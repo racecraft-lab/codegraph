@@ -227,6 +227,110 @@ describe('Installer targets — partial-state idempotency', () => {
     expect(mdEntry?.action).toBe('updated');
   });
 
+  it('codex: local install writes ./.codex/config.toml and a repo-root ./AGENTS.md block, leaving global config untouched', () => {
+    const codex = getTarget('codex')!;
+    const first = codex.install('local', { autoAllow: false });
+
+    const tomlPath = path.join(tmpCwd, '.codex', 'config.toml');
+    expect(fs.existsSync(tomlPath)).toBe(true);
+    expect(fs.readFileSync(tomlPath, 'utf-8')).toContain('[mcp_servers.codegraph]');
+
+    // Instructions land at the repo root — the file Codex actually
+    // discovers on its root→cwd walk — NOT inside ./.codex/.
+    const agentsMd = path.join(tmpCwd, 'AGENTS.md');
+    expect(fs.existsSync(agentsMd)).toBe(true);
+    expect(fs.readFileSync(agentsMd, 'utf-8')).toContain('## CodeGraph');
+    expect(fs.existsSync(path.join(tmpCwd, '.codex', 'AGENTS.md'))).toBe(false);
+
+    // Nothing leaked into the (empty) global home.
+    expect(fs.existsSync(path.join(tmpHome, '.codex'))).toBe(false);
+
+    // Local installs surface the trusted-projects caveat.
+    expect((first.notes ?? []).join(' ')).toMatch(/trust/i);
+
+    // Re-install is fully unchanged (byte-equal → idempotent).
+    const second = codex.install('local', { autoAllow: false });
+    for (const f of second.files) expect(f.action).toBe('unchanged');
+  });
+
+  it('codex: local install replaces a legacy repo-root AGENTS.md block, keeping user content', () => {
+    const codex = getTarget('codex')!;
+    const agentsMd = path.join(tmpCwd, 'AGENTS.md');
+    fs.writeFileSync(agentsMd, `# Project agents guide\n\nBe terse.\n\n${LEGACY_BLOCK}\n`);
+
+    const result = codex.install('local', { autoAllow: false });
+
+    const body = fs.readFileSync(agentsMd, 'utf-8');
+    expect(body).toContain('# Project agents guide');
+    expect(body).toContain('Be terse.');
+    // Self-heal: the stale pre-#529 body is gone, the current block is in.
+    expect(body).not.toContain('Prefer `codegraph_search`');
+    expect(body).toContain('codegraph explore');
+    expect(result.files.find((f) => f.path.endsWith('AGENTS.md'))?.action).toBe('updated');
+  });
+
+  it('codex: local partial state — config.toml intact but AGENTS.md missing → install heals', () => {
+    const codex = getTarget('codex')!;
+    codex.install('local', { autoAllow: false });
+    fs.rmSync(path.join(tmpCwd, 'AGENTS.md'));
+
+    const result = codex.install('local', { autoAllow: false });
+    const toml = result.files.find((f) => f.path.endsWith('config.toml'))!;
+    expect(toml.action).toBe('unchanged');
+    const md = result.files.find((f) => f.path.endsWith('AGENTS.md'))!;
+    expect(md.action).toBe('created');
+    expect(fs.readFileSync(path.join(tmpCwd, 'AGENTS.md'), 'utf-8')).toContain('## CodeGraph');
+  });
+
+  it('codex: local install/uninstall preserve sibling TOML tables and [[array_of_tables]] verbatim', () => {
+    const codex = getTarget('codex')!;
+    const dir = path.join(tmpCwd, '.codex');
+    fs.mkdirSync(dir, { recursive: true });
+    const tomlPath = path.join(dir, 'config.toml');
+    fs.writeFileSync(tomlPath, [
+      '# project codex config',
+      'project_doc_max_bytes = 65536',
+      '',
+      '[mcp_servers.other]',
+      'command = "other-server"',
+      '',
+      '[[profiles.review.steps]]',
+      'name = "lint"',
+      '',
+    ].join('\n'));
+
+    codex.install('local', { autoAllow: false });
+    const afterInstall = fs.readFileSync(tomlPath, 'utf-8');
+    expect(afterInstall).toContain('[mcp_servers.codegraph]');
+    expect(afterInstall).toContain('# project codex config');
+    expect(afterInstall).toContain('project_doc_max_bytes = 65536');
+    expect(afterInstall).toContain('[mcp_servers.other]');
+    expect(afterInstall).toContain('command = "other-server"');
+    expect(afterInstall).toContain('[[profiles.review.steps]]');
+
+    codex.uninstall('local');
+    const afterUninstall = fs.readFileSync(tomlPath, 'utf-8');
+    expect(afterUninstall).not.toContain('[mcp_servers.codegraph]');
+    expect(afterUninstall).toContain('[mcp_servers.other]');
+    expect(afterUninstall).toContain('[[profiles.review.steps]]');
+    // Siblings remain → the file itself must survive.
+    expect(fs.existsSync(tomlPath)).toBe(true);
+  });
+
+  it('codex: local uninstall deletes ./.codex/config.toml when it becomes empty and strips the AGENTS.md block', () => {
+    const codex = getTarget('codex')!;
+    codex.install('local', { autoAllow: false });
+    const tomlPath = path.join(tmpCwd, '.codex', 'config.toml');
+    expect(fs.existsSync(tomlPath)).toBe(true);
+
+    codex.uninstall('local');
+    // config.toml contained only our table → removed entirely.
+    expect(fs.existsSync(tomlPath)).toBe(false);
+    // AGENTS.md contained only our block → removeMarkedSection deletes
+    // the now-empty file.
+    expect(fs.existsSync(path.join(tmpCwd, 'AGENTS.md'))).toBe(false);
+  });
+
   it('opencode: prefers .jsonc when both .json and .jsonc exist', () => {
     const opencode = getTarget('opencode')!;
     const dir = path.join(tmpHome, '.config', 'opencode');
