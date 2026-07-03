@@ -1,0 +1,70 @@
+{
+  "history": [
+    {
+      "timestamp": "2026-07-03T19:25:46Z",
+      "mode": "install",
+      "actions": [
+        {
+          "id": "review",
+          "action": "installed",
+          "kind": "extension",
+          "ref_kind": "release",
+          "ref_tag": "v1.0.1",
+          "from_version": "",
+          "repo": "ismaelJimenez/spec-kit-review",
+          "zip_url": "https://github.com/ismaelJimenez/spec-kit-review/archive/refs/tags/v1.0.1.zip"
+        },
+        {
+          "id": "verify",
+          "action": "installed",
+          "kind": "extension",
+          "ref_kind": "release",
+          "ref_tag": "v1.0.3",
+          "from_version": "",
+          "repo": "ismaelJimenez/spec-kit-verify",
+          "zip_url": "https://github.com/ismaelJimenez/spec-kit-verify/archive/refs/tags/v1.0.3.zip"
+        },
+        {
+          "id": "verify-tasks",
+          "action": "installed",
+          "kind": "extension",
+          "ref_kind": "tag",
+          "ref_tag": "v1.0.0",
+          "from_version": "",
+          "repo": "datastone-inc/spec-kit-verify-tasks",
+          "zip_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.0.0.zip"
+        },
+        {
+          "id": "cleanup",
+          "action": "installed",
+          "kind": "extension",
+          "ref_kind": "release",
+          "ref_tag": "v1.0.0",
+          "from_version": "",
+          "repo": "dsrednicki/spec-kit-cleanup",
+          "zip_url": "https://github.com/dsrednicki/spec-kit-cleanup/archive/refs/tags/v1.0.0.zip"
+        },
+        {
+          "id": "retrospective",
+          "action": "installed",
+          "kind": "extension",
+          "ref_kind": "release",
+          "ref_tag": "v1.0.0",
+          "from_version": "",
+          "repo": "emi-dm/spec-kit-retrospective",
+          "zip_url": "https://github.com/emi-dm/spec-kit-retrospective/archive/refs/tags/v1.0.0.zip"
+        },
+        {
+          "id": "claude-ask-questions",
+          "action": "installed",
+          "kind": "preset",
+          "ref_kind": "release",
+          "ref_tag": "v1.0.0",
+          "from_version": "",
+          "repo": "0xrafasec/spec-kit-preset-claude-ask-questions",
+          "zip_url": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions/archive/refs/tags/v1.0.0.zip"
+        }
+      ]
+    }
+  ]
+}
