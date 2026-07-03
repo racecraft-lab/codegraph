@@ -116,10 +116,12 @@ function findResponse(stdout: string[], id: number): any | null {
   return null;
 }
 
-// Hosted CI runners (4 vCPU, cold caches, vitest workers competing for cores)
-// need looser wait budgets than a dev machine; scale every wait here rather
-// than retuning each call site. Per-test timeouts (20-45s) still bound tests.
-const WAIT_SCALE = process.env.CI ? 3 : 1;
+// Hosted CI runners (4 vCPU, cold caches) need looser budgets than a dev
+// machine; scale every wait here rather than retuning call sites, and wrap
+// the per-test timeout caps in T() so the caps scale with the waits (a
+// scaled wait must never be clipped by an unscaled test cap).
+const WAIT_SCALE = process.env.CI ? 4 : 1;
+const T = (ms: number): number => ms * WAIT_SCALE;
 
 function waitFor<T>(
   predicate: () => T | undefined | null | false,
@@ -237,7 +239,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     // Exactly one daemon ever bound, and it's the same pid both attached to.
     expect(countListeningLines(realRoot)).toBe(1);
     expect(readLockPid(realRoot)).toBe(daemonPid);
-  }, 40000);
+  }, T(40000));
 
   it('concurrent launchers converge on a single daemon (lockfile race — must-fix 1)', async () => {
     const env = { CODEGRAPH_DAEMON_IDLE_TIMEOUT_MS: '15000' };
@@ -263,7 +265,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     const daemonPid = readLockPid(realRoot);
     expect(daemonPid).toBeTruthy();
     expect(isAlive(daemonPid!)).toBe(true);
-  }, 45000);
+  }, T(45000));
 
   it('daemon survives the first client dying; a second client keeps working (must-fix 2 / #277)', async () => {
     // Idle high so the daemon doesn't reap mid-test; poll fast so proxy 1
@@ -297,7 +299,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     const toolsResp = await waitFor(() => findResponse(second.stdout, 2), 10000);
     expect(Array.isArray(toolsResp.result.tools)).toBe(true);
     expect(toolsResp.result.tools.length).toBeGreaterThan(0);
-  }, 45000);
+  }, T(45000));
 
   it('CODEGRAPH_NO_DAEMON=1 keeps each process independent (no socket/pidfile)', async () => {
     const env = { CODEGRAPH_NO_DAEMON: '1' };
@@ -309,7 +311,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     expect(first.stderr.some((l) => l.includes('Attached to shared daemon'))).toBe(false);
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.pid'))).toBe(false);
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.log'))).toBe(false);
-  }, 20000);
+  }, T(20000));
 
   it('clears a stale (dead-pid) lockfile and a fresh daemon takes over', async () => {
     // Plant a lockfile pointing at a definitely-dead pid + the real socket path.
@@ -336,7 +338,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     const livePid = readLockPid(realRoot);
     expect(livePid).not.toBe(999_999);
     expect(isAlive(livePid!)).toBe(true);
-  }, 40000);
+  }, T(40000));
 
   it('proxy falls back to direct mode on a daemon version mismatch', async () => {
     const net = await import('net');
@@ -368,7 +370,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     } finally {
       await new Promise<void>((resolve) => miniServer.close(() => resolve()));
     }
-  }, 30000);
+  }, T(30000));
 
   // The over-the-wire client-hello → record → sweep path is covered by the
   // deterministic `Daemon.reapDeadClients` unit test in daemon-client-liveness
@@ -392,7 +394,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     expect(await waitProcessExit(daemonPid, 12000)).toBe(true);
     expect(readDaemonLog(realRoot)).toContain('inactivity backstop');
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.pid'))).toBe(false);
-  }, 30000);
+  }, T(30000));
 
   it('daemon idle-times-out after the last client disconnects', async () => {
     const env = { CODEGRAPH_DAEMON_IDLE_TIMEOUT_MS: '800', CODEGRAPH_PPID_POLL_MS: '200' };
@@ -409,7 +411,7 @@ describe('Shared MCP daemon (issue #411)', () => {
 
     expect(await waitProcessExit(daemonPid, 10000)).toBe(true);
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.pid'))).toBe(false);
-  }, 30000);
+  }, T(30000));
 
   it('proxy survives the daemon dying mid-session and keeps serving (#662)', async () => {
     // The #662 scenario: an MCP host SIGTERM's the shared daemon while a session
@@ -439,5 +441,5 @@ describe('Shared MCP daemon (issue #411)', () => {
     const resp = await waitFor(() => findResponse(server.stdout, 3), 15000);
     expect(resp.result !== undefined || resp.error !== undefined).toBe(true);
     expect(isAlive(server.child.pid!)).toBe(true);
-  }, 45000);
+  }, T(45000));
 });
