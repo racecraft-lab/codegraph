@@ -6,6 +6,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['__tests__/**/*.test.ts'],
+    // Teardown tolerance for temp-dir removal races (see the file's header).
+    setupFiles: ['./__tests__/setup/rm-tolerance.ts'],
     /**
      * The parse-heavy suites compile tree-sitter grammar WASM inside the test
      * process; without `--liftoff-only` V8's turboshaft tier can exhaust its
