@@ -782,7 +782,7 @@ When breaking a feature into specs:
 
 | Resource | Detail |
 |----------|--------|
-| Runtime | Node `>=20 <25` (hard version check in `src/bin/node-version-check.ts`); `node:sqlite` DatabaseSync (WAL + FTS5), zero native deps |
+| Runtime | Node `>=20 <25` npm engines range (hard check in `src/bin/node-version-check.ts`); effective from-source floor is Node 22.5+ for `node:sqlite` — self-contained releases bundle a ≥22.5 runtime; `node:sqlite` DatabaseSync (WAL + FTS5), zero native deps |
 | Parsing | tree-sitter WASM grammars shipped in `src/extraction/wasm/`, copied by `copy-assets` |
 | MCP daemon | `src/mcp/` daemon + query-pool/workers — the substrate the HTTP server and LSP facade ride |
 | Watch/sync | `src/sync/` FileWatcher (FSEvents/inotify/RDCW) — hooks for auto re-embed, wiki auto-update, LSP incremental passes |

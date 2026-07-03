@@ -204,12 +204,12 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 ## 5. Constraints
 
 - **Additive-first tracking fork**: new capabilities live in new modules (`src/embeddings`, `src/server`, `web/`, `src/lsp`, `src/analysis`, `src/query`, `src/llm`, `src/wiki`, `src/group`) behind opt-in flags; diffs to upstream-owned files stay minimal so upstream merges remain routine.
-- **Zero native dependencies** in the core package: `node:sqlite` is the only store; new runtime deps must be pure-JS/WASM; Node engines `>=20 <25` preserved; any new SQL/WASM/static asset must be wired into the `copy-assets` build step or it will not ship.
-- **Local-first & private**: telemetry hard-disabled by default in this fork; no network calls except user-configured endpoints (embedding/LLM) and locally spawned language servers; the web app makes no external requests.
+- **Zero native dependencies** in the core package: `node:sqlite` is the only store; new runtime deps must be pure-JS/WASM; the npm engines range `>=20 <25` must be preserved (it gates the thin-installer shim — the effective from-source floor is Node 22.5+ for `node:sqlite`, which the bundled runtime satisfies); any new SQL/WASM/static asset must be wired into the `copy-assets` build step or it will not ship.
+- **Local-first & private**: telemetry **must be** hard-disabled by default in this fork — upstream currently defaults it to enabled (`src/telemetry/index.ts`), so flipping that default is fork work, not current state; no network calls except user-configured endpoints (embedding/LLM) and locally spawned language servers; the web app makes no external requests.
 - **Deterministic extraction stays LLM-free**: LLM output is confined to prose layers (wiki text, labels, narratives) — never to graph structure.
 - **Self-host bar for the web platform**: deployable as embedded static assets via the CLI or a single container; no external services required.
 - **License hygiene**: all new code MIT; dependencies must be MIT/Apache/BSD-compatible; no code or text imported from non-permissively-licensed codebases. Implementations are original work against public standards (LSP spec, openCypher, OpenAI-compatible API shapes, tree-sitter grammars).
-- **Vendor-neutral documentation**: PRDs, specs, and code describe capabilities in self-contained terms without referencing third-party commercial or source-available products.
+- **Vendor-neutral documentation**: PRDs, specs, and code describe capabilities in self-contained terms — no comparisons to, endorsements of, or dependencies on third-party commercial or source-available products. Referencing public standards and API schemas (LSP, openCypher, OpenAI-compatible shapes) and permissively-licensed OSS frameworks is allowed.
 
 ## 6. Open Questions
 
