@@ -72,3 +72,17 @@ codegraph reduced effort and whether both arms reached a correct answer.
 - Corpus repos are cloned to `/tmp/codegraph-corpus` (reused if already present).
 - Add or edit repos in `corpus.json` (fields: `name`, `repo`, `size`, `files`,
   `question`).
+
+## Invariants (from CLAUDE.md validation methodology)
+
+- **Model floor**: the harness defaults both arms to `--model sonnet --effort
+  high` (`run-all.sh`). Never raise `MODEL`/`EFFORT` — Sonnet is the deliberate
+  floor model — unless the maintainer explicitly asks.
+- **Variance**: one pass is n=1 per arm. Never conclude from a single pass —
+  run the audit at least twice and report ranges, not single numbers.
+- **Pass bar**: a flow question reaches ~0 Read/Grep within the repo-size
+  explore-call budget and runs faster than the without-codegraph arm.
+- **Isolating a build change**: use `scripts/agent-eval/ab-new-vs-baseline.sh`
+  (both arms codegraph-on, daemon pre-warm baked in) — not with-vs-without.
+- **MCP attach**: don't trust claude's `init` snapshot; judge codegraph usage
+  from `parse-run.mjs`'s `by type` output.
