@@ -1,0 +1,20 @@
+# Keeps the SHA-pinned actions in .github/workflows fresh (weekly, one
+# grouped PR).
+#
+# npm is deliberately NOT configured: package.json / package-lock.json are
+# upstream-owned files (this repo is a tracking fork — see CLAUDE.md house
+# rules), dependency bumps arrive by syncing upstream, and fork-local bumps
+# would create permanent merge friction.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+    commit-message:
+      prefix: ci

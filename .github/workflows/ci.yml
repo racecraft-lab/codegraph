@@ -1,0 +1,145 @@
+# Fork-local CI (racecraft-lab/codegraph). Upstream ships no test workflow —
+# release.yml and deploy-site.yml are CD only — so this is the gate that keeps
+# every PR green: the full vitest suite across the supported OS × Node matrix,
+# the copy-assets shipping contract, a CLI smoke test, dependency review, and
+# the installer-coverage house rule from CLAUDE.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  # No base-branch filter: this repo stacks PRs (base = another feature
+  # branch), and stacked PRs must get checks too.
+  pull_request:
+  # Ready for a merge queue, if one is ever enabled on the repo.
+  merge_group:
+  workflow_dispatch:
+
+# Least privilege by default; jobs opt into anything more.
+permissions:
+  contents: read
+
+# One live run per ref: pushing new commits to a PR cancels the stale run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # CI runs are not usage — keep them out of telemetry entirely. DO_NOT_TRACK
+  # is the cross-tool standard CodeGraph always honors (TELEMETRY.md).
+  DO_NOT_TRACK: 1
+
+defaults:
+  run:
+    # Also on Windows (Git Bash): process substitution + consistent quoting.
+    shell: bash
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # A platform-specific failure must not mask results on the others.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # 22 = node:sqlite floor for running from source (>=22.5, see
+        # src/db/sqlite-adapter.ts); 24 = current LTS. Node 20/21 are served
+        # only by the bundled >=22.5 runtime the installer ships, and Node 25
+        # is hard-blocked by src/bin/node-version-check.ts — neither belongs
+        # in a from-source test matrix.
+        node: [22, 24]
+    steps:
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Configure git identity for test fixture repos
+        # Several suites create throwaway repos and commit in them; runners
+        # ship with no global git identity configured.
+        run: |
+          git config --global user.name 'codegraph-ci'
+          git config --global user.email 'ci@codegraph.invalid'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Assert bundled assets shipped to dist (copy-assets contract)
+        # Any new SQL or grammar wasm must be wired into copy-assets or it
+        # won't ship (CLAUDE.md "Build, Test, Run") — enforced mechanically:
+        # dist must carry schema.sql and every grammar in src/extraction/wasm.
+        run: |
+          test -f dist/db/schema.sql
+          diff <(cd src/extraction/wasm && printf '%s\n' *.wasm | sort) \
+               <(cd dist/extraction/wasm && printf '%s\n' *.wasm | sort)
+
+      - name: CLI smoke test
+        run: node dist/bin/codegraph.js version
+
+      - name: Test
+        run: npm test
+
+  dependency-review:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+
+  installer-guard:
+    # CI enforcement of the CLAUDE.md house rule: any src/installer change
+    # needs matching coverage in __tests__/installer-targets.test.ts and a
+    # CHANGELOG entry — installer regressions break every new install
+    # silently. (Locally the ship-coverage Stop hook enforces this for Claude
+    # Code; this job covers every other contributor, including Codex, which
+    # has no lifecycle hooks.)
+    name: installer coverage guard
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Installer changes carry contract-test + CHANGELOG coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          files=$(gh pr diff "$PR" --repo "$REPO" --name-only)
+          installer=$(printf '%s\n' "$files" | grep '^src/installer/' | grep -v '\.md$' || true)
+          if [ -z "$installer" ]; then
+            echo "No installer source changes — guard not applicable."
+            exit 0
+          fi
+          missing=""
+          printf '%s\n' "$files" | grep -qx '__tests__/installer-targets.test.ts' || missing="$missing __tests__/installer-targets.test.ts"
+          printf '%s\n' "$files" | grep -qx 'CHANGELOG.md' || missing="$missing CHANGELOG.md"
+          if [ -n "$missing" ]; then
+            {
+              echo '### Installer coverage guard failed'
+              echo "This PR changes installer source but is missing:$missing"
+              echo 'House rule (CLAUDE.md): any src/installer change needs matching contract-test coverage and a CHANGELOG entry.'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo 'Installer changes carry contract-test + CHANGELOG coverage.'

@@ -1,0 +1,40 @@
+# Static security analysis via GitHub code scanning (free for public repos).
+# Findings land in the repo's Security tab and as PR check annotations.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  # Unfiltered so stacked PRs (base = another feature branch) are scanned too.
+  pull_request:
+  schedule:
+    - cron: '26 6 * * 1' # weekly, Monday 06:26 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # upload findings to code scanning
+    steps:
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
+        with:
+          category: '/language:javascript-typescript'
