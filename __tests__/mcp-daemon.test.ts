@@ -127,6 +127,7 @@ function waitFor<T>(
   predicate: () => T | undefined | null | false,
   timeoutMs: number,
   pollMs = 25,
+  label = '',
 ): Promise<T> {
   const budgetMs = timeoutMs * WAIT_SCALE;
   return new Promise((resolve, reject) => {
@@ -135,7 +136,9 @@ function waitFor<T>(
       let v: T | undefined | null | false;
       try { v = predicate(); } catch (e) { return reject(e); }
       if (v) return resolve(v as T);
-      if (Date.now() - started > budgetMs) return reject(new Error(`Timed out after ${budgetMs}ms`));
+      if (Date.now() - started > budgetMs) {
+        return reject(new Error(`Timed out after ${budgetMs}ms${label ? ` waiting for: ${label}` : ''}`));
+      }
       setTimeout(tick, pollMs);
     };
     tick();
@@ -185,7 +188,18 @@ describe('Shared MCP daemon (issue #411)', () => {
     realRoot = fs.realpathSync(tempDir);
   });
 
-  afterEach(async () => {
+  afterEach(async (ctx) => {
+    // Forensics for CI-only flakes (the #662 ubuntu-22 stall): on failure,
+    // dump what the proxies said and what the daemon logged — otherwise a
+    // hosted-runner timeout leaves nothing to diagnose.
+    if (ctx.task.result?.state === 'fail') {
+      const tail = (lines: string[], n: number) => lines.slice(-n).join('\n');
+      console.error(`[mcp-daemon diagnostics] "${ctx.task.name}" failed`);
+      servers.forEach((s, i) => {
+        console.error(`[proxy ${i} stderr tail]\n${tail(s.stderr, 20)}`);
+      });
+      console.error(`[daemon.log tail]\n${tail(readDaemonLog(realRoot).split('\n'), 25)}`);
+    }
     killTree(...servers.map((s) => s.child));
     // The daemon is detached (not a tracked child) — reap it explicitly via the
     // pid it recorded, so a test can't leak a background daemon. Guard against
@@ -421,14 +435,14 @@ describe('Shared MCP daemon (issue #411)', () => {
     const server = spawnServer(tempDir, env);
     servers.push(server);
     sendInitialize(server.child, `file://${tempDir}`, 1);
-    await waitFor(() => findResponse(server.stdout, 1), 10000);
-    await waitFor(() => server.stderr.some((l) => l.includes('Attached to shared daemon')), 8000);
-    await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, 8000);
+    await waitFor(() => findResponse(server.stdout, 1), 10000, 25, '#662 initialize response (id 1)');
+    await waitFor(() => server.stderr.some((l) => l.includes('Attached to shared daemon')), 8000, 25, '#662 attach log');
+    await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, 8000, 25, '#662 daemon lockfile pid');
     const daemonPid = readLockPid(realRoot)!;
 
     // A warm call goes through the daemon.
     sendMessage(server.child, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'codegraph_status', arguments: {} } });
-    await waitFor(() => findResponse(server.stdout, 2), 10000);
+    await waitFor(() => findResponse(server.stdout, 2), 10000, 25, '#662 warm tools/call response (id 2)');
 
     // Kill the daemon out from under the live proxy.
     process.kill(daemonPid, 'SIGTERM');
@@ -436,9 +450,9 @@ describe('Shared MCP daemon (issue #411)', () => {
 
     // The proxy must still be alive and still answer — served in-process now.
     expect(isAlive(server.child.pid!)).toBe(true);
-    await waitFor(() => server.stderr.some((l) => l.includes('serving this session in-process')), 8000);
+    await waitFor(() => server.stderr.some((l) => l.includes('serving this session in-process')), 8000, 25, '#662 in-process fallback log');
     sendMessage(server.child, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'codegraph_status', arguments: {} } });
-    const resp = await waitFor(() => findResponse(server.stdout, 3), 15000);
+    const resp = await waitFor(() => findResponse(server.stdout, 3), 15000, 25, '#662 post-fallback response (id 3)');
     expect(resp.result !== undefined || resp.error !== undefined).toBe(true);
     expect(isAlive(server.child.pid!)).toBe(true);
   }, T(45000));

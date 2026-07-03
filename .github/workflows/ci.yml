@@ -95,11 +95,12 @@ jobs:
         # The daemon suite spawns real proxy+daemon process trees and is
         # timing-sensitive; on 4-vCPU runners it flakes under the CPU
         # contention of the parallel parse-heavy suites (observed at 3x its
-        # dev-machine wait budgets). Give it the runner to itself, with one
-        # retry for cold-start spikes (macos runners are the slowest; a
-        # retried run starts warm and is flagged as flaky in the output).
+        # dev-machine wait budgets). Give it the runner to itself, with
+        # retries for runner-lottery spikes (retried runs start warm and are
+        # flagged as flaky in the output; on-failure diagnostics dump the
+        # proxy stderr + daemon log).
         if: runner.os != 'Windows'
-        run: npx vitest run --retry=1 __tests__/mcp-daemon.test.ts
+        run: npx vitest run --retry=2 __tests__/mcp-daemon.test.ts
 
       - name: Test (Windows — informational, does not gate)
         if: runner.os == 'Windows'
