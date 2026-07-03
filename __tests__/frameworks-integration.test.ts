@@ -610,7 +610,9 @@ describe('Java end-to-end — field-injected bean trace (issue #389)', () => {
 describe('JVM FQN imports — end-to-end', () => {
   let tmpDir: string | undefined;
   afterEach(() => {
-    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    // Parse workers can hold handles for a beat after a test ends —
+    // EBUSY/EPERM here are transient (seen on Windows CI runners).
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     tmpDir = undefined;
   });
 

@@ -116,18 +116,24 @@ function findResponse(stdout: string[], id: number): any | null {
   return null;
 }
 
+// Hosted CI runners (4 vCPU, cold caches, vitest workers competing for cores)
+// need looser wait budgets than a dev machine; scale every wait here rather
+// than retuning each call site. Per-test timeouts (20-45s) still bound tests.
+const WAIT_SCALE = process.env.CI ? 3 : 1;
+
 function waitFor<T>(
   predicate: () => T | undefined | null | false,
   timeoutMs: number,
   pollMs = 25,
 ): Promise<T> {
+  const budgetMs = timeoutMs * WAIT_SCALE;
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const tick = () => {
       let v: T | undefined | null | false;
       try { v = predicate(); } catch (e) { return reject(e); }
       if (v) return resolve(v as T);
-      if (Date.now() - started > timeoutMs) return reject(new Error(`Timed out after ${timeoutMs}ms`));
+      if (Date.now() - started > budgetMs) return reject(new Error(`Timed out after ${budgetMs}ms`));
       setTimeout(tick, pollMs);
     };
     tick();
@@ -189,7 +195,9 @@ describe('Shared MCP daemon (issue #411)', () => {
     }
     await new Promise((r) => setTimeout(r, 50));
     servers.length = 0;
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    // A just-SIGKILL'd server (or its liftoff re-exec grandchild) can hold
+    // handles for a beat — EBUSY/EPERM/ENOTEMPTY here are transient.
+    fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('two invocations share ONE detached daemon; both attach as proxies', async () => {

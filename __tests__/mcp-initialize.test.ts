@@ -112,7 +112,9 @@ describe('MCP initialize handshake (issue #172)', () => {
       child.kill('SIGKILL');
       child = null;
     }
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    // The just-SIGKILL'd server (or its liftoff re-exec grandchild) can hold
+    // handles for a beat — EBUSY/EPERM/ENOTEMPTY here are transient.
+    fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('responds to initialize quickly when no .codegraph exists in cwd', async () => {

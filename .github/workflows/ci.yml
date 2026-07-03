@@ -88,7 +88,21 @@ jobs:
         run: node dist/bin/codegraph.js version
 
       - name: Test
+        if: runner.os != 'Windows'
         run: npm test
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        # Two suites are excluded as known hosted-runner quirks, pre-existing
+        # on main (CLAUDE.md "Cross-platform validation"): mcp-daemon.test.ts
+        # (daemon lifecycle timing/semantics over named pipes) and
+        # worktree-detection.test.ts (8.3 short-path TEMP vs long-path
+        # mismatch: RUNNER~1 vs runneradmin). The Parallels VM remains the
+        # authoritative Windows validation path for those areas.
+        run: >-
+          npx vitest run
+          --exclude "__tests__/mcp-daemon.test.ts"
+          --exclude "__tests__/worktree-detection.test.ts"
 
   dependency-review:
     name: dependency review
