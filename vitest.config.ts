@@ -1,10 +1,26 @@
 import { defineConfig } from 'vitest/config';
+import { WASM_RUNTIME_FLAGS } from './src/extraction/wasm-runtime-flags';
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
     include: ['__tests__/**/*.test.ts'],
+    /**
+     * The parse-heavy suites compile tree-sitter grammar WASM inside the test
+     * process; without `--liftoff-only` V8's turboshaft tier can exhaust its
+     * Zone arena and abort the whole vitest fork — "Fatal process out of
+     * memory: Zone", reported by vitest only as "Worker exited unexpectedly"
+     * (no failing test). The CLI solves this by re-execing itself with the
+     * flag (src/extraction/wasm-runtime-flags.ts); vitest forks never take
+     * that path, so hand the same flags to the fork processes here. V8 flags
+     * are process-wide — the parse-worker threads inherit them.
+     */
+    poolOptions: {
+      forks: {
+        execArgv: [...WASM_RUNTIME_FLAGS],
+      },
+    },
     /**
      * Several MCP integration tests (mcp-daemon, mcp-initialize, mcp-ppid-watchdog,
      * mcp-roots) spawn `dist/bin/codegraph.js serve --mcp` with `process.execPath`
