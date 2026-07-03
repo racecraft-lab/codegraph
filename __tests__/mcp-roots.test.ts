@@ -91,8 +91,14 @@ describe('MCP project resolution via roots/list (issue #196)', () => {
     }
     // The just-SIGKILL'd server (or its liftoff re-exec grandchild) can hold
     // handles for a beat — EBUSY/EPERM/ENOTEMPTY here are transient.
-    fs.rmSync(cwdDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    fs.rmSync(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    try {
+      fs.rmSync(cwdDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      fs.rmSync(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch (e) {
+      // Best-effort on Windows: the grandchild can outlive the retry budget
+      // and a leaked CI tempdir is harmless. POSIX still throws.
+      if (process.platform !== 'win32') throw e;
+    }
   });
 
   it('resolves the project from the client roots/list when no rootUri is sent', async () => {

@@ -89,7 +89,15 @@ jobs:
 
       - name: Test
         if: runner.os != 'Windows'
-        run: npm test
+        run: npx vitest run --exclude "__tests__/mcp-daemon.test.ts"
+
+      - name: Test (daemon suite, isolated)
+        # The daemon suite spawns real proxy+daemon process trees and is
+        # timing-sensitive; on 4-vCPU runners it flakes under the CPU
+        # contention of the parallel parse-heavy suites (observed at 3x its
+        # dev-machine wait budgets). Give it the runner to itself.
+        if: runner.os != 'Windows'
+        run: npx vitest run __tests__/mcp-daemon.test.ts
 
       - name: Test (Windows)
         if: runner.os == 'Windows'
