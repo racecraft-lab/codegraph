@@ -116,18 +116,29 @@ function findResponse(stdout: string[], id: number): any | null {
   return null;
 }
 
+// Hosted CI runners (4 vCPU, cold caches) need looser budgets than a dev
+// machine; scale every wait here rather than retuning call sites, and wrap
+// the per-test timeout caps in T() so the caps scale with the waits (a
+// scaled wait must never be clipped by an unscaled test cap).
+const WAIT_SCALE = process.env.CI ? 4 : 1;
+const T = (ms: number): number => ms * WAIT_SCALE;
+
 function waitFor<T>(
   predicate: () => T | undefined | null | false,
   timeoutMs: number,
   pollMs = 25,
+  label = '',
 ): Promise<T> {
+  const budgetMs = timeoutMs * WAIT_SCALE;
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const tick = () => {
       let v: T | undefined | null | false;
       try { v = predicate(); } catch (e) { return reject(e); }
       if (v) return resolve(v as T);
-      if (Date.now() - started > timeoutMs) return reject(new Error(`Timed out after ${timeoutMs}ms`));
+      if (Date.now() - started > budgetMs) {
+        return reject(new Error(`Timed out after ${budgetMs}ms${label ? ` waiting for: ${label}` : ''}`));
+      }
       setTimeout(tick, pollMs);
     };
     tick();
@@ -177,7 +188,18 @@ describe('Shared MCP daemon (issue #411)', () => {
     realRoot = fs.realpathSync(tempDir);
   });
 
-  afterEach(async () => {
+  afterEach(async (ctx) => {
+    // Forensics for CI-only flakes (the #662 ubuntu-22 stall): on failure,
+    // dump what the proxies said and what the daemon logged — otherwise a
+    // hosted-runner timeout leaves nothing to diagnose.
+    if (ctx.task.result?.state === 'fail') {
+      const tail = (lines: string[], n: number) => lines.slice(-n).join('\n');
+      console.error(`[mcp-daemon diagnostics] "${ctx.task.name}" failed`);
+      servers.forEach((s, i) => {
+        console.error(`[proxy ${i} stderr tail]\n${tail(s.stderr, 20)}`);
+      });
+      console.error(`[daemon.log tail]\n${tail(readDaemonLog(realRoot).split('\n'), 25)}`);
+    }
     killTree(...servers.map((s) => s.child));
     // The daemon is detached (not a tracked child) — reap it explicitly via the
     // pid it recorded, so a test can't leak a background daemon. Guard against
@@ -189,7 +211,9 @@ describe('Shared MCP daemon (issue #411)', () => {
     }
     await new Promise((r) => setTimeout(r, 50));
     servers.length = 0;
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    // A just-SIGKILL'd server (or its liftoff re-exec grandchild) can hold
+    // handles for a beat — EBUSY/EPERM/ENOTEMPTY here are transient.
+    fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('two invocations share ONE detached daemon; both attach as proxies', async () => {
@@ -229,7 +253,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     // Exactly one daemon ever bound, and it's the same pid both attached to.
     expect(countListeningLines(realRoot)).toBe(1);
     expect(readLockPid(realRoot)).toBe(daemonPid);
-  }, 40000);
+  }, T(40000));
 
   it('concurrent launchers converge on a single daemon (lockfile race — must-fix 1)', async () => {
     const env = { CODEGRAPH_DAEMON_IDLE_TIMEOUT_MS: '15000' };
@@ -255,7 +279,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     const daemonPid = readLockPid(realRoot);
     expect(daemonPid).toBeTruthy();
     expect(isAlive(daemonPid!)).toBe(true);
-  }, 45000);
+  }, T(45000));
 
   it('daemon survives the first client dying; a second client keeps working (must-fix 2 / #277)', async () => {
     // Idle high so the daemon doesn't reap mid-test; poll fast so proxy 1
@@ -289,7 +313,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     const toolsResp = await waitFor(() => findResponse(second.stdout, 2), 10000);
     expect(Array.isArray(toolsResp.result.tools)).toBe(true);
     expect(toolsResp.result.tools.length).toBeGreaterThan(0);
-  }, 45000);
+  }, T(45000));
 
   it('CODEGRAPH_NO_DAEMON=1 keeps each process independent (no socket/pidfile)', async () => {
     const env = { CODEGRAPH_NO_DAEMON: '1' };
@@ -301,7 +325,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     expect(first.stderr.some((l) => l.includes('Attached to shared daemon'))).toBe(false);
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.pid'))).toBe(false);
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.log'))).toBe(false);
-  }, 20000);
+  }, T(20000));
 
   it('clears a stale (dead-pid) lockfile and a fresh daemon takes over', async () => {
     // Plant a lockfile pointing at a definitely-dead pid + the real socket path.
@@ -328,7 +352,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     const livePid = readLockPid(realRoot);
     expect(livePid).not.toBe(999_999);
     expect(isAlive(livePid!)).toBe(true);
-  }, 40000);
+  }, T(40000));
 
   it('proxy falls back to direct mode on a daemon version mismatch', async () => {
     const net = await import('net');
@@ -360,7 +384,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     } finally {
       await new Promise<void>((resolve) => miniServer.close(() => resolve()));
     }
-  }, 30000);
+  }, T(30000));
 
   // The over-the-wire client-hello → record → sweep path is covered by the
   // deterministic `Daemon.reapDeadClients` unit test in daemon-client-liveness
@@ -384,7 +408,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     expect(await waitProcessExit(daemonPid, 12000)).toBe(true);
     expect(readDaemonLog(realRoot)).toContain('inactivity backstop');
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.pid'))).toBe(false);
-  }, 30000);
+  }, T(30000));
 
   it('daemon idle-times-out after the last client disconnects', async () => {
     const env = { CODEGRAPH_DAEMON_IDLE_TIMEOUT_MS: '800', CODEGRAPH_PPID_POLL_MS: '200' };
@@ -401,7 +425,7 @@ describe('Shared MCP daemon (issue #411)', () => {
 
     expect(await waitProcessExit(daemonPid, 10000)).toBe(true);
     expect(fs.existsSync(path.join(realRoot, '.codegraph', 'daemon.pid'))).toBe(false);
-  }, 30000);
+  }, T(30000));
 
   it('proxy survives the daemon dying mid-session and keeps serving (#662)', async () => {
     // The #662 scenario: an MCP host SIGTERM's the shared daemon while a session
@@ -411,14 +435,14 @@ describe('Shared MCP daemon (issue #411)', () => {
     const server = spawnServer(tempDir, env);
     servers.push(server);
     sendInitialize(server.child, `file://${tempDir}`, 1);
-    await waitFor(() => findResponse(server.stdout, 1), 10000);
-    await waitFor(() => server.stderr.some((l) => l.includes('Attached to shared daemon')), 8000);
-    await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, 8000);
+    await waitFor(() => findResponse(server.stdout, 1), 10000, 25, '#662 initialize response (id 1)');
+    await waitFor(() => server.stderr.some((l) => l.includes('Attached to shared daemon')), 8000, 25, '#662 attach log');
+    await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, 8000, 25, '#662 daemon lockfile pid');
     const daemonPid = readLockPid(realRoot)!;
 
     // A warm call goes through the daemon.
     sendMessage(server.child, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'codegraph_status', arguments: {} } });
-    await waitFor(() => findResponse(server.stdout, 2), 10000);
+    await waitFor(() => findResponse(server.stdout, 2), 10000, 25, '#662 warm tools/call response (id 2)');
 
     // Kill the daemon out from under the live proxy.
     process.kill(daemonPid, 'SIGTERM');
@@ -426,10 +450,10 @@ describe('Shared MCP daemon (issue #411)', () => {
 
     // The proxy must still be alive and still answer — served in-process now.
     expect(isAlive(server.child.pid!)).toBe(true);
-    await waitFor(() => server.stderr.some((l) => l.includes('serving this session in-process')), 8000);
+    await waitFor(() => server.stderr.some((l) => l.includes('serving this session in-process')), 8000, 25, '#662 in-process fallback log');
     sendMessage(server.child, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'codegraph_status', arguments: {} } });
-    const resp = await waitFor(() => findResponse(server.stdout, 3), 15000);
+    const resp = await waitFor(() => findResponse(server.stdout, 3), 15000, 25, '#662 post-fallback response (id 3)');
     expect(resp.result !== undefined || resp.error !== undefined).toBe(true);
     expect(isAlive(server.child.pid!)).toBe(true);
-  }, 45000);
+  }, T(45000));
 });

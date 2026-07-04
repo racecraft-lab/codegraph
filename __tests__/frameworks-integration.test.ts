@@ -610,7 +610,14 @@ describe('Java end-to-end — field-injected bean trace (issue #389)', () => {
 describe('JVM FQN imports — end-to-end', () => {
   let tmpDir: string | undefined;
   afterEach(() => {
-    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    // Parse workers can hold handles for a beat after a test ends —
+    // EBUSY/EPERM here are transient (seen on Windows CI runners).
+    try {
+      if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch (e) {
+      // Best-effort on Windows: a leaked CI tempdir is harmless. POSIX throws.
+      if (process.platform !== 'win32') throw e;
+    }
     tmpDir = undefined;
   });
 
