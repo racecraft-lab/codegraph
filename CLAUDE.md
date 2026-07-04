@@ -298,5 +298,7 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+shell commands, and other important information, read the current plan:
+`specs/001-embedding-infrastructure/plan.md` (SPEC-001 — Embedding Infrastructure
+& Endpoint Provider; delivered as Slice A = US1, then Slice B = US2+US3).
 <!-- SPECKIT END -->

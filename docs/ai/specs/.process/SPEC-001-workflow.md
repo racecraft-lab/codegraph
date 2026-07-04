@@ -34,7 +34,7 @@ captured during scoping.
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 26 FRs, 3 US, 12 acceptance scenarios, 0 markers; G1 pass |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 13 questions; 1 consensus run (both-agree) + 1 security item (conservative default, flagged); FR-016a added, FR-004/022/023 updated; G2 pass |
-| Plan | `/speckit-plan` | ⏳ Pending | |
+| Plan | `/speckit-plan` | ✅ Complete | 8 artifacts (plan + research 16 decisions + data-model + quickstart + 4 contracts); constitution PASS ×2; G3 pass (1 false-positive marker reworded) |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
@@ -360,11 +360,19 @@ onto user stories so tasks can deliver Slice A end-to-end first.
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, execution flow |
-| `research.md` | ⏳ | Decision rationales (if needed) |
-| `data-model.md` | ⏳ | node_vectors + config entities |
-| `contracts/` | ⏳ | EmbeddingProvider interface; /v1/embeddings request/response shape |
-| `quickstart.md` | ⏳ | Configure endpoint → index → verify status |
+| `plan.md` | ✅ | Technical context, constitution gates (PASS ×2, Complexity Tracking empty), reviewability budget (split → 2 slice-PRs; Slice A warn accepted) |
+| `research.md` | ✅ | 16 decisions (D1–D16) with rationale + rejected alternatives + code precedent |
+| `data-model.md` | ✅ | 5 entities: node_vectors (TEXT PK, no FK), metadata scalars, embedding input, pass, endpoint config |
+| `contracts/` | ✅ | 4 contracts: embedding-config, embedding-provider (+OpenAI wire shape), node-vectors-schema (+f32 codec), status-embedding-json |
+| `quickstart.md` | ✅ | Configure endpoint → index → verify status |
+
+Notes: G3 pass (0 markers after rewording a false-positive literal `[NEEDS CLARIFICATION]`
+inside the Principle I gate description — auto-fix attempt 1). Plan-phase reviewability
+estimator: `not_estimated` (`projected: null` — plan.md declares no parseable production-file
+structure); recorded as unmeasured, NOT as a within-budget pass; the plan's own budget section
+projects ~750 LOC → split, consistent with the spec's Reviewability Budget. after_plan hook
+(agent-context) fulfilled inline by the plan command's CLAUDE.md SPECKIT-marker update.
+All six binding clarify resolutions verified present with zero deviations.
 
 ---
 
