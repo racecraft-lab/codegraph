@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { CodeGraph } from '../src';
+import { rmrfBestEffort } from './setup/rm-tolerance';
 
 const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
 
@@ -113,14 +114,9 @@ describe('MCP initialize handshake (issue #172)', () => {
       child = null;
     }
     // The just-SIGKILL'd server (or its liftoff re-exec grandchild) can hold
-    // handles for a beat — EBUSY/EPERM/ENOTEMPTY here are transient.
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    } catch (e) {
-      // Best-effort on Windows: the grandchild can outlive the retry budget
-      // and a leaked CI tempdir is harmless. POSIX still throws.
-      if (process.platform !== 'win32') throw e;
-    }
+    // handles for a beat — rmrfBestEffort retries and, on win32 only,
+    // tolerates a leaked tempdir.
+    rmrfBestEffort(tempDir);
   });
 
   it('responds to initialize quickly when no .codegraph exists in cwd', async () => {

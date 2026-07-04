@@ -29,7 +29,18 @@ const requireCjs = createRequire(import.meta.url);
 const fs: typeof FsType = requireCjs('fs');
 
 const TRANSIENT = new Set(['EPERM', 'EBUSY', 'ENOTEMPTY']);
-const realRmSync = fs.rmSync.bind(fs);
+
+// vitest re-runs setupFiles per test file (isolate: true) while the CJS fs
+// module is process-wide — guard so wrappers don't chain, and keep a handle
+// to the true original for rmrfBestEffort.
+type PatchedRmSync = typeof fs.rmSync & {
+  __cgRmTolerance?: true;
+  __cgRealRmSync?: typeof fs.rmSync;
+};
+const current = fs.rmSync as PatchedRmSync;
+const realRmSync: typeof fs.rmSync = current.__cgRmTolerance
+  ? current.__cgRealRmSync!
+  : current.bind(fs);
 
 function insideTmpdir(p: FsType.PathLike): boolean {
   try {
@@ -41,22 +52,42 @@ function insideTmpdir(p: FsType.PathLike): boolean {
   }
 }
 
-fs.rmSync = ((p: FsType.PathLike, opts?: FsType.RmOptions) => {
-  const merged: FsType.RmOptions | undefined = opts
-    ? { maxRetries: 5, retryDelay: 100, ...opts }
-    : opts;
+function swallowable(p: FsType.PathLike, recursive: boolean | undefined, code: string): boolean {
+  return process.platform === 'win32' && recursive === true && TRANSIENT.has(code) && insideTmpdir(p);
+}
+
+/**
+ * Teardown helper for suites whose fixtures are held open a beat longer than
+ * the test (spawned servers, parse workers): recursive rm with retry backoff,
+ * best-effort on win32 for tmpdir fixtures, throwing everywhere else. Call it
+ * once per directory so one failure never skips a sibling cleanup.
+ */
+export function rmrfBestEffort(p: FsType.PathLike): void {
   try {
-    return realRmSync(p, merged as FsType.RmOptions);
+    realRmSync(p, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   } catch (e) {
     const code = (e as NodeJS.ErrnoException)?.code ?? '';
-    if (
-      process.platform === 'win32' &&
-      opts?.recursive === true &&
-      TRANSIENT.has(code) &&
-      insideTmpdir(p)
-    ) {
-      return; // best-effort: leaked tempdir on a throwaway CI VM
-    }
+    if (swallowable(p, true, code)) return; // leaked CI tempdir is harmless
     throw e;
   }
-}) as typeof fs.rmSync;
+}
+
+if (!current.__cgRmTolerance) {
+  const patched = ((p: FsType.PathLike, opts?: FsType.RmOptions) => {
+    const merged: FsType.RmOptions | undefined = opts
+      ? { maxRetries: 5, retryDelay: 100, ...opts }
+      : opts;
+    try {
+      return realRmSync(p, merged as FsType.RmOptions);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code ?? '';
+      if (swallowable(p, opts?.recursive, code)) {
+        return; // best-effort: leaked tempdir on a throwaway CI VM
+      }
+      throw e;
+    }
+  }) as PatchedRmSync;
+  patched.__cgRmTolerance = true;
+  patched.__cgRealRmSync = realRmSync;
+  fs.rmSync = patched;
+}
