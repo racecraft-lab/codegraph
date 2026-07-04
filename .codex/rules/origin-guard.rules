@@ -33,6 +33,25 @@ prefix_rule(
     match = ["git push --follow-tags origin"],
 )
 
+# Remote-before-flag forms. The repo has exactly two remotes: `upstream` is
+# blanket-forbidden above (any flags after it), so covering `origin` closes
+# the realistic tag-push surface; other remote names fall to the
+# instructions-layer backstop like all flag-shuffled forms.
+prefix_rule(
+    pattern = ["git", "push", "origin", "--tags"],
+    decision = "forbidden",
+    justification = "Release tags are created by the GitHub Actions Release workflow, never pushed manually.",
+    match = ["git push origin --tags"],
+    not_match = ["git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin", "--follow-tags"],
+    decision = "forbidden",
+    justification = "Release tags are created by the GitHub Actions Release workflow, never pushed manually.",
+    match = ["git push origin --follow-tags"],
+)
+
 prefix_rule(
     pattern = ["npm", "publish"],
     decision = "forbidden",

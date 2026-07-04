@@ -54,8 +54,12 @@ function tomlConfigPath(loc: Location): string {
   return path.join(configDir(loc), 'config.toml');
 }
 function instructionsPath(loc: Location): string {
-  // Global: `$CODEX_HOME/AGENTS.md`. Local: the repo-root AGENTS.md —
-  // the file Codex actually discovers in a project (root→cwd walk).
+  // Global: `$CODEX_HOME/AGENTS.md`. Local: `./AGENTS.md` at the install
+  // cwd. The installer-wide contract is that local installs run at the
+  // project root — every target resolves local paths against
+  // process.cwd() (see claude.ts `./.mcp.json`, cursor.ts `./.cursor/`) —
+  // and the project-root AGENTS.md is the file Codex discovers in a
+  // project (root→cwd walk).
   return loc === 'global'
     ? path.join(configDir('global'), 'AGENTS.md')
     : path.join(process.cwd(), 'AGENTS.md');
