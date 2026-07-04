@@ -256,8 +256,33 @@ Once `package.json` is at the target version on `main`, trigger
 **Do not run `npm publish`, `git push`, or `git tag` yourself** — these are
 publish actions on shared state. Write the files, hand the user the commands.
 
+## Engineering discipline
+
+The project constitution (`.specify/memory/constitution.md`) is binding for all work,
+SpecKit-driven or not. Its spine is the four Karpathy principles
+(https://github.com/fgabelmannjr/andrej-karpathy-skills); the short form:
+
+1. **Think before coding** — state assumptions; present competing interpretations
+   instead of picking one silently; push back when a simpler approach exists;
+   confusion stops work and becomes a question.
+2. **Simplicity first** — minimum code that solves the stated problem; no speculative
+   abstractions, flags, or configurability. Test: "would a senior engineer call this
+   overcomplicated?"
+3. **Surgical changes** — every changed line traces to the task; no adjacent
+   "improvements"; match existing style; mention unrelated dead code, don't delete it.
+   Repo-scale corollary: this is a tracking fork — new capabilities go in new modules
+   behind opt-in flags, and diffs to upstream-owned files stay minimal so upstream
+   merges remain routine.
+4. **Goal-driven execution** — turn tasks into verifiable goals ("add validation" →
+   "write failing tests for invalid inputs, make them pass"); bug fixes start from a
+   failing test that reproduces the bug; completion claims carry evidence (test
+   output, probe results, A/B numbers), never vibes.
+
 ## House rules
 
+- **This repo is the racecraft tracking fork** (`origin` = racecraft-lab/codegraph).
+  All pushes and PRs target `origin`; `upstream` (colbymchenry/codegraph) is
+  fetch-only — never push, tag, or open PRs there. No exceptions.
 - Any change to `src/installer/` (especially `targets/`) needs corresponding test coverage and a CHANGELOG entry — installer regressions break every new install silently.
 - When changing what the MCP tools do or how agents should use them, edit `src/mcp/server-instructions.ts` — it is the **single source of truth** for agent-facing tool guidance (issue #529). The installer no longer writes a duplicate instructions block into `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.cursor/rules/codegraph.mdc` / Kiro steering, so there's nothing to keep in sync anymore. (The repo's own checked-in `.cursor/rules/codegraph.mdc` is dogfooding config — update it too if you use Cursor on this repo, but it ships nowhere.)
 - CodeGraph provides **code context**, not product requirements. For new features, ask the user about UX, edge cases, and acceptance criteria — the graph won't tell you.
