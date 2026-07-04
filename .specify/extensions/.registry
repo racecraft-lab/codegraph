@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "agent-context": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:9a1dc02d2d0139bb03860392ecacef79183be2c442feda2f9ccaa4e5907b1e47",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.agent-context.update"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-03T19:25:07.876692+00:00"
+    },
+    "review": {
+      "version": "1.0.1",
+      "source": "local",
+      "manifest_hash": "sha256:3f9eedfc8079662edfb8d1f9c07a161be4e66111ea57621061f1658e91710d83",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.review.run",
+          "speckit.review.code",
+          "speckit.review.comments",
+          "speckit.review.tests",
+          "speckit.review.errors",
+          "speckit.review.types",
+          "speckit.review.simplify"
+        ],
+        "claude": [
+          "speckit.review.run",
+          "speckit.review.code",
+          "speckit.review.comments",
+          "speckit.review.tests",
+          "speckit.review.errors",
+          "speckit.review.types",
+          "speckit.review.simplify"
+        ],
+        "codex": [
+          "speckit.review.run",
+          "speckit.review.code",
+          "speckit.review.comments",
+          "speckit.review.tests",
+          "speckit.review.errors",
+          "speckit.review.types",
+          "speckit.review.simplify"
+        ],
+        "zed": [
+          "speckit.review.run",
+          "speckit.review.code",
+          "speckit.review.comments",
+          "speckit.review.tests",
+          "speckit.review.errors",
+          "speckit.review.types",
+          "speckit.review.simplify"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-03T19:25:40.006878+00:00"
+    },
+    "verify": {
+      "version": "1.0.3",
+      "source": "local",
+      "manifest_hash": "sha256:74202b2c3bb17058b10787838cdf30c9ebe11e8793fc1de04bee75d5f111949a",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.verify.run"
+        ],
+        "claude": [
+          "speckit.verify.run"
+        ],
+        "codex": [
+          "speckit.verify.run"
+        ],
+        "zed": [
+          "speckit.verify.run"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-03T19:25:41.245358+00:00"
+    },
+    "verify-tasks": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:6428b6dccaa3daa8aa5d72a73001cd3f82b9908e8c67bedd84697dd7547c96e8",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.verify-tasks.run",
+          "speckit.verify-tasks"
+        ],
+        "claude": [
+          "speckit.verify-tasks.run",
+          "speckit.verify-tasks"
+        ],
+        "codex": [
+          "speckit.verify-tasks.run",
+          "speckit.verify-tasks"
+        ],
+        "zed": [
+          "speckit.verify-tasks.run",
+          "speckit.verify-tasks"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-03T19:25:42.965306+00:00"
+    },
+    "cleanup": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:b15a5e3b4e5b43f867c093d962492f502b01503d0ec174611d0797854b017578",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.cleanup.run",
+          "speckit.cleanup"
+        ],
+        "claude": [
+          "speckit.cleanup.run",
+          "speckit.cleanup"
+        ],
+        "codex": [
+          "speckit.cleanup.run",
+          "speckit.cleanup"
+        ],
+        "zed": [
+          "speckit.cleanup.run",
+          "speckit.cleanup"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-03T19:25:44.177348+00:00"
+    },
+    "retrospective": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:43dbaba249c6e7322de1130446632197bbcb21c3c9f08fbe16654e86f6d5d922",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.retrospective.analyze"
+        ],
+        "claude": [
+          "speckit.retrospective.analyze"
+        ],
+        "codex": [
+          "speckit.retrospective.analyze"
+        ],
+        "zed": [
+          "speckit.retrospective.analyze"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-03T19:25:45.346136+00:00"
+    }
+  }
+}
