@@ -32,7 +32,7 @@ captured during scoping.
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | |
+| Specify | `/speckit-specify` | ✅ Complete | 26 FRs, 3 US, 12 acceptance scenarios, 0 markers; G1 pass |
 | Clarify | `/speckit-clarify` | ⏳ Pending | Optional but recommended |
 | Plan | `/speckit-plan` | ⏳ Pending | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
@@ -203,17 +203,25 @@ DORMANT when unconfigured (zero behavior change, zero network traffic).
 
 ### Specify Results
 
-<!-- Fill in after running the command -->
-
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | |
-| User Stories | |
-| Acceptance Criteria | |
+| Functional Requirements | 26 (activation/config, symbol selection, input+change-detection, persistence, pass behavior, incremental, resilience, observability, security/invariants) |
+| User Stories | 3 — US1 Configure+index (P1, Slice A); US2 Incremental freshness (P2, Slice B); US3 Late config + resilience (P3, Slice B) |
+| Acceptance Criteria | 12 acceptance scenarios (4/story) + 8 success criteria + 8 edge cases |
+
+Notes: spec-template resolved via speckit-pro-reviewability preset; Reviewability Budget
+section records **split required** (~750 projected LOC, 2 primary surfaces) → two
+vertical-slice PRs (Slice A = US1, Slice B = US2+US3), matching the scaffold's accepted
+Q10 split. 0 `[NEEDS CLARIFICATION]` markers (Q1–Q9 decisions pre-fixed in Assumptions).
+G1: pass (validate-gate.sh: 0 markers). after_specify hook (agent-context) auto-accepted
+per hook rules (non-destructive). Constitution validation baseline (Phase 0): build ✓,
+typecheck ✓, 2078 tests passed / 4 skipped.
 
 ### Files Generated
 
-- [ ] `specs/001-embedding-infrastructure/spec.md`
+- [x] `specs/001-embedding-infrastructure/spec.md`
+- [x] `specs/001-embedding-infrastructure/checklists/requirements.md` (spec quality checklist)
+- [x] `.specify/feature.json` (feature_directory pointer)
 
 ### SpecKit Traceability Markers
 
