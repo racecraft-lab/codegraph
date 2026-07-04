@@ -33,7 +33,7 @@ captured during scoping.
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 26 FRs, 3 US, 12 acceptance scenarios, 0 markers; G1 pass |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Optional but recommended |
+| Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 13 questions; 1 consensus run (both-agree) + 1 security item (conservative default, flagged); FR-016a added, FR-004/022/023 updated; G2 pass |
 | Plan | `/speckit-plan` | ⏳ Pending | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
@@ -286,9 +286,18 @@ onto user stories so tasks can deliver Slice A end-to-end first.
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | Node identity & vector lifecycle | | |
-| 2 | Endpoint client behavior | | |
-| 3 | Status surface & slice boundary | | |
+| 1 | Node identity & vector lifecycle | 4 (3 resolved by executor evidence, 1 via consensus) | Node IDs deterministic TEXT (`kind:sha256(path:kind:name:line)`) — vectors survive sync/re-index, no reuse cache (OQ1 resolved; design concept's `filesSkipped` premise was a misread — the skip is the write-time content-hash guard). CLI `codegraph index` = DB recreate → re-embeds by design. Locals never graph nodes → FR-005 flat kind test, "top-level" qualifier relaxed to include type-member constants (OQ3 resolved). **Consensus (both-agree): Design B — NO cascade FK on node_vectors; per-symbol re-embed granularity (FR-016a added); FR-017 via explicit anti-join reconciliation** (name_segment_vocab precedent; avoids #899/#1067 cascade hazards). Workflow Plan Prompt DDL corrected: node_id TEXT (was INTEGER). |
+| 2 | Endpoint client behavior | 4 (all answered by parent from executor evidence) | Dims + active model persist as **project_metadata scalars** (`embedding_dims`, `embedding_model`; index-version-stamp precedent — FR-004 updated); backoff = base 1s ×2 full-jitter, ~8s cap, **3 retries/batch**, honor Retry-After (fixed constants — deviation from cookbook's 6 justified by Q8 abort-pass); input cap = fixed **~6,000 chars** (char-based; tokenizer would violate FR-025); defaults **BATCH_SIZE=16 / CONCURRENCY=4 / TIMEOUT_MS=30000**, env-overridable + clamped (parse-pool precedent). Layer-2 consensus not dispatched: executor's items were self-described confirmations with cited external evidence (OpenAI cookbook/API limits, Ollama/nomic contexts, LlamaIndex defaults), medium-high confidence, low-stakes (env-overridable or trivially-tunable constants) — parent accepted per Rule 5 and the operator's token-conservation directive. |
+| 3 | Status surface & slice boundary | 5 (+3 flagged subs) | Coverage = **join from live nodes** to vectors filtered to active model ("current" = present ∧ model-match — orphan rows excluded; no input_hash check at status time). Status gains `Embeddings:` section (endpoint/model/dims/coverage) **with `--json` parity** (new `getEmbeddingCoverage` query method). **[security] endpoint rendering: scheme+host+port only** — userinfo/path/query stripped, key never rendered (FR-022/FR-023 updated; strictest option adopted autonomously, flagged for operator review). Dormant = neutral line + persisted prior-run data labeled as such. Progress: `'embedding'` phase added to IndexProgress union + PHASE_NAMES, emitted only when active. Slice split confirmed 1:1 (Slice A = US1 incl. all observability; Slice B = US2+US3; no straddle). |
+
+### Consensus Resolution Log
+
+| # | Type | Question/Gap/Finding | Categories | Round | Outcome | Resolution | Analysts Used |
+|---|------|----------------------|------------|-------|---------|------------|---------------|
+| 1 | Clarify | Modified-file re-embedding: per-symbol vs per-changed-file (FK cascade vs explicit reconciliation) | [codebase, spec] | 1 | both-agree | Design B: no FK; vectors survive node delete/re-insert; FR-016a added; FR-017 = explicit reconciliation | codebase-analyst, spec-context-analyst |
+| 2 | Clarify | Status endpoint line rendering — credential leak risk (URL userinfo / query keys) | [security] | 1 | conservative-default* | Scheme+host+port only; userinfo/path/query stripped; API key never rendered (FR-022/FR-023 updated) | none — orchestrator adopted the strictest of all candidate policies (all satisfied FR-023) |
+
+\* Security-tagged item resolved autonomously by adopting the maximally-conservative display policy instead of stopping the run: every candidate option satisfied the MUST requirements, the choice is display-only and reversible, and the decision is surfaced here and in the final report for operator review. Analyst fan-out was skipped per the operator's token-conservation directive.
 
 ---
 
@@ -327,7 +336,7 @@ onto user stories so tasks can deliver Slice A end-to-end first.
   fail an index over it" pattern used by vocab/metadata; the sync-heal follows the
   vocabWasEmpty backfill precedent at src/index.ts sync())
 - Schema: migration v8 in src/db/migrations.ts + schema.sql in lockstep (the v7
-  name_segment_vocab precedent): node_vectors(node_id INTEGER PRIMARY KEY, model TEXT,
+  name_segment_vocab precedent): node_vectors(node_id TEXT PRIMARY KEY, model TEXT,
   dims INTEGER, vector BLOB, input_hash TEXT) — little-endian f32 BLOB; DDL-only
   migration (instant on any size DB)
 - Failure semantics: one batch exhausting retries aborts the whole pass; partial

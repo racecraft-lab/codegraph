@@ -77,7 +77,29 @@ A user who indexed their project before configuring an endpoint later sets the U
 - **Very large project**: symbols are embedded in bounded batches; the abort/resume design keeps a failed pass from losing prior progress.
 - **Endpoint intermittently slow/timing out**: treated as endpoint failure per the bounded-retry-then-advisory-abort path; the operation never hangs the index/sync indefinitely.
 
-## Requirements *(mandatory)*
+## Clarifications
+
+### Session 2026-07-04 (Session 1 — Node identity & vector lifecycle)
+
+- Q: Are symbol identities stable across re-index; is a vector-reuse cache needed? → A: Identities are deterministic text ids (derived from file path, kind, name, and start line — stable for unchanged content); no reuse cache. The full CLI re-index recreates the database and re-embeds by design; sync and library re-index preserve vectors for unchanged files.
+- Q: Does the `variable` kind include function locals? → A: No — locals are never graph symbols; symbol selection is a flat kind-membership test (FR-005).
+- Q: When a modified file's node rows are deleted and re-inserted, must re-embedding be strictly per-symbol (skip vectors for symbols in the touched file whose identity and input hash are unchanged), or is re-embedding every symbol in the touched file acceptable? → A: Strictly per-symbol. Node identity is a deterministic function of file path, kind, name, and start line, so an unaffected symbol regenerates the identical node id on re-extraction; the vector table carries no cascading delete from the node row, so its vector survives the file's node delete-and-reinsert cycle untouched. Vectors for symbols confirmed gone after re-extraction are removed by the explicit reconciliation in FR-017, not as a side effect of the file-level node delete. (Consensus: codebase-analyst + spec-context-analyst, both-agree, Round 1.)
+
+### Session 2026-07-04 (Session 2 — Endpoint client behavior)
+
+- Q: Where are the inferred/enforced dimension and active model persisted so enforcement survives restarts? → A: As project-metadata scalars (written on first successful batch, read at pass start), following the existing index-version stamp pattern; per-row model/dims columns stay self-describing integrity metadata (FR-004 updated).
+- Q: Backoff parameters for 5xx/429, given abort-on-exhaustion (Q8)? → A: Base 1,000 ms, ×2 growth, full jitter, ~8 s per-delay cap, 3 retries per batch, honoring `Retry-After` on 429 (capped ~30 s); fixed constants, not env vars.
+- Q: Embedding-input truncation cap? → A: Fixed ~6,000-character cap on the composed input, character-based (token counting would need a tokenizer dependency, FR-025); small-context models may still truncate server-side — accepted.
+- Q: Defaults for batch size / concurrency / timeout? → A: 16 / 4 / 30,000 ms, all env-overridable with positive-int validation and clamping.
+
+### Session 2026-07-04 (Session 3 — Status surface & slice boundary)
+
+- Q: How is coverage computed given transient orphan vector rows (no-FK design)? → A: Join from live embeddable symbols to vector rows filtered to the active model; "current" = present ∧ model-match (input-hash staleness is a sync-time trigger, not a status-time check). FR-022 updated.
+- Q: What does the status embedding section show, and does `--json` get parity? → A: Endpoint (redacted), model, dimension, coverage as `embedded/embeddable (NN%)`; a parallel `embedding` object in `--json` (required — automated probes read machine output).
+- Q: What renders for the endpoint line (credential safety)? → A: Scheme + host + port only — userinfo, path, and query stripped; the API key never rendered anywhere (FR-023 extended). Strictest option chosen; security-flagged decision surfaced for operator review.
+- Q: What shows when dormant? → A: A neutral (never warning-styled) dormant line naming the two activation variables; if vectors from a prior configured run exist on disk, their model/dims/coverage are also shown labeled "from a previous run" (disk-read only — dormancy preserved).
+- Q: Does the progress surface gain an embedding phase? → A: Yes — `embedding` added to the progress phase union with a display label, emitted only when active, progress = embedded ÷ eligible.
+- Q: Does the Q10 slice split map onto user stories? → A: Confirmed 1:1 — Slice A = US1 (including the full observability surface: status section, coverage, progress phase); Slice B = US2+US3. The "current = present ∧ model-match" reading removes the only straddle, so Slice A has no dependency on Slice B.
 
 ### Functional Requirements
 
@@ -86,11 +108,11 @@ A user who indexed their project before configuring an endpoint later sets the U
 - **FR-001**: The system MUST treat the embedding feature as active only when BOTH an embedding endpoint URL and an embedding model are configured (`CODEGRAPH_EMBEDDING_URL` and `CODEGRAPH_EMBEDDING_MODEL`). If either is absent, the feature MUST remain fully dormant.
 - **FR-002**: When dormant, the system MUST make zero embedding-endpoint network requests and MUST produce index and sync results identical to a build without the feature (zero behavior change).
 - **FR-003**: The embedding API key (`CODEGRAPH_EMBEDDING_API_KEY`) MUST be optional so that keyless local endpoints work; when the endpoint requires a key and none is supplied, the resulting authentication failure MUST be handled as an endpoint failure (see FR-019).
-- **FR-004**: The embedding dimension (`CODEGRAPH_EMBEDDING_DIMS`) MUST be optional; when unset, the system MUST infer it from the first successful batch, persist it, and enforce it on all subsequent vectors.
+- **FR-004**: The embedding dimension (`CODEGRAPH_EMBEDDING_DIMS`) MUST be optional; when unset, the system MUST infer it from the first successful batch, persist it (as a project-metadata scalar, alongside the active model identity), and enforce it on all subsequent vectors.
 
 #### Symbol selection
 
-- **FR-005**: The system MUST embed only declaration-kind symbols: `function`, `method`, `class`, `struct`, `interface`, `trait`, `protocol`, `enum`, `type_alias`, `module`, `namespace`, `component`, `route`, plus top-level `constant` and top-level `variable`.
+- **FR-005**: The system MUST embed only declaration-kind symbols: `function`, `method`, `class`, `struct`, `interface`, `trait`, `protocol`, `enum`, `type_alias`, `module`, `namespace`, `component`, `route`, plus `constant` and `variable` (the extractor emits these kinds only at file/module scope or as type-member constants — never for function locals, which are not graph symbols — so selection is a flat kind-membership test with no scope predicate).
 - **FR-006**: The system MUST NOT embed noise-level kinds: `parameter`, `import`, `export`, `enum_member`, `field`, `property`, and `file`.
 
 #### Embedding input and change detection
@@ -114,6 +136,7 @@ A user who indexed their project before configuring an endpoint later sets the U
 #### Incremental freshness
 
 - **FR-016**: On sync, the system MUST re-embed only symbols whose embedding input hash has changed or that have no current vector, leaving unchanged symbols untouched.
+- **FR-016a**: The persisted vector for a symbol MUST NOT be deleted as a side effect of that symbol's node row being deleted and re-inserted during re-extraction of its file (no cascading delete from the node row to the vector row) — the vector survives that cycle undisturbed whenever the symbol's node identity (kind, name, start line, file path) and input hash are unchanged. Cleanup of vectors for symbols that no longer exist after re-extraction is performed solely by the explicit reconciliation in FR-017.
 - **FR-017**: On sync, the system MUST delete the stored vectors of symbols that no longer exist.
 - **FR-018**: A plain sync MUST backfill vectors for all embeddable symbols that are missing a current vector (for example, a project indexed before the endpoint was configured) without requiring any new or special command.
 
@@ -125,11 +148,11 @@ A user who indexed their project before configuring an endpoint later sets the U
 
 #### Observability
 
-- **FR-022**: The status command MUST report the embedding backend/endpoint, the active model, the vector dimension, and coverage (the share of embeddable symbols that have a current vector). When the feature is dormant, status MUST convey that clearly without implying an error.
+- **FR-022**: The status command MUST report the embedding endpoint (redacted to scheme + host + port only — never credentials, path, or query), the active model, the vector dimension, and coverage — in both the human-readable output and the machine-readable (`--json`) output. Coverage is the share of embeddable (declaration-kind) symbols that have a current vector, where "current" means a vector row exists for the symbol's identity with the active model — computed by joining from live symbols, so transient orphan vector rows never count (input-hash staleness is a sync-time re-embed trigger, not a status-time check). When the feature is dormant, status MUST convey that clearly and neutrally without implying an error; if vectors from a previous configured run are present on disk, status additionally reports their model/dimension/coverage labeled as from a previous run (read from disk only — no network).
 
 #### Security and invariants
 
-- **FR-023**: The API key MUST never be persisted to disk, written to any log, or echoed in any error message.
+- **FR-023**: The API key MUST never be persisted to disk, written to any log, or echoed in any error message. Credentials embedded in the endpoint URL (userinfo or query parameters) MUST likewise never be rendered in any output — the endpoint is always displayed redacted to scheme + host + port.
 - **FR-024**: The feature MUST NOT alter graph structure: symbol (node) and relationship (edge) counts MUST remain identical between an index run with the feature active and one without.
 - **FR-025**: The feature MUST NOT add any new runtime dependency (it MUST use the platform's built-in HTTP capability) and MUST NOT introduce any new telemetry.
 - **FR-026**: The feature MUST NOT modify the retrieval surface used by agents (no change to how queries are answered); vectors are written but not yet consumed in this spec.
@@ -160,7 +183,7 @@ A user who indexed their project before configuring an endpoint later sets the U
 
 ### Key Entities *(include if feature involves data)*
 
-- **Symbol vector record**: one row per embedded symbol. Represents the persisted embedding of a declaration-level symbol. Key attributes: symbol identity (primary key, referencing the existing symbol), the vector (compact binary blob of little-endian 32-bit floats), the active model name, the vector dimension, and the input hash used for change detection. The store holds exactly one active model's vectors.
+- **Symbol vector record**: one row per embedded symbol. Represents the persisted embedding of a declaration-level symbol. Key attributes: symbol identity (primary key — the existing symbol's deterministic **text** identifier, derived from file path, kind, name, and start line, and therefore stable across sync and re-index of unchanged content), the vector (compact binary blob of little-endian 32-bit floats), the active model name, the vector dimension, and the input hash used for change detection. The store holds exactly one active model's vectors. The record's lifecycle is independent of the node row's delete/re-insert cycle during file re-extraction (no cascading delete; cleanup is by explicit reconciliation, FR-016a/FR-017).
 - **Embedding input**: the deterministic text composed per symbol from its name, kind, signature, docstring, and trimmed source snippet. It is hashed to the input hash that drives change detection; it is transient (sent to the endpoint) and not itself persisted beyond the hash.
 - **Endpoint configuration**: the user-provided activation surface — required endpoint URL and model, optional API key, optional dimension — sourced from the environment. Presence of both URL and model activates the feature; the API key is never persisted.
 - **Embedding pass**: the inline, post-resolution reconciliation that, when active, embeds missing/stale symbols, deletes vectors for removed symbols, and (on failure) aborts advisorily and resumes on the next run. It never fails the enclosing index/sync.
@@ -198,14 +221,18 @@ Recorded scoping decisions (interview Q1-Q9 and the roadmap storage decision):
 - **Q8 — endpoint failure**: On endpoint failure, **abort the pass after bounded retries and resume on the next run**.
 - **Q9 — telemetry**: **No new telemetry.**
 - **Storage (roadmap decision 2026-07-03)**: Vectors are stored as a **plain binary blob (little-endian 32-bit floats) with brute-force scan** in this version, preserving the zero-native-dependency constraint.
+- **Session 1 clarification — symbol identity**: Symbol identifiers are deterministic (derived from file path, kind, name, and start line), so vectors keyed by symbol identity survive sync and library re-index of unchanged files; the full CLI re-index command recreates the database and re-embeds from scratch by design. No input-hash-keyed vector reuse cache is needed.
+- **Session 1 clarification — locals**: Function-local variables are never graph symbols, so no scope predicate is required for symbol selection (FR-005).
 
 Reasonable defaults for details the interview did not fix (to be finalized in planning):
 
-- Symbols are embedded in bounded batches; the exact batch size is an implementation detail chosen for endpoint efficiency and is not user-facing.
-- "Bounded retries" uses a small retry count with backoff; the exact count/backoff is an implementation detail, and the observable contract is only that the pass aborts advisorily rather than hanging or failing the operation.
-- The trimmed source snippet is bounded to a reasonable length so that embedding input stays within typical endpoint limits; the exact trimming policy is an implementation detail as long as it is deterministic (FR-007).
+- Symbols are embedded in bounded batches with bounded concurrency and a per-request timeout. Defaults (Session 2): **batch size 16, concurrency 4, request timeout 30,000 ms** — all user-overridable via `CODEGRAPH_EMBEDDING_BATCH_SIZE`, `CODEGRAPH_EMBEDDING_CONCURRENCY`, and `CODEGRAPH_EMBEDDING_TIMEOUT_MS` (positive-integer validated and clamped, following the existing worker-pool env-parse precedent).
+- "Bounded retries" (Session 2) is exponential backoff with full jitter: base 1,000 ms, ×2 growth, ~8 s per-delay cap, **3 retries per batch** (4 attempts total), honoring a server-provided `Retry-After` on 429 (capped ~30 s). These are fixed constants, not new env vars. The retry budget is deliberately smaller than hosted-API cookbook defaults because one exhausted batch aborts the whole pass (Q8) — a sustained-down endpoint should fail fast rather than burn wall-clock inside the index lock. The observable contract remains only that the pass aborts advisorily rather than hanging or failing the operation.
+- The composed embedding input (Session 2) is capped at a fixed **~6,000 characters** (snippet trimmed to fit), character-based rather than token-counted because accurate token counting would require a tokenizer dependency (FR-025). ~6,000 chars ≈ ~1,500–1,700 code tokens — under the 2,048-token default context of common local models (e.g. nomic-embed-text) and far under hosted 8,191-token limits. Models with very small contexts (256–512 tokens) may still truncate server-side — an accepted limitation. The cap is a fixed deterministic constant (FR-007).
+- The inferred/enforced dimension and the active model identity (Session 2) are persisted as **project-metadata scalars** (written on the first successful batch, read at pass start as the authoritative enforcement values), following the existing index-version stamp pattern; the per-row model/dimension columns (FR-009) remain self-describing integrity metadata, not the enforcement source of truth.
 - The endpoint speaks the standard OpenAI-compatible embeddings request/response shape; no vendor-specific behavior is assumed or required.
-- Coverage in status is computed as the share of embeddable symbols that have a current (non-stale, present) vector.
+- Coverage in status (Session 3) is computed by joining from live embeddable symbols to their vector rows filtered to the active model ("current" = present with matching model); transient orphan rows are structurally excluded from the count. Input-hash staleness is detected at sync time, not status time. Zero embeddable symbols reports as trivially complete.
+- The index/sync progress surface (Session 3) gains an `embedding` phase (emitted only when the feature is active — dormancy adds no phase), with progress = embedded-so-far ÷ eligible-to-embed.
 
 Scope boundaries assumed for this spec:
 
