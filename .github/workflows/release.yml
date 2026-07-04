@@ -24,7 +24,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Default checkout is detached at a SHA; we need an actual branch
           # so the CHANGELOG-promote commit knows where to push.
