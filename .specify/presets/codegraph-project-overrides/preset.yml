@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+preset:
+  id: "codegraph-project-overrides"
+  name: "CodeGraph Project Overrides"
+  version: "1.0.0"
+  description: "Repo-specific template policy for the racecraft CodeGraph fork: constitution test exceptions (Constitution IV & Quality Gates) layered on top of the generated speckit-pro-reviewability preset. Lives at higher precedence (lower priority number) so regeneration of the generic preset never drops project policy."
+  author: "racecraft-lab"
+  repository: "https://github.com/racecraft-lab/codegraph"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.5.1"
+
+provides:
+  templates:
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-template.md"
+      description: "Tasks template carrying the reviewability augmentation PLUS the constitution test-policy exceptions (bug fixes start from a failing test; installer changes update the installer-targets contract suite)."
+      replaces: "tasks-template"
+
+tags:
+  - "codegraph"
+  - "project-policy"

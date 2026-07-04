@@ -1,11 +1,9 @@
 {
-  "schema_version": "1.0",
   "presets": {
     "claude-ask-questions": {
-      "version": "1.0.0",
-      "source": "local",
-      "manifest_hash": "sha256:df86035abc0a128286bef51699f330b54e1d5d92373ccf1b0ba079b0168a0880",
       "enabled": true,
+      "installed_at": "2026-07-03T19:25:46.510494+00:00",
+      "manifest_hash": "sha256:df86035abc0a128286bef51699f330b54e1d5d92373ccf1b0ba079b0168a0880",
       "priority": 10,
       "registered_commands": {
         "agy": [
@@ -29,7 +27,25 @@
         "speckit-clarify",
         "speckit-checklist"
       ],
-      "installed_at": "2026-07-03T19:25:46.510494+00:00"
+      "source": "local",
+      "version": "1.0.0"
+    },
+    "codegraph-project-overrides": {
+      "enabled": true,
+      "installed_at": "project-local-manual",
+      "manifest_hash": "project-local-manual",
+      "priority": 3,
+      "source": "project-local-manual",
+      "version": "1.0.0"
+    },
+    "speckit-pro-reviewability": {
+      "enabled": true,
+      "installed_at": "generated-by-speckit-pro-setup",
+      "manifest_hash": "project-local-generated",
+      "priority": 5,
+      "source": "project-local-generated",
+      "version": "1.0.0"
     }
-  }
+  },
+  "schema_version": "1.0"
 }

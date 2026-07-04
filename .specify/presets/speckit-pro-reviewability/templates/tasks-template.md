@@ -11,6 +11,14 @@ description: "Task list template for feature implementation"
 
 **Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
+**Reviewability**: Generated tasks MUST preserve the spec's reviewability
+budget. If task generation expands beyond 400 reviewable LOC, 6 production
+files, 15 total files, or more than one primary surface, add an explicit
+reviewability checkpoint task before implementation. If it expands beyond
+800 reviewable LOC, 8 production files, 25 total files, or more than one
+primary surface without a ratified exception, stop and split the spec instead
+of adding more implementation tasks.
+
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
 ## Format: `[ID] [P?] [Story] Description`
@@ -69,6 +77,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T007 Create base models/entities that all stories depend on
 - [ ] T008 Configure error handling and logging infrastructure
 - [ ] T009 Setup environment configuration management
+- [ ] T009A Verify reviewability budget against planned task/file scope and record split decision or exception before implementation
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -156,6 +165,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
+- [ ] TXXX Generate or update the PR review packet with review order, scope budget, traceability, verification evidence, known gaps, and rollback/flag notes
 - [ ] TXXX Run quickstart.md validation
 
 ---
@@ -250,3 +260,4 @@ With multiple developers:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
+- Avoid: expanding a task list past the reviewability budget instead of splitting the spec
