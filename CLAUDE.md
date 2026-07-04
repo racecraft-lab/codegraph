@@ -260,7 +260,7 @@ publish actions on shared state. Write the files, hand the user the commands.
 
 The project constitution (`.specify/memory/constitution.md`) is binding for all work,
 SpecKit-driven or not. Its spine is the four Karpathy principles
-(github.com/fgabelmannjr/andrej-karpathy-skills); the short form:
+(https://github.com/fgabelmannjr/andrej-karpathy-skills); the short form:
 
 1. **Think before coding** — state assumptions; present competing interpretations
    instead of picking one silently; push back when a simpler approach exists;
