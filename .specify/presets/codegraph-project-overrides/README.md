@@ -4,11 +4,15 @@ Repo-specific SpecKit preset for the racecraft CodeGraph fork.
 
 ## Why this exists
 
-`ensure-reviewability-preset.sh` (run by `/speckit-pro:speckit-scaffold-spec` step 0)
-**regenerates** `speckit-pro-reviewability` from the current core templates on every
-run, so any project-specific customization stored there gets clobbered. Per the
-speckit-pro Project Fixup guidance, project policy lives here instead, at higher
-precedence (priority 3 < 5), where regeneration can never touch it.
+`ensure-reviewability-preset.sh` — a script that ships with the speckit-pro
+plugin, not this repo (run by `/speckit-pro:speckit-scaffold-spec` step 0) —
+**regenerates** the entire sibling `speckit-pro-reviewability` preset
+(templates *and* its README) from the current core templates on every run, so
+any project-specific customization stored there gets clobbered. That preset
+directory is committed byte-identical to the generator's output (a re-run is a
+verified no-op) and must not be hand-edited. Per the speckit-pro Project Fixup
+guidance, project policy lives here instead, at higher precedence
+(priority 3 < 5), where regeneration can never touch it.
 
 ## What it overrides
 
