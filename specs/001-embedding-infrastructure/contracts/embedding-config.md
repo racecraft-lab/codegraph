@@ -24,9 +24,18 @@ active  ⇔  CODEGRAPH_EMBEDDING_URL is non-empty  AND  CODEGRAPH_EMBEDDING_MODE
 ```
 
 - **Active** → the embed pass is constructed and runs (inline, post-resolution).
-- **Inactive (dormant)** → the pass is never constructed: zero network requests, zero
-  `node_vectors` writes, zero new log lines — byte-identical to a build without the
-  feature (SC-002). Setting only one of URL/MODEL stays dormant (edge case).
+- **Fully dormant (neither URL nor MODEL set)** → the pass is never constructed:
+  zero network requests, zero `node_vectors` writes, zero new log lines —
+  byte-identical to a build without the feature (FR-002/SC-002).
+- **Half-configured (exactly one of URL/MODEL set)** → the pass is likewise never
+  constructed (zero network requests, zero `node_vectors` writes), but this state
+  is **distinct** from fully dormant, not a variant of it (FR-001a/SC-009): it
+  surfaces one actionable configuration error naming the missing variable
+  (`CODEGRAPH_EMBEDDING_MODEL` when URL is set without MODEL, and symmetrically
+  `CODEGRAPH_EMBEDDING_URL`), advisory and non-fatal, on both the invoking
+  `index`/`sync` command's own output and the `status` embedding section (which
+  renders this state distinctly from the neutral dormant line — FR-022). This
+  single error line is the only observable difference from fully dormant.
 
 ## Parsed configuration shape (in-memory only)
 

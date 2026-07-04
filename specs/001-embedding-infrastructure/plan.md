@@ -49,7 +49,12 @@ additive table `node_vectors(node_id TEXT PRIMARY KEY, model TEXT, dims INTEGER,
 vector BLOB, input_hash TEXT)` — little-endian f32 BLOB, **no foreign key** (vectors
 survive the file-level node delete/re-insert cycle). Two `project_metadata` scalars
 `embedding_dims` and `embedding_model` (via existing `setMetadata`/`getMetadata`) hold
-the authoritative enforcement values. All data lives under `.codegraph/`.
+the authoritative enforcement values. All data lives under `.codegraph/`. The table
+ships in lockstep in both `schema.sql` (fresh DBs) and an idempotent, DDL-only
+(`CREATE TABLE IF NOT EXISTS`) v8 migration (upgraded DBs); a **fresh-vs-upgraded
+convergence check MUST assert both paths yield an identical `node_vectors` shape**,
+guarding the two definitions against silent drift (FR-012). The migration inherits the
+runner's per-`up` transaction, so a failed apply leaves no partial-schema state.
 
 **Testing**: `vitest` (real files + real SQLite in temp dirs via `fs.mkdtempSync`; **no
 DB mocking**). Endpoint behavior is exercised against a **local mock OpenAI-compatible
@@ -71,13 +76,52 @@ fast rather than burning wall-clock inside the index lock. The v8 migration is D
 (instant on any size DB). Brute-force scan is acceptable this version — no ANN, no
 quantization (deferred). Vectors are written but never read on the retrieval path
 (FR-026), so there is **no retrieval regression surface** here (Constitution VI).
+There is deliberately **no fixed wall-clock target** for a full-index pass — throughput
+is endpoint-bound, not codegraph-bound (SC-010) — so the measurable codegraph-side
+bounds are the ones that matter: **incremental cost is scoped to endpoint work**
+(requests/writes scale with the changed/missing set; the per-sync staleness scan +
+FR-017 anti-join are network-free `O(embeddable-symbols)` local work — FR-027);
+**peak memory is bounded** by batched/streaming selection, never materializing all
+symbols + composed inputs at once (FR-028, the existing batched-resolution-to-avoid-OOM
+precedent); **vector writes are committed in batch-sized transactions** — not per-row
+(fsync churn) and not one pass-long transaction across network I/O (WAL bloat + non-durable
+partial progress) — with concurrency bounding only in-flight HTTP while writes go
+synchronously through the single `node:sqlite` connection (FR-029); the **WAL is
+checkpointed after the pass's bulk writes** via the same `runMaintenance()`
+(`wal_checkpoint(PASSIVE)` + `optimize`) the index/sync already runs after bulk writes,
+with the pass positioned so its writes are covered by that checkpoint (FR-030); and
+because the pass runs inside the index lock (FR-015a) yet does network I/O, **reads stay
+responsive** — WAL readers run concurrently with the single writer and the batch-commit
+strategy holds no reader-blocking pass-long transaction — while lock-hold time is bounded
+per batch by the per-request timeout (a fully-down endpoint aborts within one batch's
+retry budget; a slow-but-responding endpoint on a huge index is the long-hold case
+FR-015a's two-minute stale-reclaim limitation already accepts) (FR-031).
 
-**Constraints**: dormant-when-unconfigured is byte-identical to today — zero network,
-zero `node_vectors` writes, zero new log lines (FR-002/SC-002). API key never
-persisted, logged, or echoed; the endpoint is rendered redacted to scheme+host+port
-only (FR-023/SC-007). Symbol (node) and relationship (edge) counts identical with vs
+**Constraints**: dormant-when-unconfigured (neither activation variable set) is
+byte-identical to today — zero network, zero `node_vectors` writes, zero new log lines
+(FR-002/SC-002). A **half-configuration** (exactly one of URL/MODEL set) is a distinct
+state (FR-001a/SC-009): the feature stays off (still zero network, zero writes) but the
+config parse distinguishes exactly-one-set from neither-set and surfaces an **actionable
+error naming the missing variable** rather than collapsing both to one dormant signal.
+API key never persisted, logged, or echoed; the endpoint is rendered redacted to
+scheme+host+port only — including in **error/log messages derived from transport
+failures** (a raw `fetch`/network error can embed the URL), and an unparseable URL
+renders as a safe placeholder, never the raw string (FR-023/SC-007). Endpoint failures
+are handled per the retryable/non-retryable split: 5xx/429/timeout/network errors
+consume the bounded-retry budget (per-request `AbortSignal.timeout` converts a **hang**
+into a timeout — FR-019/FR-019a), while a non-retryable 4xx (400/404/422) and a
+malformed/mismatched response abort the pass fast and advisorily without corrupting the
+store (FR-021a). Symbol (node) and relationship (edge) counts identical with vs
 without the feature (FR-024/SC-006). Deterministic input construction — identical
-symbol content always yields the identical composed text and input hash (FR-007/FR-008).
+symbol content always yields the identical composed text and input hash (FR-007/FR-008),
+made platform-independent by normalizing the composed input (line endings → LF, UTF-8)
+before the SHA-256 so a CRLF-vs-LF checkout of the same code hashes identically and never
+triggers a spurious re-embed. The Slice B reconciliation delete (FR-017) runs on **every
+vector-preserving pass** — `sync()` and the library in-place `indexAll()` re-index — not
+only the CLI sync, so no preserving path leaves a silent orphan; only the DB-recreating
+full re-index is exempt (fresh table). The embed pass runs **inside the existing index/sync
+mutual-exclusion** (FR-015a) — it adds no new lock — so a concurrent CLI sync and
+daemon-watcher sync are serialized and never interleave `node_vectors` writes.
 
 **Scale/Scope**: per-project index; scales to large repos via bounded batches and the
 abort/resume design (a failed pass loses no prior progress — the next run re-selects

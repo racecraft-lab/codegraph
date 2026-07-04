@@ -52,11 +52,26 @@ Added as a top-level `embedding` key alongside the existing `status --json` fiel
 }
 ```
 
+### Half-configured (misconfigured — exactly one of URL/MODEL set)
+
+```json
+{
+  "embedding": {
+    "active": false,
+    "misconfigured": true,
+    "missingVariable": "CODEGRAPH_EMBEDDING_MODEL",
+    "activationVars": ["CODEGRAPH_EMBEDDING_URL", "CODEGRAPH_EMBEDDING_MODEL"]
+  }
+}
+```
+
 ### Field rules
 
 | Field | Rule |
 |---|---|
 | `active` | `true` iff config active (URL+MODEL set). |
+| `misconfigured` | `true` iff exactly one of URL/MODEL is set (FR-001a). Present only in this state; omitted otherwise. |
+| `missingVariable` | Present only when `misconfigured` is `true`; names the single unset variable (`CODEGRAPH_EMBEDDING_URL` or `CODEGRAPH_EMBEDDING_MODEL`). |
 | `endpoint` | Redacted to **scheme + host + port only** — never userinfo/path/query, never the key (FR-023). Present only when `active`. |
 | `model`, `dims` | The active model + enforced/inferred dimension (from `project_metadata`). |
 | `coverage` | `{ embedded, embeddable, percent }` — `percent = round(embedded/embeddable*100)`; `embeddable === 0` ⇒ `percent = 100` (trivially complete). Computed by joining FROM live nodes to active-model vectors (orphans excluded). |
@@ -86,6 +101,20 @@ Embeddings:
   (from a previous run: model nomic-embed-text, dims 768, coverage 1180/1240 (95%))   ← only if on-disk vectors exist
 ```
 
+### Misconfigured (half-configuration)
+
+```text
+Embeddings:
+  Misconfigured — CODEGRAPH_EMBEDDING_URL is set but CODEGRAPH_EMBEDDING_MODEL
+  is missing. Set CODEGRAPH_EMBEDDING_MODEL to activate embeddings.
+```
+
+Rendered distinctly from the neutral dormant line (FR-022) — this state is not
+neutral, since the user signaled intent by setting one variable. The identical
+message also appears as a one-line advisory on the invoking `index`/`sync`
+command's own output (FR-001a), via the existing warn-style helper (stdout,
+never stderr, never a non-zero exit).
+
 ## Progress phase (FR-022 / Session 3 / D15)
 
 - `IndexProgress.phase` (`src/extraction/index.ts:72`) gains `'embedding'`:
@@ -104,3 +133,7 @@ Embeddings:
 - Prior-run: after configuring→indexing→unsetting, dormant status shows `previousRun`
   read from disk with no network call.
 - Zero embeddable symbols → `percent === 100` (trivially complete).
+- Misconfigured: with exactly one of URL/MODEL set, `--json` shows
+  `embedding.misconfigured === true` and `missingVariable`; human output is distinct
+  from dormant; the identical single-line advisory also appears on the `index`/`sync`
+  command's own output (SC-009).

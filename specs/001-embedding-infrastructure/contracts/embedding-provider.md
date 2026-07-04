@@ -81,7 +81,8 @@ Authorization: Bearer {CODEGRAPH_EMBEDDING_API_KEY}   # omitted entirely when ke
 | HTTP 5xx | Retry per D5 (backoff + jitter); on exhaustion → reject → advisory pass abort. |
 | HTTP 429 | Retry per D5, honoring `Retry-After` (capped ~30 s); on exhaustion → reject. |
 | Timeout / network error | Treated as endpoint failure → retry per D5 → reject on exhaustion. |
-| HTTP 401/403 (key required but missing/wrong) | Endpoint failure (bounded retries, then advisory abort) — never a fatal index error (FR-003). |
+| HTTP 401/403 (key required but missing/wrong) | Non-retryable endpoint failure — abort the pass fast, without exhausting the retry budget (same bucket as 400/404/422); still advisory, never a fatal index error (FR-003/FR-019). |
+| HTTP 400/404/422 (malformed request / wrong path) | Non-retryable — fast advisory abort, no retry budget consumed (FR-019). |
 | Vector length ≠ enforced dims | Actionable error naming `CODEGRAPH_EMBEDDING_DIMS`; pass fails advisorily (FR-021). |
 
 In every failure path the enclosing index/sync **still reports success** (FR-014).

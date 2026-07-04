@@ -78,8 +78,10 @@ The deterministic text composed per symbol and sent to the endpoint. Only its
 `input_hash` is persisted (Entity 1).
 
 - **Composition** (FR-007, D11): `name` + `kind` + `signature` + `docstring` +
-  trimmed source `snippet`, joined in a fixed order/format. Deterministic — identical
-  symbol content always produces byte-identical composed text.
+  trimmed source `snippet`, joined in a fixed order/format, with line endings normalized
+  to LF and the text encoded as UTF-8. Deterministic and platform-independent — identical
+  symbol content always produces byte-identical composed text regardless of host OS or the
+  repo's CRLF/LF checkout setting.
 - **Cap**: the composed input is capped at a fixed **~6,000 characters**; the snippet
   is trimmed to fit (character-based, no tokenizer — FR-025).
 - **Hash**: `input_hash = sha256(composedInput)` (hex). Drives change detection
@@ -192,7 +194,9 @@ project_metadata (existing)                nodes (existing, UNCHANGED)
    `CODEGRAPH_EMBEDDING_DIMS` and fails the pass advisorily (FR-021/D10).
 3. **Blob integrity** — `vector` byte length must equal `dims * 4` (little-endian f32).
 4. **Determinism** — identical symbol content ⇒ identical composed input ⇒ identical
-   `input_hash` (FR-007/FR-008).
+   `input_hash` (FR-007/FR-008). Composition normalizes line endings to LF and encodes as
+   UTF-8, so the hash is stable across platforms and CRLF/LF checkouts — a re-index on a
+   different OS never marks unchanged symbols stale.
 5. **Single active model** — a stored row with a non-matching model is stale and
    replaced; coverage counts only active-model rows (FR-010/FR-022).
 6. **Env tunables** — batch/concurrency/timeout parsed as positive integers and clamped;

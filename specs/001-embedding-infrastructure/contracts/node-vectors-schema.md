@@ -68,6 +68,21 @@ Written via existing `setMetadata(key, value)` / read via `getMetadata(key)`:
 | `selectStaleVectors(activeModel)` (or hash compare in-pass) | B | Rows whose `model ≠ activeModel` (model switch) — re-embed set (FR-010). Input-hash staleness is compared in the pass against freshly composed input (FR-016). |
 | `deleteRemovedVectors()` | B | Anti-join delete: `DELETE FROM node_vectors WHERE node_id NOT IN (SELECT id FROM nodes)` — removes vectors of deleted symbols (FR-017). |
 
+### Write batching & WAL checkpoint (FR-029 / FR-030)
+
+`upsertNodeVector` is a single-**row** helper, but the pass MUST invoke it **inside a
+batch-sized transaction** — the vectors of one completed embedding batch committed
+together via the existing `db.transaction()` bulk-write path — never one implicit
+transaction per row (per-row `fsync` churn) nor one pass-long transaction held open
+across network I/O (unbounded WAL growth + non-durable partial progress, which would
+break the FR-020 resume contract). Writes go **synchronously through the single
+`node:sqlite` connection** — bounded concurrency governs only in-flight HTTP requests,
+so there is no concurrent-writer contention on `node_vectors`. After the pass's bulk
+writes, the WAL is checkpointed via the same `runMaintenance()`
+(`PRAGMA wal_checkpoint(PASSIVE)` + `PRAGMA optimize`) the index/sync already runs after
+bulk writes (`src/db/index.ts`), with the pass positioned so its writes are covered by
+that checkpoint rather than growing the WAL unbounded (FR-030).
+
 ### Coverage query shape (FR-022)
 
 ```sql

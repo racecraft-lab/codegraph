@@ -35,7 +35,7 @@ captured during scoping.
 | Specify | `/speckit-specify` | ✅ Complete | 26 FRs, 3 US, 12 acceptance scenarios, 0 markers; G1 pass |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 13 questions; 1 consensus run (both-agree) + 1 security item (conservative default, flagged); FR-016a added, FR-004/022/023 updated; G2 pass |
 | Plan | `/speckit-plan` | ✅ Complete | 8 artifacts (plan + research 16 decisions + data-model + quickstart + 4 contracts); constitution PASS ×2; G3 pass (1 false-positive marker reworded) |
-| Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
+| Checklist | `/speckit-checklist` | 🔄 In Progress | PAUSED 2026-07-04 (operator request). 3/4 domains COMPLETE with consensus applied: data-integrity (28 items, 6 gaps fixed), error-handling (25 items, 9 gaps fixed), performance (23 items, 9 gaps fixed) — all 0 gaps remaining, CRL rows 1–8 logged. **RESUME AT: security domain** — re-dispatch checklist-executor for security (its prior run was stopped before writing anything; no checklists/security.md exists). Prior-domain hardening the security run must not re-litigate: FR-023 (extended ×2), SC-007, FR-003/FR-019 (401/403 fast-abort), FR-001a, scheme+host+port endpoint rendering. After security domain + consensus: G4 gate → spec-MOC regen → commit → Phase 5 Tasks. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Implement | `/speckit-implement` | ⏳ Pending | |
@@ -297,6 +297,13 @@ onto user stories so tasks can deliver Slice A end-to-end first.
 | 1 | Clarify | Modified-file re-embedding: per-symbol vs per-changed-file (FK cascade vs explicit reconciliation) | [codebase, spec] | 1 | both-agree | Design B: no FK; vectors survive node delete/re-insert; FR-016a added; FR-017 = explicit reconciliation | codebase-analyst, spec-context-analyst |
 | 2 | Clarify | Status endpoint line rendering — credential leak risk (URL userinfo / query keys) | [security] | 1 | conservative-default* | Scheme+host+port only; userinfo/path/query stripped; API key never rendered (FR-022/FR-023 updated) | none — orchestrator adopted the strictest of all candidate policies (all satisfied FR-023) |
 
+| 3 | Gap | CHK025 — cross-process write serialization around the embed pass (CLI vs daemon) | [codebase, spec] | 1 | both-agree | FR-015a tightened: names both guard layers (in-process mutex + PID-checked FileLock at codegraph.lock), fail-fast lock semantics, no new lock, upserts-not-a-substitute; 2-minute stale-reclaim window documented as accepted pre-existing limitation | codebase-analyst, spec-context-analyst |
+| 4 | Gap | CHK012/FR-001a — surfacing location of the half-config error | [spec] | 1 | both-agree | Both channels (index/sync warn line + distinct misconfigured status state, `--json` mirrored, never non-zero exit); contracts reconciled (embedding-config.md, status-embedding-json.md gain misconfigured shape) | codebase-analyst, spec-context-analyst |
+| 5 | Gap | CHK022/FR-023 — error-path credential redaction completeness | [security] | 1 | 3/3 | FR-023 extended: recursive cause-chain redaction, non-message own-props (`.input`), provider response bodies untrusted (OpenAI 401 echoes key fragments), outgoing request/init never logged, persisted sinks named; replace-never-wrap at throw site; SC-007 extended. Security decision — flagged for operator review | all 3 |
+| 6 | Gap | CHK008/FR-003 — auth 401/403 retry-vs-fast-abort | [domain, security] | 1 | 3/3 | 401/403 → non-retryable fast advisory abort (joins 400/404/422 bucket); refines Q8 intent (reference SDKs exclude auth from retry; retrying risks IP throttling; static bearer key can't transiently succeed); FR-003/FR-019/Edge Cases/provider contract updated. Security decision — flagged for operator review | all 3 |
+| 7 | Gap | CHK014/FR-031(a) — daemon read responsiveness during a long pass | [codebase] | 1 | high-confidence | FR-031(a) scoped: full never-block guarantee only for healthy query pool (per-worker connections + WAL, empirically tested); status query + stdio/pool-degraded paths share the writer connection → "responsive" = bounded by one batch's synchronous span | codebase-analyst |
+| 8 | Gap | CHK015/FR-031(b) — lock-hold vs 2-min stale-reclaim window | [codebase] | 1 | high-confidence | "Accepted pre-existing limitation" confirmed factually accurate (mtime-based staleness, no refresh; #1091 proves multi-minute holds already occur today). Adopted SHOULD-level mitigation: refresh lock-file mtime at batch boundaries (cooperative-yield cadence); FR-015a "unmodified" phrasing reconciled | codebase-analyst |
+
 \* Security-tagged item resolved autonomously by adopting the maximally-conservative display policy instead of stopping the run: every candidate option satisfied the MUST requirements, the choice is display-only and reversible, and the decision is surfaced here and in the final report for operator review. Analyst fan-out was skipped per the operator's token-conservation directive.
 
 ---
@@ -456,9 +463,9 @@ Focus on Embedding Infrastructure & Endpoint Provider requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| data-integrity | | | |
-| error-handling | | | |
-| performance | | | |
+| data-integrity | 28 (CHK001–028) | 6 found → 6 fixed, 0 remain | FR-007/008 (LF+UTF-8 normalization, SHA-256), FR-010 (exact model match), FR-012 (lockstep convergence assertion), FR-015a (lock inheritance — consensus-tightened), FR-017 (reconciliation on every vector-preserving pass), new Edge Case (start-line-shift orphan) |
+| error-handling | 25 (CHK001–025) | 9 found → 9 fixed, 0 remain | New FR-001a (half-config actionable error, both surfaces), FR-019a (per-request timeout), FR-021a (response validation/count-mismatch), SC-009; FR-019 retryable/non-retryable taxonomy (401/403 → fast-abort, 3/3 consensus); FR-023 redaction extended (recursive cause chain, `.input`, response bodies untrusted, request/init never logged, persisted sinks named); contracts reconciled (embedding-config, embedding-provider, status-embedding-json + misconfigured state) |
+| performance | 23 (CHK001–023) | 9 found → 9 fixed, 0 remain | New FR-027 (endpoint-work proportionality; O(embeddable) local scan accepted), FR-028 (bounded/streaming memory), FR-029 (batch-transaction commits, no pass-long txn), FR-030 (WAL checkpoint via runMaintenance), FR-031 (read responsiveness — consensus-scoped to pooled/main-thread paths; bounded lock-hold + SHOULD-level lock freshness refresh); SC-010 added, SC-003 amended |
 | security | | | |
 | **Total** | | | |
 
