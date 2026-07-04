@@ -1,0 +1,12 @@
+# Project-scoped Codex CLI config (read in trusted projects only) — CodeGraph dogfooding.
+# The MCP server runs the LOCAL build so Codex sessions exercise HEAD:
+# run `npm run build` and `node dist/bin/codegraph.js init .` once per clone.
+
+# Root project doc (AGENTS.md -> CLAUDE.md symlink) is ~37 KB; raise the cap so
+# Codex reads the whole manual instead of truncating at the 32 KiB default.
+project_doc_max_bytes = 65536
+
+[mcp_servers.codegraph]
+command = "node"
+args = ["dist/bin/codegraph.js", "serve", "--mcp"]
+startup_timeout_sec = 30

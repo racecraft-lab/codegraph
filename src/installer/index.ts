@@ -135,7 +135,7 @@ export async function runInstallerWithOptions(opts: RunInstallerOptions): Promis
   } else if (useDefaults) {
     location = 'global';
   } else {
-    // If every selected target is global-only (e.g. Codex), skip the
+    // If every selected target is global-only (e.g. Hermes), skip the
     // prompt and force user-wide — project-local would just produce
     // skip warnings.
     const allGlobalOnly = targets.every((t) => !t.supportsLocation('local'));

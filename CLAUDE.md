@@ -283,6 +283,9 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **This repo is the racecraft tracking fork** (`origin` = racecraft-lab/codegraph).
   All pushes and PRs target `origin`; `upstream` (colbymchenry/codegraph) is
   fetch-only — never push, tag, or open PRs there. No exceptions.
+- **Never put Claude Code / Codex session URLs in PRs.** No `claude.ai/code/…` or
+  Codex session links in PR bodies or in commit messages pushed to PR branches —
+  strip any harness-default session trailer before committing or opening a PR.
 - Any change to `src/installer/` (especially `targets/`) needs corresponding test coverage and a CHANGELOG entry — installer regressions break every new install silently.
 - When changing what the MCP tools do or how agents should use them, edit `src/mcp/server-instructions.ts` — it is the **single source of truth** for agent-facing tool guidance (issue #529). The installer no longer writes a duplicate instructions block into `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.cursor/rules/codegraph.mdc` / Kiro steering, so there's nothing to keep in sync anymore. (The repo's own checked-in `.cursor/rules/codegraph.mdc` is dogfooding config — update it too if you use Cursor on this repo, but it ships nowhere.)
 - CodeGraph provides **code context**, not product requirements. For new features, ask the user about UX, edge cases, and acceptance criteria — the graph won't tell you.

@@ -1,0 +1,89 @@
+# CodeGraph fork guardrails — Codex parity with .claude/hooks/origin-guard.mjs.
+# upstream (colbymchenry/codegraph) is fetch-only; releases ship only via the
+# GitHub Actions Release workflow. Loaded because the project .codex/ layer is
+# trusted (see developers.openai.com/codex/rules).
+#
+# Verify:
+#   codex execpolicy check --pretty --rules .codex/rules/origin-guard.rules -- git push upstream main
+#
+# Known limit (documented): prefix_rule matches literal token prefixes only, so
+# flag-shuffled forms (e.g. `git -C . push upstream`) aren't matched here — the
+# root AGENTS.md house rules remain the backstop for those.
+
+prefix_rule(
+    pattern = ["git", "push", "upstream"],
+    decision = "forbidden",
+    justification = "The upstream remote (colbymchenry/codegraph) is fetch-only. Push to origin (racecraft-lab/codegraph) instead.",
+    match = ["git push upstream main"],
+    not_match = ["git push origin main", "git push --set-upstream origin feat"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--tags"],
+    decision = "forbidden",
+    justification = "Release tags are created by the GitHub Actions Release workflow, never pushed manually.",
+    match = ["git push --tags"],
+    not_match = ["git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--follow-tags"],
+    decision = "forbidden",
+    justification = "Release tags are created by the GitHub Actions Release workflow, never pushed manually.",
+    match = ["git push --follow-tags origin"],
+)
+
+# Remote-before-flag forms. The repo has exactly two remotes: `upstream` is
+# blanket-forbidden above (any flags after it), so covering `origin` closes
+# the realistic tag-push surface; other remote names fall to the
+# instructions-layer backstop like all flag-shuffled forms.
+prefix_rule(
+    pattern = ["git", "push", "origin", "--tags"],
+    decision = "forbidden",
+    justification = "Release tags are created by the GitHub Actions Release workflow, never pushed manually.",
+    match = ["git push origin --tags"],
+    not_match = ["git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin", "--follow-tags"],
+    decision = "forbidden",
+    justification = "Release tags are created by the GitHub Actions Release workflow, never pushed manually.",
+    match = ["git push origin --follow-tags"],
+)
+
+prefix_rule(
+    pattern = ["npm", "publish"],
+    decision = "forbidden",
+    justification = "Releases ship only via the GitHub Actions Release workflow; a manual npm publish ships the wrong (non-bundled) package.",
+    match = ["npm publish"],
+    not_match = ["npm run build", "npm test"],
+)
+
+prefix_rule(
+    pattern = ["git", "tag"],
+    decision = "prompt",
+    justification = "Release tags are cut by the Release workflow. Approve listing (git tag -l); decline tag creation.",
+    match = ["git tag v1.0.0", "git tag -l"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "create"],
+    decision = "prompt",
+    justification = "PRs must target origin (racecraft-lab/codegraph). Decline if --repo/-R points at colbymchenry.",
+    match = ["gh pr create --repo colbymchenry/codegraph"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "merge"],
+    decision = "prompt",
+    justification = "Confirm the PR belongs to origin (racecraft-lab/codegraph), never upstream.",
+    match = ["gh pr merge 42"],
+)
+
+prefix_rule(
+    pattern = ["gh", "release"],
+    decision = "prompt",
+    justification = "GitHub Releases are created by the Release workflow on origin only.",
+    match = ["gh release create v1.0.0"],
+)

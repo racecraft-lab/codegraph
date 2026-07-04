@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "node",
+      "args": ["dist/bin/codegraph.js", "serve", "--mcp"]
+    }
+  }
+}
