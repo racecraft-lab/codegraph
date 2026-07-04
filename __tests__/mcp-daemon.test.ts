@@ -39,6 +39,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CodeGraph } from '../src';
 import { getDaemonSocketPath } from '../src/mcp/daemon-paths';
+import { rmrfBestEffort } from './setup/rm-tolerance';
 
 const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
 
@@ -120,7 +121,9 @@ function findResponse(stdout: string[], id: number): any | null {
 // machine; scale every wait here rather than retuning call sites, and wrap
 // the per-test timeout caps in T() so the caps scale with the waits (a
 // scaled wait must never be clipped by an unscaled test cap).
-const WAIT_SCALE = process.env.CI ? 4 : 1;
+// Explicit value check: CI set to '0'/'false' must not enable scaling.
+const CI_ON = !['', '0', 'false'].includes((process.env.CI ?? '').trim().toLowerCase());
+const WAIT_SCALE = CI_ON ? 4 : 1;
 const T = (ms: number): number => ms * WAIT_SCALE;
 
 function waitFor<T>(
@@ -212,8 +215,9 @@ describe('Shared MCP daemon (issue #411)', () => {
     await new Promise((r) => setTimeout(r, 50));
     servers.length = 0;
     // A just-SIGKILL'd server (or its liftoff re-exec grandchild) can hold
-    // handles for a beat — EBUSY/EPERM/ENOTEMPTY here are transient.
-    fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    // handles for a beat — rmrfBestEffort retries and, on win32 only,
+    // tolerates a leaked tempdir.
+    rmrfBestEffort(tempDir);
   });
 
   it('two invocations share ONE detached daemon; both attach as proxies', async () => {
