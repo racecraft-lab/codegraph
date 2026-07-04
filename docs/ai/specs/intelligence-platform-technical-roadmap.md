@@ -6,7 +6,7 @@ This document defines the **SPEC catalog** for the Intelligence Platform: an ord
 
 **Source PRD:** [docs/prd-intelligence-platform.md](../../prd-intelligence-platform.md)
 **Home note:** [intelligence-platform-roadmap-MOC.md](intelligence-platform-roadmap-MOC.md)
-**Branch:** `racecraft/intelligence-platform`
+**Branch:** `main`
 **Tracker:** GitHub issues on `racecraft-lab/codegraph`
 
 ---

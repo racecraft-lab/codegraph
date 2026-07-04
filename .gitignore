@@ -68,3 +68,7 @@ tmux-web/
 assets/__pycache__/
 
 assets/generate-waitlist.py
+
+# SpecKit worktrees + local autopilot settings
+.worktrees/
+.claude/speckit-pro.local.md

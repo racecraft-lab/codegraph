@@ -439,14 +439,18 @@ describe('Shared MCP daemon (issue #411)', () => {
     const server = spawnServer(tempDir, env);
     servers.push(server);
     sendInitialize(server.child, `file://${tempDir}`, 1);
-    await waitFor(() => findResponse(server.stdout, 1), 10000, 25, '#662 initialize response (id 1)');
+    // 20s budgets on the two cold-path waits (not the usual 10s): under a full
+    // parallel `npm test` the spawned proxy + detached daemon boot compete with
+    // ~CPU-count vitest forks compiling tree-sitter WASM, and 10s flaked
+    // locally (the test passes in isolation in <1s).
+    await waitFor(() => findResponse(server.stdout, 1), 20000, 25, '#662 initialize response (id 1)');
     await waitFor(() => server.stderr.some((l) => l.includes('Attached to shared daemon')), 8000, 25, '#662 attach log');
     await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, 8000, 25, '#662 daemon lockfile pid');
     const daemonPid = readLockPid(realRoot)!;
 
     // A warm call goes through the daemon.
     sendMessage(server.child, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'codegraph_status', arguments: {} } });
-    await waitFor(() => findResponse(server.stdout, 2), 10000, 25, '#662 warm tools/call response (id 2)');
+    await waitFor(() => findResponse(server.stdout, 2), 20000, 25, '#662 warm tools/call response (id 2)');
 
     // Kill the daemon out from under the live proxy.
     process.kill(daemonPid, 'SIGTERM');
@@ -459,5 +463,5 @@ describe('Shared MCP daemon (issue #411)', () => {
     const resp = await waitFor(() => findResponse(server.stdout, 3), 15000, 25, '#662 post-fallback response (id 3)');
     expect(resp.result !== undefined || resp.error !== undefined).toBe(true);
     expect(isAlive(server.child.pid!)).toBe(true);
-  }, T(45000));
+  }, T(60000));
 });
