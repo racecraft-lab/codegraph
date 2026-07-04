@@ -30,6 +30,14 @@
       "source": "local",
       "version": "1.0.0"
     },
+    "codegraph-project-overrides": {
+      "enabled": true,
+      "installed_at": "project-local-manual",
+      "manifest_hash": "project-local-manual",
+      "priority": 3,
+      "source": "project-local-manual",
+      "version": "1.0.0"
+    },
     "speckit-pro-reviewability": {
       "enabled": true,
       "installed_at": "generated-by-speckit-pro-setup",
