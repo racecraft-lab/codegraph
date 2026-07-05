@@ -36,8 +36,8 @@ setup.
 | Specify | `$speckit-specify` | Complete | Generated `spec.md` and `requirements.md`; 4 user stories, 17 FRs, 10 acceptance scenarios, 0 clarification markers. |
 | Clarify | `$speckit-clarify` | Complete | Grammar pin, package-resolution boundary, advanced syntax list, PPX route, eval repos, and validation bar resolved. |
 | Plan | `$speckit-plan` | Complete | Generated plan, research, data model, quickstart, and contract; required split by grammar/status, extraction, resolution, and validation/eval slices. |
-| Checklist | `$speckit-checklist` | In Progress | Recommended domains: language-coverage, resolution-correctness, validation/eval, safety/license. |
-| Tasks | `$speckit-tasks` | Pending | Must emit split-ready tasks if grammar/extraction/resolution/PPX/eval exceed budget. |
+| Checklist | `$speckit-checklist` | Complete | Completed language-coverage, resolution-correctness, validation/eval, and safety/license with zero remaining gaps. |
+| Tasks | `$speckit-tasks` | In Progress | Must emit split-ready tasks if grammar/extraction/resolution/PPX/eval exceed budget. |
 | Analyze | `$speckit-analyze` | Pending | Must check roadmap drift, especially PPX expansion and package-depth scope. |
 | Implement | `$speckit-implement` | Pending | TDD-first language support implementation; stop before PPX coding unless Plan/Analyze authorizes a split/update. |
 
@@ -432,10 +432,10 @@ Focus on local-first constraints:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| language-coverage | Pending | Pending | Pending |
-| resolution-correctness | Pending | Pending | Pending |
-| validation-eval | Pending | Pending | Pending |
-| safety-license | Pending | Pending | Pending |
+| language-coverage | 20 | 0 | `spec.md`, `data-model.md`, `contracts/ocaml-language-support.md` |
+| resolution-correctness | 23 | 0 | `spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/ocaml-language-support.md`, `quickstart.md` |
+| validation-eval | 32 | 0 | `spec.md`, `plan.md`, `research.md`, `contracts/ocaml-language-support.md`, `quickstart.md` |
+| safety-license | 28 | 0 | `spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/ocaml-language-support.md`, `quickstart.md` |
 
 ---
 

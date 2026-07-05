@@ -17,24 +17,29 @@ This contract documents public observable behavior for SPEC-023 through existing
 
 OCaml extraction must emit existing CodeGraph node kinds only.
 
-| OCaml construct | Expected node behavior |
-|-----------------|------------------------|
-| Modules and functors | Searchable module/function-like ownership as appropriate, with containment. |
-| Signatures and module types | `interface`-style public symbols. |
-| Functions and arrow/external `val` declarations | `function`. |
-| Non-arrow `val` declarations | `constant`. |
-| Let-bindings | Useful `function`, `variable`, or `constant` nodes based on syntax. |
-| Abstract or alias types | `type_alias`. |
-| Records | `struct` with `field` children. |
-| Variants, GADTs, polymorphic variants | `enum` with `enum_member` children. |
-| Classes and objects | `class`, `method`, `field`, and contained symbols where statically visible. |
-| Labeled/optional parameters | Useful parameter/name evidence without changing public node-kind vocabulary. |
-| Attributes and extension nodes | Parse-preserved syntax only; no PPX-expanded symbols. |
+| OCaml construct | Required CodeGraph kind | Span and ownership rule |
+|-----------------|-------------------------|-------------------------|
+| Named modules, including nested modules | `module` | Span the full module declaration, including body or signature when syntactically present. |
+| Named functors | `module` | Span the full functor declaration, including module parameters and body or result signature. |
+| Signatures, module types, and class types | `interface` | Span the public specification item. |
+| Functions, named function-like `let`/`let rec` bindings, external declarations, and arrow/external `val` declarations | `function` | Span the full binding or declaration body when syntactically available. |
+| Stable non-function `let` value bindings and non-arrow `val` declarations | `constant` | Span the binding or public declaration. |
+| Pattern-only `let` bindings | `constant` or `variable` only for stable identifier leaves; otherwise no standalone node | Do not synthesize a name from the whole pattern; attach unnamed or unstable structure to the nearest useful owner. |
+| Abstract or alias types | `type_alias` | Span the type declaration or specification. |
+| Records | `struct` with `field` children | Span the record type declaration; fields span their source field declarations. |
+| Variants, GADTs, and polymorphic variants | `enum` with `enum_member` children | Span the variant type declaration; constructors/tags span their source declarations. |
+| Named classes | `class` | Span the full class declaration. |
+| Class methods | `method` | Span the full method declaration body when syntactically available. |
+| Visible class/object fields | `field` | Span the source field declaration. |
+| Labeled and optional parameters | `parameter` when a stable source name exists | Span the parameter pattern or name, including `~label`, `?label`, and `~label:local` forms. |
+| Anonymous object, module, functor, and pattern-only forms | No synthetic standalone owner | Attach covered child symbols to the nearest useful owner or file. |
+| Attributes and extension nodes | No PPX-expanded symbol kind | Preserve source-level visibility only; do not synthesize generated symbols or relationships. |
 
 ## Relationship Output
 
 - Containment relationships are emitted for symbol ownership.
-- Module paths, `open`, and `include` relationships are emitted only when exactly one local target survives source, interface-pairing, and workspace metadata constraints.
+- Module paths, functor references/applications, `open`, and `include` relationships are emitted only when exactly one local target survives source, interface-pairing, and workspace metadata constraints.
+- Functor relationships may point to statically named functor modules, argument modules, and result-module aliases when unique; they must not synthesize generated result members, type equalities, or elaborated functor semantics.
 - `.ml`/`.mli` relationships are emitted only for unique same-directory, same-basename pairs.
 - Checked-in `dune-project`, `dune` stanzas, and root or `opam/` `*.opam` files may constrain local relationships.
 - Metadata must not create package nodes or external package edges.
@@ -43,17 +48,18 @@ OCaml extraction must emit existing CodeGraph node kinds only.
 
 The graph must omit unsupported precision rather than guess when:
 
-- More than one local module candidate remains.
+- More than one local module or functor candidate remains.
 - A source/interface pair is ambiguous.
 - Package metadata cannot deterministically constrain a local relationship.
 - A relationship would require installed switch state, network package metadata, `_opam`, lock directories, or templates.
 - A relationship would require PPX expansion or generated-code inference.
+- A relationship would require functor result elaboration or type-equality inference.
 
 The implementation must not choose by nearest directory, index order, or fuzzy score after ambiguity remains.
 
 ## Validation Evidence Contract
 
-Before SPEC-023 is complete, evidence must include:
+Any PR/slice that claims complete OCaml support must satisfy this evidence contract. Earlier split slices may omit mandatory eval evidence only when they explicitly do not claim complete support and preserve this completion gate. Before SPEC-023 is complete, evidence must include:
 
 - Fixture coverage for required syntax and negative ambiguity cases.
 - Parser health checks for `.ml` and `.mli`.

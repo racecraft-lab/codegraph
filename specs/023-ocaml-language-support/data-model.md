@@ -49,7 +49,8 @@
 - `qualifiedName`: module-qualified name when deterministically available.
 - `nodeKind`: one of CodeGraph's existing node kinds.
 - `syntaxCategory`: module, signature, functor, type, record, variant, constructor, value, function, let-binding, class, object, method, field, parameter, module type, or interface item.
-- `sourceSpan`: stable start/end location.
+- `sourceSpan`: stable start/end location for the accepted declaration, body-bearing binding, public specification item, parameter pattern/name, or stable identifier leaf.
+- `spanBoundary`: declaration, declaration-with-body, specification-item, parameter-pattern, identifier-leaf, or nearest-owner fallback.
 - `owner`: nearest useful containing symbol or file.
 - `unitRole`: implementation, interface, or both.
 - `unsupportedSyntaxNote`: optional note for parse-preserved unsupported precision such as PPX attributes or extension nodes.
@@ -64,6 +65,8 @@
 
 - Required constructs must emit stable searchable symbols with useful spans.
 - Pattern-heavy definitions and anonymous nested definitions attach to the nearest useful owning symbol.
+- Pattern-only bindings must not create synthetic names from whole-pattern text; stable identifier leaves may emit symbols only when their span and owner are clear.
+- Anonymous object, module, and functor expressions attach to the nearest useful owner unless they are bound to a stable source name.
 - Attributes and extension nodes do not imply PPX-expanded symbols.
 
 ## Entity: OCaml Interface Pairing
@@ -110,9 +113,10 @@
 
 **Fields**
 
-- `requestedPath`: module path requested by source syntax.
+- `requestedPath`: module path requested by source syntax, including qualified references, functor application targets or arguments, `open`, and `include`.
+- `referenceForm`: qualified path, functor application, open, include, interface pair, or metadata-constrained local relationship.
 - `candidateSymbol`: local OCaml symbol candidate.
-- `evidence`: source path, interface pairing, open/include scope, and workspace metadata evidence.
+- `evidence`: source path, functor application syntax, interface pairing, open/include scope, and workspace metadata evidence.
 - `candidateCount`: number of surviving candidates after constraints.
 
 **Relationships**
@@ -123,6 +127,7 @@
 
 - Ambiguity fails closed.
 - The resolver must not choose by nearest directory, index order, or fuzzy score after ambiguity remains.
+- Functor applications produce relationships only when the referenced functor and argument/result modules resolve uniquely; generated result internals are not synthesized.
 
 ## Entity: OCaml Relationship
 
@@ -131,13 +136,14 @@
 - `sourceSymbol`: source node.
 - `targetSymbol`: target node.
 - `edgeKind`: existing CodeGraph edge kind, primarily `contains`, `imports`, or `references` for SPEC-023 behavior.
-- `evidenceSource`: syntax, interface pairing, open/include scope, or checked-in metadata.
+- `evidenceSource`: syntax, functor application, interface pairing, open/include scope, or checked-in metadata.
 - `confidence`: deterministic unique-only.
 
 **Validation Rules**
 
 - Relationships are local and deterministic.
 - Unsupported PPX/package relationships emit no edge.
+- Functor result elaboration and type-equality inference emit no edge.
 - No package node or external package edge is produced.
 
 ## Entity: PPX Policy

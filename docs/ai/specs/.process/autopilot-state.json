@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T19:43:58Z",
-  "active_step": "Phase 4: Checklist - Language Coverage",
+  "updated_at": "2026-07-05T20:10:46Z",
+  "active_step": "Phase 5: Tasks",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -118,6 +118,38 @@
     "constitution_gate": "passed with required split; no PPX expansion, package nodes, or external package edges",
     "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
   },
+  "phase4_evidence": {
+    "language_coverage": {
+      "executor": "checklist-executor",
+      "items": 20,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "remediation": "Tightened source-level node-kind and span rules for functors, let forms, classes/objects, labeled/optional parameters, anonymous forms, and unsupported syntax."
+    },
+    "resolution_correctness": {
+      "executor": "checklist-executor",
+      "items": 23,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "remediation": "Added unique-only Dune-scoped functor reference/application wording and explicitly excluded functor result elaboration and type-equality inference."
+    },
+    "validation_eval": {
+      "executor": "checklist-executor",
+      "items": 32,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "remediation": "Clarified mandatory eval evidence belongs to the first PR/slice claiming complete OCaml support; earlier slices must preserve the completion gate."
+    },
+    "safety_license": {
+      "executor": "checklist-executor",
+      "items": 28,
+      "gaps_found": 0,
+      "gaps_remaining": 0,
+      "remediation": "No remediation required."
+    },
+    "consensus": "No unresolved consensus items reported for any checklist domain.",
+    "marker_check": "count-markers all returned 0 for gaps, clarifications, critical, high, medium, and low markers"
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -161,39 +193,39 @@
     },
     {
       "step": "Phase 4: Checklist - Language Coverage",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Language Coverage Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Resolution Correctness",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Resolution Correctness Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Validation and Eval",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Validation and Eval Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Safety and License",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Safety and License Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 6: Analyze",

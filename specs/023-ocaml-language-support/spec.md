@@ -20,10 +20,12 @@
 - First-slice syntax coverage includes classes/objects, labeled and optional arguments, local modules, first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions. Attributes and extension nodes are parsed/preserved only; they do not imply PPX expansion or speculative edges.
 - `.ml` and `.mli` files both report as OCaml. Pairing is same normalized directory plus basename only when unique; ambiguous pairings fail closed.
 - Interface declarations emit useful public symbols: arrow/external `val` as `function`, non-arrow `val` as `constant`, abstract or alias `type` as `type_alias`, record types as `struct` with `field`, variant/GADT/polymorphic variant types as `enum` with `enum_member`, `module` as `module`, `module type`/signature/class type as `interface`, class declarations as `class`, and method specifications as `method`. `open` and `include` contribute conservative relationship evidence rather than standalone public symbols.
+- Source-level declarations use only existing CodeGraph node kinds: named modules and named functors emit `module`; module type, signature, and class type declarations emit `interface`; named function-like `let` or `let rec` bindings, external declarations, and function-valued declarations emit `function`; stable non-function `let` value bindings emit `constant`; stable identifier leaves from pattern-only bindings may emit `constant` or `variable` only when the identifier span and owner are clear; named classes emit `class`; class methods emit `method`; visible class/object fields emit `field`; labeled and optional parameters emit `parameter` when they have a stable source name. Anonymous object, module, functor, or pattern-only forms do not create synthetic standalone owner names.
+- Source spans cover the accepted symbol's source declaration: module, functor, class, function, and method spans include the syntactically available body or signature; interface declarations span the public specification item; parameter spans cover the parameter pattern/name; stable identifier leaves from pattern-only bindings span the identifier and attach to the nearest useful owner. Unsupported advanced syntax is either attached to a nearest useful owner or recorded as an unsupported limitation; speculative standalone nodes are prohibited.
 
 ### Session 2026-07-05 - Resolution, Dune, Packages, and PPX Gate
 
-- First-slice module-path, `open`, and `include` resolution is Dune-scoped and unique-only. Relationships are emitted only when exactly one local candidate survives source, interface-pairing, and workspace metadata constraints.
+- First-slice module-path, functor reference/application, `open`, and `include` resolution is Dune-scoped and unique-only. Relationships are emitted only when exactly one local candidate survives source, interface-pairing, and workspace metadata constraints. Functor relationships are limited to statically named functor modules, argument modules, and result-module aliases; functor result elaboration and type-equality inference remain out of scope.
 - Authoritative metadata for the first slice is limited to checked-in `dune-project`, `dune` stanzas, and root or `opam/` `*.opam` files. `_opam`, lock directories, templates, installed switches, and network package state are out of scope.
 - Package metadata gates and constrains local relationships only. SPEC-023 does not add `package` nodes and does not emit external package edges.
 - Ambiguous module or package candidates fail closed: emit no edge unless exactly one candidate survives. The implementation must not choose by nearest directory, index order, or fuzzy score after ambiguity remains.
@@ -33,8 +35,8 @@
 
 - Real-repository smoke and eval proof are pinned to `ocaml-community/yojson` as the small corpus, `ocaml/ocaml-lsp` as the medium corpus, and `ocaml/dune` as the large corpus. `mirage/irmin` is optional PPX/package stress coverage only if budget allows.
 - The canonical retrieval matrix is three questions per pinned corpus. Yojson covers the `from_string` parse path, the `to_string`/pretty-print write path, and `.ml`/`.mli` public exposure for Safe/Common/Util. OCaml-LSP covers `textDocument/hover`, `textDocument/completion`, and Dune RPC diagnostics after build. Dune covers `dune build` stanza-to-rule flow, `dune-project`/opam package metadata handling, and rule execution through scheduler/actions.
-- The first PR must include fixture coverage, parser health checks, copied-artifact assertions, full build/typecheck/unit verification, OCaml language status evidence, repeated smoke on all three pinned repositories, graph-count stability, and deterministic `probe-explore`/`probe-node` evidence for all nine retrieval questions.
-- Headless A/B evidence is mandatory for Yojson and OCaml-LSP in the first PR. Dune A/B and optional Irmin PPX/package stress may split only with an explicit follow-up gate before SPEC-023 is complete.
+- The first PR/slice that claims complete OCaml support must include fixture coverage, parser health checks, copied-artifact assertions, full build/typecheck/unit verification, OCaml language status evidence, repeated smoke on all three pinned repositories, graph-count stability, and deterministic `probe-explore`/`probe-node` evidence for all nine retrieval questions. Earlier split slices may omit this evidence only when their PR packet explicitly states that the slice does not claim complete OCaml support and preserves this completion gate.
+- Headless A/B evidence is mandatory for Yojson and OCaml-LSP in the first PR/slice that claims complete OCaml support. Dune A/B and optional Irmin PPX/package stress may split only with an explicit follow-up gate before SPEC-023 is complete.
 - Existing-language controls are `npm run build`, `npm run typecheck`, `npm test`, targeted extraction/resolution/status tests, and a CodeGraph self-repo retrieval smoke. Run `scripts/agent-eval/ab-new-vs-baseline.sh` on an existing-language control only if shared MCP, explore-budget, resolver, or retrieval behavior changes.
 - Each real-repository smoke record must include repository URL, commit SHA, index command, `filesByLanguage`, node count, edge count, parse errors or warnings, second-run stability, and retrieval probe outcome. Passing smoke requires OCaml language status, no fatal indexing errors, stable graph counts, no speculative edges for unsupported PPX/package cases, and retrieval probes within the size-based explore budget.
 
@@ -65,7 +67,7 @@ As an agent, I can search and explore OCaml symbols and get conservative relatio
 
 **Acceptance Scenarios**:
 
-1. **Given** an OCaml module that references another module through a path, local open, or include, **When** an agent explores the involved symbols, **Then** the system shows only relationships grounded in deterministic source or workspace evidence.
+1. **Given** an OCaml module that references another module through a path, functor application, local open, or include, **When** an agent explores the involved symbols, **Then** the system shows only relationships grounded in deterministic source or workspace evidence.
 2. **Given** an OCaml source/interface pair, **When** an agent searches for a public symbol, **Then** the system can connect the implementation and interface when the pairing is unambiguous.
 3. **Given** package or workspace metadata that clearly identifies local dependencies, **When** resolution runs, **Then** the system uses that metadata to improve relationships without inventing missing package links.
 
@@ -104,7 +106,7 @@ As a maintainer, I can see the PPX decision before implementation proceeds so ge
 
 - Source files without matching interface files still produce useful implementation symbols.
 - Interface files without matching source files still produce searchable public declarations.
-- Nested modules, functors, local opens, includes, and shadowed names are represented conservatively when ownership is clear.
+- Nested modules, functor references/applications, local opens, includes, and shadowed names are represented conservatively when ownership is clear.
 - Ambiguous module paths, package metadata, or generated PPX constructs do not create speculative edges.
 - Pattern-heavy definitions, labeled arguments, optional arguments, and anonymous nested definitions keep source spans attached to the nearest useful owning symbol.
 - Workspaces containing multiple local packages do not mix package relationships unless metadata provides a deterministic boundary.
@@ -119,7 +121,7 @@ As a maintainer, I can see the PPX decision before implementation proceeds so ge
 - **FR-003**: System MUST emit stable searchable symbols for OCaml modules, signatures, functors, type declarations, records, variants, constructors, values, functions, let-bindings, classes, objects, methods, fields, and interface declarations.
 - **FR-004**: System MUST preserve useful source spans and containment relationships for extracted OCaml symbols.
 - **FR-005**: System MUST handle labeled arguments, optional arguments, and common pattern-heavy definitions without dropping the nearest useful owning symbol.
-- **FR-006**: System MUST represent OCaml module paths, opens, and includes conservatively when exactly one local relationship can be determined from source, interface-pairing, and Dune-scoped workspace evidence.
+- **FR-006**: System MUST represent OCaml module paths, functor references/applications, opens, and includes conservatively when exactly one local relationship can be determined from source, interface-pairing, and Dune-scoped workspace evidence.
 - **FR-007**: System MUST connect OCaml source and interface files when the pair is unambiguous.
 - **FR-008**: System MUST use only checked-in `dune-project`, `dune` stanzas, and root or `opam/` `*.opam` package metadata, and only to constrain deterministic local OCaml relationships.
 - **FR-009**: System MUST fail closed for ambiguous module, package, or PPX relationships by omitting unsupported precision instead of emitting speculative graph edges, package nodes, or external package edges.
@@ -155,7 +157,7 @@ As a maintainer, I can see the PPX decision before implementation proceeds so ge
 
 - **OCaml Source Unit**: A source or interface file that can be indexed and associated with language status.
 - **OCaml Symbol**: A searchable code element such as a module, type, value, function, class, object, method, field, constructor, or signature item.
-- **OCaml Relationship**: A deterministic local connection between symbols, files, modules, source/interface pairs, workspace metadata, or checked-in package metadata; it is not an external package edge.
+- **OCaml Relationship**: A deterministic local connection between symbols, files, modules, functor references/applications, source/interface pairs, workspace metadata, or checked-in package metadata; it is not an external package edge.
 - **OCaml Interface Pairing**: A same-directory, same-basename `.ml`/`.mli` relationship that is used only when the pair is unique and unambiguous.
 - **Workspace Metadata**: Checked-in `dune-project`, `dune` stanzas, and root or `opam/` `*.opam` files that can improve OCaml relationship resolution when they provide clear deterministic local boundaries.
 - **Validation Evidence**: Fixture expectations, real-repository smoke output, graph stability records, deterministic retrieval probe results, headless A/B results, existing-language control checks, and documented split decisions.
@@ -167,7 +169,7 @@ As a maintainer, I can see the PPX decision before implementation proceeds so ge
 
 - **SC-001**: 100% of required OCaml fixture constructs produce expected searchable symbols, source spans, and containment relationships.
 - **SC-002**: Yojson, OCaml-LSP, and Dune index successfully, report OCaml in language/status output, and show stable graph counts across repeated indexing, unless a specific repository split is approved with a follow-up gate.
-- **SC-003**: The nine pinned OCaml structural questions return useful graph-backed context within the current repository-size retrieval budget, with Yojson and OCaml-LSP headless A/B evidence in the first PR and any Dune A/B split explicitly gated before SPEC-023 is complete.
+- **SC-003**: The nine pinned OCaml structural questions return useful graph-backed context within the current repository-size retrieval budget, with Yojson and OCaml-LSP headless A/B evidence in the first PR/slice that claims complete OCaml support and any Dune A/B split explicitly gated before SPEC-023 is complete.
 - **SC-004**: Validation identifies zero speculative relationships for ambiguous package, module, or PPX cases.
 - **SC-005**: Existing supported-language behavior remains green under the standard build, typecheck, and unit-test verification commands, and build verification proves both required OCaml WASM artifacts are copied into `dist/extraction/wasm/`.
 - **SC-006**: The PR review packet maps every functional requirement and success criterion to concrete evidence or named deferred work.

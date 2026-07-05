@@ -35,6 +35,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [data-model.md](data-model.md)
 - [research.md](research.md)
 - [contracts/ocaml-language-support.md](contracts/ocaml-language-support.md)
+- [checklists/language-coverage.md](checklists/language-coverage.md)
 - [checklists/requirements.md](checklists/requirements.md)
+- [checklists/resolution-correctness.md](checklists/resolution-correctness.md)
+- [checklists/safety-license.md](checklists/safety-license.md)
+- [checklists/validation-eval.md](checklists/validation-eval.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

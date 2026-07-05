@@ -32,9 +32,9 @@
 
 ## Decision: Resolution is Dune-scoped, unique-only, and local
 
-**Rationale**: Module paths, `open`, and `include` relationships are emitted only when exactly one local candidate survives source evidence, interface-pairing evidence, and checked-in workspace metadata constraints. The resolver must not choose by nearest directory, index order, or fuzzy score after ambiguity remains.
+**Rationale**: Module paths, functor references/applications, `open`, and `include` relationships are emitted only when exactly one local candidate survives source evidence, interface-pairing evidence, and checked-in workspace metadata constraints. Functor relationships are limited to statically named functor modules, argument modules, and result-module aliases; generated result members, type equalities, and elaborated functor semantics are not inferred. The resolver must not choose by nearest directory, index order, or fuzzy score after ambiguity remains.
 
-**Alternatives considered**: Full OCaml module elaboration was rejected as typechecker-grade semantics. Unconstrained name matching was rejected because it risks wrong edges in multi-package workspaces.
+**Alternatives considered**: Full OCaml module and functor-result elaboration was rejected as typechecker-grade semantics. Unconstrained name matching was rejected because it risks wrong edges in multi-package workspaces.
 
 ## Decision: Package metadata constrains local relationships only
 
@@ -62,7 +62,7 @@
 
 ## Decision: Yojson and OCaml-LSP headless A/B evidence is first-completion mandatory
 
-**Rationale**: The first PR or final slice that claims OCaml support complete must include headless A/B evidence for Yojson and OCaml-LSP. Dune A/B and optional Irmin stress may split only with an explicit follow-up gate before SPEC-023 is complete.
+**Rationale**: The first PR/slice that claims complete OCaml support must include headless A/B evidence for Yojson and OCaml-LSP. Earlier split slices may omit that evidence only when they do not claim complete support and preserve the completion gate. Dune A/B and optional Irmin stress may split only with an explicit follow-up gate before SPEC-023 is complete.
 
 **Alternatives considered**: Deferring all A/B evidence was rejected because retrieval performance is a constitutional regression surface.
 

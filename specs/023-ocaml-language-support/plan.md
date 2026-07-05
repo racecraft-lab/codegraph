@@ -6,9 +6,9 @@
 
 ## Summary
 
-Add OCaml to CodeGraph's supported-language matrix through the existing tree-sitter WASM grammar pipeline, a new OCaml extractor, conservative Dune-scoped local resolution, status/build wiring, fixtures, docs, and eval-backed retrieval proof. SPEC-023 keeps PPX expansion, external package graph modeling, package nodes, and typechecker-grade semantics out of scope; unsupported or ambiguous cases fail closed.
+Add OCaml to CodeGraph's supported-language matrix through the existing tree-sitter WASM grammar pipeline, a new OCaml extractor, conservative Dune-scoped local resolution for module paths, functor references/applications, opens, includes, and interface pairs, status/build wiring, fixtures, docs, and eval-backed retrieval proof. SPEC-023 keeps PPX expansion, functor result elaboration, external package graph modeling, package nodes, and typechecker-grade semantics out of scope; unsupported or ambiguous cases fail closed.
 
-The clarified scope is broader than the roadmap's original minimum, so SPEC-023 remains one cohesive specification but implementation must split into ordered reviewable slices before coding. A PR that claims OCaml support as complete must preserve the full validation bar: fixtures, parser health, copied-artifact checks, repeated smoke on Yojson/OCaml-LSP/Dune, deterministic probes for all nine pinned questions, Yojson and OCaml-LSP headless A/B evidence, and an explicit follow-up gate for any deferred Dune A/B.
+The clarified scope is broader than the roadmap's original minimum, so SPEC-023 remains one cohesive specification but implementation must split into ordered reviewable slices before coding. A PR/slice that claims OCaml support as complete must preserve the full validation bar: fixtures, parser health, copied-artifact checks, repeated smoke on Yojson/OCaml-LSP/Dune, deterministic probes for all nine pinned questions, Yojson and OCaml-LSP headless A/B evidence, and an explicit follow-up gate for any deferred Dune A/B. Earlier split slices may omit mandatory eval evidence only when their PR packet explicitly states that the slice does not claim complete OCaml support and preserves this completion gate.
 
 ## Technical Context
 
@@ -26,7 +26,7 @@ The clarified scope is broader than the roadmap's original minimum, so SPEC-023 
 
 **Performance Goals**: OCaml structural questions should resolve within the existing repo-size explore-call budget, with useful graph-backed context and no Read/Grep fallback caused by missing OCaml support. Repeated indexing must keep node and edge counts stable, and existing language retrieval/status behavior must not regress.
 
-**Constraints**: Deterministic AST/static-analysis graph only; no LLM-generated graph structure; no native runtime dependency; no package nodes; no external package edges; no PPX expansion; ambiguous module/package/PPX relationships emit no edge; Dune/opam metadata only constrains local relationships when unique.
+**Constraints**: Deterministic AST/static-analysis graph only; no LLM-generated graph structure; no native runtime dependency; no package nodes; no external package edges; no PPX expansion; no functor result elaboration or type-equality inference; ambiguous module/functor/package/PPX relationships emit no edge; Dune/opam metadata only constrains local relationships when unique.
 
 **Scale/Scope**: `.ml` and `.mli` support; broad first-slice syntax including modules, signatures, functors, types, records, variants, values, functions, let-bindings, labeled/optional arguments, classes/objects, local modules, first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions. Validation corpus is Yojson, OCaml-LSP, and Dune with nine pinned retrieval questions.
 
@@ -102,7 +102,7 @@ docs/
 |-------|-------------|-------------------|---------------------|
 | 1. Grammar/status/basic health | Vendor `tree-sitter-ocaml@0.24.2` implementation and interface WASMs, wire copy-assets/status, and prove both parsers load. | Grammar provenance, parser health checks for `.ml` and `.mli`, copied-artifact assertion, status test. | May not claim full OCaml support until later slices pass. |
 | 2. Broad syntax extraction | Add `ocaml.ts` and fixtures for required syntax. | Fixture expectations for nodes, spans, containment, interface declarations, and unsupported syntax visibility. | No resolver/package behavior beyond what tests require. |
-| 3. Dune-scoped conservative resolution | Add unique-only local module/open/include/interface-pairing and metadata constraints. | Positive and negative resolution fixtures, ambiguity no-edge tests, no package node/external edge assertions. | PPX remains unsupported/future work. |
+| 3. Dune-scoped conservative resolution | Add unique-only local module/functor/open/include/interface-pairing and metadata constraints. | Positive and negative resolution fixtures, ambiguity no-edge tests, no functor result elaboration, and no package node/external edge assertions. | PPX remains unsupported/future work. |
 | 4. Validation/eval/docs | Record real-repo smoke, deterministic probes, A/B evidence, docs, and PR packet traceability. | Yojson, OCaml-LSP, Dune smoke; all nine probes; Yojson and OCaml-LSP A/B; existing-language controls; compact metrics. | SPEC-023 is not complete until this evidence exists or an explicit approved follow-up gate preserves any deferred Dune A/B. |
 
 ## Complexity Tracking
@@ -110,7 +110,7 @@ docs/
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | Broader-than-roadmap syntax coverage | Clarify made classes/objects, labeled/optional arguments, local/first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions first-slice requirements. | Basic functions/modules would pass indexing but fail common OCaml retrieval questions and force agents back to Read/Grep. |
-| Dune-scoped local resolution | OCaml module relationships often depend on workspace boundaries, source/interface pairing, and Dune metadata. | Symbol-only extraction would not satisfy FR-006, FR-007, or the pinned retrieval matrix. |
+| Dune-scoped local resolution | OCaml module and functor relationships often depend on workspace boundaries, source/interface pairing, and Dune metadata. | Symbol-only extraction would not satisfy FR-006, FR-007, or the pinned retrieval matrix. |
 | Multi-slice implementation | The clarified scope can exceed the one-PR reviewability block threshold if implemented as one diff. | Weakening eval or syntax scope would violate clarified requirements; slicing keeps each PR reviewable while preserving the final bar. |
 
 ## Phase 0 Research Summary
@@ -118,7 +118,7 @@ docs/
 Research output is captured in [research.md](research.md). All technical context unknowns are resolved:
 
 - Grammar source is `tree-sitter-ocaml@0.24.2`, MIT, with implementation and interface WASMs required.
-- Resolution is Dune-scoped, unique-only, and local.
+- Resolution is Dune-scoped, unique-only, and local for module paths, functor references/applications, open/include scope, and interface pairing.
 - Package metadata constrains local relationships only; package nodes and external package edges are prohibited.
 - PPX expansion is unsupported/future work for SPEC-023.
 - Validation uses Yojson, OCaml-LSP, and Dune with nine pinned retrieval questions and mandatory Yojson/OCaml-LSP A/B evidence.
@@ -134,7 +134,7 @@ The contract exists because OCaml support changes public observable behavior thr
 The PR packet for any SPEC-023 implementation slice must include:
 
 - What changed and why.
-- Non-goals: no OCaml LSP precision, no PPX expansion, no typechecker-grade semantics, no package nodes, no external package edges.
+- Non-goals: no OCaml LSP precision, no PPX expansion, no functor result elaboration, no typechecker-grade semantics, no package nodes, no external package edges.
 - Review order by slice.
 - Scope budget and split status.
 - Traceability from FR/SC to files and evidence.

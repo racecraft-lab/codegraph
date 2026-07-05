@@ -43,8 +43,8 @@ Expected fixture coverage:
 - OCaml language/status listing.
 - Modules, signatures, functors, type aliases, records, variants, GADTs, polymorphic variants, values, functions, let-bindings, classes, objects, methods, fields, labeled and optional arguments, local modules, first-class modules, attributes, extension nodes, and pattern-heavy definitions.
 - Same-directory, same-basename `.ml`/`.mli` pairing when unique.
-- Dune-scoped module path, `open`, and `include` resolution when unique.
-- Negative cases for ambiguous modules, ambiguous source/interface pairs, unsupported package relationships, and PPX-expanded symbols.
+- Dune-scoped module path, functor reference/application, `open`, and `include` resolution when unique.
+- Negative cases for ambiguous modules, ambiguous functor targets, ambiguous source/interface pairs, unsupported package relationships, and PPX-expanded symbols.
 
 Expected outcome:
 
@@ -145,11 +145,13 @@ Expected outcome:
 
 ## Completion Gate
 
+A PR/slice that claims complete OCaml support must satisfy this gate. Earlier split slices may omit mandatory eval evidence only when they explicitly do not claim complete OCaml support and preserve the gate below.
+
 SPEC-023 is complete only when:
 
 - Grammar artifacts are vendored, health-checked, and copied by build.
 - Fixture, smoke, deterministic probe, and required A/B evidence are recorded.
 - PPX is documented as unsupported/future work.
-- Ambiguous module/package/PPX cases fail closed.
+- Ambiguous module/functor/package/PPX cases fail closed.
 - No package nodes or external package edges are produced.
 - Existing-language controls remain green.
