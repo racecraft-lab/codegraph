@@ -22,9 +22,9 @@ Re-read it before each phase. It records the human-approved decisions from Grill
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `$speckit-specify` | Pending | Produce `specs/004-web-framework-research-spike/spec.md` |
-| Clarify | `$speckit-clarify` | Pending | Resolve current-source, scoring, and screenshot evidence ambiguities |
-| Plan | `$speckit-plan` | Pending | Plan the research matrix, prototype method, evidence storage, and validation |
+| Specify | `$speckit-specify` | Complete | Produced `specs/004-web-framework-research-spike/spec.md` with 17 FRs, 3 stories, and 9 acceptance scenarios |
+| Clarify | `$speckit-clarify` | Complete | Skipped after G1/G2: 0 active `[NEEDS CLARIFICATION]` markers |
+| Plan | `$speckit-plan` | In Progress | Plan the research matrix, prototype method, evidence storage, and validation |
 | Checklist | `$speckit-checklist` | Pending | Recommended domains: ux, performance, integration, reliability |
 | Tasks | `$speckit-tasks` | Pending | Keep tasks docs/process-first; no production web code |
 | Analyze | `$speckit-analyze` | Pending | Check drift against the design concept and roadmap |
@@ -55,6 +55,21 @@ bash speckit-autopilot/scripts/reviewability-gate.sh setup docs/ai/specs/intelli
 ```
 
 Result: pass with warning. The gate reported `primary surfaces 6 exceeds warn threshold 1` from the broader roadmap scan. SPEC-004 itself remains a docs/process research spike with projected reviewable LOC 0, production files 0, and one slice. The split decision is: keep SPEC-004 as one research spike.
+
+### Autopilot Preflight Results
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| Parent model and effort | Verified | `/Users/fredrickgabelmann/.codex/config.toml` declares `model = "gpt-5.5"` and `model_reasoning_effort = "xhigh"`. |
+| SpecKit prerequisites | Passed | `check-prerequisites.sh docs/ai/specs/.process/SPEC-004-workflow.md` returned `all_pass: true`, branch `004-web-framework-research-spike`, worktree `true`, feature branch `true`, and SpecKit CLI `0.11.8`. |
+| Codex subagents | Passed | `validate-agent-install.sh --surface codex --autoheal` returned `ok: codex: 10 bundled agents installed`. |
+| Confidence gate mode | Advisory | `resolve-confidence-mode.sh -- docs/ai/specs/.process/SPEC-004-workflow.md` returned `advisory`. |
+| Archive sweep | Skipped | Archive extension is not installed; cleanup was not applied. |
+| Project commands | Verified | `package.json` scripts define `npm run build`, `npm run typecheck`, and `npm test`; these override detector shorthand. |
+| G0 build | Passed | `npm run build` exited 0. |
+| G0 typecheck | Passed | `npm run typecheck` exited 0. |
+| G0 tests | Passed | `npm test` exited 0 with 132 test files passed, 2223 tests passed, and 4 skipped. |
+| Reviewability setup gate | Warn/pass | `reviewability-gate.sh setup docs/ai/specs/intelligence-platform-technical-roadmap.md` returned `status: warn`, `pass: true`; warning: `primary surfaces 6 exceeds warn threshold 1`. |
 
 ## Specification Context
 
@@ -144,13 +159,15 @@ Record after running:
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | Pending |
-| User Stories | Pending |
-| Acceptance Criteria | Pending |
+| Functional Requirements | 17 |
+| User Stories | 3 |
+| Acceptance Criteria | 9 acceptance scenarios |
 
 ### Files Generated
 
-- `specs/004-web-framework-research-spike/spec.md`
+- [x] `specs/004-web-framework-research-spike/spec.md`
+- [x] `specs/004-web-framework-research-spike/checklists/requirements.md`
+- [x] `.specify/feature.json`
 
 ## Phase 2: Clarify
 
@@ -175,7 +192,7 @@ Do not revisit decisions already settled in the design concept unless the spec c
 
 | Focus Area | Questions | Key Outcomes |
 |------------|-----------|--------------|
-| Decision matrix and evidence | Pending | Pending |
+| Decision matrix and evidence | 0 | Skipped: G1/G2 found no active clarification markers after Specify. |
 
 ## Phase 3: Plan
 
@@ -363,6 +380,15 @@ Flag any mismatch as HIGH or CRITICAL if it could make SPEC-005/006 build on an 
 |----|----------|-------|------------|
 | Pending | Pending | Pending | Pending |
 
+## Phase 6.5: Confidence Gate
+
+Run the advisory pre-Implement confidence gate after Analyze and before Implement.
+
+| Phase | Gate | Status | Notes |
+|-------|------|--------|-------|
+| Confidence Gate | G6.5 | Pending | Mode: advisory |
+| G6.5 | Confidence Gate | Pending | Reads the latest Phase 6 confidence block |
+
 ## Phase 7: Implement
 
 ### Implement Prompt
@@ -408,6 +434,21 @@ Before requesting review, confirm:
 - `npm run build` and `npm test` results are recorded, or a scoped verification rationale is documented.
 
 ## Post-Implementation Checklist
+
+| Phase | Item | Status | Notes |
+|-------|------|--------|-------|
+| Post | Post: Doctor Extension Check | Skipped | Doctor extension not installed |
+| Post | Post: Verify Implementation | Pending | Verify extension installed |
+| Post | Post: Verify Tasks Phantom Check | Pending | Verify-tasks extension installed |
+| Post | Post: Code Review | Pending | Built-in diff review |
+| Post | Post: Integration Suite | Pending | Full project verification |
+| Post | Post: Reviewability Diff Gate | Pending | Final reviewability backstop |
+| Post | Post: Self-Review | Pending | Four-question audit |
+| Post | Post: UAT Runbook Generation | Pending | Skeleton plus author agent |
+| Post | Post: PR Body Generation | Pending | Packet/body generation |
+| Post | Post: PR Creation | Pending | PR side effect after packet validation |
+| Post | Post: Review Remediation | Pending | Review polling and fixes |
+| Post | Post: Retrospective | Pending | Final canonical post item |
 
 - [ ] `spec.md`, `plan.md`, `tasks.md`, and supporting SpecKit artifacts are complete.
 - [ ] `docs/design/web-framework-decision.md` exists and contains the scored matrix, recommendation, shipping strategy, and graph-rendering evidence.

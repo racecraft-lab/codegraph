@@ -1,0 +1,220 @@
+{
+  "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
+  "updated_at": "2026-07-05T13:02:00-05:00",
+  "active_step": "Phase 3: Plan",
+  "confidence_gate_mode": "advisory",
+  "archive_sweep": {
+    "archive_extension_installed": false,
+    "current_target": "specs/004-web-framework-research-spike",
+    "cleanup_mode": "disabled",
+    "safeToApplyCleanup": false,
+    "note": "Archive extension not installed; no previously merged spec cleanup was applied."
+  },
+  "project_commands": {
+    "BUILD": "npm run build",
+    "TYPECHECK": "npm run typecheck",
+    "LINT": "N/A",
+    "LINT_FIX": "N/A",
+    "UNIT_TEST": "npm test",
+    "INTEGRATION_TEST": "N/A",
+    "SINGLE_FILE_TEST": "npm test --",
+    "SINGLE_FILE_INTEGRATION": "N/A",
+    "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
+  },
+  "preset_conventions": {
+    "has_presets": true,
+    "presets": [
+      "claude-ask-questions",
+      "codegraph-project-overrides",
+      "speckit-pro-reviewability"
+    ],
+    "template_resolution": {
+      "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
+      "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
+      "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
+    }
+  },
+  "preflight": {
+    "model": "gpt-5.5",
+    "model_reasoning_effort": "xhigh",
+    "branch": "004-web-framework-research-spike",
+    "is_worktree": true,
+    "on_feature_branch": true,
+    "specify_version": "0.11.8",
+    "agent_install": "validate-agent-install.sh: ok: codex: 10 bundled agents installed",
+    "reviewability_setup_gate": {
+      "status": "warn",
+      "pass": true,
+      "warnings": [
+        "primary surfaces 6 exceeds warn threshold 1"
+      ]
+    },
+    "g0_verification": {
+      "build": "passed: npm run build",
+      "typecheck": "passed: npm run typecheck",
+      "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
+      "integration_test": "N/A"
+    },
+    "phase_1_specify": {
+      "status": "completed",
+      "functional_requirements": 17,
+      "user_stories": 3,
+      "acceptance_scenarios": 9,
+      "gate_g1": "passed: spec.md exists with 0 [NEEDS CLARIFICATION] markers",
+      "files": [
+        "specs/004-web-framework-research-spike/spec.md",
+        "specs/004-web-framework-research-spike/checklists/requirements.md",
+        ".specify/feature.json"
+      ]
+    },
+    "phase_2_clarify": {
+      "status": "completed",
+      "skipped": "G1 and G2 both found 0 active clarification markers; no clarify questions required."
+    },
+    "capability_path": {
+      "codebase_context": "local repository files plus RepoPrompt MCP when selected",
+      "library_documentation": "web search / official docs when current facts are required",
+      "web_or_domain_research": "web search available to parent; subagents receive gathered evidence or fallback notes",
+      "source_extraction": "local files and command outputs"
+    }
+  },
+  "extensions": {
+    "doctor": "skipped: doctor extension not installed",
+    "verify": "enabled",
+    "verify_tasks": "enabled",
+    "review": "enabled",
+    "cleanup": "enabled",
+    "retrospective": "enabled",
+    "agent_context": "enabled"
+  },
+  "plan": [
+    {
+      "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
+      "status": "completed",
+      "note": "Archive extension not installed; cleanup disabled."
+    },
+    {
+      "step": "Phase 0: Prerequisites",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 1: Specify",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Decision matrix and evidence",
+      "status": "completed",
+      "skipped": "No active [NEEDS CLARIFICATION] markers after Specify."
+    },
+    {
+      "step": "Phase 2: Clarify - Decision matrix and evidence Consensus",
+      "status": "completed",
+      "skipped": "No unresolved clarify items required consensus."
+    },
+    {
+      "step": "Phase 3: Plan",
+      "status": "in_progress"
+    },
+    {
+      "step": "Phase 4: Checklist - ux",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - ux Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - performance",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - performance Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - integration",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - integration Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - reliability",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - reliability Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 5: Tasks",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6: Analyze",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6: Analyze - Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6.5: Confidence Gate",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - Pending task decomposition",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Doctor Extension Check",
+      "status": "completed",
+      "skipped": "doctor extension not installed"
+    },
+    {
+      "step": "Post: Verify Implementation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Verify Tasks Phantom Check",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Code Review",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Integration Suite",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Reviewability Diff Gate",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Self-Review",
+      "status": "pending"
+    },
+    {
+      "step": "Post: UAT Runbook Generation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: PR Body Generation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: PR Creation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Review Remediation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Retrospective",
+      "status": "pending"
+    }
+  ]
+}
