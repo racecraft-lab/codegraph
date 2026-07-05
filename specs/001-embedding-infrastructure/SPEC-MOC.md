@@ -38,6 +38,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [contracts/embedding-provider.md](contracts/embedding-provider.md)
 - [contracts/node-vectors-schema.md](contracts/node-vectors-schema.md)
 - [contracts/status-embedding-json.md](contracts/status-embedding-json.md)
+- [checklists/data-integrity.md](checklists/data-integrity.md)
+- [checklists/error-handling.md](checklists/error-handling.md)
+- [checklists/performance.md](checklists/performance.md)
 - [checklists/requirements.md](checklists/requirements.md)
+- [checklists/security.md](checklists/security.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

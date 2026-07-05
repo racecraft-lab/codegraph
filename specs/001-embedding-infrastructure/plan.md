@@ -106,7 +106,17 @@ error naming the missing variable** rather than collapsing both to one dormant s
 API key never persisted, logged, or echoed; the endpoint is rendered redacted to
 scheme+host+port only — including in **error/log messages derived from transport
 failures** (a raw `fetch`/network error can embed the URL), and an unparseable URL
-renders as a safe placeholder, never the raw string (FR-023/SC-007). Endpoint failures
+renders as a safe placeholder, never the raw string (FR-023/SC-007). The endpoint URL
+and any embedded credentials are, like the key, never **persisted** under `.codegraph/`
+(the metadata scalars hold only model + dims), not merely never rendered (FR-023). The
+composed embedding input — the user's source code — leaves the machine **only** as the
+`{model, input}` request body to the one user-configured endpoint and only when active,
+carries no added metadata, and is never written to any local log/error/persisted sink
+beyond its `input_hash`: no secondary destination, no fallback/default endpoint, no
+phone-home, no telemetry field (FR-025a/FR-025/SC-011). The endpoint scheme is
+user-controlled — plaintext-`http` **local** endpoints are supported by design, while
+TLS for a **remote** endpoint is the user's responsibility (CodeGraph neither upgrades
+nor downgrades the scheme). Endpoint failures
 are handled per the retryable/non-retryable split: 5xx/429/timeout/network errors
 consume the bounded-retry budget (per-request `AbortSignal.timeout` converts a **hang**
 into a timeout — FR-019/FR-019a), while a non-retryable 4xx (400/404/422) and a
