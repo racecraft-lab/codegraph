@@ -549,6 +549,29 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     expect(q.getMetadata('embedding_model')).toBe('nomic');
   });
 
+  it('aborts advisorily when a provider returns fewer vectors than inputs — never misaligns vectors to symbols (Copilot review)', async () => {
+    // The EndpointProvider enforces count-match internally (FR-021a), but the pass accepts
+    // ANY EmbeddingProvider — a short batch from a future provider must abort, not persist
+    // misaligned rows.
+    class ShortProvider extends FakeProvider {
+      override async embed(texts: string[]): Promise<Float32Array[]> {
+        const full = await super.embed(texts);
+        return full.slice(0, Math.max(0, full.length - 1)); // one vector short
+      }
+    }
+    const { db, q } = open();
+    q.insertNodes([mkNode('s0', 'function'), mkNode('s1', 'function')]);
+    const provider = new ShortProvider({ id: 'nomic', vectorDims: 4 });
+    const { opts } = harness(db, q, provider, baseConfig({ batchSize: 2 }));
+
+    const result = await runEmbeddingPass(opts);
+
+    expect(result.aborted).toBe(true);
+    expect(result.abortReason).toContain('vectors');
+    expect(result.embedded).toBe(0);
+    expect(q.getEmbeddingCoverage('nomic').embedded).toBe(0); // nothing persisted from the short batch
+  });
+
   it('never echoes a symbol source or composed input into the abort reason — only the redacted provider reason (FR-025a)', async () => {
     const { db, q } = open();
     const SECRET_SOURCE = 'SECRET_SOURCE_9f3a_do_not_leak';

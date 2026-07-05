@@ -1072,7 +1072,8 @@ export class CodeGraph {
    * contract `status-embedding-json.md`). Pure and network-free in every state:
    * it reads the activation config from the environment and the model/dims
    * scalars + coverage counts from the on-disk index — dormancy is never broken
-   * to produce it (FR-023). See {@link EmbeddingStatus} for the four shapes.
+   * to produce it (FR-023). See {@link EmbeddingStatus} for the three variants
+   * (active / dormant — optionally carrying prior-run data / misconfigured).
    */
   getEmbeddingStatus(): EmbeddingStatus {
     const config = loadEmbeddingConfig(process.env);

@@ -21,7 +21,12 @@ export interface EmbeddingProvider {
   /** Stable identifier of the active model (== EmbeddingConfig.model for the endpoint provider). */
   readonly id: string;
 
-  /** Vector dimension. Known after the first successful batch (inferred) or from config. */
+  /**
+   * Vector dimension. `0` is the "not yet known" sentinel: an endpoint provider
+   * reports `0` until its first successful batch establishes (or config pins) the
+   * dimension; a provider with a statically-known dimension may report it up front.
+   * Zero-length embeddings are rejected as malformed, so a real dimension is never 0.
+   */
   readonly dims: number;
 
   /**

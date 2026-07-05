@@ -253,6 +253,13 @@ export class EndpointProvider implements EmbeddingProvider {
       // rather than letting reconcileDims read length 0 as the "dimension unknown"
       // sentinel and silently latch dims=0 (FR-021a).
       if (vec.length === 0) return { ok: false, reason: 'response entry had an empty embedding array' };
+      // Non-finite elements (NaN/±Infinity — e.g. a null or string in the JSON array)
+      // would persist as garbage vector bytes; reject the batch instead (FR-021a).
+      for (let e = 0; e < vec.length; e++) {
+        if (!Number.isFinite(vec[e])) {
+          return { ok: false, reason: 'response entry contained a non-finite embedding value' };
+        }
+      }
       const conflict = this.reconcileDims(vec.length);
       if (conflict !== undefined) return { ok: false, reason: conflict };
       vectors[idx] = vec;

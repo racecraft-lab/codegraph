@@ -479,6 +479,20 @@ describe('EndpointProvider — empty embedding rejected (FIX 5 / FR-021a)', () =
     expect(mock.requests).toHaveLength(1); // non-retryable validation failure — no retry storm
     expect(provider.dims).toBe(0);         // the empty array was NOT latched as a real dimension
   });
+
+  it('rejects a 200 whose embedding contains a non-finite value (null/NaN would persist as garbage bytes)', async () => {
+    // A non-numeric JSON element becomes NaN under Float32Array.from (note: null coerces
+    // to 0, so a string is the real NaN carrier); persisting it would store garbage
+    // vector bytes. Must fail validation, non-retryable.
+    const mock = await startMock(() => ({ status: 200, body: JSON.stringify({ data: [{ index: 0, embedding: [0.1, 'not-a-number', 0.3] }] }) }));
+    const provider = new EndpointProvider(makeConfig({ url: `${mock.origin}/v1/embeddings` }), FAST);
+
+    const err = await captureReject(provider.embed(['x']));
+
+    expect(err.name).toBe('EmbeddingEndpointError');
+    expect(err.message).toContain('non-finite');
+    expect(mock.requests).toHaveLength(1); // validation failure — no retry budget consumed
+  });
 });
 
 describe('EndpointProvider — dimension enforcement (FR-021)', () => {

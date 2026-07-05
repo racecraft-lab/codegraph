@@ -316,6 +316,15 @@ export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<E
         break;
       }
 
+      // Defensive contract check: the EndpointProvider enforces one-vector-per-input
+      // (FR-021a), but the pass accepts ANY EmbeddingProvider — a future provider that
+      // returns a short/long batch must abort here, never misalign vectors to symbols.
+      if (vectors.length !== composed.length) {
+        aborted = true;
+        abortReason = `provider returned ${vectors.length} vectors for ${composed.length} inputs`;
+        break;
+      }
+
       if (dims === undefined) {
         const established = vectors[0]?.length ?? 0;
         if (enforcedDims !== undefined && established !== enforcedDims) {
