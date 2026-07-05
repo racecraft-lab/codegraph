@@ -85,7 +85,7 @@ cd your-project
 codegraph init
 ```
 
-<sub>`codegraph init` creates the local `.codegraph/` directory and builds the full graph in the same step — one command, done.</sub>
+<sub>`codegraph init` creates the local `.codegraph/` directory and builds the full graph in the same step — one command, done. In a git repo it also adds `.codegraph/` to your `.gitignore`: the index (and, with embeddings configured, the vectors) is a machine-generated local artifact that should never be committed — `codegraph init`/`sync` regenerates it in full.</sub>
 
 <div align="center">
 
