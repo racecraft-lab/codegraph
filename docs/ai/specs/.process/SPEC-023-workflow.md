@@ -37,8 +37,8 @@ setup.
 | Clarify | `$speckit-clarify` | Complete | Grammar pin, package-resolution boundary, advanced syntax list, PPX route, eval repos, and validation bar resolved. |
 | Plan | `$speckit-plan` | Complete | Generated plan, research, data model, quickstart, and contract; required split by grammar/status, extraction, resolution, and validation/eval slices. |
 | Checklist | `$speckit-checklist` | Complete | Completed language-coverage, resolution-correctness, validation/eval, and safety/license with zero remaining gaps. |
-| Tasks | `$speckit-tasks` | In Progress | Must emit split-ready tasks if grammar/extraction/resolution/PPX/eval exceed budget. |
-| Analyze | `$speckit-analyze` | Pending | Must check roadmap drift, especially PPX expansion and package-depth scope. |
+| Tasks | `$speckit-tasks` | Complete | Generated 74 split-ready tasks across 7 phases; FR-001 through FR-017 and SC-001 through SC-006 covered. |
+| Analyze | `$speckit-analyze` | In Progress | Must check roadmap drift, especially PPX expansion and package-depth scope. |
 | Implement | `$speckit-implement` | Pending | TDD-first language support implementation; stop before PPX coding unless Plan/Analyze authorizes a split/update. |
 
 **Status Legend:** Pending | In Progress | Complete | Blocked
@@ -494,10 +494,10 @@ Reference `spec.md`, `plan.md`, and
 
 | Metric | Value |
 |--------|-------|
-| Total Tasks | Pending |
-| Phases | Pending |
-| Parallel Opportunities | Pending |
-| User Stories Covered | Pending |
+| Total Tasks | 74 |
+| Phases | 7 |
+| Parallel Opportunities | 22 |
+| User Stories Covered | US1, US2, US3, US4 |
 
 ---
 
@@ -513,10 +513,10 @@ Record the emitted decision here:
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| Route | Pending | Expected: split-ready if broad syntax/package/eval scope exceeds budget |
-| Releasable | Pending | True only if each slice is independently reviewable and shippable |
-| Signals | Pending | Detector findings |
-| Warnings | Pending | Release-safety warnings |
+| Route | one-navigable-PR | Atomicity route allows one navigable PR while retaining split-ready task ordering |
+| Releasable | true | Tasks preserve independently reviewable checkpoints and completion gates |
+| Signals | change-shape:modify-heavy | Detector finding |
+| Warnings | none | No release-safety warnings |
 
 ---
 
