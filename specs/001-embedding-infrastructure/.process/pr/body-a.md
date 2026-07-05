@@ -3,7 +3,7 @@
 ## Summary
 
 <!-- speckit-pro-editable:summary:start -->
-**Slice A of SPEC-001 (stacked PR 1 of 2).** Adds the embedding substrate: every declaration-level symbol gets a persisted vector computed through a user-configured OpenAI-compatible endpoint on a full index, with the feature fully dormant when unconfigured (byte-identical behavior, zero network). Slice B (incremental freshness + backfill heal + outage resilience) follows in a stacked PR based on this branch. Split per the ratified reviewability budget (the combined diff exceeds block thresholds); stacked sequentially because the schema-version pin (v7→v8) is a hard-atomic seam that lands exactly once, here.
+**Slice A of SPEC-001 (stacked PR 1 of 2).** Adds the embedding substrate: every declaration-level symbol gets a persisted vector computed through a user-configured OpenAI-compatible endpoint on a full index, with the feature fully dormant when unconfigured (byte-identical behavior, zero network). Slice B (incremental freshness + backfill heal + outage resilience) follows in a stacked PR based on this branch. Split per the ratified reviewability budget (the combined diff exceeds block thresholds); stacked sequentially because the schema-version pin (v7→v8) is a hard-atomic seam that lands exactly once, here. *(Note: Copilot's review findings on this PR are fixed in the stacked PR — this branch is frozen at its reviewable checkpoint.)*
 <!-- speckit-pro-editable:summary:end -->
 
 Source: feature specification defines reviewer-ready PR packet behavior.
