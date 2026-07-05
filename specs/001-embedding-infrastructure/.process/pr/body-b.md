@@ -107,7 +107,7 @@ visible and countable through `codegraph status`.
      or off never changes the code graph itself, only whether vectors exist
      on the side.
 
-- [ ] Story 1 confirmed: a configured endpoint fully embeds a project and
+- [x] Story 1 confirmed: a configured endpoint fully embeds a project and
       `codegraph status` shows 100% coverage with the right model and
       dimension; an unconfigured project indexes exactly as before and
       reports itself as dormant, not broken; the graph's node/edge counts
@@ -140,7 +140,7 @@ two environment variables still set.
      ran automatically in the background, without you typing `codegraph
      sync`.
 
-- [ ] Story 2 confirmed: editing or deleting code and running `sync` keeps
+- [x] Story 2 confirmed: editing or deleting code and running `sync` keeps
       coverage at 100% by touching only what changed — never the whole
       project — and the same freshness happens automatically when the
       background watcher triggers the sync.
@@ -177,7 +177,7 @@ two environment variables still set.
      out, not silently ignored and not fatal. Unset
      `CODEGRAPH_EMBEDDING_DIMS` afterward to go back to normal.
 
-- [ ] Story 3 confirmed: turning on embeddings after the fact backfills to
+- [x] Story 3 confirmed: turning on embeddings after the fact backfills to
       100% with one plain sync, and a mid-run outage never breaks index or
       sync — it always resumes cleanly once the endpoint is back.
 
@@ -274,9 +274,11 @@ two environment variables still set.
 
 Advisory only — these checkboxes block nothing.
 
-- [ ] Reviewer walked every Per-Story Acceptance Test above.
-- [ ] Reviewer confirmed the Negative-Path Tests behave as described.
-- [ ] Reviewer is satisfied the PR delivers the behavior the spec promised.
+- [x] Reviewer walked every Per-Story Acceptance Test above.
+- [x] Reviewer confirmed the Negative-Path Tests behave as described.
+- [x] Reviewer is satisfied the PR delivers the behavior the spec promised.
+
+**UAT executed 2026-07-05 by the autopilot agent at the maintainer's direction** — real endpoint: headless LM Studio on HAL (`http://hal:1234`), model `text-embedding-nomic-embed-code@q8_0` (3584 dims, auto-inferred). Highlights: full index 100% coverage with live "Embedding symbols" progress; dormant/half-config/node-edge-parity all verified; incremental sync 0.4s touching only changed symbols; watcher-triggered auto-embed via real FSEvents; mid-pass outage (proxy to HAL killed at +6s) → exit 0 with 64/184 durably persisted → one sync resumed to 184/184; dims-mismatch names `CODEGRAPH_EMBEDDING_DIMS`; 404 fast-abort in 0.45s; model switch re-inferred dims 768 and converged 100%; SIGINT-interrupt recovered by the next sync (the intermediate no-op was correct fail-fast lock contention); byte-scan found key/userinfo/query credentials in NO file or output; empty project trivially complete. Hang-timeout and single-host egress rest on the automated suites (FR-019a timeout tests; the whole-codebase one-fetch-call-site egress pin). Full command log in the session record.
 
 ## Rollback
 
