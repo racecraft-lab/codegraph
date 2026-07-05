@@ -307,8 +307,7 @@ is ready to scaffold against that decision; SPEC-006 and SPEC-007 remain
 downstream.
 
 SPEC-023 (OCaml Language Support) is in flight on branch
-`023-ocaml-language-support`; PR #21 is open and autopilot closeout is in the
-post-PR verification/remediation stage.
+`023-ocaml-language-support`; PR #21 is open and autopilot closeout is complete.
 
 Current plan: `specs/023-ocaml-language-support/plan.md`
 

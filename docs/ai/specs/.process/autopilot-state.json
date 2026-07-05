@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T22:26:27Z",
-  "active_step": "Post: PR Creation",
+  "updated_at": "2026-07-05T22:30:10Z",
+  "active_step": "complete",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -383,11 +383,11 @@
     },
     {
       "step": "Post: PR Creation",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: Review Remediation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Retrospective",
@@ -489,12 +489,21 @@
       "workflow_contract": "validate-pr-workflow-contract.sh passed"
     },
     "pr_creation": {
-      "status": "in_progress",
-      "reason": "packet validation passed; preparing push and gh pr create from packet fields"
+      "status": "complete",
+      "pr_number": 21,
+      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/21",
+      "title": "feat(speckit-pro): Add OCaml language support",
+      "base": "main",
+      "head": "023-ocaml-language-support",
+      "mergeable": "MERGEABLE"
     },
     "review_remediation": {
-      "status": "pending",
-      "reason": "awaiting PR creation"
+      "status": "complete",
+      "comments": 0,
+      "reviews": 0,
+      "review_decision": "",
+      "status_checks": 0,
+      "action": "no remediation required on initial PR check"
     },
     "retrospective": {
       "status": "complete",
@@ -502,5 +511,13 @@
       "spec_changes_proposed": false,
       "spec_adherence": "97.8%"
     }
+  },
+  "status": "completed_pr_open",
+  "pr": {
+    "number": 21,
+    "url": "https://github.com/racecraft-lab/codegraph/pull/21",
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "MERGEABLE"
   }
 }
