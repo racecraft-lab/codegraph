@@ -1,6 +1,6 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
-  "updated_at": "2026-07-05T19:40:59.032Z",
+  "updated_at": "2026-07-05T19:47:00.206Z",
   "active_step": "complete",
   "confidence_gate_mode": "advisory",
   "archive_sweep": {
@@ -772,10 +772,11 @@
     },
     "review_remediation": {
       "status": "completed",
-      "reviews": 0,
-      "comments": 0,
-      "checks": "all initial PR checks passed",
-      "checked_at": "2026-07-05T19:40:59.032Z"
+      "reviews": 1,
+      "comments": 8,
+      "remediated_comments": 8,
+      "checks": "Copilot comments remediated; current PR checks are tracked on GitHub",
+      "checked_at": "2026-07-05T19:46:10.882Z"
     }
   }
 }

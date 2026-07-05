@@ -110,8 +110,8 @@ Any failed gate excludes the candidate from final weighted ranking.
 | Gate | Pass threshold | Applied result |
 |------|----------------|----------------|
 | Self-host anywhere | Official docs show a local static, Node, or container serving path that does not require a proprietary platform and can fit a future SPEC-005 local HTTP server/static mount. | Vite+React, SvelteKit, Next, Astro, SolidStart pass. TanStack Start is self-hostable but fails stability below. |
-| Offline/package-shipped assets | Production UI can run from package-shipped JS, CSS, images, fonts/icons, workers, WASM, graph-renderer assets, and locally generated CodeGraph data with no required CDN or remote asset fetch. | All candidates can plausibly satisfy this with local assets; runtime SaaS/CDN is not required by the base packages. |
-| No hosted-service runtime dependency | Startup, routing, graph rendering, auth posture, telemetry posture, optional integrations, and data loading work without hosted SaaS, cloud functions, hosted databases, hosted auth, remote telemetry, or remote assets. | All candidates pass if later specs avoid optional hosted integrations. |
+| Offline/package-shipped assets | Production UI can run from package-shipped JS, CSS, images, fonts/icons, workers, WASM, graph-renderer assets, and locally generated CodeGraph data with no required CDN or remote asset fetch. | Official docs and package metadata for the evaluated base packages did not identify a required CDN, remote asset fetch, hosted worker, or remote WASM dependency in the selected local/static serving paths. |
+| No hosted-service runtime dependency | Startup, routing, graph rendering, auth posture, telemetry posture, optional integrations, and data loading work without hosted SaaS, cloud functions, hosted databases, hosted auth, remote telemetry, or remote assets. | The base framework paths and selected renderer do not require hosted SaaS, hosted auth, hosted database, cloud function, or remote telemetry at runtime. Optional hosted integrations are deferred risks for later specs, not part of the SPEC-004 pass decision. |
 | Permissive license | Framework, selected graph renderer, and required runtime dependencies are MIT, Apache-2.0, BSD, ISC, or similarly permissive. GPL, AGPL, source-available-only, unclear, or incompatible runtime dependencies fail. | npm package licenses are MIT for all evaluated packages. Astro has a GitHub API `NOASSERTION` note but package-level license is MIT. |
 | Package footprint | Base framework package path must stay plausibly package-shippable for a local CLI distribution. SPEC-004 used 30 MB unpacked as the hard-gate threshold for the primary framework package before app output and graph renderer. | Next fails at 155,058,895 B unpacked. Other primary packages pass. |
 | Maintenance health | Package/repository is not archived or deprecated, has activity within the last 12 months, and has no current maintainer warning that makes it unsafe as the base stack. Release-candidate status fails for SPEC-004 base-stack adoption. | TanStack Start fails because official docs mark it Release Candidate. Others pass; npm deprecation fields returned no text. |
@@ -201,15 +201,18 @@ Prototype source stayed outside durable source at `/tmp/spec-004-web-framework-r
 Commands run:
 
 ```bash
-/Users/fredrickgabelmann/.nvm/versions/node/v22.22.2/bin/node dist/bin/codegraph.js init -i .
-/Users/fredrickgabelmann/.nvm/versions/node/v22.22.2/bin/node /tmp/spec-004-web-framework-research/export-codegraph-data.mjs .codegraph/codegraph.db /tmp/spec-004-web-framework-research/data
+node dist/bin/codegraph.js init -i .
+node /tmp/spec-004-web-framework-research/export-codegraph-data.mjs .codegraph/codegraph.db /tmp/spec-004-web-framework-research/data
 cd /tmp/spec-004-web-framework-research/prototype
 npm install
 npm install -D playwright
+npx playwright install chromium
 npm run build
 npm run dev -- --port 4174
 node capture-screenshots.mjs
 ```
+
+The local run used Node 22.22.2 from `nvm`; any Node runtime supported by CodeGraph's built CLI path and `node:sqlite` requirements should work for reproduction.
 
 Observed local results:
 

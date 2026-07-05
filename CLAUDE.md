@@ -297,11 +297,12 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-SPEC-004 (Web Framework Research Spike) is in plan/design. Active plan:
-`specs/004-web-framework-research-spike/plan.md`.
+SPEC-004 (Web Framework Research Spike) is implemented and under review in
+PR #19. Primary review artifact: `docs/design/web-framework-decision.md`.
 
 Durable implementation artifacts are limited to the web framework decision
-document and small PNG evidence assets under `docs/design/`. Do not add
+document, SpecKit process artifacts, and small PNG evidence assets under
+`docs/design/`. Do not add
 production web code, hosted-service runtime dependencies, CDN runtime
 dependencies, non-permissive/source-available dependencies, or changes to
 extraction, retrieval, MCP, SQLite schema, or installer behavior for SPEC-004.

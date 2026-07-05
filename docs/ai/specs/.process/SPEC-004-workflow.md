@@ -25,7 +25,7 @@ Re-read it before each phase. It records the human-approved decisions from Grill
 | Specify | `$speckit-specify` | Complete | Produced `specs/004-web-framework-research-spike/spec.md` with 17 FRs, 3 stories, and 9 acceptance scenarios |
 | Clarify | `$speckit-clarify` | Complete | Skipped after G1/G2: 0 active `[NEEDS CLARIFICATION]` markers |
 | Plan | `$speckit-plan` | Complete | Created plan, research, data model, contract, quickstart, and updated managed SpecKit context |
-| Checklist | `$speckit-checklist` | Complete | Completed ux, performance, integration, and reliability checklists with 0 remaining gaps |
+| Checklist | `$speckit-checklist` | Complete | Generated ux, performance, integration, and reliability review checklists for SPEC-004 |
 | Tasks | `$speckit-tasks` | Complete | Generated 39 ordered docs/process spike tasks with concrete Phase 7 task groups |
 | Analyze | `$speckit-analyze` | Complete | Found and fixed three documentation drift issues before implementation |
 | Implement | `$speckit-implement` | Complete | Produced the decision doc, screenshot assets, and UAT evidence |
@@ -60,7 +60,7 @@ Result: pass with warning. The gate reported `primary surfaces 6 exceeds warn th
 
 | Check | Result | Evidence |
 |-------|--------|----------|
-| Parent model and effort | Verified | `/Users/fredrickgabelmann/.codex/config.toml` declares `model = "gpt-5.5"` and `model_reasoning_effort = "xhigh"`. |
+| Parent model and effort | Verified | `~/.codex/config.toml` declares `model = "gpt-5.5"` and `model_reasoning_effort = "xhigh"`. |
 | SpecKit prerequisites | Passed | `check-prerequisites.sh docs/ai/specs/.process/SPEC-004-workflow.md` returned `all_pass: true`, branch `004-web-framework-research-spike`, worktree `true`, feature branch `true`, and SpecKit CLI `0.11.8`. |
 | Codex subagents | Passed | `validate-agent-install.sh --surface codex --autoheal` returned `ok: codex: 10 bundled agents installed`. |
 | Confidence gate mode | Advisory | `resolve-confidence-mode.sh -- docs/ai/specs/.process/SPEC-004-workflow.md` returned `advisory`. |
@@ -233,9 +233,9 @@ Quote and use the design concept decisions from `docs/ai/specs/.process/SPEC-004
 | `plan.md` | Complete | Research method, scoring model, artifact layout, validation |
 | `research.md` | Complete | Candidate evidence procedure and decision rationales |
 | `quickstart.md` | Complete | Reproduce prototype evidence and screenshot capture |
-| `contracts/` | Not expected | No API contract in this spike |
+| API contracts | Not expected | No API contract in this spike |
 | `data-model.md` | Complete | Decision/evidence artifact entities and validation rules |
-| `contracts/decision-artifacts.md` | Complete | Durable report, evidence, screenshot, and PR packet contract |
+| `contracts/decision-artifacts.md` | Complete | Docs/process contract for durable report, evidence, screenshot, and PR packet artifacts |
 
 Plan gate evidence:
 
@@ -484,7 +484,7 @@ Result: Pass with recorded downstream limitation.
 | Post | Post: UAT Runbook Generation | Complete | Existing filled runbook validated with `validate-uat-runbook.sh` |
 | Post | Post: PR Body Generation | Complete | PR body and packet generated, then validated with `validate-pr-packet.sh` |
 | Post | Post: PR Creation | Complete | Opened PR #19: https://github.com/racecraft-lab/codegraph/pull/19 |
-| Post | Post: Review Remediation | Complete | No comments or reviews; all initial PR checks passed |
+| Post | Post: Review Remediation | Complete | Remediated 8 Copilot comments; refreshed PR checks passed |
 | Post | Post: Retrospective | Complete | `specs/004-web-framework-research-spike/retrospective.md` records outcome, verification, reviewability, lessons, and follow-up |
 
 - [x] `spec.md`, `plan.md`, `tasks.md`, and supporting SpecKit artifacts are complete.
