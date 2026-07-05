@@ -1,0 +1,288 @@
+{
+  "schema_version": "pr-marker-plan.v1",
+  "kind": "pr_marker_plan",
+  "feature_id": "004-web-framework-research-spike",
+  "status": "emission_ready",
+  "source_fingerprint": {
+    "feature_spec_sha": "2cfa5174b87aeebdbc135a3d69f760558d9396e08fb59df2bc9b5d14aeec6047",
+    "plan_declared_scope_sha": "cfc19ad11595491b4b97eb19606bb5b30e82c22d3db2a33e589124dc54671a40",
+    "tasks_sha": "2750edb70c5273c8d779e8e2399343a7ade6acbc2c49a35e1e20d0630897b86c",
+    "reviewability_sha": "4d1b634010fb67710faab238916853334d4b63d5fdb37312ca00b412be803f38",
+    "hazard_route_sha": "68f01d9a0f5ff45656c900daf1d6f30b469a156a824735dc62f4ea724d73e783"
+  },
+  "markers": [
+    {
+      "id": "foundation",
+      "review_order": 1,
+      "kind": "foundation",
+      "parent_marker_id": null,
+      "source_boundary": {
+        "section": "Foundation",
+        "story_id": null,
+        "start_task_id": "T001",
+        "end_task_id": "T009"
+      },
+      "task_ids": [
+        "T001",
+        "T002",
+        "T003",
+        "T004",
+        "T005",
+        "T006",
+        "T007",
+        "T008",
+        "T009"
+      ],
+      "folded_polish_task_ids": [],
+      "folded_polish_target_reason": "",
+      "declared_files": [
+        {
+          "operation": "MODIFIED",
+          "path": "docs/design/web-framework-decision.md"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "specs/004-web-framework-research-spike/quickstart.md"
+        }
+      ],
+      "declared_tests": [],
+      "reviewability": {
+        "status": "block",
+        "mode": "tasks",
+        "scope": "foundation",
+        "evidence_path": ""
+      },
+      "hazards": [
+        "change-shape:modify-heavy"
+      ],
+      "subdivision": {
+        "status": "none",
+        "details": {}
+      },
+      "implementation_checkpoint": {
+        "status": "complete"
+      },
+      "emission_mapping": {
+        "status": "marker_split",
+        "source_marker_ids": [
+          "foundation"
+        ],
+        "packet_path": null
+      },
+      "warnings": []
+    },
+    {
+      "id": "us1",
+      "review_order": 2,
+      "kind": "user_story",
+      "parent_marker_id": null,
+      "source_boundary": {
+        "section": "User Story 1 - Review a grounded framework decision (Priority: P1) MVP",
+        "story_id": 1,
+        "start_task_id": "T010",
+        "end_task_id": "T020"
+      },
+      "task_ids": [
+        "T010",
+        "T011",
+        "T012",
+        "T013",
+        "T014",
+        "T015",
+        "T016",
+        "T017",
+        "T018",
+        "T019",
+        "T020"
+      ],
+      "folded_polish_task_ids": [],
+      "folded_polish_target_reason": "",
+      "declared_files": [
+        {
+          "operation": "MODIFIED",
+          "path": "docs/design/web-framework-decision.md"
+        }
+      ],
+      "declared_tests": [],
+      "reviewability": {
+        "status": "block",
+        "mode": "tasks",
+        "scope": "us1",
+        "evidence_path": ""
+      },
+      "hazards": [
+        "change-shape:modify-heavy"
+      ],
+      "subdivision": {
+        "status": "none",
+        "details": {}
+      },
+      "implementation_checkpoint": {
+        "status": "complete"
+      },
+      "emission_mapping": {
+        "status": "marker_split",
+        "source_marker_ids": [
+          "us1"
+        ],
+        "packet_path": null
+      },
+      "warnings": []
+    },
+    {
+      "id": "us2",
+      "review_order": 3,
+      "kind": "user_story",
+      "parent_marker_id": null,
+      "source_boundary": {
+        "section": "User Story 2 - Verify graph rendering before committing to the stack",
+        "story_id": 2,
+        "start_task_id": "T021",
+        "end_task_id": "T031"
+      },
+      "task_ids": [
+        "T021",
+        "T022",
+        "T023",
+        "T024",
+        "T025",
+        "T026",
+        "T027",
+        "T028",
+        "T029",
+        "T030",
+        "T031"
+      ],
+      "folded_polish_task_ids": [],
+      "folded_polish_target_reason": "",
+      "declared_files": [
+        {
+          "operation": "MODIFIED",
+          "path": "docs/design/assets/spec-004/one-k-node-target.png"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "docs/design/assets/spec-004/self-repo-graph.png"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "docs/design/web-framework-decision.md"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
+        }
+      ],
+      "declared_tests": [],
+      "reviewability": {
+        "status": "block",
+        "mode": "tasks",
+        "scope": "us2",
+        "evidence_path": ""
+      },
+      "hazards": [
+        "change-shape:modify-heavy"
+      ],
+      "subdivision": {
+        "status": "none",
+        "details": {}
+      },
+      "implementation_checkpoint": {
+        "status": "complete"
+      },
+      "emission_mapping": {
+        "status": "marker_split",
+        "source_marker_ids": [
+          "us2"
+        ],
+        "packet_path": null
+      },
+      "warnings": []
+    },
+    {
+      "id": "us3",
+      "review_order": 4,
+      "kind": "user_story",
+      "parent_marker_id": null,
+      "source_boundary": {
+        "section": "User Story 3 - Reuse the decision in later web specs",
+        "story_id": 3,
+        "start_task_id": "T032",
+        "end_task_id": "T035"
+      },
+      "task_ids": [
+        "T032",
+        "T033",
+        "T034",
+        "T035"
+      ],
+      "folded_polish_task_ids": [
+        "T036",
+        "T037",
+        "T038",
+        "T039"
+      ],
+      "folded_polish_target_reason": "nearest_preceding_non_polish_scope",
+      "declared_files": [
+        {
+          "operation": "MODIFIED",
+          "path": "docs/design/web-framework-decision.md"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "specs/004-web-framework-research-spike/quickstart.md"
+        },
+        {
+          "operation": "MODIFIED",
+          "path": "specs/004-web-framework-research-spike/spec.md"
+        }
+      ],
+      "declared_tests": [],
+      "reviewability": {
+        "status": "block",
+        "mode": "tasks",
+        "scope": "us3",
+        "evidence_path": ""
+      },
+      "hazards": [
+        "change-shape:modify-heavy"
+      ],
+      "subdivision": {
+        "status": "none",
+        "details": {}
+      },
+      "implementation_checkpoint": {
+        "status": "complete"
+      },
+      "emission_mapping": {
+        "status": "marker_split",
+        "source_marker_ids": [
+          "us3"
+        ],
+        "packet_path": null
+      },
+      "warnings": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "reviewability_size_warning",
+      "severity": "warning",
+      "message": "Reviewability sizing result is marker-planning input.",
+      "source": "reviewability",
+      "details": {
+        "status": "block",
+        "mode": "tasks",
+        "evidence_path": ""
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # SpecKit Workflow: SPEC-004 - Web Framework Research Spike
 
-**Template Version**: 1.0.0  
-**Created**: 2026-07-05  
+**Template Version**: 1.0.0
+**Created**: 2026-07-05
 **Purpose**: Execute SPEC-004 through the SpecKit workflow and produce the framework decision evidence that unblocks SPEC-005, SPEC-006, and SPEC-007.
 
 ---
@@ -458,41 +458,43 @@ Do not add production server/web app code, in-browser indexing, LSP facade work,
 
 ## Self-Review
 
-Before requesting review, confirm:
+Result: Pass with recorded downstream limitation.
 
-- The decision doc cites current official docs and live package/repository metadata for every candidate.
-- The chosen stack passed every hard gate before UX scoring decided the winner.
-- The graph-rendering prototype evidence includes screenshots, reproduction notes, and representative CodeGraph data.
-- The screenshot assets are committed and referenced by relative paths from `docs/design/web-framework-decision.md`.
-- SPEC-004 did not add production server or web UI code.
-- The UAT runbook includes a self-repo dogfooding step.
-- `npm run build` and `npm test` results are recorded, or a scoped verification rationale is documented.
+| Check | Result | Evidence |
+|-------|--------|----------|
+| Current candidate evidence | Pass | `docs/design/web-framework-decision.md` records official docs plus live package/repository metadata for all six candidates. |
+| Hard gates before scoring | Pass | Failed candidates are excluded before weighted scoring; Vite + React is selected after gates pass. |
+| Prototype and screenshots | Pass | Two 1440x960 PNGs are committed under `docs/design/assets/spec-004/` and referenced from the decision doc. |
+| Scope boundary | Pass | Branch diff contains docs/process artifacts and PNG evidence only; no production server, web UI, in-browser indexing, LSP facade, or WebSocket endpoint code. |
+| UAT runbook | Pass | `specs/004-web-framework-research-spike/.process/uat-runbook.md` records self-repo dogfooding and pass-with-limitation outcome. |
+| Verification | Pass | `npm run build`, `npm run typecheck`, and `npm test` passed in post-implementation verification. |
+| Known limitation | Accepted | Production large-graph UX, accessibility, search/filter/details polish, and WebGL runner-up validation remain SPEC-006 work. |
 
 ## Post-Implementation Checklist
 
 | Phase | Item | Status | Notes |
 |-------|------|--------|-------|
 | Post | Post: Doctor Extension Check | Skipped | Doctor extension not installed |
-| Post | Post: Verify Implementation | Pending | Verify extension installed |
-| Post | Post: Verify Tasks Phantom Check | Pending | Verify-tasks extension installed |
-| Post | Post: Code Review | Pending | Built-in diff review |
-| Post | Post: Integration Suite | Pending | Full project verification |
-| Post | Post: Reviewability Diff Gate | Pending | Final reviewability backstop |
-| Post | Post: Self-Review | Pending | Four-question audit |
-| Post | Post: UAT Runbook Generation | Pending | Skeleton plus author agent |
-| Post | Post: PR Body Generation | Pending | Packet/body generation |
+| Post | Post: Verify Implementation | Complete | Prerequisites, coverage guard, task count, and artifact presence verified |
+| Post | Post: Verify Tasks Phantom Check | Complete | `verify-tasks-report.md` records 39 verified tasks and no flagged items |
+| Post | Post: Code Review | Complete | Diff hygiene and forbidden-surface checks passed after workflow whitespace fix |
+| Post | Post: Integration Suite | Complete | `npm run build`, `npm run typecheck`, and `npm test` passed |
+| Post | Post: Reviewability Diff Gate | Complete | Final backstop proceeded with valid marker plan despite size-only file-count block |
+| Post | Post: Self-Review | Complete | Audit passed with SPEC-006 limitation recorded |
+| Post | Post: UAT Runbook Generation | Complete | Existing filled runbook validated with `validate-uat-runbook.sh` |
+| Post | Post: PR Body Generation | Complete | PR body and packet generated, then validated with `validate-pr-packet.sh` |
 | Post | Post: PR Creation | Pending | PR side effect after packet validation |
 | Post | Post: Review Remediation | Pending | Review polling and fixes |
-| Post | Post: Retrospective | Pending | Final canonical post item |
+| Post | Post: Retrospective | Complete | `specs/004-web-framework-research-spike/retrospective.md` records outcome, verification, reviewability, lessons, and follow-up |
 
-- [ ] `spec.md`, `plan.md`, `tasks.md`, and supporting SpecKit artifacts are complete.
-- [ ] `docs/design/web-framework-decision.md` exists and contains the scored matrix, recommendation, shipping strategy, and graph-rendering evidence.
-- [ ] Screenshot PNGs exist under `docs/design/assets/spec-004/` and are referenced from the decision doc.
-- [ ] UAT runbook exists under `specs/004-web-framework-research-spike/.process/`.
-- [ ] Self-repo dogfooding evidence is recorded.
-- [ ] Reviewability gate warnings are acknowledged.
-- [ ] Build/test verification is recorded.
-- [ ] No production web/server code was introduced by the spike.
+- [x] `spec.md`, `plan.md`, `tasks.md`, and supporting SpecKit artifacts are complete.
+- [x] `docs/design/web-framework-decision.md` exists and contains the scored matrix, recommendation, shipping strategy, and graph-rendering evidence.
+- [x] Screenshot PNGs exist under `docs/design/assets/spec-004/` and are referenced from the decision doc.
+- [x] UAT runbook exists under `specs/004-web-framework-research-spike/.process/`.
+- [x] Self-repo dogfooding evidence is recorded.
+- [x] Reviewability gate warnings are acknowledged.
+- [x] Build/test verification is recorded.
+- [x] No production web/server code was introduced by the spike.
 
 ## Project Structure Reference
 
