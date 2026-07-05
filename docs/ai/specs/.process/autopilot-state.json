@@ -1,14 +1,30 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
-  "updated_at": "2026-07-05T19:47:00.206Z",
-  "active_step": "complete",
+  "updated_at": "2026-07-05T21:22:21Z",
+  "active_step": "archived",
+  "status": "completed_archived",
+  "archived_spec": {
+    "spec_id": "SPEC-004",
+    "source_feature_dir": "specs/004-web-framework-research-spike",
+    "archive_report": ".specify/memory/archive-reports/2026-07-05-SPEC-004.md",
+    "merged_pr": {
+      "number": 19,
+      "url": "https://github.com/racecraft-lab/codegraph/pull/19",
+      "title": "feat(speckit-pro): Add web framework research spike",
+      "merged_at": "2026-07-05T21:19:23Z",
+      "merge_commit": "0366d3cef02a36fc1e2d95e8928390cdfbdc7484"
+    }
+  },
   "confidence_gate_mode": "advisory",
   "archive_sweep": {
     "archive_extension_installed": false,
     "current_target": "specs/004-web-framework-research-spike",
-    "cleanup_mode": "disabled",
-    "safeToApplyCleanup": false,
-    "note": "Archive extension not installed; no previously merged spec cleanup was applied."
+    "cleanup_mode": "applied",
+    "safeToApplyCleanup": true,
+    "archive_report": ".specify/memory/archive-reports/2026-07-05-SPEC-004.md",
+    "cleanup_branch": "codex/spec-004-archive-cleanup",
+    "applied_at": "2026-07-05T21:22:21Z",
+    "note": "Post-merge archive cleanup applied after PR #19 merged."
   },
   "project_commands": {
     "BUILD": "npm run build",
@@ -218,13 +234,13 @@
           "nodes": 220,
           "edges": 223,
           "first_visible_render_ms": 353,
-          "frame_signal": "118 rAF ticks/sec",
+          "frame_signal": "117 rAF ticks/sec",
           "screenshot": "docs/design/assets/spec-004/self-repo-graph.png"
         },
         "one_k_dataset": {
           "nodes": 1000,
           "edges": 2500,
-          "first_visible_render_ms": 139,
+          "first_visible_render_ms": 145,
           "frame_signal": "102 rAF ticks/sec",
           "screenshot": "docs/design/assets/spec-004/one-k-node-target.png"
         }
