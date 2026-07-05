@@ -24,6 +24,9 @@ The decision document must include these sections:
 - Every candidate must cite official documentation.
 - Every candidate must cite live package or repository metadata checked during implementation.
 - Every hard-gate pass/fail result must cite evidence.
+- Every volatile live-source evidence record must include the captured observed value, source URL, access date, lookup method/tool/path, and the gate, score, or claim it supports.
+- Bare links, uncaptured package-page observations, or unstored repository observations are not acceptable evidence for hard-gate pass/fail decisions.
+- If metadata is unavailable, stale, or conflicting, the decision document must record the attempted lookup, the missing or conflicting value, and the conservative impact instead of treating absence as pass evidence.
 - Any candidate that fails a hard gate must be excluded from final weighted ranking.
 - The recommended stack must pass every hard gate and have prototype evidence.
 - If browser automation, package metadata, or graph-rendering validation is unavailable, the document must record the fallback and impact.

@@ -299,10 +299,10 @@ Focus on SPEC-004 requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| ux | Pending | Pending | Pending |
-| performance | Pending | Pending | Pending |
-| integration | Pending | Pending | Pending |
-| reliability | Pending | Pending | Pending |
+| ux | 17 | 5 fixed; 0 remaining | `spec.md`, `plan.md`, `checklists/ux.md` |
+| performance | 23 | 0 | `spec.md`, `plan.md`, `quickstart.md`, `data-model.md`, `contracts/decision-artifacts.md`, `checklists/performance.md` |
+| integration | 24 | 14 fixed; 0 remaining | `spec.md`, `plan.md`, `checklists/integration.md` |
+| reliability | 26 | 9 fixed; 0 remaining | `spec.md`, `plan.md`, `contracts/decision-artifacts.md`, `checklists/reliability.md` |
 
 ## Phase 5: Tasks
 

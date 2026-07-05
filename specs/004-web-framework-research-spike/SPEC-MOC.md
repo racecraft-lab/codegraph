@@ -34,6 +34,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [data-model.md](data-model.md)
 - [research.md](research.md)
 - [contracts/decision-artifacts.md](contracts/decision-artifacts.md)
+- [checklists/integration.md](checklists/integration.md)
+- [checklists/performance.md](checklists/performance.md)
+- [checklists/reliability.md](checklists/reliability.md)
 - [checklists/requirements.md](checklists/requirements.md)
+- [checklists/ux.md](checklists/ux.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

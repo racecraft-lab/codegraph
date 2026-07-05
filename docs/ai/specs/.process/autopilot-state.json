@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
-  "updated_at": "2026-07-05T13:09:00-05:00",
-  "active_step": "Phase 4: Checklist - ux",
+  "updated_at": "2026-07-05T13:44:00-05:00",
+  "active_step": "Phase 5: Tasks",
   "confidence_gate_mode": "advisory",
   "archive_sweep": {
     "archive_extension_installed": false,
@@ -88,6 +88,56 @@
         "CLAUDE.md"
       ]
     },
+    "phase_4_checklist": {
+      "ux": {
+        "status": "completed",
+        "items": 17,
+        "gaps_before": 5,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/ux.md",
+          "specs/004-web-framework-research-spike/spec.md",
+          "specs/004-web-framework-research-spike/plan.md"
+        ]
+      },
+      "performance": {
+        "status": "completed",
+        "items": 23,
+        "gaps_before": 0,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/performance.md"
+        ]
+      },
+      "integration": {
+        "status": "completed",
+        "items": 24,
+        "gaps_before": 14,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/integration.md",
+          "specs/004-web-framework-research-spike/spec.md",
+          "specs/004-web-framework-research-spike/plan.md"
+        ]
+      },
+      "reliability": {
+        "status": "completed",
+        "items": 26,
+        "gaps_before": 9,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/reliability.md",
+          "specs/004-web-framework-research-spike/spec.md",
+          "specs/004-web-framework-research-spike/plan.md",
+          "specs/004-web-framework-research-spike/contracts/decision-artifacts.md"
+        ]
+      },
+      "gate_g4": "passed: 0 [Gap] markers"
+    },
     "capability_path": {
       "codebase_context": "local repository files plus RepoPrompt MCP when selected",
       "library_documentation": "web search / official docs when current facts are required",
@@ -134,39 +184,43 @@
     },
     {
       "step": "Phase 4: Checklist - ux",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - ux Consensus",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "No unresolved UX checklist items required consensus."
     },
     {
       "step": "Phase 4: Checklist - performance",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - performance Consensus",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "No unresolved performance checklist items required consensus."
     },
     {
       "step": "Phase 4: Checklist - integration",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - integration Consensus",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "No unresolved integration checklist items required consensus."
     },
     {
       "step": "Phase 4: Checklist - reliability",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - reliability Consensus",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "No unresolved reliability checklist items required consensus."
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 6: Analyze",
