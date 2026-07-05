@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
-  "updated_at": "2026-07-05T13:44:00-05:00",
-  "active_step": "Phase 5: Tasks",
+  "updated_at": "2026-07-05T13:55:26-05:00",
+  "active_step": "Phase 6: Analyze",
   "confidence_gate_mode": "advisory",
   "archive_sweep": {
     "archive_extension_installed": false,
@@ -138,12 +138,144 @@
       },
       "gate_g4": "passed: 0 [Gap] markers"
     },
+    "phase_5_tasks": {
+      "status": "completed",
+      "total_tasks": 39,
+      "phases": 6,
+      "user_stories_covered": 3,
+      "parallel_opportunities": [
+        "T010-T016",
+        "T021-T022",
+        "T032-T034"
+      ],
+      "gate_g5": "passed: 39 tasks and 0 unresolved markers",
+      "reviewability_gate": {
+        "mode": "tasks",
+        "status": "block",
+        "pass": false,
+        "evidence_path": "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json",
+        "interpretation": "Current size-only block recorded as marker-planning input; no malformed, stale, unsafe, or correctness blocker detected."
+      },
+      "atomicity_route": {
+        "route": "one-navigable-PR",
+        "releasable": true,
+        "signals": [
+          "change-shape:modify-heavy"
+        ],
+        "warnings": []
+      },
+      "layer_plan": {
+        "status": "skipped",
+        "reason": "atomicity route is one-navigable-PR, not split-PR"
+      },
+      "files": [
+        "specs/004-web-framework-research-spike/tasks.md",
+        "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json"
+      ]
+    },
     "capability_path": {
       "codebase_context": "local repository files plus RepoPrompt MCP when selected",
       "library_documentation": "web search / official docs when current facts are required",
       "web_or_domain_research": "web search available to parent; subagents receive gathered evidence or fallback notes",
       "source_extraction": "local files and command outputs"
     }
+  },
+  "pr_marker_plan": {
+    "schemaVersion": 1,
+    "status": "planned",
+    "source": "reviewability-gate tasks size-only block",
+    "evidence_path": "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json",
+    "fingerprint_status": "current",
+    "ordered_marker_ids": [
+      "m1-decision-rules",
+      "m2-current-source-research",
+      "m3-prototype-evidence",
+      "m4-downstream-handoff",
+      "m5-polish-verification"
+    ],
+    "markers": [
+      {
+        "id": "m1-decision-rules",
+        "review_order": 1,
+        "task_ids": [
+          "T001",
+          "T002",
+          "T003",
+          "T004",
+          "T005",
+          "T006",
+          "T007",
+          "T008",
+          "T009"
+        ],
+        "checkpoint": null
+      },
+      {
+        "id": "m2-current-source-research",
+        "review_order": 2,
+        "task_ids": [
+          "T010",
+          "T011",
+          "T012",
+          "T013",
+          "T014",
+          "T015",
+          "T016",
+          "T017",
+          "T018",
+          "T019",
+          "T020"
+        ],
+        "checkpoint": null
+      },
+      {
+        "id": "m3-prototype-evidence",
+        "review_order": 3,
+        "task_ids": [
+          "T021",
+          "T022",
+          "T023",
+          "T024",
+          "T025",
+          "T026",
+          "T027",
+          "T028",
+          "T029",
+          "T030",
+          "T031"
+        ],
+        "checkpoint": null
+      },
+      {
+        "id": "m4-downstream-handoff",
+        "review_order": 4,
+        "task_ids": [
+          "T032",
+          "T033",
+          "T034",
+          "T035"
+        ],
+        "checkpoint": null
+      },
+      {
+        "id": "m5-polish-verification",
+        "review_order": 5,
+        "task_ids": [
+          "T036",
+          "T037",
+          "T038",
+          "T039"
+        ],
+        "checkpoint": null
+      }
+    ],
+    "warnings": [
+      "reviewable LOC 1560 exceeds block threshold 800",
+      "total files 98 exceeds block threshold 25"
+    ],
+    "final_marker_split": null,
+    "packet_validation": null,
+    "pr_mappings": []
   },
   "extensions": {
     "doctor": "skipped: doctor extension not installed",
@@ -220,11 +352,11 @@
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 6: Analyze",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 6: Analyze - Consensus",
@@ -235,7 +367,23 @@
       "status": "pending"
     },
     {
-      "step": "Phase 7: Implement - Pending task decomposition",
+      "step": "Phase 7: Implement - Setup and decision rules (T001-T009)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - US1 framework decision (T010-T020)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - US2 prototype evidence (T021-T031)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - US3 downstream handoff (T032-T035)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - Polish and verification (T036-T039)",
       "status": "pending"
     },
     {

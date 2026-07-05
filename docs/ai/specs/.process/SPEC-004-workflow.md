@@ -25,9 +25,9 @@ Re-read it before each phase. It records the human-approved decisions from Grill
 | Specify | `$speckit-specify` | Complete | Produced `specs/004-web-framework-research-spike/spec.md` with 17 FRs, 3 stories, and 9 acceptance scenarios |
 | Clarify | `$speckit-clarify` | Complete | Skipped after G1/G2: 0 active `[NEEDS CLARIFICATION]` markers |
 | Plan | `$speckit-plan` | Complete | Created plan, research, data model, contract, quickstart, and updated managed SpecKit context |
-| Checklist | `$speckit-checklist` | In Progress | Recommended domains: ux, performance, integration, reliability |
-| Tasks | `$speckit-tasks` | Pending | Keep tasks docs/process-first; no production web code |
-| Analyze | `$speckit-analyze` | Pending | Check drift against the design concept and roadmap |
+| Checklist | `$speckit-checklist` | Complete | Completed ux, performance, integration, and reliability checklists with 0 remaining gaps |
+| Tasks | `$speckit-tasks` | Complete | Generated 39 ordered docs/process spike tasks with concrete Phase 7 task groups |
+| Analyze | `$speckit-analyze` | In Progress | Check drift against the design concept and roadmap |
 | Implement | `$speckit-implement` | Pending | Produce the decision doc, screenshot assets, and UAT evidence |
 
 ## Prerequisites
@@ -336,10 +336,20 @@ Reference `spec.md`, `plan.md`, and `docs/ai/specs/.process/SPEC-004-design-conc
 
 | Metric | Value |
 |--------|-------|
-| Total Tasks | Pending |
-| Phases | Pending |
-| Parallel Opportunities | Pending |
-| User Stories Covered | Pending |
+| Total Tasks | 39 |
+| Phases | 6 |
+| Parallel Opportunities | T010-T016, T021-T022, T032-T034 |
+| User Stories Covered | 3 |
+
+### Tasks Reviewability Gate
+
+| Field | Value |
+|-------|-------|
+| Mode | tasks |
+| Status | block; pass false |
+| Evidence | `specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json` |
+| Interpretation | Current size-only block recorded as marker-planning input; no malformed, stale, unsafe, or correctness blocker detected. |
+| Marker plan | Five review markers: decision rules, current-source research, prototype evidence, downstream handoff, polish/verification. |
 
 ## Atomicity Route
 
@@ -353,10 +363,14 @@ Record the emitted decision here:
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| Route | Pending | Expected: one navigable PR or single atomic PR for the research spike |
-| Releasable | Pending | Expected: true because this is docs/process and screenshot evidence |
-| Signals | Pending | Detector findings |
-| Warnings | Pending | Release-safety warnings |
+| Route | one-navigable-PR | Single reviewable PR with ordered marker sections |
+| Releasable | true | Docs/process spike with durable decision doc and screenshot evidence |
+| Signals | change-shape:modify-heavy | Detector findings |
+| Warnings | none | No release-safety warnings |
+
+## Layer Plan
+
+Skipped. The atomicity route is `one-navigable-PR`, not `split-PR`; review ordering will be handled through the PR marker plan recorded from the tasks reviewability gate.
 
 ## Phase 6: Analyze
 
