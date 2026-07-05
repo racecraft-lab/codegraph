@@ -766,15 +766,21 @@ level, which is how the entire existing suite runs.)
 
 ### What Worked Well
 
--
+- Clarify-by-consensus caught two real design forks early (no-FK per-symbol vector survival; 401/403 fast-abort) that the original prompts had settled the other way — both survived implementation and live UAT unchanged.
+- Emergent-invariant testing (write the pin, expect green, falsifiability-probe it) proved the resilience layer needed zero new production code — abort/resume genuinely falls out of missing/stale re-selection.
+- Dogfooding as the final UAT tier: the repo indexed and fully embedded itself (worktree 3,569/3,569; main checkout 3,398/3,398 after an additive v7→v8 migration under a live released-binary daemon) — the multi-minute lock-hold, heal, watcher-freshness, and endpoint-outage paths were all exercised on real scale before merge. Now codified as the roadmap's Dogfooding Protocol, binding for every future spec.
 
 ### Challenges Encountered
 
--
+- Output-pipeline truncation (`cmd | tail`) twice masked real signals: a vitest failure count and a rebase conflict. Rule adopted: capture to a file and check the tool's own exit code, never a pipe tail's.
+- The tasks reviewability gate and the atomicity classifier disagreed (size-block vs single-atomic-PR); reconciled via a 2-marker stacked emission (M1→PR #16, M2→PR #17) honoring the hard-atomic schema-version pin.
+- PR #16's squash-merge orphaned the stacked branch history; recovered with a tree-identity-verified `merge -X ours` (byte-identical result, no force-push) after an aborted rebase attempt.
 
 ### Patterns to Reuse
 
--
+- Stacked marker PRs for over-budget features with a hard-atomic seam: freeze slice A at its checkpoint commit, land every follow-up on the stacked head, and resolve slice-A review findings there.
+- The reviewability packet's editable-region + protected-fingerprint discipline held through UAT check-offs and body refreshes — recompute the fingerprint and re-validate rather than bypassing.
+- SHOULD-level hardenings (lock-freshness refresh, plaintext-remote warning) as the conservative middle between "accepted limitation" and new mandatory machinery — both fired correctly in live UAT.
 
 ---
 

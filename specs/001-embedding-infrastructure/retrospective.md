@@ -248,3 +248,15 @@ validation, FR-031 lock-hold bounding) — not new, unspecified capability.
 - Constitution review: **PASS** — all seven principles independently re-verified (not just plan.md's self-report); no violations.
 - Human Gate readiness: **N/A** — no spec changes are proposed, so no gate is triggered.
 - Actionability: **PASS** — three recommendations above are specific and tied to concrete findings.
+
+## Addendum — Live dogfood validation (2026-07-05, post-retrospective)
+
+After this report was written, the full UAT runbook was executed twice more against real
+infrastructure (a headless LM Studio endpoint serving nomic-embed-code, 3584 dims): once
+per stacked PR head, all story and negative-path checkboxes passing (mid-pass outage via
+proxy-kill, SIGINT recovery, model-switch re-inference to 768 dims, credential byte-scan
+clean). The repository then dogfooded itself: the feature worktree embedded 3,569/3,569
+declaration symbols and the main checkout's live index migrated v7→v8 additively and
+backfilled 3,398/3,398 — while the released-binary MCP daemon kept serving it. The
+process is now codified as the roadmap's binding Dogfooding Protocol for every future
+spec.
