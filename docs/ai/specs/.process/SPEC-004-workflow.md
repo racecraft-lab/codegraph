@@ -30,6 +30,23 @@ Re-read it before each phase. It records the human-approved decisions from Grill
 | Analyze | `$speckit-analyze` | Complete | Found and fixed three documentation drift issues before implementation |
 | Implement | `$speckit-implement` | Complete | Produced the decision doc, screenshot assets, and UAT evidence |
 
+## Post-Merge Archive Status
+
+PR #19 (`feat(speckit-pro): Add web framework research spike`) merged on
+2026-07-05T21:19:23Z at `0366d3cef02a36fc1e2d95e8928390cdfbdc7484`.
+
+Post-merge archive cleanup removed the active spec directory
+`specs/004-web-framework-research-spike/` and preserved this workflow ledger plus
+`docs/ai/specs/.process/SPEC-004-design-concept.md` as historical process
+evidence. The canonical shipped artifacts are:
+
+- `docs/design/web-framework-decision.md`
+- `docs/design/assets/spec-004/self-repo-graph.png`
+- `docs/design/assets/spec-004/one-k-node-target.png`
+
+Detailed recovery commands are recorded in
+`.specify/memory/archive-reports/2026-07-05-SPEC-004.md`.
+
 ## Prerequisites
 
 ### Constitution Validation

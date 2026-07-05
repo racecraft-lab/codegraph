@@ -98,8 +98,8 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-001 | Embedding Infrastructure & Endpoint Provider | ✅ Complete | [SPEC-001-workflow.md](.process/SPEC-001-workflow.md) | Merged (#16, #17) |
 | SPEC-002 | Bundled Local Embedding Fallback | ⏳ Pending | [SPEC-002-workflow.md](SPEC-002-workflow.md) | Ready (SPEC-001 complete) |
 | SPEC-003 | Hybrid Semantic Search | ⏳ Pending | [SPEC-003-workflow.md](SPEC-003-workflow.md) | Ready (SPEC-001 complete) |
-| SPEC-004 | Web Framework Research Spike | 🔄 Under Review | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | PR #19 open from `004-web-framework-research-spike` |
-| SPEC-005 | Local HTTP Server & REST API | ⏳ Pending | [SPEC-005-workflow.md](SPEC-005-workflow.md) | Blocked by SPEC-004 |
+| SPEC-004 | Web Framework Research Spike | ✅ Complete | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Merged (#19); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-004.md` |
+| SPEC-005 | Local HTTP Server & REST API | ⏳ Pending | [SPEC-005-workflow.md](SPEC-005-workflow.md) | Ready (SPEC-004 complete; see `docs/design/web-framework-decision.md`) |
 | SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Blocked by SPEC-005 |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
 | SPEC-008 | LSP Client Integration | ⏳ Pending | [SPEC-008-workflow.md](SPEC-008-workflow.md) | Specify (parallel-safe) |
@@ -243,6 +243,10 @@ Budget result: within budget (spike)
 
 **Key Files:**
 - `docs/design/web-framework-decision.md` — scored matrix + recommendation + shipping strategy
+
+**Completion:** Merged in PR #19 (`0366d3c`) and archived on 2026-07-05. The active
+spec folder was removed after the decision document, screenshots, workflow ledger,
+and archive report became the durable record.
 
 ---
 
