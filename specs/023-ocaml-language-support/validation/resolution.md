@@ -8,7 +8,7 @@ npx vitest run __tests__/ocaml-resolution.test.ts
 
 ## Result
 
-Passed: 1 test file, 2 tests.
+Passed: 1 test file, 4 tests.
 
 ## Positive Evidence
 
@@ -19,7 +19,10 @@ Passed: 1 test file, 2 tests.
   argument module without functor result elaboration.
 - `Foo.run ()` resolves to the implementation body when a paired interface also
   declares the public function.
-- Checked-in Dune/opam metadata is discovered for local boundary context.
+- `Foo.(run ())` records and resolves the local-open module relationship.
+- Checked-in root `dune-project`, root `dune`, root `*.opam`, and `opam/*.opam`
+  metadata are discovered for local boundary context even though they are not
+  indexed as OCaml source files.
 
 ## Negative Evidence
 
@@ -28,3 +31,7 @@ Passed: 1 test file, 2 tests.
 - `Yojson.Safe` package-looking references produce no local edge when no unique
   local candidate exists.
 - No package nodes or external package edges are created.
+- Implementation-only symbols hidden by a paired `.mli` are not resolved from
+  external consumers.
+- Functor body references such as `X.build` do not elaborate result members or
+  type-equality relationships.

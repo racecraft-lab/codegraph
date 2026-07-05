@@ -87,20 +87,38 @@ describe('OCaml language support', () => {
       expect.objectContaining({ kind: 'function', language: 'ocaml', name: 'map', isExported: true }),
       expect.objectContaining({ kind: 'function', language: 'ocaml', name: 'now', isExported: true }),
       expect.objectContaining({ kind: 'parameter', language: 'ocaml', name: 'default' }),
-      expect.objectContaining({ kind: 'struct', language: 'ocaml', name: 'person' }),
-      expect.objectContaining({ kind: 'field', language: 'ocaml', name: 'count' }),
-      expect.objectContaining({ kind: 'enum', language: 'ocaml', name: 'color' }),
-      expect.objectContaining({ kind: 'enum_member', language: 'ocaml', name: 'Blue' }),
-      expect.objectContaining({ kind: 'enum', language: 'ocaml', name: 'expr' }),
-      expect.objectContaining({ kind: 'enum_member', language: 'ocaml', name: 'Int' }),
-      expect.objectContaining({ kind: 'enum', language: 'ocaml', name: 'poly' }),
-      expect.objectContaining({ kind: 'enum_member', language: 'ocaml', name: '`B' }),
-      expect.objectContaining({ kind: 'module', language: 'ocaml', name: 'M' }),
-      expect.objectContaining({ kind: 'interface', language: 'ocaml', name: 'S' }),
-      expect.objectContaining({ kind: 'interface', language: 'ocaml', name: 'counter_like' }),
-      expect.objectContaining({ kind: 'class', language: 'ocaml', name: 'counter' }),
-      expect.objectContaining({ kind: 'method', language: 'ocaml', name: 'inc' }),
+      expect.objectContaining({ kind: 'struct', language: 'ocaml', name: 'person', isExported: true }),
+      expect.objectContaining({ kind: 'field', language: 'ocaml', name: 'count', isExported: true }),
+      expect.objectContaining({ kind: 'enum', language: 'ocaml', name: 'color', isExported: true }),
+      expect.objectContaining({ kind: 'enum_member', language: 'ocaml', name: 'Blue', isExported: true }),
+      expect.objectContaining({ kind: 'enum', language: 'ocaml', name: 'expr', isExported: true }),
+      expect.objectContaining({ kind: 'enum_member', language: 'ocaml', name: 'Int', isExported: true }),
+      expect.objectContaining({ kind: 'enum', language: 'ocaml', name: 'poly', isExported: true }),
+      expect.objectContaining({ kind: 'enum_member', language: 'ocaml', name: '`B', isExported: true }),
+      expect.objectContaining({ kind: 'module', language: 'ocaml', name: 'M', isExported: true }),
+      expect.objectContaining({ kind: 'interface', language: 'ocaml', name: 'S', isExported: true }),
+      expect.objectContaining({ kind: 'interface', language: 'ocaml', name: 'counter_like', isExported: true }),
+      expect.objectContaining({ kind: 'class', language: 'ocaml', name: 'counter', isExported: true }),
+      expect.objectContaining({ kind: 'method', language: 'ocaml', name: 'inc', isExported: true }),
     ]));
+  });
+
+  it('keeps references inside anonymous and pattern-only let bindings', () => {
+    const code = `module Foo = struct
+  let run () = ()
+  let make () = (1, 2)
+end
+
+let named () = Foo.run ()
+let _ = Foo.run ()
+let (x, y) = Foo.make ()
+`;
+    const result = extractFromSource('src/sample.ml', code);
+    const refNames = result.unresolvedReferences.map((ref) => ref.referenceName);
+
+    expect(result.errors).toEqual([]);
+    expect(refNames.filter((name) => name === 'Foo.run')).toHaveLength(2);
+    expect(refNames).toContain('Foo.make');
   });
 
   it('records conservative module references for open, include, and functor applications', () => {

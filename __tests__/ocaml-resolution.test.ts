@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CodeGraph } from '../src';
-import { isIgnoredOcamlPath } from '../src/resolution/ocaml-workspace';
+import { isIgnoredOcamlPath, loadOcamlWorkspace } from '../src/resolution/ocaml-workspace';
+import type { ResolutionContext } from '../src/resolution/types';
 import type { Node } from '../src/types';
 
 const RESOLUTION_FIXTURES = path.resolve(__dirname, 'fixtures/ocaml/resolution');
@@ -44,11 +45,13 @@ describe('OCaml conservative resolution', () => {
     const built = findNode(graph, 'module', 'Built', 'consumer.ml');
     const use = findNode(graph, 'function', 'use', 'consumer.ml');
     const leak = findNode(graph, 'function', 'leak', 'consumer.ml');
+    const localOpen = findNode(graph, 'function', 'local_open', 'consumer.ml');
     const fooInterface = findNode(graph, 'module', 'Foo', 'foo.mli');
     const commonSignature = findNode(graph, 'interface', 'S', 'common.mli');
     const makeFunctor = findNode(graph, 'module', 'Make', 'functors.ml');
     const runImplementation = findNode(graph, 'function', 'run', 'foo.ml');
     const hiddenImplementation = findNode(graph, 'function', 'hidden', 'foo.ml');
+    const buildSignature = findNode(graph, 'function', 'build', 'common.mli');
 
     expect(graph.getOutgoingEdges(consumer.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'imports', target: fooInterface.id }),
@@ -61,7 +64,11 @@ describe('OCaml conservative resolution', () => {
     expect(graph.getOutgoingEdges(use.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'calls', target: runImplementation.id }),
     ]));
+    expect(graph.getOutgoingEdges(localOpen.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'imports', target: fooInterface.id }),
+    ]));
     expect(graph.getOutgoingEdges(leak.id).some((edge) => edge.target === hiddenImplementation.id)).toBe(false);
+    expect(graph.getOutgoingEdges(makeFunctor.id).some((edge) => edge.target === buildSignature.id)).toBe(false);
   });
 
   it('does not guess across duplicate modules or external package-looking paths', async () => {
@@ -90,5 +97,34 @@ describe('OCaml conservative resolution', () => {
     expect(isIgnoredOcamlPath('opam.locked')).toBe(true);
     expect(isIgnoredOcamlPath('nested/opam.locked')).toBe(true);
     expect(isIgnoredOcamlPath('nested/opam.locked/package.opam')).toBe(true);
+  });
+
+  it('discovers checked-in dune and opam metadata outside indexed source files', () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-ocaml-workspace-'));
+    fs.cpSync(path.join(RESOLUTION_FIXTURES, 'workspace'), tempDir, { recursive: true });
+
+    const context = {
+      getProjectRoot: () => tempDir!,
+      getAllFiles: () => [],
+      fileExists: (filePath: string) => fs.existsSync(path.join(tempDir!, filePath)),
+      readFile: (filePath: string) => {
+        try {
+          return fs.readFileSync(path.join(tempDir!, filePath), 'utf-8');
+        } catch {
+          return null;
+        }
+      },
+    } as unknown as ResolutionContext;
+
+    const workspace = loadOcamlWorkspace(context);
+
+    expect(workspace.metadataPaths).toEqual(expect.arrayContaining([
+      'demo.opam',
+      'dune',
+      'dune-project',
+      'opam/extra.opam',
+    ]));
+    expect([...workspace.localPackageNames]).toContain('demo');
+    expect([...workspace.localPackageNames]).toContain('extra');
   });
 });

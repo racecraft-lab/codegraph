@@ -13,8 +13,8 @@ npm test
 
 - `npm run typecheck`: passed.
 - `npm run build`: passed.
-- OCaml targeted suite: passed, 5 test files, 11 tests.
-- `npm test`: passed, 137 test files, 2234 tests passed, 4 skipped.
+- OCaml targeted suite: passed, 5 test files, 14 tests.
+- `npm test`: passed, 137 test files, 2237 tests passed, 4 skipped.
 
 ## Existing-Language A/B Control
 

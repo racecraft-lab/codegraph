@@ -17,8 +17,8 @@ agent A/B gates remain blocked by the missing local `claude` CLI.
 | Dune smoke/probes/A/B gate | `dune-smoke.md`, `dune-probes.md`, `dune-ab-gate.md` | Smoke/probes complete; A/B follow-up gate recorded |
 | Self-repo retrieval smoke | `self-repo-smoke.md` | Complete |
 | Existing-language controls | `existing-language-controls.md`, `existing-language-ab-gate.md` | Test controls complete; A/B blocked |
-| Quickstart run and marker scan | `quickstart-run.md` | Partial; marker scan clean |
-| PR packet traceability | `pr-packet-traceability.md` | In progress |
+| Quickstart run and marker scan | `quickstart-run.md` | Complete with recorded follow-up gate |
+| PR packet traceability | `pr-packet-traceability.md` | Complete |
 
 ## Smoke/Probe Fields
 

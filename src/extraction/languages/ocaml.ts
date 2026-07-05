@@ -95,6 +95,10 @@ function createNode(
   });
 }
 
+function isInterfaceFile(ctx: ExtractorContext): boolean {
+  return ctx.filePath.endsWith('.mli');
+}
+
 function createParameters(parent: SyntaxNode, ctx: ExtractorContext): void {
   for (let i = 0; i < parent.namedChildCount; i++) {
     const child = parent.namedChild(i);
@@ -193,7 +197,9 @@ function handleCompilationUnit(node: SyntaxNode, ctx: ExtractorContext): boolean
 
 function handleModuleDefinition(node: SyntaxNode, ctx: ExtractorContext): boolean {
   const binding = firstChildOfType(node, 'module_binding') ?? node;
-  const created = createNode(ctx, 'module', bindingName(binding, ctx.source), node);
+  const created = createNode(ctx, 'module', bindingName(binding, ctx.source), node, {
+    isExported: isInterfaceFile(ctx),
+  });
   if (!created) return true;
 
   ctx.pushScope(created.id);
@@ -208,7 +214,9 @@ function handleModuleDefinition(node: SyntaxNode, ctx: ExtractorContext): boolea
 }
 
 function handleModuleTypeDefinition(node: SyntaxNode, ctx: ExtractorContext): boolean {
-  const created = createNode(ctx, 'interface', bindingName(node, ctx.source), node);
+  const created = createNode(ctx, 'interface', bindingName(node, ctx.source), node, {
+    isExported: isInterfaceFile(ctx),
+  });
   if (!created) return true;
   ctx.pushScope(created.id);
   visitNonNameChildren(node, ctx);
@@ -218,7 +226,9 @@ function handleModuleTypeDefinition(node: SyntaxNode, ctx: ExtractorContext): bo
 
 function handleClassDefinition(node: SyntaxNode, ctx: ExtractorContext): boolean {
   const binding = firstChildOfType(node, 'class_binding') ?? node;
-  const created = createNode(ctx, 'class', bindingName(binding, ctx.source), node);
+  const created = createNode(ctx, 'class', bindingName(binding, ctx.source), node, {
+    isExported: isInterfaceFile(ctx),
+  });
   if (!created) return true;
   ctx.pushScope(created.id);
   visitNonNameChildren(binding, ctx);
@@ -229,7 +239,7 @@ function handleClassDefinition(node: SyntaxNode, ctx: ExtractorContext): boolean
 function handleClassTypeDefinition(node: SyntaxNode, ctx: ExtractorContext): boolean {
   const binding = firstChildOfType(node, 'class_type_binding') ?? node;
   const created = createNode(ctx, 'interface', bindingName(binding, ctx.source), node, {
-    isExported: ctx.filePath.endsWith('.mli'),
+    isExported: isInterfaceFile(ctx),
   });
   if (!created) return true;
   ctx.pushScope(created.id);
@@ -242,7 +252,10 @@ function handleValueDefinition(node: SyntaxNode, ctx: ExtractorContext): boolean
   const bindings = node.namedChildren.filter((child) => child.type === 'let_binding');
   for (const binding of bindings.length > 0 ? bindings : [node]) {
     const name = bindingName(binding, ctx.source);
-    if (!name) continue;
+    if (!name) {
+      visitNonNameChildren(binding, ctx);
+      continue;
+    }
     const isFunction =
       hasDirectChild(binding, 'parameter') ||
       firstChildOfType(binding, 'function') !== null ||
@@ -290,39 +303,42 @@ function handleTypeDefinition(node: SyntaxNode, ctx: ExtractorContext): boolean 
     const record = firstChildOfType(binding, 'record_declaration');
     const variant = firstChildOfType(binding, 'variant_declaration');
     const polymorphicVariant = firstChildOfType(binding, 'polymorphic_variant_type');
+    const exported = isInterfaceFile(ctx);
     if (record) {
-      const created = createNode(ctx, 'struct', name, binding);
+      const created = createNode(ctx, 'struct', name, binding, { isExported: exported });
       if (!created) continue;
       ctx.pushScope(created.id);
       for (const field of descendantsOfType(record, 'field_declaration')) {
-        createNode(ctx, 'field', bindingName(field, ctx.source), field);
+        createNode(ctx, 'field', bindingName(field, ctx.source), field, { isExported: exported });
       }
       ctx.popScope();
     } else if (variant) {
-      const created = createNode(ctx, 'enum', name, binding);
+      const created = createNode(ctx, 'enum', name, binding, { isExported: exported });
       if (!created) continue;
       ctx.pushScope(created.id);
       for (const ctor of descendantsOfType(variant, 'constructor_declaration')) {
-        createNode(ctx, 'enum_member', bindingName(ctor, ctx.source), ctor);
+        createNode(ctx, 'enum_member', bindingName(ctor, ctx.source), ctor, { isExported: exported });
       }
       ctx.popScope();
     } else if (polymorphicVariant) {
-      const created = createNode(ctx, 'enum', name, binding);
+      const created = createNode(ctx, 'enum', name, binding, { isExported: exported });
       if (!created) continue;
       ctx.pushScope(created.id);
       for (const tag of descendantsOfType(polymorphicVariant, 'tag')) {
-        createNode(ctx, 'enum_member', text(tag, ctx.source), tag);
+        createNode(ctx, 'enum_member', text(tag, ctx.source), tag, { isExported: exported });
       }
       ctx.popScope();
     } else {
-      createNode(ctx, 'type_alias', name, binding);
+      createNode(ctx, 'type_alias', name, binding, { isExported: exported });
     }
   }
   return true;
 }
 
 function handleMethod(node: SyntaxNode, ctx: ExtractorContext): boolean {
-  const created = createNode(ctx, 'method', bindingName(node, ctx.source), node);
+  const created = createNode(ctx, 'method', bindingName(node, ctx.source), node, {
+    isExported: isInterfaceFile(ctx),
+  });
   if (!created) return true;
   ctx.pushScope(created.id);
   createParameters(node, ctx);
@@ -332,7 +348,9 @@ function handleMethod(node: SyntaxNode, ctx: ExtractorContext): boolean {
 }
 
 function handleField(node: SyntaxNode, ctx: ExtractorContext): boolean {
-  createNode(ctx, 'field', bindingName(node, ctx.source), node);
+  createNode(ctx, 'field', bindingName(node, ctx.source), node, {
+    isExported: isInterfaceFile(ctx),
+  });
   return true;
 }
 
@@ -386,6 +404,10 @@ export const ocamlExtractor: LanguageExtractor = {
         return true;
       case 'module_application':
         addModuleReferences(node, ctx, 'references');
+        visitNonNameChildren(node, ctx);
+        return true;
+      case 'local_open_expression':
+        addModuleReference(node, ctx, 'imports');
         visitNonNameChildren(node, ctx);
         return true;
       case 'package_expression':

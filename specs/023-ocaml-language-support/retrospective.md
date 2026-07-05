@@ -78,7 +78,7 @@ or acceptance-criteria rewrite is proposed by this retrospective.
 
 | Criterion | Result | Notes |
 |-----------|--------|-------|
-| SC-001 | Pass | Targeted OCaml suite passed: 5 files, 11 tests. |
+| SC-001 | Pass | Targeted OCaml suite passed: 5 files, 14 tests. |
 | SC-002 | Pass | Yojson, OCaml-LSP, and Dune smoke records are complete with repeated stability. |
 | SC-003 | Partial | Dune deterministic smoke/probes passed, but large-repo Dune A/B is still an explicit follow-up gate. |
 | SC-004 | Pass | Negative resolution and PPX policy tests cover no speculative edge behavior. |

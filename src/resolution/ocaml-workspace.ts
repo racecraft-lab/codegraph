@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import type { ResolutionContext } from './types';
 
 export interface OcamlWorkspace {
@@ -7,6 +9,10 @@ export interface OcamlWorkspace {
 }
 
 const workspaceCache = new WeakMap<ResolutionContext, OcamlWorkspace>();
+
+function normalizePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+}
 
 export function isIgnoredOcamlPath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, '/');
@@ -35,6 +41,56 @@ export function sourceUnitKey(filePath: string): string | null {
   return filePath.replace(/\\/g, '/').replace(/\.mli?$/i, '').toLowerCase();
 }
 
+function isOcamlMetadataPath(filePath: string): boolean {
+  const normalized = normalizePath(filePath);
+  const base = normalized.split('/').pop() ?? '';
+  return (
+    base === 'dune-project' ||
+    base === 'dune' ||
+    /^[^/]+\.opam$/i.test(normalized) ||
+    /^opam\/[^/]+\.opam$/i.test(normalized)
+  );
+}
+
+function parentDirectory(filePath: string): string {
+  const normalized = normalizePath(filePath);
+  const slash = normalized.lastIndexOf('/');
+  return slash < 0 ? '.' : normalized.slice(0, slash);
+}
+
+function joinRelative(dir: string, fileName: string): string {
+  return dir === '.' ? fileName : `${dir}/${fileName}`;
+}
+
+function readProjectDir(context: ResolutionContext, relativeDir: string): string[] {
+  const root = path.resolve(context.getProjectRoot());
+  const target = path.resolve(root, relativeDir);
+  if (target !== root && !target.startsWith(root + path.sep)) return [];
+
+  try {
+    return fs
+      .readdirSync(target, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => joinRelative(relativeDir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+function collectCandidateMetadataPaths(context: ResolutionContext, sourceDirs: Set<string>): Set<string> {
+  const candidates = new Set<string>(['dune-project']);
+  for (const dir of sourceDirs) candidates.add(joinRelative(dir, 'dune'));
+
+  for (const filePath of readProjectDir(context, '.')) {
+    if (/^[^/]+\.opam$/i.test(filePath)) candidates.add(filePath);
+  }
+  for (const filePath of readProjectDir(context, 'opam')) {
+    if (/^opam\/[^/]+\.opam$/i.test(filePath)) candidates.add(filePath);
+  }
+
+  return candidates;
+}
+
 export function loadOcamlWorkspace(context: ResolutionContext): OcamlWorkspace {
   const cached = workspaceCache.get(context);
   if (cached) return cached;
@@ -42,27 +98,32 @@ export function loadOcamlWorkspace(context: ResolutionContext): OcamlWorkspace {
   const metadataPaths: string[] = [];
   const interfaceUnitKeys = new Set<string>();
   const localPackageNames = new Set<string>();
+  const sourceDirs = new Set<string>(['.']);
+  const seenMetadataPaths = new Set<string>();
 
   for (const filePath of context.getAllFiles()) {
-    const normalized = filePath.replace(/\\/g, '/');
+    const normalized = normalizePath(filePath);
     if (isIgnoredOcamlPath(normalized)) continue;
     const unitKey = sourceUnitKey(normalized);
-    if (unitKey && normalized.endsWith('.mli')) interfaceUnitKeys.add(unitKey);
+    if (unitKey) {
+      sourceDirs.add(parentDirectory(normalized));
+      if (normalized.endsWith('.mli')) interfaceUnitKeys.add(unitKey);
+    }
+    if (isOcamlMetadataPath(normalized)) seenMetadataPaths.add(normalized);
+  }
 
+  for (const candidate of collectCandidateMetadataPaths(context, sourceDirs)) {
+    if (isIgnoredOcamlPath(candidate)) continue;
+    if (context.fileExists(candidate)) seenMetadataPaths.add(candidate);
+  }
+
+  for (const metadataPath of seenMetadataPaths) {
+    const normalized = normalizePath(metadataPath);
+    if (isIgnoredOcamlPath(normalized) || !isOcamlMetadataPath(normalized)) continue;
     const base = normalized.split('/').pop() ?? '';
-    const isRootOpam = /^[^/]+\.opam$/i.test(normalized);
-    const isOpamDirPackage = /^opam\/[^/]+\.opam$/i.test(normalized);
-    const isMetadata =
-      base === 'dune-project' ||
-      base === 'dune' ||
-      isRootOpam ||
-      isOpamDirPackage;
-    if (!isMetadata) continue;
 
     metadataPaths.push(normalized);
-    if (base.endsWith('.opam')) {
-      localPackageNames.add(base.replace(/\.opam$/i, '').toLowerCase());
-    }
+    if (base.endsWith('.opam')) localPackageNames.add(base.replace(/\.opam$/i, '').toLowerCase());
 
     const content = context.readFile(normalized);
     if (!content) continue;
