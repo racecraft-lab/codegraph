@@ -37,7 +37,7 @@ Use the UAT runbook below for reviewer-facing acceptance checks. Treat installed
 
 # SPEC-004 UAT Runbook
 
-Status: Completed SPEC-004 UAT runbook with prototype, screenshot, verification, and final result evidence.
+Status: Completed SPEC-004 UAT runbook with prototype, screenshot, verification, and final result evidence. Manual UAT was rerun on 2026-07-05.
 
 ## Purpose
 
@@ -111,17 +111,17 @@ Expected result: No hosted runtime service is required. If any hosted runtime de
 
 ## Result Log
 
-Completed during SPEC-004 tasks.
+Completed during SPEC-004 tasks and rerun on 2026-07-05.
 
 | Check | Command or method | Outcome | Evidence path or note |
 |-------|-------------------|---------|------------------------|
 | Build | `npm run build` | Pass | Build exited 0. |
 | Test | `npm test` | Pass | 132 test files, 2,223 tests passed, 4 skipped. |
-| Self-repo data export | `codegraph init -i .` under Node 22.22.2, then `/tmp/spec-004-web-framework-research/export-codegraph-data.mjs` | Pass | Worktree-local index: 404 files, 5,830 nodes, 23,848 edges. Self dataset: 220 nodes, 223 edges. |
-| Prototype local run | `/tmp/spec-004-web-framework-research/prototype`, `npm install`, `npm run build`, `npm run dev -- --port 4174` | Pass | Vite + React + Cytoscape.js prototype built and served locally. |
-| Self-repo screenshot or fallback | `node capture-screenshots.mjs` with local Playwright Chromium | Pass | `docs/design/assets/spec-004/self-repo-graph.png`; 1440x960; first render 353 ms; 118 rAF ticks/sec. |
-| 1k-node screenshot or fallback | `node capture-screenshots.mjs` with local Playwright Chromium | Pass | `docs/design/assets/spec-004/one-k-node-target.png`; 1440x960; first render 139 ms; 102 rAF ticks/sec. |
-| No hosted runtime service | Prototype network path inspected by construction: local Vite server + local `/data/*.json` only | Pass | Implementation-time package/doc access used network; selected runtime path did not require hosted services or CDN assets. |
+| Self-repo data export | `node dist/bin/codegraph.js index` under Node 22.22.2, then `/tmp/spec-004-web-framework-research/export-codegraph-data.mjs` | Pass | Worktree-local index: 404 files, 5,830 nodes, 23,848 edges in 2.4s. Self dataset: 220 nodes, 223 edges. |
+| Prototype local run | `/tmp/spec-004-web-framework-research/prototype`, `npm install`, `npm install -D playwright`, `npx playwright install chromium`, `npm run build`, `npm run dev -- --port 4174` | Pass | Vite + React + Cytoscape.js prototype built and served locally. |
+| Self-repo screenshot or fallback | `node capture-screenshots.mjs` with local Playwright Chromium | Pass | `docs/design/assets/spec-004/self-repo-graph.png`; 1440x960; first render 353 ms; 117 rAF ticks/sec. |
+| 1k-node screenshot or fallback | `node capture-screenshots.mjs` with local Playwright Chromium | Pass | `docs/design/assets/spec-004/one-k-node-target.png`; 1440x960; first render 145 ms; 102 rAF ticks/sec. |
+| No hosted runtime service | Playwright request audit against local Vite server and `/data/*.json` files | Pass | 12 browser requests, 0 non-local requests. Implementation-time package/doc access used network; selected runtime path did not require hosted services or CDN assets. |
 | Final UAT result | Review decision doc, screenshots, and verification floor | Pass with limitation | Limitation: production large-graph UX, accessibility, search/filter/details polish, and WebGL runner-up validation remain SPEC-006 work. |
 ## Verification
 

@@ -212,6 +212,7 @@ Commands run:
 
 ```bash
 node dist/bin/codegraph.js init -i .
+node dist/bin/codegraph.js index
 node /tmp/spec-004-web-framework-research/export-codegraph-data.mjs .codegraph/codegraph.db /tmp/spec-004-web-framework-research/data
 cd /tmp/spec-004-web-framework-research/prototype
 npm install
@@ -228,14 +229,15 @@ Observed local results:
 
 | Evidence | Result |
 |----------|--------|
-| Worktree-local CodeGraph index | `codegraph init -i .` under Node 22.22.2 indexed 404 files, 5,830 nodes, and 23,848 edges in 2.3s. |
+| Worktree-local CodeGraph index | Existing initialized worktree confirmed with `codegraph init -i .`; `codegraph index` under Node 22.22.2 refreshed 404 files, 5,830 nodes, and 23,848 edges in 2.4s. |
 | Self-repo dataset | `/tmp/spec-004-web-framework-research/data/self-repo-graph.json`, 220 nodes and 223 edges, selected from `src/` file/class/interface/function/method/route/component nodes. |
 | 1k target dataset | `/tmp/spec-004-web-framework-research/data/one-k-node-target.json`, 1,000 nodes and 2,500 edges from the worktree-local CodeGraph index. |
-| Prototype install | `npm install` added 20 packages with 0 vulnerabilities; Playwright was installed as a temporary dev dependency for browser capture only. |
+| Prototype install | `npm install` and `npm install -D playwright` completed with 0 vulnerabilities; Playwright was a temporary dev dependency for browser capture only. |
 | Prototype build | `npm run build` passed; Vite reported `dist/index.html` 0.41 kB, CSS 1.39 kB gzip 0.64 kB, JS 630.81 kB gzip 199.44 kB, with the expected 500 kB chunk-size advisory. |
-| Screenshot capture | Local Playwright Chromium capture at 1440x960. The bundled REPL Playwright package existed but had no cached Chromium binary, so the run used temporary prototype-local Playwright after `npx playwright install chromium`. |
-| Self-repo render | First visible render 353 ms; frame signal 118 `requestAnimationFrame` ticks/sec. |
-| 1k target render | First visible render 139 ms; frame signal 102 `requestAnimationFrame` ticks/sec. |
+| Screenshot capture | Local Playwright Chromium capture at 1440x960 using temporary prototype-local Playwright after `npx playwright install chromium`. |
+| Self-repo render | First visible render 353 ms; frame signal 117 `requestAnimationFrame` ticks/sec. |
+| 1k target render | First visible render 145 ms; frame signal 102 `requestAnimationFrame` ticks/sec. |
+| Browser interaction and network audit | Playwright switched to the 1k dataset, zoomed the canvas, selected a node (`goframe-synthesizer.ts`), and recorded 12 browser requests with 0 non-local requests. |
 
 Prototype interaction observations:
 
@@ -299,7 +301,7 @@ Captured assets:
 
 | Asset | Caption |
 |-------|---------|
-| `docs/design/assets/spec-004/self-repo-graph.png` | Self-repo CodeGraph subset, 220 nodes and 223 edges, captured by local Playwright Chromium at 1440x960. Visible labels include parser/extractor, CLI, and target-related source nodes. Primary controls show dataset switcher, pan/zoom graph canvas, selected-node panel, and metrics. Frame signal: 118 rAF ticks/sec. |
+| `docs/design/assets/spec-004/self-repo-graph.png` | Self-repo CodeGraph subset, 220 nodes and 223 edges, captured by local Playwright Chromium at 1440x960. Visible labels include parser/extractor, CLI, and target-related source nodes. Primary controls show dataset switcher, pan/zoom graph canvas, selected-node panel, and metrics. Frame signal: 117 rAF ticks/sec. |
 | `docs/design/assets/spec-004/one-k-node-target.png` | 1k-node/60fps target, 1,000 nodes and 2,500 edges, captured by local Playwright Chromium at 1440x960. The graph shows a dense 1k-node canvas with labels and colored node-kind groups. Primary controls show dataset switcher, graph canvas, metrics, and selected-node panel. Frame signal: 102 rAF ticks/sec. |
 
 ## Self-Repo UAT Criteria
