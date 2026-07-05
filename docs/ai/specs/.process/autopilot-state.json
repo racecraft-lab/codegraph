@@ -1,6 +1,6 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T22:34:45Z",
+  "updated_at": "2026-07-05T22:41:55Z",
   "active_step": "complete",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
@@ -499,12 +499,20 @@
     },
     "review_remediation": {
       "status": "complete",
-      "comments": 0,
-      "reviews": 0,
-      "review_decision": "",
-      "status_checks": 10,
-      "checks": "all GitHub checks passed",
-      "action": "no review-comment remediation required; mergeability conflict resolved by merging origin/main"
+      "comments": 2,
+      "reviews": 1,
+      "review_decision": "COMMENTED",
+      "fixes": [
+        "ignored root-level and nested opam.locked files",
+        "failed closed for implementation-only OCaml symbols hidden by a paired .mli"
+      ],
+      "verification": [
+        "npm run build passed",
+        "npm run typecheck passed",
+        "OCaml focused suite passed: 5 files, 12 tests",
+        "npm test passed: 137 files, 2235 passed, 4 skipped"
+      ],
+      "action": "actionable Copilot comments fixed locally; awaiting push and fresh GitHub rerun"
     },
     "retrospective": {
       "status": "complete",
@@ -520,6 +528,6 @@
     "state": "OPEN",
     "isDraft": false,
     "mergeable": "MERGEABLE",
-    "checks": "passed"
+    "checks": "passed before review-remediation follow-up; review fixes pending fresh GitHub rerun after push"
   }
 }

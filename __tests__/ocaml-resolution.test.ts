@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CodeGraph } from '../src';
+import { isIgnoredOcamlPath } from '../src/resolution/ocaml-workspace';
 import type { Node } from '../src/types';
 
 const RESOLUTION_FIXTURES = path.resolve(__dirname, 'fixtures/ocaml/resolution');
@@ -42,10 +43,12 @@ describe('OCaml conservative resolution', () => {
     const consumer = findNode(graph, 'module', 'Consumer', 'consumer.ml');
     const built = findNode(graph, 'module', 'Built', 'consumer.ml');
     const use = findNode(graph, 'function', 'use', 'consumer.ml');
+    const leak = findNode(graph, 'function', 'leak', 'consumer.ml');
     const fooInterface = findNode(graph, 'module', 'Foo', 'foo.mli');
     const commonSignature = findNode(graph, 'interface', 'S', 'common.mli');
     const makeFunctor = findNode(graph, 'module', 'Make', 'functors.ml');
     const runImplementation = findNode(graph, 'function', 'run', 'foo.ml');
+    const hiddenImplementation = findNode(graph, 'function', 'hidden', 'foo.ml');
 
     expect(graph.getOutgoingEdges(consumer.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'imports', target: fooInterface.id }),
@@ -58,6 +61,7 @@ describe('OCaml conservative resolution', () => {
     expect(graph.getOutgoingEdges(use.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'calls', target: runImplementation.id }),
     ]));
+    expect(graph.getOutgoingEdges(leak.id).some((edge) => edge.target === hiddenImplementation.id)).toBe(false);
   });
 
   it('does not guess across duplicate modules or external package-looking paths', async () => {
@@ -80,5 +84,11 @@ describe('OCaml conservative resolution', () => {
     expect(graph.getOutgoingEdges(call.id).some((edge) => runTargets.includes(edge.target))).toBe(false);
     expect(graph.getOutgoingEdges(externalPackage.id).filter((edge) => edge.kind !== 'contains')).toHaveLength(0);
     expect((graph.getStats().nodesByKind as Record<string, number>).package).toBeUndefined();
+  });
+
+  it('ignores opam lock files as workspace metadata', () => {
+    expect(isIgnoredOcamlPath('opam.locked')).toBe(true);
+    expect(isIgnoredOcamlPath('nested/opam.locked')).toBe(true);
+    expect(isIgnoredOcamlPath('nested/opam.locked/package.opam')).toBe(true);
   });
 });

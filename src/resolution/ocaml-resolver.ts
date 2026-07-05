@@ -1,5 +1,6 @@
 import type { Node } from '../types';
 import type { ResolutionContext, ResolvedRef, UnresolvedRef } from './types';
+import type { OcamlWorkspace } from './ocaml-workspace';
 import { isIgnoredOcamlPath, loadOcamlWorkspace, sourceUnitKey } from './ocaml-workspace';
 
 const OCAML_BUILTIN_MODULES = new Set([
@@ -71,7 +72,11 @@ function candidateNodes(ref: UnresolvedRef, context: ResolutionContext): Node[] 
     });
 }
 
-function collapseInterfacePairs(candidates: Node[], ref: UnresolvedRef): Node[] {
+function collapseInterfacePairs(
+  candidates: Node[],
+  ref: UnresolvedRef,
+  workspace: OcamlWorkspace,
+): Node[] {
   const byUnit = new Map<string, Node[]>();
   const unpaired: Node[] = [];
 
@@ -90,6 +95,11 @@ function collapseInterfacePairs(candidates: Node[], ref: UnresolvedRef): Node[] 
   for (const group of byUnit.values()) {
     const implementation = group.filter((node) => node.filePath.endsWith('.ml'));
     const intf = group.filter((node) => node.filePath.endsWith('.mli'));
+    const key = sourceUnitKey(group[0]!.filePath);
+
+    if (implementation.length > 0 && intf.length === 0 && key && workspace.interfaceUnitKeys.has(key)) {
+      continue;
+    }
 
     if (implementation.length > 1 || intf.length > 1) {
       collapsed.push(...group);
@@ -114,7 +124,7 @@ export function resolveOcamlReference(
 
   const workspace = loadOcamlWorkspace(context);
   const root = firstSegment(ref.referenceName);
-  const candidates = collapseInterfacePairs(candidateNodes(ref, context), ref);
+  const candidates = collapseInterfacePairs(candidateNodes(ref, context), ref, workspace);
 
   if (candidates.length === 0) {
     if (OCAML_BUILTIN_MODULES.has(root) || workspace.localPackageNames.has(root.toLowerCase())) {

@@ -2,6 +2,7 @@ import type { ResolutionContext } from './types';
 
 export interface OcamlWorkspace {
   metadataPaths: string[];
+  interfaceUnitKeys: Set<string>;
   localPackageNames: Set<string>;
 }
 
@@ -17,6 +18,8 @@ export function isIgnoredOcamlPath(filePath: string): boolean {
     normalized.includes('/_build/') ||
     normalized.startsWith('_build/') ||
     normalized.endsWith('.opam.template') ||
+    normalized === 'opam.locked' ||
+    normalized.endsWith('/opam.locked') ||
     normalized.includes('/opam.locked/')
   );
 }
@@ -37,11 +40,14 @@ export function loadOcamlWorkspace(context: ResolutionContext): OcamlWorkspace {
   if (cached) return cached;
 
   const metadataPaths: string[] = [];
+  const interfaceUnitKeys = new Set<string>();
   const localPackageNames = new Set<string>();
 
   for (const filePath of context.getAllFiles()) {
     const normalized = filePath.replace(/\\/g, '/');
     if (isIgnoredOcamlPath(normalized)) continue;
+    const unitKey = sourceUnitKey(normalized);
+    if (unitKey && normalized.endsWith('.mli')) interfaceUnitKeys.add(unitKey);
 
     const base = normalized.split('/').pop() ?? '';
     const isRootOpam = /^[^/]+\.opam$/i.test(normalized);
@@ -70,6 +76,7 @@ export function loadOcamlWorkspace(context: ResolutionContext): OcamlWorkspace {
 
   const workspace = {
     metadataPaths: metadataPaths.sort(),
+    interfaceUnitKeys,
     localPackageNames,
   };
   workspaceCache.set(context, workspace);
