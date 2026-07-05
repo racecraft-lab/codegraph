@@ -41,5 +41,6 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [checklists/requirements.md](checklists/requirements.md)
 - [checklists/ux.md](checklists/ux.md)
 - [.process/reviewability/tasks-gate.json](.process/reviewability/tasks-gate.json)
+- [.process/uat-runbook.md](.process/uat-runbook.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

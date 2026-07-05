@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
-  "updated_at": "2026-07-05T14:05:39-05:00",
-  "active_step": "Phase 7: Implement - Setup and decision rules (T001-T009)",
+  "updated_at": "2026-07-05T14:22:40-05:00",
+  "active_step": "Post: Verify Implementation",
   "confidence_gate_mode": "advisory",
   "archive_sweep": {
     "archive_extension_installed": false,
@@ -207,6 +207,42 @@
       "pass": true,
       "recommended_action": "proceed"
     },
+    "phase_7_implement": {
+      "status": "completed",
+      "tasks_completed": "T001-T039",
+      "selected_stack": "Vite + React SPA",
+      "selected_renderer": "Cytoscape.js",
+      "prototype": {
+        "workspace": "/tmp/spec-004-web-framework-research/prototype",
+        "self_repo_dataset": {
+          "nodes": 220,
+          "edges": 223,
+          "first_visible_render_ms": 353,
+          "frame_signal": "118 rAF ticks/sec",
+          "screenshot": "docs/design/assets/spec-004/self-repo-graph.png"
+        },
+        "one_k_dataset": {
+          "nodes": 1000,
+          "edges": 2500,
+          "first_visible_render_ms": 139,
+          "frame_signal": "102 rAF ticks/sec",
+          "screenshot": "docs/design/assets/spec-004/one-k-node-target.png"
+        }
+      },
+      "verification": {
+        "build": "passed: npm run build",
+        "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
+        "uat": "pass with limitation"
+      },
+      "files": [
+        "docs/design/web-framework-decision.md",
+        "docs/design/assets/spec-004/self-repo-graph.png",
+        "docs/design/assets/spec-004/one-k-node-target.png",
+        "specs/004-web-framework-research-spike/.process/uat-runbook.md",
+        "specs/004-web-framework-research-spike/quickstart.md",
+        "specs/004-web-framework-research-spike/tasks.md"
+      ]
+    },
     "capability_path": {
       "codebase_context": "local repository files plus RepoPrompt MCP when selected",
       "library_documentation": "web search / official docs when current facts are required",
@@ -403,23 +439,23 @@
     },
     {
       "step": "Phase 7: Implement - Setup and decision rules (T001-T009)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - US1 framework decision (T010-T020)",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - US2 prototype evidence (T021-T031)",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - US3 downstream handoff (T032-T035)",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - Polish and verification (T036-T039)",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Doctor Extension Check",
@@ -428,7 +464,7 @@
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",

@@ -28,7 +28,7 @@ Re-read it before each phase. It records the human-approved decisions from Grill
 | Checklist | `$speckit-checklist` | Complete | Completed ux, performance, integration, and reliability checklists with 0 remaining gaps |
 | Tasks | `$speckit-tasks` | Complete | Generated 39 ordered docs/process spike tasks with concrete Phase 7 task groups |
 | Analyze | `$speckit-analyze` | Complete | Found and fixed three documentation drift issues before implementation |
-| Implement | `$speckit-implement` | Pending | Produce the decision doc, screenshot assets, and UAT evidence |
+| Implement | `$speckit-implement` | Complete | Produced the decision doc, screenshot assets, and UAT evidence |
 
 ## Prerequisites
 
@@ -451,10 +451,10 @@ Do not add production server/web app code, in-browser indexing, LSP facade work,
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| Research matrix | Pending | Pending | Six candidates |
-| Prototype evidence | Pending | Pending | Chosen stack only |
-| Decision report | Pending | Pending | Includes screenshot assets |
-| UAT and verification | Pending | Pending | Self-repo evidence required |
+| Research matrix | T010-T020 | Complete | Selected Vite + React SPA; Cytoscape.js renderer with Sigma.js runner-up |
+| Prototype evidence | T021-T028 | Complete | Worktree-local CodeGraph index, 220-node self-repo dataset, 1k-node target, two 1440x960 screenshots |
+| Decision report | T001-T020, T032-T039 | Complete | `docs/design/web-framework-decision.md` includes matrix, evidence, handoff, traceability, and review packet |
+| UAT and verification | T029-T031, T036 | Complete | `npm run build` and `npm test` passed; UAT result pass with limitation |
 
 ## Self-Review
 

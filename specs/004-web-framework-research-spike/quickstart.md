@@ -53,7 +53,7 @@ Expected result: exactly one recommended stack, with runner-up tradeoffs and dow
 Create the selected-stack prototype outside durable source, for example:
 
 ```bash
-mkdir -p /tmp/spec-004-web-prototype
+mkdir -p /tmp/spec-004-web-framework-research/prototype
 ```
 
 Use representative CodeGraph data from this repository with the documented graph JSON shape:
@@ -64,7 +64,7 @@ Use representative CodeGraph data from this repository with the documented graph
     "source": "codegraph repository",
     "nodeCount": 1000,
     "edgeCount": 0,
-    "selection": "representative self-repo subset or 1k-node target"
+    "selection": "representative self-repo subset or 1k-node/60fps target"
   },
   "nodes": [
     {
@@ -86,7 +86,7 @@ Use representative CodeGraph data from this repository with the documented graph
 }
 ```
 
-Expected result: prototype renders representative self-repo data and a 1k-node target, or records the closest achieved fallback with cause and downstream implication.
+Expected result: prototype renders representative self-repo data and a 1k-node/60fps target, or records the closest achieved fallback with cause and downstream implication.
 
 ## 5. Capture Evidence
 

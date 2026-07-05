@@ -20,11 +20,11 @@
 
 **Purpose**: Create the durable decision surface, UAT runbook check, and temporary research/prototype workspace without adding production code.
 
-- [ ] T001 Create the initial decision document skeleton with all contract-required sections in `docs/design/web-framework-decision.md`
-- [ ] T002 Generate or update the UAT runbook at `specs/004-web-framework-research-spike/.process/uat-runbook.md` against existing `spec.md` and `plan.md`, then update any stale SPEC-004 paths or commands in `specs/004-web-framework-research-spike/quickstart.md`
-- [ ] T003 [P] Create the temporary evidence and prototype workspace at `/tmp/spec-004-web-framework-research/`
-- [ ] T004 [P] Create the committed screenshot evidence directory at `docs/design/assets/spec-004/`
-- [ ] T005 Verify the reviewability budget before implementation and record the split/no-split decision in `docs/design/web-framework-decision.md`
+- [X] T001 Create the initial decision document skeleton with all contract-required sections in `docs/design/web-framework-decision.md`
+- [X] T002 Generate or update the UAT runbook at `specs/004-web-framework-research-spike/.process/uat-runbook.md` against existing `spec.md` and `plan.md`, then update any stale SPEC-004 paths or commands in `specs/004-web-framework-research-spike/quickstart.md`
+- [X] T003 [P] Create the temporary evidence and prototype workspace at `/tmp/spec-004-web-framework-research/`
+- [X] T004 [P] Create the committed screenshot evidence directory at `docs/design/assets/spec-004/`
+- [X] T005 Verify the reviewability budget before implementation and record the split/no-split decision in `docs/design/web-framework-decision.md`
 
 ---
 
@@ -34,10 +34,10 @@
 
 **Critical**: No candidate recommendation or prototype work begins until this phase is complete.
 
-- [ ] T006 Record the SPEC-004 scope, non-goals, forbidden durable changes, and prototype-source boundary in `docs/design/web-framework-decision.md`
-- [ ] T007 Define the hard-gate pass/fail thresholds and weighted scoring model, including UX sub-scores, in `docs/design/web-framework-decision.md`
-- [ ] T008 Define the evidence record schema for official docs, package metadata, repository metadata, observed values, source URLs, access dates, lookup methods, and supported claims in `docs/design/web-framework-decision.md`
-- [ ] T009 Define the prototype data shape, screenshot fallback ladder, self-repo UAT criteria, and no-hosted-runtime check in `docs/design/web-framework-decision.md`
+- [X] T006 Record the SPEC-004 scope, non-goals, forbidden durable changes, and prototype-source boundary in `docs/design/web-framework-decision.md`
+- [X] T007 Define the hard-gate pass/fail thresholds and weighted scoring model, including UX sub-scores, in `docs/design/web-framework-decision.md`
+- [X] T008 Define the evidence record schema for official docs, package metadata, repository metadata, observed values, source URLs, access dates, lookup methods, and supported claims in `docs/design/web-framework-decision.md`
+- [X] T009 Define the prototype data shape, screenshot fallback ladder, self-repo UAT criteria, and no-hosted-runtime check in `docs/design/web-framework-decision.md`
 
 **Checkpoint**: Decision rules are fixed and user story work can now proceed.
 
@@ -51,17 +51,17 @@
 
 ### Implementation for User Story 1
 
-- [ ] T010 [P] [US1] Gather official documentation and live package/repository metadata for Vite+React SPA in `/tmp/spec-004-web-framework-research/vite-react.md`
-- [ ] T011 [P] [US1] Gather official documentation and live package/repository metadata for SvelteKit static/adapter-node in `/tmp/spec-004-web-framework-research/sveltekit.md`
-- [ ] T012 [P] [US1] Gather official documentation and live package/repository metadata for Next.js standalone in `/tmp/spec-004-web-framework-research/nextjs-standalone.md`
-- [ ] T013 [P] [US1] Gather official documentation and live package/repository metadata for Astro islands in `/tmp/spec-004-web-framework-research/astro-islands.md`
-- [ ] T014 [P] [US1] Gather official documentation and live package/repository metadata for TanStack Start in `/tmp/spec-004-web-framework-research/tanstack-start.md`
-- [ ] T015 [P] [US1] Gather official documentation and live package/repository metadata for SolidStart in `/tmp/spec-004-web-framework-research/solidstart.md`
-- [ ] T016 [P] [US1] Gather official documentation and live package/repository metadata for chosen-stack graph-rendering library candidates, including canvas/WebGL force-graph options and 1k-node/60fps evidence where available, in `/tmp/spec-004-web-framework-research/graph-renderers.md`
-- [ ] T017 [US1] Consolidate all six framework evidence notes and graph-renderer notes into the current-source evidence table in `docs/design/web-framework-decision.md`
-- [ ] T018 [US1] Apply hard gates to every framework candidate and graph-renderer candidate, excluding any failed framework candidate from final ranking and any failed renderer from prototype selection in `docs/design/web-framework-decision.md`
-- [ ] T019 [US1] Score only gate-passing framework candidates with weighted scoring and UX sub-scores in `docs/design/web-framework-decision.md`
-- [ ] T020 [US1] Select exactly one framework stack and one graph-rendering approach from the chosen-stack bake-off, then record runner-up tradeoffs and rejection rationale in `docs/design/web-framework-decision.md`
+- [X] T010 [P] [US1] Gather official documentation and live package/repository metadata for Vite+React SPA in `/tmp/spec-004-web-framework-research/vite-react.md`
+- [X] T011 [P] [US1] Gather official documentation and live package/repository metadata for SvelteKit static/adapter-node in `/tmp/spec-004-web-framework-research/sveltekit.md`
+- [X] T012 [P] [US1] Gather official documentation and live package/repository metadata for Next.js standalone in `/tmp/spec-004-web-framework-research/nextjs-standalone.md`
+- [X] T013 [P] [US1] Gather official documentation and live package/repository metadata for Astro islands in `/tmp/spec-004-web-framework-research/astro-islands.md`
+- [X] T014 [P] [US1] Gather official documentation and live package/repository metadata for TanStack Start in `/tmp/spec-004-web-framework-research/tanstack-start.md`
+- [X] T015 [P] [US1] Gather official documentation and live package/repository metadata for SolidStart in `/tmp/spec-004-web-framework-research/solidstart.md`
+- [X] T016 [P] [US1] Gather official documentation and live package/repository metadata for chosen-stack graph-rendering library candidates, including canvas/WebGL force-graph options and 1k-node/60fps evidence where available, in `/tmp/spec-004-web-framework-research/graph-renderers.md`
+- [X] T017 [US1] Consolidate all six framework evidence notes and graph-renderer notes into the current-source evidence table in `docs/design/web-framework-decision.md`
+- [X] T018 [US1] Apply hard gates to every framework candidate and graph-renderer candidate, excluding any failed framework candidate from final ranking and any failed renderer from prototype selection in `docs/design/web-framework-decision.md`
+- [X] T019 [US1] Score only gate-passing framework candidates with weighted scoring and UX sub-scores in `docs/design/web-framework-decision.md`
+- [X] T020 [US1] Select exactly one framework stack and one graph-rendering approach from the chosen-stack bake-off, then record runner-up tradeoffs and rejection rationale in `docs/design/web-framework-decision.md`
 
 **Checkpoint**: User Story 1 is complete when the decision matrix can be reviewed without relying on unstored live pages or uncaptured package metadata.
 
@@ -75,17 +75,17 @@
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Generate or export representative CodeGraph data from this repository into `/tmp/spec-004-web-framework-research/data/self-repo-graph.json` and record the selection method in `docs/design/web-framework-decision.md`
-- [ ] T022 [US2] Generate or simulate the 1k-node/60fps graph target into `/tmp/spec-004-web-framework-research/data/one-k-node-target.json` and record node/edge counts in `docs/design/web-framework-decision.md`
-- [ ] T023 [US2] Build the selected-stack throwaway graph-rendering prototype under `/tmp/spec-004-web-framework-research/prototype/`
-- [ ] T024 [US2] Run the throwaway prototype locally with package-shipped or local assets only and record commands plus any network/dependency findings in `docs/design/web-framework-decision.md`
-- [ ] T025 [US2] Capture the representative self-repo browser screenshot or required no-screenshot fallback evidence at `docs/design/assets/spec-004/self-repo-graph.png`
-- [ ] T026 [US2] Capture the 1k-node/60fps target browser screenshot or required no-screenshot fallback evidence at `docs/design/assets/spec-004/one-k-node-target.png`
-- [ ] T027 [US2] Add screenshot references, captions, dataset names, node/edge counts, capture tool, dimensions, visible labels, graph structure, and primary controls to `docs/design/web-framework-decision.md`
-- [ ] T028 [US2] Record graph interaction observations, first visible render timing, frame-rate or interaction-smoothness signal, machine/browser context, asset size notes, readability notes, and prototype limitations in `docs/design/web-framework-decision.md`
-- [ ] T029 [US2] Run `npm run build` from the repository root and record the verification outcome in `docs/design/web-framework-decision.md`
-- [ ] T030 [US2] Run `npm test` from the repository root and record the verification outcome in `docs/design/web-framework-decision.md`
-- [ ] T031 [US2] Record the final self-repo UAT result as pass, pass with limitation, or fail in both `docs/design/web-framework-decision.md` and `specs/004-web-framework-research-spike/.process/uat-runbook.md`
+- [X] T021 [US2] Generate or export representative CodeGraph data from this repository into `/tmp/spec-004-web-framework-research/data/self-repo-graph.json` and record the selection method in `docs/design/web-framework-decision.md`
+- [X] T022 [US2] Generate or simulate the 1k-node/60fps graph target into `/tmp/spec-004-web-framework-research/data/one-k-node-target.json` and record node/edge counts in `docs/design/web-framework-decision.md`
+- [X] T023 [US2] Build the selected-stack throwaway graph-rendering prototype under `/tmp/spec-004-web-framework-research/prototype/`
+- [X] T024 [US2] Run the throwaway prototype locally with package-shipped or local assets only and record commands plus any network/dependency findings in `docs/design/web-framework-decision.md`
+- [X] T025 [US2] Capture the representative self-repo browser screenshot or required no-screenshot fallback evidence at `docs/design/assets/spec-004/self-repo-graph.png`
+- [X] T026 [US2] Capture the 1k-node/60fps target browser screenshot or required no-screenshot fallback evidence at `docs/design/assets/spec-004/one-k-node-target.png`
+- [X] T027 [US2] Add screenshot references, captions, dataset names, node/edge counts, capture tool, dimensions, visible labels, graph structure, and primary controls to `docs/design/web-framework-decision.md`
+- [X] T028 [US2] Record graph interaction observations, first visible render timing, frame-rate or interaction-smoothness signal, machine/browser context, asset size notes, readability notes, and prototype limitations in `docs/design/web-framework-decision.md`
+- [X] T029 [US2] Run `npm run build` from the repository root and record the verification outcome in `docs/design/web-framework-decision.md`
+- [X] T030 [US2] Run `npm test` from the repository root and record the verification outcome in `docs/design/web-framework-decision.md`
+- [X] T031 [US2] Record the final self-repo UAT result as pass, pass with limitation, or fail in both `docs/design/web-framework-decision.md` and `specs/004-web-framework-research-spike/.process/uat-runbook.md`
 
 **Checkpoint**: User Story 2 is complete when screenshots or explicitly documented fallback evidence are committed or recorded, prototype source remains outside durable source, and build/test health is documented.
 
@@ -99,10 +99,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T032 [US3] Document the embedded package-shipped static asset strategy, asset classes, expected later build output, package destination, and copy-assets implications in `docs/design/web-framework-decision.md`
-- [ ] T033 [US3] Document the SPEC-005 local HTTP server boundary, local API assumptions, route fallback behavior, static serving expectations, and explicit dormant activation handoff in `docs/design/web-framework-decision.md`
-- [ ] T034 [US3] Document the standalone container recipe with entrypoint, served asset source, `.codegraph/` mount assumptions, host/port/configuration expectations, and offline behavior in `docs/design/web-framework-decision.md`
-- [ ] T035 [US3] Map every deferred implementation concern to SPEC-005, SPEC-006, SPEC-007, or a named follow-up in `docs/design/web-framework-decision.md`
+- [X] T032 [US3] Document the embedded package-shipped static asset strategy, asset classes, expected later build output, package destination, and copy-assets implications in `docs/design/web-framework-decision.md`
+- [X] T033 [US3] Document the SPEC-005 local HTTP server boundary, local API assumptions, route fallback behavior, static serving expectations, and explicit dormant activation handoff in `docs/design/web-framework-decision.md`
+- [X] T034 [US3] Document the standalone container recipe with entrypoint, served asset source, `.codegraph/` mount assumptions, host/port/configuration expectations, and offline behavior in `docs/design/web-framework-decision.md`
+- [X] T035 [US3] Map every deferred implementation concern to SPEC-005, SPEC-006, SPEC-007, or a named follow-up in `docs/design/web-framework-decision.md`
 
 **Checkpoint**: User Story 3 is complete when later web specs can cite the decision document instead of reopening framework selection.
 
@@ -112,10 +112,10 @@
 
 **Purpose**: Validate the artifact set, runbook, traceability, and PR review packet before review.
 
-- [ ] T036 Validate the reproduction and UAT steps against the actual commands, artifact paths, screenshots, and prototype outcomes in `specs/004-web-framework-research-spike/quickstart.md` and `specs/004-web-framework-research-spike/.process/uat-runbook.md`
-- [ ] T037 Confirm the durable diff contains no production server or web UI source, no in-browser indexing, no LSP facade or WebSocket endpoint, no long-lived prototype source, no generated web build output, no CDN/runtime hosted-service dependency, and no non-permissive dependency adoption; record the result in `docs/design/web-framework-decision.md`
-- [ ] T038 Add a review packet source section covering what changed, why, non-goals, review order, scope budget, traceability, verification evidence, known gaps, and rollback or feature-flag notes in `docs/design/web-framework-decision.md`
-- [ ] T039 Validate FR and success-criteria coverage against `specs/004-web-framework-research-spike/spec.md` and record any known limitation or pass-with-limitation status in `docs/design/web-framework-decision.md`
+- [X] T036 Validate the reproduction and UAT steps against the actual commands, artifact paths, screenshots, and prototype outcomes in `specs/004-web-framework-research-spike/quickstart.md` and `specs/004-web-framework-research-spike/.process/uat-runbook.md`
+- [X] T037 Confirm the durable diff contains no production server or web UI source, no in-browser indexing, no LSP facade or WebSocket endpoint, no long-lived prototype source, no generated web build output, no CDN/runtime hosted-service dependency, and no non-permissive dependency adoption; record the result in `docs/design/web-framework-decision.md`
+- [X] T038 Add a review packet source section covering what changed, why, non-goals, review order, scope budget, traceability, verification evidence, known gaps, and rollback or feature-flag notes in `docs/design/web-framework-decision.md`
+- [X] T039 Validate FR and success-criteria coverage against `specs/004-web-framework-research-spike/spec.md` and record any known limitation or pass-with-limitation status in `docs/design/web-framework-decision.md`
 
 ---
 
