@@ -1,0 +1,782 @@
+{
+  "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
+  "updated_at": "2026-07-05T19:47:00.206Z",
+  "active_step": "complete",
+  "confidence_gate_mode": "advisory",
+  "archive_sweep": {
+    "archive_extension_installed": false,
+    "current_target": "specs/004-web-framework-research-spike",
+    "cleanup_mode": "disabled",
+    "safeToApplyCleanup": false,
+    "note": "Archive extension not installed; no previously merged spec cleanup was applied."
+  },
+  "project_commands": {
+    "BUILD": "npm run build",
+    "TYPECHECK": "npm run typecheck",
+    "LINT": "N/A",
+    "LINT_FIX": "N/A",
+    "UNIT_TEST": "npm test",
+    "INTEGRATION_TEST": "N/A",
+    "SINGLE_FILE_TEST": "npm test --",
+    "SINGLE_FILE_INTEGRATION": "N/A",
+    "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
+  },
+  "preset_conventions": {
+    "has_presets": true,
+    "presets": [
+      "claude-ask-questions",
+      "codegraph-project-overrides",
+      "speckit-pro-reviewability"
+    ],
+    "template_resolution": {
+      "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
+      "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
+      "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
+    }
+  },
+  "preflight": {
+    "model": "gpt-5.5",
+    "model_reasoning_effort": "xhigh",
+    "branch": "004-web-framework-research-spike",
+    "is_worktree": true,
+    "on_feature_branch": true,
+    "specify_version": "0.11.8",
+    "agent_install": "validate-agent-install.sh: ok: codex: 10 bundled agents installed",
+    "reviewability_setup_gate": {
+      "status": "warn",
+      "pass": true,
+      "warnings": [
+        "primary surfaces 6 exceeds warn threshold 1"
+      ]
+    },
+    "g0_verification": {
+      "build": "passed: npm run build",
+      "typecheck": "passed: npm run typecheck",
+      "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
+      "integration_test": "N/A"
+    },
+    "phase_1_specify": {
+      "status": "completed",
+      "functional_requirements": 17,
+      "user_stories": 3,
+      "acceptance_scenarios": 9,
+      "gate_g1": "passed: spec.md exists with 0 [NEEDS CLARIFICATION] markers",
+      "files": [
+        "specs/004-web-framework-research-spike/spec.md",
+        "specs/004-web-framework-research-spike/checklists/requirements.md",
+        ".specify/feature.json"
+      ]
+    },
+    "phase_2_clarify": {
+      "status": "completed",
+      "skipped": "G1 and G2 both found 0 active clarification markers; no clarify questions required."
+    },
+    "phase_3_plan": {
+      "status": "completed",
+      "gate_g3": "passed: plan.md exists with 0 unresolved markers",
+      "reviewability_budget": {
+        "status": "not_estimated",
+        "projected": null,
+        "note": "No declared production-file structure because SPEC-004 is a docs/process spike with 0 planned production files."
+      },
+      "files": [
+        "specs/004-web-framework-research-spike/plan.md",
+        "specs/004-web-framework-research-spike/research.md",
+        "specs/004-web-framework-research-spike/data-model.md",
+        "specs/004-web-framework-research-spike/contracts/decision-artifacts.md",
+        "specs/004-web-framework-research-spike/quickstart.md",
+        "CLAUDE.md"
+      ]
+    },
+    "phase_4_checklist": {
+      "ux": {
+        "status": "completed",
+        "items": 17,
+        "gaps_before": 5,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/ux.md",
+          "specs/004-web-framework-research-spike/spec.md",
+          "specs/004-web-framework-research-spike/plan.md"
+        ]
+      },
+      "performance": {
+        "status": "completed",
+        "items": 23,
+        "gaps_before": 0,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/performance.md"
+        ]
+      },
+      "integration": {
+        "status": "completed",
+        "items": 24,
+        "gaps_before": 14,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/integration.md",
+          "specs/004-web-framework-research-spike/spec.md",
+          "specs/004-web-framework-research-spike/plan.md"
+        ]
+      },
+      "reliability": {
+        "status": "completed",
+        "items": 26,
+        "gaps_before": 9,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/004-web-framework-research-spike/checklists/reliability.md",
+          "specs/004-web-framework-research-spike/spec.md",
+          "specs/004-web-framework-research-spike/plan.md",
+          "specs/004-web-framework-research-spike/contracts/decision-artifacts.md"
+        ]
+      },
+      "gate_g4": "passed: 0 [Gap] markers"
+    },
+    "phase_5_tasks": {
+      "status": "completed",
+      "total_tasks": 39,
+      "phases": 6,
+      "user_stories_covered": 3,
+      "parallel_opportunities": [
+        "T010-T016",
+        "T021-T022",
+        "T032-T034"
+      ],
+      "gate_g5": "passed: 39 tasks and 0 unresolved markers",
+      "reviewability_gate": {
+        "mode": "tasks",
+        "status": "block",
+        "pass": false,
+        "evidence_path": "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json",
+        "interpretation": "Current size-only block recorded as marker-planning input; no malformed, stale, unsafe, or correctness blocker detected."
+      },
+      "atomicity_route": {
+        "route": "one-navigable-PR",
+        "releasable": true,
+        "signals": [
+          "change-shape:modify-heavy"
+        ],
+        "warnings": []
+      },
+      "layer_plan": {
+        "status": "skipped",
+        "reason": "atomicity route is one-navigable-PR, not split-PR"
+      },
+      "files": [
+        "specs/004-web-framework-research-spike/tasks.md",
+        "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json"
+      ]
+    },
+    "phase_6_analyze": {
+      "status": "completed",
+      "findings": {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 0,
+        "remaining_high_or_critical": 0
+      },
+      "gate_g6": "passed: 0 CRITICAL/HIGH findings",
+      "consensus": "skipped: no unresolved findings",
+      "confidence_scores": {
+        "spec_plan_alignment": 0.94,
+        "task_coverage": 0.93,
+        "non_goal_exclusion": 0.96,
+        "implementation_readiness": 0.9,
+        "evidence_grounding": 0.92,
+        "confidence_gate_composite": 0.93
+      },
+      "files": [
+        "docs/ai/specs/.process/SPEC-004-workflow.md",
+        "specs/004-web-framework-research-spike/spec.md",
+        "specs/004-web-framework-research-spike/plan.md",
+        "specs/004-web-framework-research-spike/tasks.md"
+      ]
+    },
+    "phase_6_5_confidence_gate": {
+      "status": "completed",
+      "mode": "advisory",
+      "threshold": 0.9,
+      "composite": 0.93,
+      "pass": true,
+      "recommended_action": "proceed"
+    },
+    "phase_7_implement": {
+      "status": "completed",
+      "tasks_completed": "T001-T039",
+      "selected_stack": "Vite + React SPA",
+      "selected_renderer": "Cytoscape.js",
+      "prototype": {
+        "workspace": "/tmp/spec-004-web-framework-research/prototype",
+        "self_repo_dataset": {
+          "nodes": 220,
+          "edges": 223,
+          "first_visible_render_ms": 353,
+          "frame_signal": "118 rAF ticks/sec",
+          "screenshot": "docs/design/assets/spec-004/self-repo-graph.png"
+        },
+        "one_k_dataset": {
+          "nodes": 1000,
+          "edges": 2500,
+          "first_visible_render_ms": 139,
+          "frame_signal": "102 rAF ticks/sec",
+          "screenshot": "docs/design/assets/spec-004/one-k-node-target.png"
+        }
+      },
+      "verification": {
+        "build": "passed: npm run build",
+        "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
+        "uat": "pass with limitation"
+      },
+      "files": [
+        "docs/design/web-framework-decision.md",
+        "docs/design/assets/spec-004/self-repo-graph.png",
+        "docs/design/assets/spec-004/one-k-node-target.png",
+        "specs/004-web-framework-research-spike/.process/uat-runbook.md",
+        "specs/004-web-framework-research-spike/quickstart.md",
+        "specs/004-web-framework-research-spike/tasks.md"
+      ]
+    },
+    "capability_path": {
+      "codebase_context": "local repository files plus RepoPrompt MCP when selected",
+      "library_documentation": "web search / official docs when current facts are required",
+      "web_or_domain_research": "web search available to parent; subagents receive gathered evidence or fallback notes",
+      "source_extraction": "local files and command outputs"
+    }
+  },
+  "pr_marker_plan": {
+    "schema_version": "pr-marker-plan.v1",
+    "kind": "pr_marker_plan",
+    "feature_id": "004-web-framework-research-spike",
+    "status": "emission_ready",
+    "source_fingerprint": {
+      "feature_spec_sha": "2cfa5174b87aeebdbc135a3d69f760558d9396e08fb59df2bc9b5d14aeec6047",
+      "plan_declared_scope_sha": "cfc19ad11595491b4b97eb19606bb5b30e82c22d3db2a33e589124dc54671a40",
+      "tasks_sha": "2750edb70c5273c8d779e8e2399343a7ade6acbc2c49a35e1e20d0630897b86c",
+      "reviewability_sha": "4d1b634010fb67710faab238916853334d4b63d5fdb37312ca00b412be803f38",
+      "hazard_route_sha": "68f01d9a0f5ff45656c900daf1d6f30b469a156a824735dc62f4ea724d73e783"
+    },
+    "markers": [
+      {
+        "id": "foundation",
+        "review_order": 1,
+        "kind": "foundation",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "Foundation",
+          "story_id": null,
+          "start_task_id": "T001",
+          "end_task_id": "T009"
+        },
+        "task_ids": [
+          "T001",
+          "T002",
+          "T003",
+          "T004",
+          "T005",
+          "T006",
+          "T007",
+          "T008",
+          "T009"
+        ],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "docs/design/web-framework-decision.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/004-web-framework-research-spike/quickstart.md"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "foundation",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "complete"
+        },
+        "emission_mapping": {
+          "status": "marker_split",
+          "source_marker_ids": [
+            "foundation"
+          ],
+          "packet_path": null
+        },
+        "warnings": []
+      },
+      {
+        "id": "us1",
+        "review_order": 2,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 1 - Review a grounded framework decision (Priority: P1) MVP",
+          "story_id": 1,
+          "start_task_id": "T010",
+          "end_task_id": "T020"
+        },
+        "task_ids": [
+          "T010",
+          "T011",
+          "T012",
+          "T013",
+          "T014",
+          "T015",
+          "T016",
+          "T017",
+          "T018",
+          "T019",
+          "T020"
+        ],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "docs/design/web-framework-decision.md"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "us1",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "complete"
+        },
+        "emission_mapping": {
+          "status": "marker_split",
+          "source_marker_ids": [
+            "us1"
+          ],
+          "packet_path": null
+        },
+        "warnings": []
+      },
+      {
+        "id": "us2",
+        "review_order": 3,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 2 - Verify graph rendering before committing to the stack",
+          "story_id": 2,
+          "start_task_id": "T021",
+          "end_task_id": "T031"
+        },
+        "task_ids": [
+          "T021",
+          "T022",
+          "T023",
+          "T024",
+          "T025",
+          "T026",
+          "T027",
+          "T028",
+          "T029",
+          "T030",
+          "T031"
+        ],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "docs/design/assets/spec-004/one-k-node-target.png"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "docs/design/assets/spec-004/self-repo-graph.png"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "docs/design/web-framework-decision.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "us2",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "complete"
+        },
+        "emission_mapping": {
+          "status": "marker_split",
+          "source_marker_ids": [
+            "us2"
+          ],
+          "packet_path": null
+        },
+        "warnings": []
+      },
+      {
+        "id": "us3",
+        "review_order": 4,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 3 - Reuse the decision in later web specs",
+          "story_id": 3,
+          "start_task_id": "T032",
+          "end_task_id": "T035"
+        },
+        "task_ids": [
+          "T032",
+          "T033",
+          "T034",
+          "T035"
+        ],
+        "folded_polish_task_ids": [
+          "T036",
+          "T037",
+          "T038",
+          "T039"
+        ],
+        "folded_polish_target_reason": "nearest_preceding_non_polish_scope",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "docs/design/web-framework-decision.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/004-web-framework-research-spike/quickstart.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/004-web-framework-research-spike/spec.md"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "us3",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "complete"
+        },
+        "emission_mapping": {
+          "status": "marker_split",
+          "source_marker_ids": [
+            "us3"
+          ],
+          "packet_path": null
+        },
+        "warnings": []
+      }
+    ],
+    "warnings": [
+      {
+        "code": "reviewability_size_warning",
+        "severity": "warning",
+        "message": "Reviewability sizing result is marker-planning input.",
+        "source": "reviewability",
+        "details": {
+          "status": "block",
+          "mode": "tasks",
+          "evidence_path": ""
+        }
+      }
+    ]
+  },
+  "extensions": {
+    "doctor": "skipped: doctor extension not installed",
+    "verify": "enabled",
+    "verify_tasks": "enabled",
+    "review": "enabled",
+    "cleanup": "enabled",
+    "retrospective": "enabled",
+    "agent_context": "enabled"
+  },
+  "plan": [
+    {
+      "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
+      "status": "completed",
+      "note": "Archive extension not installed; cleanup disabled."
+    },
+    {
+      "step": "Phase 0: Prerequisites",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 1: Specify",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Decision matrix and evidence",
+      "status": "completed",
+      "skipped": "No active [NEEDS CLARIFICATION] markers after Specify."
+    },
+    {
+      "step": "Phase 2: Clarify - Decision matrix and evidence Consensus",
+      "status": "completed",
+      "skipped": "No unresolved clarify items required consensus."
+    },
+    {
+      "step": "Phase 3: Plan",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - ux",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - ux Consensus",
+      "status": "completed",
+      "skipped": "No unresolved UX checklist items required consensus."
+    },
+    {
+      "step": "Phase 4: Checklist - performance",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - performance Consensus",
+      "status": "completed",
+      "skipped": "No unresolved performance checklist items required consensus."
+    },
+    {
+      "step": "Phase 4: Checklist - integration",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - integration Consensus",
+      "status": "completed",
+      "skipped": "No unresolved integration checklist items required consensus."
+    },
+    {
+      "step": "Phase 4: Checklist - reliability",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - reliability Consensus",
+      "status": "completed",
+      "skipped": "No unresolved reliability checklist items required consensus."
+    },
+    {
+      "step": "Phase 5: Tasks",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 6: Analyze",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 6: Analyze - Consensus",
+      "status": "completed",
+      "skipped": "No unresolved analyze findings required consensus."
+    },
+    {
+      "step": "Phase 6.5: Confidence Gate",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Implement - Setup and decision rules (T001-T009)",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Implement - US1 framework decision (T010-T020)",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Implement - US2 prototype evidence (T021-T031)",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Implement - US3 downstream handoff (T032-T035)",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Implement - Polish and verification (T036-T039)",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Doctor Extension Check",
+      "status": "completed",
+      "skipped": "doctor extension not installed"
+    },
+    {
+      "step": "Post: Verify Implementation",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Verify Tasks Phantom Check",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Code Review",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Integration Suite",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Reviewability Diff Gate",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Self-Review",
+      "status": "completed"
+    },
+    {
+      "step": "Post: UAT Runbook Generation",
+      "status": "completed"
+    },
+    {
+      "step": "Post: PR Body Generation",
+      "status": "completed"
+    },
+    {
+      "step": "Post: PR Creation",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Review Remediation",
+      "status": "completed"
+    },
+    {
+      "step": "Post: Retrospective",
+      "status": "completed"
+    }
+  ],
+  "current_source_fingerprint": {
+    "feature_spec_sha": "2cfa5174b87aeebdbc135a3d69f760558d9396e08fb59df2bc9b5d14aeec6047",
+    "plan_declared_scope_sha": "cfc19ad11595491b4b97eb19606bb5b30e82c22d3db2a33e589124dc54671a40",
+    "tasks_sha": "2750edb70c5273c8d779e8e2399343a7ade6acbc2c49a35e1e20d0630897b86c",
+    "reviewability_sha": "4d1b634010fb67710faab238916853334d4b63d5fdb37312ca00b412be803f38",
+    "hazard_route_sha": "68f01d9a0f5ff45656c900daf1d6f30b469a156a824735dc62f4ea724d73e783"
+  },
+  "pr_marker_plan_current_source_fingerprint": {
+    "feature_spec_sha": "2cfa5174b87aeebdbc135a3d69f760558d9396e08fb59df2bc9b5d14aeec6047",
+    "plan_declared_scope_sha": "cfc19ad11595491b4b97eb19606bb5b30e82c22d3db2a33e589124dc54671a40",
+    "tasks_sha": "2750edb70c5273c8d779e8e2399343a7ade6acbc2c49a35e1e20d0630897b86c",
+    "reviewability_sha": "4d1b634010fb67710faab238916853334d4b63d5fdb37312ca00b412be803f38",
+    "hazard_route_sha": "68f01d9a0f5ff45656c900daf1d6f30b469a156a824735dc62f4ea724d73e783"
+  },
+  "post_implementation": {
+    "verify_implementation": {
+      "status": "completed",
+      "evidence": [
+        "check-prerequisites --require-tasks --include-tasks",
+        "phase coverage guard",
+        "39 completed tasks",
+        "artifact presence check"
+      ]
+    },
+    "verify_tasks": {
+      "status": "completed",
+      "report": "specs/004-web-framework-research-spike/verify-tasks-report.md",
+      "verified_tasks": 39,
+      "flagged_items": 0
+    },
+    "code_review": {
+      "status": "completed",
+      "evidence": [
+        "git diff --check origin/main",
+        "placeholder scan",
+        "forbidden production surface diff check"
+      ]
+    },
+    "integration_suite": {
+      "status": "completed",
+      "commands": [
+        "npm run build",
+        "npm run typecheck",
+        "npm test"
+      ],
+      "tests": "132 files, 2223 passed, 4 skipped"
+    },
+    "final_reviewability": {
+      "status": "completed",
+      "result": "proceed",
+      "evidence": "specs/004-web-framework-research-spike/.process/final-reviewability/gate-state.json"
+    },
+    "uat_runbook": {
+      "status": "completed",
+      "validation": "validate-uat-runbook.sh ok"
+    },
+    "pr_body": {
+      "status": "completed",
+      "body": "specs/004-web-framework-research-spike/.process/pr-body.md",
+      "packet": "specs/004-web-framework-research-spike/.process/pr-packets/single.json",
+      "validation": "passed"
+    },
+    "retrospective": {
+      "status": "completed",
+      "report": "specs/004-web-framework-research-spike/retrospective.md"
+    },
+    "pr_creation": {
+      "status": "completed",
+      "number": 19,
+      "url": "https://github.com/racecraft-lab/codegraph/pull/19",
+      "title": "feat(speckit-pro): Add web framework research spike"
+    },
+    "review_remediation": {
+      "status": "completed",
+      "reviews": 1,
+      "comments": 8,
+      "remediated_comments": 8,
+      "checks": "Copilot comments remediated; current PR checks are tracked on GitHub",
+      "checked_at": "2026-07-05T19:46:10.882Z"
+    }
+  }
+}

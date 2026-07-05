@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.0.0",
+  "packet_id": "single",
+  "mode": "single",
+  "target": {
+    "base_branch": "main",
+    "head_branch": "004-web-framework-research-spike"
+  },
+  "source_feature_dir": "specs/004-web-framework-research-spike",
+  "generated_title": {
+    "value": "feat(speckit-pro): Add web framework research spike",
+    "type": "feat",
+    "scope": "speckit-pro",
+    "description": "Add web framework research spike",
+    "source_evidence": {
+      "kind": "feature_spec",
+      "source": "specs/004-web-framework-research-spike/spec.md",
+      "summary": "Feature title normalized into a public action phrase."
+    },
+    "rejected_candidates": [
+      {
+        "value": "Web Framework Research Spike",
+        "reason": "Feature display title is source evidence, not the final conventional title."
+      },
+      {
+        "value": "004-web-framework-research-spike",
+        "reason": "Branch names remain metadata and are not title descriptions."
+      }
+    ]
+  },
+  "body_file": "specs/004-web-framework-research-spike/.process/pr-body.md",
+  "required_headings": [
+    "Summary",
+    "What Changed",
+    "Why It Matters",
+    "How To Review",
+    "How To UAT",
+    "Verification",
+    "Scope",
+    "Known Gaps"
+  ],
+  "verification_evidence": [
+    {
+      "kind": "pr_packet_validation",
+      "source": "specs/004-web-framework-research-spike/.process/pr-packets/single/validation.json",
+      "summary": "Packet validation records status passed for this single packet.",
+      "result": "passed"
+    },
+    {
+      "kind": "final_reviewability_gate",
+      "source": "specs/004-web-framework-research-spike/.process/final-reviewability/gate-state.json",
+      "summary": "Final reviewability gate is size-blocked but proceeds via marker split.",
+      "result": "proceed_marker_split"
+    }
+  ],
+  "scope_evidence": {
+    "reviewable_loc": 0,
+    "production_files": 0,
+    "total_files": 34,
+    "budget_result": "size_blocked_marker_split",
+    "reviewability_gate_result": "block",
+    "reviewability_outcome": "marker_split",
+    "reviewability_evidence": "specs/004-web-framework-research-spike/.process/final-reviewability/gate-state.json",
+    "changed_files": [
+      ".specify/feature.json",
+      "CLAUDE.md",
+      "docs/ai/specs/.process/SPEC-004-design-concept.md",
+      "docs/ai/specs/.process/SPEC-004-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "docs/ai/specs/intelligence-platform-roadmap-MOC.md",
+      "docs/ai/specs/intelligence-platform-technical-roadmap.md",
+      "docs/design/assets/spec-004/one-k-node-target.png",
+      "docs/design/assets/spec-004/self-repo-graph.png",
+      "docs/design/web-framework-decision.md",
+      "specs/004-web-framework-research-spike/.process/final-reviewability/gate-state.json",
+      "specs/004-web-framework-research-spike/.process/marker-plan/final-marker-split-result.json",
+      "specs/004-web-framework-research-spike/.process/marker-plan/pr-marker-plan.json",
+      "specs/004-web-framework-research-spike/.process/pr-body.md",
+      "specs/004-web-framework-research-spike/.process/pr-packets/single.json",
+      "specs/004-web-framework-research-spike/.process/pr-packets/single/validation.json",
+      "specs/004-web-framework-research-spike/.process/reviewability/atomicity-route.json",
+      "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json",
+      "specs/004-web-framework-research-spike/.process/uat-runbook.md",
+      "specs/004-web-framework-research-spike/SPEC-MOC.md",
+      "specs/004-web-framework-research-spike/checklists/integration.md",
+      "specs/004-web-framework-research-spike/checklists/performance.md",
+      "specs/004-web-framework-research-spike/checklists/reliability.md",
+      "specs/004-web-framework-research-spike/checklists/requirements.md",
+      "specs/004-web-framework-research-spike/checklists/ux.md",
+      "specs/004-web-framework-research-spike/contracts/decision-artifacts.md",
+      "specs/004-web-framework-research-spike/data-model.md",
+      "specs/004-web-framework-research-spike/plan.md",
+      "specs/004-web-framework-research-spike/quickstart.md",
+      "specs/004-web-framework-research-spike/research.md",
+      "specs/004-web-framework-research-spike/retrospective.md",
+      "specs/004-web-framework-research-spike/spec.md",
+      "specs/004-web-framework-research-spike/tasks.md",
+      "specs/004-web-framework-research-spike/verify-tasks-report.md"
+    ],
+    "non_goals": [
+      "Split title generation is not implemented by this single-packet task.",
+      "Multi-PR emission behavior is not modified by this single-packet task."
+    ]
+  },
+  "uat": {
+    "how_to_uat": "Use the UAT Runbook embedded in the rendered PR body for reviewer-facing acceptance checks.",
+    "uat_runbook_heading": "## UAT Runbook",
+    "uat_source": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
+  },
+  "source_markers": [
+    {
+      "marker_id": "feature-spec",
+      "rendered_text": "Source: feature specification and changed-file scope.",
+      "source": "specs/004-web-framework-research-spike/spec.md"
+    },
+    {
+      "marker_id": "changed-file-scope",
+      "rendered_text": "Source: generated PR packet changed-file evidence.",
+      "source": "specs/004-web-framework-research-spike/.process/pr-body.md"
+    },
+    {
+      "marker_id": "quickstart-verification",
+      "rendered_text": "Source: generated PR packet.",
+      "source": "specs/004-web-framework-research-spike/quickstart.md"
+    }
+  ],
+  "editable_fields": [
+    {
+      "field_id": "summary",
+      "heading": "Summary",
+      "start_marker": "<!-- speckit-pro-editable:summary:start -->",
+      "end_marker": "<!-- speckit-pro-editable:summary:end -->"
+    },
+    {
+      "field_id": "what_changed",
+      "heading": "What Changed",
+      "start_marker": "<!-- speckit-pro-editable:what_changed:start -->",
+      "end_marker": "<!-- speckit-pro-editable:what_changed:end -->"
+    },
+    {
+      "field_id": "why_it_matters",
+      "heading": "Why It Matters",
+      "start_marker": "<!-- speckit-pro-editable:why_it_matters:start -->",
+      "end_marker": "<!-- speckit-pro-editable:why_it_matters:end -->"
+    }
+  ],
+  "protected_body_fingerprint": {
+    "algorithm": "sha256",
+    "value": "dcd6ad6081be69a49346ca78bbb12c8e24620825e6c4d46c438e7609704a177f",
+    "normalization": "canonical packet block only; LF line endings; trailing whitespace trimmed; final newline ensured; editable block bodies replaced by <elided:field_id> before sha256.",
+    "elided_fields": [
+      "summary",
+      "what_changed",
+      "why_it_matters"
+    ]
+  },
+  "validation_result_path": "specs/004-web-framework-research-spike/.process/pr-packets/single/validation.json"
+}
