@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T19:35:02Z",
-  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-05T19:43:58Z",
+  "active_step": "Phase 4: Checklist - Language Coverage",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -102,6 +102,22 @@
       "marker_check": "count-markers clarifications total=0"
     }
   },
+  "phase3_evidence": {
+    "executor": "phase-executor",
+    "files_created": [
+      "specs/023-ocaml-language-support/plan.md",
+      "specs/023-ocaml-language-support/research.md",
+      "specs/023-ocaml-language-support/data-model.md",
+      "specs/023-ocaml-language-support/quickstart.md",
+      "specs/023-ocaml-language-support/contracts/ocaml-language-support.md"
+    ],
+    "files_modified": [
+      "CLAUDE.md"
+    ],
+    "reviewability_decision": "SPEC-023 remains one spec, but implementation must split into grammar/status, extraction, resolution, and validation/eval slices.",
+    "constitution_gate": "passed with required split; no PPX expansion, package nodes, or external package edges",
+    "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -141,11 +157,11 @@
     },
     {
       "step": "Phase 3: Plan",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Language Coverage",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 4: Checklist - Language Coverage Consensus",

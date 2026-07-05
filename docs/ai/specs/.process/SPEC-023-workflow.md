@@ -35,8 +35,8 @@ setup.
 |-------|---------|--------|-------|
 | Specify | `$speckit-specify` | Complete | Generated `spec.md` and `requirements.md`; 4 user stories, 17 FRs, 10 acceptance scenarios, 0 clarification markers. |
 | Clarify | `$speckit-clarify` | Complete | Grammar pin, package-resolution boundary, advanced syntax list, PPX route, eval repos, and validation bar resolved. |
-| Plan | `$speckit-plan` | Pending | Must re-check reviewability because Grill Me intentionally broadened scope beyond the roadmap minimum. |
-| Checklist | `$speckit-checklist` | Pending | Recommended domains: language-coverage, resolution-correctness, validation/eval, safety/license. |
+| Plan | `$speckit-plan` | Complete | Generated plan, research, data model, quickstart, and contract; required split by grammar/status, extraction, resolution, and validation/eval slices. |
+| Checklist | `$speckit-checklist` | In Progress | Recommended domains: language-coverage, resolution-correctness, validation/eval, safety/license. |
 | Tasks | `$speckit-tasks` | Pending | Must emit split-ready tasks if grammar/extraction/resolution/PPX/eval exceed budget. |
 | Analyze | `$speckit-analyze` | Pending | Must check roadmap drift, especially PPX expansion and package-depth scope. |
 | Implement | `$speckit-implement` | Pending | TDD-first language support implementation; stop before PPX coding unless Plan/Analyze authorizes a split/update. |
@@ -362,11 +362,11 @@ Reference:
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | Pending | Technical approach and reviewability route |
-| `research.md` | Pending | Grammar pin, package metadata, PPX gate, eval repo selection |
-| `data-model.md` | Pending | OCaml syntax/resolution entities if useful |
-| `contracts/` | Pending | Not expected unless eval/report contracts need structure |
-| `quickstart.md` | Pending | Build, fixture, real-repo smoke, eval reproduction |
+| `plan.md` | Complete | Technical approach, constitution gates, reviewability estimate, and required implementation slices |
+| `research.md` | Complete | Grammar pin, package metadata, PPX gate, eval repo selection, retrieval questions, and control checks |
+| `data-model.md` | Complete | OCaml grammar, source-unit, symbol, pairing, metadata, relationship, PPX, validation, probe, and A/B entities |
+| `contracts/` | Complete | `contracts/ocaml-language-support.md` captures observable CLI/MCP/library/status/artifact/evidence behavior |
+| `quickstart.md` | Complete | Build, parser health, fixtures, smoke corpus, deterministic probes, A/B evidence, and existing-language controls |
 
 ---
 

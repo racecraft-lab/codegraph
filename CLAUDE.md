@@ -297,9 +297,21 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-No spec is currently in flight. SPEC-001 (Embedding Infrastructure & Endpoint
-Provider) is complete and archived — provenance and recovery commands in
-`.specify/memory/archive-reports/2026-07-05-SPEC-001.md`. For roadmap status and
-the next specs, see `docs/ai/specs/intelligence-platform-technical-roadmap.md`
-(Progress Tracking + Dogfooding Protocol).
+SPEC-023 (OCaml Language Support) is in flight on branch
+`023-ocaml-language-support`; Plan is complete and Checklists are next.
+
+Current plan: `specs/023-ocaml-language-support/plan.md`
+
+Supporting artifacts: `specs/023-ocaml-language-support/research.md`,
+`specs/023-ocaml-language-support/data-model.md`,
+`specs/023-ocaml-language-support/quickstart.md`, and
+`specs/023-ocaml-language-support/contracts/ocaml-language-support.md`.
+
+Workflow: `docs/ai/specs/.process/SPEC-023-workflow.md`.
+
+Preserve the clarified decisions: vendor `tree-sitter-ocaml@0.24.2`
+implementation and interface WASMs; use Dune-scoped unique-only local
+resolution; add no package nodes, external package edges, or PPX expansion; and
+keep Yojson, OCaml-LSP, and Dune validation with the nine pinned retrieval
+questions plus Yojson/OCaml-LSP A/B evidence.
 <!-- SPECKIT END -->
