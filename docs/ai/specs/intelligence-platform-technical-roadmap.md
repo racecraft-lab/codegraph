@@ -102,7 +102,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-005 | Local HTTP Server & REST API | ⏳ Pending | [SPEC-005-workflow.md](SPEC-005-workflow.md) | Ready (SPEC-004 complete; see `docs/design/web-framework-decision.md`) |
 | SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Blocked by SPEC-005 |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
-| SPEC-008 | LSP Client Integration | ⏳ Pending | [SPEC-008-workflow.md](SPEC-008-workflow.md) | Specify (parallel-safe) |
+| SPEC-008 | LSP Client Integration | 🔄 In Progress | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Scaffolded on `008-lsp-client-integration` |
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Blocked by SPEC-005 |
 | SPEC-010 | Graph-Aware Rename | ⏳ Pending | [SPEC-010-workflow.md](SPEC-010-workflow.md) | Blocked by SPEC-008 |
 | SPEC-011 | Execution Flows & Clusters | ⏳ Pending | [SPEC-011-workflow.md](SPEC-011-workflow.md) | Specify (parallel-safe) |
