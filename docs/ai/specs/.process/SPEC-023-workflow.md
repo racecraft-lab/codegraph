@@ -33,8 +33,8 @@ setup.
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `$speckit-specify` | Pending | Generate `specs/023-ocaml-language-support/spec.md`; capture broad syntax, deep package resolution, PPX research gate, and full eval bar. |
-| Clarify | `$speckit-clarify` | Pending | Required; resolve grammar pin, package-resolution boundary, advanced syntax list, PPX route, and eval repos. |
+| Specify | `$speckit-specify` | Complete | Generated `spec.md` and `requirements.md`; 4 user stories, 17 FRs, 10 acceptance scenarios, 0 clarification markers. |
+| Clarify | `$speckit-clarify` | In Progress | Required; resolve grammar pin, package-resolution boundary, advanced syntax list, PPX route, and eval repos. |
 | Plan | `$speckit-plan` | Pending | Must re-check reviewability because Grill Me intentionally broadened scope beyond the roadmap minimum. |
 | Checklist | `$speckit-checklist` | Pending | Recommended domains: language-coverage, resolution-correctness, validation/eval, safety/license. |
 | Tasks | `$speckit-tasks` | Pending | Must emit split-ready tasks if grammar/extraction/resolution/PPX/eval exceed budget. |
@@ -75,11 +75,13 @@ Before each phase, verify alignment with `.specify/memory/constitution.md`:
 | VI - Retrieval Performance | New OCaml output must help agents avoid Read/Grep and must not regress existing language retrieval. | Agent-eval on OCaml repos plus control smoke. |
 | VII - Local-First, Zero Native Deps | Grammar and tooling must be permissive and shippable as WASM/static assets; no native runtime dependency. | License check, `copy-assets`, `npm run build`. |
 
-**Constitution Check:** Baseline scaffold prereqs passed. `specify` is installed
-at `/Users/fredrickgabelmann/.local/bin/specify`. Codex agent install validator
-reported `ok: codex: 10 bundled agents installed`. Reviewability setup gate
-returned `pass: true`, `status: warn`, 325 reviewable LOC, 4 production files,
-10 total files, warning `primary surfaces 6 exceeds warn threshold 1`.
+**Constitution Check:** Verified during autopilot Phase 0 on 2026-07-05.
+`check-prerequisites.sh` returned `all_pass: true`; Codex agent install
+validator reported `ok: codex: 10 bundled agents installed`; reviewability
+setup gate returned `pass: true`, `status: warn`, 325 reviewable LOC, 4
+production files, 10 total files, warning `primary surfaces 6 exceeds warn
+threshold 1`; `npm run build`, `npm run typecheck`, and `npm test` passed
+(`132` test files, `2223` passed, `4` skipped).
 
 ---
 
@@ -202,14 +204,14 @@ Reference the design concept:
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | Pending |
-| User Stories | Pending |
-| Acceptance Criteria | Pending |
+| Functional Requirements | 17 |
+| User Stories | 4 |
+| Acceptance Criteria | 10 |
 
 ### Files Generated
 
-- [ ] `specs/023-ocaml-language-support/spec.md`
-- [ ] `specs/023-ocaml-language-support/checklists/requirements.md`
+- [x] `specs/023-ocaml-language-support/spec.md`
+- [x] `specs/023-ocaml-language-support/checklists/requirements.md`
 
 ---
 
@@ -501,6 +503,17 @@ enter implementation without a recorded split/roadmap decision.
 
 ---
 
+## Phase 6.5: Confidence Gate
+
+Run after Analyze and before Implement. Confidence mode resolved at autopilot
+startup.
+
+| Confidence Gate | G6.5 | Status | Notes |
+|-----------------|------|--------|-------|
+| Confidence Gate | G6.5 | Pending | Advisory mode unless overridden by local config or invocation flags. |
+
+---
+
 ## Phase 7: Implement
 
 ### Implement Prompt
@@ -556,6 +569,23 @@ languages, resolver paths, MCP tools, or installer code.
 - [ ] CHANGELOG `## [Unreleased]` entry is user-facing and avoids internals.
 - [ ] PR packet records scope budget, review order, non-goals, verification,
   known gaps, and rollback notes.
+
+### Canonical Post Items
+
+| Post | Status | Notes |
+|------|--------|-------|
+| Post: Doctor Extension Check | Skipped | Doctor extension is not installed. |
+| Post: Verify Implementation | Pending | Verify extension is installed. |
+| Post: Verify Tasks Phantom Check | Pending | Verify-tasks extension is installed. |
+| Post: Code Review | Pending | Built-in independent diff review. |
+| Post: Integration Suite | Pending | Full verification after implementation. |
+| Post: Reviewability Diff Gate | Pending | Final reviewability backstop before PR packet generation. |
+| Post: Self-Review | Pending | Four-question audit before UAT and PR body. |
+| Post: UAT Runbook Generation | Pending | Deterministic skeleton plus authoring agent. |
+| Post: PR Body Generation | Pending | Generated packet/body plus validation. |
+| Post: PR Creation | Pending | Create PR only from validated packet fields. |
+| Post: Review Remediation | Pending | Monitor and address review feedback. |
+| Post: Retrospective | Pending | Final canonical post item. |
 
 ## Project Structure Reference
 

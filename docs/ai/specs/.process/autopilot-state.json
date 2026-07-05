@@ -1,0 +1,209 @@
+{
+  "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
+  "updated_at": "2026-07-05T19:08:20Z",
+  "active_step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping",
+  "spec_id": "SPEC-023",
+  "feature_dir": "specs/023-ocaml-language-support",
+  "branch": "023-ocaml-language-support",
+  "confidence_gate_mode": "advisory",
+  "archive_sweep": {
+    "current_target": "specs/023-ocaml-language-support",
+    "archive_extension_installed": false,
+    "safeToApplyCleanup": false,
+    "mode": "unavailable",
+    "note": "Archive extension is not installed; no cleanup was applied."
+  },
+  "project_commands": {
+    "BUILD": "npm run build",
+    "TYPECHECK": "npm run typecheck",
+    "LINT": "N/A",
+    "LINT_FIX": "N/A",
+    "UNIT_TEST": "npm test",
+    "INTEGRATION_TEST": "N/A",
+    "SINGLE_FILE_TEST": "npx vitest run <file>",
+    "SINGLE_FILE_INTEGRATION": "N/A",
+    "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
+  },
+  "preset_conventions": {
+    "has_presets": true,
+    "presets": [
+      "claude-ask-questions",
+      "codegraph-project-overrides",
+      "speckit-pro-reviewability"
+    ],
+    "templates": {
+      "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
+      "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
+      "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
+    }
+  },
+  "codex_agents": {
+    "validator": "ok: codex: 10 bundled agents installed",
+    "model": "gpt-5.5",
+    "model_reasoning_effort": "xhigh"
+  },
+  "phase0_evidence": {
+    "prerequisites": "check-prerequisites.sh all_pass=true",
+    "confidence_gate_mode": "advisory",
+    "reviewability_setup_gate": "status=warn, pass=true, reviewable_loc=325, production_files=4, total_files=10",
+    "build": "npm run build passed",
+    "typecheck": "npm run typecheck passed",
+    "unit_test": "npm test passed: 132 files, 2223 passed, 4 skipped"
+  },
+  "phase1_evidence": {
+    "executor": "phase-executor",
+    "files_created": [
+      ".specify/feature.json",
+      "specs/023-ocaml-language-support/spec.md",
+      "specs/023-ocaml-language-support/checklists/requirements.md"
+    ],
+    "user_stories": 4,
+    "functional_requirements": 17,
+    "acceptance_scenarios": 10,
+    "requirements_checklist": "16/16 complete",
+    "gate": "G1 pass: spec.md exists with 0 markers",
+    "after_specify_hook": "skipped: agent-context hook installed but no SPEC-023 plan.md exists yet; running without a plan could auto-detect unrelated plans"
+  },
+  "plan": [
+    {
+      "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 0: Prerequisites",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 1: Specify",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping",
+      "status": "in_progress"
+    },
+    {
+      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 2: Clarify - Validation and Eval Bar",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 2: Clarify - Validation and Eval Bar Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 3: Plan",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Language Coverage",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Language Coverage Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Resolution Correctness",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Resolution Correctness Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Validation and Eval",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Validation and Eval Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Safety and License",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Safety and License Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 5: Tasks",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6: Analyze",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6: Analyze - Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6.5: Confidence Gate",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - Pending task decomposition",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Doctor Extension Check",
+      "status": "skipped: doctor extension not installed"
+    },
+    {
+      "step": "Post: Verify Implementation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Verify Tasks Phantom Check",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Code Review",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Integration Suite",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Reviewability Diff Gate",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Self-Review",
+      "status": "pending"
+    },
+    {
+      "step": "Post: UAT Runbook Generation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: PR Body Generation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: PR Creation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Review Remediation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Retrospective",
+      "status": "pending"
+    }
+  ]
+}
