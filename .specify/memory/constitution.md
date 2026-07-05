@@ -1,4 +1,23 @@
 <!--
+Sync Impact Report — 2026-07-05
+- Version change: 1.0.0 → 1.1.0 (MINOR: materially expanded guidance)
+- Modified principles: none
+- Added sections:
+  - Quality Gates & Development Workflow → "Dogfooding (binding)" subsection, binding the
+    roadmap's Dogfooding Protocol (docs/ai/specs/intelligence-platform-technical-roadmap.md
+    § Dogfooding Protocol, landed with SPEC-001 in PR #17) as constitutional law: the repo
+    stays self-indexed + embedded, every spec merge triggers the rebuild→sync loop, and
+    every spec's UAT includes a self-repo step
+- Removed sections: none
+- Template propagation:
+  - ✅ .specify/templates/*.md — no edit needed: the per-spec self-repo UAT step enters each
+    workflow file via /speckit-pro:speckit-scaffold-spec reading the roadmap, whose
+    Dogfooding Protocol section is the operational source of truth
+  - ✅ CLAUDE.md — no edit needed: operational mechanics stay in the roadmap section
+- Follow-up TODOs: none
+-->
+
+<!--
 Sync Impact Report — 2026-07-03
 - Version change: (uninitialized template) → 1.0.0 (initial ratification)
 - Modified principles: n/a — template placeholders replaced with 7 concrete principles
@@ -158,6 +177,27 @@ The product is the agent stopping — treat sufficiency like uptime.
   implement, gated G0–G7; registered `after_implement` hooks (review, verify,
   verify-tasks, cleanup, retrospective) run per `.specify/extensions.yml`.
 
+### Dogfooding (binding)
+
+This repository is the first consumer of every Intelligence Platform capability. The
+operational protocol lives in the technical roadmap
+(`docs/ai/specs/intelligence-platform-technical-roadmap.md` § Dogfooding Protocol) and is
+binding here:
+
+- The repo MUST remain self-indexed and (while an embedding endpoint is configured)
+  fully embedded. Endpoint configuration flows through the committed `.envrc` direnv shim
+  plus an untracked `.envrc.local`; `.envrc.local` and `.codegraph/` are never committed,
+  and `CODEGRAPH_EMBEDDING_API_KEY` is never persisted, logged, or echoed.
+- After each spec's PR(s) merge, the dogfood loop MUST run before the next spec starts:
+  update main, rebuild, `codegraph sync`, and verify `codegraph status` reports a healthy
+  index (coverage regression from the previous spec's baseline blocks new work until
+  explained or healed).
+- Every spec MUST include a self-repo UAT step that exercises its new capability against
+  this repository, per the roadmap's per-spec dogfood ladder, with the outcome recorded
+  in the spec's UAT runbook and retrospective.
+- Dormancy discipline (extends Principle VII): with a capability unconfigured, behavior
+  stays byte-identical — zero network calls, zero schema writes.
+
 ## Governance
 
 - This constitution supersedes other practice documents where they conflict. `CLAUDE.md`
@@ -173,4 +213,4 @@ The product is the agent stopping — treat sufficiency like uptime.
 - The constitution is committed to git. Back it up before any SpecKit upgrade or
   `specify init --force` — upgrades overwrite `.specify/memory/`.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-03 | **Last Amended**: 2026-07-03
+**Version**: 1.1.0 | **Ratified**: 2026-07-03 | **Last Amended**: 2026-07-05
