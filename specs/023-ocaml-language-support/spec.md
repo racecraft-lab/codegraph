@@ -1,4 +1,4 @@
-# Feature Specification: SPEC-023 - OCaml Language Support
+# Feature Specification: OCaml Language Support
 
 **Feature Branch**: `023-ocaml-language-support`
 
