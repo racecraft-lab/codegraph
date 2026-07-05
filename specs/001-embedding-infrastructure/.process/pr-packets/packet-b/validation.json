@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "error_class": "none",
+  "exit_code": 0,
+  "stderr_line": "",
+  "packet_id": "packet-b",
+  "mode": "single",
+  "target": {
+    "base_branch": "001-embedding-infrastructure-slice-a",
+    "head_branch": "001-embedding-infrastructure"
+  },
+  "status": "passed",
+  "title_value": "feat(embeddings): Add incremental embedding freshness, backfill healing, and endpoint resilience (stacked 2 of 2)",
+  "body_file": "specs/001-embedding-infrastructure/.process/pr/body-b.md",
+  "rule_outcomes": [
+    {
+      "rule": "packet.validation",
+      "status": "passed",
+      "evidence": "no failures"
+    }
+  ],
+  "pr_blocked": false,
+  "failures": [],
+  "remediation_evidence": [],
+  "timestamp": "2026-07-05T08:11:43Z"
+}

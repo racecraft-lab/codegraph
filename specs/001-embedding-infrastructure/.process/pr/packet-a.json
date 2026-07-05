@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0.0",
+  "packet_id": "packet-a",
+  "mode": "single",
+  "target": {
+    "base_branch": "main",
+    "head_branch": "322d001"
+  },
+  "source_feature_dir": "specs/001-embedding-infrastructure",
+  "generated_title": {
+    "value": "feat(embeddings): Add semantic embedding infrastructure via OpenAI-compatible endpoints (stacked 1 of 2, full-index embedding)",
+    "type": "feat",
+    "scope": "embeddings",
+    "description": "Add semantic embedding infrastructure via OpenAI-compatible endpoints (stacked 1 of 2, full-index embedding)",
+    "source_evidence": {
+      "kind": "feature_spec",
+      "source": "specs/001-embedding-infrastructure/spec.md",
+      "summary": "Feature title normalized into a public action phrase; internal tracking label dropped for the public title; stacked-pair qualifier added so the two sequential PRs are distinguishable."
+    },
+    "rejected_candidates": [
+      {
+        "value": "Embedding Infrastructure & Endpoint Provider (SPEC-001)",
+        "reason": "Feature display title is source evidence, not the final conventional title."
+      },
+      {
+        "value": "322d001",
+        "reason": "Branch names remain metadata and are not title descriptions."
+      }
+    ]
+  },
+  "body_file": "specs/001-embedding-infrastructure/.process/pr/body-a.md",
+  "required_headings": [
+    "Summary",
+    "What Changed",
+    "Why It Matters",
+    "How To Review",
+    "How To UAT",
+    "Verification",
+    "Scope",
+    "Known Gaps"
+  ],
+  "verification_evidence": [
+    {
+      "kind": "layer4_script",
+      "source": "tests/speckit-pro/layer4-scripts/test-generate-pr-body.sh",
+      "summary": "Focused generator test covers single packet metadata and rendered body paths.",
+      "result": "pending"
+    }
+  ],
+  "scope_evidence": {
+    "reviewable_loc": 0,
+    "production_files": 0,
+    "total_files": 48,
+    "budget_result": "within_budget",
+    "changed_files": [
+      ".claude/agent-memory/speckit-pro-implement-executor/MEMORY.md",
+      ".claude/agent-memory/speckit-pro-implement-executor/project_embedding-endpoint-provider.md",
+      ".claude/agent-memory/speckit-pro-implement-executor/project_embedding-indexall-wiring.md",
+      ".claude/agent-memory/speckit-pro-implement-executor/project_embedding-pass.md",
+      ".specify/feature.json",
+      "CHANGELOG.md",
+      "CLAUDE.md",
+      "__tests__/db-perf.test.ts",
+      "__tests__/embeddings-codec.test.ts",
+      "__tests__/embeddings-config.test.ts",
+      "__tests__/embeddings-endpoint.test.ts",
+      "__tests__/embeddings-index.test.ts",
+      "__tests__/embeddings-input-hash.test.ts",
+      "__tests__/foundation.test.ts",
+      "__tests__/pr19-improvements.test.ts",
+      "docs/ai/specs/.process/SPEC-001-design-concept.md",
+      "docs/ai/specs/.process/SPEC-001-workflow.md",
+      "docs/ai/specs/intelligence-platform-roadmap-MOC.md",
+      "docs/ai/specs/intelligence-platform-technical-roadmap.md",
+      "specs/001-embedding-infrastructure/.process/autopilot-state.json",
+      "specs/001-embedding-infrastructure/.process/reviewability/tasks-gate.json",
+      "specs/001-embedding-infrastructure/SPEC-MOC.md",
+      "specs/001-embedding-infrastructure/checklists/data-integrity.md",
+      "specs/001-embedding-infrastructure/checklists/error-handling.md",
+      "specs/001-embedding-infrastructure/checklists/performance.md",
+      "specs/001-embedding-infrastructure/checklists/requirements.md",
+      "specs/001-embedding-infrastructure/checklists/security.md",
+      "specs/001-embedding-infrastructure/contracts/embedding-config.md",
+      "specs/001-embedding-infrastructure/contracts/embedding-provider.md",
+      "specs/001-embedding-infrastructure/contracts/node-vectors-schema.md",
+      "specs/001-embedding-infrastructure/contracts/status-embedding-json.md",
+      "specs/001-embedding-infrastructure/data-model.md",
+      "specs/001-embedding-infrastructure/plan.md",
+      "specs/001-embedding-infrastructure/quickstart.md",
+      "specs/001-embedding-infrastructure/research.md",
+      "specs/001-embedding-infrastructure/spec.md",
+      "specs/001-embedding-infrastructure/tasks.md",
+      "src/bin/codegraph.ts",
+      "src/db/migrations.ts",
+      "src/db/queries.ts",
+      "src/db/schema.sql",
+      "src/embeddings/config.ts",
+      "src/embeddings/endpoint-provider.ts",
+      "src/embeddings/indexer-hook.ts",
+      "src/embeddings/provider.ts",
+      "src/extraction/index.ts",
+      "src/index.ts",
+      "src/ui/shimmer-progress.ts"
+    ],
+    "non_goals": [
+      "Split title generation is not implemented by this single-packet task.",
+      "Multi-PR emission behavior is not modified by this single-packet task."
+    ]
+  },
+  "uat": {
+    "how_to_uat": "Use the UAT Runbook embedded in the rendered PR body for reviewer-facing acceptance checks.",
+    "uat_runbook_heading": "## UAT Runbook",
+    "uat_source": "specs/001-embedding-infrastructure/.process/uat-runbook.md"
+  },
+  "source_markers": [
+    {
+      "marker_id": "feature-spec",
+      "rendered_text": "Source: feature specification defines reviewer-ready PR packet behavior.",
+      "source": "specs/001-embedding-infrastructure/spec.md"
+    },
+    {
+      "marker_id": "schema-contract",
+      "rendered_text": "Source: schema contract defines editable field markers.",
+      "source": "speckit-pro/skills/speckit-autopilot/contracts/pr-packet.schema.json"
+    },
+    {
+      "marker_id": "quickstart-verification",
+      "rendered_text": "Source: quickstart defines single-packet validation evidence.",
+      "source": "specs/001-embedding-infrastructure/quickstart.md"
+    }
+  ],
+  "editable_fields": [
+    {
+      "field_id": "summary",
+      "heading": "Summary",
+      "start_marker": "<!-- speckit-pro-editable:summary:start -->",
+      "end_marker": "<!-- speckit-pro-editable:summary:end -->"
+    },
+    {
+      "field_id": "what_changed",
+      "heading": "What Changed",
+      "start_marker": "<!-- speckit-pro-editable:what_changed:start -->",
+      "end_marker": "<!-- speckit-pro-editable:what_changed:end -->"
+    },
+    {
+      "field_id": "why_it_matters",
+      "heading": "Why It Matters",
+      "start_marker": "<!-- speckit-pro-editable:why_it_matters:start -->",
+      "end_marker": "<!-- speckit-pro-editable:why_it_matters:end -->"
+    }
+  ],
+  "protected_body_fingerprint": {
+    "algorithm": "sha256",
+    "value": "7bbbb6b77e91890bf31848841a5e16f7b2fc701acc7c1ad9069789a2c0174816",
+    "normalization": "canonical packet block only; LF line endings; trailing whitespace trimmed; final newline ensured; editable block bodies replaced by <elided:field_id> before sha256.",
+    "elided_fields": [
+      "summary",
+      "what_changed",
+      "why_it_matters"
+    ]
+  },
+  "validation_result_path": "specs/001-embedding-infrastructure/.process/pr-packets/packet-a/validation.json"
+}

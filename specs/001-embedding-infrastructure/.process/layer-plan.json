@@ -1,0 +1,926 @@
+{
+ "tool": "plan-layers",
+ "contract_version": 1,
+ "status": "ok",
+ "feature_dir": "specs/001-embedding-infrastructure",
+ "tasks_file": "specs/001-embedding-infrastructure/tasks.md",
+ "increments": [
+  {
+   "id": "foundation",
+   "name": "Foundation",
+   "kind": "foundation",
+   "order": 0,
+   "depends_on": [],
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 45,
+    "heading": "## Phase 1: Setup"
+   },
+   "tasks": [
+    {
+     "id": "T001",
+     "title": "Confirm the branch baseline is green (`npm run build` && `npm test`) and record a `codegraph status --json` `{nodeCount, edgeCount}` snapshot on a throwaway `fs.mkdtempSync` project, to anchor the FR-024/SC-006 node-edge parity and FR-002/SC-002 dormancy-byte-identity comparisons; create the empty `src/embeddings/` module directory.",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 50
+     },
+     "files": [],
+     "tests": []
+    },
+    {
+     "id": "T002",
+     "title": "Write failing unit tests in `__tests__/embeddings-config.test.ts` \u2014 `loadEmbeddingConfig(env)`: active iff `CODEGRAPH_EMBEDDING_URL` **and** `CODEGRAPH_EMBEDDING_MODEL` both non-empty (FR-001); returns `null` (dormant) when **neither** set (FR-002); returns a distinct half-config descriptor naming the missing variable when **exactly one** set (FR-001a/SC-009); `BATCH_SIZE`/`CONCURRENCY`/`TIMEOUT_MS` positive-int parse+clamp with invalid/blank\u2192default 16/4/30000 (D4); endpoint-redaction helper strips userinfo/path/query to scheme+host+port and renders an unparseable URL as a safe placeholder (FR-023/D16); `isPlaintextRemoteEndpoint(url)` true for `http` non-loopback, false for loopback/`https` (Assumptions transport bullet).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 63
+     },
+     "files": [
+      "__tests__/embeddings-config.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T003",
+     "title": "Implement `src/embeddings/config.ts` \u2014 `EmbeddingConfig` interface + `loadEmbeddingConfig(env): EmbeddingConfig | null` (null-return IS the dormancy signal) + a half-config descriptor (`missingVariable`) per FR-001a; positive-int parse+clamp following the `resolveParsePoolSize` precedent (`src/extraction/parse-pool.ts`); `redactEndpoint(url)` (scheme+host+port only, unparseable\u2192placeholder) and `isPlaintextRemoteEndpoint(url)`; makes T002 pass (FR-001/FR-001a/FR-002/FR-003 key-optional/FR-004 dims-optional/FR-023/D3/D4/D16).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 64
+     },
+     "files": [
+      "src/embeddings/config.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T004",
+     "title": "Implement `src/embeddings/provider.ts` \u2014 the `EmbeddingProvider` interface (`readonly id: string; readonly dims: number; embed(texts: string[]): Promise<Float32Array[]>`) per `contracts/embedding-provider.md` \u00a71 (D2). Interface only \u2014 the seam SPEC-002/003 consume; no implementation, so no behavior test.",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 65
+     },
+     "files": [
+      "contracts/embedding-provider.md",
+      "src/embeddings/provider.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T005",
+     "title": "Write failing unit tests in `__tests__/embeddings-codec.test.ts` \u2014 `encodeVector(Float32Array)\u2192Buffer` with `byteLength === dims*4`; `decodeVector(blob, dims)\u2192Float32Array` round-trip identity element-for-element; endianness fixed little-endian regardless of host (FR-011/D7).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 66
+     },
+     "files": [
+      "__tests__/embeddings-codec.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T006",
+     "title": "Implement the little-endian f32 codec (`encodeVector`/`decodeVector`) as exported helpers in `src/embeddings/indexer-hook.ts`; makes T005 pass (FR-011/D7).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 67
+     },
+     "files": [
+      "src/embeddings/indexer-hook.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T007",
+     "title": "Write failing unit tests in `__tests__/embeddings-input-hash.test.ts` \u2014 `composeEmbeddingInput(symbol)`: fixed field order kind/name/signature/docstring/source per `contracts/embedding-provider.md` \u00a73; ~6,000-char cap trims the **snippet last** and never drops other fields; **LF normalization + UTF-8** so a CRLF vs LF checkout of identical code composes byte-identically (FR-007); `computeInputHash` = `sha256` hex over the normalized bytes, stable across runs/platforms and identical content \u2192 identical hash (FR-008).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 68
+     },
+     "files": [
+      "__tests__/embeddings-input-hash.test.ts",
+      "contracts/embedding-provider.md"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T008",
+     "title": "Implement `composeEmbeddingInput(symbol)` + `computeInputHash(composed)` as exported helpers in `src/embeddings/indexer-hook.ts` \u2014 deterministic fixed-order join, LF/UTF-8 normalization, ~6000-char cap, `node:crypto` `createHash('sha256')`; makes T007 pass (FR-007/FR-008/D11).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 69
+     },
+     "files": [
+      "src/embeddings/indexer-hook.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T009",
+     "title": "Write failing tests in `__tests__/embeddings-index.test.ts` (schema-convergence section) \u2014 a freshly-created DB (from `schema.sql`) and a DB **upgraded from schema v7** yield an **identical `node_vectors` table shape** (assert `PRAGMA table_info` equality across both paths); the v8 migration is **DDL-only** and **idempotent** (re-open is a safe no-op) and applies atomically (FR-012/D8).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 70
+     },
+     "files": [
+      "__tests__/embeddings-index.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T010",
+     "title": "Add `CREATE TABLE IF NOT EXISTS node_vectors (node_id TEXT PRIMARY KEY, model TEXT NOT NULL, dims INTEGER NOT NULL, vector BLOB NOT NULL, input_hash TEXT NOT NULL)` \u2014 **no foreign key** (D6/FR-016a) \u2014 to `src/db/schema.sql`, and add the **identical** DDL as a v8 migration `up` in `src/db/migrations.ts` (bump `CURRENT_SCHEMA_VERSION` 7\u21928), in lockstep; makes T009 pass. `copy-assets` needs no change (DDL lives inside the already-shipped `schema.sql`) (FR-012/D8; Constitution VII).",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 71
+     },
+     "files": [
+      "src/db/migrations.ts",
+      "src/db/schema.sql"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T011",
+     "title": "Verify the reviewability budget against the planned two-slice file/LOC scope and record the ratified split (Slice A = US1 ~500 LOC/~8 files; Slice B = US2+US3 ~250 LOC) before implementation; confirm each slice stays at/below the block threshold (spec Reviewability Budget / plan). No code \u2014 a gate.",
+     "story": null,
+     "increment_id": "foundation",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 72
+     },
+     "files": [],
+     "tests": []
+    }
+   ],
+   "files": [
+    "__tests__/embeddings-codec.test.ts",
+    "__tests__/embeddings-config.test.ts",
+    "__tests__/embeddings-index.test.ts",
+    "__tests__/embeddings-input-hash.test.ts",
+    "contracts/embedding-provider.md",
+    "src/db/migrations.ts",
+    "src/db/schema.sql",
+    "src/embeddings/config.ts",
+    "src/embeddings/indexer-hook.ts",
+    "src/embeddings/provider.ts"
+   ],
+   "tests": [],
+   "advisory_size": {
+    "task_count": 11,
+    "file_reference_count": 12,
+    "distinct_file_count": 10,
+    "test_reference_count": 0,
+    "distinct_test_count": 0
+   }
+  },
+  {
+   "id": "us1",
+   "name": "User Story 1 - Configure and embed on index (Slice A) (Priority: P1) \ud83c\udfaf MVP",
+   "kind": "story",
+   "order": 1,
+   "depends_on": [],
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 79,
+    "heading": "## Phase 3: User Story 1 - Configure and embed on index (Slice A) (Priority: P1) \ud83c\udfaf MVP"
+   },
+   "tasks": [
+    {
+     "id": "T012",
+     "title": "Write failing tests in `__tests__/embeddings-index.test.ts` (query-helper section) \u2014 `upsertNodeVector` inserts then **replaces on conflict** (FR-009/FR-010); `selectEmbeddableNodesMissingVector(activeModel)` returns only live **declaration-kind** nodes (FR-005) and never noise kinds `parameter/import/export/enum_member/field/property/file` (FR-006) that lack a current-model vector; `getEmbeddingCoverage(activeModel)` joins **FROM live nodes** so orphan vector rows are excluded and `embeddable===0 \u21d2 percent 100` (FR-022); model match is **exact, case-sensitive** (FR-010).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 92
+     },
+     "files": [
+      "__tests__/embeddings-index.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T013",
+     "title": "Implement the additive Slice-A query helpers in `src/db/queries.ts` \u2014 `upsertNodeVector(node_id, model, dims, vector, input_hash)` (`INSERT \u2026 ON CONFLICT(node_id) DO UPDATE`), `selectEmbeddableNodesMissingVector(activeModel)` (declaration-kind + no current-model vector), `getEmbeddingCoverage(activeModel)` (join-from-live-nodes, active-model filter); makes T012 pass (FR-005/FR-006/FR-009/FR-010/FR-016/FR-018/FR-022).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 93
+     },
+     "files": [
+      "src/db/queries.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T014",
+     "title": "Write failing integration tests in `__tests__/embeddings-endpoint.test.ts` against a local `node:http` mock endpoint (ephemeral port, deterministic vectors) \u2014 success + **dimension inference** from the first batch; **keyless** vs `Authorization: Bearer` path (FR-003); 5xx/429 **retry+backoff** honoring `Retry-After`, then success and then retry\u2192exhaustion\u2192reject (FR-019); per-request **timeout** on a hanging endpoint (FR-019a); **401/403 fast-abort** without consuming the retry budget (FR-003/FR-019); **non-retryable 4xx** (400/404/422) fast-abort (FR-019); **response validation** \u2014 non-JSON/truncated body, missing embeddings, or an embedding **count \u2260 batch size** fails the batch and persists nothing (FR-021a); **dimension conflict** raises an error naming `CODEGRAPH_EMBEDDING_DIMS` (FR-021); **recursive redaction** \u2014 a raw transport error's message, `cause` chain, and `.input` own-property, plus response-body text, never leak the key or URL creds; output order matches input order.",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 94
+     },
+     "files": [
+      "__tests__/embeddings-endpoint.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T015",
+     "title": "Implement `src/embeddings/endpoint-provider.ts` \u2014 a `fetch`-based `EndpointProvider` (built-in global `fetch` + `AbortSignal.timeout`, **no new dependency**, FR-025): batching (default 16), bounded concurrency (default 4) over in-flight HTTP only, OpenAI `{model, input}` wire shape (`contracts/embedding-provider.md` \u00a72), exponential backoff + full jitter (base 1000ms, \u00d72, ~8s cap, 3 retries) on 5xx/429/timeout/network (D5), **fast-abort** on 401/403 and other non-retryable 4xx (FR-003/FR-019), strict response validation with count-match (FR-021a), and **full replacement** of any transport/endpoint error with a new redacted error before it leaves the provider \u2014 recursively through `cause`/own-properties, response-body redacted too (FR-023); makes T014 pass (FR-003/FR-019/FR-019a/FR-021/FR-021a/FR-023/FR-025/D1/D5).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 95
+     },
+     "files": [
+      "contracts/embedding-provider.md",
+      "src/embeddings/endpoint-provider.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T016",
+     "title": "Implement the **full-index embed pass** in `src/embeddings/indexer-hook.ts` \u2014 **stream/batched selection** of missing symbols (never materialize all symbols + composed inputs at once, FR-028), compose (T008) \u2192 embed (T015) \u2192 persist via `encodeVector` (T006) + `upsertNodeVector` (T013) in **batch-sized transactions** (one `db.transaction()` per completed batch \u2014 never per-row nor one pass-long tx, writes synchronous through the single `node:sqlite` connection, FR-029); **dimension infer\u2192persist\u2192enforce** via `project_metadata` scalars `embedding_dims`/`embedding_model` (`setMetadata`/`getMetadata`, D9/FR-004) with a conflict naming `CODEGRAPH_EMBEDDING_DIMS` (FR-021); **WAL checkpoint** the pass's bulk writes via the same `runMaintenance()` the index already runs, positioned so its writes are covered (FR-030); **advisory abort** on retry exhaustion leaving written vectors in place (FR-014/FR-019); runs **inside the existing index lock**, adds **no new lock**, and refreshes the held lock-file mtime at batch boundaries (FR-015a/FR-031). Failures identify a symbol by **node id, never by echoing its source** (FR-025a).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 96
+     },
+     "files": [
+      "src/embeddings/indexer-hook.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T017",
+     "title": "Add `'embedding'` to the `IndexProgress.phase` union in `src/extraction/index.ts` and a matching `embedding: 'Embedding symbols'` label to `PHASE_NAMES` in `src/ui/shimmer-progress.ts` \u2014 the two one-line additions beside the existing `scanning|parsing|storing|resolving` entries (D15/FR-022).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 97
+     },
+     "files": [
+      "src/extraction/index.ts",
+      "src/ui/shimmer-progress.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T018",
+     "title": "Implement the plaintext-`http`-remote **advisory warning** helper in `src/embeddings/config.ts` (message for `isPlaintextRemoteEndpoint(url)` \u2014 \"source code and any bearer key would cross the network in cleartext\"), warn-style, advisory-only, loopback stays warning-free; unit test in `__tests__/embeddings-config.test.ts` (Assumptions transport bullet \u2014 SHOULD).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 98
+     },
+     "files": [
+      "__tests__/embeddings-config.test.ts",
+      "src/embeddings/config.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T019",
+     "title": "Wire the advisory embed pass into `indexAll()` **after reference resolution** in `src/index.ts` (the established \"advisory \u2014 never fail an index over it\" slot): construct the pass only when config is active (else fully dormant \u2014 zero network/writes/log-lines), emit the `'embedding'` progress phase (embedded \u00f7 eligible), and print the **one-line half-config advisory** (T003 descriptor) and the **plaintext-remote warning** (T018) to the command's own stdout \u2014 non-fatal, never a non-zero exit (FR-001a/FR-013/FR-014/FR-015a/Assumptions transport).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 99
+     },
+     "files": [
+      "src/index.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T020",
+     "title": "Add the `status` **embedding section + `--json` parity** in `src/bin/codegraph.ts` (after the Index Statistics block) backed by a new `getEmbeddingStatus()` library method on the `CodeGraph` class in `src/index.ts` (sibling to `indexAll`/`sync`) over `getEmbeddingCoverage` + the metadata scalars \u2014 active (`endpoint` redacted to scheme+host+port, model, dims, `embedded/embeddable (NN%)`), neutral **dormant** line naming the two activation vars (+ `previousRun` read from disk only when prior-run vectors exist), and a distinct **misconfigured** line + `--json` `misconfigured`/`missingVariable` for the half-config state \u2014 per `contracts/status-embedding-json.md` (FR-022/FR-001a/FR-023).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 100
+     },
+     "files": [
+      "contracts/status-embedding-json.md",
+      "src/bin/codegraph.ts",
+      "src/index.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T021",
+     "title": "Add the Slice-A **security-invariant** suite to `__tests__/embeddings-index.test.ts` \u2014 with `CODEGRAPH_EMBEDDING_API_KEY` set and creds embedded in the URL, the key and URL creds appear in **no** persisted file (neither `node_vectors` nor `project_metadata`), log line, or error message across success/timeout/network/4xx/5xx/dimension-conflict/malformed paths incl. the `cause` chain and `.input` (SC-007/FR-023); **code-egress**: a network capture during a pass shows requests to **exactly one** host (the configured endpoint), each body exactly `{model, input}` with no added metadata, and the composed input appears in no local sink \u2014 only `input_hash` persisted (SC-011/FR-025a); `package.json` gains **no runtime dependency** and no telemetry event fires (SC-008/FR-025).",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 104
+     },
+     "files": [
+      "__tests__/embeddings-index.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T022",
+     "title": "Add the Slice-A **behavior** suite to `__tests__/embeddings-index.test.ts` \u2014 full index \u2192 `embedding.coverage.percent === 100` with correct model+dims incl. **inferred** dims when `CODEGRAPH_EMBEDDING_DIMS` unset (SC-001, US1-AS1/AS4); **dormant byte-identity** (neither var set) \u2192 zero embedding requests, zero `node_vectors` writes, zero new log lines, results identical to a no-feature build (SC-002, US1-AS2); **keyless** endpoint embeds with no `Authorization` header (US1-AS3); **node/edge counts identical** with vs without the feature vs the T001 baseline (SC-006/FR-024); `status`/`--json` active + dormant + misconfigured shapes render correctly.",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 105
+     },
+     "files": [
+      "__tests__/embeddings-index.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T023",
+     "title": "**Slice A checkpoint** \u2014 run quickstart A1\u2013A6 to green, add the Slice A user-facing `## [Unreleased]` entry to `CHANGELOG.md` (endpoint embeddings on full index; `status` coverage; the `CODEGRAPH_EMBEDDING_*` vars), and assemble the Slice A PR review packet (what changed, why, non-goals, review order, scope budget, traceability FR-005/FR-006\u2192selection, FR-024\u2192parity, FR-023\u2192redaction, SC-001\u2192coverage probe, verification evidence, known gaps, rollback = unset the two env vars). `npm run typecheck` + `npm test` green.",
+     "story": "us1",
+     "increment_id": "us1",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 106
+     },
+     "files": [],
+     "tests": []
+    }
+   ],
+   "files": [
+    "__tests__/embeddings-config.test.ts",
+    "__tests__/embeddings-endpoint.test.ts",
+    "__tests__/embeddings-index.test.ts",
+    "contracts/embedding-provider.md",
+    "contracts/status-embedding-json.md",
+    "src/bin/codegraph.ts",
+    "src/db/queries.ts",
+    "src/embeddings/config.ts",
+    "src/embeddings/endpoint-provider.ts",
+    "src/embeddings/indexer-hook.ts",
+    "src/extraction/index.ts",
+    "src/index.ts",
+    "src/ui/shimmer-progress.ts"
+   ],
+   "tests": [],
+   "advisory_size": {
+    "task_count": 12,
+    "file_reference_count": 16,
+    "distinct_file_count": 13,
+    "test_reference_count": 0,
+    "distinct_test_count": 0
+   }
+  },
+  {
+   "id": "us2",
+   "name": "User Story 2 - Incremental freshness on edit (Slice B)",
+   "kind": "story",
+   "order": 2,
+   "depends_on": [],
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 113,
+    "heading": "## Phase 4: User Story 2 - Incremental freshness on edit (Slice B) (Priority: P2)"
+   },
+   "tasks": [
+    {
+     "id": "T024",
+     "title": "Write failing tests in `__tests__/embeddings-sync.test.ts` \u2014 from 100% coverage: editing one symbol's body/signature re-embeds **only** that symbol (input_hash changed) and leaves all others untouched (FR-016); a **rename/move that doesn't change the input** does **not** re-embed (FR-016); deleting a symbol removes its vector via the **anti-join over the complete live node set** (FR-017), never falsely deleting vectors for files untouched by the incremental pass; the vector **survives** its file's node delete-and-reinsert cycle (no cascade, FR-016a); the re-embed **count == changed inputs (+ any previously missing)**, not repo total, and the per-sync staleness scan/anti-join issue zero embedding requests for unchanged symbols (FR-027/SC-003).",
+     "story": "us2",
+     "increment_id": "us2",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 126
+     },
+     "files": [
+      "__tests__/embeddings-sync.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T025",
+     "title": "Implement the incremental branch in `src/embeddings/indexer-hook.ts` + additive helpers in `src/db/queries.ts` \u2014 `selectStaleVectors(activeModel)` (rows whose `model \u2260 activeModel`, FR-010) and in-pass `input_hash` staleness comparison against freshly-composed input over the `O(embeddable-symbols)` network-free scan (FR-016/FR-027), plus `deleteRemovedVectors()` = `DELETE FROM node_vectors WHERE node_id NOT IN (SELECT id FROM nodes)` evaluated against the whole live node set (FR-017); makes T024 pass.",
+     "story": "us2",
+     "increment_id": "us2",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 127
+     },
+     "files": [
+      "src/db/queries.ts",
+      "src/embeddings/indexer-hook.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T026",
+     "title": "Wire the pass into `sync()` in `src/index.ts` \u2014 incremental missing/stale selection + reconciliation **delete on every vector-preserving pass** (both `sync()` and the library in-place `indexAll()` re-index; the DB-recreating full re-index is exempt), inside the existing index lock (no new lock), with the same half-config/plaintext advisories; this **automatically covers the daemon-watcher path** because the watcher already calls `sync()` \u2014 **no `src/mcp/` change** (FR-013/FR-015/FR-015a/FR-016/FR-016a/FR-017).",
+     "story": "us2",
+     "increment_id": "us2",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 128
+     },
+     "files": [
+      "src/index.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T027",
+     "title": "Add a test in `__tests__/embeddings-sync.test.ts` asserting a watcher-triggered `sync()` runs the embed pass identically to a CLI sync (library-level; no real daemon spawned \u2014 src/mcp untouched) and that key/URL redaction holds on that path (FR-015/FR-023, US2-AS4).",
+     "story": "us2",
+     "increment_id": "us2",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 129
+     },
+     "files": [
+      "__tests__/embeddings-sync.test.ts"
+     ],
+     "tests": []
+    }
+   ],
+   "files": [
+    "__tests__/embeddings-sync.test.ts",
+    "src/db/queries.ts",
+    "src/embeddings/indexer-hook.ts",
+    "src/index.ts"
+   ],
+   "tests": [],
+   "advisory_size": {
+    "task_count": 4,
+    "file_reference_count": 5,
+    "distinct_file_count": 4,
+    "test_reference_count": 0,
+    "distinct_test_count": 0
+   }
+  },
+  {
+   "id": "us3",
+   "name": "User Story 3 - Late configuration and endpoint resilience (Slice B)",
+   "kind": "story",
+   "order": 3,
+   "depends_on": [],
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 135,
+    "heading": "## Phase 5: User Story 3 - Late configuration and endpoint resilience (Slice B) (Priority: P3)"
+   },
+   "tasks": [
+    {
+     "id": "T028",
+     "title": "Write a failing test in `__tests__/embeddings-sync.test.ts` \u2014 index with **no endpoint configured** (zero vectors), then configure the endpoint and run a **single plain `sync`**: coverage reaches 100% via the heal/backfill path with **no new or special command** (SC-004/FR-018, US3-AS1).",
+     "story": "us3",
+     "increment_id": "us3",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 148
+     },
+     "files": [
+      "__tests__/embeddings-sync.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T029",
+     "title": "Implement the late-config **backfill/heal** path in `src/embeddings/indexer-hook.ts` / `src/index.ts` \u2014 a plain sync selects every embeddable symbol missing a current vector and batch-embeds it, following the `vocabWasEmpty` end-of-sync heal precedent; makes T028 pass (FR-018/D14).",
+     "story": "us3",
+     "increment_id": "us3",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 149
+     },
+     "files": [
+      "src/embeddings/indexer-hook.ts",
+      "src/index.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T030",
+     "title": "Write failing tests in `__tests__/embeddings-resilience.test.ts` (mock endpoint) \u2014 endpoint unreachable partway \u2192 bounded retries \u2192 **clean advisory abort** with already-written vectors intact and the enclosing index/sync **exit code 0** (SC-005/FR-014/FR-019); a subsequent run with the endpoint restored **resumes** and reaches 100% with **no manual intervention and no resume command** (progress derived from missing/stale rows \u2014 no checkpoint, FR-020); a dimension conflict on a later batch names `CODEGRAPH_EMBEDDING_DIMS` and fails the pass advisorily (FR-021).",
+     "story": "us3",
+     "increment_id": "us3",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 150
+     },
+     "files": [
+      "__tests__/embeddings-resilience.test.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T031",
+     "title": "Implement/confirm **abort-then-resume** semantics in `src/embeddings/indexer-hook.ts` \u2014 missing/stale re-selection **is** the resume (no separate checkpoint state to corrupt), and per-batch lock-hold stays bounded by per-request-timeout \u00d7 concurrency \u00d7 retries so a fully-down endpoint aborts within one batch's budget (FR-020/FR-031); makes T030 pass.",
+     "story": "us3",
+     "increment_id": "us3",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 151
+     },
+     "files": [
+      "src/embeddings/indexer-hook.ts"
+     ],
+     "tests": []
+    },
+    {
+     "id": "T032",
+     "title": "**Slice B checkpoint** \u2014 run quickstart B1\u2013B5 to green; confirm US2 + US3 acceptance scenarios pass independently on a Slice-A-embedded project.",
+     "story": "us3",
+     "increment_id": "us3",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 152
+     },
+     "files": [],
+     "tests": []
+    }
+   ],
+   "files": [
+    "__tests__/embeddings-resilience.test.ts",
+    "__tests__/embeddings-sync.test.ts",
+    "src/embeddings/indexer-hook.ts",
+    "src/index.ts"
+   ],
+   "tests": [],
+   "advisory_size": {
+    "task_count": 5,
+    "file_reference_count": 5,
+    "distinct_file_count": 4,
+    "test_reference_count": 0,
+    "distinct_test_count": 0
+   }
+  },
+  {
+   "id": "polish",
+   "name": "Polish & Cross-Cutting Concerns",
+   "kind": "polish",
+   "order": 4,
+   "depends_on": [],
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 158,
+    "heading": "## Phase 6: Polish & Cross-Cutting Concerns"
+   },
+   "tasks": [
+    {
+     "id": "T033",
+     "title": "Add the Slice B user-facing `## [Unreleased]` entry to `CHANGELOG.md` \u2014 incremental freshness on edit, late-config backfill via plain `sync`, and endpoint-outage resilience (advisory abort + automatic resume). Plain-language, no internal paths/symbols/benchmarks.",
+     "story": null,
+     "increment_id": "polish",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 162
+     },
+     "files": [],
+     "tests": []
+    },
+    {
+     "id": "T034",
+     "title": "Documentation touch-ups referencing the `CODEGRAPH_EMBEDDING_*` variables and the dormant-by-default behavior (vendor-neutral, no third-party endorsements; no README image bytes change, so no `?v=N` bump needed).",
+     "story": null,
+     "increment_id": "polish",
+     "status": "done",
+     "parallel": true,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 163
+     },
+     "files": [],
+     "tests": []
+    },
+    {
+     "id": "T035",
+     "title": "**Dormancy + retrieval-surface regression proof** \u2014 run the full `npm test` suite with the feature **unconfigured** and confirm it is byte-identical-behavior green (FR-002/SC-002), the node/edge parity from T001 still holds (FR-024/SC-006), and **no change was made to the retrieval/MCP surface** \u2014 vectors are written but never read on the agent-facing path (FR-026); `src/mcp/` diff is empty.",
+     "story": null,
+     "increment_id": "polish",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 164
+     },
+     "files": [],
+     "tests": []
+    },
+    {
+     "id": "T036",
+     "title": "Assemble the Slice B PR review packet (what changed, why, non-goals, review order, scope budget, traceability SC-003\u2192incremental-count probe, SC-004\u2192backfill probe, SC-005\u2192abort/resume probe, verification evidence, known gaps incl. the accepted FR-015a two-minute stale-reclaim limitation, rollback = unset the two env vars).",
+     "story": null,
+     "increment_id": "polish",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 165
+     },
+     "files": [],
+     "tests": []
+    },
+    {
+     "id": "T037",
+     "title": "Run full `quickstart.md` validation (A1\u2013A6 + B1\u2013B5) + `npm run typecheck` + `npm test` for both slices; record evidence (Constitution IV \u2014 evidence, not vibes).",
+     "story": null,
+     "increment_id": "polish",
+     "status": "done",
+     "parallel": false,
+     "source": {
+      "path": "specs/001-embedding-infrastructure/tasks.md",
+      "line": 166
+     },
+     "files": [],
+     "tests": []
+    }
+   ],
+   "files": [],
+   "tests": [],
+   "advisory_size": {
+    "task_count": 5,
+    "file_reference_count": 0,
+    "distinct_file_count": 0,
+    "test_reference_count": 0,
+    "distinct_test_count": 0
+   }
+  }
+ ],
+ "warnings": [
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T001 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 50
+   },
+   "details": {
+    "task_id": "T001",
+    "increment_id": "foundation"
+   }
+  },
+  {
+   "code": "reference_not_found",
+   "severity": "warning",
+   "message": "file reference not found: contracts/embedding-provider.md",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 65
+   },
+   "details": {
+    "kind": "file",
+    "reference": "contracts/embedding-provider.md",
+    "task_id": "T004"
+   }
+  },
+  {
+   "code": "reference_not_found",
+   "severity": "warning",
+   "message": "file reference not found: contracts/embedding-provider.md",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 68
+   },
+   "details": {
+    "kind": "file",
+    "reference": "contracts/embedding-provider.md",
+    "task_id": "T007"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T011 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 72
+   },
+   "details": {
+    "task_id": "T011",
+    "increment_id": "foundation"
+   }
+  },
+  {
+   "code": "reference_not_found",
+   "severity": "warning",
+   "message": "file reference not found: contracts/embedding-provider.md",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 95
+   },
+   "details": {
+    "kind": "file",
+    "reference": "contracts/embedding-provider.md",
+    "task_id": "T015"
+   }
+  },
+  {
+   "code": "reference_not_found",
+   "severity": "warning",
+   "message": "file reference not found: contracts/status-embedding-json.md",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 100
+   },
+   "details": {
+    "kind": "file",
+    "reference": "contracts/status-embedding-json.md",
+    "task_id": "T020"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T023 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 106
+   },
+   "details": {
+    "task_id": "T023",
+    "increment_id": "us1"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T032 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 152
+   },
+   "details": {
+    "task_id": "T032",
+    "increment_id": "us3"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T033 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 162
+   },
+   "details": {
+    "task_id": "T033",
+    "increment_id": "polish"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T034 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 163
+   },
+   "details": {
+    "task_id": "T034",
+    "increment_id": "polish"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T035 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 164
+   },
+   "details": {
+    "task_id": "T035",
+    "increment_id": "polish"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T036 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 165
+   },
+   "details": {
+    "task_id": "T036",
+    "increment_id": "polish"
+   }
+  },
+  {
+   "code": "task_without_references",
+   "severity": "warning",
+   "message": "Task T037 has no file or test references.",
+   "source": {
+    "path": "specs/001-embedding-infrastructure/tasks.md",
+    "line": 166
+   },
+   "details": {
+    "task_id": "T037",
+    "increment_id": "polish"
+   }
+  }
+ ],
+ "errors": [],
+ "summary": {
+  "increment_count": 5,
+  "task_count": 37,
+  "warning_count": 13,
+  "error_count": 0,
+  "message": "Planned 5 increment(s) with 37 task(s)."
+ }
+}

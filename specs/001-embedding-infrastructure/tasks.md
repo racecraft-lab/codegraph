@@ -76,7 +76,7 @@ unit-green — user-story implementation can begin.
 
 ---
 
-## Phase 3: User Story 1 — Configure and embed on index (Slice A) (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Configure and embed on index (Slice A) (Priority: P1) 🎯 MVP
 
 **Goal**: A configured user runs a full index, every declaration-kind symbol gets a
 persisted vector, and `status` shows endpoint/model/dims and 100% coverage. The complete
@@ -110,7 +110,7 @@ functional and independently testable. STOP and VALIDATE before starting Slice B
 
 ---
 
-## Phase 4: User Story 2 — Incremental freshness on edit (Slice B) (Priority: P2)
+## Phase 4: User Story 2 - Incremental freshness on edit (Slice B) (Priority: P2)
 
 **Goal**: Each sync — CLI or the daemon watcher's automatic sync — re-embeds only symbols
 whose embedding input genuinely changed and removes vectors for deleted symbols, keeping
@@ -132,7 +132,7 @@ quickstart B1.
 
 ---
 
-## Phase 5: User Story 3 — Late configuration and endpoint resilience (Slice B) (Priority: P3)
+## Phase 5: User Story 3 - Late configuration and endpoint resilience (Slice B) (Priority: P3)
 
 **Goal**: A repo indexed before configuring an endpoint backfills every missing vector via a
 plain sync (no special command); if the endpoint fails mid-pass, the index/sync still
@@ -185,6 +185,14 @@ mid-pass → operation still reports success with partial vectors; restore + rer
 - T025 ← T016, T024. T026 ← T025. T027 ← T026.
 - T029 ← T026, T028. T031 ← T029, T030. T032 ← all Slice B.
 - T035/T037 ← all implementation.
+
+### Incremental Delivery
+
+1. Complete Foundation: Setup + Foundational substrate (T001-T011) — config, provider seam, codec, input-hash, v8 migration.
+2. Complete User Story 1: configure + full-index embedding, dims, status, progress (T012-T023) — Slice A, first PR.
+3. Complete User Story 2: incremental freshness on edit via sync/watcher (T024-T027) — Slice B.
+4. Complete User Story 3: late-config backfill + endpoint resilience (T028-T032) — Slice B.
+5. Complete Polish: CHANGELOG, docs, dormancy proof, packets, validation evidence (T033-T037).
 
 ### Slice A / Slice B boundary
 
