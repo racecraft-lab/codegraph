@@ -114,13 +114,13 @@ atomicity classifier at G5 confirms the split-PR route.
 
 ### Success Criteria Summary
 
-- [ ] With `CODEGRAPH_EMBEDDING_URL` + `CODEGRAPH_EMBEDDING_MODEL` set, a full index leaves every declaration-kind node with a persisted vector in `node_vectors` (coverage 100% in `codegraph status`).
-- [ ] With the feature unconfigured, behavior is byte-identical to today: zero network calls, zero schema rows written, all existing tests pass unchanged.
-- [ ] Editing one file and syncing re-embeds only that file's changed nodes (`input_hash` unchanged → skipped); removing a file deletes its nodes' vectors.
-- [ ] A repo indexed before configuration heals fully via a plain `codegraph sync`.
-- [ ] Endpoint failure mid-pass aborts the pass after bounded retries without failing the index/sync; the next run resumes from partial coverage.
-- [ ] `codegraph status` reports embedding backend, model, dims, and coverage %.
-- [ ] Dimension drift produces one actionable error naming `CODEGRAPH_EMBEDDING_DIMS`; URL-without-MODEL produces one actionable error naming `CODEGRAPH_EMBEDDING_MODEL`.
+- [x] With `CODEGRAPH_EMBEDDING_URL` + `CODEGRAPH_EMBEDDING_MODEL` set, a full index leaves every declaration-kind node with a persisted vector in `node_vectors` (coverage 100% in `codegraph status`).
+- [x] With the feature unconfigured, behavior is byte-identical to today: zero network calls, zero schema rows written, all existing tests pass unchanged.
+- [x] Editing one file and syncing re-embeds only that file's changed nodes (`input_hash` unchanged → skipped); removing a file deletes its nodes' vectors.
+- [x] A repo indexed before configuration heals fully via a plain `codegraph sync`.
+- [x] Endpoint failure mid-pass aborts the pass after bounded retries without failing the index/sync; the next run resumes from partial coverage.
+- [x] `codegraph status` reports embedding backend, model, dims, and coverage %.
+- [x] Dimension drift produces one actionable error naming `CODEGRAPH_EMBEDDING_DIMS`; URL-without-MODEL produces one actionable error naming `CODEGRAPH_EMBEDDING_MODEL`.
 
 ---
 
@@ -758,7 +758,7 @@ level, which is how the entire existing suite runs.)
 - [x] No new npm dependencies (dependency set test-pinned); src/mcp/ + src/installer/ diffs vs main EMPTY
 - [x] CHANGELOG.md `[Unreleased]` entries added (Slice A + Slice B, user-facing style)
 - [x] PR(s) created per the marker plan — stacked emission: **PR #16** (Slice A → main, https://github.com/racecraft-lab/codegraph/pull/16) and **PR #17** (Slice B → slice-a, https://github.com/racecraft-lab/codegraph/pull/17); both packet-validated + contract-validated; origin only; no session URLs. Review-remediation loop scheduled (5m cadence).
-- [ ] Merged to main branch (operator: merge #16 first, then retarget/merge #17)
+- [x] Merged to main branch (operator: merge #16 first, then retarget/merge #17)
 
 ---
 
