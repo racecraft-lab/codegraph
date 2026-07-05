@@ -93,6 +93,14 @@
         "fingerprint_status": "source fingerprint captured at plan-creation still valid for marker membership; tasks.md content-hash changed only by checkbox marks",
         "commit_sha": "322d001c9d85241018e13358cd63912bcc740ee9",
         "warnings": []
+      },
+      {
+        "marker_id": "M2-slice-b",
+        "tasks": "T024-T037 (all complete; tasks.md 37/37 [X])",
+        "evidence": "G7 full verify green: build+typecheck+2207 passed/4 skipped (+129 vs 2078 baseline, 0 regressions); resilience pins falsifiability-probed; src/mcp+installer diff vs main empty",
+        "fingerprint_status": "valid (marker membership unchanged; tasks.md deltas are checkbox marks only)",
+        "commit_sha": "a5695bad4d3b815e2f5f8bc415a52464f57e8a95",
+        "warnings": []
       }
     ],
     "warnings": [
