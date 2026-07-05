@@ -38,7 +38,7 @@ captured during scoping.
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 99 items, 28 gaps found → 28 fixed, 0 remain; CRL rows 1–12 (4 security items conservative-default, flagged for operator review); G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 37 tasks, 6 phases, 14 [P]; full FR/SC traceability; G5 pass; size-only block → pr_marker_plan (2 stacked markers); atomicity = single-atomic-PR (version pin) |
 | Analyze | `/speckit-analyze` | ✅ Complete | PASS: 3 LOW findings (doc nits), all remediated in 1 loop; 0 unresolved → consensus skipped; G6 pass; confidence 0.98 |
-| Implement | `/speckit-implement` | ⏳ Pending | |
+| Implement | `/speckit-implement` | ✅ Complete | 37/37 tasks; G7 pass (build+typecheck+2207 tests, +129 new, 0 regressions); markers M1=322d001, M2 recorded below. Final constitution: I ✓ (0 markers) · II ✓ (zero speculative code; 5 executor cycles found 0 needed refactors) · III ✓ (net-new src/embeddings/; upstream diffs additive-only; src/mcp/+src/installer/ diff vs main EMPTY) · IV ✓ (TDD every behavior task, RED verified with real failures, emergent invariants falsifiability-probed) · V ✓ (node/edge parity test) · VI ✓ (retrieval surface untouched) · VII ✓ (dependency set pinned by test — no new deps; no telemetry; secrets byte-searched absent from disk/logs) |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -704,10 +704,15 @@ Before starting any task:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| 1 - Foundation | | | |
-| 2 - US1 / Slice A | | | |
-| 3 - US2+US3 / Slice B | | | |
-| 4 - Polish | | | |
+| 1 - Foundation | T001–T011 | ✅ 11/11 | config (37 tests), provider iface, codec (8), input-hash (13), v8 migration lockstep (3) + 3 version-pin bumps; committed faa7490; suite 2135 green |
+| 2 - US1 / Slice A | T012–T023 | ✅ 12/12 | queries, endpoint client (22 tests incl. redaction/fast-abort), embed pass (batch-txn/dims/advisory), indexAll wiring, status+--json, security+behavior invariants (9, all emergent-green), CHANGELOG-A; **marker M1 = 322d001**, checkpoint recorded, suite green |
+| 3 - US2+US3 / Slice B | T024–T032 | ✅ 9/9 | incremental (hash-scan + anti-join reconcile, 6 tests), sync wiring + zero-change heal + watcher parity (4), resilience T028–T031 all EMERGENT (4 pins, falsifiability-probed, zero production changes) |
+| 4 - Polish | T033–T037 | ✅ 5/5 | CHANGELOG-B; T034 = CHANGELOG+quickstart (README untouched — no env-var section exists; feature substrate-only until SPEC-003); T035 proofs: src/mcp/ + src/installer/ diff vs main EMPTY, dormancy = suite runs unconfigured, parity = T022-4; T036 packet → PR stage; T037 = G7 run |
+
+Quickstart evidence map: A1/A4→T022-1, A2→T022-2+T019b, A3→T022-3, A5→T021-1, A6→T020/T022-5;
+B1→T024/T026, B2→T027, B3→T028 pin, B4→T030-1/2, B5→T024-6+T030-3. (CLI-level probes not
+runnable on this dev shell — Node 26 vs the CLI's <25 gate; all probes exercised at library
+level, which is how the entire existing suite runs.)
 
 ---
 

@@ -238,6 +238,8 @@ export class QueryBuilder {
     insertNameSegment?: SqliteStatement;
     upsertNodeVector?: SqliteStatement;
     selectEmbeddableMissing?: SqliteStatement;
+    selectEmbeddedWithHash?: SqliteStatement;
+    deleteRemovedVectors?: SqliteStatement;
     embeddingCoverage?: SqliteStatement;
   } = {};
 
@@ -2070,6 +2072,50 @@ export class QueryBuilder {
       ...EMBEDDABLE_NODE_KINDS,
     ) as { embeddable: number; embedded: number };
     return { embeddable: row.embeddable, embedded: row.embedded };
+  }
+
+  /**
+   * Live declaration-level symbols (FR-005 kinds) that ALREADY carry a
+   * current-model vector, paired with that vector's stored `input_hash`. The
+   * incremental embed pass (SPEC-001 Slice B) recomposes each symbol's input and
+   * re-embeds only those whose fresh hash no longer matches — a network-free
+   * O(embeddable) staleness scan (FR-016/FR-027). This is the exact complement of
+   * {@link selectEmbeddableNodesMissingVector}: that returns the symbols with NO
+   * current-model vector (always re-embedded), this returns the ones WITH one (re-
+   * embedded only when their input changed). The two sets are disjoint by the join.
+   */
+  selectEmbeddedNodeHashes(activeModel: string): Array<{ node: Node; inputHash: string }> {
+    if (!this.stmts.selectEmbeddedWithHash) {
+      this.stmts.selectEmbeddedWithHash = this.db.prepare(`
+        SELECT n.*, v.input_hash AS input_hash
+        FROM nodes n
+        JOIN node_vectors v ON v.node_id = n.id AND v.model = ?
+        WHERE n.kind IN (${EMBEDDABLE_KINDS_PLACEHOLDERS})
+      `);
+    }
+    const rows = this.stmts.selectEmbeddedWithHash.all(
+      activeModel,
+      ...EMBEDDABLE_NODE_KINDS,
+    ) as Array<NodeRow & { input_hash: string }>;
+    return rows.map((row) => ({ node: rowToNode(row), inputHash: row.input_hash }));
+  }
+
+  /**
+   * Reconcile the vector layer against the live node set: delete every
+   * `node_vectors` row whose `node_id` is no longer present in `nodes` (FR-017).
+   * `node_vectors` has no foreign key (D6/FR-016a), so a removed symbol — and the
+   * transient orphan a delete-reinsert cycle leaves behind — persists until this
+   * anti-join sweeps it. Evaluated over the WHOLE `nodes` table, so a vector for a
+   * file untouched by the current pass is never falsely deleted. Returns the number
+   * of orphan rows removed.
+   */
+  deleteRemovedVectors(): number {
+    if (!this.stmts.deleteRemovedVectors) {
+      this.stmts.deleteRemovedVectors = this.db.prepare(
+        'DELETE FROM node_vectors WHERE node_id NOT IN (SELECT id FROM nodes)',
+      );
+    }
+    return this.stmts.deleteRemovedVectors.run().changes;
   }
 
   // ===========================================================================

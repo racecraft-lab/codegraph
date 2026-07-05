@@ -791,6 +791,20 @@ export class CodeGraph {
           }
         } catch { /* vocab is advisory — never fail a sync over it */ }
 
+        // Optional embedding pass over the resolved graph — the SAME advisory pass
+        // indexAll runs, in sync()'s post-resolution slot. Run on every successful
+        // sync REGARDLESS of change count: an incremental sync re-embeds only the
+        // symbols whose input changed and reconciles deletions, while a zero-change
+        // sync backfills any still-missing vectors (the FR-018 heal a plain
+        // `codegraph sync` relies on — mirrors the vocab heal above, which also runs
+        // independent of file changes). Fully dormant unless the embedding env vars
+        // are set, and strictly advisory: any failure is swallowed so a broken embed
+        // can never fail a sync (FR-014/019). The file watcher and the daemon both
+        // drive this same sync(), so they inherit the pass with no extra wiring (FR-015).
+        try {
+          await this.maybeRunEmbeddingPass(options.onProgress);
+        } catch { /* embedding is advisory — never fail a sync over it */ }
+
         return result;
       } finally {
         this.fileLock.release();

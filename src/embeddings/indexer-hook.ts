@@ -221,17 +221,36 @@ function parseStoredDims(raw: string | null): number | undefined {
 }
 
 /**
- * Execute the full-index embed pass. See the section header for the contract; the
- * result is always returned (never thrown) so the caller can treat embedding as
- * advisory (FR-014/019).
+ * Execute the embed pass. Selects symbols with no current-model vector PLUS those whose
+ * stored input hash is now stale (an incremental edit), embeds them in batch-sized
+ * transactions, and reconciles away vectors for removed symbols (FR-016/FR-017). On a
+ * fresh graph this reduces to the full-index pass (nothing embedded yet, nothing to
+ * reconcile). See the section header for the streaming/dims/abort contract; the result
+ * is always returned (never thrown) so the caller can treat embedding as advisory
+ * (FR-014/019).
  */
 export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<EmbeddingPassResult> {
   const { queries, provider, config, transaction, runMaintenance, onProgress, refreshLock, readSource } = opts;
   const model = config.model;
 
-  // Bounded metadata select up front (ids + fields only — the composed inputs, which
-  // carry source, are built per-chunk below so they never all coexist, FR-028).
-  const eligible = queries.selectEmbeddableNodesMissingVector(model);
+  // Selection (bounded metadata only — the composed inputs that carry source are built
+  // per-chunk below so they never all coexist, FR-028):
+  //   (1) symbols with NO current-model vector — missing, or embedded under a prior
+  //       model (a model switch, FR-010). Always re-embedded.
+  const missing = queries.selectEmbeddableNodesMissingVector(model);
+  //   (2) symbols that DO carry a current-model vector but whose freshly-composed input
+  //       no longer hashes to the stored value — genuinely edited symbols. This
+  //       compose-and-compare is the network-free O(embeddable) staleness scan: only
+  //       symbols whose input actually changed are queued for the endpoint (FR-016/
+  //       FR-027). Each composed input is hashed then discarded, so the whole graph's
+  //       source never materializes at once (FR-028).
+  const changed: Node[] = [];
+  for (const { node, inputHash } of queries.selectEmbeddedNodeHashes(model)) {
+    if (computeInputHash(composeEmbeddingInput(toSymbolInput(node, readSource))) !== inputHash) {
+      changed.push(node);
+    }
+  }
+  const eligible = [...missing, ...changed];
   const attempted = eligible.length;
 
   // Enforcement target, read at pass start (D9/FR-021): an explicit
@@ -296,9 +315,22 @@ export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<E
     refreshLock?.(); // batch boundary — keep the held index lock fresh (FR-031)
   }
 
-  // WAL-checkpoint the pass's writes (a full pass, OR an abort that committed ≥1 batch)
+  // Reconcile the vector layer against the live node set: drop vectors for symbols that
+  // no longer exist — deletions, and the transient orphans a file's node delete-reinsert
+  // leaves behind (FR-017). A single auto-committed statement (NOT the per-batch
+  // transaction seam), so the batch-commit cadence is unchanged. Runs on every pass —
+  // including one that embedded nothing (a pure deletion) or aborted — since a removed
+  // symbol is gone regardless of endpoint state. Advisory: a failure never fails the pass.
+  let reconciledAny = false;
+  try {
+    reconciledAny = queries.deleteRemovedVectors() > 0;
+  } catch {
+    // ignore — reconciliation is best-effort, never load-bearing
+  }
+
+  // WAL-checkpoint the pass's writes (embedded batches and/or a reconciliation delete)
   // via the same maintenance the index runs; best-effort, never load-bearing (FR-030).
-  if (wroteAnyBatch) {
+  if (wroteAnyBatch || reconciledAny) {
     try {
       runMaintenance();
     } catch {
