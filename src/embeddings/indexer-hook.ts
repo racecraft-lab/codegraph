@@ -130,7 +130,7 @@ export function computeInputHash(composed: string): string {
     .digest('hex');
 }
 
-// --- Full-index embed pass (T016) ------------------------------------------
+// --- Embed pass — unified full-index + incremental (T016/T025) --------------
 //
 // `runEmbeddingPass` is the exported orchestration entry the indexer drives after
 // resolution. It STREAMS the eligible-but-unembedded symbols in `batchSize × concurrency`

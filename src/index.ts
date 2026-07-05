@@ -597,7 +597,7 @@ export class CodeGraph {
             // cause), keeping endpoint/key redaction total (FR-023).
             logWarn(
               `Embedding pass skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
-              '— indexing is unaffected.'
+              '— the enclosing index/sync operation is unaffected.'
             );
           }
         }
@@ -661,7 +661,14 @@ export class CodeGraph {
           fs.utimesSync(lockPath, now, now);
         } catch { /* lock refresh is advisory */ }
       },
-      readSource: (node) => this.readNodeSource(node),
+      // Pass-scoped per-file cache: the staleness scan recomposes inputs for every
+      // embedded symbol, so without memoization a multi-symbol file would be re-read
+      // and re-split once per symbol. The cache lives only for this pass (dropped when
+      // the closure goes out of scope), so it never serves stale content across passes.
+      readSource: (() => {
+        const fileLines = new Map<string, string[] | undefined>();
+        return (node: Node) => this.readNodeSource(node, fileLines);
+      })(),
     });
 
     // Surface an advisory abort's reason to the log rather than silently discarding the
@@ -672,7 +679,7 @@ export class CodeGraph {
     // never threw — embedding stays advisory, the index/sync is unaffected either way.
     if (result.aborted) {
       logWarn(
-        'Embedding pass aborted; some symbols are unembedded but indexing is unaffected. ' +
+        'Embedding pass aborted; some symbols are unembedded but the enclosing index/sync operation is unaffected. ' +
         `Reason: ${result.abortReason ?? 'unknown'}`
       );
     }
@@ -685,11 +692,15 @@ export class CodeGraph {
    * read error yields `undefined`, so the pass composes that symbol from its
    * in-graph fields alone rather than failing (FR-028).
    */
-  private readNodeSource(node: Node): string | undefined {
+  private readNodeSource(node: Node, fileLines?: Map<string, string[] | undefined>): string | undefined {
     try {
-      const absolutePath = validatePathWithinRoot(this.projectRoot, node.filePath);
-      if (!absolutePath) return undefined;
-      const lines = fs.readFileSync(absolutePath, 'utf-8').split('\n');
+      let lines = fileLines?.get(node.filePath);
+      if (lines === undefined && !(fileLines?.has(node.filePath) ?? false)) {
+        const absolutePath = validatePathWithinRoot(this.projectRoot, node.filePath);
+        lines = absolutePath ? fs.readFileSync(absolutePath, 'utf-8').split('\n') : undefined;
+        fileLines?.set(node.filePath, lines);
+      }
+      if (lines === undefined) return undefined;
       const startIdx = Math.max(0, node.startLine - 1);
       const endIdx = Math.min(lines.length, node.endLine);
       return lines.slice(startIdx, endIdx).join('\n');
