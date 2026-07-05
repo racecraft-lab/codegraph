@@ -2,6 +2,7 @@ open Utils
 include Common.S
 
 val map : f:(int -> int) -> ?default:int -> int list -> int
+val callbacks : (int -> int) list
 external now : unit -> float = "c_now"
 
 type person = { name : string; count : int }

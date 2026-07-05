@@ -15,6 +15,10 @@ function firstChildOfType(node: SyntaxNode, type: string): SyntaxNode | null {
   return null;
 }
 
+function directChildrenOfType(node: SyntaxNode, type: string): SyntaxNode[] {
+  return node.namedChildren.filter((child) => child.type === type);
+}
+
 function descendantsOfType(node: SyntaxNode, type: string): SyntaxNode[] {
   const out: SyntaxNode[] = [];
   const stack = [node];
@@ -78,6 +82,14 @@ function bindingName(node: SyntaxNode, source: string): string | null {
 
 function hasDirectChild(node: SyntaxNode, type: string): boolean {
   return firstChildOfType(node, type) !== null;
+}
+
+function topLevelDeclaredType(node: SyntaxNode): SyntaxNode | null {
+  for (const child of node.namedChildren) {
+    if (child.type === 'value_name') continue;
+    return child;
+  }
+  return null;
 }
 
 function createNode(
@@ -203,7 +215,7 @@ function handleModuleDefinition(node: SyntaxNode, ctx: ExtractorContext): boolea
   if (!created) return true;
 
   ctx.pushScope(created.id);
-  for (const param of descendantsOfType(binding, 'module_parameter')) {
+  for (const param of directChildrenOfType(binding, 'module_parameter')) {
     const name = directName(param, 'module_name', ctx.source);
     if (name) ctx.createNode('parameter', name, param);
     addModuleReference(param, ctx, 'references');
@@ -282,14 +294,14 @@ function handleExternal(node: SyntaxNode, ctx: ExtractorContext): boolean {
 function handleValueSpecification(node: SyntaxNode, ctx: ExtractorContext): boolean {
   const name = bindingName(node, ctx.source);
   if (!name) return true;
-  const isFunction = firstDescendantOfType(node, 'function_type') !== null;
+  const typeNode = topLevelDeclaredType(node);
+  const isFunction = typeNode?.type === 'function_type';
   const created = createNode(ctx, isFunction ? 'function' : 'constant', name, node, {
     isExported: true,
   });
   if (created) {
     ctx.pushScope(created.id);
-    const typeNode = firstDescendantOfType(node, 'function_type');
-    if (typeNode) createFunctionTypeParameters(typeNode, ctx);
+    if (isFunction && typeNode) createFunctionTypeParameters(typeNode, ctx);
     ctx.popScope();
   }
   return true;

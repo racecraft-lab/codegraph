@@ -1,8 +1,8 @@
 # SPEC-023 Validation Evidence Index
 
 This directory records evidence for OCaml language support. Local implementation
-evidence and deterministic real-repository smoke/probes are complete; headless
-agent A/B gates remain blocked by the missing local `claude` CLI.
+evidence and deterministic real-repository smoke/probes are complete. Yojson
+and OCaml-LSP A/B evidence is recorded; Dune A/B remains a follow-up gate.
 
 ## Required Records
 

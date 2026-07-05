@@ -85,6 +85,7 @@ describe('OCaml language support', () => {
       expect.objectContaining({ kind: 'file', language: 'ocaml', name: 'sample.mli' }),
       expect.objectContaining({ kind: 'module', language: 'ocaml', name: 'Sample', isExported: true }),
       expect.objectContaining({ kind: 'function', language: 'ocaml', name: 'map', isExported: true }),
+      expect.objectContaining({ kind: 'constant', language: 'ocaml', name: 'callbacks', isExported: true }),
       expect.objectContaining({ kind: 'function', language: 'ocaml', name: 'now', isExported: true }),
       expect.objectContaining({ kind: 'parameter', language: 'ocaml', name: 'default' }),
       expect.objectContaining({ kind: 'struct', language: 'ocaml', name: 'person', isExported: true }),
@@ -119,6 +120,20 @@ let (x, y) = Foo.make ()
     expect(result.errors).toEqual([]);
     expect(refNames.filter((name) => name === 'Foo.run')).toHaveLength(2);
     expect(refNames).toContain('Foo.make');
+  });
+
+  it('keeps nested functor parameters scoped to their own module binding', () => {
+    const code = `module Outer = struct
+  module Inner (X : S) = struct end
+end
+`;
+    const result = extractFromSource('src/sample.ml', code);
+    const xParameters = result.nodes
+      .filter((node) => node.kind === 'parameter' && node.name === 'X')
+      .map((node) => node.qualifiedName);
+
+    expect(result.errors).toEqual([]);
+    expect(xParameters).toEqual(['Sample::Outer::Inner::X']);
   });
 
   it('records conservative module references for open, include, and functor applications', () => {

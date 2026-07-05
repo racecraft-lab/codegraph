@@ -399,8 +399,8 @@
       "status": "pass",
       "build": "npm run build passed",
       "typecheck": "npm run typecheck passed",
-      "targeted_ocaml": "5 files, 14 tests passed",
-      "unit_test": "npm test passed: 137 files, 2237 passed, 4 skipped"
+      "targeted_ocaml": "5 files, 15 tests passed",
+      "unit_test": "npm test passed: 137 files, 2238 passed, 4 skipped"
     },
     "review_scouting": {
       "status": "complete",
@@ -458,7 +458,7 @@
       "status": "pass",
       "build": "npm run build passed",
       "typecheck": "npm run typecheck passed",
-      "unit_test": "npm test passed: 137 files, 2237 passed, 4 skipped",
+      "unit_test": "npm test passed: 137 files, 2238 passed, 4 skipped",
       "evidence": "specs/023-ocaml-language-support/.process/emission/full-verification-evidence.md"
     },
     "self_review": {
@@ -509,8 +509,8 @@
       "verification": [
         "npm run build passed",
         "npm run typecheck passed",
-        "OCaml focused suite passed: 5 files, 14 tests",
-        "npm test passed: 137 files, 2237 passed, 4 skipped"
+        "OCaml focused suite passed: 5 files, 15 tests",
+        "npm test passed: 137 files, 2238 passed, 4 skipped"
       ],
       "action": "actionable Copilot comments fixed locally; awaiting push and fresh GitHub rerun"
     },

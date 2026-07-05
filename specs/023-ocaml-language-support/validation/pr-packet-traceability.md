@@ -34,7 +34,7 @@
 
 - Build/typecheck: passed.
 - Targeted OCaml parser/status/extraction/resolution/PPX suite: passed.
-- Full `npm test`: passed, 137 files, 2237 tests passed, 4 skipped.
+- Full `npm test`: passed, 137 files, 2238 tests passed, 4 skipped.
 - Yojson, OCaml-LSP, and Dune real-repo smoke/probes: complete.
 - Yojson A/B: complete, weak-adoption signal.
 - OCaml-LSP A/B: complete with one exact run and one adjusted safer run; weak
