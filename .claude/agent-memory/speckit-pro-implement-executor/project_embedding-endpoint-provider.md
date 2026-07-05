@@ -1,0 +1,17 @@
+---
+name: embedding-endpoint-provider
+description: SPEC-001 EndpointProvider (src/embeddings/endpoint-provider.ts) design facts — retry budget, redaction, fetch credential-URL quirk
+metadata:
+  type: project
+---
+
+`src/embeddings/endpoint-provider.ts` (`EndpointProvider implements EmbeddingProvider`) is the OpenAI-compatible HTTP embedding client for SPEC-001 (Slice A, tasks T014 RED / T015 GREEN).
+
+**Why:** the provider is the seam SPEC-002/003 consume; correctness of retry/redaction is load-bearing and was pinned by contract `specs/001-embedding-infrastructure/contracts/embedding-provider.md`.
+
+**How to apply — non-obvious facts that will bite a future edit:**
+- Retry budget = `maxRetries` retries AFTER the initial attempt. Default 3 ⇒ **4 total HTTP requests** on a persistently-failing endpoint (the exhaustion test asserts `requests.length === 4`). Fast-abort (400/401/403/404/422) and malformed-200 ⇒ **1 request** (no budget consumed).
+- Node's global `fetch` (undici) **throws synchronously** on a URL with userinfo credentials: `TypeError: Request cannot be constructed from a URL that includes credentials: http://user:secret@...` — the raw message **leaks the creds**. So userinfo URLs never reach a server; they're only usable to test transport-failure redaction. FULL ERROR REPLACEMENT reads only `raw.name`, never `.message/.cause/.stack`, and constructs a fresh `EmbeddingEndpointError` from `redactEndpoint(url)` (scheme+host+port) — never sets `cause`, never echoes the response body.
+- Backoff: full jitter `random(0, min(base*2^attempt, cap))`, base 1000ms / cap ~8000ms prod; `Retry-After` (429) honored and capped ~30000ms. Constructor takes optional `EndpointProviderOverrides {baseDelayMs,maxDelayMs,retryAfterCapMs,maxRetries}` so tests inject tiny delays.
+- `dims` starts `config.dims ?? 0` (0 = unknown), inferred on first successful vector, then enforced per-vector; a conflict returns a non-retryable failure whose message names `CODEGRAPH_EMBEDDING_DIMS`.
+- Reuses `redactEndpoint` from [[embedding-config]] `src/embeddings/config.ts` — do not duplicate redaction.

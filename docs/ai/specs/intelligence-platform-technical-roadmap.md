@@ -94,7 +94,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 
 | Spec | Name | Status | Workflow File | Next Phase |
 |------|------|--------|---------------|------------|
-| SPEC-001 | Embedding Infrastructure & Endpoint Provider | ⏳ Pending | [SPEC-001-workflow.md](SPEC-001-workflow.md) | Specify |
+| SPEC-001 | Embedding Infrastructure & Endpoint Provider | 🔄 In Progress | [SPEC-001-workflow.md](.process/SPEC-001-workflow.md) | Specify |
 | SPEC-002 | Bundled Local Embedding Fallback | ⏳ Pending | [SPEC-002-workflow.md](SPEC-002-workflow.md) | Blocked by SPEC-001 |
 | SPEC-003 | Hybrid Semantic Search | ⏳ Pending | [SPEC-003-workflow.md](SPEC-003-workflow.md) | Blocked by SPEC-001 |
 | SPEC-004 | Web Framework Research Spike | ⏳ Pending | [SPEC-004-workflow.md](SPEC-004-workflow.md) | Specify (parallel-safe) |

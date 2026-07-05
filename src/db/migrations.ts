@@ -9,7 +9,7 @@ import { SqliteDatabase } from './sqlite-adapter';
 /**
  * Current schema version
  */
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 /**
  * Migration definition
@@ -116,6 +116,30 @@ const migrations: Migration[] = [
           name TEXT NOT NULL,
           PRIMARY KEY (segment, name)
         ) WITHOUT ROWID;
+      `);
+    },
+  },
+  {
+    version: 8,
+    description:
+      'Add node_vectors — per-symbol embedding store (little-endian f32 BLOB) for semantic search (SPEC-001)',
+    up: (db) => {
+      // DDL only — instant on any size database. The table starts EMPTY on
+      // migrated databases; the embed pass populates it later (never this
+      // migration), and a full re-index writes it from scratch. No foreign key
+      // to nodes(id) ON PURPOSE: a sync deletes and re-inserts a file's node
+      // rows during re-extraction, and an FK ON DELETE CASCADE would drop the
+      // vectors with them, forcing a needless re-embed; orphan rows are
+      // transient and swept by the embed pass's anti-join reconciliation. Keep
+      // the definition in lockstep with schema.sql.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS node_vectors (
+          node_id TEXT PRIMARY KEY,
+          model TEXT NOT NULL,
+          dims INTEGER NOT NULL,
+          vector BLOB NOT NULL,
+          input_hash TEXT NOT NULL
+        );
       `);
     },
   },

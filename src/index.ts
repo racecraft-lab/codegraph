@@ -6,6 +6,7 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
 import {
   Node,
   Edge,
@@ -46,7 +47,7 @@ import {
 } from './resolution';
 import { GraphTraverser, GraphQueryManager } from './graph';
 import { ContextBuilder, createContextBuilder } from './context';
-import { Mutex, FileLock } from './utils';
+import { Mutex, FileLock, validatePathWithinRoot } from './utils';
 import { FileWatcher, WatchOptions, PendingFile, LockUnavailableError } from './sync';
 import { EXTRACTION_VERSION } from './extraction/extraction-version';
 import { getCodeGraphDir } from './directory';
@@ -54,6 +55,10 @@ import { deriveProjectNameTokens } from './search/query-utils';
 import { CodeGraphPackageVersion } from './mcp/version';
 import { segmentLookupVariants, splitIdentifierSegments } from './search/identifier-segments';
 import { createYielder } from './resolution/cooperative-yield';
+import { logWarn } from './errors';
+import { loadEmbeddingConfig, plaintextRemoteWarning, redactEndpoint } from './embeddings/config';
+import { EndpointProvider } from './embeddings/endpoint-provider';
+import { runEmbeddingPass } from './embeddings/indexer-hook';
 
 // Re-export types for consumers
 export * from './types';
@@ -124,6 +129,71 @@ export interface IndexOptions {
 
   /** Enable verbose logging (worker lifecycle, memory, timeouts) */
   verbose?: boolean;
+}
+
+/**
+ * Embedding coverage counts + derived percentage (SPEC-001 FR-022).
+ * `percent = round(embedded / embeddable * 100)`, defined as 100 when nothing is
+ * embeddable (a trivially-complete empty graph).
+ */
+export interface EmbeddingCoverageStatus {
+  embedded: number;
+  embeddable: number;
+  percent: number;
+}
+
+/** Active embedding status: the feature is on (both URL and MODEL set, FR-001). */
+export interface EmbeddingStatusActive {
+  active: true;
+  /** Endpoint redacted to scheme + host + port only — never userinfo/path/query (FR-023). */
+  endpoint: string;
+  model: string;
+  /** Enforced/inferred dimension, or null when neither a scalar nor config supplies one. */
+  dims: number | null;
+  coverage: EmbeddingCoverageStatus;
+}
+
+/** Dormant embedding status: the feature is off (neither URL nor MODEL set, FR-002). */
+export interface EmbeddingStatusDormant {
+  active: false;
+  /** The two variables that would activate the feature. */
+  activationVars: string[];
+  /** Prior-run snapshot, present only when on-disk scalars + live vectors exist. */
+  previousRun?: { model: string; dims: number | null; coverage: EmbeddingCoverageStatus };
+}
+
+/** Misconfigured embedding status: exactly one of URL/MODEL set — off, but intent signaled (FR-001a). */
+export interface EmbeddingStatusMisconfigured {
+  active: false;
+  misconfigured: true;
+  /** The single unset variable (`CODEGRAPH_EMBEDDING_URL` or `CODEGRAPH_EMBEDDING_MODEL`). */
+  missingVariable: string;
+  activationVars: string[];
+}
+
+/**
+ * Embedding observability snapshot returned by {@link CodeGraph.getEmbeddingStatus}
+ * — the machine shape behind `codegraph status` / `--json` (contract:
+ * `status-embedding-json.md`). A discriminated union over the activation state:
+ *  - active (URL+MODEL set): redacted endpoint + model/dims + live coverage;
+ *  - dormant (neither set): the two activation variables, plus `previousRun` IFF a
+ *    prior run's scalars and live vectors survive on disk;
+ *  - misconfigured (exactly one set): the single missing variable.
+ * Every state is network-free — dormancy is never broken to compute it (FR-023).
+ */
+export type EmbeddingStatus =
+  | EmbeddingStatusActive
+  | EmbeddingStatusDormant
+  | EmbeddingStatusMisconfigured;
+
+/** The two environment variables that activate embeddings (FR-001). */
+const EMBEDDING_ACTIVATION_VARS = ['CODEGRAPH_EMBEDDING_URL', 'CODEGRAPH_EMBEDDING_MODEL'];
+
+/** Parse a persisted positive-integer dims scalar; null/blank/invalid → null. */
+function parseStoredDims(raw: string | null): number | null {
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 /**
@@ -513,11 +583,97 @@ export class CodeGraph {
           } catch { /* metadata is advisory — never fail an index over it */ }
         }
 
+        // Optional embedding pass over the fully-resolved graph. Fully dormant
+        // unless CODEGRAPH_EMBEDDING_URL + CODEGRAPH_EMBEDDING_MODEL are set, and
+        // strictly advisory: any failure (misconfig, endpoint down, dim conflict)
+        // is swallowed here so a broken embed can never fail an index (FR-014/019).
+        if (result.success && result.filesIndexed > 0) {
+          try {
+            await this.maybeRunEmbeddingPass(options.onProgress);
+          } catch { /* embedding is advisory — never fail an index over it */ }
+        }
+
         return result;
       } finally {
         this.fileLock.release();
       }
     });
+  }
+
+  /**
+   * Advisory embedding pass, run inside {@link indexAll} after resolution. Reads
+   * the embedding config from the environment and does exactly one of three
+   * things:
+   *  - unconfigured (neither URL nor MODEL set) → nothing at all: no network, no
+   *    writes, no log line — the wiring is byte-silent when off (FR-002);
+   *  - half-configured (exactly one set) → one advisory line naming the missing
+   *    variable, then skip (FR-001a);
+   *  - active (both set) → stream every embeddable-but-unembedded symbol through
+   *    the endpoint provider, persisting one vector per symbol.
+   *
+   * The pass itself never throws (it reports an advisory abort instead), and the
+   * call site additionally wraps this in a try/catch, so embedding can never fail
+   * the surrounding index (FR-014/019).
+   */
+  private async maybeRunEmbeddingPass(
+    onProgress?: (progress: IndexProgress) => void
+  ): Promise<void> {
+    const config = loadEmbeddingConfig(process.env);
+    // Fully dormant — indistinguishable from a build without the feature (FR-002).
+    if (config === null) return;
+    // Half-config — feature stays off, but name the missing variable (FR-001a).
+    if ('misconfigured' in config) {
+      logWarn(
+        `Embedding is disabled because ${config.missingVariable} is not set — ` +
+        `set both CODEGRAPH_EMBEDDING_URL and CODEGRAPH_EMBEDDING_MODEL to enable it.`
+      );
+      return;
+    }
+
+    // Active. Warn once if source code would cross the network in cleartext (FR-023).
+    const cleartextWarning = plaintextRemoteWarning(config.url);
+    if (cleartextWarning) logWarn(cleartextWarning);
+
+    const provider = new EndpointProvider(config);
+    const lockPath = path.join(getCodeGraphDir(this.projectRoot), 'codegraph.lock');
+
+    await runEmbeddingPass({
+      queries: this.queries,
+      provider,
+      config,
+      transaction: <T>(fn: () => T): T => this.db.transaction(fn),
+      runMaintenance: () => this.db.runMaintenance(),
+      onProgress: (current, total) => onProgress?.({ phase: 'embedding', current, total }),
+      refreshLock: () => {
+        // Keep the held index lock fresh across a long pass so it isn't reaped as
+        // stale (FR-031). Best-effort — a refresh failure never stops the pass.
+        try {
+          const now = new Date();
+          fs.utimesSync(lockPath, now, now);
+        } catch { /* lock refresh is advisory */ }
+      },
+      readSource: (node) => this.readNodeSource(node),
+    });
+  }
+
+  /**
+   * Resolve a symbol's on-disk source snippet for the embedding pass: the file
+   * slice `startLine`..`endLine`, read under the project root (mirrors the
+   * context builder's node-source extraction). Any path escape, missing file, or
+   * read error yields `undefined`, so the pass composes that symbol from its
+   * in-graph fields alone rather than failing (FR-028).
+   */
+  private readNodeSource(node: Node): string | undefined {
+    try {
+      const absolutePath = validatePathWithinRoot(this.projectRoot, node.filePath);
+      if (!absolutePath) return undefined;
+      const lines = fs.readFileSync(absolutePath, 'utf-8').split('\n');
+      const startIdx = Math.max(0, node.startLine - 1);
+      const endIdx = Math.min(lines.length, node.endLine);
+      return lines.slice(startIdx, endIdx).join('\n');
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -865,6 +1021,72 @@ export class CodeGraph {
    */
   getJournalMode(): string {
     return this.db.getJournalMode();
+  }
+
+  /**
+   * Embedding observability snapshot for `codegraph status` (SPEC-001 FR-022 /
+   * contract `status-embedding-json.md`). Pure and network-free in every state:
+   * it reads the activation config from the environment and the model/dims
+   * scalars + coverage counts from the on-disk index — dormancy is never broken
+   * to produce it (FR-023). See {@link EmbeddingStatus} for the four shapes.
+   */
+  getEmbeddingStatus(): EmbeddingStatus {
+    const config = loadEmbeddingConfig(process.env);
+
+    // Half-config — exactly one of URL/MODEL set: feature off, name the gap (FR-001a).
+    if (config !== null && 'misconfigured' in config) {
+      return {
+        active: false,
+        misconfigured: true,
+        missingVariable: config.missingVariable,
+        activationVars: EMBEDDING_ACTIVATION_VARS.slice(),
+      };
+    }
+
+    // Active — both URL and MODEL set (FR-001). Model/dims come from the persisted
+    // scalars (what was actually embedded), falling back to the live config when a
+    // pass has not yet written them; coverage is computed for that model.
+    if (config !== null) {
+      const model = this.queries.getMetadata('embedding_model') ?? config.model;
+      const dims = parseStoredDims(this.queries.getMetadata('embedding_dims')) ?? config.dims ?? null;
+      return {
+        active: true,
+        endpoint: redactEndpoint(config.url),
+        model,
+        dims,
+        coverage: this.embeddingCoverageOf(model),
+      };
+    }
+
+    // Fully dormant — neither set (FR-002). Attach a prior-run snapshot ONLY when a
+    // model scalar and at least one live vector for it survive on disk; read entirely
+    // from disk, so reporting a prior run never reaches the (now-unset) endpoint.
+    const dormant: EmbeddingStatusDormant = {
+      active: false,
+      activationVars: EMBEDDING_ACTIVATION_VARS.slice(),
+    };
+    const previousModel = this.queries.getMetadata('embedding_model');
+    if (previousModel !== null) {
+      const coverage = this.embeddingCoverageOf(previousModel);
+      if (coverage.embedded > 0) {
+        dormant.previousRun = {
+          model: previousModel,
+          dims: parseStoredDims(this.queries.getMetadata('embedding_dims')),
+          coverage,
+        };
+      }
+    }
+    return dormant;
+  }
+
+  /**
+   * Coverage counts for `model` with the derived percentage: `round(embedded /
+   * embeddable * 100)`, or 100 when nothing is embeddable (trivially complete).
+   */
+  private embeddingCoverageOf(model: string): EmbeddingCoverageStatus {
+    const { embeddable, embedded } = this.queries.getEmbeddingCoverage(model);
+    const percent = embeddable === 0 ? 100 : Math.round((embedded / embeddable) * 100);
+    return { embedded, embeddable, percent };
   }
 
   // ===========================================================================

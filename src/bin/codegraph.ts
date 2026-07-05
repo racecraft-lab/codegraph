@@ -830,6 +830,9 @@ program
             currentExtractionVersion: EXTRACTION_VERSION,
             reindexRecommended,
           },
+          // Embedding observability (SPEC-001 FR-022): parallel to the human
+          // section below; automated probes read this machine shape.
+          embedding: cg.getEmbeddingStatus(),
         }));
         cg.destroy();
         return;
@@ -862,6 +865,31 @@ program
         ? chalk.green('wal')
         : chalk.yellow(`${journalMode || 'unknown'} ${getGlyphs().dash} WAL inactive; reads can block on writes`);
       console.log(`  Journal:   ${journalLabel}`);
+      console.log();
+
+      // Embeddings (SPEC-001 FR-022): active shows endpoint/model/dims/coverage;
+      // dormant is neutral (never warn-styled — dormancy is not an error); a
+      // half-configuration is a distinct advisory (the user signaled intent).
+      const embedding = cg.getEmbeddingStatus();
+      console.log(chalk.bold('Embeddings:'));
+      if (embedding.active) {
+        console.log(`  Endpoint:  ${embedding.endpoint}`);
+        console.log(`  Model:     ${embedding.model}`);
+        console.log(`  Dims:      ${embedding.dims ?? 'unknown'}`);
+        const { embedded, embeddable, percent } = embedding.coverage;
+        console.log(`  Coverage:  ${formatNumber(embedded)}/${formatNumber(embeddable)} (${percent}%)`);
+      } else if ('misconfigured' in embedding) {
+        const setVar = embedding.missingVariable === 'CODEGRAPH_EMBEDDING_MODEL'
+          ? 'CODEGRAPH_EMBEDDING_URL'
+          : 'CODEGRAPH_EMBEDDING_MODEL';
+        warn(`Misconfigured ${getGlyphs().dash} ${setVar} is set but ${embedding.missingVariable} is missing. Set ${embedding.missingVariable} to activate embeddings.`);
+      } else {
+        console.log('  ' + chalk.dim(`Dormant ${getGlyphs().dash} set ${embedding.activationVars[0]} and ${embedding.activationVars[1]} to enable.`));
+        if (embedding.previousRun) {
+          const pr = embedding.previousRun;
+          console.log('  ' + chalk.dim(`(from a previous run: model ${pr.model}, dims ${pr.dims ?? 'unknown'}, coverage ${formatNumber(pr.coverage.embedded)}/${formatNumber(pr.coverage.embeddable)} (${pr.coverage.percent}%))`));
+        }
+      }
       console.log();
 
       // Node breakdown

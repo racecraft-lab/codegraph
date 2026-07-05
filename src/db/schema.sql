@@ -142,6 +142,28 @@ CREATE TABLE IF NOT EXISTS name_segment_vocab (
     PRIMARY KEY (segment, name)
 ) WITHOUT ROWID;
 
+-- Embedding vectors — one row per embedded declaration-level symbol (SPEC-001).
+-- Each row carries the persisted embedding plus self-describing integrity
+-- metadata: `model` is the active model name at write time, `dims` is the vector
+-- length, `vector` is a little-endian f32 BLOB (byte length == dims * 4), and
+-- `input_hash` is the sha256 of the composed embedding input (drives staleness
+-- detection). Writes are an upsert on `node_id`, so exactly one active model's
+-- vector is held per symbol.
+-- There is deliberately NO foreign key to nodes(id). A sync deletes and
+-- re-inserts a file's node rows during re-extraction; an FK ON DELETE CASCADE
+-- would drop the vectors along with them and force a needless re-embed on every
+-- edit. Orphan rows (a `node_id` no longer present in `nodes`) are transient and
+-- harmless — they are swept by the embed pass's explicit anti-join
+-- reconciliation, never by a cascade. Keep this definition in lockstep with the
+-- v8 migration in migrations.ts.
+CREATE TABLE IF NOT EXISTS node_vectors (
+    node_id TEXT PRIMARY KEY,
+    model TEXT NOT NULL,
+    dims INTEGER NOT NULL,
+    vector BLOB NOT NULL,
+    input_hash TEXT NOT NULL
+);
+
 -- Edge indexes.
 -- idx_edges_source / idx_edges_target are intentionally omitted —
 -- the (source, kind) and (target, kind) composites below cover the
