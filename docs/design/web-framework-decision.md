@@ -71,6 +71,9 @@ Prototype boundary:
 
 ## Durable Evidence Records
 
+Unless a row states a narrower method-specific date, every durable evidence row
+below was accessed or captured on 2026-07-05.
+
 | ID | Subject | Type | Observed value | Source or path | Method | Supported claim |
 |----|---------|------|----------------|----------------|--------|-----------------|
 | FW-VITE-DOC-001 | Vite static build | Official docs | Default output is `dist`; `npm run build` builds static output; `vite preview` serves built files locally for checking | https://vite.dev/guide/static-deploy | Browser docs review | Static/package-shipped serving gate |
@@ -197,6 +200,13 @@ Standalone container recipe to complete later:
 ## Prototype Run Evidence
 
 Prototype source stayed outside durable source at `/tmp/spec-004-web-framework-research/prototype/`. It used Vite + React + Cytoscape.js and local JSON data copied into the prototype's `public/data/` directory.
+
+Reproducibility scope: SPEC-004 preserves the decision, commands, data shape,
+observed results, and screenshot evidence. It does not commit the temporary
+export script, screenshot script, prototype source, or generated data files. A
+clean-checkout rerun must recreate equivalent scratch files from the documented
+JSON shape and commands below, or treat this section as recorded UAT evidence
+rather than a turnkey reproduction script.
 
 Commands run:
 

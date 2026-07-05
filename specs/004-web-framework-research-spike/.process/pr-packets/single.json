@@ -41,17 +41,26 @@
   ],
   "verification_evidence": [
     {
-      "kind": "layer4_script",
-      "source": "tests/speckit-pro/layer4-scripts/test-generate-pr-body.sh",
-      "summary": "Focused generator test covers single packet metadata and rendered body paths.",
-      "result": "pending"
+      "kind": "pr_packet_validation",
+      "source": "specs/004-web-framework-research-spike/.process/pr-packets/single/validation.json",
+      "summary": "Packet validation records status passed for this single packet.",
+      "result": "passed"
+    },
+    {
+      "kind": "final_reviewability_gate",
+      "source": "specs/004-web-framework-research-spike/.process/final-reviewability/gate-state.json",
+      "summary": "Final reviewability gate is size-blocked but proceeds via marker split.",
+      "result": "proceed_marker_split"
     }
   ],
   "scope_evidence": {
     "reviewable_loc": 0,
     "production_files": 0,
     "total_files": 34,
-    "budget_result": "within_budget",
+    "budget_result": "size_blocked_marker_split",
+    "reviewability_gate_result": "block",
+    "reviewability_outcome": "marker_split",
+    "reviewability_evidence": "specs/004-web-framework-research-spike/.process/final-reviewability/gate-state.json",
     "changed_files": [
       ".specify/feature.json",
       "CLAUDE.md",
@@ -137,7 +146,7 @@
   ],
   "protected_body_fingerprint": {
     "algorithm": "sha256",
-    "value": "97d9a9223d429dd2508d0f4d757217d6a45e19fd5db7efa25d5d223e75ce79a6",
+    "value": "eda7d839f62587509bf63aa6e321139fd6eddcff2451acfaf85f572d0e922eef",
     "normalization": "canonical packet block only; LF line endings; trailing whitespace trimmed; final newline ensured; editable block bodies replaced by <elided:field_id> before sha256.",
     "elided_fields": [
       "summary",

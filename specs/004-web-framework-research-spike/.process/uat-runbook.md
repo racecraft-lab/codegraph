@@ -15,6 +15,13 @@ Use this runbook to verify that SPEC-004 remains a docs/process research spike, 
 - Screenshot assets: `docs/design/assets/spec-004/`
 - Expected screenshots: `docs/design/assets/spec-004/self-repo-graph.png` and `docs/design/assets/spec-004/one-k-node-target.png`
 
+Reproduction scope: the committed repo preserves the UAT result, data shape,
+commands, and PNG evidence. It does not preserve the temporary export script,
+screenshot script, prototype source, or generated data files. Reruns from a
+clean checkout must recreate equivalent scratch files from the documented data
+shape in `docs/design/web-framework-decision.md`, or treat this runbook as the
+recorded UAT result.
+
 ## Pre-Flight
 
 Run from the repository root.
@@ -57,7 +64,7 @@ npm run build
 npm test
 ```
 
-Then run the documented local prototype commands from `docs/design/web-framework-decision.md`. Record exact commands and outcomes below when those tasks are reached.
+Then review the documented local prototype commands from `docs/design/web-framework-decision.md`. Rerun them only when the temporary scratch files are still available or have been recreated from the documented data shape. Record exact commands and outcomes below when those tasks are reached.
 
 ## No Hosted Runtime Service Check
 
@@ -67,7 +74,7 @@ Expected result: No hosted runtime service is required. If any hosted runtime de
 
 ## Result Log
 
-Fill during later SPEC-004 tasks.
+Completed during SPEC-004 tasks.
 
 | Check | Command or method | Outcome | Evidence path or note |
 |-------|-------------------|---------|------------------------|

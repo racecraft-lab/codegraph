@@ -22,15 +22,15 @@
 
 ## Requirement Consistency
 
-- [ ] CHK009 Do the spec, plan, research notes, design concept, and contract consistently require hard local-first integration gates before UX scoring can affect the recommendation? [Consistency, Spec §FR-004, Spec §FR-006, Plan §Hard Gates, Design Concept §Goals]
-- [ ] CHK010 Are embedded asset and container strategy requirements consistent across the design concept, spec, plan, quickstart, and decision-artifact contract? [Consistency, Design Concept §Q5, Spec §FR-013, Plan §Artifact Layout, Quickstart §7, Contract §Decision Artifacts]
-- [ ] CHK011 Do no-production-code boundaries consistently prevent SPEC-004 from implementing the SPEC-005 server while still requiring enough handoff guidance for SPEC-005? [Consistency, Spec §FR-015, Plan §Constraints, Contract §Forbidden Durable Changes]
+- [x] CHK009 Do the spec, plan, research notes, design concept, and contract consistently require hard local-first integration gates before UX scoring can affect the recommendation? [Resolved 2026-07-05, Consistency, Spec §FR-004, Spec §FR-006, Plan §Hard Gates, Design Concept §Goals]
+- [x] CHK010 Are embedded asset and container strategy requirements consistent across the design concept, spec, plan, quickstart, and decision-artifact contract? [Resolved 2026-07-05, Consistency, Design Concept §Q5, Spec §FR-013, Plan §Artifact Layout, Quickstart §7, Contract §Decision Artifacts]
+- [x] CHK011 Do no-production-code boundaries consistently prevent SPEC-004 from implementing the SPEC-005 server while still requiring enough handoff guidance for SPEC-005? [Resolved 2026-07-05, Consistency, Spec §FR-015, Plan §Constraints, Contract §Forbidden Durable Changes]
 
 ## Acceptance Criteria Quality
 
 - [x] CHK012 Can maintainers objectively determine whether the recommendation includes a SPEC-005-ready local serving model for embedded static assets and local graph APIs? [Resolved 2026-07-05, Measurability, Spec §SC-005, Spec §SC-007]
 - [x] CHK013 Can maintainers objectively evaluate the standalone container recipe from required elements and local-only constraints? [Resolved 2026-07-05, Measurability, Spec §FR-013, Contract §Decision Artifacts]
-- [ ] CHK014 Can maintainers objectively verify that runtime CDN or hosted-service dependency claims are supported by evidence rather than assumptions? [Measurability, Spec §FR-016, Data Model §HardGateResult, Contract §Evidence Requirements]
+- [x] CHK014 Can maintainers objectively verify that runtime CDN or hosted-service dependency claims are supported by evidence rather than assumptions? [Resolved 2026-07-05, Measurability, Spec §FR-016, Data Model §HardGateResult, Contract §Evidence Requirements]
 
 ## Scenario Coverage
 
@@ -41,9 +41,9 @@
 
 ## Re-run Assessment
 
-- [ ] CHK019 Are embedded static-asset requirements now explicit about asset classes, later `dist/web/` or equivalent package destination, and deferred `copy-assets` implications? [Completeness, Spec §FR-013, Plan §Shipping and SPEC-005 Handoff Requirements]
-- [ ] CHK020 Are standalone container recipe requirements now measurable by entrypoint, served asset source, data/index assumptions, host/port/configuration, offline startup, and no hosted/CDN runtime dependency? [Measurability, Spec §SC-008, Plan §Standalone container recipe]
-- [ ] CHK021 Are runtime hosted-service and CDN exclusions now clear across framework runtime, graph renderer, fonts/icons, workers, WASM, telemetry, auth, data loading, and optional integrations? [Clarity, Spec §FR-016, Plan §Constraints]
-- [ ] CHK022 Is the SPEC-005 local HTTP server handoff now defined without requiring SPEC-004 to implement the server or production web app? [Consistency, Spec §FR-015, Spec §SC-007, Plan §SPEC-005 local HTTP server boundary]
-- [ ] CHK023 Are edge cases now covered for framework server conflicts, container-only paths, embedded npm-package friction, runtime network surprises, and unresolved handoff uncertainties? [Coverage, Spec §Edge Cases, Plan §Shipping and SPEC-005 Handoff Requirements]
-- [ ] CHK024 Can later SPEC-005, SPEC-006, and SPEC-007 authors trace deferred integration work from the decision document requirements to owning follow-up specs? [Traceability, Spec §SC-007, Plan §Artifact Layout]
+- [x] CHK019 Are embedded static-asset requirements now explicit about asset classes, later `dist/web/` or equivalent package destination, and deferred `copy-assets` implications? [Resolved 2026-07-05, Completeness, Spec §FR-013, Plan §Shipping and SPEC-005 Handoff Requirements]
+- [x] CHK020 Are standalone container recipe requirements now measurable by entrypoint, served asset source, data/index assumptions, host/port/configuration, offline startup, and no hosted/CDN runtime dependency? [Resolved 2026-07-05, Measurability, Spec §SC-008, Plan §Standalone container recipe]
+- [x] CHK021 Are runtime hosted-service and CDN exclusions now clear across framework runtime, graph renderer, fonts/icons, workers, WASM, telemetry, auth, data loading, and optional integrations? [Resolved 2026-07-05, Clarity, Spec §FR-016, Plan §Constraints]
+- [x] CHK022 Is the SPEC-005 local HTTP server handoff now defined without requiring SPEC-004 to implement the server or production web app? [Resolved 2026-07-05, Consistency, Spec §FR-015, Spec §SC-007, Plan §SPEC-005 local HTTP server boundary]
+- [x] CHK023 Are edge cases now covered for framework server conflicts, container-only paths, embedded npm-package friction, runtime network surprises, and unresolved handoff uncertainties? [Resolved 2026-07-05, Coverage, Spec §Edge Cases, Plan §Shipping and SPEC-005 Handoff Requirements]
+- [x] CHK024 Can later SPEC-005, SPEC-006, and SPEC-007 authors trace deferred integration work from the decision document requirements to owning follow-up specs? [Resolved 2026-07-05, Traceability, Spec §SC-007, Plan §Artifact Layout]

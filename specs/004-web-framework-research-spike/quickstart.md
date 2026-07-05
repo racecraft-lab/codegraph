@@ -2,6 +2,13 @@
 
 Use this guide during implementation to prove the research spike is complete and reviewable.
 
+Reproduction scope: this guide records the SPEC-004 validation path and durable
+evidence expectations. The exact throwaway prototype source, export script,
+screenshot script, and generated JSON data were intentionally kept outside the
+repo. To rerun from a clean checkout, recreate equivalent scratch files from
+the JSON shape below, or treat the committed decision document and screenshots
+as the durable result evidence.
+
 ## Prerequisites
 
 - Run from the repository root.

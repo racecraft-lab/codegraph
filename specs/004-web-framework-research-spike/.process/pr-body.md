@@ -37,7 +37,7 @@ Use the UAT runbook below for reviewer-facing acceptance checks. Treat installed
 
 # SPEC-004 UAT Runbook
 
-Status: Setup runbook for SPEC-004. Fill results during later research, prototype, and validation tasks.
+Status: Completed SPEC-004 UAT runbook with prototype, screenshot, verification, and final result evidence.
 
 ## Purpose
 
@@ -51,6 +51,13 @@ Use this runbook to verify that SPEC-004 remains a docs/process research spike, 
 - Temporary prototype data: `/tmp/spec-004-web-framework-research/data/`
 - Screenshot assets: `docs/design/assets/spec-004/`
 - Expected screenshots: `docs/design/assets/spec-004/self-repo-graph.png` and `docs/design/assets/spec-004/one-k-node-target.png`
+
+Reproduction scope: the committed repo preserves the UAT result, data shape,
+commands, and PNG evidence. It does not preserve the temporary export script,
+screenshot script, prototype source, or generated data files. Reruns from a
+clean checkout must recreate equivalent scratch files from the documented data
+shape in `docs/design/web-framework-decision.md`, or treat this runbook as the
+recorded UAT result.
 
 ## Pre-Flight
 
@@ -94,7 +101,7 @@ npm run build
 npm test
 ```
 
-Then run the documented local prototype commands from `docs/design/web-framework-decision.md`. Record exact commands and outcomes below when those tasks are reached.
+Then review the documented local prototype commands from `docs/design/web-framework-decision.md`. Rerun them only when the temporary scratch files are still available or have been recreated from the documented data shape. Record exact commands and outcomes below when those tasks are reached.
 
 ## No Hosted Runtime Service Check
 
@@ -104,7 +111,7 @@ Expected result: No hosted runtime service is required. If any hosted runtime de
 
 ## Result Log
 
-Fill during later SPEC-004 tasks.
+Completed during SPEC-004 tasks.
 
 | Check | Command or method | Outcome | Evidence path or note |
 |-------|-------------------|---------|------------------------|
@@ -133,4 +140,4 @@ Source: generated PR packet.
 
 ## Known Gaps
 
-No known gaps are recorded by the generated packet. Review the UAT runbook and source spec for feature-specific deferred work.
+Known accepted limitation: SPEC-004 proves framework and renderer feasibility with recorded local evidence, but production large-graph UX, accessibility, search/filter/details polish, and WebGL runner-up validation remain SPEC-006 work.

@@ -8,44 +8,44 @@
 
 ## Requirement Completeness
 
-- [ ] CHK001 Are live-source research requirements complete enough to require official documentation, current package metadata, current repository metadata, access dates, and source URLs for every framework candidate before scoring? [Completeness, Spec §FR-002, Spec §FR-003, Plan §Research Steps]
+- [x] CHK001 Are live-source research requirements complete enough to require official documentation, current package metadata, current repository metadata, access dates, and source URLs for every framework candidate before scoring? [Resolved 2026-07-05, Completeness, Spec §FR-002, Spec §FR-003, Plan §Research Steps]
 - [x] CHK002 Does the spec define durable evidence requirements for volatile live-source facts, including captured value, source URL, access date, and lookup method for package/repository metadata? [Resolved 2026-07-05, Spec §FR-003, Spec §FR-012, Plan §Research Steps]
-- [ ] CHK003 Are screenshot evidence requirements complete enough to require committed PNG assets, report references, capture metadata, dataset identity, node/edge counts, dimensions, and visible graph details? [Completeness, Spec §FR-011, Spec §SC-004, Plan §Prototype Method]
-- [ ] CHK004 Are fallback requirements complete for unavailable browser automation, unavailable package metadata, and incomplete graph-rendering validation? [Completeness, Spec §FR-017, Contract §Evidence Requirements]
+- [x] CHK003 Are screenshot evidence requirements complete enough to require committed PNG assets, report references, capture metadata, dataset identity, node/edge counts, dimensions, and visible graph details? [Resolved 2026-07-05, Completeness, Spec §FR-011, Spec §SC-004, Plan §Prototype Method]
+- [x] CHK004 Are fallback requirements complete for unavailable browser automation, unavailable package metadata, and incomplete graph-rendering validation? [Resolved 2026-07-05, Completeness, Spec §FR-017, Contract §Evidence Requirements]
 - [x] CHK005 Does the spec require later web behavior to remain dormant by default until explicitly enabled by a later spec or command? [Resolved 2026-07-05, Spec §FR-018, Plan §Dormant-by-default handoff]
 
 ## Requirement Clarity
 
-- [ ] CHK006 Is "live package and repository metadata" clarified with the exact reliability-relevant fields that must be captured for reviewer auditability? [Clarity, Spec §FR-003, Plan §Research Steps]
+- [x] CHK006 Is "live package and repository metadata" clarified with the exact reliability-relevant fields that must be captured for reviewer auditability? [Resolved 2026-07-05, Clarity, Spec §FR-003, Plan §Research Steps]
 - [x] CHK007 Is the screenshot fallback path clarified enough to distinguish preferred browser automation, local Playwright or equivalent capture, and a documented no-screenshot failure path? [Resolved 2026-07-05, Spec §FR-017, Plan §Prototype Method]
 - [x] CHK008 Is dormant-by-default behavior clarified as zero production behavior change, no automatic server startup, and no runtime network dependency in unconfigured clones? [Resolved 2026-07-05, Spec §FR-018, Spec §Assumptions, Plan §Constitution Check]
-- [ ] CHK009 Is the distinction clear between implementation-time research network access and the selected shipped runtime path operating offline from package-shipped or locally generated assets? [Clarity, Spec §FR-016, Plan §Constraints]
+- [x] CHK009 Is the distinction clear between implementation-time research network access and the selected shipped runtime path operating offline from package-shipped or locally generated assets? [Resolved 2026-07-05, Clarity, Spec §FR-016, Plan §Constraints]
 
 ## Requirement Consistency
 
-- [ ] CHK010 Do the spec, plan, research notes, and contract consistently require official docs plus live metadata before hard-gate decisions and weighted scoring? [Consistency, Spec §US1, Research §Evidence standard, Contract §Evidence Requirements]
-- [ ] CHK011 Do screenshot asset paths and report reference requirements align across the spec, plan, research notes, quickstart, and decision-artifact contract? [Consistency, Spec §FR-011, Plan §Artifact Layout, Contract §Screenshot Assets]
-- [ ] CHK012 Are fallback requirements consistent between the edge cases, functional requirements, prototype method, quickstart, and decision-artifact contract? [Consistency, Spec §Edge Cases, Spec §FR-017, Plan §Prototype Method]
-- [ ] CHK013 Do dormant-by-default constraints align with the roadmap handoff to SPEC-005, SPEC-006, and SPEC-007 without requiring SPEC-004 to implement feature flags or server behavior? [Consistency, Spec §FR-015, Spec §SC-007, Plan §Shipping and SPEC-005 Handoff Requirements]
+- [x] CHK010 Do the spec, plan, research notes, and contract consistently require official docs plus live metadata before hard-gate decisions and weighted scoring? [Resolved 2026-07-05, Consistency, Spec §US1, Research §Evidence standard, Contract §Evidence Requirements]
+- [x] CHK011 Do screenshot asset paths and report reference requirements align across the spec, plan, research notes, quickstart, and decision-artifact contract? [Resolved 2026-07-05, Consistency, Spec §FR-011, Plan §Artifact Layout, Contract §Screenshot Assets]
+- [x] CHK012 Are fallback requirements consistent between the edge cases, functional requirements, prototype method, quickstart, and decision-artifact contract? [Resolved 2026-07-05, Consistency, Spec §Edge Cases, Spec §FR-017, Plan §Prototype Method]
+- [x] CHK013 Do dormant-by-default constraints align with the roadmap handoff to SPEC-005, SPEC-006, and SPEC-007 without requiring SPEC-004 to implement feature flags or server behavior? [Resolved 2026-07-05, Consistency, Spec §FR-015, Spec §SC-007, Plan §Shipping and SPEC-005 Handoff Requirements]
 
 ## Acceptance Criteria Quality
 
 - [x] CHK014 Can a maintainer objectively determine whether every volatile live-source claim is reproducible from the decision document after external package or repository data changes? [Resolved 2026-07-05, Spec §SC-001, Spec §SC-002, Plan §Research Steps]
-- [ ] CHK015 Can a maintainer objectively determine whether screenshot fallback preserved enough visual evidence to review the graph-rendering result? [Measurability, Spec §SC-004, Plan §Prototype Method]
+- [x] CHK015 Can a maintainer objectively determine whether screenshot fallback preserved enough visual evidence to review the graph-rendering result? [Resolved 2026-07-05, Measurability, Spec §SC-004, Plan §Prototype Method]
 - [x] CHK016 Can a later SPEC-005 author objectively identify which runtime behavior remains dormant by default and which explicit activation path a later spec must define? [Resolved 2026-07-05, Spec §SC-007, Plan §SPEC-005 local HTTP server boundary]
 - [x] CHK017 Can a reviewer trace every hard-gate pass/fail decision to durable evidence rather than an unstored live-source observation? [Resolved 2026-07-05, Contract §Evidence Requirements]
 
 ## Scenario Coverage
 
-- [ ] CHK018 Are requirements defined for official documentation conflicting with live package or repository metadata, including the stricter interpretation rule and any local reproduction exception? [Coverage, Spec §Edge Cases, Plan §Research Steps]
-- [ ] CHK019 Are requirements defined for unavailable or stale package metadata without silently weakening a hard gate? [Coverage, Spec §Edge Cases, Research §Current-Source Research Procedure]
+- [x] CHK018 Are requirements defined for official documentation conflicting with live package or repository metadata, including the stricter interpretation rule and any local reproduction exception? [Resolved 2026-07-05, Coverage, Spec §Edge Cases, Plan §Research Steps]
+- [x] CHK019 Are requirements defined for unavailable or stale package metadata without silently weakening a hard gate? [Resolved 2026-07-05, Coverage, Spec §Edge Cases, Research §Current-Source Research Procedure]
 - [x] CHK020 Are requirements defined for browser automation being unavailable while still preserving reviewer-readable prototype evidence or explicitly documenting why evidence could not be captured? [Resolved 2026-07-05, Spec §Edge Cases, Spec §FR-017, Spec §SC-004]
 - [x] CHK021 Are requirements defined for later specs discovering that dormant-by-default constraints require an explicit opt-in command, config, or serve mode not chosen during SPEC-004? [Resolved 2026-07-05, Spec §Edge Cases, Spec §SC-007, Plan §SPEC-005 local HTTP server boundary]
 
 ## Re-run Assessment
 
-- [ ] CHK022 Are volatile live-source evidence requirements now durable across spec, plan, and decision-artifact contract through captured value, source URL, access date, lookup method, and supported claim? [Traceability, Spec §FR-003, Spec §SC-001, Plan §Research Steps, Contract §Evidence Requirements]
-- [ ] CHK023 Is screenshot fallback now specified as an ordered ladder from preferred browser automation to local browser capture to documented no-screenshot failure? [Clarity, Spec §FR-017, Plan §Prototype Method]
-- [ ] CHK024 Can maintainers objectively review no-screenshot outcomes from attempted commands, tooling limitation, dataset/counts where available, substitute evidence, and downstream impact? [Measurability, Spec §SC-004, Plan §Prototype Method]
-- [ ] CHK025 Are dormant-by-default requirements now explicit about zero production behavior change, no automatic server startup, no default-on config or feature flag, and no runtime network dependency in unconfigured clones? [Clarity, Spec §FR-018, Spec §Assumptions, Plan §Constitution Check]
-- [ ] CHK026 Can later SPEC-005 authors trace the explicit web activation path decision, or its deferral, from SPEC-004 into the downstream handoff? [Traceability, Spec §SC-007, Plan §SPEC-005 local HTTP server boundary]
+- [x] CHK022 Are volatile live-source evidence requirements now durable across spec, plan, and decision-artifact contract through captured value, source URL, access date, lookup method, and supported claim? [Resolved 2026-07-05, Traceability, Spec §FR-003, Spec §SC-001, Plan §Research Steps, Contract §Evidence Requirements]
+- [x] CHK023 Is screenshot fallback now specified as an ordered ladder from preferred browser automation to local browser capture to documented no-screenshot failure? [Resolved 2026-07-05, Clarity, Spec §FR-017, Plan §Prototype Method]
+- [x] CHK024 Can maintainers objectively review no-screenshot outcomes from attempted commands, tooling limitation, dataset/counts where available, substitute evidence, and downstream impact? [Resolved 2026-07-05, Measurability, Spec §SC-004, Plan §Prototype Method]
+- [x] CHK025 Are dormant-by-default requirements now explicit about zero production behavior change, no automatic server startup, no default-on config or feature flag, and no runtime network dependency in unconfigured clones? [Resolved 2026-07-05, Clarity, Spec §FR-018, Spec §Assumptions, Plan §Constitution Check]
+- [x] CHK026 Can later SPEC-005 authors trace the explicit web activation path decision, or its deferral, from SPEC-004 into the downstream handoff? [Resolved 2026-07-05, Traceability, Spec §SC-007, Plan §SPEC-005 local HTTP server boundary]

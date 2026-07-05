@@ -98,7 +98,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-001 | Embedding Infrastructure & Endpoint Provider | ✅ Complete | [SPEC-001-workflow.md](.process/SPEC-001-workflow.md) | Merged (#16, #17) |
 | SPEC-002 | Bundled Local Embedding Fallback | ⏳ Pending | [SPEC-002-workflow.md](SPEC-002-workflow.md) | Ready (SPEC-001 complete) |
 | SPEC-003 | Hybrid Semantic Search | ⏳ Pending | [SPEC-003-workflow.md](SPEC-003-workflow.md) | Ready (SPEC-001 complete) |
-| SPEC-004 | Web Framework Research Spike | 🔄 In Progress | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Scaffolded on `004-web-framework-research-spike` |
+| SPEC-004 | Web Framework Research Spike | 🔄 Under Review | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | PR #19 open from `004-web-framework-research-spike` |
 | SPEC-005 | Local HTTP Server & REST API | ⏳ Pending | [SPEC-005-workflow.md](SPEC-005-workflow.md) | Blocked by SPEC-004 |
 | SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Blocked by SPEC-005 |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
@@ -119,7 +119,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | ⏳ Pending | [SPEC-023-workflow.md](SPEC-023-workflow.md) | Specify (parallel-safe) |
 
-**Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
+**Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked
 
 ---
 
