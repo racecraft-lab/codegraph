@@ -483,8 +483,8 @@ Result: Pass with recorded downstream limitation.
 | Post | Post: Self-Review | Complete | Audit passed with SPEC-006 limitation recorded |
 | Post | Post: UAT Runbook Generation | Complete | Existing filled runbook validated with `validate-uat-runbook.sh` |
 | Post | Post: PR Body Generation | Complete | PR body and packet generated, then validated with `validate-pr-packet.sh` |
-| Post | Post: PR Creation | Pending | PR side effect after packet validation |
-| Post | Post: Review Remediation | Pending | Review polling and fixes |
+| Post | Post: PR Creation | Complete | Opened PR #19: https://github.com/racecraft-lab/codegraph/pull/19 |
+| Post | Post: Review Remediation | Complete | No comments or reviews; all initial PR checks passed |
 | Post | Post: Retrospective | Complete | `specs/004-web-framework-research-spike/retrospective.md` records outcome, verification, reviewability, lessons, and follow-up |
 
 - [x] `spec.md`, `plan.md`, `tasks.md`, and supporting SpecKit artifacts are complete.
