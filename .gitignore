@@ -72,3 +72,6 @@ assets/generate-waitlist.py
 # SpecKit worktrees + local autopilot settings
 .worktrees/
 .claude/speckit-pro.local.md
+
+# Local, untracked environment (direnv) — HAL embedding config etc.
+.envrc.local
