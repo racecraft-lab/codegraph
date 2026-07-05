@@ -6,6 +6,7 @@ const PHASE_NAMES: Record<string, string> = {
   parsing: 'Parsing code',
   storing: 'Storing data',
   resolving: 'Resolving refs',
+  embedding: 'Embedding symbols',
 };
 
 export interface IndexProgress {

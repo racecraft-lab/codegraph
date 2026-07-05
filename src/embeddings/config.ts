@@ -169,3 +169,25 @@ export function isPlaintextRemoteEndpoint(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * One-line, SHOULD-level transport advisory for a plaintext-remote endpoint —
+ * the {@link isPlaintextRemoteEndpoint} case: `http` to a non-loopback host, so
+ * the source code sent for embedding (and any bearer key) would cross the
+ * network in cleartext. Returns `null` for every endpoint that does NOT warrant
+ * it (any `https`, or loopback `http` — the designed local case), so a caller
+ * can `const w = plaintextRemoteWarning(url); if (w) print(w)` with no branching
+ * of its own. Advisory only — it never blocks activation.
+ *
+ * The endpoint is embedded via {@link redactEndpoint} (scheme + host + port
+ * only) — never the raw URL, whose userinfo/query could carry credentials that
+ * must not leak into a printed warning (FR-023).
+ */
+export function plaintextRemoteWarning(url: string): string | null {
+  if (!isPlaintextRemoteEndpoint(url)) return null;
+  return (
+    `Warning: embedding endpoint ${redactEndpoint(url)} uses plaintext http to a ` +
+    'non-loopback host — source code and any bearer key would cross the network ' +
+    'in cleartext; use https instead.'
+  );
+}

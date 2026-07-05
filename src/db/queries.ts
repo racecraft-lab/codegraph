@@ -51,6 +51,21 @@ function isLowValueFile(filePath: string): boolean {
 const SQLITE_PARAM_CHUNK_SIZE = 500;
 
 /**
+ * Declaration-level node kinds that receive an embedding (SPEC-001 FR-005).
+ * The complement — parameter, import, export, enum_member, field, property,
+ * file — is deliberately excluded as embedding noise (FR-006). Shared by the
+ * missing-vector selection and the coverage count so the two can never drift.
+ */
+const EMBEDDABLE_NODE_KINDS: readonly NodeKind[] = [
+  'function', 'method', 'class', 'struct', 'interface', 'trait', 'protocol',
+  'enum', 'type_alias', 'module', 'namespace', 'component', 'route',
+  'constant', 'variable',
+];
+
+/** Placeholder list (`?, ?, …`) binding {@link EMBEDDABLE_NODE_KINDS} into an IN(). */
+const EMBEDDABLE_KINDS_PLACEHOLDERS = EMBEDDABLE_NODE_KINDS.map(() => '?').join(', ');
+
+/**
  * Database row types (snake_case from SQLite)
  */
 interface NodeRow {
@@ -221,6 +236,9 @@ export class QueryBuilder {
     getTopRouteFile?: SqliteStatement;
     getRoutingManifest?: SqliteStatement;
     insertNameSegment?: SqliteStatement;
+    upsertNodeVector?: SqliteStatement;
+    selectEmbeddableMissing?: SqliteStatement;
+    embeddingCoverage?: SqliteStatement;
   } = {};
 
   // Names whose segments were already written this session — skips re-splitting
@@ -1975,6 +1993,83 @@ export class QueryBuilder {
       dbSizeBytes: 0, // Set by caller using DatabaseConnection.getSize()
       lastUpdated: Date.now(),
     };
+  }
+
+  // ===========================================================================
+  // Embedding Vectors (SPEC-001)
+  // ===========================================================================
+
+  /**
+   * Upsert a symbol's embedding vector. Keyed on `node_id`, so a second write
+   * for the same symbol REPLACES the first — exactly one active-model vector is
+   * ever held per symbol (FR-009). `vector` is the raw little-endian f32 BLOB,
+   * `dims` its element count, and `inputHash` the sha256 of the composed
+   * embedding input that drives staleness detection (FR-010).
+   */
+  upsertNodeVector(nodeId: string, model: string, dims: number, vector: Uint8Array, inputHash: string): void {
+    if (!this.stmts.upsertNodeVector) {
+      this.stmts.upsertNodeVector = this.db.prepare(`
+        INSERT INTO node_vectors (node_id, model, dims, vector, input_hash)
+        VALUES (@nodeId, @model, @dims, @vector, @inputHash)
+        ON CONFLICT(node_id) DO UPDATE SET
+          model = @model,
+          dims = @dims,
+          vector = @vector,
+          input_hash = @inputHash
+      `);
+    }
+    this.stmts.upsertNodeVector.run({ nodeId, model, dims, vector, inputHash });
+  }
+
+  /**
+   * Live declaration-level symbols (FR-005 kinds) that still need an embedding
+   * for `activeModel`: either they carry no vector at all, or their stored
+   * vector was written under a DIFFERENT model and is therefore stale (FR-010).
+   * The model comparison uses SQLite's default BINARY collation — exact and
+   * case-sensitive, so a 'Nomic' row is stale against an active 'nomic'. The
+   * LEFT JOIN keys on (node_id, model); a NULL right side is precisely "no
+   * current-model vector for this node".
+   */
+  selectEmbeddableNodesMissingVector(activeModel: string): Node[] {
+    if (!this.stmts.selectEmbeddableMissing) {
+      this.stmts.selectEmbeddableMissing = this.db.prepare(`
+        SELECT n.*
+        FROM nodes n
+        LEFT JOIN node_vectors v ON v.node_id = n.id AND v.model = ?
+        WHERE n.kind IN (${EMBEDDABLE_KINDS_PLACEHOLDERS})
+          AND v.node_id IS NULL
+      `);
+    }
+    const rows = this.stmts.selectEmbeddableMissing.all(activeModel, ...EMBEDDABLE_NODE_KINDS) as NodeRow[];
+    return rows.map(rowToNode);
+  }
+
+  /**
+   * Embedding coverage for `activeModel`: `embeddable` is the count of live
+   * FR-005 symbols, `embedded` the count of those with a current-model vector.
+   * `embedded` counts FROM nodes JOINed to node_vectors, so an ORPHAN vector row
+   * (a `node_id` no longer present in `nodes`) is never counted, and a vector
+   * under another model doesn't count either (FR-022). `embeddable === 0` is a
+   * valid empty graph — the caller derives the percentage (100 when nothing is
+   * embeddable), this method only reports the two counts.
+   */
+  getEmbeddingCoverage(activeModel: string): { embeddable: number; embedded: number } {
+    if (!this.stmts.embeddingCoverage) {
+      this.stmts.embeddingCoverage = this.db.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM nodes
+             WHERE kind IN (${EMBEDDABLE_KINDS_PLACEHOLDERS})) AS embeddable,
+          (SELECT COUNT(*) FROM nodes n
+             JOIN node_vectors v ON v.node_id = n.id AND v.model = ?
+             WHERE n.kind IN (${EMBEDDABLE_KINDS_PLACEHOLDERS})) AS embedded
+      `);
+    }
+    const row = this.stmts.embeddingCoverage.get(
+      ...EMBEDDABLE_NODE_KINDS,
+      activeModel,
+      ...EMBEDDABLE_NODE_KINDS,
+    ) as { embeddable: number; embedded: number };
+    return { embeddable: row.embeddable, embedded: row.embedded };
   }
 
   // ===========================================================================

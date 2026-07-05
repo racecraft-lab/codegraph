@@ -13,7 +13,7 @@
  * positive-int precedent in `src/extraction/parse-pool.ts`.
  */
 import { describe, it, expect } from 'vitest';
-import { loadEmbeddingConfig, redactEndpoint, isPlaintextRemoteEndpoint } from '../src/embeddings/config';
+import { loadEmbeddingConfig, redactEndpoint, isPlaintextRemoteEndpoint, plaintextRemoteWarning } from '../src/embeddings/config';
 import type { EmbeddingConfig } from '../src/embeddings/config';
 
 /** A base env with BOTH activation variables set, plus optional overrides. */
@@ -228,5 +228,38 @@ describe('isPlaintextRemoteEndpoint (plaintext-remote advisory)', () => {
 
   it('does not throw on an unparseable URL (returns false)', () => {
     expect(isPlaintextRemoteEndpoint('not a url')).toBe(false);
+  });
+});
+
+describe('plaintextRemoteWarning (plaintext-remote advisory message — SHOULD-level, advisory-only)', () => {
+  it('returns null for any https endpoint (encrypted in transit — no advisory)', () => {
+    expect(plaintextRemoteWarning('https://api.example.com')).toBeNull();
+    expect(plaintextRemoteWarning('https://10.1.2.3:8443')).toBeNull();
+  });
+
+  it('returns null for loopback-http endpoints (the designed local case)', () => {
+    expect(plaintextRemoteWarning('http://localhost:11434')).toBeNull();
+    expect(plaintextRemoteWarning('http://127.0.0.1:11434/v1')).toBeNull();
+    expect(plaintextRemoteWarning('http://[::1]:11434')).toBeNull();
+  });
+
+  it('returns a one-line cleartext advisory for plaintext http to a non-loopback host', () => {
+    const msg = plaintextRemoteWarning('http://10.1.2.3:11434');
+    expect(msg).not.toBeNull();
+    const line = msg as string;
+    expect(line).not.toContain('\n'); // single line
+    expect(line).toMatch(/cleartext|plaintext/i); // names the transport risk
+    expect(line).toContain('10.1.2.3'); // the redacted endpoint host
+    expect(line).toContain('https'); // suggests the fix
+  });
+
+  it('embeds the REDACTED endpoint, never userinfo or query credentials from the raw URL', () => {
+    const msg = plaintextRemoteWarning('http://alice:s3cr3t@10.1.2.3:11434/v1/embeddings?apikey=leak789');
+    expect(msg).not.toBeNull();
+    const line = msg as string;
+    expect(line).toContain('http://10.1.2.3:11434'); // scheme + host + port only
+    for (const credential of ['alice', 's3cr3t', 'leak789']) {
+      expect(line).not.toContain(credential);
+    }
   });
 });
