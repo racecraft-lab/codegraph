@@ -14,7 +14,7 @@ The clarified scope is broader than the roadmap's original minimum, so SPEC-023 
 
 **Language/Version**: TypeScript, strict project style. Runtime target remains Node `>=20 <25`; from-source development still requires the effective `node:sqlite` floor of Node 22.5+.
 
-**Primary Dependencies**: Existing `web-tree-sitter` runtime and CodeGraph extraction/resolution stack; vendored `tree-sitter-ocaml@0.24.2` implementation and interface WASM artifacts; `node:sqlite`; vitest.
+**Primary Dependencies**: Existing `web-tree-sitter` runtime and CodeGraph extraction/resolution stack; the public `ocaml` language token in `src/types.ts`; vendored `tree-sitter-ocaml@0.24.2` implementation and interface WASM artifacts; `node:sqlite`; vitest.
 
 **Storage**: Existing local SQLite database through `node:sqlite`; source fixtures and validation records are file-based project artifacts.
 
@@ -28,7 +28,7 @@ The clarified scope is broader than the roadmap's original minimum, so SPEC-023 
 
 **Constraints**: Deterministic AST/static-analysis graph only; no LLM-generated graph structure; no native runtime dependency; no package nodes; no external package edges; no PPX expansion; no functor result elaboration or type-equality inference; ambiguous module/functor/package/PPX relationships emit no edge; Dune/opam metadata only constrains local relationships when unique.
 
-**Scale/Scope**: `.ml` and `.mli` support; broad first-slice syntax including modules, signatures, functors, types, records, variants, values, functions, let-bindings, labeled/optional arguments, classes/objects, local modules, first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions. Validation corpus is Yojson, OCaml-LSP, and Dune with nine pinned retrieval questions.
+**Scale/Scope**: `.ml` and `.mli` support; both extensions report as the public `ocaml` language while the parser path selects the implementation grammar for `.ml` and the interface grammar for `.mli`. Broad first-slice syntax includes modules, signatures, functors, types, records, variants, values, functions, let-bindings, labeled/optional arguments, classes/objects, local modules, first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions. Validation corpus is Yojson, OCaml-LSP, and Dune with nine pinned retrieval questions.
 
 **Reviewability Budget**: Primary surface: harness/adapter. Secondary surfaces: docs/process, seed/config, language status, validation fixtures, retrieval evaluation. Re-estimate after Clarify: 650-900 reviewable production LOC if delivered as one change, 6-8 production files, 16-24 total files excluding vendored/generated grammar artifacts. Result: warning-to-block risk for one PR. Split decision: required implementation slicing before coding; SPEC-023 remains one specification.
 
@@ -74,6 +74,7 @@ specs/023-ocaml-language-support/
 
 ```text
 src/
+|-- types.ts
 |-- extraction/
 |   |-- languages/
 |   |   `-- ocaml.ts
@@ -82,7 +83,7 @@ src/
 |       `-- tree-sitter-ocaml_interface.wasm
 |-- resolution/
 |   `-- [minimal OCaml module/dune/package constraint wiring]
-`-- [grammar registry/status wiring touched only where required]
+`-- [grammar registry/status/parser wiring touched only where required]
 
 __tests__/
 |-- fixtures/
@@ -100,7 +101,7 @@ docs/
 
 | Slice | Review Goal | Required Evidence | Completion Boundary |
 |-------|-------------|-------------------|---------------------|
-| 1. Grammar/status/basic health | Vendor `tree-sitter-ocaml@0.24.2` implementation and interface WASMs, wire copy-assets/status, and prove both parsers load. | Grammar provenance, parser health checks for `.ml` and `.mli`, copied-artifact assertion, status test. | May not claim full OCaml support until later slices pass. |
+| 1. Grammar/status/basic health | Vendor `tree-sitter-ocaml@0.24.2` implementation and interface WASMs, add the public `ocaml` language registry entry, select the internal grammar by extension, verify copy-assets/status, and prove both parsers load. | Grammar provenance, parser health checks for `.ml` and `.mli`, copied-artifact assertion, status test. | May not claim full OCaml support until later slices pass. |
 | 2. Broad syntax extraction | Add `ocaml.ts` and fixtures for required syntax. | Fixture expectations for nodes, spans, containment, interface declarations, and unsupported syntax visibility. | No resolver/package behavior beyond what tests require. |
 | 3. Dune-scoped conservative resolution | Add unique-only local module/functor/open/include/interface-pairing and metadata constraints. | Positive and negative resolution fixtures, ambiguity no-edge tests, no functor result elaboration, and no package node/external edge assertions. | PPX remains unsupported/future work. |
 | 4. Validation/eval/docs | Record real-repo smoke, deterministic probes, A/B evidence, docs, and PR packet traceability. | Yojson, OCaml-LSP, Dune smoke; all nine probes; Yojson and OCaml-LSP A/B; existing-language controls; compact metrics. | SPEC-023 is not complete until this evidence exists or an explicit approved follow-up gate preserves any deferred Dune A/B. |
@@ -118,6 +119,7 @@ docs/
 Research output is captured in [research.md](research.md). All technical context unknowns are resolved:
 
 - Grammar source is `tree-sitter-ocaml@0.24.2`, MIT, with implementation and interface WASMs required.
+- OCaml exposes one public language token, `ocaml`; the implementation must use an internal extension-aware parser/grammar key so `.mli` files use `tree-sitter-ocaml_interface.wasm` without adding a public `ocaml_interface` language.
 - Resolution is Dune-scoped, unique-only, and local for module paths, functor references/applications, open/include scope, and interface pairing.
 - Package metadata constrains local relationships only; package nodes and external package edges are prohibited.
 - PPX expansion is unsupported/future work for SPEC-023.

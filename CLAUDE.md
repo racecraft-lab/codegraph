@@ -298,7 +298,7 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 
 <!-- SPECKIT START -->
 SPEC-023 (OCaml Language Support) is in flight on branch
-`023-ocaml-language-support`; Tasks are complete and Analyze is next.
+`023-ocaml-language-support`; Analyze is complete and Implement is in progress.
 
 Current plan: `specs/023-ocaml-language-support/plan.md`
 

@@ -38,8 +38,8 @@ setup.
 | Plan | `$speckit-plan` | Complete | Generated plan, research, data model, quickstart, and contract; required split by grammar/status, extraction, resolution, and validation/eval slices. |
 | Checklist | `$speckit-checklist` | Complete | Completed language-coverage, resolution-correctness, validation/eval, and safety/license with zero remaining gaps. |
 | Tasks | `$speckit-tasks` | Complete | Generated 74 split-ready tasks across 7 phases; FR-001 through FR-017 and SC-001 through SC-006 covered. |
-| Analyze | `$speckit-analyze` | In Progress | Must check roadmap drift, especially PPX expansion and package-depth scope. |
-| Implement | `$speckit-implement` | Pending | TDD-first language support implementation; stop before PPX coding unless Plan/Analyze authorizes a split/update. |
+| Analyze | `$speckit-analyze` | Complete | Found and fixed three artifact-consistency issues; no critical PPX/package/eval drift remains. |
+| Implement | `$speckit-implement` | In Progress | TDD-first language support implementation; stop before PPX coding unless Plan/Analyze authorizes a split/update. |
 
 **Status Legend:** Pending | In Progress | Complete | Blocked
 
@@ -561,7 +561,9 @@ recorded split/roadmap decision.
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| Pending | Pending | Pending | Pending |
+| A1 | High | The `.ml`/`.mli` grammar contract required one public OCaml language with two WASM grammars, but plan/tasks did not explicitly cover the internal extension-aware parser path or `src/types.ts` language registry. | Updated `spec.md`, `plan.md`, and `tasks.md` to require public `ocaml` reporting, `.ml` implementation grammar selection, `.mli` interface grammar selection, and `src/types.ts` registry coverage without introducing a public `ocaml_interface` language. |
+| A2 | Medium | Build/status tasks over-specified implementation files: `copy-assets` already wildcard-copies WASM files, and status output derives from `filesByLanguage` rather than a hardcoded OCaml list in `src/bin/codegraph.ts`. | Updated T016/T017 in `tasks.md` to verify the existing wildcard copy path and internal parser/status behavior instead of forcing unnecessary `package.json` or `src/bin/codegraph.ts` edits. |
+| A3 | Medium | Domain checklist files were still unchecked despite the workflow recording Phase 4 completion with zero gaps; one checklist also referenced nonexistent `Quickstart §8`. | Marked the validated domain checklist items complete and corrected the stale quickstart reference to `Quickstart §Completion Gate`. |
 
 ---
 
@@ -572,7 +574,7 @@ startup.
 
 | Confidence Gate | G6.5 | Status | Notes |
 |-----------------|------|--------|-------|
-| Confidence Gate | G6.5 | Pending | Advisory mode unless overridden by local config or invocation flags. |
+| Confidence Gate | G6.5 | Soft Skipped | Advisory mode returned `NO_DATA` because no synthesizer confidence emit was present; recommended action was `soft_skip`. |
 
 ---
 

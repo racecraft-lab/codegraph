@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T20:16:20Z",
-  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-05T20:27:33Z",
+  "active_step": "Phase 7: Implement - Pending task decomposition",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -177,6 +177,33 @@
     },
     "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
   },
+  "phase6_evidence": {
+    "executor": "analyze-executor",
+    "findings_total": 3,
+    "critical": 0,
+    "high": 1,
+    "medium": 2,
+    "low": 0,
+    "remediations": [
+      "A1 High: clarified one public ocaml language token with internal extension-aware implementation/interface grammar selection and src/types.ts registry coverage.",
+      "A2 Medium: reworded copy-assets and status tasks to verify existing wildcard copy/status behavior instead of forcing unrelated package.json or src/bin/codegraph.ts edits.",
+      "A3 Medium: marked validated checklist items complete and corrected stale Quickstart reference."
+    ],
+    "consensus": "No unresolved consensus items reported by analyze-executor.",
+    "verification": [
+      "check-prerequisites.sh --json --require-tasks --include-tasks",
+      "count-markers findings returned 0",
+      "count-markers all returned 0",
+      "git diff --check clean"
+    ]
+  },
+  "phase6_5_evidence": {
+    "mode": "advisory",
+    "result": "soft_skip",
+    "pass": null,
+    "reason": "confidence-gate.sh returned NO_DATA because no synthesizer confidence emit was present in the workflow file",
+    "recommended_action": "soft_skip"
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -256,19 +283,19 @@
     },
     {
       "step": "Phase 6: Analyze",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 6: Analyze - Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 6.5: Confidence Gate",
-      "status": "pending"
+      "status": "skipped: advisory confidence gate returned NO_DATA and recommended soft_skip"
     },
     {
       "step": "Phase 7: Implement - Pending task decomposition",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Doctor Extension Check",

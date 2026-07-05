@@ -37,9 +37,9 @@
 - [ ] T012 Write failing `codegraph status` and language-count tests for OCaml `.ml` and `.mli` files in `__tests__/ocaml-status.test.ts`
 - [ ] T013 Vendor `tree-sitter-ocaml.wasm` from `tree-sitter-ocaml@0.24.2` into `src/extraction/wasm/tree-sitter-ocaml.wasm`
 - [ ] T014 Vendor `tree-sitter-ocaml_interface.wasm` from `tree-sitter-ocaml@0.24.2` into `src/extraction/wasm/tree-sitter-ocaml_interface.wasm`
-- [ ] T015 Wire OCaml implementation/interface grammar metadata and extensions in `src/extraction/grammars.ts`
-- [ ] T016 Update `copy-assets` so both OCaml WASM artifacts are copied into `dist/extraction/wasm/` in `package.json`
-- [ ] T017 Wire OCaml status/language display behavior where needed in `src/bin/codegraph.ts`
+- [ ] T015 Add the public `ocaml` language token, `.ml`/`.mli` source-file coverage, and grammar metadata in `src/types.ts` and `src/extraction/grammars.ts`
+- [ ] T016 Verify `npm run build` copies both OCaml WASM artifacts from `src/extraction/wasm/` into `dist/extraction/wasm/` through the existing wildcard `copy-assets` path, editing `package.json` only if that wildcard path no longer covers new WASMs
+- [ ] T017 Add extension-aware internal OCaml parser selection so `.ml` and `.mli` both detect/store/report as `ocaml`, while `.mli` loads `tree-sitter-ocaml_interface.wasm` instead of a second public language, in `src/extraction/grammars.ts` and parser callers
 - [ ] T018 Run parser health, copied-artifact, and status tests and record results in `specs/023-ocaml-language-support/validation/grammar-status.md`
 
 **Checkpoint**: Grammar/status slice can be reviewed independently but must not claim complete OCaml support.
@@ -239,8 +239,8 @@ Task: "T050 Run Dune smoke and record specs/023-ocaml-language-support/validatio
 
 ### Functional Requirements
 
-- **FR-001**: T011, T012, T015, T021, T024, T028, T029
-- **FR-002**: T012, T017, T018, T048-T050, T057
+- **FR-001**: T011, T012, T015, T017, T021, T024, T028, T029
+- **FR-002**: T012, T015, T018, T048-T050, T057
 - **FR-003**: T019-T027, T029
 - **FR-004**: T021-T027, T029
 - **FR-005**: T019, T022, T026, T027, T029
@@ -248,7 +248,7 @@ Task: "T050 Run Dune smoke and record specs/023-ocaml-language-support/validatio
 - **FR-007**: T020, T023, T030, T033, T039, T043
 - **FR-008**: T031, T033, T037, T041-T043
 - **FR-009**: T005, T032, T034-T036, T042, T062-T066
-- **FR-010**: T002, T009, T010, T013-T016, T018, T057
+- **FR-010**: T002, T009, T010, T013-T017, T018, T057
 - **FR-011**: T019-T023, T029-T036, T043, T062-T066
 - **FR-012**: T045-T050
 - **FR-013**: T044, T051-T056, T060-T061
