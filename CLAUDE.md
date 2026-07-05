@@ -297,9 +297,12 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-No spec is currently in flight. SPEC-001 (Embedding Infrastructure & Endpoint
-Provider) is complete and archived — provenance and recovery commands in
-`.specify/memory/archive-reports/2026-07-05-SPEC-001.md`. For roadmap status and
-the next specs, see `docs/ai/specs/intelligence-platform-technical-roadmap.md`
-(Progress Tracking + Dogfooding Protocol).
+SPEC-004 (Web Framework Research Spike) is in plan/design. Active plan:
+`specs/004-web-framework-research-spike/plan.md`.
+
+Durable implementation artifacts are limited to the web framework decision
+document and small PNG evidence assets under `docs/design/`. Do not add
+production web code, hosted-service runtime dependencies, CDN runtime
+dependencies, non-permissive/source-available dependencies, or changes to
+extraction, retrieval, MCP, SQLite schema, or installer behavior for SPEC-004.
 <!-- SPECKIT END -->

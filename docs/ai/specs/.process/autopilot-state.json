@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
-  "updated_at": "2026-07-05T13:02:00-05:00",
-  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-05T13:09:00-05:00",
+  "active_step": "Phase 4: Checklist - ux",
   "confidence_gate_mode": "advisory",
   "archive_sweep": {
     "archive_extension_installed": false,
@@ -71,6 +71,23 @@
       "status": "completed",
       "skipped": "G1 and G2 both found 0 active clarification markers; no clarify questions required."
     },
+    "phase_3_plan": {
+      "status": "completed",
+      "gate_g3": "passed: plan.md exists with 0 unresolved markers",
+      "reviewability_budget": {
+        "status": "not_estimated",
+        "projected": null,
+        "note": "No declared production-file structure because SPEC-004 is a docs/process spike with 0 planned production files."
+      },
+      "files": [
+        "specs/004-web-framework-research-spike/plan.md",
+        "specs/004-web-framework-research-spike/research.md",
+        "specs/004-web-framework-research-spike/data-model.md",
+        "specs/004-web-framework-research-spike/contracts/decision-artifacts.md",
+        "specs/004-web-framework-research-spike/quickstart.md",
+        "CLAUDE.md"
+      ]
+    },
     "capability_path": {
       "codebase_context": "local repository files plus RepoPrompt MCP when selected",
       "library_documentation": "web search / official docs when current facts are required",
@@ -113,11 +130,11 @@
     },
     {
       "step": "Phase 3: Plan",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - ux",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 4: Checklist - ux Consensus",

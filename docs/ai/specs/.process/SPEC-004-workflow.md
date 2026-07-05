@@ -24,8 +24,8 @@ Re-read it before each phase. It records the human-approved decisions from Grill
 |-------|---------|--------|-------|
 | Specify | `$speckit-specify` | Complete | Produced `specs/004-web-framework-research-spike/spec.md` with 17 FRs, 3 stories, and 9 acceptance scenarios |
 | Clarify | `$speckit-clarify` | Complete | Skipped after G1/G2: 0 active `[NEEDS CLARIFICATION]` markers |
-| Plan | `$speckit-plan` | In Progress | Plan the research matrix, prototype method, evidence storage, and validation |
-| Checklist | `$speckit-checklist` | Pending | Recommended domains: ux, performance, integration, reliability |
+| Plan | `$speckit-plan` | Complete | Created plan, research, data model, contract, quickstart, and updated managed SpecKit context |
+| Checklist | `$speckit-checklist` | In Progress | Recommended domains: ux, performance, integration, reliability |
 | Tasks | `$speckit-tasks` | Pending | Keep tasks docs/process-first; no production web code |
 | Analyze | `$speckit-analyze` | Pending | Check drift against the design concept and roadmap |
 | Implement | `$speckit-implement` | Pending | Produce the decision doc, screenshot assets, and UAT evidence |
@@ -230,11 +230,18 @@ Quote and use the design concept decisions from `docs/ai/specs/.process/SPEC-004
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | Pending | Research method, scoring model, artifact layout, validation |
-| `research.md` | Pending | Candidate evidence and decision rationales |
-| `quickstart.md` | Pending | Reproduce prototype evidence and screenshot capture |
+| `plan.md` | Complete | Research method, scoring model, artifact layout, validation |
+| `research.md` | Complete | Candidate evidence procedure and decision rationales |
+| `quickstart.md` | Complete | Reproduce prototype evidence and screenshot capture |
 | `contracts/` | Not expected | No API contract in this spike |
-| `data-model.md` | Optional | Only if the prototype data shape needs a stable fixture schema |
+| `data-model.md` | Complete | Decision/evidence artifact entities and validation rules |
+| `contracts/decision-artifacts.md` | Complete | Durable report, evidence, screenshot, and PR packet contract |
+
+Plan gate evidence:
+
+- G3 passed: `validate-gate.sh G3 specs/004-web-framework-research-spike` returned `pass: true`.
+- Plan reviewability estimator returned `not_estimated` because no production-file structure is declared; this is advisory and expected for a docs/process spike with 0 planned production files.
+- Managed SpecKit context in `CLAUDE.md` now points to `specs/004-web-framework-research-spike/plan.md`.
 
 ## Phase 4: Domain Checklists
 
