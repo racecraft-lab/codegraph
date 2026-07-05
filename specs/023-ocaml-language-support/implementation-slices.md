@@ -41,13 +41,10 @@ proved the only remaining blocker is PR size, not correctness.
   block threshold 25`.
 - Final backstop artifacts:
   - `specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json`
-  - `specs/023-ocaml-language-support/.process/final-reviewability/reslicing-packet.json`
-  - `specs/023-ocaml-language-support/.process/final-reviewability/atomicity-route.json`
-  - `specs/023-ocaml-language-support/.process/final-reviewability/layer-plan-scoped.json`
-- PRSG continuation result: `multi-pr-emission.sh --candidate-dir` validated six
-  dry-run slice candidates in
-  `specs/023-ocaml-language-support/.process/emission/candidates/` with
-  `branches=false` and `pull_requests=false`.
+  - `specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt`
+- Final backstop result after commit `267d25e`: `status=exception`,
+  `exception_class=infra`, `exception_honored=true`; no PR side-effect blocker
+  remains.
 
 ## Atomicity Output
 

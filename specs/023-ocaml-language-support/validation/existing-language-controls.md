@@ -7,7 +7,6 @@ npm run typecheck
 npm run build
 npx vitest run __tests__/ocaml-parser-health.test.ts __tests__/ocaml-status.test.ts __tests__/ocaml-extraction.test.ts __tests__/ocaml-resolution.test.ts __tests__/ocaml-ppx-policy.test.ts
 npm test
-npx vitest run __tests__/mcp-daemon.test.ts -t "daemon idle-times-out after the last client disconnects"
 ```
 
 ## Current Result
@@ -15,15 +14,13 @@ npx vitest run __tests__/mcp-daemon.test.ts -t "daemon idle-times-out after the 
 - `npm run typecheck`: passed.
 - `npm run build`: passed.
 - OCaml targeted suite: passed, 5 test files, 11 tests.
-- `npm test`: 136 test files passed, 1 test file failed; 2233 tests passed,
-  4 skipped, 1 failure in `__tests__/mcp-daemon.test.ts` idle-timeout case.
-  Diagnostics showed the daemon/proxy hitting the unsupported Node 26 guard.
-- Targeted rerun of the failed daemon idle-timeout test: passed, 1 test passed,
-  8 skipped.
+- `npm test`: passed, 137 test files, 2234 tests passed, 4 skipped.
 
-## Pending
+## Existing-Language A/B Control
 
 - Existing-language A/B is applicable because shared grammar, parser,
-  import-resolution, and resolver orchestration paths changed. The control is
-  blocked until the local `claude` runner prerequisite and clean baseline
-  comparison setup are available; see `existing-language-ab-gate.md`.
+  import-resolution, and resolver orchestration paths changed.
+- External Claude A/B was rejected by the sandbox reviewer because it would send
+  private repository contents to an external service.
+- Local-only current-vs-baseline deterministic control passed; see
+  `existing-language-ab-gate.md`.

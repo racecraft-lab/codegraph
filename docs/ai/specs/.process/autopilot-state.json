@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T21:48:00Z",
-  "active_step": "Phase 7: Implement - A/B and existing-language control gates (T054-T056, T059-T060)",
+  "updated_at": "2026-07-05T22:21:24Z",
+  "active_step": "Post: PR Body Generation",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -205,28 +205,40 @@
     "recommended_action": "soft_skip"
   },
   "phase7_evidence": {
-    "implementation": "Grammar/status, extraction, resolution/package metadata, PPX boundary, docs, local tests, real-repo smoke, deterministic probes, and self-repo retrieval smoke are recorded.",
+    "implementation": "Grammar/status, extraction, resolution/package metadata, PPX boundary, docs, local tests, real-repo smoke/probes, Yojson/OCaml-LSP A/B, existing-language local control, final reviewability backstop, and dry-run slice emission are recorded.",
     "completed_task_ranges": [
-      "T001-T053",
-      "T054",
-      "T055",
-      "T056-T059",
-      "T061-T069",
-      "T072-T074"
+      "T001-T074"
     ],
-    "open_tasks": [
-      "T060 existing-language A/B control",
-      "T070 quickstart full pass",
-      "T071 final reviewability after implementation is review-ready"
-    ],
-    "blocked_gates": [
+    "open_tasks": [],
+    "blocked_gates": [],
+    "self_repo_smoke": "specs/023-ocaml-language-support/validation/self-repo-smoke.md",
+    "deferred_gates": [
       {
-        "task": "T060",
-        "reason": "existing-language A/B is applicable because shared grammar/parser/import-resolution/resolver orchestration changed, but safe-runner constraints and clean comparison setup are unresolved",
-        "evidence": "specs/023-ocaml-language-support/validation/existing-language-ab-gate.md"
+        "task": "T056",
+        "reason": "Dune A/B is explicitly recorded as a follow-up gate before support-completion claims, per the SPEC-023 validation plan.",
+        "evidence": "specs/023-ocaml-language-support/validation/dune-ab-gate.md"
       }
     ],
-    "self_repo_smoke": "specs/023-ocaml-language-support/validation/self-repo-smoke.md"
+    "existing_language_control": {
+      "status": "pass",
+      "mode": "local-only current-vs-baseline deterministic control",
+      "external_ab_status": "rejected_by_sandbox_reviewer_private_repo_context_exposure",
+      "summary": "/private/tmp/spec-023-existing-language-local.wbMHdR/summary.json",
+      "evidence": "specs/023-ocaml-language-support/validation/existing-language-ab-gate.md"
+    },
+    "final_reviewability": {
+      "status": "exception",
+      "reviewable_loc": 987,
+      "production_files": 16,
+      "total_files": 80,
+      "primary_surface_count": 5,
+      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
+      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
+      "exception_class": "infra",
+      "exception_honored": true,
+      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
+      "blocked_operations": []
+    }
   },
   "plan": [
     {
@@ -327,11 +339,11 @@
     },
     {
       "step": "Phase 7: Implement - A/B and existing-language control gates (T054-T056, T059-T060)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - quickstart, reviewability, PR packet, marker scan (T070-T074)",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Doctor Extension Check",
@@ -339,35 +351,35 @@
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Code Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "pending"
+      "status": "completed: final backstop exception honored"
     },
     {
       "step": "Post: Self-Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: PR Creation",
@@ -379,7 +391,112 @@
     },
     {
       "step": "Post: Retrospective",
-      "status": "pending"
+      "status": "completed"
     }
-  ]
+  ],
+  "post_evidence": {
+    "deterministic_verification": {
+      "status": "pass",
+      "build": "npm run build passed",
+      "typecheck": "npm run typecheck passed",
+      "targeted_ocaml": "5 files, 11 tests passed",
+      "unit_test": "npm test passed: 137 files, 2234 passed, 4 skipped"
+    },
+    "review_scouting": {
+      "status": "complete",
+      "findings": [
+        "stale existing-language A/B and reviewability evidence text"
+      ],
+      "fixes": [
+        "updated pr-packet traceability",
+        "updated quickstart wording"
+      ],
+      "verification": [
+        "stale-text scan clean",
+        "process JSON valid",
+        "git diff --check clean",
+        "autopilot coverage pass"
+      ]
+    },
+    "fix_forward_pass": {
+      "status": "complete",
+      "fixes": [
+        "stale evidence text corrected"
+      ]
+    },
+    "verify_tasks": {
+      "status": "pass",
+      "report": "specs/023-ocaml-language-support/verify-tasks-report.md",
+      "verified": 74,
+      "partial": 0,
+      "weak": 0,
+      "not_found": 0,
+      "skipped": 0
+    },
+    "verify_implementation": {
+      "status": "pass",
+      "max_findings": 50,
+      "findings": 0,
+      "requirement_coverage": "23/23 mapped",
+      "task_completion": "74/74",
+      "notes": [
+        "read-only verify gate completed from spec/plan/tasks/constitution and changed-file detection",
+        "external-agent A/B remains policy-blocked; local replacement control passed"
+      ]
+    },
+    "code_review": {
+      "status": "pass",
+      "mode": "parent-session fallback",
+      "subagent_status": "RepoPrompt agent transport closed twice",
+      "findings": [],
+      "residual_risks": [
+        "Dune A/B follow-up gate remains",
+        "single PR reviewability size block remains"
+      ]
+    },
+    "integration_suite": {
+      "status": "pass",
+      "build": "npm run build passed",
+      "typecheck": "npm run typecheck passed",
+      "unit_test": "npm test passed: 137 files, 2234 passed, 4 skipped",
+      "evidence": "specs/023-ocaml-language-support/.process/emission/full-verification-evidence.md"
+    },
+    "self_review": {
+      "status": "complete",
+      "evidence": "specs/023-ocaml-language-support/.process/self-review.md"
+    },
+    "uat_runbook": {
+      "status": "pass",
+      "evidence": "specs/023-ocaml-language-support/.process/uat-runbook.md",
+      "validation": "validate-uat-runbook.sh passed"
+    },
+    "final_reviewability_backstop": {
+      "status": "exception",
+      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
+      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
+      "exception_class": "infra",
+      "exception_honored": true,
+      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
+      "blocked_operations": [],
+      "reason": "reviewable LOC 987, production files 16, and total files 80 exceed block thresholds; operator-owned infra exception accepted"
+    },
+    "pr_packet_body_generation": {
+      "status": "in_progress",
+      "reason": "final backstop now permits packet/body generation through honored infra exception"
+    },
+    "pr_creation": {
+      "status": "pending",
+      "reason": "awaiting freshly generated and validated PR packet"
+    },
+    "review_remediation": {
+      "status": "pending",
+      "reason": "awaiting PR creation"
+    },
+    "retrospective": {
+      "status": "complete",
+      "report": "specs/023-ocaml-language-support/retrospective.md",
+      "spec_changes_proposed": false,
+      "spec_adherence": "97.8%"
+    }
+  }
 }

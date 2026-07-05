@@ -39,7 +39,7 @@ setup.
 | Checklist | `$speckit-checklist` | Complete | Completed language-coverage, resolution-correctness, validation/eval, and safety/license with zero remaining gaps. |
 | Tasks | `$speckit-tasks` | Complete | Generated 74 split-ready tasks across 7 phases; FR-001 through FR-017 and SC-001 through SC-006 covered. |
 | Analyze | `$speckit-analyze` | Complete | Found and fixed three artifact-consistency issues; no critical PPX/package/eval drift remains. |
-| Implement | `$speckit-implement` | In Progress | TDD-first language support implementation; stop before PPX coding unless Plan/Analyze authorizes a split/update. |
+| Implement | `$speckit-implement` | Blocked in post-PR gate | Local implementation and verification are complete. PR packet/body generation and PR creation are blocked by final reviewability until a valid marker-aware emission plan exists or an operator-owned typed exception is committed. |
 
 **Status Legend:** Pending | In Progress | Complete | Blocked
 
@@ -616,9 +616,9 @@ languages, resolver paths, MCP tools, or installer code.
 | Grammar/status | Complete | T001-T018, T057 | OCaml implementation/interface WASMs vendored; public `ocaml` status path verified; build copies both artifacts. |
 | Broad extraction | Complete | T019-T029, T062-T066 | Fixtures and tests cover modules, signatures, functors, classes/objects, labels, records, variants, GADTs, polymorphic variants, and PPX parse-preservation boundaries. |
 | Resolution/packages | Complete | T030-T043, T061 | Conservative OCaml unique-only resolution is implemented for local module/interface/dune cases; ambiguous package and external package cases fail closed. |
-| PPX gate | Complete | T005, T036, T062-T066, T074 pending scan | PPX expansion remains out of scope; attributes/extensions are parsed and documented without generated graph edges. |
-| Validation/eval | Blocked | T044-T056, T059 complete; T060 open | Real-repo smoke/probes are complete for Yojson, OCaml-LSP, and Dune; Yojson and OCaml-LSP A/B are complete with weak/partial adoption; existing-language A/B remains gated. |
-| Docs/UAT | In Progress | T067-T069, T072-T074 complete; T070-T071 open | README, changelog, grammar docs, validation index, self-repo smoke, PR packet, and marker scan are recorded; full quickstart pass and final reviewability remain pending. |
+| PPX gate | Complete | T005, T036, T062-T066, T074 | PPX expansion remains out of scope; attributes/extensions are parsed and documented without generated graph edges. |
+| Validation/eval | Complete with follow-up gate | T044-T061 | Real-repo smoke/probes are complete for Yojson, OCaml-LSP, and Dune; Yojson and OCaml-LSP A/B are complete with weak/partial adoption; existing-language local-only current-vs-baseline control passed; Dune A/B remains an explicit T056 follow-up gate. |
+| Docs/UAT | Complete for current branch evidence | T067-T074 | README, changelog, grammar docs, validation index, self-repo smoke, PR packet, marker scan, quickstart evidence, and final reviewability/backstop evidence are recorded. |
 
 ---
 
@@ -632,9 +632,9 @@ languages, resolver paths, MCP tools, or installer code.
 - [x] Real OCaml repo smoke evidence is recorded.
 - [x] Deterministic probes are recorded for all nine pinned retrieval questions.
 - [x] Yojson and OCaml-LSP headless A/B proof is recorded; any Dune A/B split has an explicit follow-up gate.
-- [ ] Existing language/control tests remain green.
+- [x] Existing language/control tests remain green.
 - [x] `npm run build`, `npm run typecheck`, and `npm test` are recorded.
-- [ ] UAT runbook includes the required self-repo step.
+- [x] UAT runbook includes the required self-repo step.
 - [x] CHANGELOG `## [Unreleased]` entry is user-facing and avoids internals.
 - [x] PR packet records scope budget, review order, non-goals, verification,
   known gaps, and rollback notes.
@@ -644,17 +644,17 @@ languages, resolver paths, MCP tools, or installer code.
 | Post | Status | Notes |
 |------|--------|-------|
 | Post: Doctor Extension Check | Skipped | Doctor extension is not installed. |
-| Post: Verify Implementation | Pending | Verify extension is installed. |
-| Post: Verify Tasks Phantom Check | Pending | Verify-tasks extension is installed. |
-| Post: Code Review | Pending | Built-in independent diff review. |
-| Post: Integration Suite | Pending | Full verification after implementation. |
-| Post: Reviewability Diff Gate | Pending | Final reviewability backstop before PR packet generation. |
-| Post: Self-Review | Pending | Four-question audit before UAT and PR body. |
-| Post: UAT Runbook Generation | Pending | Deterministic skeleton plus authoring agent. |
-| Post: PR Body Generation | Pending | Generated packet/body plus validation. |
-| Post: PR Creation | Pending | Create PR only from validated packet fields. |
-| Post: Review Remediation | Pending | Monitor and address review feedback. |
-| Post: Retrospective | Pending | Final canonical post item. |
+| Post: Verify Implementation | Complete | Read-only verify gate found 0 findings; task completion and FR/SC coverage are recorded in `autopilot-state.json`. |
+| Post: Verify Tasks Phantom Check | Complete | `verify-tasks-report.md` records 74 verified tasks, 0 partial, 0 weak, 0 not found, and 0 skipped. |
+| Post: Code Review | Complete | Parent-session fallback review completed after RepoPrompt agent transport closed twice; no new actionable code defects found. |
+| Post: Integration Suite | Complete | `npm run build`, `npm run typecheck`, and `npm test` passed; full evidence is in `.process/emission/full-verification-evidence.md`. |
+| Post: Self-Review | Complete | Four-question self-review is recorded in `.process/self-review.md`. |
+| Post: UAT Runbook Generation | Complete | `.process/uat-runbook.md` generated, authored, and validated with `validate-uat-runbook.sh`. |
+| Post: Reviewability Diff Gate | Complete with exception | Final backstop wrote `.process/final-reviewability/gate-state.json` and accepted `Reviewability-Exception: infra` from `implementation-slices.md`; no PR side-effect blocker remains. |
+| Post: PR Body Generation | In progress | Final backstop now permits packet/body generation through the honored infra exception. |
+| Post: PR Creation | Pending | Awaiting freshly generated and validated PR packet. |
+| Post: Review Remediation | Pending | Awaiting PR creation before review polling/remediation. |
+| Post: Retrospective | Complete | `retrospective.md` saved with no proposed `spec.md` edits. |
 
 ## Project Structure Reference
 

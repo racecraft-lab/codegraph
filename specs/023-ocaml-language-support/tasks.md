@@ -133,7 +133,7 @@
 - [X] T057 [US3] Run `npm run build`, `npm run typecheck`, and `npm test` and record full verification output plus copied OCaml WASM proof in `specs/023-ocaml-language-support/validation/existing-language-controls.md`
 - [X] T058 [US3] Run targeted extraction, resolution, status, parser-health, and copied-artifact tests and record command output in `specs/023-ocaml-language-support/validation/existing-language-controls.md`
 - [X] T059 [US3] Run CodeGraph self-repo retrieval smoke and record the prompt, tool output summary, and Read/Grep outcome in `specs/023-ocaml-language-support/validation/self-repo-smoke.md`
-- [ ] T060 [US3] Run `scripts/agent-eval/ab-new-vs-baseline.sh` on an existing-language control only if shared MCP, explore-budget, resolver, status, or retrieval behavior changed, and record the run or non-applicability rationale in `specs/023-ocaml-language-support/validation/existing-language-ab-gate.md`
+- [X] T060 [US3] Run `scripts/agent-eval/ab-new-vs-baseline.sh` on an existing-language control only if shared MCP, explore-budget, resolver, status, or retrieval behavior changed, and record the run or non-applicability rationale in `specs/023-ocaml-language-support/validation/existing-language-ab-gate.md`
 - [X] T061 [US3] Update FR/SC traceability with changed files, verification evidence, known gaps, and deferred gates in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
 
 **Checkpoint**: User Story 3 completes the evidence gate for any slice that claims complete OCaml support. Dune A/B may remain deferred only if `dune-ab-gate.md` names the approved follow-up gate before SPEC-023 completion.
@@ -168,8 +168,8 @@
 - [X] T067 [P] Update user-facing OCaml support and limitation notes in `README.md`
 - [X] T068 [P] Add a user-facing Unreleased changelog entry for OCaml language support in `CHANGELOG.md`
 - [X] T069 [P] Update OCaml grammar provenance and shipping notes after implementation evidence is final in `docs/grammars/tree-sitter-ocaml.md`
-- [ ] T070 Run the complete quickstart validation path and record pass/fail evidence in `specs/023-ocaml-language-support/validation/quickstart-run.md`
-- [ ] T071 Run final reviewability and scope-budget check against changed files and record result in `specs/023-ocaml-language-support/implementation-slices.md`
+- [X] T070 Run the complete quickstart validation path and record pass/fail evidence in `specs/023-ocaml-language-support/validation/quickstart-run.md`
+- [X] T071 Run final reviewability and scope-budget check against changed files and record result in `specs/023-ocaml-language-support/implementation-slices.md`
 - [X] T072 Confirm no unrelated language extractors or resolver behavior were modified and record review notes in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
 - [X] T073 Finalize the PR packet with review order, non-goals, scope budget, rollback notes, FR/SC traceability, verification evidence, known gaps, and deferred work in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
 - [X] T074 Confirm no unresolved clarification, gap, or critical markers remain in SPEC-023 artifacts and record the scan in `specs/023-ocaml-language-support/validation/quickstart-run.md`

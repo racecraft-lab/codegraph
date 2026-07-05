@@ -1,19 +1,18 @@
 # SPEC-023 Quickstart Run
 
-Status: partial; blocked at the remaining A/B/control gates.
+Status: complete with recorded follow-up gate and honored reviewability
+exception.
 
 ## Local Verification
 
-Previously recorded local verification:
+Latest local verification:
 
 - `npm run build`: passed.
 - `npm run typecheck`: passed.
 - Targeted OCaml suite: passed, 5 files, 11 tests.
-- `npm test`: 136 files passed, 1 file failed; 2233 tests passed, 4 skipped,
-  1 daemon idle-timeout failure. Targeted rerun of the daemon idle-timeout case
-  passed.
+- `npm test`: passed, 137 files, 2234 tests passed, 4 skipped.
 
-See `existing-language-controls.md` for command details and the Node 26 caveat.
+See `existing-language-controls.md` for command details.
 
 ## Real-Repository Smoke and Probes
 
@@ -29,8 +28,33 @@ See `existing-language-controls.md` for command details and the Node 26 caveat.
   CodeGraph in the with arm; the adjusted run disabled Bash/Task and showed
   CodeGraph exposed but not selected.
 - Dune: follow-up gate recorded; not run.
-- Existing-language control A/B: applicable, but blocked until a safe
-  repo-confined runner or explicit approval for another unsandboxed eval exists.
+- Existing-language control: complete with a local-only current-vs-baseline
+  replacement because the external Claude A/B was rejected for private-repo
+  context exposure. See `existing-language-ab-gate.md`.
+
+## Final Reviewability
+
+Final reviewability was run after implementation commit `a336e44`.
+
+```bash
+/Users/fredrickgabelmann/.codex/plugins/cache/racecraft-plugins-public/speckit-pro/2.17.0/skills/speckit-autopilot/scripts/reviewability-gate.sh diff origin/main...HEAD
+```
+
+Result: blocked by size, not by correctness:
+
+```json
+{"status":"block","reviewable_loc":987,"production_files":16,"total_files":80,"primary_surface_count":5}
+```
+
+The required final backstop and closeout were then run:
+
+- `final-reviewability-backstop.sh` wrote
+  `specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json`.
+- The maintainer-authorized `Reviewability-Exception: infra` in
+  `implementation-slices.md` was accepted as contract-provenance evidence.
+- Final backstop result after commit `267d25e`: `status=exception`,
+  `exception_class=infra`, `exception_honored=true`, with no blocked PR
+  operations.
 
 ## Reviewability and Marker Checks
 
@@ -52,7 +76,8 @@ Autopilot coverage guard:
 
 ## Pass/Fail
 
-The quickstart path is not fully passing yet because Dune A/B remains a
-follow-up gate and existing-language A/B is blocked by safe-runner constraints.
-Local implementation, deterministic probes, Yojson/OCaml-LSP A/B, and marker
-checks are recorded.
+The quickstart path is complete for the current branch evidence. Dune A/B remains
+an explicit follow-up gate recorded by T056. Final reviewability proceeds through
+the maintainer-authorized infra exception, not through a clean size pass. Local
+implementation, deterministic probes, Yojson/OCaml-LSP A/B, existing-language
+local control, and marker checks are recorded.
