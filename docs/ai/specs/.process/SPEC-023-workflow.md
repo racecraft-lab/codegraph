@@ -653,7 +653,7 @@ languages, resolver paths, MCP tools, or installer code.
 | Post: Reviewability Diff Gate | Complete with exception | Final backstop wrote `.process/final-reviewability/gate-state.json` and accepted the infra reviewability exception in `implementation-slices.md`; no PR side-effect blocker remains. |
 | Post: PR Body Generation | Complete | Generated and validated the single-PR packet/body; `validate-pr-packet.sh` passed and workflow contract validation passed for `feat(speckit-pro): Add OCaml language support`. |
 | Post: PR Creation | Complete | Opened PR #21: https://github.com/racecraft-lab/codegraph/pull/21. The branch was merged with current `origin/main`, pushed, and GitHub now reports `mergeable=MERGEABLE`. |
-| Post: Review Remediation | Complete | Initial PR review check found 0 comments and 0 reviews; no remediation was required. |
+| Post: Review Remediation | Complete | Initial PR review check found 0 comments and 0 reviews; all GitHub checks passed after the mergeability fix. |
 | Post: Retrospective | Complete | `retrospective.md` saved with no proposed `spec.md` edits. |
 
 ## Project Structure Reference
