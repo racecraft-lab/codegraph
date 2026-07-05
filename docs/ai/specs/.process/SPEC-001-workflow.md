@@ -716,6 +716,38 @@ level, which is how the entire existing suite runs.)
 
 ---
 
+### Self-Review (auto-generated)
+
+1. **Tests executed?** YES, invoked directly this session — BUILD (`npm run build`), TYPECHECK
+   (`npm run typecheck`), UNIT/INTEGRATION (`npm test`, vitest — integration tests run inside it
+   via real mock-endpoint servers; no separate INTEGRATION command exists; LINT = N/A, no lint
+   config). Most recent full run (post review-fixes, commit 0fb29aa): **131 files / 2212 passed /
+   4 skipped / exit 0** at 02:55. Honesty note: the immediately-prior full run showed **1 flaky
+   failure** whose name was lost to an output-truncation in the runner pipeline; the rerun
+   was fully green and the 7 embeddings suites are green across ≥3 consecutive runs — recorded
+   as a flake observation in the PR body's known gaps.
+2. **Edge cases?** Non-happy paths test-pinned per criterion: dormancy (T022-2/T019b), half-config
+   both directions (T019c + T020 d-tests), keyless auth (T022-3), 401/403 fast-abort + key-echoing
+   401 body (endpoint suite + T021-2), timeout/hang (FR-019a tests), mid-body transport reset
+   (FIX 3 test), malformed/zero-length responses (FR-021a + FIX 5 tests), dims conflict incl.
+   later-batch (T030-3 + FIX 1 test), outage abort/resume (T030-1/2), model switch (T024-6),
+   CRLF/LF hashing (T007). `[edge-case-gap]` ×2 (advisory): no dedicated start-line-shift orphan
+   test (mechanism pinned indirectly by the deletion anti-join test); CLI status section rendering
+   untested (logic tested at library level via getEmbeddingStatus — review finding #10).
+3. **Requirements matched?** 31/31 FRs + 11/11 SCs traced (tasks.md traceability table, verified
+   independently by speckit-verify-run); 37/37 tasks [X] with zero phantoms (speckit-verify-tasks,
+   Layers 1–5, live test execution). Documented deviations: T025 helper naming
+   (selectEmbeddedNodeHashes vs selectStaleVectors — behavior verified equivalent), T001 snapshot
+   superseded by the dynamic parity test.
+4. **Follow-up & tidiness?** No TODO/DEFERRED markers in spec/plan/tasks. Deferred-by-design items
+   each have a landing place: search consumption → SPEC-003; bundled model → SPEC-002;
+   ANN/quantization → roadmap key decision (deferred until scale). Review advisories not fixed
+   pre-PR (watcher warn repetition #6, per-symbol file re-read cache #8, CLI status test #10, and
+   the suggestion list) → enumerated in the PR body's Known gaps section. `[tidiness]`: executor
+   agent-memory files (.claude/agent-memory/speckit-pro-implement-executor/*) rode the branch —
+   process exhaust, called out in the PR body review-order notes. No debug scaffolding/console.log
+   found in the diff (T021 pinned no stray logging on the embed paths).
+
 ## Post-Implementation Checklist
 
 - [ ] All tasks marked complete in tasks.md
