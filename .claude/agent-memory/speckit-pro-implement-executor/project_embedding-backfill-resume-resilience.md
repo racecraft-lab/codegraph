@@ -34,21 +34,29 @@ facts below are non-obvious and were only established by writing falsifiable pin
   pass's `abortReason`. Prior batch's vectors stay durable (FR-021). Test this with
   a REAL `EndpointProvider` + dims-switching node:http mock, NOT the T016 FakeProvider
   (which returns a constant dim and can't reproduce it).
-- **`maybeRunEmbeddingPass` (src/index.ts) DISCARDS the pass result**, so
-  `abortReason` is **invisible at the library level** (indexAll/sync only expose
-  `result.success`). To assert an abort *reason* (e.g. it names the dims var), call
-  `runEmbeddingPass` **directly** with a real `EndpointProvider` constructed with
-  tiny backoff overrides (`{baseDelayMs:1,maxDelayMs:2,retryAfterCapMs:5,maxRetries:3}`).
-- **Bounded abort = break-on-first-failing-batch.** A fully-down endpoint makes
-  exactly `maxRetries+1` (=4) HTTP attempts for the FIRST batch, then the pass
-  `break`s — batches 2..n are never sent. So `mock.requestCount() === 4` is an exact,
-  falsifiable FR-020 boundedness pin. At the LIBRARY level the provider uses
+- **`maybeRunEmbeddingPass` (src/index.ts) does not surface the pass result on
+  IndexResult**, but as of pre-PR FIX 1 it **`logWarn`s `result.abortReason` on abort** —
+  so an abort *reason* is now observable at the library level via a recording logger
+  (`setLogger({warn(m){warnings.push(m)}})`), asserting e.g. a warn containing
+  `CODEGRAPH_EMBEDDING_DIMS`. To assert the reason on the RESULT object itself (not the
+  log), still call `runEmbeddingPass` **directly** with a real `EndpointProvider` + tiny
+  backoff overrides (`{baseDelayMs:1,maxDelayMs:2,retryAfterCapMs:5,maxRetries:3}`).
+- **Bounded abort = break-on-first-failing-SUPER-CHUNK** (post-FIX-2). At
+  **concurrency=1** a super-chunk is one batch, so a fully-down endpoint makes exactly
+  `maxRetries+1` (=4) HTTP attempts then `break`s — `mock.requestCount() === 4` stays an
+  exact FR-020 pin (the direct-pass + outage resilience tests now set `concurrency:1` for
+  this). At concurrency>1 the first super-chunk fires up to `concurrency` batches
+  concurrently (each retrying to its budget) BEFORE embed() rejects, so the bound is
+  `~concurrency × (maxRetries+1)` for that one super-chunk — still bounded, just a larger
+  constant; the pass still never proceeds to later super-chunks. At the LIBRARY level the provider uses
   production backoff (no override hook in `maybeRunEmbeddingPass`), so a retryable-500
   outage costs ~3-7s once (full-jitter, observed ~3s) — keep such tests to ONE
   aborting batch and a ~30s timeout.
 - **Library-level outage harness:** batchSize env `CODEGRAPH_EMBEDDING_BATCH_SIZE='2'`
-  over the 6-symbol base project → 3 batches; a mock that serves 2 OK then 500s
-  commits 4 vectors durably, aborts advisorily, `indexAll().success===true`. Script
+  **AND `CODEGRAPH_EMBEDDING_CONCURRENCY='1'`** (post-FIX-2 — else all 6 symbols ride ONE
+  super-chunk of `2×defaultConcurrency` and its single failed batch discards the whole
+  super-chunk → 0 durable, not 4) over the 6-symbol base project → 3 batches; a mock that
+  serves 2 OK then 500s commits 4 vectors durably, aborts advisorily, `indexAll().success===true`. Script
   the mock by an `okServed` counter (NOT request count — retries inflate it). Compute
   "what was embedded" from `node_vectors` (readVectorsByName), never from request
   bodies (a 500'd request still records its input body).

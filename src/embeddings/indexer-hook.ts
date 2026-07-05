@@ -133,12 +133,14 @@ export function computeInputHash(composed: string): string {
 // --- Full-index embed pass (T016) ------------------------------------------
 //
 // `runEmbeddingPass` is the exported orchestration entry the indexer drives after
-// resolution. It STREAMS the eligible-but-unembedded symbols in `batchSize` chunks:
-// per chunk it composes each symbol's input, embeds the chunk through the provider,
-// and persists that chunk's vectors in ONE transaction — one commit per completed
-// batch, never per-row and never a single pass-long transaction (FR-029). Only one
-// chunk's composed inputs (the source-bearing strings) exist at a time, so memory
-// stays bounded regardless of graph size (FR-028).
+// resolution. It STREAMS the eligible-but-unembedded symbols in `batchSize × concurrency`
+// super-chunks: per super-chunk it composes each symbol's input and hands the whole
+// super-chunk to the provider in ONE `embed()` call, so the provider's bounded pool runs
+// `concurrency` `batchSize` requests at once; the returned vectors are then persisted in
+// `batchSize`-sized transaction slices, committed serially — one commit per batch, never
+// per-row and never a single pass-long transaction (FR-029). Only one super-chunk's
+// composed inputs (the source-bearing strings) exist at a time, so memory stays bounded
+// regardless of graph size (FR-028).
 //
 // The vector dimension is inferred from the first successful batch and persisted —
 // with the active model — to the `project_metadata` scalars (D9/FR-004); a dimension
@@ -180,9 +182,13 @@ export interface RunEmbeddingPassOptions {
    * Wire to `DatabaseConnection.runMaintenance` (FR-030).
    */
   runMaintenance: () => void;
-  /** Progress ping as each batch commits: `(embeddedSoFar, totalEligible)`. */
+  /** Progress ping as each batch slice commits: `(embeddedSoFar, totalEligible)`. */
   onProgress?: (current: number, total: number) => void;
-  /** Refresh the held index-lock's mtime at each batch boundary (FR-031). */
+  /**
+   * Refresh the held index-lock's mtime. Invoked on a wall-clock interval spanning the
+   * whole pass (NOT at batch boundaries), so a long per-batch retry ladder can't starve
+   * the refresh and let the lock be reaped as stale (FR-031).
+   */
   refreshLock?: () => void;
   /**
    * Resolve a symbol's trimmed source snippet for composition. The caller (which
@@ -268,74 +274,106 @@ export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<E
   let abortReason: string | undefined;
   let dims: number | undefined; // established by the first successful batch
 
-  for (let offset = 0; offset < eligible.length; offset += config.batchSize) {
-    const chunk = eligible.slice(offset, offset + config.batchSize);
-    const composed = chunk.map((node) => composeEmbeddingInput(toSymbolInput(node, readSource)));
+  // Refresh the held index lock on a wall-clock interval that spans the WHOLE pass —
+  // NOT only at batch boundaries. A single batch's full retry ladder (up to maxRetries ×
+  // the per-request timeout, plus backoff) can otherwise run for minutes with zero
+  // refreshes and let the lock be reaped as stale (FR-031). The timer is unref'd so it
+  // never keeps the process alive, and is cleared in `finally` so it can't outlive the
+  // pass. A refresh throw is swallowed — lock refresh is always advisory.
+  const LOCK_REFRESH_INTERVAL_MS = 30_000;
+  const refreshTimer = refreshLock
+    ? setInterval(() => { try { refreshLock(); } catch { /* lock refresh is advisory */ } }, LOCK_REFRESH_INTERVAL_MS)
+    : undefined;
+  refreshTimer?.unref?.();
 
-    let vectors: Float32Array[];
-    try {
-      vectors = await provider.embed(composed);
-    } catch (err) {
-      // Advisory abort (FR-014/019): stop, keep prior committed batches, never throw.
-      aborted = true;
-      abortReason = abortReasonOf(err);
-      break;
-    }
+  try {
+    // Super-chunk the eligible symbols by `batchSize × concurrency` and hand each
+    // super-chunk to the provider in ONE `embed()` call. The provider splits it into
+    // `batchSize` batches and runs its bounded (`concurrency`) pool over them, so several
+    // requests are genuinely in flight at once — without this, feeding one `batchSize`
+    // chunk per awaited call left the pool starved at a single request. The returned
+    // vectors are then persisted in `batchSize`-sized transaction slices, committed
+    // serially, so the per-batch durability cadence (FR-029) is preserved even though the
+    // endpoint work ran concurrently.
+    //
+    // Abort granularity: a failure of ANY batch rejects the whole super-chunk's `embed()`,
+    // so NOTHING from that super-chunk is persisted (earlier super-chunks stay durable).
+    // There is no checkpoint to replay — the next pass simply re-selects the still-missing
+    // symbols (stateless resume, FR-021), so a lost super-chunk costs a re-embed of at most
+    // `batchSize × concurrency` symbols.
+    const superChunkSize = config.batchSize * config.concurrency;
+    for (let offset = 0; offset < eligible.length; offset += superChunkSize) {
+      const superChunk = eligible.slice(offset, offset + superChunkSize);
+      const composed = superChunk.map((node) => composeEmbeddingInput(toSymbolInput(node, readSource)));
 
-    if (dims === undefined) {
-      const established = vectors[0]?.length ?? 0;
-      if (enforcedDims !== undefined && established !== enforcedDims) {
-        // Advisory abort BEFORE writing this batch — the enforced dimension wins, and
-        // the message names the escape hatch (FR-021). No source is referenced.
+      let vectors: Float32Array[];
+      try {
+        vectors = await provider.embed(composed);
+      } catch (err) {
+        // Advisory abort (FR-014/019): stop, keep prior committed slices, never throw.
         aborted = true;
-        abortReason =
-          `embedding dimension mismatch: the endpoint returned ${established}-dimension vectors ` +
-          `but ${enforcedDims} is enforced (CODEGRAPH_EMBEDDING_DIMS). Set CODEGRAPH_EMBEDDING_DIMS=${established} ` +
-          `to accept this model, or clear it to re-infer, then re-index.`;
+        abortReason = abortReasonOf(err);
         break;
       }
-      dims = established;
-      // Persist the enforcement scalars once, on first success (idempotent upsert).
-      queries.setMetadata('embedding_dims', String(dims));
-      queries.setMetadata('embedding_model', model);
-    }
 
-    const hashes = composed.map(computeInputHash);
-    // One transaction per completed batch (FR-029): all of this chunk's vectors commit
-    // atomically, or none do (a mid-batch failure rolls the whole chunk back).
-    transaction(() => {
-      for (const [k, node] of chunk.entries()) {
-        queries.upsertNodeVector(node.id, model, dims!, encodeVector(vectors[k]!), hashes[k]!);
+      if (dims === undefined) {
+        const established = vectors[0]?.length ?? 0;
+        if (enforcedDims !== undefined && established !== enforcedDims) {
+          // Advisory abort BEFORE writing anything — the enforced dimension wins, and the
+          // message names the escape hatch (FR-021). No source is referenced.
+          aborted = true;
+          abortReason =
+            `embedding dimension mismatch: the endpoint returned ${established}-dimension vectors ` +
+            `but ${enforcedDims} is enforced (CODEGRAPH_EMBEDDING_DIMS). Set CODEGRAPH_EMBEDDING_DIMS=${established} ` +
+            `to accept this model, or clear it to re-infer, then re-index.`;
+          break;
+        }
+        dims = established;
+        // Persist the enforcement scalars once, on first success (idempotent upsert).
+        queries.setMetadata('embedding_dims', String(dims));
+        queries.setMetadata('embedding_model', model);
       }
-    });
 
-    wroteAnyBatch = true;
-    embedded += chunk.length;
-    onProgress?.(embedded, attempted);
-    refreshLock?.(); // batch boundary — keep the held index lock fresh (FR-031)
-  }
-
-  // Reconcile the vector layer against the live node set: drop vectors for symbols that
-  // no longer exist — deletions, and the transient orphans a file's node delete-reinsert
-  // leaves behind (FR-017). A single auto-committed statement (NOT the per-batch
-  // transaction seam), so the batch-commit cadence is unchanged. Runs on every pass —
-  // including one that embedded nothing (a pure deletion) or aborted — since a removed
-  // symbol is gone regardless of endpoint state. Advisory: a failure never fails the pass.
-  let reconciledAny = false;
-  try {
-    reconciledAny = queries.deleteRemovedVectors() > 0;
-  } catch {
-    // ignore — reconciliation is best-effort, never load-bearing
-  }
-
-  // WAL-checkpoint the pass's writes (embedded batches and/or a reconciliation delete)
-  // via the same maintenance the index runs; best-effort, never load-bearing (FR-030).
-  if (wroteAnyBatch || reconciledAny) {
-    try {
-      runMaintenance();
-    } catch {
-      // ignore — a checkpoint failure never fails the pass
+      const hashes = composed.map(computeInputHash);
+      // One transaction per `batchSize`-sized slice (FR-029): each slice's vectors commit
+      // atomically, and commits run serially even though the requests ran concurrently.
+      for (let sliceStart = 0; sliceStart < superChunk.length; sliceStart += config.batchSize) {
+        const sliceEnd = Math.min(sliceStart + config.batchSize, superChunk.length);
+        transaction(() => {
+          for (let k = sliceStart; k < sliceEnd; k++) {
+            queries.upsertNodeVector(superChunk[k]!.id, model, dims!, encodeVector(vectors[k]!), hashes[k]!);
+          }
+        });
+        wroteAnyBatch = true;
+        embedded += sliceEnd - sliceStart;
+        onProgress?.(embedded, attempted);
+      }
     }
+
+    // Reconcile the vector layer against the live node set: drop vectors for symbols that
+    // no longer exist — deletions, and the transient orphans a file's node delete-reinsert
+    // leaves behind (FR-017). A single auto-committed statement (NOT the per-batch
+    // transaction seam), so the batch-commit cadence is unchanged. Runs on every pass —
+    // including one that embedded nothing (a pure deletion) or aborted — since a removed
+    // symbol is gone regardless of endpoint state. Advisory: a failure never fails the pass.
+    let reconciledAny = false;
+    try {
+      reconciledAny = queries.deleteRemovedVectors() > 0;
+    } catch {
+      // ignore — reconciliation is best-effort, never load-bearing
+    }
+
+    // WAL-checkpoint the pass's writes (embedded batches and/or a reconciliation delete)
+    // via the same maintenance the index runs; best-effort, never load-bearing (FR-030).
+    if (wroteAnyBatch || reconciledAny) {
+      try {
+        runMaintenance();
+      } catch {
+        // ignore — a checkpoint failure never fails the pass
+      }
+    }
+  } finally {
+    if (refreshTimer !== undefined) clearInterval(refreshTimer);
   }
 
   const result: EmbeddingPassResult = { attempted, embedded, aborted };

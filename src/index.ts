@@ -590,7 +590,16 @@ export class CodeGraph {
         if (result.success && result.filesIndexed > 0) {
           try {
             await this.maybeRunEmbeddingPass(options.onProgress);
-          } catch { /* embedding is advisory — never fail an index over it */ }
+          } catch (err) {
+            // Advisory — an unexpected throw from the embedding wiring itself (config
+            // load, provider construction) never fails the index, but it must not be
+            // invisible either. Only the error's NAME is surfaced (never its message or
+            // cause), keeping endpoint/key redaction total (FR-023).
+            logWarn(
+              `Embedding pass skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+              '— indexing is unaffected.'
+            );
+          }
         }
 
         return result;
@@ -637,7 +646,7 @@ export class CodeGraph {
     const provider = new EndpointProvider(config);
     const lockPath = path.join(getCodeGraphDir(this.projectRoot), 'codegraph.lock');
 
-    await runEmbeddingPass({
+    const result = await runEmbeddingPass({
       queries: this.queries,
       provider,
       config,
@@ -654,6 +663,19 @@ export class CodeGraph {
       },
       readSource: (node) => this.readNodeSource(node),
     });
+
+    // Surface an advisory abort's reason to the log rather than silently discarding the
+    // result. The reason is already redacted by construction (endpoint + status only,
+    // never source or credentials — FR-023/FR-025a), and it carries the actionable
+    // guidance a user needs: FR-021's `CODEGRAPH_EMBEDDING_DIMS` message on a dimension
+    // conflict, or the redacted endpoint-failure reason on an outage. The pass itself
+    // never threw — embedding stays advisory, the index/sync is unaffected either way.
+    if (result.aborted) {
+      logWarn(
+        'Embedding pass aborted; some symbols are unembedded but indexing is unaffected. ' +
+        `Reason: ${result.abortReason ?? 'unknown'}`
+      );
+    }
   }
 
   /**
@@ -803,7 +825,15 @@ export class CodeGraph {
         // drive this same sync(), so they inherit the pass with no extra wiring (FR-015).
         try {
           await this.maybeRunEmbeddingPass(options.onProgress);
-        } catch { /* embedding is advisory — never fail a sync over it */ }
+        } catch (err) {
+          // Advisory — an unexpected throw from the embedding wiring never fails a sync,
+          // but must not be invisible. Only the error's NAME is surfaced (never its
+          // message or cause), keeping endpoint/key redaction total (FR-023).
+          logWarn(
+            `Embedding pass skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+            '— the sync is unaffected.'
+          );
+        }
 
         return result;
       } finally {

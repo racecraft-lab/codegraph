@@ -18,7 +18,7 @@
  * indexer wiring) to this file — keep new `describe` blocks additive.
  */
 
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -32,6 +32,7 @@ import { Node, NodeKind } from '../src/types';
 import * as indexerHook from '../src/embeddings/indexer-hook';
 import type { RunEmbeddingPassOptions } from '../src/embeddings/indexer-hook';
 import type { EmbeddingProvider } from '../src/embeddings/provider';
+import { EndpointProvider } from '../src/embeddings/endpoint-provider';
 import type { EmbeddingConfig } from '../src/embeddings/config';
 import { CodeGraph } from '../src';
 import type { IndexProgress, IndexResult } from '../src';
@@ -373,10 +374,15 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     }
   }
 
+  // concurrency 1 by default so the super-chunk (batchSize × concurrency) equals batchSize
+  // — these FakeProvider cases assert the PER-BATCH cadence (one embed() call, txn, and
+  // progress ping per batchSize chunk), which is the concurrency=1 shape. Genuine
+  // concurrency (super-chunk > batch) is exercised separately by the FIX 2 test with a
+  // real EndpointProvider; a case that wants it overrides `concurrency` explicitly.
   function baseConfig(over: Partial<EmbeddingConfig> = {}): EmbeddingConfig {
     return {
       url: 'http://localhost:1234/v1/embeddings', model: 'nomic',
-      batchSize: 2, concurrency: 4, timeoutMs: 30_000, ...over,
+      batchSize: 2, concurrency: 1, timeoutMs: 30_000, ...over,
     };
   }
 
@@ -407,7 +413,7 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     }
   });
 
-  it('embeds every eligible symbol to 100% coverage: batch-sized txns, inferred dims persisted, progress + lock refresh + one checkpoint (FR-004/028/029/030/031)', async () => {
+  it('embeds every eligible symbol to 100% coverage: batch-sized txns, inferred dims persisted, progress + one checkpoint (FR-004/028/029/030)', async () => {
     const { db, q } = open();
     const ids = ['n0', 'n1', 'n2', 'n3', 'n4'];
     q.insertNodes(ids.map((id) => mkNode(id, 'function')));
@@ -438,12 +444,14 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     expect(q.getMetadata('embedding_dims')).toBe('4');
     expect(q.getMetadata('embedding_model')).toBe('nomic');
 
-    // Streaming: 3 batches (2+2+1); one transaction + one lock refresh per batch;
-    // progress is cumulative; exactly one WAL checkpoint after all writes.
+    // Streaming: 3 batches (2+2+1); one transaction per batch; progress is cumulative;
+    // exactly one WAL checkpoint after all writes. Lock refresh is now driven by a ~30s
+    // wall-clock timer (FR-031), NOT batch boundaries, so a sub-second pass fires it zero
+    // times — the interval behavior is pinned by the FIX 4 timer test in this file.
     expect(provider.calls).toHaveLength(3);
     expect(provider.calls.flat()).toHaveLength(5);
     expect(counters.transaction).toBe(3);
-    expect(counters.refresh).toBe(3);
+    expect(counters.refresh).toBe(0);
     expect(counters.maintenance).toBe(1);
     expect(progress).toEqual([[2, 5], [4, 5], [5, 5]]);
   });
@@ -466,11 +474,12 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     // Batch 1's two rows committed; batch 2 rolled back to nothing (no partial rows).
     expect(allVectors(db).map((r) => r.node_id)).toEqual(['a0', 'a1']);
 
-    // One committed batch → one txn, one refresh, one progress ping; the checkpoint
-    // still runs because ≥1 batch was written (FR-030).
+    // One committed batch → one txn and one progress ping; the checkpoint still runs
+    // because ≥1 batch was written (FR-030). Lock refresh is timer-driven now, so a fast
+    // pass records zero refreshes (the interval is covered by the FIX 4 timer test).
     expect(provider.calls).toHaveLength(2);
     expect(counters.transaction).toBe(1);
-    expect(counters.refresh).toBe(1);
+    expect(counters.refresh).toBe(0);
     expect(counters.maintenance).toBe(1);
     expect(progress).toEqual([[2, 4]]);
   });
@@ -566,6 +575,121 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     expect(result.abortReason).not.toContain(SECRET_DOC);
     expect(result.abortReason).not.toContain('SECRET');
     expect(allVectors(db)).toHaveLength(0);
+  });
+
+  // ===========================================================================
+  // FIX 2 (concurrency) + FIX 4 (lock-refresh timer). The pass must feed the
+  // provider a super-chunk (batchSize × concurrency) so the provider's bounded
+  // pool actually runs batches concurrently, and must refresh the held lock on a
+  // wall-clock interval spanning the whole pass rather than only at batch
+  // boundaries (so one batch's full retry ladder can't starve the refresh).
+  // FIX 2 uses a REAL EndpointProvider (the pool lives there) + an in-flight-
+  // tracking node:http mock; FIX 4 uses fake timers + a parked provider.
+  // ===========================================================================
+  describe('concurrency super-chunking & lock-refresh timer (FIX 2 / FIX 4)', () => {
+    interface InFlightMock {
+      origin: string;
+      getMaxInFlight: () => number;
+      close: () => Promise<void>;
+    }
+    const servers: InFlightMock[] = [];
+
+    /** A local endpoint that returns valid 4-dim vectors after `delayMs`, tracking peak in-flight. */
+    async function startInFlightMock(delayMs: number): Promise<InFlightMock> {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const server = createServer((req, res) => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        const chunks: Buffer[] = [];
+        req.on('data', (c: Buffer) => chunks.push(c));
+        req.on('end', () => {
+          let inputs: string[] = [];
+          try {
+            inputs = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { input?: string[] }).input ?? [];
+          } catch { /* leave empty */ }
+          const data = inputs.map((_t, index) => ({
+            index,
+            embedding: Array.from({ length: 4 }, (_v, k) => k + index * 0.5),
+          }));
+          setTimeout(() => {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ data, model: 'nomic' }), () => { inFlight--; });
+          }, delayMs);
+        });
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const { port } = server.address() as AddressInfo;
+      const mock: InFlightMock = {
+        origin: `http://127.0.0.1:${port}`,
+        getMaxInFlight: () => maxInFlight,
+        close: () => new Promise<void>((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()); }),
+      };
+      servers.push(mock);
+      return mock;
+    }
+
+    afterEach(async () => {
+      await Promise.all(servers.splice(0).map((s) => s.close()));
+    });
+
+    it('feeds the provider a super-chunk (batchSize × concurrency) so its pool runs batches concurrently — not one batch at a time (FIX 2)', async () => {
+      const { db, q } = open();
+      const ids = Array.from({ length: 12 }, (_v, i) => `c${i}`);
+      q.insertNodes(ids.map((id) => mkNode(id, 'function')));
+
+      const mock = await startInFlightMock(40); // slow enough that concurrent requests overlap
+      const config = baseConfig({ url: `${mock.origin}/v1/embeddings`, batchSize: 2, concurrency: 3 });
+      const provider = new EndpointProvider(config, { baseDelayMs: 1, maxDelayMs: 2 });
+      const { opts } = harness(db, q, provider, config);
+
+      const result = await runEmbeddingPass(opts);
+
+      // Full coverage — the super-chunking neither drops nor duplicates any symbol.
+      expect(result).toEqual({ attempted: 12, embedded: 12, aborted: false });
+      expect(allVectors(db)).toHaveLength(12);
+
+      // The mock saw MORE than one request in flight at once: a super-chunk fed the pool
+      // several batches. Pre-fix the pass awaited each batchSize chunk serially, so the
+      // pool never received >1 batch and peak in-flight stayed pinned at 1.
+      expect(mock.getMaxInFlight()).toBeGreaterThan(1);
+    });
+
+    it('refreshes the held lock on a wall-clock interval spanning the whole pass, not at batch boundaries (FIX 4 / FR-031)', async () => {
+      vi.useFakeTimers();
+      try {
+        const { db, q } = open();
+        q.insertNodes(['r0', 'r1'].map((id) => mkNode(id, 'function')));
+
+        // A provider whose only embed() call parks until released — so the pass sits
+        // mid-embed (no batch committed, no boundary crossed) while the clock advances.
+        let release!: () => void;
+        const parked = new Promise<void>((r) => { release = r; });
+        const provider: EmbeddingProvider = {
+          id: 'nomic',
+          get dims() { return 4; },
+          async embed(texts: string[]): Promise<Float32Array[]> {
+            await parked;
+            return texts.map(() => Float32Array.from([1, 2, 3, 4]));
+          },
+        };
+        const { opts, counters } = harness(db, q, provider, baseConfig({ batchSize: 2 }));
+
+        const passPromise = runEmbeddingPass(opts);
+        await vi.advanceTimersByTimeAsync(0);       // let the pass reach `await provider.embed`
+        expect(counters.refresh).toBe(0);           // nothing committed yet — NOT a per-batch call
+
+        // Cross two ~30s intervals while the pass is parked mid-embed: the timer must fire
+        // even though no batch boundary was reached.
+        await vi.advanceTimersByTimeAsync(65_000);
+        expect(counters.refresh).toBeGreaterThanOrEqual(2);
+
+        release();
+        await passPromise;                          // finishes and clears the interval in finally
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });
 
@@ -801,6 +925,40 @@ describe.skipIf(!HAS_SQLITE)('indexAll wiring (T019)', () => {
 
     cg.close();
     expect(readVectors(dir).rows).toHaveLength(0);
+  }, 20000);
+
+  it('(e) a mid-pass dimension conflict aborts advisorily AND surfaces the CODEGRAPH_EMBEDDING_DIMS guidance to the log, rather than discarding it (FIX 1 / FR-021)', async () => {
+    // The endpoint establishes 4-dim vectors on the first batch, then switches to 5-dim;
+    // the provider rejects the change with a reason naming CODEGRAPH_EMBEDDING_DIMS.
+    // Serial batches (concurrency 1, batchSize 2) make the switch deterministic — the
+    // first request establishes the dimension, a later request conflicts.
+    const mock = await startEmbedMock((inputs, count) => {
+      const dims = count === 1 ? 4 : 5;
+      const data = inputs.map((_t, index) => ({
+        index,
+        embedding: Array.from({ length: dims }, (_v, k) => k + index * 0.5),
+      }));
+      return { status: 200, body: JSON.stringify({ data, model: 'test-model' }) };
+    });
+    process.env.CODEGRAPH_EMBEDDING_URL = `${mock.origin}/v1/embeddings`;
+    process.env.CODEGRAPH_EMBEDDING_MODEL = 'test-model';
+    process.env.CODEGRAPH_EMBEDDING_BATCH_SIZE = '2';
+    process.env.CODEGRAPH_EMBEDDING_CONCURRENCY = '1';
+
+    const dir = makeProject();
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+
+    // Advisory: the dimension conflict never fails the index.
+    const result = await cg.indexAll();
+    expect(result.success).toBe(true);
+    expect(mock.requestCount()).toBeGreaterThanOrEqual(2); // established dims, then conflicted
+
+    // The wiring must NOT silently swallow the pass result: the already-redacted abort
+    // reason (carrying the actionable CODEGRAPH_EMBEDDING_DIMS message) reaches the log.
+    expect(warnings.some((w) => w.includes('CODEGRAPH_EMBEDDING_DIMS'))).toBe(true);
+
+    cg.close();
   }, 20000);
 });
 

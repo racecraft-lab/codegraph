@@ -50,7 +50,10 @@ interface RecordedRequest {
   body: string;
 }
 type MockReply = { status: number; headers?: Record<string, string>; body?: string };
-type MockHandler = (req: RecordedRequest, count: number) => MockReply | 'hang';
+// 'hang' = receive but never answer (per-request timeout path). 'destroy-mid-body' =
+// send 200 headers + a truncated body then reset the socket (a transport failure DURING
+// the body read, distinct from a well-formed-but-invalid-JSON body).
+type MockHandler = (req: RecordedRequest, count: number) => MockReply | 'hang' | 'destroy-mid-body';
 
 interface MockServer {
   port: number;
@@ -84,6 +87,19 @@ async function startMock(handler: MockHandler, opts: { delayMs?: number } = {}):
       const reply = handler(rec, requests.length);
       if (reply === 'hang') {
         inFlight--; // received, but deliberately never answered
+        return;
+      }
+      if (reply === 'destroy-mid-body') {
+        // Deliver 200 headers + a partial body so `fetch()` RESOLVES the Response, then
+        // reset the socket on a LATER tick so the failure lands during `response.text()`
+        // (the body read) — NOT during `fetch()` itself, and NOT as a well-formed but
+        // invalid-JSON body. content-length promises far more than is ever sent. Swallow
+        // the reset we are about to cause on the server side.
+        res.socket?.on('error', () => {});
+        res.writeHead(200, { 'content-type': 'application/json', 'content-length': '4096' });
+        res.write('{"data":[{"index":0,"embedding":[0.1');
+        setTimeout(() => res.socket?.destroy(), 20);
+        inFlight--;
         return;
       }
       const send = (): void => {
@@ -426,6 +442,42 @@ describe('EndpointProvider — response validation (FR-021a)', () => {
 
     expect(err.name).toBe('EmbeddingEndpointError');
     expect(mock.requests).toHaveLength(1);
+  });
+});
+
+describe('EndpointProvider — mid-body transport failure on a 200 (FIX 3 / FR-019)', () => {
+  it('classifies a socket reset DURING the 200-body read as a RETRYABLE network error, not a non-retryable malformed-body abort', async () => {
+    // Headers say 200 (response.ok), so we enter the body-read path — then the socket is
+    // reset mid-body. That read failure is a transport error, and it must be retried like
+    // any other network failure, NOT misclassified as "response body was not valid JSON".
+    const mock = await startMock(() => 'destroy-mid-body');
+    const provider = new EndpointProvider(
+      makeConfig({ url: `${mock.origin}/v1/embeddings?api_key=xyz`, apiKey: 'sk-topsecret-KEY' }),
+      FAST,
+    );
+    const err = await captureReject(provider.embed(['x']));
+
+    expect(err.name).toBe('EmbeddingEndpointError');
+    // The full bounded budget (1 initial + 3 retries) was consumed — proof the read
+    // failure was treated as retryable, not fast-aborted after a single request.
+    expect(mock.requests).toHaveLength(4);
+    assertNoLeak(err, ['sk-topsecret-KEY', 'xyz']);
+  });
+});
+
+describe('EndpointProvider — empty embedding rejected (FIX 5 / FR-021a)', () => {
+  it('rejects a 200 whose embedding array is empty instead of accepting length 0 as an inferred dimension', async () => {
+    // A zero-length embedding is a malformed response, not "dimension unknown". It must be
+    // a non-retryable validation failure — never latched as dims=0 (which the pass would
+    // then persist as a bogus embedding_dims=0 scalar).
+    const mock = await startMock(() => ({ status: 200, body: JSON.stringify({ data: [{ index: 0, embedding: [] }] }) }));
+    const provider = new EndpointProvider(makeConfig({ url: `${mock.origin}/v1/embeddings` }), FAST);
+
+    const err = await captureReject(provider.embed(['x']));
+
+    expect(err.name).toBe('EmbeddingEndpointError');
+    expect(mock.requests).toHaveLength(1); // non-retryable validation failure — no retry storm
+    expect(provider.dims).toBe(0);         // the empty array was NOT latched as a real dimension
   });
 });
 

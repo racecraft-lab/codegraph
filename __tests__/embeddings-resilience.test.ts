@@ -357,6 +357,11 @@ describe.skipIf(!HAS_SQLITE)('embedding backfill & resume — library level (T02
     });
     configureEndpoint(mock);
     process.env.CODEGRAPH_EMBEDDING_BATCH_SIZE = '2';
+    // concurrency 1 so each super-chunk is a single batch: the two healthy batches commit
+    // in their own super-chunks BEFORE batch 3 hits the outage. At the default concurrency
+    // all six symbols would ride one super-chunk whose single failed batch discards it
+    // whole, leaving 0 durable — this test pins the 4-durable partial-progress guarantee.
+    process.env.CODEGRAPH_EMBEDDING_CONCURRENCY = '1';
 
     const dir = makeProject(baseFiles());
 
@@ -485,13 +490,16 @@ describe.skipIf(!HAS_SQLITE)('embedding pass resilience — direct pass (T030 FR
 
     // Batch 1 returns 4-dim vectors (establishes the dimension); every later batch
     // returns 8-dim vectors → the provider rejects the change across embed() calls.
+    // concurrency 1 keeps the super-chunk == one batch, so batch 1 commits in its OWN
+    // super-chunk BEFORE the conflicting later batch is ever sent — the "earlier work
+    // survives a later abort" invariant this test pins holds at super-chunk granularity.
     let okServed = 0;
     const mock = await startEmbedMock(mocks, (inputs) => embedOk(inputs, okServed++ < 1 ? 4 : 8));
 
     const provider = new EndpointProvider(
-      baseConfig(mock), { baseDelayMs: 1, maxDelayMs: 2, retryAfterCapMs: 5, maxRetries: 3 },
+      baseConfig(mock, { concurrency: 1 }), { baseDelayMs: 1, maxDelayMs: 2, retryAfterCapMs: 5, maxRetries: 3 },
     );
-    const { opts } = harness(db, q, provider, baseConfig(mock));
+    const { opts } = harness(db, q, provider, baseConfig(mock, { concurrency: 1 }));
 
     // Never throws — an advisory abort is a returned result, not an exception (FR-019).
     const result = await runEmbeddingPass(opts);
@@ -518,12 +526,14 @@ describe.skipIf(!HAS_SQLITE)('embedding pass resilience — direct pass (T030 FR
 
     // Every request fails (retryable 500). With tiny backoff overrides the whole thing
     // resolves in milliseconds, so the boundedness is proven by the request COUNT.
+    // concurrency 1 makes the super-chunk one batch, so the pass aborts on the FIRST
+    // failing batch after exactly maxRetries+1 attempts — later super-chunks never send.
     const mock = await startEmbedMock(mocks, () => ({ status: 500, body: '{"error":"down"}' }));
 
     const provider = new EndpointProvider(
-      baseConfig(mock), { baseDelayMs: 1, maxDelayMs: 2, retryAfterCapMs: 5, maxRetries: 3 },
+      baseConfig(mock, { concurrency: 1 }), { baseDelayMs: 1, maxDelayMs: 2, retryAfterCapMs: 5, maxRetries: 3 },
     );
-    const { opts } = harness(db, q, provider, baseConfig(mock));
+    const { opts } = harness(db, q, provider, baseConfig(mock, { concurrency: 1 }));
 
     const result = await runEmbeddingPass(opts);
 
