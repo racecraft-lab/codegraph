@@ -1,17 +1,57 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T22:41:55Z",
-  "active_step": "complete",
-  "spec_id": "SPEC-023",
-  "feature_dir": "specs/023-ocaml-language-support",
-  "branch": "023-ocaml-language-support",
-  "confidence_gate_mode": "advisory",
+  "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
+  "spec_id": "SPEC-008",
+  "feature_dir": "specs/008-lsp-client-integration",
+  "updated_at": "2026-07-05T22:24:00Z",
+  "active_step": "Phase 2: Clarify - Server prereqs and validation",
+  "confidence_gate_mode": "strict",
+  "plan": [
+    {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
+    {"step": "Phase 0: Prerequisites", "status": "completed"},
+    {"step": "Phase 1: Specify", "status": "completed"},
+    {"step": "Phase 2: Clarify - Server prereqs and validation", "status": "in_progress"},
+    {"step": "Phase 2: Clarify - Server prereqs and validation Consensus", "status": "pending"},
+    {"step": "Phase 2: Clarify - Language parity baseline", "status": "pending"},
+    {"step": "Phase 2: Clarify - Language parity baseline Consensus", "status": "pending"},
+    {"step": "Phase 2: Clarify - Feature and capability parity baseline", "status": "pending"},
+    {"step": "Phase 2: Clarify - Feature and capability parity baseline Consensus", "status": "pending"},
+    {"step": "Phase 2: Clarify - Edge correction and provenance", "status": "pending"},
+    {"step": "Phase 2: Clarify - Edge correction and provenance Consensus", "status": "pending"},
+    {"step": "Phase 2: Clarify - Activation, config, and slicing", "status": "pending"},
+    {"step": "Phase 2: Clarify - Activation, config, and slicing Consensus", "status": "pending"},
+    {"step": "Phase 3: Plan", "status": "pending"},
+    {"step": "Phase 4: Checklist - Integration", "status": "pending"},
+    {"step": "Phase 4: Checklist - Integration Consensus", "status": "pending"},
+    {"step": "Phase 4: Checklist - Reliability", "status": "pending"},
+    {"step": "Phase 4: Checklist - Reliability Consensus", "status": "pending"},
+    {"step": "Phase 4: Checklist - Data Integrity", "status": "pending"},
+    {"step": "Phase 4: Checklist - Data Integrity Consensus", "status": "pending"},
+    {"step": "Phase 4: Checklist - Performance", "status": "pending"},
+    {"step": "Phase 4: Checklist - Performance Consensus", "status": "pending"},
+    {"step": "Phase 5: Tasks", "status": "pending"},
+    {"step": "Phase 6: Analyze", "status": "pending"},
+    {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
+    {"step": "Phase 6.5: Confidence Gate", "status": "pending"},
+    {"step": "Phase 7: Implement - Pending task decomposition", "status": "pending"},
+    {"step": "Post: Doctor Extension Check", "status": "pending"},
+    {"step": "Post: Verify Implementation", "status": "pending"},
+    {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
+    {"step": "Post: Code Review", "status": "pending"},
+    {"step": "Post: Integration Suite", "status": "pending"},
+    {"step": "Post: Reviewability Diff Gate", "status": "pending"},
+    {"step": "Post: Self-Review", "status": "pending"},
+    {"step": "Post: UAT Runbook Generation", "status": "pending"},
+    {"step": "Post: PR Body Generation", "status": "pending"},
+    {"step": "Post: PR Creation", "status": "pending"},
+    {"step": "Post: Review Remediation", "status": "pending"},
+    {"step": "Post: Retrospective", "status": "pending"}
+  ],
   "archive_sweep": {
-    "current_target": "specs/023-ocaml-language-support",
     "archive_extension_installed": false,
+    "current_target": "specs/008-lsp-client-integration",
+    "cleanup_mode": "disabled",
     "safeToApplyCleanup": false,
-    "mode": "unavailable",
-    "note": "Archive extension is not installed; no cleanup was applied."
+    "note": "Archive extension not installed; no previously merged spec cleanup was applied."
   },
   "project_commands": {
     "BUILD": "npm run build",
@@ -20,7 +60,7 @@
     "LINT_FIX": "N/A",
     "UNIT_TEST": "npm test",
     "INTEGRATION_TEST": "N/A",
-    "SINGLE_FILE_TEST": "npx vitest run <file>",
+    "SINGLE_FILE_TEST": "npm test --",
     "SINGLE_FILE_INTEGRATION": "N/A",
     "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
   },
@@ -31,506 +71,44 @@
       "codegraph-project-overrides",
       "speckit-pro-reviewability"
     ],
-    "templates": {
+    "template_resolution": {
       "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
       "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
       "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
     }
   },
-  "codex_agents": {
-    "validator": "ok: codex: 10 bundled agents installed",
-    "model": "gpt-5.5",
-    "model_reasoning_effort": "xhigh"
-  },
-  "phase0_evidence": {
-    "prerequisites": "check-prerequisites.sh all_pass=true",
-    "confidence_gate_mode": "advisory",
-    "reviewability_setup_gate": "status=warn, pass=true, reviewable_loc=325, production_files=4, total_files=10",
-    "build": "npm run build passed",
-    "typecheck": "npm run typecheck passed",
-    "unit_test": "npm test passed: 132 files, 2223 passed, 4 skipped"
-  },
-  "phase1_evidence": {
-    "executor": "phase-executor",
-    "files_created": [
-      ".specify/feature.json",
-      "specs/023-ocaml-language-support/spec.md",
-      "specs/023-ocaml-language-support/checklists/requirements.md"
-    ],
-    "user_stories": 4,
-    "functional_requirements": 17,
-    "acceptance_scenarios": 10,
-    "requirements_checklist": "16/16 complete",
-    "gate": "G1 pass: spec.md exists with 0 markers",
-    "after_specify_hook": "skipped: agent-context hook installed but no SPEC-023 plan.md exists yet; running without a plan could auto-detect unrelated plans"
-  },
-  "phase2_evidence": {
-    "session_1": {
-      "focus": "Grammar, Syntax Breadth, and Shipping",
-      "questions": 5,
-      "outcome": "Pinned vendored tree-sitter-ocaml@0.24.2 implementation and interface WASMs; required parser health checks and dist artifact assertion; locked first-slice syntax breadth; defined .ml/.mli pairing and interface node kinds.",
-      "consensus": {
-        "item": "Grammar source/artifacts",
-        "categories": "[codebase, domain]",
-        "round": 1,
-        "outcome": "both-agree",
-        "analysts": [
-          "codebase-analyst",
-          "domain-researcher"
-        ]
-      },
-      "marker_check": "count-markers clarifications total=0"
+  "preflight": {
+    "model": "parent session not directly introspectable; custom phase agents are installed with gpt-5.5/xhigh",
+    "model_reasoning_effort": "parent session not directly introspectable; strict run proceeds with xhigh custom agents",
+    "branch": "008-lsp-client-integration",
+    "is_worktree": true,
+    "on_feature_branch": true,
+    "specify_version": "0.11.8",
+    "agent_install": "validate-agent-install.sh: ok: codex: 10 bundled agents installed",
+    "coverage_guard": "passed: validate-autopilot-phase-coverage.py",
+    "g0_verification": {
+      "build": "passed: npm run build",
+      "typecheck": "passed: npm run typecheck",
+      "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
+      "integration_test": "N/A"
     },
-    "session_2": {
-      "focus": "Resolution, Dune, Packages, and PPX Gate",
-      "questions": 5,
-      "outcome": "Dune-scoped unique-only local resolution; authoritative metadata limited to checked-in dune-project, dune stanzas, and root/opam *.opam; metadata gates local relationships only; ambiguity emits no edge; PPX expansion unsupported/future work.",
-      "consensus": {
-        "status": "skipped",
-        "reason": "clarify-executor reported no unresolved items and high-confidence recommendations"
-      },
-      "marker_check": "count-markers clarifications total=0"
+    "capability_path": {
+      "codebase_context": "local repository files plus available codebase context tools",
+      "library_documentation": "web search or official docs when current facts are required",
+      "web_or_domain_research": "web search available to parent; subagents receive gathered evidence or fallback notes",
+      "source_extraction": "local files and command outputs"
     },
-    "session_3": {
-      "focus": "Validation and Eval Bar",
-      "questions": 5,
-      "outcome": "Pinned smoke/eval corpus to Yojson, OCaml-LSP, and Dune; pinned three retrieval questions per repo; required first-PR fixture/parser/copy/full-verify/status/smoke/stability/probe evidence plus Yojson and OCaml-LSP A/B; allowed only Dune A/B and optional Irmin stress to split with an explicit follow-up gate; defined existing-language controls and compact smoke metrics.",
-      "consensus": {
-        "status": "skipped",
-        "reason": "clarify-executor reported no unresolved items and high or medium-high confidence recommendations"
-      },
-      "marker_check": "count-markers clarifications total=0"
-    }
-  },
-  "phase3_evidence": {
-    "executor": "phase-executor",
-    "files_created": [
-      "specs/023-ocaml-language-support/plan.md",
-      "specs/023-ocaml-language-support/research.md",
-      "specs/023-ocaml-language-support/data-model.md",
-      "specs/023-ocaml-language-support/quickstart.md",
-      "specs/023-ocaml-language-support/contracts/ocaml-language-support.md"
-    ],
-    "files_modified": [
-      "CLAUDE.md"
-    ],
-    "reviewability_decision": "SPEC-023 remains one spec, but implementation must split into grammar/status, extraction, resolution, and validation/eval slices.",
-    "constitution_gate": "passed with required split; no PPX expansion, package nodes, or external package edges",
-    "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
-  },
-  "phase4_evidence": {
-    "language_coverage": {
-      "executor": "checklist-executor",
-      "items": 20,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "remediation": "Tightened source-level node-kind and span rules for functors, let forms, classes/objects, labeled/optional parameters, anonymous forms, and unsupported syntax."
-    },
-    "resolution_correctness": {
-      "executor": "checklist-executor",
-      "items": 23,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "remediation": "Added unique-only Dune-scoped functor reference/application wording and explicitly excluded functor result elaboration and type-equality inference."
-    },
-    "validation_eval": {
-      "executor": "checklist-executor",
-      "items": 32,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "remediation": "Clarified mandatory eval evidence belongs to the first PR/slice claiming complete OCaml support; earlier slices must preserve the completion gate."
-    },
-    "safety_license": {
-      "executor": "checklist-executor",
-      "items": 28,
-      "gaps_found": 0,
-      "gaps_remaining": 0,
-      "remediation": "No remediation required."
-    },
-    "consensus": "No unresolved consensus items reported for any checklist domain.",
-    "marker_check": "count-markers all returned 0 for gaps, clarifications, critical, high, medium, and low markers"
-  },
-  "phase5_evidence": {
-    "executor": "phase-executor",
-    "files_created": [
-      "specs/023-ocaml-language-support/tasks.md"
-    ],
-    "total_tasks": 74,
-    "phases": 7,
-    "parallel_opportunities": 22,
-    "setup_foundational_tasks": 18,
-    "us1_tasks": 11,
-    "us2_tasks": 14,
-    "us3_tasks": 18,
-    "us4_tasks": 5,
-    "polish_tasks": 8,
-    "coverage": "FR-001 through FR-017 and SC-001 through SC-006 covered",
-    "format_validation": "74/74 task lines match required checklist format",
-    "gate": "G5 pass: 74 tasks found",
-    "atomicity_route": {
-      "route": "one-navigable-PR",
-      "releasable": true,
-      "signals": [
-        "change-shape:modify-heavy"
-      ],
-      "warnings": []
-    },
-    "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
-  },
-  "phase6_evidence": {
-    "executor": "analyze-executor",
-    "findings_total": 3,
-    "critical": 0,
-    "high": 1,
-    "medium": 2,
-    "low": 0,
-    "remediations": [
-      "A1 High: clarified one public ocaml language token with internal extension-aware implementation/interface grammar selection and src/types.ts registry coverage.",
-      "A2 Medium: reworded copy-assets and status tasks to verify existing wildcard copy/status behavior instead of forcing unrelated package.json or src/bin/codegraph.ts edits.",
-      "A3 Medium: marked validated checklist items complete and corrected stale Quickstart reference."
-    ],
-    "consensus": "No unresolved consensus items reported by analyze-executor.",
-    "verification": [
-      "check-prerequisites.sh --json --require-tasks --include-tasks",
-      "count-markers findings returned 0",
-      "count-markers all returned 0",
-      "git diff --check clean"
-    ]
-  },
-  "phase6_5_evidence": {
-    "mode": "advisory",
-    "result": "soft_skip",
-    "pass": null,
-    "reason": "confidence-gate.sh returned NO_DATA because no synthesizer confidence emit was present in the workflow file",
-    "recommended_action": "soft_skip"
-  },
-  "phase7_evidence": {
-    "implementation": "Grammar/status, extraction, resolution/package metadata, PPX boundary, docs, local tests, real-repo smoke/probes, Yojson/OCaml-LSP A/B, existing-language local control, final reviewability backstop, and dry-run slice emission are recorded.",
-    "completed_task_ranges": [
-      "T001-T074"
-    ],
-    "open_tasks": [],
-    "blocked_gates": [],
-    "self_repo_smoke": "specs/023-ocaml-language-support/validation/self-repo-smoke.md",
-    "deferred_gates": [
-      {
-        "task": "T056",
-        "reason": "Dune A/B is explicitly recorded as a follow-up gate before support-completion claims, per the SPEC-023 validation plan.",
-        "evidence": "specs/023-ocaml-language-support/validation/dune-ab-gate.md"
-      }
-    ],
-    "existing_language_control": {
-      "status": "pass",
-      "mode": "local-only current-vs-baseline deterministic control",
-      "external_ab_status": "rejected_by_sandbox_reviewer_private_repo_context_exposure",
-      "summary": "/private/tmp/spec-023-existing-language-local.wbMHdR/summary.json",
-      "evidence": "specs/023-ocaml-language-support/validation/existing-language-ab-gate.md"
-    },
-    "final_reviewability": {
-      "status": "exception",
-      "reviewable_loc": 1250,
-      "production_files": 16,
-      "total_files": 90,
-      "primary_surface_count": 5,
-      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
-      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
-      "exception_class": "infra",
-      "exception_honored": true,
-      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
-      "blocked_operations": []
-    }
-  },
-  "plan": [
-    {
-      "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 0: Prerequisites",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 1: Specify",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Validation and Eval Bar",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Validation and Eval Bar Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 3: Plan",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Language Coverage",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Language Coverage Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Resolution Correctness",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Resolution Correctness Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Validation and Eval",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Validation and Eval Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Safety and License",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Safety and License Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 5: Tasks",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 6: Analyze",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 6: Analyze - Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 6.5: Confidence Gate",
-      "status": "skipped: advisory confidence gate returned NO_DATA and recommended soft_skip"
-    },
-    {
-      "step": "Phase 7: Implement - setup, grammar, status, extraction, resolution, PPX, docs completed (T001-T047, T057-T058, T061-T069)",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement - real-repo smoke and deterministic probes (T048-T053)",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement - A/B and existing-language control gates (T054-T056, T059-T060)",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement - quickstart, reviewability, PR packet, marker scan (T070-T074)",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Doctor Extension Check",
-      "status": "skipped: doctor extension not installed"
-    },
-    {
-      "step": "Post: Verify Implementation",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Verify Tasks Phantom Check",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Code Review",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Integration Suite",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Reviewability Diff Gate",
-      "status": "completed: final backstop exception honored"
-    },
-    {
-      "step": "Post: Self-Review",
-      "status": "completed"
-    },
-    {
-      "step": "Post: UAT Runbook Generation",
-      "status": "completed"
-    },
-    {
-      "step": "Post: PR Body Generation",
-      "status": "completed"
-    },
-    {
-      "step": "Post: PR Creation",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Review Remediation",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Retrospective",
-      "status": "completed"
-    }
-  ],
-  "post_evidence": {
-    "deterministic_verification": {
-      "status": "pass",
-      "build": "npm run build passed",
-      "typecheck": "npm run typecheck passed",
-      "targeted_ocaml": "5 files, 16 tests passed",
-      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped"
-    },
-    "review_scouting": {
-      "status": "complete",
-      "findings": [
-        "stale existing-language A/B and reviewability evidence text"
-      ],
-      "fixes": [
-        "updated pr-packet traceability",
-        "updated quickstart wording"
-      ],
-      "verification": [
-        "stale-text scan clean",
-        "process JSON valid",
-        "git diff --check clean",
-        "autopilot coverage pass"
+    "phase_1_specify": {
+      "status": "completed",
+      "functional_requirements": 28,
+      "user_stories": 4,
+      "acceptance_scenarios": 14,
+      "gate_g1": "passed: spec.md exists with 0 active [NEEDS CLARIFICATION] markers",
+      "files": [
+        "specs/008-lsp-client-integration/spec.md",
+        "specs/008-lsp-client-integration/checklists/requirements.md",
+        ".specify/feature.json"
       ]
-    },
-    "fix_forward_pass": {
-      "status": "complete",
-      "fixes": [
-        "stale evidence text corrected"
-      ]
-    },
-    "verify_tasks": {
-      "status": "pass",
-      "report": "specs/023-ocaml-language-support/verify-tasks-report.md",
-      "verified": 74,
-      "partial": 0,
-      "weak": 0,
-      "not_found": 0,
-      "skipped": 0
-    },
-    "verify_implementation": {
-      "status": "pass",
-      "max_findings": 50,
-      "findings": 0,
-      "requirement_coverage": "23/23 mapped",
-      "task_completion": "74/74",
-      "notes": [
-        "read-only verify gate completed from spec/plan/tasks/constitution and changed-file detection",
-        "external-agent A/B remains policy-blocked; local replacement control passed"
-      ]
-    },
-    "code_review": {
-      "status": "pass",
-      "mode": "parent-session fallback",
-      "subagent_status": "RepoPrompt agent transport closed twice",
-      "findings": [],
-      "residual_risks": [
-        "Dune A/B follow-up gate remains",
-        "single PR reviewability size block remains"
-      ]
-    },
-    "integration_suite": {
-      "status": "pass",
-      "build": "npm run build passed",
-      "typecheck": "npm run typecheck passed",
-      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped",
-      "evidence": "specs/023-ocaml-language-support/.process/emission/full-verification-evidence.md"
-    },
-    "self_review": {
-      "status": "complete",
-      "evidence": "specs/023-ocaml-language-support/.process/self-review.md"
-    },
-    "uat_runbook": {
-      "status": "pass",
-      "evidence": "specs/023-ocaml-language-support/.process/uat-runbook.md",
-      "validation": "validate-uat-runbook.sh passed"
-    },
-    "final_reviewability_backstop": {
-      "status": "exception",
-      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
-      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
-      "exception_class": "infra",
-      "exception_honored": true,
-      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
-      "blocked_operations": [],
-      "reason": "reviewable LOC 1250, production files 16, and total files 90 exceed block thresholds; operator-owned infra exception accepted",
-      "total_files": 90
-    },
-    "pr_packet_body_generation": {
-      "status": "pass",
-      "packet_location": "transient worktree-generated packet/body used for PR creation; not committed to avoid self-referential packet diffs",
-      "validation": "validate-pr-packet.sh passed for current packet",
-      "title": "feat(speckit-pro): Add OCaml language support",
-      "workflow_contract": "validate-pr-workflow-contract.sh passed"
-    },
-    "pr_creation": {
-      "status": "complete",
-      "pr_number": 21,
-      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/21",
-      "title": "feat(speckit-pro): Add OCaml language support",
-      "base": "main",
-      "head": "023-ocaml-language-support",
-      "mergeable": "MERGEABLE"
-    },
-    "review_remediation": {
-      "status": "complete",
-      "comments": 2,
-      "reviews": 1,
-      "review_decision": "COMMENTED",
-      "fixes": [
-        "ignored root-level and nested opam.locked files",
-        "failed closed for implementation-only OCaml symbols hidden by a paired .mli",
-        "constrained bare OCaml calls to same-file visible callable targets",
-        "preserved same-source-unit private helper calls behind paired .mli files",
-        "regenerated final changed-files and reviewability state"
-      ],
-      "verification": [
-        "npm run build passed",
-        "npm run typecheck passed",
-        "OCaml focused suite passed: 5 files, 16 tests",
-        "npm test passed: 137 files, 2239 passed, 4 skipped"
-      ],
-      "action": "actionable Copilot and RepoPrompt findings fixed, pushed through 3269506, RepoPrompt clean-gate returned no actionable findings, and GitHub checks passed"
-    },
-    "retrospective": {
-      "status": "complete",
-      "report": "specs/023-ocaml-language-support/retrospective.md",
-      "spec_changes_proposed": false,
-      "spec_adherence": "97.8%"
     }
-  },
-  "status": "completed_pr_open",
-  "pr": {
-    "number": 21,
-    "url": "https://github.com/racecraft-lab/codegraph/pull/21",
-    "state": "OPEN",
-    "isDraft": false,
-    "mergeable": "MERGEABLE",
-    "checks": "all GitHub checks passed at 3269506"
   }
 }

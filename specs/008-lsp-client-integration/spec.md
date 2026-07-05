@@ -1,0 +1,174 @@
+# Feature Specification: LSP Client Integration
+
+**Feature Branch**: `008-lsp-client-integration`
+
+**Created**: 2026-07-05
+
+**Status**: Draft
+
+**Input**: User description: "SPEC-008 adds opt-in language-server precision so installed local language servers can verify and correct graph definitions and references while default indexing remains unchanged."
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - Opt into compiler-accurate graph precision (Priority: P1)
+
+As a CodeGraph user, I want to explicitly enable language-server precision for a project so graph definitions and references can be verified without changing default indexing for projects that do not opt in.
+
+**Why this priority**: This is the core user value: stronger graph accuracy while preserving the existing structural indexing behavior by default.
+
+**Independent Test**: Can be tested by indexing the same project with and without LSP precision enabled and confirming that only the opted-in run records LSP coverage and verified/corrected edges.
+
+**Acceptance Scenarios**:
+
+1. **Given** a repository where LSP precision is not enabled, **When** the user runs normal indexing, **Then** the repository indexes exactly as it did before SPEC-008 with no LSP-only coverage or provenance changes.
+2. **Given** a repository with LSP precision enabled and all required local servers available, **When** indexing completes, **Then** the run records per-language LSP coverage and any corrected graph edges.
+3. **Given** a project-level LSP opt-in setting, **When** the user runs indexing without an explicit command-line LSP flag, **Then** the precision pass runs according to that project setting.
+
+---
+
+### User Story 2 - Configure local language-server behavior (Priority: P2)
+
+As a user running CodeGraph across different machines and projects, I want to override language-server commands and timeouts so LSP precision can work with local toolchain layouts without requiring CodeGraph to install anything.
+
+**Why this priority**: LSP precision depends on user-managed local server binaries. Configuration must be repeatable for projects and overridable for individual machines.
+
+**Independent Test**: Can be tested by providing project configuration and machine-local environment overrides, then verifying that status and indexing use the selected commands and timeout values.
+
+**Acceptance Scenarios**:
+
+1. **Given** a project configuration that overrides a language-server command or timeout, **When** LSP precision is enabled, **Then** CodeGraph uses the configured values for that project.
+2. **Given** machine-local environment overrides for a language-server command or timeout, **When** LSP precision is enabled, **Then** those overrides apply to the current run without modifying project configuration.
+3. **Given** no LSP opt-in setting, **When** a supported server is present on the user's machine, **Then** CodeGraph does not auto-enable LSP precision.
+
+---
+
+### User Story 3 - Understand LSP availability and graceful degradation (Priority: P2)
+
+As a user, I want status output to explain which languages were verified, which servers were unavailable, and where CodeGraph fell back to existing graph behavior so I can trust the index without debugging hidden failures.
+
+**Why this priority**: Missing or unstable local servers are expected in normal use. The product must degrade visibly by language instead of failing the entire structural index.
+
+**Independent Test**: Can be tested by enabling LSP precision in a mixed-language repository while one configured server is missing or forced to fail, then confirming indexing succeeds and status reports the unavailable language.
+
+**Acceptance Scenarios**:
+
+1. **Given** LSP precision is enabled and one relevant server is missing, **When** the user indexes the repository, **Then** structural indexing succeeds and that language is reported as unverified.
+2. **Given** LSP precision is enabled and one relevant server crashes or times out, **When** the user indexes the repository, **Then** other covered languages may still be verified and the failed language degrades to existing graph behavior.
+3. **Given** a completed index, **When** the user checks status, **Then** status reports detected servers, unavailable servers, and per-language LSP coverage.
+
+---
+
+### User Story 4 - Complete SPEC-008 with no unowned parity gaps (Priority: P3)
+
+As a maintainer, I want SPEC-008 validation to prove real-server coverage and internal parity ownership so the project cannot claim LSP precision while leaving baseline language or capability gaps unowned.
+
+**Why this priority**: The feature is broad enough to require an explicit completion gate. This protects reviewability and prevents backlog-only parity claims.
+
+**Independent Test**: Can be tested by running the SPEC-008 validation path with missing prerequisites, missing language ownership, and missing capability-row ownership and confirming each case fails before completion with a clear reason.
+
+**Acceptance Scenarios**:
+
+1. **Given** a SPEC-008 validation run where a required real local language server is absent, **When** validation starts, **Then** validation fails before completion with the missing prerequisite named clearly.
+2. **Given** a SPEC-008 validation run where any internal baseline language lacks SPEC-008 coverage or concrete numbered future-spec ownership, **When** validation checks the language table, **Then** validation fails before completion.
+3. **Given** a SPEC-008 validation run where any baseline feature or capability row lacks implementation evidence or concrete numbered future-spec ownership, **When** validation checks the capability table, **Then** validation fails before completion.
+4. **Given** a known wrong static or heuristic graph target and a unique LSP target for the same reference, **When** LSP precision verifies that reference, **Then** the old target is replaced or suppressed and correction metadata is recorded.
+5. **Given** ambiguous LSP output for a reference, **When** LSP precision evaluates that output, **Then** no speculative replacement edge is emitted.
+
+### Edge Cases
+
+- LSP precision is enabled for a repository that contains no files for one or more supported languages.
+- A language server is present on the machine but unavailable through the configured command.
+- A language server starts successfully but crashes, hangs, or exceeds the configured timeout during verification.
+- Project configuration and environment overrides both provide values for the same language.
+- LSP returns multiple possible definitions or references for the same graph edge.
+- LSP returns a unique target that conflicts with an existing static or heuristic target.
+- A baseline language has parser/resolver support but no concrete LSP target selected for SPEC-008.
+- A baseline feature or capability row is not implemented by SPEC-008 and lacks concrete numbered future-spec ownership.
+- Incremental watch verification runs while one covered language is temporarily unavailable.
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+- **FR-001**: CodeGraph MUST keep LSP precision disabled unless the user explicitly opts in through the command line or project configuration.
+- **FR-002**: CodeGraph MUST preserve existing structural indexing behavior for repositories that do not opt into LSP precision.
+- **FR-003**: Users MUST be able to enable LSP precision for an indexing run with `codegraph index --lsp`.
+- **FR-004**: Users MUST be able to enable LSP precision through project configuration for repeatable project use.
+- **FR-005**: Users MUST be able to override language-server commands and timeouts through project configuration.
+- **FR-006**: Users MUST be able to override language-server commands and timeouts through environment variables for machine-local use.
+- **FR-007**: CodeGraph MUST detect and report available and unavailable local language servers for the languages covered by SPEC-008.
+- **FR-008**: `codegraph status` MUST report detected servers, unavailable servers, and per-language LSP coverage for the current project.
+- **FR-009**: Missing, crashed, or timed-out language servers MUST NOT fail normal structural indexing; the affected language MUST degrade to existing graph behavior and be reported as unverified.
+- **FR-010**: SPEC-008 validation/completion MUST require real local language-server validation for all languages selected for SPEC-008 coverage.
+- **FR-011**: SPEC-008 validation/completion MUST fail clearly when any required real local language server is missing.
+- **FR-012**: SPEC-008 planning and validation MUST include a language parity table covering the internal parity baseline's reproduced language matrix and additional baseline language rows.
+- **FR-013**: Every baseline language row MUST have SPEC-008 coverage or concrete numbered future-spec ownership before SPEC-008 completion can pass.
+- **FR-014**: SPEC-008 planning and validation MUST include a feature and capability parity table covering every baseline capability row.
+- **FR-015**: Every baseline feature or capability row MUST have implementation evidence or concrete numbered future-spec ownership before SPEC-008 completion can pass.
+- **FR-016**: CodeGraph MUST preserve existing `null` and `heuristic` provenance semantics for graph edges that are not LSP-upgraded or LSP-verified.
+- **FR-017**: CodeGraph MUST mark only LSP-upgraded or LSP-verified edges with `provenance: "lsp"`.
+- **FR-018**: When LSP returns a unique target that conflicts with an existing graph target, CodeGraph MUST replace or suppress the old target and record correction metadata.
+- **FR-019**: When LSP output is ambiguous, CodeGraph MUST NOT emit speculative replacement edges.
+- **FR-020**: CodeGraph MUST NOT auto-install language servers.
+- **FR-021**: CodeGraph MUST NOT auto-enable LSP precision only because a language server is found on the user's machine.
+- **FR-022**: CodeGraph MUST NOT expose CodeGraph itself as an LSP server as part of SPEC-008.
+- **FR-023**: CodeGraph MUST NOT include rename or refactor operations as part of SPEC-008.
+- **FR-024**: CodeGraph MUST NOT introduce remote network calls beyond user-configured local language-server subprocesses.
+- **FR-025**: SPEC-008 MUST remain one feature specification planned as three vertical review slices.
+- **FR-026**: The covered server set MUST include TypeScript/JavaScript via typescript-language-server; Python via pyright or basedpyright; Go via gopls; Rust via rust-analyzer; C/C++ via clangd; Swift via SourceKit-LSP; Java via jdtls; C#, Kotlin, PHP, and Ruby via concrete local server choices selected during planning; Dart via the Dart SDK language server; Vue via Vue Language Tools; and a COBOL parity disposition.
+- **FR-027**: If COBOL is not assigned to a concrete local LSP target in SPEC-008, SPEC-008 MUST assign it to a concrete numbered future spec and preserve parser/resolver parity evidence.
+- **FR-028**: Incremental watch behavior MUST verify changed files with LSP precision when LSP is explicitly enabled and the relevant server is available.
+
+### Reviewability Budget *(mandatory)*
+
+- **Primary surface**: harness/adapter
+- **Secondary surfaces, if any**: CLI, project configuration, status reporting, graph provenance, validation docs/process
+- **Projected reviewable LOC**: 565 net-new LOC from roadmap estimate, excluding generated, lock, or vendor artifacts
+- **Projected production files**: Approximately 7
+- **Projected total files**: Approximately 14
+- **Budget result**: warning accepted after parity expansion
+- **Split decision**: Remain one spec, planned as three vertical PR slices: core client/config/status plus one complete language path; expanded real-server verification and correction behavior across the next language group; remaining servers, incremental watch verification, self-repo dogfood, and final status/reporting. Any remaining parity work must name concrete numbered future specs, not backlog-only ownership.
+
+### PR Review Packet Requirements *(mandatory)*
+
+- PR description MUST include: what changed, why, non-goals, review order,
+  scope budget, traceability, verification evidence, known gaps, and rollback
+  or feature-flag notes.
+- Traceability MUST map each major requirement or success criterion to changed
+  files and verification evidence.
+- Deferred work MUST name the follow-up spec or issue.
+
+### Key Entities *(include if feature involves data)*
+
+- **LSP Precision Setting**: The user-visible opt-in state that determines whether language-server verification runs for a project or indexing command.
+- **Language Server Configuration**: User-provided command and timeout choices for a language, including project-level and machine-local override values.
+- **Server Availability Record**: The detected status for a language server, including available, unavailable, crashed, timed out, or not applicable for the current project.
+- **Language Coverage Record**: The per-language result describing whether files for that language were verified, degraded, or not present.
+- **Edge Verification Record**: The result of verifying an existing graph edge, including unchanged, upgraded, corrected, suppressed, or ambiguous.
+- **Correction Metadata**: Audit information explaining why a previous graph target was replaced or suppressed by a unique LSP result.
+- **Language Parity Row**: A baseline language row with SPEC-008 coverage status or concrete numbered future-spec ownership.
+- **Capability Parity Row**: A baseline feature or capability row with implementation evidence or concrete numbered future-spec ownership.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: In non-opted-in test projects, 100% of indexing runs produce the same graph behavior and provenance semantics as the pre-SPEC-008 structural index.
+- **SC-002**: In fully provisioned validation projects, 100% of SPEC-008-covered languages report LSP availability and per-language coverage in status.
+- **SC-003**: In missing-server and crashed-server runtime scenarios, 100% of structural indexing runs complete successfully while reporting the affected language as unverified.
+- **SC-004**: In prereq validation scenarios, 100% of missing required real local servers fail validation before completion with a clear missing-prerequisite message.
+- **SC-005**: In parity validation scenarios, 100% of unowned baseline language rows and baseline capability rows fail validation before completion.
+- **SC-006**: In edge-correction fixtures with a unique LSP target, 100% of known wrong static or heuristic targets are replaced or suppressed with correction metadata.
+- **SC-007**: In ambiguous LSP fixtures, 0 speculative replacement edges are emitted.
+- **SC-008**: The final SPEC-008 review packet includes a language parity table and a feature/capability parity table with 0 unowned gaps.
+- **SC-009**: The final SPEC-008 validation evidence covers all three vertical PR slices and records self-repo dogfood results with LSP explicitly enabled.
+
+## Assumptions
+
+- The users for this feature are developers and maintainers who run CodeGraph locally or in controlled validation environments.
+- Normal runtime and SPEC-008 validation have intentionally different failure behavior: normal runtime degrades per language, while validation fails when required real-server prerequisites or parity ownership are missing.
+- Project configuration is the repeatable source for shared settings, while environment variables are machine-local overrides for the current run.
+- Presence of a language server on the user's machine is never enough to activate LSP precision without an explicit opt-in.
+- The internal parity baseline is authoritative for language and capability ownership; references to the baseline stay generic as the internal parity baseline, reproduced matrix, and baseline capability rows.
+- The exact concrete local server choices for languages with accepted alternatives are finalized during planning against current primary documentation.
+- The COBOL row requires an explicit parity disposition; if SPEC-008 does not select a local LSP target, a concrete numbered future spec owns the remaining LSP parity work.

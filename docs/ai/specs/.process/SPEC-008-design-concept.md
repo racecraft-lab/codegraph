@@ -22,6 +22,8 @@ stop_reason: "natural"
 
 - Add opt-in LSP precision for graph definitions/references while preserving default CodeGraph behavior when LSP is not enabled.
 - Cover all roadmap-listed language servers in SPEC-008: TypeScript/JavaScript, Python, Go, Rust, C/C++, Swift, and Java.
+- Add a no-waiver language-parity gate before tasks are generated: every language in the reproduced baseline must be covered by SPEC-008 or by a concrete numbered future spec. Backlog-only ownership is not acceptable.
+- Treat the reproduced language matrix and feature/capability list as the parity contract.
 - Require real language-server validation for completion, with a prereq check that fails clearly when required binaries are missing.
 - Represent LSP precision additively by marking only LSP-upgraded/verified edges with `provenance: "lsp"`.
 - Correct conflicting graph targets when LSP returns a unique target, while recording correction metadata for auditability.
@@ -176,9 +178,32 @@ stop_reason: "natural"
 - **What:** Exact install commands and version pins for each required real language server.
   **Why deferred:** The user chose the validation policy, but exact package manager commands should be confirmed during Plan against current official server docs and local CI constraints.
   **Suggested next step:** Resolve in `/speckit-plan` research before tasks are generated.
+- **What:** Parity disposition for C#, Kotlin, PHP, Ruby, Dart, Vue, COBOL, and future language additions.
+  **Why deferred:** This was requested after scaffold. The reproduced baseline includes production and experimental language rows, while SPEC-008 originally listed only the roadmap language-server families.
+  **Suggested next step:** Resolve in `/speckit-plan` research against the reproduced baseline. Any language not implemented in SPEC-008 must be assigned to a concrete numbered follow-on spec before SPEC-008 can pass final validation.
 - **What:** The exact three PR slice boundaries.
   **Why deferred:** The user accepted a three-slice route, but Plan should set the final split after spec/user stories and file operations are concrete.
   **Suggested next step:** Use the tentative split in the workflow Plan prompt, then let Tasks and the atomicity route finalize it.
+
+## Post-Scaffold Parity Addendum
+
+Review date: 2026-07-05.
+
+Reproduced baseline:
+- Required language list: JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL.
+- Production rows: JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, and Dart.
+- Experimental rows: Vue and COBOL.
+- Required feature matrix: 13 languages x 9 columns covering imports, named bindings, exports, heritage, type annotations, constructor inference, config, frameworks, and entry points.
+- Required capability list: MCP tools/resources/prompts, multi-repo registry behavior, groups, wiki, rename, detect-changes, Cypher, hybrid search, processes, clusters, remote embeddings, agent support, and operational analyzer flags.
+
+Disposition rule:
+- CodeGraph parser support is already broader than this baseline.
+- SPEC-008 planning must add a parity table covering every required language. Languages not implemented in SPEC-008 need a concrete numbered future-spec owner and a reason.
+- No `backlog`, `later`, `no mainstream server`, or `not in original roadmap` rationale can satisfy the parity gate by itself.
+- SPEC-024 owns full feature/capability closure for any row not already closed by existing CodeGraph behavior or SPEC-001 through SPEC-023.
+
+Required audit input:
+- `docs/ai/specs/.process/language-feature-parity-baseline.md`
 
 ## Recommended Next Step
 
