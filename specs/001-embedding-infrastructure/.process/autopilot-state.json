@@ -23,25 +23,78 @@
     "hazard_route": {
       "route": "single-atomic-PR",
       "releasable": true,
-      "signals": ["hard-atomic:global-version-pin"],
-      "implication": "Markers MUST be emitted as an ORDERED STACK (marker B based on marker A), never independent parallel PRs — the global schema-version pin (CURRENT_SCHEMA_VERSION 7->8) lands exactly once, in marker A."
+      "signals": [
+        "hard-atomic:global-version-pin"
+      ],
+      "implication": "Markers MUST be emitted as an ORDERED STACK (marker B based on marker A), never independent parallel PRs \u2014 the global schema-version pin (CURRENT_SCHEMA_VERSION 7->8) lands exactly once, in marker A."
     },
     "markers": [
       {
         "id": "M1-slice-a",
-        "title": "Slice A — endpoint embedding on full index (US1: config, provider, client, migration v8, embed pass in indexAll, dims, status, progress)",
-        "tasks": ["T001","T002","T003","T004","T005","T006","T007","T008","T009","T010","T011","T012","T013","T014","T015","T016","T017","T018","T019","T020","T021","T022","T023"],
+        "title": "Slice A \u2014 endpoint embedding on full index (US1: config, provider, client, migration v8, embed pass in indexAll, dims, status, progress)",
+        "tasks": [
+          "T001",
+          "T002",
+          "T003",
+          "T004",
+          "T005",
+          "T006",
+          "T007",
+          "T008",
+          "T009",
+          "T010",
+          "T011",
+          "T012",
+          "T013",
+          "T014",
+          "T015",
+          "T016",
+          "T017",
+          "T018",
+          "T019",
+          "T020",
+          "T021",
+          "T022",
+          "T023"
+        ],
         "review_order": 1
       },
       {
         "id": "M2-slice-b",
-        "title": "Slice B — incremental + healing (US2+US3: input_hash incremental sync, reconciliation delete, daemon/watcher, sync-heal backfill, abort/resume) + polish",
-        "tasks": ["T024","T025","T026","T027","T028","T029","T030","T031","T032","T033","T034","T035","T036","T037"],
+        "title": "Slice B \u2014 incremental + healing (US2+US3: input_hash incremental sync, reconciliation delete, daemon/watcher, sync-heal backfill, abort/resume) + polish",
+        "tasks": [
+          "T024",
+          "T025",
+          "T026",
+          "T027",
+          "T028",
+          "T029",
+          "T030",
+          "T031",
+          "T032",
+          "T033",
+          "T034",
+          "T035",
+          "T036",
+          "T037"
+        ],
         "review_order": 2
       }
     ],
-    "review_order": ["M1-slice-a", "M2-slice-b"],
-    "checkpoints": [],
+    "review_order": [
+      "M1-slice-a",
+      "M2-slice-b"
+    ],
+    "checkpoints": [
+      {
+        "marker_id": "M1-slice-a",
+        "tasks": "T001-T023 (all complete, tasks.md 23/37 [X])",
+        "evidence": "full suite green at checkpoint (see workflow US1 notes); embeddings suites: index 35, endpoint 22, config 37, input-hash 13, codec 8",
+        "fingerprint_status": "source fingerprint captured at plan-creation still valid for marker membership; tasks.md content-hash changed only by checkbox marks",
+        "commit_sha": "322d001c9d85241018e13358cd63912bcc740ee9",
+        "warnings": []
+      }
+    ],
     "warnings": [
       "Full-diff totals exceed block thresholds; the 2 ordered markers keep each reviewable unit near the plan's projected ~500 (Slice A) / ~250 (Slice B) production LOC.",
       "Emission must be stacked (M2 PR based on M1), honoring the hard-atomic global-version-pin signal."
