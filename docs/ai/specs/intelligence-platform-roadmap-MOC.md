@@ -24,7 +24,7 @@ Navigation map for the CodeGraph Intelligence Platform roadmap. This home note c
 **Why:** Retrieval-by-meaning is the capability agents feel first, and its vectors are reused by clusters, wiki, and search everywhere downstream.
 
 ### Phase 1 — Self-Hosted Web Platform
-- [SPEC-004 Web Framework Research Spike](SPEC-004-workflow.md)
+- [SPEC-004 Web Framework Research Spike](.process/SPEC-004-workflow.md)
 - [SPEC-005 Local HTTP Server & REST API](SPEC-005-workflow.md)
 - [SPEC-006 Web UI: Graph Browser](SPEC-006-workflow.md)
 - [SPEC-007 In-Browser Indexing](SPEC-007-workflow.md)

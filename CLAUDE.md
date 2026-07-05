@@ -297,8 +297,18 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
+SPEC-001 and SPEC-004 are complete and archived; provenance and recovery
+commands live in `.specify/memory/archive-reports/`.
+
+SPEC-004's canonical web-stack decision is `docs/design/web-framework-decision.md`:
+Vite + React SPA for the future production app, Cytoscape.js for the proven
+throwaway prototype path, and Sigma.js as the SPEC-006 WebGL runner-up. SPEC-005
+is ready to scaffold against that decision; SPEC-006 and SPEC-007 remain
+downstream.
+
 SPEC-023 (OCaml Language Support) is in flight on branch
-`023-ocaml-language-support`; Analyze is complete and Implement is in progress.
+`023-ocaml-language-support`; PR #21 is open and autopilot closeout is in the
+post-PR verification/remediation stage.
 
 Current plan: `specs/023-ocaml-language-support/plan.md`
 
