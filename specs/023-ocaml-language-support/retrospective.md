@@ -116,8 +116,8 @@ support specs.
 
 Evidence: final reviewability reports `status=block`, `reviewable_loc=987`,
 `production_files=16`, `total_files=87`, and `primary_surface_count=5`.
-After closeout commit `c5843db`, the final-reviewability backstop accepted
-`Reviewability-Exception: infra` from `implementation-slices.md` and returned
+After closeout commit `c5843db`, the final-reviewability backstop accepted the
+infra reviewability exception from `implementation-slices.md` and returned
 `status=exception` with no blocked PR operations.
 
 Root cause: the clarified OCaml scope required grammar assets, broad extraction,

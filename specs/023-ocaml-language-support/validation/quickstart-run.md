@@ -50,7 +50,7 @@ The required final backstop and closeout were then run:
 
 - `final-reviewability-backstop.sh` wrote
   `specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json`.
-- The maintainer-authorized `Reviewability-Exception: infra` in
+- The maintainer-authorized infra reviewability exception in
   `implementation-slices.md` was accepted as contract-provenance evidence.
 - Final backstop result after commit `267d25e`: `status=exception`,
   `exception_class=infra`, `exception_honored=true`, with no blocked PR

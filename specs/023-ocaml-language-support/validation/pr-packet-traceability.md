@@ -49,7 +49,7 @@
   `total_files=80`, `primary_surface_count=5`.
 - Final backstop after closeout commit `c5843db`: `status=exception`,
   `total_files=87`, `exception_class=infra`, `exception_honored=true`; the
-  accepted evidence is `Reviewability-Exception: infra` in
+  accepted evidence is the infra reviewability exception in
   `implementation-slices.md`.
 
 ## Unrelated-Scope Check

@@ -650,7 +650,7 @@ languages, resolver paths, MCP tools, or installer code.
 | Post: Integration Suite | Complete | `npm run build`, `npm run typecheck`, and `npm test` passed; full evidence is in `.process/emission/full-verification-evidence.md`. |
 | Post: Self-Review | Complete | Four-question self-review is recorded in `.process/self-review.md`. |
 | Post: UAT Runbook Generation | Complete | `.process/uat-runbook.md` generated, authored, and validated with `validate-uat-runbook.sh`. |
-| Post: Reviewability Diff Gate | Complete with exception | Final backstop wrote `.process/final-reviewability/gate-state.json` and accepted `Reviewability-Exception: infra` from `implementation-slices.md`; no PR side-effect blocker remains. |
+| Post: Reviewability Diff Gate | Complete with exception | Final backstop wrote `.process/final-reviewability/gate-state.json` and accepted the infra reviewability exception in `implementation-slices.md`; no PR side-effect blocker remains. |
 | Post: PR Body Generation | In progress | Final backstop now permits packet/body generation through the honored infra exception. |
 | Post: PR Creation | Pending | Awaiting freshly generated and validated PR packet. |
 | Post: Review Remediation | Pending | Awaiting PR creation before review polling/remediation. |
