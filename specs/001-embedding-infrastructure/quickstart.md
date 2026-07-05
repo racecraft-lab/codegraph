@@ -1,7 +1,7 @@
 # Quickstart & Validation: Embedding Infrastructure (SPEC-001)
 
 Runnable scenarios that prove the feature end-to-end and map each Success Criterion
-(SC-001…SC-008) and acceptance scenario to an observable check. Design details live in
+(SC-001…SC-011) and acceptance scenario to an observable check. Design details live in
 [`data-model.md`](./data-model.md) and [`contracts/`](./contracts/); this is the
 run/validate guide.
 
@@ -69,7 +69,9 @@ codegraph status --json | jq .embedding
 embedding network requests, zero `node_vectors` writes, zero new log lines.
 `embedding.active === false` with `activationVars` naming the two variables; **no**
 `endpoint` field; the human line is neutral (not a warning). Only one of URL/MODEL set
-⇒ still dormant.
+is the **half-config** state, *not* this neutral dormant line: the pass stays inactive
+(no embedding, no writes) but surfaces the actionable missing-variable message of
+SC-009/FR-001a.
 
 ### A3 — Keyless endpoint (Acceptance US1-3)
 
@@ -173,6 +175,14 @@ pass as failed, and the enclosing operation still succeeds.
 | SC-006 | A4 | node/edge counts identical with vs without |
 | SC-007 | A5 | key/URL-credential absent from all files/logs/errors; endpoint redacted |
 | SC-008 | A6 | no new runtime dependency; no telemetry event |
+| SC-009 | A2 · T019/T020 | half-config → actionable missing-variable message; zero requests/writes; success exit; distinct from neutral dormant (`misconfigured`/`missingVariable`) |
+| SC-010 | A1/B4 · T016/T024/T031 | no wall-clock target — bounded batch/concurrency/timeout/retries, batched commit + WAL checkpoint, responsive reads, observable `embedding` phase; unreachable endpoint aborts within one batch's retry budget |
+| SC-011 | T016/T021 | one network destination (the configured endpoint); each body exactly `{model, input}`; composed input in no local sink — only `input_hash` persisted |
+
+SC-009 / SC-010 / SC-011 have no standalone CLI probe above; they are verified by the
+referenced unit/integration test tasks (the mock-endpoint suite captures each request's
+destination and body, asserts the half-config `misconfigured` message, and measures the
+bounded-resource behavior) — so all eleven criteria trace to observable checks.
 
 **Definition of done (per slice)**: `npm run typecheck` + `npm test` green, and every
 scenario for that slice observably passes (Constitution IV — evidence, not vibes).

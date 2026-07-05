@@ -239,7 +239,8 @@ src/
 │   ├── migrations.ts           # EDIT [Slice A] CURRENT_SCHEMA_VERSION 7->8; add v8 DDL
 │   └── queries.ts              # EDIT [A] upsert vector, select eligible, getEmbeddingCoverage
 │                               #      [B] anti-join reconciliation delete, select stale-by-hash
-├── index.ts                    # EDIT [A] wire advisory embed pass into indexAll() post-resolve
+├── index.ts                    # EDIT [A] wire advisory embed pass into indexAll() post-resolve;
+│                               #          add getEmbeddingStatus() on the CodeGraph class (backs `status`/`--json`)
 │                               #      [B] wire into sync() (incremental + reconcile + heal)
 ├── extraction/index.ts         # EDIT [Slice A] add 'embedding' to IndexProgress.phase union
 ├── ui/shimmer-progress.ts      # EDIT [Slice A] add 'embedding' to PHASE_NAMES

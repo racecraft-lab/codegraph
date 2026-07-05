@@ -37,7 +37,7 @@ captured during scoping.
 | Plan | `/speckit-plan` | ✅ Complete | 8 artifacts (plan + research 16 decisions + data-model + quickstart + 4 contracts); constitution PASS ×2; G3 pass (1 false-positive marker reworded) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 99 items, 28 gaps found → 28 fixed, 0 remain; CRL rows 1–12 (4 security items conservative-default, flagged for operator review); G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 37 tasks, 6 phases, 14 [P]; full FR/SC traceability; G5 pass; size-only block → pr_marker_plan (2 stacked markers); atomicity = single-atomic-PR (version pin) |
-| Analyze | `/speckit-analyze` | ⏳ Pending | |
+| Analyze | `/speckit-analyze` | ✅ Complete | PASS: 3 LOW findings (doc nits), all remediated in 1 loop; 0 unresolved → consensus skipped; G6 pass; confidence 0.98 |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -635,7 +635,24 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| I1 | LOW | spec.md FR subsections out of numeric order (FR-027–031 before FR-022–026) | Subsections reordered byte-preserving; FRs now read 019→031 monotonically |
+| C2 | LOW | quickstart.md SC traceability stopped at SC-008 | SC-009/010/011 rows added with covering tasks; dangling half-config clause reconciled with SC-009/FR-001a |
+| U3 | LOW | getEmbeddingStatus() home file unpinned | Pinned to CodeGraph class in src/index.ts in plan.md structure map + tasks.md T020 |
+
+Analyze verdict: PASS after 1 remediation loop — marker counter 0/0/0/0, re-run confirmed
+zero findings, constitution V/VII/III re-verified, design-concept Q1–Q10 drift-free,
+Slice A independence confirmed. 0 unresolved for consensus (consensus round skipped per
+protocol). All settled-history decisions correctly not re-flagged.
+
+### Pre-Implement Confidence (Phase 6 emit)
+
+📊 Confidence: 0.98
+
+- Task understanding: 0.97
+- Approach clarity: 0.97
+- Requirements alignment: 0.98
+- Risk assessment: 1.00
+- Completeness: 1.00
 
 ---
 
