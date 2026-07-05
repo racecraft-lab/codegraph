@@ -1,6 +1,6 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T22:21:24Z",
+  "updated_at": "2026-07-05T22:22:35Z",
   "active_step": "Post: PR Body Generation",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
@@ -230,7 +230,7 @@
       "status": "exception",
       "reviewable_loc": 987,
       "production_files": 16,
-      "total_files": 80,
+      "total_files": 87,
       "primary_surface_count": 5,
       "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
       "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
@@ -478,7 +478,8 @@
       "exception_honored": true,
       "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
       "blocked_operations": [],
-      "reason": "reviewable LOC 987, production files 16, and total files 80 exceed block thresholds; operator-owned infra exception accepted"
+      "reason": "reviewable LOC 987, production files 16, and total files 87 exceed block thresholds; operator-owned infra exception accepted",
+      "total_files": 87
     },
     "pr_packet_body_generation": {
       "status": "in_progress",

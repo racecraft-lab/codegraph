@@ -94,7 +94,7 @@ or acceptance-criteria rewrite is proposed by this retrospective.
 | Resolution scope | Conservative Dune-scoped local relationships only. | Implemented through OCaml-specific workspace/resolver modules and unique-only tests. | None |
 | PPX handling | Parse/preserve syntax only; no expansion or generated relationships. | Implemented and validated through PPX negative fixtures. | None |
 | Existing-language control | Run an existing-language A/B only if shared behavior changed. | Shared paths changed; external Claude A/B was policy-blocked, so a local-only current-vs-baseline deterministic control replaced it. | Minor |
-| Reviewability | Split-ready work, projected 10-16 total files. | Final gate reports 987 reviewable LOC, 16 production files, 80 total files; final backstop proceeds through a maintainer-authorized infra exception. | Significant |
+| Reviewability | Split-ready work, projected 10-16 total files. | Final gate reports 987 reviewable LOC, 16 production files, 87 total files; final backstop proceeds through a maintainer-authorized infra exception. | Significant |
 
 ## Significant Deviations
 
@@ -115,8 +115,8 @@ support specs.
 ### SIGNIFICANT: Single-PR reviewability blocks by size
 
 Evidence: final reviewability reports `status=block`, `reviewable_loc=987`,
-`production_files=16`, `total_files=80`, and `primary_surface_count=5`.
-After commit `267d25e`, the final-reviewability backstop accepted
+`production_files=16`, `total_files=87`, and `primary_surface_count=5`.
+After closeout commit `c5843db`, the final-reviewability backstop accepted
 `Reviewability-Exception: infra` from `implementation-slices.md` and returned
 `status=exception` with no blocked PR operations.
 

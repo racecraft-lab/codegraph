@@ -43,13 +43,14 @@
 
 ## Scope Budget and Reviewability
 
-- Current committed changed-file count against `origin/main...HEAD`: 80 paths.
+- Current committed changed-file count against `origin/main...HEAD`: 87 paths.
 - Final reviewability gate after implementation commit `a336e44`: blocked by
   size, `status=block`, `reviewable_loc=987`, `production_files=16`,
   `total_files=80`, `primary_surface_count=5`.
-- Final backstop after exception commit `267d25e`: `status=exception`,
-  `exception_class=infra`, `exception_honored=true`; the accepted evidence is
-  `Reviewability-Exception: infra` in `implementation-slices.md`.
+- Final backstop after closeout commit `c5843db`: `status=exception`,
+  `total_files=87`, `exception_class=infra`, `exception_honored=true`; the
+  accepted evidence is `Reviewability-Exception: infra` in
+  `implementation-slices.md`.
 
 ## Unrelated-Scope Check
 
