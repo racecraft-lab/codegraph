@@ -34,7 +34,7 @@ setup.
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
 | Specify | `$speckit-specify` | Complete | Generated `spec.md` and `requirements.md`; 4 user stories, 17 FRs, 10 acceptance scenarios, 0 clarification markers. |
-| Clarify | `$speckit-clarify` | In Progress | Required; resolve grammar pin, package-resolution boundary, advanced syntax list, PPX route, and eval repos. |
+| Clarify | `$speckit-clarify` | Complete | Grammar pin, package-resolution boundary, advanced syntax list, PPX route, eval repos, and validation bar resolved. |
 | Plan | `$speckit-plan` | Pending | Must re-check reviewability because Grill Me intentionally broadened scope beyond the roadmap minimum. |
 | Checklist | `$speckit-checklist` | Pending | Recommended domains: language-coverage, resolution-correctness, validation/eval, safety/license. |
 | Tasks | `$speckit-tasks` | Pending | Must emit split-ready tasks if grammar/extraction/resolution/PPX/eval exceed budget. |
@@ -116,13 +116,14 @@ threshold 1`; `npm run build`, `npm run typecheck`, and `npm test` passed
 
 ### Success Criteria Summary
 
-- [ ] OCaml files (`.ml`, `.mli`) are discovered, parsed, and listed in language/status output.
+- [ ] OCaml files (`.ml`, `.mli`) are discovered, parsed with the correct vendored grammar artifact, and listed in language/status output.
 - [ ] Core and advanced OCaml constructs produce stable nodes with correct kinds/spans.
 - [ ] Module, functor, open/include, `.ml`/`.mli`, dune workspace, and approved package-resolution cases produce conservative references/imports edges.
 - [ ] Ambiguous or unsupported package/PPX cases do not create speculative graph edges.
-- [ ] `npm run build` copies `tree-sitter-ocaml.wasm` into `dist/`.
+- [ ] `npm run build` copies `tree-sitter-ocaml.wasm` and `tree-sitter-ocaml_interface.wasm` into `dist/`.
 - [ ] Fixture tests cover extraction and resolution breadth.
-- [ ] At least one real OCaml project smoke and the planned multi-repo agent-eval proof are recorded or split with explicit gate approval.
+- [ ] Yojson, OCaml-LSP, and Dune smoke evidence plus pinned retrieval probes are recorded or split with explicit gate approval.
+- [ ] Headless A/B evidence is recorded for Yojson and OCaml-LSP; Dune A/B may split only with a follow-up gate before SPEC-023 is complete.
 - [ ] Existing language extraction/resolution tests remain green.
 
 ---
@@ -273,9 +274,17 @@ Focus on proof required before PR:
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | Grammar/syntax/shipping | Pending | Pending |
-| 2 | Resolution/package/PPX | Pending | Pending |
-| 3 | Validation/eval | Pending | Pending |
+| 1 | Grammar/syntax/shipping | 5 | Vendor `tree-sitter-ocaml@0.24.2` WASMs for `.ml` and `.mli`; require parser health checks and dist artifact assertions; first-slice syntax includes classes/objects, labels, local/first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions; pair `.ml`/`.mli` by unique same-directory basename; `.mli` declarations emit mirrored public node kinds. |
+| 2 | Resolution/package/PPX | 5 | Use Dune-scoped, unique-only local resolution for module paths/open/include; authoritative metadata is checked-in `dune-project`, `dune` stanzas, and root or `opam/` `*.opam`; metadata gates local relationships only, with no package nodes or external package edges; ambiguity emits no edge; PPX expansion is unsupported/future work. |
+| 3 | Validation/eval | 5 | Pin real-repo corpus to Yojson, OCaml-LSP, and Dune; require three retrieval questions per repo; require first-PR fixture, parser health, copied-artifact, full verify, status, repeated smoke, graph stability, deterministic probe, and Yojson/OCaml-LSP A/B evidence; allow only Dune A/B and optional Irmin stress to split with an explicit follow-up gate; require existing-language controls and compact smoke metrics. |
+
+---
+
+### Consensus Resolution Log
+
+| # | Type | Question/Gap/Finding | Categories | Round | Outcome | Resolution | Analysts Used |
+|---|------|----------------------|------------|-------|---------|------------|---------------|
+| 1 | Clarify | Grammar source/artifacts | [codebase, domain] | 1 | both-agree | Vendor `tree-sitter-ocaml@0.24.2` WASMs for implementation and interface grammars; reject `tree-sitter-wasms@0.1.13` for this feature because it ships only one older OCaml artifact and valid `.mli` probing produced an ERROR tree. | codebase-analyst, domain-researcher |
 
 ---
 
@@ -299,15 +308,38 @@ $speckit-plan
 - Tests: vitest with real files and real SQLite; no DB mocking.
 
 ## Architecture Notes
-- New grammar artifact: `src/extraction/wasm/tree-sitter-ocaml.wasm`.
+- New grammar artifacts: `src/extraction/wasm/tree-sitter-ocaml.wasm` and `src/extraction/wasm/tree-sitter-ocaml_interface.wasm`, vendored from `tree-sitter-ocaml@0.24.2`.
 - New extractor: `src/extraction/languages/ocaml.ts`.
 - Modify grammar registry/status wiring so OCaml is recognized and shipped.
 - Modify resolver/import matching minimally for module paths, open/include,
   `.ml`/`.mli` pairing, dune workspace roots, and approved package metadata.
+- Resolution is Dune-scoped and unique-only: use checked-in `dune-project`,
+  `dune` stanzas, and root or `opam/` `*.opam` only to constrain local
+  relationships. Do not add package nodes or external package edges.
+- PPX expansion is unsupported/future work in SPEC-023; attributes and
+  extension nodes are parsed/preserved only.
 - Add fixtures under `__tests__/fixtures/ocaml/` and tests matching local
   language-support conventions.
-- Add docs/status evidence and build verification that the WASM artifact lands
+- Add docs/status evidence and build verification that both WASM artifacts land
   in `dist/`.
+- Add `docs/grammars/tree-sitter-ocaml.md` provenance/rebuild notes for the
+  vendored `tree-sitter-ocaml@0.24.2` artifacts.
+- Pin validation design to `ocaml-community/yojson`, `ocaml/ocaml-lsp`, and
+  `ocaml/dune`. Record the exact commit SHA and smoke metrics for each repo:
+  `filesByLanguage`, node count, edge count, parse warnings/errors, second-run
+  stability, and retrieval probe outcome.
+- Use the nine-question retrieval matrix from `spec.md`: three questions each
+  for Yojson parse/write/interface exposure, OCaml-LSP hover/completion/Dune
+  diagnostics, and Dune stanza/package/scheduler flows.
+- First PR requires deterministic `probe-explore`/`probe-node` results for all
+  nine questions and headless A/B evidence for Yojson and OCaml-LSP. Dune A/B
+  and optional Irmin PPX/package stress may split only with an explicit
+  follow-up gate before SPEC-023 is complete.
+- Existing-language controls are full build/typecheck/unit verification,
+  targeted extraction/resolution/status tests, and a CodeGraph self-repo
+  retrieval smoke. Run `scripts/agent-eval/ab-new-vs-baseline.sh` on an
+  existing-language control only if shared MCP, explore-budget, resolver, or
+  retrieval behavior changes.
 
 ## Constitution and Reviewability Gates
 - Re-run reviewability estimation using the clarified syntax/package/PPX scope.
@@ -374,6 +406,12 @@ $speckit-checklist validation-eval
 Focus on proof before PR:
 - Fixture coverage, real OCaml repo smoke, agent-eval prompts, control checks,
   build/copy-assets verification, and `codegraph status`.
+- Pinned smoke corpus: `ocaml-community/yojson`, `ocaml/ocaml-lsp`, and
+  `ocaml/dune`.
+- Retrieval matrix: three structural questions per pinned corpus, matching
+  `spec.md` Clarifications Session 3.
+- Mandatory first-PR evidence: deterministic probes for all nine questions,
+  Yojson and OCaml-LSP headless A/B, compact smoke metrics, and full verify.
 - Pay special attention to whether eval evidence is required in the same PR or
   split without weakening the final bar.
 ```
@@ -419,12 +457,27 @@ Task constraints:
   resolution/package metadata, PPX research gate, validation/eval, docs/UAT.
 - Mark parallel-safe tasks with [P] only when they touch different files and do
   not depend on the same generated fixture or schema/status wiring.
-- Include explicit tasks for `copy-assets` and verifying the OCaml WASM artifact
-  in `dist/`.
+- Include explicit tasks for `copy-assets` and verifying both OCaml WASM
+  artifacts in `dist/`: `tree-sitter-ocaml.wasm` and
+  `tree-sitter-ocaml_interface.wasm`.
 - Include tasks for `codegraph status` language listing.
 - Include real OCaml repo smoke and agent-eval proof, or split them with an
   explicit gate if the reviewability route requires it.
+- Include smoke tasks for `ocaml-community/yojson`, `ocaml/ocaml-lsp`, and
+  `ocaml/dune`; each task must record URL, commit SHA, index command,
+  `filesByLanguage`, node count, edge count, parse warnings/errors, second-run
+  stability, and retrieval probe outcome.
+- Include deterministic `probe-explore`/`probe-node` tasks for all nine pinned
+  retrieval questions.
+- Include headless A/B tasks for Yojson and OCaml-LSP. Dune A/B and optional
+  Irmin PPX/package stress may split only with an explicit follow-up gate.
+- Include existing-language control tasks: full build/typecheck/unit verify,
+  targeted extraction/resolution/status tests, CodeGraph self-repo retrieval
+  smoke, and conditional `ab-new-vs-baseline.sh` only if shared retrieval
+  behavior changes.
 - Include a task that resolves the PPX research gate before any PPX-related code.
+- Include negative tasks/tests proving ambiguous module/package candidates emit
+  no edge and no package nodes or external package edges are produced.
 
 Non-goals to enforce:
 - Do not implement OCaml LSP precision.
@@ -486,13 +539,22 @@ Focus on:
   research-gate decision.
 - Whether broad syntax and deep package modeling remain deterministic and
   reviewable.
+- Whether package metadata remains limited to checked-in `dune-project`, `dune`
+  stanzas, and root or `opam/` `*.opam`, with no package nodes or external
+  package edges.
 - Whether tasks preserve the full eval bar instead of silently weakening it.
+- Whether Yojson, OCaml-LSP, and Dune smoke/probe tasks preserve the pinned
+  validation bar, with Yojson and OCaml-LSP A/B in the first PR and any Dune A/B
+  split explicitly gated.
+- Whether existing-language controls are present and whether conditional
+  `ab-new-vs-baseline.sh` is required by any shared retrieval changes.
 - Whether unsupported or ambiguous OCaml features fail closed.
 - Whether build/copy-assets/status/docs/UAT are covered.
 - Whether existing language and retrieval behavior have control checks.
 
-Flag as CRITICAL if PPX expansion, package graph modeling, or eval requirements
-enter implementation without a recorded split/roadmap decision.
+Flag as CRITICAL if PPX expansion, package graph modeling, external package
+edges, package nodes, or eval requirements enter implementation without a
+recorded split/roadmap decision.
 ```
 
 ### Analysis Results
@@ -527,15 +589,19 @@ Implement SPEC-023 tasks with TDD-first discipline.
    an approved split or roadmap update.
 2. Add OCaml fixtures and failing tests for the approved syntax/resolution
    surface before implementing each slice.
-3. Wire `tree-sitter-ocaml.wasm` through the grammar pipeline and `copy-assets`.
+3. Wire `tree-sitter-ocaml.wasm` and `tree-sitter-ocaml_interface.wasm`
+   through the grammar pipeline and `copy-assets`.
 4. Add `src/extraction/languages/ocaml.ts` following existing extractor style.
 5. Add conservative resolver support for approved module/dune/package cases,
    failing closed on ambiguity.
+   Do not add package nodes, external package edges, or PPX-expanded symbols.
 6. Add docs/status updates and verify `codegraph status` lists OCaml.
 7. Run targeted tests, then `npm run build`, `npm run typecheck`, and `npm test`
    before review claims.
 8. Record fixture results, real OCaml repo smoke, agent-eval proof or approved
-   split evidence, and self-repo UAT.
+   split evidence, and self-repo UAT. The first PR must include deterministic
+   probes for all nine pinned retrieval questions and headless A/B for Yojson
+   and OCaml-LSP unless an explicit gate records a blocker.
 
 Every changed line must trace to SPEC-023 tasks. Do not refactor unrelated
 languages, resolver paths, MCP tools, or installer code.
@@ -558,11 +624,12 @@ languages, resolver paths, MCP tools, or installer code.
 
 - [ ] `spec.md`, `plan.md`, `tasks.md`, and supporting artifacts are complete.
 - [ ] PPX route is resolved before PPX-related implementation.
-- [ ] OCaml grammar artifact is copied into `dist/` by `npm run build`.
+- [ ] Both OCaml grammar artifacts are copied into `dist/` by `npm run build`.
 - [ ] Extraction/resolution fixtures pass.
 - [ ] `codegraph status` reports OCaml language support.
 - [ ] Real OCaml repo smoke evidence is recorded.
-- [ ] Agent-eval proof is recorded or split with explicit approval.
+- [ ] Deterministic probes are recorded for all nine pinned retrieval questions.
+- [ ] Yojson and OCaml-LSP headless A/B proof is recorded; any Dune A/B split has an explicit follow-up gate.
 - [ ] Existing language/control tests remain green.
 - [ ] `npm run build`, `npm run typecheck`, and `npm test` are recorded.
 - [ ] UAT runbook includes the required self-repo step.
@@ -595,7 +662,9 @@ docs/ai/specs/.process/SPEC-023-workflow.md
 specs/023-ocaml-language-support/
 specs/023-ocaml-language-support/SPEC-MOC.md
 src/extraction/wasm/tree-sitter-ocaml.wasm
+src/extraction/wasm/tree-sitter-ocaml_interface.wasm
 src/extraction/languages/ocaml.ts
+docs/grammars/tree-sitter-ocaml.md
 __tests__/fixtures/ocaml/
 ```
 

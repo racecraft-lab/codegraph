@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T19:08:20Z",
-  "active_step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping",
+  "updated_at": "2026-07-05T19:35:02Z",
+  "active_step": "Phase 3: Plan",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -64,6 +64,44 @@
     "gate": "G1 pass: spec.md exists with 0 markers",
     "after_specify_hook": "skipped: agent-context hook installed but no SPEC-023 plan.md exists yet; running without a plan could auto-detect unrelated plans"
   },
+  "phase2_evidence": {
+    "session_1": {
+      "focus": "Grammar, Syntax Breadth, and Shipping",
+      "questions": 5,
+      "outcome": "Pinned vendored tree-sitter-ocaml@0.24.2 implementation and interface WASMs; required parser health checks and dist artifact assertion; locked first-slice syntax breadth; defined .ml/.mli pairing and interface node kinds.",
+      "consensus": {
+        "item": "Grammar source/artifacts",
+        "categories": "[codebase, domain]",
+        "round": 1,
+        "outcome": "both-agree",
+        "analysts": [
+          "codebase-analyst",
+          "domain-researcher"
+        ]
+      },
+      "marker_check": "count-markers clarifications total=0"
+    },
+    "session_2": {
+      "focus": "Resolution, Dune, Packages, and PPX Gate",
+      "questions": 5,
+      "outcome": "Dune-scoped unique-only local resolution; authoritative metadata limited to checked-in dune-project, dune stanzas, and root/opam *.opam; metadata gates local relationships only; ambiguity emits no edge; PPX expansion unsupported/future work.",
+      "consensus": {
+        "status": "skipped",
+        "reason": "clarify-executor reported no unresolved items and high-confidence recommendations"
+      },
+      "marker_check": "count-markers clarifications total=0"
+    },
+    "session_3": {
+      "focus": "Validation and Eval Bar",
+      "questions": 5,
+      "outcome": "Pinned smoke/eval corpus to Yojson, OCaml-LSP, and Dune; pinned three retrieval questions per repo; required first-PR fixture/parser/copy/full-verify/status/smoke/stability/probe evidence plus Yojson and OCaml-LSP A/B; allowed only Dune A/B and optional Irmin stress to split with an explicit follow-up gate; defined existing-language controls and compact smoke metrics.",
+      "consensus": {
+        "status": "skipped",
+        "reason": "clarify-executor reported no unresolved items and high or medium-high confidence recommendations"
+      },
+      "marker_check": "count-markers clarifications total=0"
+    }
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -79,31 +117,31 @@
     },
     {
       "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Validation and Eval Bar",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Validation and Eval Bar Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 3: Plan",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 4: Checklist - Language Coverage",
