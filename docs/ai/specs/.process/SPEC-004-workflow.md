@@ -27,7 +27,7 @@ Re-read it before each phase. It records the human-approved decisions from Grill
 | Plan | `$speckit-plan` | Complete | Created plan, research, data model, contract, quickstart, and updated managed SpecKit context |
 | Checklist | `$speckit-checklist` | Complete | Completed ux, performance, integration, and reliability checklists with 0 remaining gaps |
 | Tasks | `$speckit-tasks` | Complete | Generated 39 ordered docs/process spike tasks with concrete Phase 7 task groups |
-| Analyze | `$speckit-analyze` | In Progress | Check drift against the design concept and roadmap |
+| Analyze | `$speckit-analyze` | Complete | Found and fixed three documentation drift issues before implementation |
 | Implement | `$speckit-implement` | Pending | Produce the decision doc, screenshot assets, and UAT evidence |
 
 ## Prerequisites
@@ -133,7 +133,7 @@ Functional scope:
 - After hard gates pass, weight UX first, then deploy effort, DX, cost, footprint, and license/maintenance risk.
 - Gather official documentation plus live package/repository metadata for every candidate before scoring.
 - Select one stack and build a throwaway graph-rendering prototype only in that chosen stack.
-- Validate graph-rendering with representative CodeGraph data from this repository and a 1k-node target.
+- Validate graph-rendering with representative CodeGraph data from this repository and a 1k-node/60fps target.
 - Capture browser screenshots from the prototype and commit small PNG evidence assets under `docs/design/assets/spec-004/`.
 - Write `docs/design/web-framework-decision.md` with matrix, recommendation, shipping strategy, graph-rendering notes, screenshots, and reproduction steps.
 
@@ -213,7 +213,7 @@ Plan SPEC-004 as a research spike:
 - Define measurable hard gates for self-host anywhere, offline/package-shipped assets, no hosted-service runtime dependency, permissive license, package footprint, and maintenance health.
 - Define the weighted scoring model with UX leading after hard gates.
 - Define current-source research steps using official docs plus live package/repository metadata.
-- Define the chosen-stack prototype method for graph rendering, including data shape, 1k-node target, browser screenshot capture, and performance/reproduction notes.
+- Define the chosen-stack prototype method for graph rendering, including data shape, 1k-node/60fps target, browser screenshot capture, and performance/reproduction notes.
 - Define the artifact layout for `docs/design/web-framework-decision.md` and `docs/design/assets/spec-004/`.
 - Define UAT that exercises the prototype evidence against representative CodeGraph data from this repository.
 
@@ -265,7 +265,7 @@ Focus on SPEC-004 requirements:
 $speckit-checklist performance
 
 Focus on SPEC-004 requirements:
-- 1k-node graph-rendering target.
+- 1k-node/60fps graph-rendering target.
 - Prototype performance notes and reproduction steps.
 - Candidate footprint and package-size considerations.
 - Pay special attention to whether the graph-rendering evidence is enough to unblock SPEC-006.
@@ -399,16 +399,30 @@ Flag any mismatch as HIGH or CRITICAL if it could make SPEC-005/006 build on an 
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| Pending | Pending | Pending | Pending |
+| A1 | HIGH | Roadmap graph-rendering bake-off and 1k-node/60fps target were softened to generic selected-stack prototype evidence. | Updated `spec.md`, `plan.md`, and `tasks.md` to require a chosen-stack renderer bake-off, canvas/WebGL force-graph options where available, and a recorded frame-rate or interaction-smoothness signal. |
+| A2 | MEDIUM | The workflow required a generated UAT runbook, but the core artifacts only made it implicit or routed validation through `quickstart.md`. | Updated `spec.md`, `plan.md`, and `tasks.md` to require `specs/004-web-framework-research-spike/.process/uat-runbook.md` and record self-repo UAT outcome there. |
+| A3 | MEDIUM | The workflow named LSP facade and WebSocket endpoints as out of scope, but the core boundaries did not explicitly exclude them. | Updated `spec.md`, `plan.md`, and `tasks.md` boundary language to exclude LSP facade and WebSocket endpoint work from SPEC-004. |
 
 ## Phase 6.5: Confidence Gate
 
 Run the advisory pre-Implement confidence gate after Analyze and before Implement.
 
+### Pre-Implement Confidence Emit
+
+📊 Confidence: 0.93
+
+- Task understanding: 0.94
+- Approach clarity: 0.90
+- Requirements alignment: 0.94
+- Risk assessment: 0.92
+- Completeness: 0.93
+
+Source: Phase 6 Analyze executor confidence scores mapped to the confidence-gate criteria after 0 unresolved findings remained.
+
 | Phase | Gate | Status | Notes |
 |-------|------|--------|-------|
-| Confidence Gate | G6.5 | Pending | Mode: advisory |
-| G6.5 | Confidence Gate | Pending | Reads the latest Phase 6 confidence block |
+| Confidence Gate | G6.5 | Pass | Mode: advisory |
+| G6.5 | Confidence Gate | Pass | Composite 0.93 >= threshold 0.90; proceed to Implement |
 
 ## Phase 7: Implement
 
@@ -423,14 +437,14 @@ Implement SPEC-004 tasks with evidence-first discipline:
 2. Apply hard gates for local-first, self-host, offline/package-shipped assets, no hosted runtime service, permissive license, and footprint.
 3. Score UX first among candidates that pass hard gates, then deploy effort, DX, cost, footprint, and maintenance/license risk.
 4. Select one stack and run a throwaway graph-rendering prototype only in that stack.
-5. Use representative CodeGraph data from this repository and target a 1k-node graph-rendering proof.
+5. Use representative CodeGraph data from this repository and target a 1k-node/60fps graph-rendering proof.
 6. Capture browser screenshots from the prototype using the available browser automation surface. If `@browser` is unavailable, use a local browser or Playwright-equivalent screenshot path and record the fallback.
 7. Commit small PNG screenshots under `docs/design/assets/spec-004/` and reference them from the report.
 8. Write `docs/design/web-framework-decision.md` with matrix, recommendation, shipping strategy, graph-rendering evidence, screenshots, and reproduction notes.
 9. Generate `specs/004-web-framework-research-spike/.process/uat-runbook.md` once `spec.md` exists, then add a self-repo UAT step for the screenshot/prototype evidence.
 10. Verify repo health with `npm run build` and `npm test`, or document a narrow, evidence-backed reason if a full run is not applicable.
 
-Do not add production server/web app code. Do not commit throwaway prototype source unless a task explicitly promotes a small reproducible fixture and the plan explains why it remains docs/process.
+Do not add production server/web app code, in-browser indexing, LSP facade work, or WebSocket endpoints. Do not commit throwaway prototype source unless a task explicitly promotes a small reproducible fixture and the plan explains why it remains docs/process.
 ```
 
 ### Implementation Progress

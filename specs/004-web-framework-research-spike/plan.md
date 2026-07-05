@@ -6,7 +6,7 @@
 
 ## Summary
 
-SPEC-004 is a docs/process research spike that chooses CodeGraph's future self-hosted web stack and proves the graph-rendering path before production web work starts. The implementation will evaluate the six roadmap candidates, apply local-first hard gates, score only gate-passing candidates with UX as the leading weighted criterion, build one throwaway prototype in the chosen stack, and commit only the decision document plus small screenshot evidence.
+SPEC-004 is a docs/process research spike that chooses CodeGraph's future self-hosted web stack and proves the graph-rendering path before production web work starts. The implementation will evaluate the six roadmap candidates, apply local-first hard gates, score only gate-passing candidates with UX as the leading weighted criterion, run a chosen-stack graph-rendering bake-off, build one throwaway prototype in the chosen stack, and commit only the decision document, UAT runbook, and small screenshot evidence.
 
 No production web code is in scope. Any prototype source must live in a temporary workspace and be represented in the repository only through reproduction notes and PNG screenshots.
 
@@ -18,7 +18,7 @@ No production web code is in scope. Any prototype source must live in a temporar
 
 **Storage**: Existing local `.codegraph/` SQLite store only. SPEC-004 may read or export representative graph data for prototype evidence but must not change the SQLite schema or extraction/retrieval behavior.
 
-**Testing**: `npm run build` and `npm test` are the build/test floor. UAT additionally requires local browser screenshot capture for representative self-repo data and the 1k-node target or closest documented fallback.
+**Testing**: `npm run build` and `npm test` are the build/test floor. UAT additionally requires local browser screenshot capture for representative self-repo data and the 1k-node/60fps target or closest documented fallback.
 
 **Target Platform**: Local-first, package-shipped web assets served by CodeGraph in later specs, plus a standalone container recipe for deploy-anywhere users. SPEC-004 must record the asset classes that later specs need to ship, including JS, CSS, images, fonts, workers, WASM, and graph-renderer assets; the expected package destination such as `dist/web/`; later `copy-assets` and npm-package implications; and the same local-only asset/data path for the standalone container.
 
@@ -26,9 +26,9 @@ No production web code is in scope. Any prototype source must live in a temporar
 
 **Project Type**: Docs/process research spike with a throwaway local browser prototype.
 
-**Performance Goals**: Demonstrate graph rendering with representative CodeGraph data from this repository and a 1k-node target. Record node/edge count, first visible render timing, interaction observations, machine/browser context, and any fallback if the target is missed.
+**Performance Goals**: Demonstrate graph rendering with representative CodeGraph data from this repository and the roadmap's 1k-node/60fps target. Record node/edge count, first visible render timing, frame-rate or interaction-smoothness signal, interaction observations, machine/browser context, and any fallback if the target is missed.
 
-**Constraints**: No production code. No non-permissive or source-available-only dependencies. No CDN or runtime hosted services. The runtime dependency ban covers framework runtime, graph renderer, fonts, icons, images, workers, WASM, telemetry, auth, data loading, and optional integrations. Implementation-time research may use official docs, package registries, and repositories, but the selected shipped runtime path must start and operate offline from package-shipped or locally generated assets. No changes to extraction, retrieval, MCP, SQLite schema, installer behavior, release flow, or build/copy wiring.
+**Constraints**: No production code. No non-permissive or source-available-only dependencies. No CDN or runtime hosted services. The runtime dependency ban covers framework runtime, graph renderer, fonts, icons, images, workers, WASM, telemetry, auth, data loading, and optional integrations. Implementation-time research may use official docs, package registries, and repositories, but the selected shipped runtime path must start and operate offline from package-shipped or locally generated assets. No production server, production web UI, in-browser indexing, LSP facade, WebSocket endpoint, maintained prototype source, extraction, retrieval, MCP, SQLite schema, installer behavior, release flow, or build/copy wiring changes.
 
 **Scale/Scope**: Six framework candidates, one selected-stack prototype, one decision document, small PNG evidence assets, and planning artifacts for later web specs.
 
@@ -112,7 +112,7 @@ UX scoring must be recorded as a sub-score table in `docs/design/web-framework-d
 
 | UX subcriterion | Required evidence |
 |-----------------|-------------------|
-| Graph browsing ergonomics | Prototype or official-doc evidence for pan/zoom, selecting or focusing a node, inspecting details on demand, and expanding or navigating a neighborhood. Record observed responsiveness or limitation notes for representative self-repo data and the 1k-node target or fallback. |
+| Graph browsing ergonomics | Prototype or official-doc evidence for pan/zoom, selecting or focusing a node, inspecting details on demand, and expanding or navigating a neighborhood. Record observed responsiveness or limitation notes for representative self-repo data and the 1k-node/60fps target or fallback. |
 | Discoverability | Evidence that primary graph actions, current view/status, selected node, and available navigation or search affordances are visible or described without relying on a long tutorial. |
 | Visual clarity | Screenshot or prototype notes showing readable labels or summaries, distinguishable node/edge states, visible graph structure, and sufficient contrast for text and graph elements used to understand the screenshot. |
 | Interaction fit | Evidence that the stack can support the future SPEC-006 graph-browser tasks: overview, zoom/filter, details on demand, relationship tracing, and carrying UI state through local routes or equivalent state handling. |
@@ -127,6 +127,7 @@ Each UX sub-score must cite at least one evidence source or measurement. Terms s
 4. Apply hard gates before scoring. If official docs and live metadata conflict, record both and prefer the more restrictive interpretation unless the project can reproduce the safer path locally.
 5. Score only the candidates that pass every hard gate.
 6. Select exactly one stack and document runner-up tradeoffs, downstream implications for SPEC-005/SPEC-006/SPEC-007, and rejected alternatives.
+7. Run a chosen-stack graph-rendering bake-off across canvas/WebGL force-graph options where available, using official documentation plus live package/repository metadata before choosing the renderer used in prototype evidence.
 
 ## Shipping and SPEC-005 Handoff Requirements
 
@@ -167,6 +168,8 @@ The standalone container recipe must include:
 
 ## Prototype Method
 
+Run the graph-rendering bake-off after the framework recommendation is selected and before final prototype evidence is recorded. The bake-off must compare available canvas/WebGL force-graph options for the chosen stack, apply the same offline/permissive/package-footprint gates, record current-source evidence, and identify the renderer used for the throwaway prototype.
+
 Build one throwaway prototype in the selected stack only. The prototype workspace must live outside the durable source tree, for example under `/tmp/spec-004-web-prototype` or an ignored scratch path. Do not commit prototype source.
 
 The prototype data shape must be documented and should use this minimum structure:
@@ -178,7 +181,7 @@ The prototype data shape must be documented and should use this minimum structur
     "generatedAt": "ISO-8601 timestamp",
     "nodeCount": 1000,
     "edgeCount": 0,
-    "selection": "representative self-repo subset or 1k-node target"
+    "selection": "representative self-repo subset or 1k-node/60fps target"
   },
   "nodes": [
     {
@@ -203,10 +206,10 @@ The prototype data shape must be documented and should use this minimum structur
 Prototype evidence must include:
 
 - A representative self-repo graph view generated from this repository.
-- A 1k-node target view, or the closest achieved fallback with blocker and downstream implication.
+- A 1k-node/60fps target view, or the closest achieved fallback with blocker and downstream implication.
 - Browser screenshot capture using the required fallback ladder: preferred browser automation first; local Playwright or equivalent local browser capture second; documented no-screenshot failure third. A no-screenshot failure must record commands attempted, tool or environment limitation, dataset identity, node/edge counts if available, target viewport or dimensions attempted, prototype render/output notes, reviewer-readable substitute evidence, and downstream impact. Missing screenshots must not silently weaken SC-004.
 - Interaction notes for graph browsing ergonomics: pan/zoom, node selection or focus, details on demand, expand-neighborhood or relationship traversal, visible status/legend/search affordances, and any control that is missing or deferred.
-- Performance and reproduction notes: commands, browser, machine context, node/edge counts, first visible render timing, interaction notes, asset size, screenshot readability notes, and limitations.
+- Performance and reproduction notes: commands, browser, machine context, node/edge counts, first visible render timing, frame-rate or interaction-smoothness signal, interaction notes, asset size, screenshot readability notes, and limitations.
 
 ## Artifact Layout
 
@@ -217,11 +220,12 @@ docs/design/web-framework-decision.md
 docs/design/assets/spec-004/
 ├── self-repo-graph.png
 └── one-k-node-target.png
+specs/004-web-framework-research-spike/.process/uat-runbook.md
 ```
 
 Optional additional PNGs may be committed only if they clarify a concrete gate or prototype result. Prototype source, generated `node_modules`, build output, and temporary JSON exports must not be committed.
 
-The decision document must include: executive recommendation, design-concept quotes, candidate matrix, hard-gate results, weighted scoring with UX sub-scores, selected stack, selected graph-rendering library, shipping strategy, embedded asset inventory and later copy/build implications, standalone container recipe, SPEC-005 static-serving/API/route-fallback handoff, prototype method, screenshot references and captions, self-repo UAT result, reproduction steps, known risks, and deferred work mapped to SPEC-005/SPEC-006/SPEC-007.
+The decision document must include: executive recommendation, design-concept quotes, candidate matrix, hard-gate results, weighted scoring with UX sub-scores, selected stack, selected graph-rendering library and bake-off result, shipping strategy, embedded asset inventory and later copy/build implications, standalone container recipe, SPEC-005 static-serving/API/route-fallback handoff, prototype method, screenshot references and captions, self-repo UAT result, reproduction steps, known risks, and deferred work mapped to SPEC-005/SPEC-006/SPEC-007.
 
 ## Self-Repo UAT
 
@@ -232,8 +236,8 @@ The implementation UAT must exercise representative CodeGraph data from this rep
 3. Ensure this repository has a healthy local CodeGraph index or generate one with the documented local workflow.
 4. Export or transform representative graph nodes/edges from this repository into the prototype data shape without schema changes.
 5. Run the selected-stack prototype locally with no CDN or hosted-service runtime dependency.
-6. Capture and commit PNG screenshots for representative self-repo data and the 1k-node target or fallback.
-7. Record outcome, commands, counts, timing, browser/tooling path, screenshot dimensions/readability, graph interaction observations, and limitations in `docs/design/web-framework-decision.md`.
+6. Capture and commit PNG screenshots for representative self-repo data and the 1k-node/60fps target or fallback.
+7. Record outcome, commands, counts, timing, browser/tooling path, screenshot dimensions/readability, graph interaction observations, and limitations in `docs/design/web-framework-decision.md` and `specs/004-web-framework-research-spike/.process/uat-runbook.md`.
 
 ## Project Structure
 
@@ -259,9 +263,12 @@ docs/design/
     └── spec-004/
         ├── self-repo-graph.png
         └── one-k-node-target.png
+specs/004-web-framework-research-spike/
+└── .process/
+    └── uat-runbook.md
 ```
 
-**Structure Decision**: SPEC-004 stays in the documentation/process layer. No production files under `src/`, `web/`, `tests/`, `src/mcp/`, `src/db/`, `src/extraction/`, `src/resolution/`, or `src/installer/` are planned.
+**Structure Decision**: SPEC-004 stays in the documentation/process layer. No production files under `src/`, `web/`, `tests/`, `src/server/`, `src/lsp/`, `src/mcp/`, `src/db/`, `src/extraction/`, `src/resolution/`, or `src/installer/` are planned, and no WebSocket endpoint or maintained prototype source is planned.
 
 ## Complexity Tracking
 
