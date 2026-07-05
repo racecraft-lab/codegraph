@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T22:22:35Z",
-  "active_step": "Post: PR Body Generation",
+  "updated_at": "2026-07-05T22:26:27Z",
+  "active_step": "Post: PR Creation",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -379,11 +379,11 @@
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: PR Creation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Review Remediation",
@@ -482,12 +482,15 @@
       "total_files": 87
     },
     "pr_packet_body_generation": {
-      "status": "in_progress",
-      "reason": "final backstop now permits packet/body generation through honored infra exception"
+      "status": "pass",
+      "packet_location": "transient worktree-generated packet/body used for PR creation; not committed to avoid self-referential packet diffs",
+      "validation": "validate-pr-packet.sh passed for current packet",
+      "title": "feat(speckit-pro): Add OCaml language support",
+      "workflow_contract": "validate-pr-workflow-contract.sh passed"
     },
     "pr_creation": {
-      "status": "pending",
-      "reason": "awaiting freshly generated and validated PR packet"
+      "status": "in_progress",
+      "reason": "packet validation passed; preparing push and gh pr create from packet fields"
     },
     "review_remediation": {
       "status": "pending",

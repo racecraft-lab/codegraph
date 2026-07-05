@@ -651,8 +651,8 @@ languages, resolver paths, MCP tools, or installer code.
 | Post: Self-Review | Complete | Four-question self-review is recorded in `.process/self-review.md`. |
 | Post: UAT Runbook Generation | Complete | `.process/uat-runbook.md` generated, authored, and validated with `validate-uat-runbook.sh`. |
 | Post: Reviewability Diff Gate | Complete with exception | Final backstop wrote `.process/final-reviewability/gate-state.json` and accepted the infra reviewability exception in `implementation-slices.md`; no PR side-effect blocker remains. |
-| Post: PR Body Generation | In progress | Final backstop now permits packet/body generation through the honored infra exception. |
-| Post: PR Creation | Pending | Awaiting freshly generated and validated PR packet. |
+| Post: PR Body Generation | Complete | Generated and validated the single-PR packet/body; `validate-pr-packet.sh` passed and workflow contract validation passed for `feat(speckit-pro): Add OCaml language support`. |
+| Post: PR Creation | In progress | Packet is valid; next step is push plus `gh pr create` from packet fields. |
 | Post: Review Remediation | Pending | Awaiting PR creation before review polling/remediation. |
 | Post: Retrospective | Complete | `retrospective.md` saved with no proposed `spec.md` edits. |
 
