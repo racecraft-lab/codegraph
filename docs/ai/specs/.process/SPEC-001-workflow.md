@@ -750,15 +750,15 @@ level, which is how the entire existing suite runs.)
 
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in tasks.md
-- [ ] Typecheck passes: `npm run typecheck`
-- [ ] Tests pass: `npm test` (full suite — including with the feature unconfigured, proving dormancy)
-- [ ] Build succeeds: `npm run build`
-- [ ] Node/edge counts stable across re-index with feature on (Constitution V evidence)
-- [ ] No new npm dependencies; no changes under src/mcp/ or src/installer/
-- [ ] CHANGELOG.md `[Unreleased]` entry added (user-facing feature)
-- [ ] PR(s) created per the atomicity route (expected: split-PR — one per slice), targeting origin, review-packet body, no session URLs
-- [ ] Merged to main branch
+- [x] All tasks marked complete in tasks.md (37/37; verify-tasks: 0 phantoms)
+- [x] Typecheck passes: `npm run typecheck`
+- [x] Tests pass: `npm test` — 131 files / 2212 passed / 4 skipped / exit 0 (suite runs unconfigured = dormancy proof)
+- [x] Build succeeds: `npm run build`
+- [x] Node/edge counts stable across re-index with feature on (test-pinned, ON vs OFF parity)
+- [x] No new npm dependencies (dependency set test-pinned); src/mcp/ + src/installer/ diffs vs main EMPTY
+- [x] CHANGELOG.md `[Unreleased]` entries added (Slice A + Slice B, user-facing style)
+- [x] PR(s) created per the marker plan — stacked emission: **PR #16** (Slice A → main, https://github.com/racecraft-lab/codegraph/pull/16) and **PR #17** (Slice B → slice-a, https://github.com/racecraft-lab/codegraph/pull/17); both packet-validated + contract-validated; origin only; no session URLs. Review-remediation loop scheduled (5m cadence).
+- [ ] Merged to main branch (operator: merge #16 first, then retarget/merge #17)
 
 ---
 
