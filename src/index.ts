@@ -590,7 +590,16 @@ export class CodeGraph {
         if (result.success && result.filesIndexed > 0) {
           try {
             await this.maybeRunEmbeddingPass(options.onProgress);
-          } catch { /* embedding is advisory — never fail an index over it */ }
+          } catch (err) {
+            // Advisory — an unexpected throw from the embedding wiring itself (config
+            // load, provider construction) never fails the index, but it must not be
+            // invisible either. Only the error's NAME is surfaced (never its message or
+            // cause), keeping endpoint/key redaction total (FR-023).
+            logWarn(
+              `Embedding pass skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+              '— the enclosing index/sync operation is unaffected.'
+            );
+          }
         }
 
         return result;
@@ -637,7 +646,7 @@ export class CodeGraph {
     const provider = new EndpointProvider(config);
     const lockPath = path.join(getCodeGraphDir(this.projectRoot), 'codegraph.lock');
 
-    await runEmbeddingPass({
+    const result = await runEmbeddingPass({
       queries: this.queries,
       provider,
       config,
@@ -652,8 +661,28 @@ export class CodeGraph {
           fs.utimesSync(lockPath, now, now);
         } catch { /* lock refresh is advisory */ }
       },
-      readSource: (node) => this.readNodeSource(node),
+      // Pass-scoped per-file cache: the staleness scan recomposes inputs for every
+      // embedded symbol, so without memoization a multi-symbol file would be re-read
+      // and re-split once per symbol. The cache lives only for this pass (dropped when
+      // the closure goes out of scope), so it never serves stale content across passes.
+      readSource: (() => {
+        const fileLines = new Map<string, string[] | undefined>();
+        return (node: Node) => this.readNodeSource(node, fileLines);
+      })(),
     });
+
+    // Surface an advisory abort's reason to the log rather than silently discarding the
+    // result. The reason is already redacted by construction (endpoint + status only,
+    // never source or credentials — FR-023/FR-025a), and it carries the actionable
+    // guidance a user needs: FR-021's `CODEGRAPH_EMBEDDING_DIMS` message on a dimension
+    // conflict, or the redacted endpoint-failure reason on an outage. The pass itself
+    // never threw — embedding stays advisory, the index/sync is unaffected either way.
+    if (result.aborted) {
+      logWarn(
+        'Embedding pass aborted; some symbols are unembedded but the enclosing index/sync operation is unaffected. ' +
+        `Reason: ${result.abortReason ?? 'unknown'}`
+      );
+    }
   }
 
   /**
@@ -663,11 +692,15 @@ export class CodeGraph {
    * read error yields `undefined`, so the pass composes that symbol from its
    * in-graph fields alone rather than failing (FR-028).
    */
-  private readNodeSource(node: Node): string | undefined {
+  private readNodeSource(node: Node, fileLines?: Map<string, string[] | undefined>): string | undefined {
     try {
-      const absolutePath = validatePathWithinRoot(this.projectRoot, node.filePath);
-      if (!absolutePath) return undefined;
-      const lines = fs.readFileSync(absolutePath, 'utf-8').split('\n');
+      let lines = fileLines?.get(node.filePath);
+      if (lines === undefined && !(fileLines?.has(node.filePath) ?? false)) {
+        const absolutePath = validatePathWithinRoot(this.projectRoot, node.filePath);
+        lines = absolutePath ? fs.readFileSync(absolutePath, 'utf-8').split('\n') : undefined;
+        fileLines?.set(node.filePath, lines);
+      }
+      if (lines === undefined) return undefined;
       const startIdx = Math.max(0, node.startLine - 1);
       const endIdx = Math.min(lines.length, node.endLine);
       return lines.slice(startIdx, endIdx).join('\n');
@@ -790,6 +823,28 @@ export class CodeGraph {
             await this.rebuildNameSegmentVocab();
           }
         } catch { /* vocab is advisory — never fail a sync over it */ }
+
+        // Optional embedding pass over the resolved graph — the SAME advisory pass
+        // indexAll runs, in sync()'s post-resolution slot. Run on every successful
+        // sync REGARDLESS of change count: an incremental sync re-embeds only the
+        // symbols whose input changed and reconciles deletions, while a zero-change
+        // sync backfills any still-missing vectors (the FR-018 heal a plain
+        // `codegraph sync` relies on — mirrors the vocab heal above, which also runs
+        // independent of file changes). Fully dormant unless the embedding env vars
+        // are set, and strictly advisory: any failure is swallowed so a broken embed
+        // can never fail a sync (FR-014/019). The file watcher and the daemon both
+        // drive this same sync(), so they inherit the pass with no extra wiring (FR-015).
+        try {
+          await this.maybeRunEmbeddingPass(options.onProgress);
+        } catch (err) {
+          // Advisory — an unexpected throw from the embedding wiring never fails a sync,
+          // but must not be invisible. Only the error's NAME is surfaced (never its
+          // message or cause), keeping endpoint/key redaction total (FR-023).
+          logWarn(
+            `Embedding pass skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+            '— the sync is unaffected.'
+          );
+        }
 
         return result;
       } finally {
@@ -1028,7 +1083,8 @@ export class CodeGraph {
    * contract `status-embedding-json.md`). Pure and network-free in every state:
    * it reads the activation config from the environment and the model/dims
    * scalars + coverage counts from the on-disk index — dormancy is never broken
-   * to produce it (FR-023). See {@link EmbeddingStatus} for the four shapes.
+   * to produce it (FR-023). See {@link EmbeddingStatus} for the three variants
+   * (active / dormant — optionally carrying prior-run data / misconfigured).
    */
   getEmbeddingStatus(): EmbeddingStatus {
     const config = loadEmbeddingConfig(process.env);

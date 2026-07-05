@@ -31,6 +31,7 @@ import { extractProseCandidates } from '../search/identifier-segments';
 import { detectWorktreeIndexMismatch, worktreeMismatchWarning } from '../sync/worktree';
 import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
+import { ensureCodegraphIgnored } from '../utils';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
 import { installFatalHandlers } from './fatal-handler';
@@ -504,6 +505,12 @@ program
       const { default: CodeGraph } = await loadCodeGraph();
       const cg = await CodeGraph.init(projectPath, { index: false });
       clack.log.success(`Initialized in ${projectPath}`);
+
+      // Keep the local index out of version control (git repos only; no-op if
+      // already ignored). Advisory — never blocks init.
+      if (ensureCodegraphIgnored(projectPath)) {
+        info('Added .codegraph/ to .gitignore (local index — never commit it)');
+      }
 
       // Indexing runs by default now. The legacy -i/--index flag is still
       // accepted (so existing muscle memory and scripts don't break) but is a

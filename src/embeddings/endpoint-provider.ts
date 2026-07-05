@@ -106,6 +106,12 @@ export class EndpointProvider implements EmbeddingProvider {
     this.maxRetries = overrides.maxRetries ?? DEFAULT_MAX_RETRIES;
   }
 
+  /**
+   * The inferred/enforced vector dimension, or `0` while it is not yet known — the pass
+   * infers it from the first successful batch. `0` is strictly a "dimension unknown"
+   * sentinel, never a real embedding width: a length-0 embedding is rejected as a
+   * malformed response (see {@link validate}) rather than latched as dims=0.
+   */
   get dims(): number {
     return this._dims;
   }
@@ -191,11 +197,22 @@ export class EndpointProvider implements EmbeddingProvider {
       return { ok: false, retryable: false, reason: `endpoint returned HTTP ${status}`, status };
     }
 
+    // Read the body and parse it in SEPARATE try blocks: a failure DURING the read is a
+    // transport failure (the socket reset mid-body on an otherwise-200 response), which is
+    // RETRYABLE — not the same as a fully-received body that simply isn't valid JSON. Both
+    // reference nothing off the caught error, keeping redaction total (FR-023).
+    let bodyText: string;
+    try {
+      bodyText = await response.text();
+    } catch {
+      // Transport failure while reading the 200 body — retry it like any network error.
+      return { ok: false, retryable: true, reason: 'network error reading the response body' };
+    }
     let payload: unknown;
     try {
-      payload = JSON.parse(await response.text());
+      payload = JSON.parse(bodyText);
     } catch {
-      // Malformed/non-JSON body — non-retryable advisory failure (never echo the body).
+      // Malformed/non-JSON body that WAS fully received — non-retryable (never echo it).
       return { ok: false, retryable: false, reason: 'response body was not valid JSON' };
     }
 
@@ -232,6 +249,17 @@ export class EndpointProvider implements EmbeddingProvider {
       if (vectors[idx] !== undefined) return { ok: false, reason: 'response entry index was duplicated' };
 
       const vec = Float32Array.from(rawEmbedding as number[]);
+      // A zero-length embedding is a malformed response, not a dimension. Reject it here
+      // rather than letting reconcileDims read length 0 as the "dimension unknown"
+      // sentinel and silently latch dims=0 (FR-021a).
+      if (vec.length === 0) return { ok: false, reason: 'response entry had an empty embedding array' };
+      // Non-finite elements (NaN/±Infinity — e.g. a null or string in the JSON array)
+      // would persist as garbage vector bytes; reject the batch instead (FR-021a).
+      for (let e = 0; e < vec.length; e++) {
+        if (!Number.isFinite(vec[e])) {
+          return { ok: false, reason: 'response entry contained a non-finite embedding value' };
+        }
+      }
       const conflict = this.reconcileDims(vec.length);
       if (conflict !== undefined) return { ok: false, reason: conflict };
       vectors[idx] = vec;

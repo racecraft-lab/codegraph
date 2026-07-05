@@ -38,7 +38,7 @@ captured during scoping.
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 99 items, 28 gaps found → 28 fixed, 0 remain; CRL rows 1–12 (4 security items conservative-default, flagged for operator review); G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 37 tasks, 6 phases, 14 [P]; full FR/SC traceability; G5 pass; size-only block → pr_marker_plan (2 stacked markers); atomicity = single-atomic-PR (version pin) |
 | Analyze | `/speckit-analyze` | ✅ Complete | PASS: 3 LOW findings (doc nits), all remediated in 1 loop; 0 unresolved → consensus skipped; G6 pass; confidence 0.98 |
-| Implement | `/speckit-implement` | ⏳ Pending | |
+| Implement | `/speckit-implement` | ✅ Complete | 37/37 tasks; G7 pass (build+typecheck+2207 tests, +129 new, 0 regressions); markers M1=322d001, M2 recorded below. Final constitution: I ✓ (0 markers) · II ✓ (zero speculative code; 5 executor cycles found 0 needed refactors) · III ✓ (net-new src/embeddings/; upstream diffs additive-only; src/mcp/+src/installer/ diff vs main EMPTY) · IV ✓ (TDD every behavior task, RED verified with real failures, emergent invariants falsifiability-probed) · V ✓ (node/edge parity test) · VI ✓ (retrieval surface untouched) · VII ✓ (dependency set pinned by test — no new deps; no telemetry; secrets byte-searched absent from disk/logs) |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -704,24 +704,61 @@ Before starting any task:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| 1 - Foundation | | | |
-| 2 - US1 / Slice A | | | |
-| 3 - US2+US3 / Slice B | | | |
-| 4 - Polish | | | |
+| 1 - Foundation | T001–T011 | ✅ 11/11 | config (37 tests), provider iface, codec (8), input-hash (13), v8 migration lockstep (3) + 3 version-pin bumps; committed faa7490; suite 2135 green |
+| 2 - US1 / Slice A | T012–T023 | ✅ 12/12 | queries, endpoint client (22 tests incl. redaction/fast-abort), embed pass (batch-txn/dims/advisory), indexAll wiring, status+--json, security+behavior invariants (9, all emergent-green), CHANGELOG-A; **marker M1 = 322d001**, checkpoint recorded, suite green |
+| 3 - US2+US3 / Slice B | T024–T032 | ✅ 9/9 | incremental (hash-scan + anti-join reconcile, 6 tests), sync wiring + zero-change heal + watcher parity (4), resilience T028–T031 all EMERGENT (4 pins, falsifiability-probed, zero production changes) |
+| 4 - Polish | T033–T037 | ✅ 5/5 | CHANGELOG-B; T034 = CHANGELOG+quickstart (README untouched — no env-var section exists; feature substrate-only until SPEC-003); T035 proofs: src/mcp/ + src/installer/ diff vs main EMPTY, dormancy = suite runs unconfigured, parity = T022-4; T036 packet → PR stage; T037 = G7 run |
+
+Quickstart evidence map: A1/A4→T022-1, A2→T022-2+T019b, A3→T022-3, A5→T021-1, A6→T020/T022-5;
+B1→T024/T026, B2→T027, B3→T028 pin, B4→T030-1/2, B5→T024-6+T030-3. (CLI-level probes not
+runnable on this dev shell — Node 26 vs the CLI's <25 gate; all probes exercised at library
+level, which is how the entire existing suite runs.)
 
 ---
 
+### Self-Review (auto-generated)
+
+1. **Tests executed?** YES, invoked directly this session — BUILD (`npm run build`), TYPECHECK
+   (`npm run typecheck`), UNIT/INTEGRATION (`npm test`, vitest — integration tests run inside it
+   via real mock-endpoint servers; no separate INTEGRATION command exists; LINT = N/A, no lint
+   config). Most recent full run (post review-fixes, commit 0fb29aa): **131 files / 2212 passed /
+   4 skipped / exit 0** at 02:55. Honesty note: the immediately-prior full run showed **1 flaky
+   failure** whose name was lost to an output-truncation in the runner pipeline; the rerun
+   was fully green and the 7 embeddings suites are green across ≥3 consecutive runs — recorded
+   as a flake observation in the PR body's known gaps.
+2. **Edge cases?** Non-happy paths test-pinned per criterion: dormancy (T022-2/T019b), half-config
+   both directions (T019c + T020 d-tests), keyless auth (T022-3), 401/403 fast-abort + key-echoing
+   401 body (endpoint suite + T021-2), timeout/hang (FR-019a tests), mid-body transport reset
+   (FIX 3 test), malformed/zero-length responses (FR-021a + FIX 5 tests), dims conflict incl.
+   later-batch (T030-3 + FIX 1 test), outage abort/resume (T030-1/2), model switch (T024-6),
+   CRLF/LF hashing (T007). `[edge-case-gap]` ×2 (advisory): no dedicated start-line-shift orphan
+   test (mechanism pinned indirectly by the deletion anti-join test); CLI status section rendering
+   untested (logic tested at library level via getEmbeddingStatus — review finding #10).
+3. **Requirements matched?** 31/31 FRs + 11/11 SCs traced (tasks.md traceability table, verified
+   independently by speckit-verify-run); 37/37 tasks [X] with zero phantoms (speckit-verify-tasks,
+   Layers 1–5, live test execution). Documented deviations: T025 helper naming
+   (selectEmbeddedNodeHashes vs selectStaleVectors — behavior verified equivalent), T001 snapshot
+   superseded by the dynamic parity test.
+4. **Follow-up & tidiness?** No TODO/DEFERRED markers in spec/plan/tasks. Deferred-by-design items
+   each have a landing place: search consumption → SPEC-003; bundled model → SPEC-002;
+   ANN/quantization → roadmap key decision (deferred until scale). Review advisories not fixed
+   pre-PR (watcher warn repetition #6, per-symbol file re-read cache #8, CLI status test #10, and
+   the suggestion list) → enumerated in the PR body's Known gaps section. `[tidiness]`: executor
+   agent-memory files (.claude/agent-memory/speckit-pro-implement-executor/*) rode the branch —
+   process exhaust, called out in the PR body review-order notes. No debug scaffolding/console.log
+   found in the diff (T021 pinned no stray logging on the embed paths).
+
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in tasks.md
-- [ ] Typecheck passes: `npm run typecheck`
-- [ ] Tests pass: `npm test` (full suite — including with the feature unconfigured, proving dormancy)
-- [ ] Build succeeds: `npm run build`
-- [ ] Node/edge counts stable across re-index with feature on (Constitution V evidence)
-- [ ] No new npm dependencies; no changes under src/mcp/ or src/installer/
-- [ ] CHANGELOG.md `[Unreleased]` entry added (user-facing feature)
-- [ ] PR(s) created per the atomicity route (expected: split-PR — one per slice), targeting origin, review-packet body, no session URLs
-- [ ] Merged to main branch
+- [x] All tasks marked complete in tasks.md (37/37; verify-tasks: 0 phantoms)
+- [x] Typecheck passes: `npm run typecheck`
+- [x] Tests pass: `npm test` — 131 files / 2212 passed / 4 skipped / exit 0 (suite runs unconfigured = dormancy proof)
+- [x] Build succeeds: `npm run build`
+- [x] Node/edge counts stable across re-index with feature on (test-pinned, ON vs OFF parity)
+- [x] No new npm dependencies (dependency set test-pinned); src/mcp/ + src/installer/ diffs vs main EMPTY
+- [x] CHANGELOG.md `[Unreleased]` entries added (Slice A + Slice B, user-facing style)
+- [x] PR(s) created per the marker plan — stacked emission: **PR #16** (Slice A → main, https://github.com/racecraft-lab/codegraph/pull/16) and **PR #17** (Slice B → slice-a, https://github.com/racecraft-lab/codegraph/pull/17); both packet-validated + contract-validated; origin only; no session URLs. Review-remediation loop scheduled (5m cadence).
+- [ ] Merged to main branch (operator: merge #16 first, then retarget/merge #17)
 
 ---
 
@@ -729,15 +766,21 @@ Before starting any task:
 
 ### What Worked Well
 
--
+- Clarify-by-consensus caught two real design forks early (no-FK per-symbol vector survival; 401/403 fast-abort) that the original prompts had settled the other way — both survived implementation and live UAT unchanged.
+- Emergent-invariant testing (write the pin, expect green, falsifiability-probe it) proved the resilience layer needed zero new production code — abort/resume genuinely falls out of missing/stale re-selection.
+- Dogfooding as the final UAT tier: the repo indexed and fully embedded itself (worktree 3,569/3,569; main checkout 3,398/3,398 after an additive v7→v8 migration under a live released-binary daemon) — the multi-minute lock-hold, heal, watcher-freshness, and endpoint-outage paths were all exercised on real scale before merge. Now codified as the roadmap's Dogfooding Protocol, binding for every future spec.
 
 ### Challenges Encountered
 
--
+- Output-pipeline truncation (`cmd | tail`) twice masked real signals: a vitest failure count and a rebase conflict. Rule adopted: capture to a file and check the tool's own exit code, never a pipe tail's.
+- The tasks reviewability gate and the atomicity classifier disagreed (size-block vs single-atomic-PR); reconciled via a 2-marker stacked emission (M1→PR #16, M2→PR #17) honoring the hard-atomic schema-version pin.
+- PR #16's squash-merge orphaned the stacked branch history; recovered with a tree-identity-verified `merge -X ours` (byte-identical result, no force-push) after an aborted rebase attempt.
 
 ### Patterns to Reuse
 
--
+- Stacked marker PRs for over-budget features with a hard-atomic seam: freeze slice A at its checkpoint commit, land every follow-up on the stacked head, and resolve slice-A review findings there.
+- The reviewability packet's editable-region + protected-fingerprint discipline held through UAT check-offs and body refreshes — recompute the fingerprint and re-validate rather than bypassing.
+- SHOULD-level hardenings (lock-freshness refresh, plaintext-remote warning) as the conservative middle between "accepted limitation" and new mandatory machinery — both fired correctly in live UAT.
 
 ---
 

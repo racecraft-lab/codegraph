@@ -17,6 +17,7 @@ This document defines the **SPEC catalog** for the Intelligence Platform: an ord
 2. [Dependency Graph](#dependency-graph)
 3. [Progress Tracking](#progress-tracking)
 4. [Specification Sections](#specification-sections)
+5. [Dogfooding Protocol](#dogfooding-protocol)
 
 ---
 
@@ -775,6 +776,38 @@ When breaking a feature into specs:
 4. **Mock data for blocked specs** — UI specs can use static data while backend specs complete
 5. **Integration spec last** — wire everything together as the final spec
 6. **Each spec gets its own directory**: `specs/<number>-<name>/`
+
+## Dogfooding Protocol
+
+**Binding for every spec in this roadmap** (adopted 2026-07-05 during SPEC-001 delivery):
+the codegraph repository is itself the first consumer of every capability this roadmap
+ships. Each spec is validated on this repo's own index before it merges, and the repo's
+index is kept current with each merge — so by the time a downstream spec starts, it
+builds on top of live, real-scale instances of everything before it.
+
+1. **The loop:** after each spec's PR(s) merge to `main` — rebuild (`npm run build`),
+   then run a plain `codegraph sync` on this repository. The heal path picks up whatever
+   the new spec added (schema migrations apply additively; derived layers backfill);
+   the file watcher keeps everything fresh between merges.
+2. **Local endpoint configuration** lives in the untracked `.envrc.local` (loaded by the
+   committed `.envrc` direnv shim — same pattern as gitnexus). Committed artifacts stay
+   host- and vendor-neutral; private infrastructure details never land in the repo.
+3. **Every spec's UAT runbook MUST include a self-repo step**: exercise the new
+   capability against this repository's own index, at its real scale, not only against
+   synthetic fixtures. (SPEC-001 set the baseline: the full repo — ~5.8k nodes / ~23.7k
+   edges — fully embedded, 100% declaration-symbol coverage, on both a feature worktree
+   and the main checkout's live index, with the live MCP daemon serving the migrated DB
+   concurrently.)
+4. **Ladder by spec:** SPEC-001 produce+observe (vectors, coverage, freshness on our own
+   edits) · SPEC-002 switch this repo's embedding model to the bundled one and watch
+   single-model convergence at scale · SPEC-003 point this repo's MCP config at the dev
+   build so agents developing later specs semantically search codegraph's own code ·
+   SPEC-011/019 run labels/wiki on this repo and review our own output as first users ·
+   web/LSP specs (SPEC-004+) browse and serve this repo first.
+5. **Dormancy discipline:** dogfood config must never be required — every capability
+   stays opt-in/dormant-by-default so an unconfigured clone behaves identically. A
+   dogfooding outage (endpoint down, feature unconfigured) must degrade advisorily,
+   never break indexing or retrieval.
 
 ## Environment & Deployment Context
 

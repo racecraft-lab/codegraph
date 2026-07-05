@@ -22,7 +22,12 @@ are non-obvious and would otherwise be re-litigated by SPEC-002/003 or maintenan
   config`) branch emits ONE `logWarn(...)` naming the missing variable. Idiom is
   `logWarn` from `./errors` (never `console.*`); index.ts had to add that import.
 - **IndexResult was deliberately NOT extended** — no established pattern to carry
-  embedding coverage on the result, so the pass result is awaited and discarded.
+  embedding coverage on the result. The pass result is not surfaced on IndexResult, but
+  is **no longer silently discarded (pre-PR FIX 1):** `maybeRunEmbeddingPass` now
+  `logWarn`s the (already-redacted) `result.abortReason` when `result.aborted` — so FR-021's
+  `CODEGRAPH_EMBEDDING_DIMS` guidance + endpoint-failure reasons reach the CLI/daemon log.
+  Both call-site catch-alls (indexAll + sync) also `logWarn` now — but ONLY `err.name`
+  (never message/cause), keeping redaction total on an unexpected wiring throw.
 - **Seam construction:** `transaction`→`this.db.transaction`, `runMaintenance`→
   `this.db.runMaintenance`, `onProgress`→`{phase:'embedding',current:embedded,
   total:eligible}` (the `'embedding'` phase was already in `IndexProgress`).
