@@ -297,11 +297,21 @@ $speckit-clarify Focus on SPEC-008 activation/config/slicing:
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | Server prereqs and validation | ⏳ | |
-| 1B | Language parity baseline | ⏳ | |
-| 1C | Feature/capability parity baseline | ⏳ | |
-| 2 | Edge correction and provenance | ⏳ | |
-| 3 | Activation, config, and slicing | ⏳ | |
+| 1 | Server prereqs and validation | 5 | Full internal baseline prerequisite matrix selected; versions recorded as observed Plan evidence; missing-prereq validation message shape added; prereq checks assigned to `src/lsp/servers.ts` and `src/lsp/prereqs.ts` planning path. |
+| 1B | Language parity baseline | 5 | Real-server SPEC-008 validation applies to all baseline languages except COBOL; C#, Kotlin, PHP, Ruby, Dart, and Vue are in SPEC-008 now; COBOL requires parser/resolver evidence plus SPEC-024 ownership unless Plan selects a concrete local LSP target. |
+| 1C | Feature/capability parity baseline | 5 | Baseline capability contract owner map accepted as authoritative; existing behavior rows require current source/test evidence plus SPEC-024 audit; SPEC-024 is the default concrete owner for remaining parity gaps unless Plan creates numbered child specs; artifact hygiene check required. |
+| 2 | Edge correction and provenance | 5 | LSP target uniqueness requires exactly one normalized semantic target; in-workspace correction requires one compatible CodeGraph node; external targets may suppress but not create graph nodes; only surviving verified/corrected active edges receive `lsp`; status must expose checked/verified/corrected/suppressed/skipped/degraded counts. |
+| 3 | Activation, config, and slicing | 5 | `codegraph.json.lsp` contract accepted; env overrides use JSON argv arrays and timeout vars without activation power; CLI explicit enable/disable wins over config; watch verification reuses bounded sync changes; final three vertical slices confirmed. |
+
+### Consensus Resolution Log
+
+| Phase | Item | Round | Routed Categories | Outcome | Analysts Used |
+|-------|------|-------|-------------------|---------|---------------|
+| Clarify Session 1 | Server prerequisite matrix | 1 | spec, domain | Accepted baseline-full prerequisite matrix with concrete local command alternatives; no Round 2 needed. | spec-context-analyst, domain-researcher |
+| Clarify Session 1B | Language parity disposition | 1 | n/a | No unresolved items; accepted executor recommendation that SPEC-008 covers all baseline LSP rows except COBOL disposition, with SPEC-024 ownership if no COBOL LSP target is selected. | clarify-executor |
+| Clarify Session 1C | Feature/capability parity ownership | 1 | n/a | No unresolved items; accepted baseline capability contract owner map, SPEC-024 closure ownership, and artifact hygiene validation. | clarify-executor |
+| Clarify Session 2 | Edge provenance semantics | 1 | spec, codebase | Accepted additive provenance interpretation; untouched static/null and heuristic edges remain unchanged, and `lsp` applies only to surviving verified/corrected active edges. | spec-context-analyst, codebase-analyst |
+| Clarify Session 3 | Activation/config/slicing | 1 | n/a | No unresolved items; accepted config object shape, environment override names, activation precedence, watch bounds, and final vertical slice boundaries. | clarify-executor |
 
 ---
 

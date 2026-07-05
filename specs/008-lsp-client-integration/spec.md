@@ -108,6 +108,7 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - **FR-016**: CodeGraph MUST preserve existing `null` and `heuristic` provenance semantics for graph edges that are not LSP-upgraded or LSP-verified.
 - **FR-017**: CodeGraph MUST mark only LSP-upgraded or LSP-verified edges with `provenance: "lsp"`.
 - **FR-018**: When LSP returns a unique target that conflicts with an existing graph target, CodeGraph MUST replace or suppress the old target and record correction metadata.
+- **FR-018a**: Correction metadata MUST record the replaced or suppressed edge's previous provenance, previous target, LSP target, and correction reason; suppressed edges MUST NOT remain active solely to preserve audit history.
 - **FR-019**: When LSP output is ambiguous, CodeGraph MUST NOT emit speculative replacement edges.
 - **FR-020**: CodeGraph MUST NOT auto-install language servers.
 - **FR-021**: CodeGraph MUST NOT auto-enable LSP precision only because a language server is found on the user's machine.
@@ -115,9 +116,46 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - **FR-023**: CodeGraph MUST NOT include rename or refactor operations as part of SPEC-008.
 - **FR-024**: CodeGraph MUST NOT introduce remote network calls beyond user-configured local language-server subprocesses.
 - **FR-025**: SPEC-008 MUST remain one feature specification planned as three vertical review slices.
-- **FR-026**: The covered server set MUST include TypeScript/JavaScript via typescript-language-server; Python via pyright or basedpyright; Go via gopls; Rust via rust-analyzer; C/C++ via clangd; Swift via SourceKit-LSP; Java via jdtls; C#, Kotlin, PHP, and Ruby via concrete local server choices selected during planning; Dart via the Dart SDK language server; Vue via Vue Language Tools; and a COBOL parity disposition.
+- **FR-026**: The covered server set MUST include the full internal baseline prerequisite matrix: TypeScript/JavaScript via `typescript-language-server --stdio`; Python via `pyright-langserver --stdio` or `basedpyright-langserver --stdio`; Go via `gopls`; Rust via `rust-analyzer`; C/C++ via `clangd`; Swift via `sourcekit-lsp`; Java via `jdtls -configuration <dir> -data <workspace-data>` or an equivalent configured JDT LS Java command; C# via `csharp-ls`; Kotlin via `kotlin-language-server` or `kotlin-lsp`; PHP via `intelephense --stdio` or `phpactor language-server`; Ruby via `ruby-lsp` or `solargraph stdio`; Dart via `dart language-server`; Vue via `vue-language-server --stdio`; and a COBOL parity disposition.
 - **FR-027**: If COBOL is not assigned to a concrete local LSP target in SPEC-008, SPEC-008 MUST assign it to a concrete numbered future spec and preserve parser/resolver parity evidence.
 - **FR-028**: Incremental watch behavior MUST verify changed files with LSP precision when LSP is explicitly enabled and the relevant server is available.
+- **FR-029**: LSP target uniqueness MUST be based on exactly one normalized semantic target after normalizing `Location` and `LocationLink` responses and deduplicating equivalent target ranges.
+- **FR-030**: In-workspace LSP corrections MUST require exactly one compatible CodeGraph node for the normalized target; external or unindexed LSP targets MAY suppress a conflicting active edge with audit metadata but MUST NOT create external graph nodes.
+- **FR-031**: Status output MUST include LSP precision state for human and JSON output: enabled state, last run, server availability, observed versions, per-language file coverage, and aggregate edge counts for checked, verified, corrected, suppressed, skipped-by-reason, and degraded.
+- **FR-032**: Project configuration MUST use a top-level `lsp` object with `enabled`, `defaultTimeoutMs`, optional `watch.enabled`, and `servers.<language>.command` / `servers.<language>.timeoutMs` entries keyed by CodeGraph language id.
+- **FR-033**: Environment overrides MUST use `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`, `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`, and `CODEGRAPH_LSP_TIMEOUT_MS`; command JSON MUST parse to a string array, invalid values MUST warn and fall back, and environment variables MUST NOT activate LSP precision by themselves.
+- **FR-034**: Effective activation precedence MUST be explicit CLI flag first, then `codegraph.json.lsp.enabled === true`, then default off; the CLI MUST support disabling LSP for one run even when project config opts in.
+- **FR-035**: Incremental watch LSP verification MUST reuse the existing sync/watch path, run only after normal sync/reference resolution, process only bounded changed-file sets, and skip with a recorded reason when no bounded changed-file list is available.
+
+### Server Prerequisite Matrix
+
+| Language | Required validation command or disposition | SPEC-008 validation rule |
+|---|---|---|
+| TypeScript / JavaScript | `typescript-language-server --stdio`; validate TypeScript SDK availability | Real-server validation required |
+| Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Real-server validation required |
+| Go | `gopls` | Real-server validation required |
+| Rust | `rust-analyzer` | Real-server validation required |
+| C / C++ | `clangd` | Real-server validation required |
+| Swift | `sourcekit-lsp` | Real-server validation required |
+| Java | `jdtls -configuration <dir> -data <workspace-data>` or equivalent configured JDT LS Java command | Real-server validation required |
+| C# | `csharp-ls` | Real-server validation required |
+| Kotlin | `kotlin-language-server` or `kotlin-lsp` | Real-server validation required |
+| PHP | `intelephense --stdio` or `phpactor language-server` | Real-server validation required |
+| Ruby | `ruby-lsp` or `solargraph stdio` | Real-server validation required |
+| Dart | `dart language-server` | Real-server validation required |
+| Vue | `vue-language-server --stdio`, with TypeScript SDK evidence and `--tsdk` when required | Real-server validation required |
+| COBOL | No SPEC-008 LSP server selected unless Plan deliberately chooses one | Parser/resolver parity evidence plus concrete numbered future-spec ownership required if no local LSP target is selected |
+
+Validation MUST record observed server versions and upstream minimum runtime
+requirements as evidence. It MUST NOT pin exact versions in the specification
+unless a server's own minimum runtime requirement makes a lower version invalid.
+
+Missing-prerequisite validation failures MUST use this message shape:
+`SPEC-008 real-server validation prerequisites failed. Missing required local
+language servers: <language>: expected <command or alternatives>. Install the
+server or configure codegraph.json/environment overrides. Normal codegraph index
+--lsp still degrades per language; this failure applies only to SPEC-008
+validation.`
 
 ### Reviewability Budget *(mandatory)*
 
@@ -141,13 +179,18 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 ### Key Entities *(include if feature involves data)*
 
 - **LSP Precision Setting**: The user-visible opt-in state that determines whether language-server verification runs for a project or indexing command.
-- **Language Server Configuration**: User-provided command and timeout choices for a language, including project-level and machine-local override values.
+- **Language Server Configuration**: User-provided command and timeout choices for a language, including `codegraph.json.lsp.servers.<language>.command` argv arrays, per-language timeouts, and machine-local environment override values.
 - **Server Availability Record**: The detected status for a language server, including available, unavailable, crashed, timed out, or not applicable for the current project.
 - **Language Coverage Record**: The per-language result describing whether files for that language were verified, degraded, or not present.
 - **Edge Verification Record**: The result of verifying an existing graph edge, including unchanged, upgraded, corrected, suppressed, or ambiguous.
-- **Correction Metadata**: Audit information explaining why a previous graph target was replaced or suppressed by a unique LSP result.
+- **Correction Metadata**: Audit information explaining why a previous graph target was replaced or suppressed by a unique LSP result, including previous target, new target when present, previous provenance, reason, language, server, and timestamp.
 - **Language Parity Row**: A baseline language row with SPEC-008 coverage status or concrete numbered future-spec ownership.
 - **Capability Parity Row**: A baseline feature or capability row with implementation evidence or concrete numbered future-spec ownership.
+
+Only active edges whose target was explicitly verified or corrected by the LSP
+pass are marked `provenance: "lsp"`. Existing static/null and heuristic edges
+that LSP does not verify remain unchanged. Corrected or suppressed edges record
+previous provenance and target details in correction metadata or an audit record.
 
 ## Success Criteria *(mandatory)*
 
@@ -163,6 +206,32 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - **SC-008**: The final SPEC-008 review packet includes a language parity table and a feature/capability parity table with 0 unowned gaps.
 - **SC-009**: The final SPEC-008 validation evidence covers all three vertical PR slices and records self-repo dogfood results with LSP explicitly enabled.
 
+## Configuration Contract
+
+`codegraph.json` uses a top-level LSP object:
+
+```json
+{
+  "lsp": {
+    "enabled": true,
+    "defaultTimeoutMs": 5000,
+    "watch": { "enabled": true },
+    "servers": {
+      "typescript": {
+        "command": ["typescript-language-server", "--stdio"],
+        "timeoutMs": 5000
+      }
+    }
+  }
+}
+```
+
+Language keys use CodeGraph language ids such as `typescript`, `javascript`,
+`cpp`, `csharp`, and `vue`. Environment overrides can replace command argv
+arrays or timeouts for the current machine, but cannot activate LSP precision.
+Activation precedence is: explicit CLI enable/disable, then
+`codegraph.json.lsp.enabled === true`, then default off.
+
 ## Assumptions
 
 - The users for this feature are developers and maintainers who run CodeGraph locally or in controlled validation environments.
@@ -172,3 +241,19 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - The internal parity baseline is authoritative for language and capability ownership; references to the baseline stay generic as the internal parity baseline, reproduced matrix, and baseline capability rows.
 - The exact concrete local server choices for languages with accepted alternatives are finalized during planning against current primary documentation.
 - The COBOL row requires an explicit parity disposition; if SPEC-008 does not select a local LSP target, a concrete numbered future spec owns the remaining LSP parity work.
+- The server prerequisite matrix is authoritative for Clarify and validation
+  planning; Plan records observed versions, install evidence, and any upstream
+  minimum runtime requirements.
+- Roadmap and PRD shorthand that describes edge provenance as `lsp | heuristic`
+  is interpreted as a high-level contrast between LSP-verified and non-LSP
+  resolution. It does not require rewriting untouched static/null provenance to
+  `heuristic`.
+- Incremental watch LSP verification follows the existing sync/watch lifecycle
+  and is enabled only when LSP precision is effectively enabled; it does not add
+  a second watcher pipeline.
+- Final vertical slices are: Slice 1 activation/config/status contracts,
+  client lifecycle, prereq detection, and one complete TypeScript/JavaScript
+  verification/correction path; Slice 2 correction/status generalization plus
+  Python, Go, Rust, C/C++, Swift, and Java coverage; Slice 3 remaining baseline
+  servers/dispositions, incremental watch verification, parity matrices,
+  self-repo dogfood, and validation packet.

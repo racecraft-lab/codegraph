@@ -2,24 +2,24 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-05T22:24:00Z",
-  "active_step": "Phase 2: Clarify - Server prereqs and validation",
+  "updated_at": "2026-07-05T22:55:00Z",
+  "active_step": "Phase 3: Plan",
   "confidence_gate_mode": "strict",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
     {"step": "Phase 1: Specify", "status": "completed"},
-    {"step": "Phase 2: Clarify - Server prereqs and validation", "status": "in_progress"},
-    {"step": "Phase 2: Clarify - Server prereqs and validation Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Language parity baseline", "status": "pending"},
-    {"step": "Phase 2: Clarify - Language parity baseline Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Feature and capability parity baseline", "status": "pending"},
-    {"step": "Phase 2: Clarify - Feature and capability parity baseline Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Edge correction and provenance", "status": "pending"},
-    {"step": "Phase 2: Clarify - Edge correction and provenance Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Activation, config, and slicing", "status": "pending"},
-    {"step": "Phase 2: Clarify - Activation, config, and slicing Consensus", "status": "pending"},
-    {"step": "Phase 3: Plan", "status": "pending"},
+    {"step": "Phase 2: Clarify - Server prereqs and validation", "status": "completed"},
+    {"step": "Phase 2: Clarify - Server prereqs and validation Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Language parity baseline", "status": "completed"},
+    {"step": "Phase 2: Clarify - Language parity baseline Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Feature and capability parity baseline", "status": "completed"},
+    {"step": "Phase 2: Clarify - Feature and capability parity baseline Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Edge correction and provenance", "status": "completed"},
+    {"step": "Phase 2: Clarify - Edge correction and provenance Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Activation, config, and slicing", "status": "completed"},
+    {"step": "Phase 2: Clarify - Activation, config, and slicing Consensus", "status": "completed"},
+    {"step": "Phase 3: Plan", "status": "in_progress"},
     {"step": "Phase 4: Checklist - Integration", "status": "pending"},
     {"step": "Phase 4: Checklist - Integration Consensus", "status": "pending"},
     {"step": "Phase 4: Checklist - Reliability", "status": "pending"},
@@ -109,6 +109,55 @@
         "specs/008-lsp-client-integration/checklists/requirements.md",
         ".specify/feature.json"
       ]
+    },
+    "phase_2_clarify": {
+      "session_1_server_prereqs": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "completed: baseline-full prerequisite matrix accepted with concrete local command alternatives",
+        "files": [
+          "specs/008-lsp-client-integration/spec.md",
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_1b_language_parity": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "skipped: no unresolved items",
+        "outcome": "SPEC-008 covers all baseline LSP rows except COBOL disposition; COBOL requires parser/resolver evidence plus SPEC-024 ownership unless Plan selects a concrete local LSP target.",
+        "files": [
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_1c_capability_parity": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "skipped: no unresolved items",
+        "outcome": "Baseline capability contract owner map accepted as authoritative; SPEC-024 remains concrete closure owner for remaining parity gaps unless Plan creates numbered child specs.",
+        "files": [
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_2_edge_provenance": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "completed: additive provenance semantics accepted by spec-context and codebase analysts",
+        "outcome": "Unique LSP target rules, correction audit metadata, active-edge provenance semantics, and status count requirements added to spec.md.",
+        "files": [
+          "specs/008-lsp-client-integration/spec.md",
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_3_activation_config_slicing": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "skipped: no unresolved items",
+        "outcome": "codegraph.json.lsp contract, environment override names, activation precedence, watch bounds, and final vertical slice boundaries added to spec.md.",
+        "files": [
+          "specs/008-lsp-client-integration/spec.md",
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      }
     }
   }
 }
