@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-05T22:55:00Z",
-  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-05T23:05:00Z",
+  "active_step": "Phase 4: Checklist - Integration",
   "confidence_gate_mode": "strict",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
@@ -19,8 +19,8 @@
     {"step": "Phase 2: Clarify - Edge correction and provenance Consensus", "status": "completed"},
     {"step": "Phase 2: Clarify - Activation, config, and slicing", "status": "completed"},
     {"step": "Phase 2: Clarify - Activation, config, and slicing Consensus", "status": "completed"},
-    {"step": "Phase 3: Plan", "status": "in_progress"},
-    {"step": "Phase 4: Checklist - Integration", "status": "pending"},
+    {"step": "Phase 3: Plan", "status": "completed"},
+    {"step": "Phase 4: Checklist - Integration", "status": "in_progress"},
     {"step": "Phase 4: Checklist - Integration Consensus", "status": "pending"},
     {"step": "Phase 4: Checklist - Reliability", "status": "pending"},
     {"step": "Phase 4: Checklist - Reliability Consensus", "status": "pending"},
@@ -158,6 +158,28 @@
           "docs/ai/specs/.process/SPEC-008-workflow.md"
         ]
       }
+    },
+    "phase_3_plan": {
+      "status": "completed",
+      "gate_g3": "passed: plan.md exists with 0 unresolved markers",
+      "reviewability_budget": {
+        "status": "not_estimated",
+        "projected": null,
+        "note": "No parseable production-file count entries were found by estimate-reviewable-loc.sh; advisory only."
+      },
+      "language_parity_rows": 16,
+      "capability_parity_rows": 17,
+      "unowned_parity_gaps": 0,
+      "files": [
+        "specs/008-lsp-client-integration/plan.md",
+        "specs/008-lsp-client-integration/research.md",
+        "specs/008-lsp-client-integration/data-model.md",
+        "specs/008-lsp-client-integration/quickstart.md",
+        "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+        "specs/008-lsp-client-integration/contracts/status-and-prereqs.md",
+        "specs/008-lsp-client-integration/contracts/edge-correction.md",
+        "CLAUDE.md"
+      ]
     }
   }
 }

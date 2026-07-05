@@ -33,10 +33,10 @@ plus feature parity against the internal baseline is a no-waiver gate.
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `$speckit-specify` | ⏳ Pending | Use roadmap + Design Concept decisions |
-| Clarify | `$speckit-clarify` | ⏳ Pending | Focus on real-server prereqs, correction semantics, and split boundaries |
-| Plan | `$speckit-plan` | ⏳ Pending | Must confirm server install/version evidence and three-slice plan |
-| Checklist | `$speckit-checklist` | ⏳ Pending | Run integration, reliability, performance, and data-integrity domains |
+| Specify | `$speckit-specify` | ✅ Complete | G1 passed; 28 FRs, 4 user stories, 14 acceptance scenarios |
+| Clarify | `$speckit-clarify` | ✅ Complete | G2 passed; prereqs, parity, correction semantics, config, and slices resolved |
+| Plan | `$speckit-plan` | ✅ Complete | G3 passed; parity tables have 0 unowned rows |
+| Checklist | `$speckit-checklist` | 🔄 In Progress | Run integration, reliability, performance, and data-integrity domains |
 | Tasks | `$speckit-tasks` | ⏳ Pending | Generate slice-aware tasks |
 | Analyze | `$speckit-analyze` | ⏳ Pending | Check drift against Design Concept and roadmap |
 | Implement | `$speckit-implement` | ⏳ Pending | TDD-first, real-server validation gate |
@@ -368,11 +368,17 @@ $speckit-plan
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | |
-| `research.md` | ⏳ | Must include language-server prereq/version evidence |
-| `data-model.md` | ⏳ | LSP registry, server status, verification result, correction metadata |
-| `contracts/` | ⏳ | CLI/config/status behavior and prereq contract |
-| `quickstart.md` | ⏳ | Must include real-server install/prereq check and self-repo dogfood |
+| `plan.md` | ✅ | Three vertical slices, constitution gates, language parity matrix, capability parity matrix |
+| `research.md` | ✅ | Records observed-version evidence policy and language-server prerequisite decisions |
+| `data-model.md` | ✅ | LSP registry, server status, verification result, correction metadata |
+| `contracts/` | ✅ | Config/activation, status/prereqs, and edge-correction contracts |
+| `quickstart.md` | ✅ | Real-server prereq checks, self-repo dogfood, parity validation |
+
+**Gate G3:** ✅ Passed — `plan.md` exists with 0 unresolved markers.
+
+**Reviewability budget:** Advisory `not_estimated`; the estimator found no
+parseable production-file count entries in `plan.md`, so this does not block the
+autonomous run.
 
 ---
 
