@@ -36,7 +36,7 @@ captured during scoping.
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 13 questions; 1 consensus run (both-agree) + 1 security item (conservative default, flagged); FR-016a added, FR-004/022/023 updated; G2 pass |
 | Plan | `/speckit-plan` | ✅ Complete | 8 artifacts (plan + research 16 decisions + data-model + quickstart + 4 contracts); constitution PASS ×2; G3 pass (1 false-positive marker reworded) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 99 items, 28 gaps found → 28 fixed, 0 remain; CRL rows 1–12 (4 security items conservative-default, flagged for operator review); G4 pass |
-| Tasks | `/speckit-tasks` | ⏳ Pending | |
+| Tasks | `/speckit-tasks` | ✅ Complete | 37 tasks, 6 phases, 14 [P]; full FR/SC traceability; G5 pass; size-only block → pr_marker_plan (2 stacked markers); atomicity = single-atomic-PR (version pin) |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
@@ -531,10 +531,17 @@ When checklist identifies `[Gap]` items:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 37 (T001–T037) |
+| **Phases** | 6 — Setup (1), Foundational (10), US1/Slice A (12), US2/Slice B (4), US3/Slice B (5), Polish (5) |
+| **Parallel Opportunities** | 14 tasks marked [P] |
+| **User Stories Covered** | US1 (12), US2 (4), US3 (5); Slice A = T001–T023, Slice B = T024–T037 |
+
+Notes: G5 pass (37 tasks). FR→task traceability table maps every FR-001…FR-031 (incl.
+a-variants), the plaintext-http advisory, and SC-001…SC-011 — zero uncovered. Phantom
+check trivially clean (0 tasks marked done pre-implementation). Reviewability gate
+(tasks): size-only block → marker-planning input (see Atomicity Route / pr_marker_plan
+below), not a re-slicing stop. Non-goals encoded as a binding top-of-file section;
+T035 asserts an empty src/mcp/ diff.
 
 ---
 
@@ -555,10 +562,28 @@ line count. Surface the four fields the SKILL extracts from the emitted decision
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
-| **Signals** | | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
-| **Warnings** | | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+| **Route** | `single-atomic-PR` | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
+| **Releasable** | `true` | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
+| **Signals** | `hard-atomic:global-version-pin` | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
+| **Warnings** | (none) | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+
+**Recorded 2026-07-05 (post-G5).** The classifier's `single-atomic-PR` differs from the
+scaffold-time expectation of `split-PR`: the schema-version pin (`CURRENT_SCHEMA_VERSION`
+7→8) is a hard-atomic seam shared by both slices. Reconciliation with the tasks
+reviewability gate's size-only `block` (1480 LOC / 24 prod files / 154 total — evidence:
+`specs/001-embedding-infrastructure/.process/reviewability/tasks-gate.json`): a
+**pr_marker_plan** was created (state:
+`specs/001-embedding-infrastructure/.process/autopilot-state.json`) with two ordered
+markers — M1-slice-a (T001–T023) → M2-slice-b (T024–T037) — emitted as a **stacked
+sequence** (M2's PR based on M1), never independent parallel PRs, honoring the
+version-pin atomicity while keeping each reviewable unit at the plan's ~500/~250 LOC
+projections. Advisory only; wires no PR emission or branch creation.
+
+## Layer Plan
+
+`layer_plan.status = skipped` — the atomicity route is `single-atomic-PR`, not
+`split-PR`, so the PRSG-008 layer planner was not run (autopilot step 8d). Route context
+carries forward via the pr_marker_plan above.
 
 To produce the decision, run the classifier against the feature directory:
 

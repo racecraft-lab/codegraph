@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "layer_plan": {
+    "status": "skipped",
+    "reason": "atomicity route is single-atomic-PR (not split-PR); plan-layers.sh not run per autopilot step 8d"
+  },
+  "pr_marker_plan": {
+    "created_at_phase": "tasks",
+    "source_fingerprint": {
+      "tasks_md_sha256": "c9b0d04de2dd5f557f4c011a8f686d50cfadb41148903ce3e30bd3401159b4f1",
+      "spec_md_sha256": "de13b97ed2b1675ba984cb914526a66b2ac5f6b7af8c136abd6227d6b6c3360e",
+      "plan_md_sha256": "71a6e15ba8cb3f4ed2d7dacdcd2b350fb1d2d18e8563d86365d9118a12362b2b"
+    },
+    "reviewability_finding": {
+      "mode": "tasks",
+      "status": "block",
+      "size_only": true,
+      "reviewable_loc": 1480,
+      "production_files": 24,
+      "total_files": 154,
+      "evidence_path": "specs/001-embedding-infrastructure/.process/reviewability/tasks-gate.json"
+    },
+    "hazard_route": {
+      "route": "single-atomic-PR",
+      "releasable": true,
+      "signals": ["hard-atomic:global-version-pin"],
+      "implication": "Markers MUST be emitted as an ORDERED STACK (marker B based on marker A), never independent parallel PRs — the global schema-version pin (CURRENT_SCHEMA_VERSION 7->8) lands exactly once, in marker A."
+    },
+    "markers": [
+      {
+        "id": "M1-slice-a",
+        "title": "Slice A — endpoint embedding on full index (US1: config, provider, client, migration v8, embed pass in indexAll, dims, status, progress)",
+        "tasks": ["T001","T002","T003","T004","T005","T006","T007","T008","T009","T010","T011","T012","T013","T014","T015","T016","T017","T018","T019","T020","T021","T022","T023"],
+        "review_order": 1
+      },
+      {
+        "id": "M2-slice-b",
+        "title": "Slice B — incremental + healing (US2+US3: input_hash incremental sync, reconciliation delete, daemon/watcher, sync-heal backfill, abort/resume) + polish",
+        "tasks": ["T024","T025","T026","T027","T028","T029","T030","T031","T032","T033","T034","T035","T036","T037"],
+        "review_order": 2
+      }
+    ],
+    "review_order": ["M1-slice-a", "M2-slice-b"],
+    "checkpoints": [],
+    "warnings": [
+      "Full-diff totals exceed block thresholds; the 2 ordered markers keep each reviewable unit near the plan's projected ~500 (Slice A) / ~250 (Slice B) production LOC.",
+      "Emission must be stacked (M2 PR based on M1), honoring the hard-atomic global-version-pin signal."
+    ],
+    "final_marker_split": null,
+    "packet_validation": null,
+    "pr_mappings": null
+  }
+}
