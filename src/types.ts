@@ -101,6 +101,7 @@ export const LANGUAGES = [
   'cobol',
   'vbnet',
   'erlang',
+  'ocaml',
   'unknown',
 ] as const;
 

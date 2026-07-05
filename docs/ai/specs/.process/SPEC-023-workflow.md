@@ -613,30 +613,30 @@ languages, resolver paths, MCP tools, or installer code.
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| Grammar/status | Pending | Pending | WASM + copy-assets + status |
-| Broad extraction | Pending | Pending | Syntax fixtures first |
-| Resolution/packages | Pending | Pending | Conservative module/dune/package handling |
-| PPX gate | Pending | Pending | Research/split/roadmap decision |
-| Validation/eval | Pending | Pending | Fixtures, real repos, agent-eval |
-| Docs/UAT | Pending | Pending | Self-repo and language docs |
+| Grammar/status | Complete | T001-T018, T057 | OCaml implementation/interface WASMs vendored; public `ocaml` status path verified; build copies both artifacts. |
+| Broad extraction | Complete | T019-T029, T062-T066 | Fixtures and tests cover modules, signatures, functors, classes/objects, labels, records, variants, GADTs, polymorphic variants, and PPX parse-preservation boundaries. |
+| Resolution/packages | Complete | T030-T043, T061 | Conservative OCaml unique-only resolution is implemented for local module/interface/dune cases; ambiguous package and external package cases fail closed. |
+| PPX gate | Complete | T005, T036, T062-T066, T074 pending scan | PPX expansion remains out of scope; attributes/extensions are parsed and documented without generated graph edges. |
+| Validation/eval | Blocked | T044-T056, T059 complete; T060 open | Real-repo smoke/probes are complete for Yojson, OCaml-LSP, and Dune; Yojson and OCaml-LSP A/B are complete with weak/partial adoption; existing-language A/B remains gated. |
+| Docs/UAT | In Progress | T067-T069, T072-T074 complete; T070-T071 open | README, changelog, grammar docs, validation index, self-repo smoke, PR packet, and marker scan are recorded; full quickstart pass and final reviewability remain pending. |
 
 ---
 
 ## Post-Implementation Checklist
 
-- [ ] `spec.md`, `plan.md`, `tasks.md`, and supporting artifacts are complete.
-- [ ] PPX route is resolved before PPX-related implementation.
-- [ ] Both OCaml grammar artifacts are copied into `dist/` by `npm run build`.
-- [ ] Extraction/resolution fixtures pass.
-- [ ] `codegraph status` reports OCaml language support.
-- [ ] Real OCaml repo smoke evidence is recorded.
-- [ ] Deterministic probes are recorded for all nine pinned retrieval questions.
-- [ ] Yojson and OCaml-LSP headless A/B proof is recorded; any Dune A/B split has an explicit follow-up gate.
+- [x] `spec.md`, `plan.md`, `tasks.md`, and supporting artifacts are complete.
+- [x] PPX route is resolved before PPX-related implementation.
+- [x] Both OCaml grammar artifacts are copied into `dist/` by `npm run build`.
+- [x] Extraction/resolution fixtures pass.
+- [x] `codegraph status` reports OCaml language support.
+- [x] Real OCaml repo smoke evidence is recorded.
+- [x] Deterministic probes are recorded for all nine pinned retrieval questions.
+- [x] Yojson and OCaml-LSP headless A/B proof is recorded; any Dune A/B split has an explicit follow-up gate.
 - [ ] Existing language/control tests remain green.
-- [ ] `npm run build`, `npm run typecheck`, and `npm test` are recorded.
+- [x] `npm run build`, `npm run typecheck`, and `npm test` are recorded.
 - [ ] UAT runbook includes the required self-repo step.
-- [ ] CHANGELOG `## [Unreleased]` entry is user-facing and avoids internals.
-- [ ] PR packet records scope budget, review order, non-goals, verification,
+- [x] CHANGELOG `## [Unreleased]` entry is user-facing and avoids internals.
+- [x] PR packet records scope budget, review order, non-goals, verification,
   known gaps, and rollback notes.
 
 ### Canonical Post Items

@@ -1,7 +1,7 @@
 {
   "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T20:27:33Z",
-  "active_step": "Phase 7: Implement - Pending task decomposition",
+  "updated_at": "2026-07-05T21:48:00Z",
+  "active_step": "Phase 7: Implement - A/B and existing-language control gates (T054-T056, T059-T060)",
   "spec_id": "SPEC-023",
   "feature_dir": "specs/023-ocaml-language-support",
   "branch": "023-ocaml-language-support",
@@ -204,6 +204,30 @@
     "reason": "confidence-gate.sh returned NO_DATA because no synthesizer confidence emit was present in the workflow file",
     "recommended_action": "soft_skip"
   },
+  "phase7_evidence": {
+    "implementation": "Grammar/status, extraction, resolution/package metadata, PPX boundary, docs, local tests, real-repo smoke, deterministic probes, and self-repo retrieval smoke are recorded.",
+    "completed_task_ranges": [
+      "T001-T053",
+      "T054",
+      "T055",
+      "T056-T059",
+      "T061-T069",
+      "T072-T074"
+    ],
+    "open_tasks": [
+      "T060 existing-language A/B control",
+      "T070 quickstart full pass",
+      "T071 final reviewability after implementation is review-ready"
+    ],
+    "blocked_gates": [
+      {
+        "task": "T060",
+        "reason": "existing-language A/B is applicable because shared grammar/parser/import-resolution/resolver orchestration changed, but safe-runner constraints and clean comparison setup are unresolved",
+        "evidence": "specs/023-ocaml-language-support/validation/existing-language-ab-gate.md"
+      }
+    ],
+    "self_repo_smoke": "specs/023-ocaml-language-support/validation/self-repo-smoke.md"
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -294,8 +318,20 @@
       "status": "skipped: advisory confidence gate returned NO_DATA and recommended soft_skip"
     },
     {
-      "step": "Phase 7: Implement - Pending task decomposition",
+      "step": "Phase 7: Implement - setup, grammar, status, extraction, resolution, PPX, docs completed (T001-T047, T057-T058, T061-T069)",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Implement - real-repo smoke and deterministic probes (T048-T053)",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Implement - A/B and existing-language control gates (T054-T056, T059-T060)",
       "status": "in_progress"
+    },
+    {
+      "step": "Phase 7: Implement - quickstart, reviewability, PR packet, marker scan (T070-T074)",
+      "status": "pending"
     },
     {
       "step": "Post: Doctor Extension Check",

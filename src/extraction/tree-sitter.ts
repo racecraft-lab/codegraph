@@ -422,7 +422,7 @@ export class TreeSitterExtractor {
       };
     }
 
-    const parser = getParser(this.language);
+    const parser = getParser(this.language, this.filePath);
     if (!parser) {
       return {
         nodes: [],

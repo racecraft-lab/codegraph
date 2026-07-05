@@ -24,6 +24,7 @@ import { createYielder, type MaybeYield } from './cooperative-yield';
 import { loadProjectAliases, type AliasMap } from './path-aliases';
 import { loadGoModule, type GoModule } from './go-module';
 import { loadWorkspacePackages, type WorkspacePackages } from './workspace-packages';
+import { isOcamlUniqueOnlyReference } from './ocaml-resolver';
 import { logDebug } from '../errors';
 import type { ReExport } from './types';
 import { LRUCache } from './lru-cache';
@@ -578,6 +579,7 @@ export class ReferenceResolver {
       column: ref.column,
       filePath: ref.filePath || this.getFilePathFromNodeId(ref.fromNodeId),
       language: ref.language || this.getLanguageFromNodeId(ref.fromNodeId),
+      candidates: ref.candidates,
     }));
 
     const total = refs.length;
@@ -811,6 +813,10 @@ export class ReferenceResolver {
       candidates.push(importResult);
     }
 
+    if (isOcamlUniqueOnlyReference(ref)) {
+      return null;
+    }
+
     // PHP include/require paths resolve to files via import resolution only.
     // If that didn't find the file, do NOT fall back to the symbol
     // name-matcher — it would mis-connect e.g. "inc/db.php" to an unrelated
@@ -1014,6 +1020,7 @@ export class ReferenceResolver {
         column: raw.column,
         filePath: raw.filePath || this.getFilePathFromNodeId(raw.fromNodeId),
         language: raw.language || this.getLanguageFromNodeId(raw.fromNodeId),
+        candidates: raw.candidates,
       };
       const result = this.resolveOne(ref);
       if (result) {

@@ -1,0 +1,84 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { CodeGraph } from '../src';
+import type { Node } from '../src/types';
+
+const RESOLUTION_FIXTURES = path.resolve(__dirname, 'fixtures/ocaml/resolution');
+
+function findNode(cg: CodeGraph, kind: Node['kind'], name: string, filePath: string): Node {
+  const node = cg.getNodesByKind(kind).find((candidate) =>
+    candidate.name === name && candidate.filePath === filePath
+  );
+  if (!node) throw new Error(`missing ${kind} ${name} in ${filePath}`);
+  return node;
+}
+
+describe('OCaml conservative resolution', () => {
+  let tempDir: string | null = null;
+  let cg: CodeGraph | null = null;
+
+  afterEach(() => {
+    cg?.close();
+    cg = null;
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    tempDir = null;
+  });
+
+  async function indexFixture(...fixtureDirs: string[]): Promise<CodeGraph> {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-ocaml-resolution-'));
+    for (const dir of fixtureDirs) {
+      fs.cpSync(path.join(RESOLUTION_FIXTURES, dir), tempDir, { recursive: true });
+    }
+    cg = CodeGraph.initSync(tempDir);
+    await cg.indexAll();
+    return cg;
+  }
+
+  it('resolves module opens, includes, functor applications, and qualified calls only when unique', async () => {
+    const graph = await indexFixture('workspace', 'positive');
+
+    const consumer = findNode(graph, 'module', 'Consumer', 'consumer.ml');
+    const built = findNode(graph, 'module', 'Built', 'consumer.ml');
+    const use = findNode(graph, 'function', 'use', 'consumer.ml');
+    const fooInterface = findNode(graph, 'module', 'Foo', 'foo.mli');
+    const commonSignature = findNode(graph, 'interface', 'S', 'common.mli');
+    const makeFunctor = findNode(graph, 'module', 'Make', 'functors.ml');
+    const runImplementation = findNode(graph, 'function', 'run', 'foo.ml');
+
+    expect(graph.getOutgoingEdges(consumer.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'imports', target: fooInterface.id }),
+      expect.objectContaining({ kind: 'references', target: commonSignature.id }),
+    ]));
+    expect(graph.getOutgoingEdges(built.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'references', target: makeFunctor.id }),
+      expect.objectContaining({ kind: 'references', target: fooInterface.id }),
+    ]));
+    expect(graph.getOutgoingEdges(use.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'calls', target: runImplementation.id }),
+    ]));
+  });
+
+  it('does not guess across duplicate modules or external package-looking paths', async () => {
+    const graph = await indexFixture('workspace', 'negative');
+
+    const ambiguous = findNode(graph, 'module', 'Ambiguous', 'ambiguous.ml');
+    const call = findNode(graph, 'function', 'call', 'ambiguous.ml');
+    const externalPackage = findNode(graph, 'module', 'External_package', 'external_package.ml');
+
+    const utilTargets = [
+      findNode(graph, 'module', 'Util', 'a/util.ml').id,
+      findNode(graph, 'module', 'Util', 'b/util.ml').id,
+    ];
+    const runTargets = graph
+      .getNodesByKind('function')
+      .filter((node) => node.name === 'run' && node.filePath.endsWith('/util.ml'))
+      .map((node) => node.id);
+
+    expect(graph.getOutgoingEdges(ambiguous.id).some((edge) => utilTargets.includes(edge.target))).toBe(false);
+    expect(graph.getOutgoingEdges(call.id).some((edge) => runTargets.includes(edge.target))).toBe(false);
+    expect(graph.getOutgoingEdges(externalPackage.id).filter((edge) => edge.kind !== 'contains')).toHaveLength(0);
+    expect((graph.getStats().nodesByKind as Record<string, number>).package).toBeUndefined();
+  });
+});

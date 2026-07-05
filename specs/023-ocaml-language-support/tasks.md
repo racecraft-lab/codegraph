@@ -14,13 +14,13 @@
 
 **Purpose**: Establish reviewability, provenance, validation evidence locations, and the PPX gate before implementation tasks begin.
 
-- [ ] T001 Record the SPEC-023 implementation slice route and reviewability budget in `specs/023-ocaml-language-support/implementation-slices.md`
-- [ ] T002 Document `tree-sitter-ocaml@0.24.2` source, MIT license, npm integrity, gitHead, and required WASM names in `docs/grammars/tree-sitter-ocaml.md`
-- [ ] T003 [P] Create the validation evidence index with required smoke/probe/A/B/control fields in `specs/023-ocaml-language-support/validation/README.md`
-- [ ] T004 [P] Create the PR packet traceability template for FR/SC-to-file/evidence mapping in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
-- [ ] T005 Resolve the PPX research gate as unsupported/future work for SPEC-023 before PPX-adjacent coding in `specs/023-ocaml-language-support/ppx-policy.md`
-- [ ] T006 Record no-native-runtime, no-runtime-network, and permissive-asset constraints for SPEC-023 in `specs/023-ocaml-language-support/validation/safety-license.md`
-- [ ] T007 Run the post-tasks atomicity route and record split/releasability output in `specs/023-ocaml-language-support/implementation-slices.md`
+- [X] T001 Record the SPEC-023 implementation slice route and reviewability budget in `specs/023-ocaml-language-support/implementation-slices.md`
+- [X] T002 Document `tree-sitter-ocaml@0.24.2` source, MIT license, npm integrity, gitHead, and required WASM names in `docs/grammars/tree-sitter-ocaml.md`
+- [X] T003 [P] Create the validation evidence index with required smoke/probe/A/B/control fields in `specs/023-ocaml-language-support/validation/README.md`
+- [X] T004 [P] Create the PR packet traceability template for FR/SC-to-file/evidence mapping in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
+- [X] T005 Resolve the PPX research gate as unsupported/future work for SPEC-023 before PPX-adjacent coding in `specs/023-ocaml-language-support/ppx-policy.md`
+- [X] T006 Record no-native-runtime, no-runtime-network, and permissive-asset constraints for SPEC-023 in `specs/023-ocaml-language-support/validation/safety-license.md`
+- [X] T007 Run the post-tasks atomicity route and record split/releasability output in `specs/023-ocaml-language-support/implementation-slices.md`
 
 ---
 
@@ -30,17 +30,17 @@
 
 **Critical**: No user-story implementation should begin until this phase is complete.
 
-- [ ] T008 Create representative parser health fixture samples for `.ml` and `.mli` in `__tests__/fixtures/ocaml/parser-health/`
-- [ ] T009 Write failing parser health tests for `tree-sitter-ocaml.wasm` and `tree-sitter-ocaml_interface.wasm` in `__tests__/ocaml-parser-health.test.ts`
-- [ ] T010 Write failing copied-artifact assertions for both OCaml WASMs under `dist/extraction/wasm/` in `__tests__/ocaml-parser-health.test.ts`
-- [ ] T011 Create fixture files for OCaml language detection and status output in `__tests__/fixtures/ocaml/status/`
-- [ ] T012 Write failing `codegraph status` and language-count tests for OCaml `.ml` and `.mli` files in `__tests__/ocaml-status.test.ts`
-- [ ] T013 Vendor `tree-sitter-ocaml.wasm` from `tree-sitter-ocaml@0.24.2` into `src/extraction/wasm/tree-sitter-ocaml.wasm`
-- [ ] T014 Vendor `tree-sitter-ocaml_interface.wasm` from `tree-sitter-ocaml@0.24.2` into `src/extraction/wasm/tree-sitter-ocaml_interface.wasm`
-- [ ] T015 Add the public `ocaml` language token, `.ml`/`.mli` source-file coverage, and grammar metadata in `src/types.ts` and `src/extraction/grammars.ts`
-- [ ] T016 Verify `npm run build` copies both OCaml WASM artifacts from `src/extraction/wasm/` into `dist/extraction/wasm/` through the existing wildcard `copy-assets` path, editing `package.json` only if that wildcard path no longer covers new WASMs
-- [ ] T017 Add extension-aware internal OCaml parser selection so `.ml` and `.mli` both detect/store/report as `ocaml`, while `.mli` loads `tree-sitter-ocaml_interface.wasm` instead of a second public language, in `src/extraction/grammars.ts` and parser callers
-- [ ] T018 Run parser health, copied-artifact, and status tests and record results in `specs/023-ocaml-language-support/validation/grammar-status.md`
+- [X] T008 Create representative parser health fixture samples for `.ml` and `.mli` in `__tests__/fixtures/ocaml/parser-health/`
+- [X] T009 Write failing parser health tests for `tree-sitter-ocaml.wasm` and `tree-sitter-ocaml_interface.wasm` in `__tests__/ocaml-parser-health.test.ts`
+- [X] T010 Write failing copied-artifact assertions for both OCaml WASMs under `dist/extraction/wasm/` in `__tests__/ocaml-parser-health.test.ts`
+- [X] T011 Create fixture files for OCaml language detection and status output in `__tests__/fixtures/ocaml/status/`
+- [X] T012 Write failing `codegraph status` and language-count tests for OCaml `.ml` and `.mli` files in `__tests__/ocaml-status.test.ts`
+- [X] T013 Vendor `tree-sitter-ocaml.wasm` from `tree-sitter-ocaml@0.24.2` into `src/extraction/wasm/tree-sitter-ocaml.wasm`
+- [X] T014 Vendor `tree-sitter-ocaml_interface.wasm` from `tree-sitter-ocaml@0.24.2` into `src/extraction/wasm/tree-sitter-ocaml_interface.wasm`
+- [X] T015 Add the public `ocaml` language token, `.ml`/`.mli` source-file coverage, and grammar metadata in `src/types.ts` and `src/extraction/grammars.ts`
+- [X] T016 Verify `npm run build` copies both OCaml WASM artifacts from `src/extraction/wasm/` into `dist/extraction/wasm/` through the existing wildcard `copy-assets` path, editing `package.json` only if that wildcard path no longer covers new WASMs
+- [X] T017 Add extension-aware internal OCaml parser selection so `.ml` and `.mli` both detect/store/report as `ocaml`, while `.mli` loads `tree-sitter-ocaml_interface.wasm` instead of a second public language, in `src/extraction/grammars.ts` and parser callers
+- [X] T018 Run parser health, copied-artifact, and status tests and record results in `specs/023-ocaml-language-support/validation/grammar-status.md`
 
 **Checkpoint**: Grammar/status slice can be reviewed independently but must not claim complete OCaml support.
 
@@ -54,20 +54,20 @@
 
 ### Tests for User Story 1
 
-- [ ] T019 [P] [US1] Create broad implementation syntax fixtures covering modules, functors, types, records, variants, values, functions, lets, classes, objects, local modules, first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions in `__tests__/fixtures/ocaml/broad-syntax/implementation.ml`
-- [ ] T020 [P] [US1] Create interface syntax fixtures covering `val`, `external`, type, record, variant, GADT, polymorphic variant, module, module type, class type, class, method, `open`, and `include` declarations in `__tests__/fixtures/ocaml/broad-syntax/interface.mli`
-- [ ] T021 [US1] Write failing extraction tests for `.ml` and `.mli` file recognition, node kinds, spans, and containment in `__tests__/ocaml-extraction.test.ts`
-- [ ] T022 [US1] Write failing extraction tests for labeled parameters, optional parameters, pattern-only bindings, and nearest-owner fallback spans in `__tests__/ocaml-extraction.test.ts`
-- [ ] T023 [US1] Write failing extraction tests for interface declaration symbol kinds and source/interface-only behavior in `__tests__/ocaml-extraction.test.ts`
+- [X] T019 [P] [US1] Create broad implementation syntax fixtures covering modules, functors, types, records, variants, values, functions, lets, classes, objects, local modules, first-class modules, GADTs, polymorphic variants, attributes, extension nodes, and pattern-heavy definitions in `__tests__/fixtures/ocaml/broad-syntax/implementation.ml`
+- [X] T020 [P] [US1] Create interface syntax fixtures covering `val`, `external`, type, record, variant, GADT, polymorphic variant, module, module type, class type, class, method, `open`, and `include` declarations in `__tests__/fixtures/ocaml/broad-syntax/interface.mli`
+- [X] T021 [US1] Write failing extraction tests for `.ml` and `.mli` file recognition, node kinds, spans, and containment in `__tests__/ocaml-extraction.test.ts`
+- [X] T022 [US1] Write failing extraction tests for labeled parameters, optional parameters, pattern-only bindings, and nearest-owner fallback spans in `__tests__/ocaml-extraction.test.ts`
+- [X] T023 [US1] Write failing extraction tests for interface declaration symbol kinds and source/interface-only behavior in `__tests__/ocaml-extraction.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] Implement the OCaml language extractor skeleton and source-unit handling in `src/extraction/languages/ocaml.ts`
-- [ ] T025 [US1] Implement OCaml module, signature, functor, type, record, variant, GADT, polymorphic variant, value, function, and let-binding extraction in `src/extraction/languages/ocaml.ts`
-- [ ] T026 [US1] Implement OCaml class, object, method, field, labeled/optional parameter, local module, first-class module, attribute, extension-node, and pattern-heavy extraction behavior in `src/extraction/languages/ocaml.ts`
-- [ ] T027 [US1] Implement stable source-span, containment, nearest-owner fallback, and no-synthetic-name handling in `src/extraction/languages/ocaml.ts`
-- [ ] T028 [US1] Register the OCaml extractor in `src/extraction/languages/index.ts`
-- [ ] T029 [US1] Verify User Story 1 extraction/status tests and record node/span coverage in `specs/023-ocaml-language-support/validation/extraction.md`
+- [X] T024 [US1] Implement the OCaml language extractor skeleton and source-unit handling in `src/extraction/languages/ocaml.ts`
+- [X] T025 [US1] Implement OCaml module, signature, functor, type, record, variant, GADT, polymorphic variant, value, function, and let-binding extraction in `src/extraction/languages/ocaml.ts`
+- [X] T026 [US1] Implement OCaml class, object, method, field, labeled/optional parameter, local module, first-class module, attribute, extension-node, and pattern-heavy extraction behavior in `src/extraction/languages/ocaml.ts`
+- [X] T027 [US1] Implement stable source-span, containment, nearest-owner fallback, and no-synthetic-name handling in `src/extraction/languages/ocaml.ts`
+- [X] T028 [US1] Register the OCaml extractor in `src/extraction/languages/index.ts`
+- [X] T029 [US1] Verify User Story 1 extraction/status tests and record node/span coverage in `specs/023-ocaml-language-support/validation/extraction.md`
 
 **Checkpoint**: User Story 1 should be independently functional and reviewable as grammar/status plus broad extraction, without claiming resolution or complete OCaml support.
 
@@ -81,23 +81,23 @@
 
 ### Tests for User Story 2
 
-- [ ] T030 [P] [US2] Create positive resolution fixtures for module paths, nested modules, local opens, includes, functor applications, functor arguments, result-module aliases, and unique `.ml`/`.mli` pairs in `__tests__/fixtures/ocaml/resolution/positive/`
-- [ ] T031 [P] [US2] Create Dune and opam metadata fixtures using checked-in `dune-project`, `dune`, root `*.opam`, and `opam/*.opam` files in `__tests__/fixtures/ocaml/resolution/workspace/`
-- [ ] T032 [P] [US2] Create negative ambiguity fixtures for duplicate module candidates, ambiguous interface pairs, ambiguous package metadata, unsupported PPX-generated references, and functor result elaboration cases in `__tests__/fixtures/ocaml/resolution/negative/`
-- [ ] T033 [US2] Write failing positive resolution tests for module paths, functor references/applications, opens, includes, interface pairing, and metadata-constrained local relationships in `__tests__/ocaml-resolution.test.ts`
-- [ ] T034 [US2] Write failing negative resolution tests proving ambiguous module/package candidates emit no edge in `__tests__/ocaml-resolution.test.ts`
-- [ ] T035 [US2] Write failing graph-shape tests proving no package nodes and no external package edges are produced in `__tests__/ocaml-resolution.test.ts`
-- [ ] T036 [US2] Write failing tests proving no PPX expansion and no functor result elaboration or type-equality inference in `__tests__/ocaml-resolution.test.ts`
+- [X] T030 [P] [US2] Create positive resolution fixtures for module paths, nested modules, local opens, includes, functor applications, functor arguments, result-module aliases, and unique `.ml`/`.mli` pairs in `__tests__/fixtures/ocaml/resolution/positive/`
+- [X] T031 [P] [US2] Create Dune and opam metadata fixtures using checked-in `dune-project`, `dune`, root `*.opam`, and `opam/*.opam` files in `__tests__/fixtures/ocaml/resolution/workspace/`
+- [X] T032 [P] [US2] Create negative ambiguity fixtures for duplicate module candidates, ambiguous interface pairs, ambiguous package metadata, unsupported PPX-generated references, and functor result elaboration cases in `__tests__/fixtures/ocaml/resolution/negative/`
+- [X] T033 [US2] Write failing positive resolution tests for module paths, functor references/applications, opens, includes, interface pairing, and metadata-constrained local relationships in `__tests__/ocaml-resolution.test.ts`
+- [X] T034 [US2] Write failing negative resolution tests proving ambiguous module/package candidates emit no edge in `__tests__/ocaml-resolution.test.ts`
+- [X] T035 [US2] Write failing graph-shape tests proving no package nodes and no external package edges are produced in `__tests__/ocaml-resolution.test.ts`
+- [X] T036 [US2] Write failing tests proving no PPX expansion and no functor result elaboration or type-equality inference in `__tests__/ocaml-resolution.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T037 [US2] Implement checked-in Dune and opam metadata discovery for local OCaml boundaries in `src/resolution/ocaml-workspace.ts`
-- [ ] T038 [US2] Implement unique-only OCaml module candidate selection for qualified paths, nested modules, opens, and includes in `src/resolution/ocaml-resolver.ts`
-- [ ] T039 [US2] Implement unique same-directory `.ml`/`.mli` pairing constraints in `src/resolution/ocaml-resolver.ts`
-- [ ] T040 [US2] Implement statically named functor reference/application relationships without result elaboration in `src/resolution/ocaml-resolver.ts`
-- [ ] T041 [US2] Integrate OCaml local relationship resolution into the existing resolver path in `src/resolution/import-resolver.ts`
-- [ ] T042 [US2] Enforce no package nodes, no external package edges, no installed switch state, no lock/template metadata, and no network package state in `src/resolution/ocaml-workspace.ts`
-- [ ] T043 [US2] Verify User Story 2 resolution tests and record positive/negative edge evidence in `specs/023-ocaml-language-support/validation/resolution.md`
+- [X] T037 [US2] Implement checked-in Dune and opam metadata discovery for local OCaml boundaries in `src/resolution/ocaml-workspace.ts`
+- [X] T038 [US2] Implement unique-only OCaml module candidate selection for qualified paths, nested modules, opens, and includes in `src/resolution/ocaml-resolver.ts`
+- [X] T039 [US2] Implement unique same-directory `.ml`/`.mli` pairing constraints in `src/resolution/ocaml-resolver.ts`
+- [X] T040 [US2] Implement statically named functor reference/application relationships without result elaboration in `src/resolution/ocaml-resolver.ts`
+- [X] T041 [US2] Integrate OCaml local relationship resolution into the existing resolver path in `src/resolution/import-resolver.ts`
+- [X] T042 [US2] Enforce no package nodes, no external package edges, no installed switch state, no lock/template metadata, and no network package state in `src/resolution/ocaml-workspace.ts`
+- [X] T043 [US2] Verify User Story 2 resolution tests and record positive/negative edge evidence in `specs/023-ocaml-language-support/validation/resolution.md`
 
 **Checkpoint**: User Story 2 should be independently reviewable as conservative local resolution. PPX expansion, package graph modeling, and typechecker-grade semantics remain out of scope.
 
@@ -111,30 +111,30 @@
 
 ### Validation Setup for User Story 3
 
-- [ ] T044 [US3] Create the nine-question deterministic retrieval probe matrix for Yojson, OCaml-LSP, and Dune in `specs/023-ocaml-language-support/validation/retrieval-probes.md`
-- [ ] T045 [P] [US3] Create the Yojson smoke evidence file with URL, commit SHA, index command, `filesByLanguage`, node count, edge count, parse warnings/errors, second-run stability, and retrieval probe outcome fields in `specs/023-ocaml-language-support/validation/yojson-smoke.md`
-- [ ] T046 [P] [US3] Create the OCaml-LSP smoke evidence file with URL, commit SHA, index command, `filesByLanguage`, node count, edge count, parse warnings/errors, second-run stability, and retrieval probe outcome fields in `specs/023-ocaml-language-support/validation/ocaml-lsp-smoke.md`
-- [ ] T047 [P] [US3] Create the Dune smoke evidence file with URL, commit SHA, index command, `filesByLanguage`, node count, edge count, parse warnings/errors, second-run stability, and retrieval probe outcome fields in `specs/023-ocaml-language-support/validation/dune-smoke.md`
+- [X] T044 [US3] Create the nine-question deterministic retrieval probe matrix for Yojson, OCaml-LSP, and Dune in `specs/023-ocaml-language-support/validation/retrieval-probes.md`
+- [X] T045 [P] [US3] Create the Yojson smoke evidence file with URL, commit SHA, index command, `filesByLanguage`, node count, edge count, parse warnings/errors, second-run stability, and retrieval probe outcome fields in `specs/023-ocaml-language-support/validation/yojson-smoke.md`
+- [X] T046 [P] [US3] Create the OCaml-LSP smoke evidence file with URL, commit SHA, index command, `filesByLanguage`, node count, edge count, parse warnings/errors, second-run stability, and retrieval probe outcome fields in `specs/023-ocaml-language-support/validation/ocaml-lsp-smoke.md`
+- [X] T047 [P] [US3] Create the Dune smoke evidence file with URL, commit SHA, index command, `filesByLanguage`, node count, edge count, parse warnings/errors, second-run stability, and retrieval probe outcome fields in `specs/023-ocaml-language-support/validation/dune-smoke.md`
 
 ### Smoke and Probe Evidence for User Story 3
 
-- [ ] T048 [P] [US3] Run `ocaml-community/yojson` smoke, second-run stability, and `codegraph status` evidence and record metrics in `specs/023-ocaml-language-support/validation/yojson-smoke.md`
-- [ ] T049 [P] [US3] Run `ocaml/ocaml-lsp` smoke, second-run stability, and `codegraph status` evidence and record metrics in `specs/023-ocaml-language-support/validation/ocaml-lsp-smoke.md`
-- [ ] T050 [P] [US3] Run `ocaml/dune` smoke, second-run stability, and `codegraph status` evidence and record metrics in `specs/023-ocaml-language-support/validation/dune-smoke.md`
-- [ ] T051 [P] [US3] Run `scripts/agent-eval/probe-explore.mjs` and `scripts/agent-eval/probe-node.mjs` for Yojson `from_string`, `to_string` or pretty-print, and Safe/Common/Util `.ml`/`.mli` exposure questions and record results in `specs/023-ocaml-language-support/validation/yojson-probes.md`
-- [ ] T052 [P] [US3] Run `scripts/agent-eval/probe-explore.mjs` and `scripts/agent-eval/probe-node.mjs` for OCaml-LSP `textDocument/hover`, `textDocument/completion`, and Dune RPC diagnostics questions and record results in `specs/023-ocaml-language-support/validation/ocaml-lsp-probes.md`
-- [ ] T053 [P] [US3] Run `scripts/agent-eval/probe-explore.mjs` and `scripts/agent-eval/probe-node.mjs` for Dune `dune build` stanza-to-rule, `dune-project`/opam metadata, and scheduler/action execution questions and record results in `specs/023-ocaml-language-support/validation/dune-probes.md`
+- [X] T048 [P] [US3] Run `ocaml-community/yojson` smoke, second-run stability, and `codegraph status` evidence and record metrics in `specs/023-ocaml-language-support/validation/yojson-smoke.md`
+- [X] T049 [P] [US3] Run `ocaml/ocaml-lsp` smoke, second-run stability, and `codegraph status` evidence and record metrics in `specs/023-ocaml-language-support/validation/ocaml-lsp-smoke.md`
+- [X] T050 [P] [US3] Run `ocaml/dune` smoke, second-run stability, and `codegraph status` evidence and record metrics in `specs/023-ocaml-language-support/validation/dune-smoke.md`
+- [X] T051 [P] [US3] Run `scripts/agent-eval/probe-explore.mjs` and `scripts/agent-eval/probe-node.mjs` for Yojson `from_string`, `to_string` or pretty-print, and Safe/Common/Util `.ml`/`.mli` exposure questions and record results in `specs/023-ocaml-language-support/validation/yojson-probes.md`
+- [X] T052 [P] [US3] Run `scripts/agent-eval/probe-explore.mjs` and `scripts/agent-eval/probe-node.mjs` for OCaml-LSP `textDocument/hover`, `textDocument/completion`, and Dune RPC diagnostics questions and record results in `specs/023-ocaml-language-support/validation/ocaml-lsp-probes.md`
+- [X] T053 [P] [US3] Run `scripts/agent-eval/probe-explore.mjs` and `scripts/agent-eval/probe-node.mjs` for Dune `dune build` stanza-to-rule, `dune-project`/opam metadata, and scheduler/action execution questions and record results in `specs/023-ocaml-language-support/validation/dune-probes.md`
 
 ### A/B and Control Evidence for User Story 3
 
-- [ ] T054 [P] [US3] Run Yojson headless A/B with at least two runs per arm and record model/effort, duration, Read/Grep counts, CodeGraph calls, and interpretation in `specs/023-ocaml-language-support/validation/yojson-ab.md`
-- [ ] T055 [P] [US3] Run OCaml-LSP headless A/B with at least two runs per arm and record model/effort, duration, Read/Grep counts, CodeGraph calls, and interpretation in `specs/023-ocaml-language-support/validation/ocaml-lsp-ab.md`
-- [ ] T056 [US3] Record Dune A/B evidence or an explicit follow-up gate that must close before SPEC-023 completion in `specs/023-ocaml-language-support/validation/dune-ab-gate.md`
-- [ ] T057 [US3] Run `npm run build`, `npm run typecheck`, and `npm test` and record full verification output plus copied OCaml WASM proof in `specs/023-ocaml-language-support/validation/existing-language-controls.md`
-- [ ] T058 [US3] Run targeted extraction, resolution, status, parser-health, and copied-artifact tests and record command output in `specs/023-ocaml-language-support/validation/existing-language-controls.md`
-- [ ] T059 [US3] Run CodeGraph self-repo retrieval smoke and record the prompt, tool output summary, and Read/Grep outcome in `specs/023-ocaml-language-support/validation/self-repo-smoke.md`
+- [X] T054 [P] [US3] Run Yojson headless A/B with at least two runs per arm and record model/effort, duration, Read/Grep counts, CodeGraph calls, and interpretation in `specs/023-ocaml-language-support/validation/yojson-ab.md`
+- [X] T055 [P] [US3] Run OCaml-LSP headless A/B with at least two runs per arm and record model/effort, duration, Read/Grep counts, CodeGraph calls, and interpretation in `specs/023-ocaml-language-support/validation/ocaml-lsp-ab.md`
+- [X] T056 [US3] Record Dune A/B evidence or an explicit follow-up gate that must close before SPEC-023 completion in `specs/023-ocaml-language-support/validation/dune-ab-gate.md`
+- [X] T057 [US3] Run `npm run build`, `npm run typecheck`, and `npm test` and record full verification output plus copied OCaml WASM proof in `specs/023-ocaml-language-support/validation/existing-language-controls.md`
+- [X] T058 [US3] Run targeted extraction, resolution, status, parser-health, and copied-artifact tests and record command output in `specs/023-ocaml-language-support/validation/existing-language-controls.md`
+- [X] T059 [US3] Run CodeGraph self-repo retrieval smoke and record the prompt, tool output summary, and Read/Grep outcome in `specs/023-ocaml-language-support/validation/self-repo-smoke.md`
 - [ ] T060 [US3] Run `scripts/agent-eval/ab-new-vs-baseline.sh` on an existing-language control only if shared MCP, explore-budget, resolver, status, or retrieval behavior changed, and record the run or non-applicability rationale in `specs/023-ocaml-language-support/validation/existing-language-ab-gate.md`
-- [ ] T061 [US3] Update FR/SC traceability with changed files, verification evidence, known gaps, and deferred gates in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
+- [X] T061 [US3] Update FR/SC traceability with changed files, verification evidence, known gaps, and deferred gates in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
 
 **Checkpoint**: User Story 3 completes the evidence gate for any slice that claims complete OCaml support. Dune A/B may remain deferred only if `dune-ab-gate.md` names the approved follow-up gate before SPEC-023 completion.
 
@@ -148,14 +148,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T062 [P] [US4] Create PPX attribute and extension-node negative fixtures in `__tests__/fixtures/ocaml/ppx/`
-- [ ] T063 [US4] Write failing PPX boundary tests proving attributes and extension nodes do not create PPX-expanded symbols or generated relationships in `__tests__/ocaml-ppx-policy.test.ts`
+- [X] T062 [P] [US4] Create PPX attribute and extension-node negative fixtures in `__tests__/fixtures/ocaml/ppx/`
+- [X] T063 [US4] Write failing PPX boundary tests proving attributes and extension nodes do not create PPX-expanded symbols or generated relationships in `__tests__/ocaml-ppx-policy.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T064 [US4] Preserve source-level attribute and extension-node visibility without PPX expansion in `src/extraction/languages/ocaml.ts`
-- [ ] T065 [US4] Add unsupported/future-work PPX limitation text to OCaml validation evidence in `specs/023-ocaml-language-support/validation/ppx-boundary.md`
-- [ ] T066 [US4] Verify PPX boundary tests and record no-generated-symbol/no-speculative-edge evidence in `specs/023-ocaml-language-support/validation/ppx-boundary.md`
+- [X] T064 [US4] Preserve source-level attribute and extension-node visibility without PPX expansion in `src/extraction/languages/ocaml.ts`
+- [X] T065 [US4] Add unsupported/future-work PPX limitation text to OCaml validation evidence in `specs/023-ocaml-language-support/validation/ppx-boundary.md`
+- [X] T066 [US4] Verify PPX boundary tests and record no-generated-symbol/no-speculative-edge evidence in `specs/023-ocaml-language-support/validation/ppx-boundary.md`
 
 **Checkpoint**: PPX is bounded explicitly. SPEC-023 still does not implement OCaml LSP precision, PPX expansion, generated-code inference, typechecker-grade semantics, package nodes, or external package edges.
 
@@ -165,14 +165,14 @@
 
 **Purpose**: Finish documentation, user-visible limitations, UAT, and final review packet without broadening implementation scope.
 
-- [ ] T067 [P] Update user-facing OCaml support and limitation notes in `README.md`
-- [ ] T068 [P] Add a user-facing Unreleased changelog entry for OCaml language support in `CHANGELOG.md`
-- [ ] T069 [P] Update OCaml grammar provenance and shipping notes after implementation evidence is final in `docs/grammars/tree-sitter-ocaml.md`
+- [X] T067 [P] Update user-facing OCaml support and limitation notes in `README.md`
+- [X] T068 [P] Add a user-facing Unreleased changelog entry for OCaml language support in `CHANGELOG.md`
+- [X] T069 [P] Update OCaml grammar provenance and shipping notes after implementation evidence is final in `docs/grammars/tree-sitter-ocaml.md`
 - [ ] T070 Run the complete quickstart validation path and record pass/fail evidence in `specs/023-ocaml-language-support/validation/quickstart-run.md`
 - [ ] T071 Run final reviewability and scope-budget check against changed files and record result in `specs/023-ocaml-language-support/implementation-slices.md`
-- [ ] T072 Confirm no unrelated language extractors or resolver behavior were modified and record review notes in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
-- [ ] T073 Finalize the PR packet with review order, non-goals, scope budget, rollback notes, FR/SC traceability, verification evidence, known gaps, and deferred work in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
-- [ ] T074 Confirm no unresolved clarification, gap, or critical markers remain in SPEC-023 artifacts and record the scan in `specs/023-ocaml-language-support/validation/quickstart-run.md`
+- [X] T072 Confirm no unrelated language extractors or resolver behavior were modified and record review notes in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
+- [X] T073 Finalize the PR packet with review order, non-goals, scope budget, rollback notes, FR/SC traceability, verification evidence, known gaps, and deferred work in `specs/023-ocaml-language-support/validation/pr-packet-traceability.md`
+- [X] T074 Confirm no unresolved clarification, gap, or critical markers remain in SPEC-023 artifacts and record the scan in `specs/023-ocaml-language-support/validation/quickstart-run.md`
 
 ---
 
