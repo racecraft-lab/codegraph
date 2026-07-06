@@ -95,7 +95,6 @@ Create or update `codegraph.json` with:
     "watch": { "enabled": true },
     "servers": {
       "typescript": {
-        "command": ["typescript-language-server", "--stdio"],
         "timeoutMs": 5000
       }
     }
@@ -112,7 +111,9 @@ CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON='["typescript-language-server","--stdio"]'
 Expected outcome:
 
 - Project config activates LSP when no CLI enable/disable is provided.
+- Project config may set activation, watch behavior, default timeouts, and per-language timeouts.
 - Environment command and timeout overrides apply without modifying project config.
+- Committed `lsp.servers.<language>.command` values warn and are ignored; use `CODEGRAPH_LSP_<LANG>_COMMAND_JSON` for machine-local command argv.
 - Environment variables do not activate LSP by themselves when config and CLI are disabled.
 
 ## Scenario 4: Strict SPEC-008 Prereq Validation
@@ -238,4 +239,3 @@ Gate result required before completion: zero unowned language rows.
 | Analyzer operational flags | Existing index/sync plus SPEC-024 | Existing flag compatibility and separate LSP timeout evidence | SPEC-024 | Owned |
 
 Gate result required before completion: zero unowned capability rows.
-

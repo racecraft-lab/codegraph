@@ -2,7 +2,9 @@ import { EDGE_PROVENANCES, EdgeProvenance, Language } from '../types';
 
 export const LSP_LANGUAGES = [
   'javascript',
+  'jsx',
   'typescript',
+  'tsx',
   'python',
   'java',
   'c',
@@ -78,6 +80,7 @@ export interface LspConfigWarning {
     | 'invalid-project-lsp'
     | 'invalid-language'
     | 'invalid-command'
+    | 'project-command-ignored'
     | 'invalid-timeout'
     | 'invalid-watch';
   source: 'project' | 'env';
@@ -124,9 +127,20 @@ export interface LspServerStatusRecord {
   reasonCode?: LspReasonCode;
   detail?: string;
   observedVersion?: string;
+  minimumRuntimeEvidence?: string;
   resolvedPath?: string;
   expectedAlternatives?: string[][];
   lastError?: string;
+}
+
+export interface LspCoverageRecord {
+  language: LspLanguage | 'all';
+  sourceFilesSeen: number;
+  candidateWorkItems: number;
+  checkedWorkItems: number;
+  skippedByReason: Partial<Record<LspReasonCode, number>>;
+  capExceededReasons: LspReasonCode[];
+  elapsedMs?: number;
 }
 
 export interface LspEdgeCounts {
@@ -169,6 +183,7 @@ export interface LspStatus {
   activationSource: LspActivationSource;
   lastRunAt: string | null;
   servers: LspServerStatusRecord[];
+  coverage: LspCoverageRecord[];
   edgeCounts: LspEdgeCounts;
   performance: LspPerformanceRecord;
 }
@@ -186,4 +201,3 @@ export function canUseLspProvenanceForDecision(decision: LspEdgeDecision): boole
 export function isKnownEdgeProvenance(value: string): value is EdgeProvenance {
   return (EDGE_PROVENANCES as readonly string[]).includes(value);
 }
-

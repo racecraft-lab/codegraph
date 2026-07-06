@@ -5,10 +5,18 @@ describe('LSP status contract foundation', () => {
   it('creates stable disabled-path zero-work status evidence', () => {
     const config = resolveLspConfig({ projectRoot: process.cwd(), env: {} });
     const status = createInitialLspStatus(config);
+    status.servers.push({
+      language: 'typescript',
+      command: ['typescript-language-server', '--stdio'],
+      state: 'available',
+      minimumRuntimeEvidence: 'TypeScript SDK path observed when server requires it',
+    });
 
     expect(status.enabled).toBe(false);
     expect(status.activationSource).toBe('default-off');
     expect(status.lastRunAt).toBeNull();
+    expect(status.servers[0]?.minimumRuntimeEvidence).toContain('TypeScript SDK');
+    expect(status.coverage).toEqual([]);
     expect(status.edgeCounts).toEqual({
       checked: 0,
       verified: 0,
@@ -60,4 +68,3 @@ describe('LSP status contract foundation', () => {
     }
   });
 });
-

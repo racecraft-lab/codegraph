@@ -19,7 +19,9 @@ const entry = (
 
 export const LSP_SERVER_REGISTRY: Record<LspLanguage, LspServerRegistryEntry> = {
   javascript: entry('javascript', 'JavaScript', [['typescript-language-server', '--stdio']]),
+  jsx: entry('jsx', 'JSX', [['typescript-language-server', '--stdio']]),
   typescript: entry('typescript', 'TypeScript', [['typescript-language-server', '--stdio']]),
+  tsx: entry('tsx', 'TSX', [['typescript-language-server', '--stdio']]),
   python: entry('python', 'Python', [['pyright-langserver', '--stdio'], ['basedpyright-langserver', '--stdio']]),
   java: entry('java', 'Java', [['jdtls']]),
   c: entry('c', 'C', [['clangd']]),
@@ -51,4 +53,3 @@ export function getLspServerRegistry(): readonly LspServerRegistryEntry[] {
 export function getLspServerEntry(language: LspLanguage): LspServerRegistryEntry {
   return LSP_SERVER_REGISTRY[language];
 }
-

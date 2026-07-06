@@ -67,21 +67,22 @@
 
 ## Decision: Use `codegraph.json.lsp` plus environment overrides
 
-**Rationale**: Project configuration is repeatable and shareable, while environment variables let individual machines choose different executable paths or timeout values without changing the repo.
+**Rationale**: Project configuration is repeatable and shareable for activation, watch behavior, and timeouts, while environment variables let individual machines choose different executable paths or timeout values without changing the repo. Committed executable argv is intentionally ignored with a warning so repositories cannot select arbitrary local subprocesses for other users.
 
 **Accepted contract**:
 - `codegraph.json.lsp.enabled`
 - `codegraph.json.lsp.defaultTimeoutMs`
 - `codegraph.json.lsp.watch.enabled`
-- `codegraph.json.lsp.servers.<language>.command`
 - `codegraph.json.lsp.servers.<language>.timeoutMs`
 - `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`
 - `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`
 - `CODEGRAPH_LSP_TIMEOUT_MS`
 
+Command selection is environment override first, then registry defaults or accepted alternatives; committed project command values warn and do not participate in command selection.
+
 **Alternatives considered**:
 - CLI flags only: rejected because repeatable project use is required.
-- Environment only: rejected because command arrays are awkward and invisible to status.
+- Project command argv support: rejected because committed executable selection is unsafe for machine-local toolchains; environment overrides are explicit to the current run and visible in status evidence.
 
 ## Decision: Use the clarified language-server registry
 

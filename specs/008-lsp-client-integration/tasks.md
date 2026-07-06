@@ -34,7 +34,7 @@
 - [X] T009 [P] Write failing provenance typing tests that preserve `null` and `heuristic` edges and allow only verified/corrected active edges to use `lsp` in `__tests__/lsp-precision-pass.test.ts`
 - [X] T010 Implement LSP activation, config, registry, status, performance, reason-code, and correction metadata types in `src/lsp/types.ts`
 - [X] T011 Implement the server registry for JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL disposition in `src/lsp/servers.ts`
-- [X] T012 Implement project and environment LSP config parsing with activation, command, and timeout precedence in `src/lsp/config.ts`
+- [X] T012 Implement project and environment LSP config parsing with activation, env-only command selection, project/env timeout precedence, and committed-command warning behavior in `src/lsp/config.ts`
 - [X] T013 Implement command probing, accepted-alternative selection, configured-command no-fallback behavior, and prereq report data in `src/lsp/prereqs.ts`
 - [X] T014 Implement LSP status aggregation models for server availability, coverage, edge counts, skip reasons, degradation, and performance in `src/lsp/status.ts`
 - [X] T015 Extend edge provenance typing and storage compatibility for additive `lsp` provenance in `src/types.ts` and `src/db/schema.sql`
@@ -83,13 +83,13 @@
 
 ## Phase 4: User Story 2 - Configure Local Language-Server Behavior (Priority: P2, Slice 1)
 
-**Goal**: Users can override local language-server commands and timeouts through project config and environment variables without CodeGraph installing anything or activating LSP implicitly.
+**Goal**: Users can configure repeatable project LSP activation/timeouts and machine-local language-server command overrides without CodeGraph installing anything or activating LSP implicitly.
 
-**Independent Test**: Provide project config and machine-local environment overrides, then verify indexing and status use the selected command and timeout values while environment variables alone do not enable LSP.
+**Independent Test**: Provide project config and machine-local environment overrides, then verify indexing and status use selected environment commands plus project or environment timeout values while environment variables alone do not enable LSP.
 
 ### Tests for User Story 2
 
-- [ ] T038 [P] [US2] Write failing project config tests for `lsp.enabled`, `lsp.defaultTimeoutMs`, `lsp.watch.enabled`, and `lsp.servers.<language>` values in `__tests__/lsp-config.test.ts`
+- [ ] T038 [P] [US2] Write failing project config tests for `lsp.enabled`, `lsp.defaultTimeoutMs`, `lsp.watch.enabled`, ignored committed command values, and `lsp.servers.<language>.timeoutMs` values in `__tests__/lsp-config.test.ts`
 - [ ] T039 [P] [US2] Write failing environment override tests for `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`, `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`, and `CODEGRAPH_LSP_TIMEOUT_MS` in `__tests__/lsp-config.test.ts`
 - [ ] T040 [P] [US2] Write failing invalid override tests proving malformed JSON, non-string argv elements, and invalid timeouts warn and fall back in `__tests__/lsp-config.test.ts`
 - [ ] T041 [P] [US2] Write failing command probing tests for PATH lookup, absolute argv, relative argv, selected argv reporting, and expected alternatives in `__tests__/lsp-prereqs.test.ts`
@@ -97,7 +97,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T043 [US2] Implement command argv parsing and validation for project and environment values in `src/lsp/config.ts`
+- [ ] T043 [US2] Implement command argv parsing and validation for environment values plus warning/ignore behavior for committed project command values in `src/lsp/config.ts`
 - [ ] T044 [US2] Implement timeout precedence and validation for project and environment values in `src/lsp/config.ts`
 - [ ] T045 [US2] Implement warning collection for ignored unknown languages, invalid commands, and invalid timeout values in `src/lsp/config.ts`
 - [ ] T046 [US2] Implement PATH, absolute path, and relative path command resolution with configured-command no-fallback semantics in `src/lsp/prereqs.ts`

@@ -42,6 +42,7 @@ export function createInitialLspStatus(config: EffectiveLspConfig): LspStatus {
     activationSource: config.activationSource,
     lastRunAt: null,
     servers: [],
+    coverage: [],
     edgeCounts: emptyLspEdgeCounts(),
     performance: {
       activeSessionHighWatermark: 0,
@@ -61,4 +62,3 @@ export function createInitialLspStatus(config: EffectiveLspConfig): LspStatus {
 export function isLspReasonCode(value: string): boolean {
   return (LSP_REASON_CODES as readonly string[]).includes(value);
 }
-

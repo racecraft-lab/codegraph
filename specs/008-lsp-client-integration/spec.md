@@ -28,15 +28,15 @@ As a CodeGraph user, I want to explicitly enable language-server precision for a
 
 ### User Story 2 - Configure local language-server behavior (Priority: P2)
 
-As a user running CodeGraph across different machines and projects, I want to override language-server commands and timeouts so LSP precision can work with local toolchain layouts without requiring CodeGraph to install anything.
+As a user running CodeGraph across different machines and projects, I want repeatable project LSP settings and machine-local command overrides so LSP precision can work with local toolchain layouts without requiring CodeGraph to install anything.
 
 **Why this priority**: LSP precision depends on user-managed local server binaries. Configuration must be repeatable for projects and overridable for individual machines.
 
-**Independent Test**: Can be tested by providing project configuration and machine-local environment overrides, then verifying that status and indexing use the selected commands and timeout values.
+**Independent Test**: Can be tested by providing project configuration and machine-local environment overrides, then verifying that status and indexing use selected environment commands and project or environment timeout values.
 
 **Acceptance Scenarios**:
 
-1. **Given** a project configuration that overrides a language-server command or timeout, **When** LSP precision is enabled, **Then** CodeGraph uses the configured values for that project.
+1. **Given** a project configuration that overrides a language-server timeout, **When** LSP precision is enabled, **Then** CodeGraph uses the configured timeout for that project.
 2. **Given** machine-local environment overrides for a language-server command or timeout, **When** LSP precision is enabled, **Then** those overrides apply to the current run without modifying project configuration.
 3. **Given** no LSP opt-in setting, **When** a supported server is present on the user's machine, **Then** CodeGraph does not auto-enable LSP precision.
 
@@ -94,7 +94,7 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - **FR-002**: CodeGraph MUST preserve existing structural indexing behavior for repositories that do not opt into LSP precision.
 - **FR-003**: Users MUST be able to enable LSP precision for an indexing run with `codegraph index --lsp`.
 - **FR-004**: Users MUST be able to enable LSP precision through project configuration for repeatable project use.
-- **FR-005**: Users MUST be able to override language-server commands and timeouts through project configuration.
+- **FR-005**: Users MUST be able to override LSP activation, default timeouts, watch behavior, and per-language timeouts through project configuration.
 - **FR-006**: Users MUST be able to override language-server commands and timeouts through environment variables for machine-local use.
 - **FR-007**: CodeGraph MUST detect and report available and unavailable local language servers for the languages covered by SPEC-008.
 - **FR-008**: `codegraph status` MUST report detected servers, unavailable servers, and per-language LSP coverage for the current project.
@@ -123,12 +123,12 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - **FR-030**: In-workspace LSP corrections MUST require exactly one compatible CodeGraph node for the normalized target; external or unindexed LSP targets MAY suppress a conflicting active edge with audit metadata but MUST NOT create external graph nodes.
 - **FR-031**: Status output MUST include LSP precision state for human and JSON output: enabled state, last run, server availability, observed versions, per-language file coverage, and aggregate edge counts for checked, verified, corrected, suppressed, skipped-by-reason, and degraded.
 - **FR-031a**: Human and JSON status MUST include stable machine-readable reason codes and short human-readable detail for every unavailable, skipped, degraded, not-present, not-applicable, and validation-only LSP condition. Required reason categories MUST distinguish missing default command, configured command unavailable, server crash, initialize timeout, request timeout, malformed protocol response, shutdown failure, absent or unbounded watch changed-file set, oversized watch changed-file batch, language not present, language not applicable, and missing real-server prerequisite that applies only to SPEC-008 validation. Command-related reasons MUST include the selected argv and expected alternatives when relevant, and version fields remain observational evidence rather than normal runtime success criteria.
-- **FR-032**: Project configuration MUST use a top-level `lsp` object with `enabled`, `defaultTimeoutMs`, optional `watch.enabled`, and `servers.<language>.command` / `servers.<language>.timeoutMs` entries keyed by CodeGraph language id.
+- **FR-032**: Project configuration MUST use a top-level `lsp` object with `enabled`, `defaultTimeoutMs`, optional `watch.enabled`, and `servers.<language>.timeoutMs` entries keyed by CodeGraph language id. Committed `servers.<language>.command` values MUST be ignored with a warning; command argv overrides are machine-local environment only.
 - **FR-033**: Environment overrides MUST use `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`, `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`, and `CODEGRAPH_LSP_TIMEOUT_MS`; command JSON MUST parse to a string array, invalid values MUST warn and fall back, and environment variables MUST NOT activate LSP precision by themselves.
 - **FR-034**: Effective activation precedence MUST be explicit CLI flag first, then `codegraph.json.lsp.enabled === true`, then default off; the CLI MUST support disabling LSP for one run even when project config opts in.
 - **FR-035**: Incremental watch LSP verification MUST reuse the existing sync/watch path, run only after normal sync/reference resolution, process only bounded changed-file sets, and skip with a recorded reason when no bounded changed-file list is available.
 - **FR-035a**: Incremental watch LSP verification MUST enforce measurable default work bounds before issuing LSP requests: at most 100 changed source files per bounded watch batch and at most 1,000 candidate LSP work items per language per batch. If the changed-file set is absent, unbounded, or any bound is exceeded, LSP watch verification MUST skip that batch or affected language with a recorded reason and MUST NOT fall back to a repository-wide LSP pass.
-- **FR-036**: Language-server command selection MUST use this order: valid environment command override, project server command, then registry default or accepted alternatives in listed order. A valid configured argv that cannot be resolved MUST report that language as unavailable and MUST NOT silently fall through to lower-precedence registry alternatives.
+- **FR-036**: Language-server command selection MUST use this order: valid environment command override, then registry default or accepted alternatives in listed order. A valid environment-configured argv that cannot be resolved MUST report that language as unavailable and MUST NOT silently fall through to lower-precedence registry alternatives.
 - **FR-037**: Command probing MUST resolve bare executables through the current process `PATH`; absolute or relative argv paths MUST be used as configured. Status and validation MUST report the selected argv, resolved executable path when available, unavailable-command state when resolution fails, and expected command alternatives.
 - **FR-038**: Runtime and watch verification MUST use bounded server recovery. A crash, initialize timeout, request timeout, malformed protocol response, or shutdown failure MUST NOT fail normal structural indexing; at most one fresh session restart MAY be attempted per language per run or bounded watch batch before marking that language degraded with a recorded reason.
 - **FR-038a**: Watch-mode server recovery MUST be keyed to the bounded watch batch, not to every file-watch debounce cycle. After the one allowed fresh-session restart for a language is exhausted, repeated debounce cycles for the same still-pending failed changed-file set MUST keep that language degraded and MUST NOT spawn additional server restarts; the restart budget MAY reset only for an explicit index or sync command, or for a materially new bounded watch batch with a changed-file set different from the failed batch.
@@ -194,7 +194,7 @@ validation.`
 ### Key Entities *(include if feature involves data)*
 
 - **LSP Precision Setting**: The user-visible opt-in state that determines whether language-server verification runs for a project or indexing command.
-- **Language Server Configuration**: User-provided command and timeout choices for a language, including `codegraph.json.lsp.servers.<language>.command` argv arrays, per-language timeouts, and machine-local environment override values.
+- **Language Server Configuration**: User-provided timeout and command choices for a language, including project per-language timeouts and machine-local environment command/timeout override values. Committed project command argv values are ignored with a warning.
 - **Server Availability Record**: The detected status for a language server, including available, unavailable, crashed, timed out, or not applicable for the current project.
 - **Language Coverage Record**: The per-language result describing whether files for that language were verified, degraded, or not present.
 - **Edge Verification Record**: The result of verifying an existing graph edge, including unchanged, upgraded, corrected, suppressed, or ambiguous.
@@ -239,7 +239,6 @@ previous provenance and target details in correction metadata or an audit record
     "watch": { "enabled": true },
     "servers": {
       "typescript": {
-        "command": ["typescript-language-server", "--stdio"],
         "timeoutMs": 5000
       }
     }
@@ -247,15 +246,17 @@ previous provenance and target details in correction metadata or an audit record
 }
 ```
 
-Language keys use CodeGraph language ids such as `typescript`, `javascript`,
-`cpp`, `csharp`, and `vue`. Environment overrides can replace command argv
-arrays or timeouts for the current machine, but cannot activate LSP precision.
+Language keys use CodeGraph language ids such as `typescript`, `tsx`,
+`javascript`, `jsx`, `cpp`, `csharp`, `vue`, and `cobol`. Environment
+overrides can replace command argv arrays or timeouts for the current machine,
+but cannot activate LSP precision.
 Activation precedence is: explicit CLI enable/disable, then
 `codegraph.json.lsp.enabled === true`, then default off.
 
-Command precedence is: `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`,
-`codegraph.json.lsp.servers.<language>.command`, then the registry default or
-accepted alternatives. Timeout precedence is:
+Command precedence is: `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`, then the registry
+default or accepted alternatives. Committed
+`codegraph.json.lsp.servers.<language>.command` values warn and are ignored.
+Timeout precedence is:
 `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`,
 `codegraph.json.lsp.servers.<language>.timeoutMs`,
 `CODEGRAPH_LSP_TIMEOUT_MS`, `codegraph.json.lsp.defaultTimeoutMs`, then the

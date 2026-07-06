@@ -127,7 +127,6 @@ Effective activation precedence is explicit CLI enable/disable first, then `code
     "watch": { "enabled": true },
     "servers": {
       "typescript": {
-        "command": ["typescript-language-server", "--stdio"],
         "timeoutMs": 5000
       }
     }
@@ -148,11 +147,12 @@ Environment overrides:
 Command precedence:
 
 1. `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`
-2. `codegraph.json.lsp.servers.<language>.command`
-3. Registry default command or accepted alternatives in listed order
+2. Registry default command or accepted alternatives in listed order
 
-Configured argv that is syntactically valid but unavailable is reported as
-unavailable instead of silently falling back to lower-precedence registry
+Committed `codegraph.json.lsp.servers.<language>.command` values warn and are ignored; command argv overrides are machine-local environment only.
+
+Environment-configured argv that is syntactically valid but unavailable is reported as
+unavailable instead of silently falling back to registry
 alternatives.
 
 Timeout precedence:
@@ -181,8 +181,9 @@ Measurable watch bounds for SPEC-008 are:
   validation, and watch paths. Bare executables resolve through the current
   process `PATH`; absolute or relative argv paths are used as configured.
 - Registry alternatives are tried in listed order only when no higher-precedence
-  command is configured. A configured argv that cannot be resolved records the
-  language as unavailable rather than trying lower-precedence alternatives.
+  environment command is configured. An environment-configured argv that cannot
+  be resolved records the language as unavailable rather than trying registry
+  alternatives.
 - Status and validation record the selected argv, resolved executable path when
   available, observed version/serverInfo when available, unavailable-command
   state, and expected command alternatives.

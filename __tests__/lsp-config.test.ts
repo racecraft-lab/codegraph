@@ -43,7 +43,7 @@ describe('LSP config resolution', () => {
     });
   });
 
-  it('applies command and timeout precedence without letting env activate LSP', () => {
+  it('applies machine-local command and timeout precedence without letting env activate LSP', () => {
     withProjectConfig({
       lsp: {
         defaultTimeoutMs: 7000,
@@ -71,17 +71,63 @@ describe('LSP config resolution', () => {
       expect(config.servers.typescript.timeoutMs).toBe(9000);
       expect(config.servers.typescript.timeoutSource).toBe('env');
       expect(config.servers.python.timeoutMs).toBe(6000);
+      expect(config.servers.python.timeoutSource).toBe('env');
+    });
+  });
+
+  it('ignores committed project command overrides while preserving project timeouts', () => {
+    withProjectConfig({
+      lsp: {
+        enabled: true,
+        servers: {
+          typescript: {
+            command: ['project-ts-lsp', '--stdio'],
+            timeoutMs: 8000,
+          },
+        },
+      },
+    }, (dir) => {
+      const config = resolveLspConfig({ projectRoot: dir, env: {} });
+      expect(config.servers.typescript.command).toEqual(['typescript-language-server', '--stdio']);
+      expect(config.servers.typescript.commandSource).toBe('registry');
+      expect(config.servers.typescript.timeoutMs).toBe(8000);
+      expect(config.servers.typescript.timeoutSource).toBe('project');
+      expect(config.warnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'project-command-ignored',
+          source: 'project',
+          language: 'typescript',
+        }),
+      ]));
+    });
+  });
+
+  it('preserves timeout source when overrides equal the registry default', () => {
+    withProjectConfig({ lsp: { defaultTimeoutMs: 5000 } }, (dir) => {
+      const config = resolveLspConfig({ projectRoot: dir, env: {} });
+      expect(config.servers.python.timeoutMs).toBe(5000);
+      expect(config.servers.python.timeoutSource).toBe('project');
+    });
+
+    withProjectConfig(undefined, (dir) => {
+      const config = resolveLspConfig({
+        projectRoot: dir,
+        env: { CODEGRAPH_LSP_TIMEOUT_MS: '5000' },
+      });
+      expect(config.servers.python.timeoutMs).toBe(5000);
+      expect(config.servers.python.timeoutSource).toBe('env');
+      expect(config.enabled).toBe(false);
     });
   });
 
   it('warns and falls back for invalid command and timeout values', () => {
     withProjectConfig({
       lsp: {
-        defaultTimeoutMs: -1,
+        defaultTimeoutMs: true,
         servers: {
           typescript: {
             command: ['project-ts-lsp'],
-            timeoutMs: 'bad',
+            timeoutMs: ['5000'],
           },
         },
       },
@@ -90,11 +136,11 @@ describe('LSP config resolution', () => {
         projectRoot: dir,
         env: {
           CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: '{"not":"array"}',
-          CODEGRAPH_LSP_TYPESCRIPT_TIMEOUT_MS: '0',
+          CODEGRAPH_LSP_TYPESCRIPT_TIMEOUT_MS: '1.5',
         },
       });
-      expect(config.servers.typescript.command).toEqual(['project-ts-lsp']);
-      expect(config.servers.typescript.commandSource).toBe('project');
+      expect(config.servers.typescript.command).toEqual(['typescript-language-server', '--stdio']);
+      expect(config.servers.typescript.commandSource).toBe('registry');
       expect(config.servers.typescript.timeoutMs).toBe(5000);
       expect(config.warnings.map((w) => w.code)).toEqual(expect.arrayContaining([
         'invalid-command',
@@ -103,4 +149,3 @@ describe('LSP config resolution', () => {
     });
   });
 });
-

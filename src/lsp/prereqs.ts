@@ -74,8 +74,9 @@ export function resolveExecutablePath(command: string, options: ProbeLspServerOp
   const extensions = process.platform === 'win32'
     ? (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')
     : [''];
+  const commandExtensions = executableExtensions(command, extensions);
   for (const dir of pathValue.split(path.delimiter).filter(Boolean)) {
-    for (const ext of extensions) {
+    for (const ext of commandExtensions) {
       const candidate = path.join(dir, command + ext);
       const resolved = executablePath(candidate);
       if (resolved) return resolved;
@@ -95,6 +96,13 @@ function executablePath(candidate: string): string | null {
   } catch {
     return null;
   }
+}
+
+function executableExtensions(command: string, extensions: string[]): string[] {
+  if (process.platform !== 'win32') return extensions;
+  const commandExt = path.extname(command).toUpperCase();
+  const pathExts = extensions.map((ext) => ext.toUpperCase());
+  return commandExt && pathExts.includes(commandExt) ? [''] : extensions;
 }
 
 function unavailableDetail(

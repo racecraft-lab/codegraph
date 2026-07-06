@@ -23,11 +23,10 @@
 - `defaultTimeoutMs`: optional positive integer.
 - `watch.enabled`: optional boolean.
 - `servers`: map keyed by CodeGraph language id.
-- `servers.<language>.command`: optional string array argv.
 - `servers.<language>.timeoutMs`: optional positive integer.
 
 **Validation rules**:
-- `command` must be a non-empty string array when provided.
+- Committed `servers.<language>.command` values are ignored with a warning; executable argv overrides are machine-local environment only.
 - `timeoutMs` and `defaultTimeoutMs` must be positive integers.
 - Unknown language ids warn and are ignored.
 - Invalid values warn and fall back to defaults or lower-precedence values.
@@ -82,7 +81,7 @@
 
 **Validation rules**:
 - Produced only when LSP is enabled and the language has a command-bearing registry row.
-- Environment command overrides win over project config command overrides.
+- Environment command overrides win over registry defaults; committed project command values are ignored with a warning.
 - Language timeout overrides win over global timeout.
 
 ## Entity: LspServerStatus

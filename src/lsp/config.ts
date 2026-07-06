@@ -42,6 +42,11 @@ interface TimeoutParseResult {
   warning?: LspConfigWarning;
 }
 
+interface ResolvedTimeout {
+  timeoutMs: number;
+  source: LspValueSource;
+}
+
 export function resolveLspConfig(options: ResolveLspConfigOptions): EffectiveLspConfig {
   const env = options.env ?? process.env;
   const warnings: LspConfigWarning[] = [];
@@ -52,9 +57,7 @@ export function resolveLspConfig(options: ResolveLspConfigOptions): EffectiveLsp
   if (globalEnvTimeout.warning) warnings.push(globalEnvTimeout.warning);
   const projectDefaultTimeout = parseTimeout(project?.defaultTimeoutMs, 'project', undefined, 'lsp.defaultTimeoutMs');
   if (projectDefaultTimeout.warning) warnings.push(projectDefaultTimeout.warning);
-  const defaultTimeoutMs = globalEnvTimeout.timeoutMs
-    ?? projectDefaultTimeout.timeoutMs
-    ?? DEFAULT_LSP_TIMEOUT_MS;
+  const defaultTimeout = resolveDefaultTimeout(globalEnvTimeout, projectDefaultTimeout);
   const watchEnabled = project?.watch?.enabled === false ? false : true;
   if (project?.watch?.enabled !== undefined && typeof project.watch.enabled !== 'boolean') {
     warnings.push({
@@ -66,13 +69,13 @@ export function resolveLspConfig(options: ResolveLspConfigOptions): EffectiveLsp
 
   const servers = {} as Record<LspLanguage, EffectiveLspServerConfig>;
   for (const language of LSP_LANGUAGES) {
-    servers[language] = resolveServerConfig(language, project, env, defaultTimeoutMs, warnings);
+    servers[language] = resolveServerConfig(language, project, env, defaultTimeout, warnings);
   }
 
   return {
     enabled,
     activationSource,
-    defaultTimeoutMs,
+    defaultTimeoutMs: defaultTimeout.timeoutMs,
     watchEnabled,
     servers,
     warnings,
@@ -110,7 +113,7 @@ function resolveServerConfig(
   language: LspLanguage,
   project: ProjectLspConfig | undefined,
   env: Record<string, string | undefined>,
-  defaultTimeoutMs: number,
+  defaultTimeout: ResolvedTimeout,
   warnings: LspConfigWarning[],
 ): EffectiveLspServerConfig {
   const registry = LSP_SERVER_REGISTRY[language];
@@ -120,15 +123,20 @@ function resolveServerConfig(
   if (envCommand.warning) warnings.push(envCommand.warning);
   const projectCommand = parseCommand(projectServer?.command, 'project', language, `lsp.servers.${language}.command`);
   if (projectCommand.warning) warnings.push(projectCommand.warning);
+  if (projectCommand.command) {
+    warnings.push({
+      code: 'project-command-ignored',
+      source: 'project',
+      language,
+      detail: `Ignoring committed ${language} LSP command override; use ${envPrefix}COMMAND_JSON for machine-local executable overrides`,
+    });
+  }
 
   let command: string[] | null = null;
   let commandSource: EffectiveLspServerConfig['commandSource'] = 'none';
   if (envCommand.command) {
     command = envCommand.command;
     commandSource = 'env';
-  } else if (projectCommand.command) {
-    command = projectCommand.command;
-    commandSource = 'project';
   } else if (registry.commands.length > 0) {
     command = registry.commands[0]!.argv.slice();
     commandSource = 'registry';
@@ -139,17 +147,15 @@ function resolveServerConfig(
   const projectTimeout = parseTimeout(projectServer?.timeoutMs, 'project', language, `lsp.servers.${language}.timeoutMs`);
   if (projectTimeout.warning) warnings.push(projectTimeout.warning);
 
-  let timeoutSource: LspValueSource = 'registry';
-  let timeoutMs = registry.defaultTimeoutMs || defaultTimeoutMs;
-  if (defaultTimeoutMs !== DEFAULT_LSP_TIMEOUT_MS) {
-    timeoutSource = project?.defaultTimeoutMs ? 'project' : 'env';
-    timeoutMs = defaultTimeoutMs;
-  }
-  if (projectTimeout.timeoutMs) {
+  let timeoutSource: LspValueSource = defaultTimeout.source;
+  let timeoutMs = defaultTimeout.source === 'registry'
+    ? registry.defaultTimeoutMs || defaultTimeout.timeoutMs
+    : defaultTimeout.timeoutMs;
+  if (projectTimeout.timeoutMs !== null) {
     timeoutSource = 'project';
     timeoutMs = projectTimeout.timeoutMs;
   }
-  if (envTimeout.timeoutMs) {
+  if (envTimeout.timeoutMs !== null) {
     timeoutSource = 'env';
     timeoutMs = envTimeout.timeoutMs;
   }
@@ -162,6 +168,15 @@ function resolveServerConfig(
     timeoutSource,
     disposition: registry.disposition,
   };
+}
+
+function resolveDefaultTimeout(
+  envTimeout: TimeoutParseResult,
+  projectTimeout: TimeoutParseResult,
+): ResolvedTimeout {
+  if (envTimeout.timeoutMs !== null) return { timeoutMs: envTimeout.timeoutMs, source: 'env' };
+  if (projectTimeout.timeoutMs !== null) return { timeoutMs: projectTimeout.timeoutMs, source: 'project' };
+  return { timeoutMs: DEFAULT_LSP_TIMEOUT_MS, source: 'registry' };
 }
 
 function parseCommand(raw: unknown, source: 'project' | 'env', language: LspLanguage, field: string): CommandParseResult {
@@ -178,7 +193,7 @@ function parseCommand(raw: unknown, source: 'project' | 'env', language: LspLang
       };
     }
   }
-  if (!Array.isArray(value) || value.length === 0 || value.some((part) => typeof part !== 'string' || part.length === 0)) {
+  if (!Array.isArray(value) || value.length === 0 || value.some((part) => typeof part !== 'string' || part.trim().length === 0)) {
     return {
       command: null,
       warning: { code: 'invalid-command', source, language, detail: `${field} must be a non-empty string array` },
@@ -189,12 +204,27 @@ function parseCommand(raw: unknown, source: 'project' | 'env', language: LspLang
 
 function parseTimeout(raw: unknown, source: 'project' | 'env', language: LspLanguage | undefined, field: string): TimeoutParseResult {
   if (raw === undefined || raw === '') return { timeoutMs: null };
-  const value = typeof raw === 'number' ? raw : Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
+  const value = parseTimeoutValue(raw, source);
+  if (value === null) {
     return {
       timeoutMs: null,
       warning: { code: 'invalid-timeout', source, language, detail: `${field} must be a positive integer` },
     };
   }
   return { timeoutMs: value };
+}
+
+function parseTimeoutValue(raw: unknown, source: 'project' | 'env'): number | null {
+  if (source === 'env') {
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+    if (!/^[1-9]\d*$/.test(trimmed)) return null;
+    return Number(trimmed);
+  }
+  if (typeof raw !== 'number') return null;
+  const value = raw;
+  if (!Number.isInteger(value) || value <= 0) {
+    return null;
+  }
+  return value;
 }

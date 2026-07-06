@@ -28,7 +28,6 @@ CLI activation applies only to commands that run indexing or sync-like verificat
     },
     "servers": {
       "typescript": {
-        "command": ["typescript-language-server", "--stdio"],
         "timeoutMs": 5000
       }
     }
@@ -43,10 +42,11 @@ CLI activation applies only to commands that run indexing or sync-like verificat
 | `lsp.enabled` | boolean | no | Project-level opt-in when no CLI enable/disable is supplied |
 | `lsp.defaultTimeoutMs` | positive integer | no | Default timeout for LSP requests |
 | `lsp.watch.enabled` | boolean | no | Allows incremental watch verification when LSP is effectively enabled |
-| `lsp.servers.<language>.command` | string array | no | Command argv for one language server |
 | `lsp.servers.<language>.timeoutMs` | positive integer | no | Timeout for one language server |
 
-Language keys use CodeGraph language ids: `javascript`, `typescript`, `python`, `java`, `c`, `cpp`, `csharp`, `go`, `ruby`, `rust`, `php`, `kotlin`, `swift`, `dart`, and `vue`.
+Committed project config must not select executable argv. If `lsp.servers.<language>.command` is present, CodeGraph warns and ignores it; machine-local command overrides must use `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`.
+
+Language keys use CodeGraph language ids: `javascript`, `jsx`, `typescript`, `tsx`, `python`, `java`, `c`, `cpp`, `csharp`, `go`, `ruby`, `rust`, `php`, `kotlin`, `swift`, `dart`, `vue`, and `cobol`.
 
 ## Environment Overrides
 
@@ -69,8 +69,9 @@ Activation precedence:
 Command precedence:
 
 1. `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`.
-2. `codegraph.json.lsp.servers.<language>.command`.
-3. Registry default command.
+2. Registry default command.
+
+Committed `codegraph.json.lsp.servers.<language>.command` values are ignored with a warning and do not participate in executable selection.
 
 Timeout precedence:
 
