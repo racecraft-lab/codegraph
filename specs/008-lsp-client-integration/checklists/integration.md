@@ -8,7 +8,7 @@
 
 ## Requirement Completeness
 
-- [ ] CHK001 Are command-bearing registry rows specified for TypeScript/JavaScript, Python, Go, Rust, C/C++, Swift, and Java? [Completeness, Spec §FR-026, Plan §Language Parity Matrix]
+- [ ] CHK001 Are command-bearing registry rows specified for TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, C/C++, Swift, and Java? [Completeness, Spec §FR-026, Plan §Language Parity Matrix]
 - [ ] CHK002 Are baseline registry or disposition rows specified for C#, Kotlin, PHP, Ruby, Dart, Vue, and COBOL? [Completeness, Spec §FR-026-FR-027, Plan §Language Parity Matrix]
 - [ ] CHK003 Are all internal baseline capability rows mapped to implementation evidence or concrete numbered future-spec ownership? [Completeness, Spec §FR-014-FR-015, Plan §Feature and Capability Parity Matrix]
 - [ ] CHK004 Are project configuration, environment override, and activation controls all specified without giving environment variables activation power? [Completeness, Spec §FR-032-FR-034, Plan §Activation, Config, and Watch Contract]

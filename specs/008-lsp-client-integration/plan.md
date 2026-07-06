@@ -26,7 +26,7 @@ SPEC-008 adds an opt-in LSP precision pass to the existing CodeGraph indexing pi
 
 **Constraints**: Default-off; explicit opt-in only; no auto-install; no CodeGraph-as-LSP-server; no rename/refactor behavior; no network calls beyond user-configured local subprocess commands; normal runtime degrades per language; SPEC-008 validation is strict about real-server prerequisites and parity ownership.
 
-**Scale/Scope**: One feature spec delivered as three vertical PR slices. Languages covered in SPEC-008 real-server validation: JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, and Vue. COBOL receives parser/resolver evidence and SPEC-024 ownership unless a concrete local LSP target is deliberately selected later.
+**Scale/Scope**: One feature spec delivered as three vertical PR slices. Languages covered in SPEC-008 real-server validation: JavaScript, JSX, TypeScript, TSX, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, and Vue. COBOL receives parser/resolver evidence and SPEC-024 ownership unless a concrete local LSP target is deliberately selected later.
 
 **Reviewability Budget**: Primary surface is harness/adapter under `src/lsp/`. Secondary surfaces are CLI activation, project configuration, status reporting, graph provenance, and validation docs/process. Roadmap estimate is 565 net-new LOC, about 7 production files and 14 total files. Budget result: warning accepted, not blocked, because the spec is split into three vertical PR slices with parity rows owned explicitly.
 
@@ -109,7 +109,7 @@ __tests__/
 
 | Slice | Scope | Languages | Completion evidence |
 |---|---|---|---|
-| 1. Activation/config/status/client/prereq + complete TypeScript/JavaScript path | `codegraph.json.lsp`, env overrides, CLI enable/disable precedence, status skeleton, prereq detection, JSON-RPC lifecycle, first precision-pass path | TypeScript, JavaScript | Non-LSP byte-compatible and zero-LSP-runtime-work fixture, config precedence tests, fake protocol tests, real `typescript-language-server --stdio` validation, status shows observed version and coverage |
+| 1. Activation/config/status/client/prereq + complete TypeScript-family path | `codegraph.json.lsp`, env overrides, CLI enable/disable precedence, status skeleton, prereq detection, JSON-RPC lifecycle, first precision-pass path | TypeScript, TSX, JavaScript, JSX | Non-LSP byte-compatible and zero-LSP-runtime-work fixture, config precedence tests, fake protocol tests, real `typescript-language-server --stdio` validation, status shows observed version and coverage |
 | 2. Correction/status generalization + middle language expansion | Unique-target correction/suppression, correction metadata, aggregate status counters, shared server adapters and fixtures | Python, Go, Rust, C, C++, Swift, Java | Fake ambiguity/correction tests, real-server prereq and smoke validation for each language, callers/impact/search regression probes, LSP work-count and concurrency evidence |
 | 3. Remaining baseline servers/dispositions + watch + parity matrices + dogfood | Remaining server adapters, bounded watch verification, full language/capability parity evidence, self-repo validation packet | C#, Kotlin, PHP, Ruby, Dart, Vue, COBOL disposition | Real-server evidence for implemented LSP rows, COBOL parser/resolver evidence plus SPEC-024 owner, watch bounds tests, large-repo performance evidence, self-repo `index --lsp`, status coverage, final parity tables with 0 unowned rows |
 

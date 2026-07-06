@@ -1,0 +1,142 @@
+{
+  "slice_id": "polish",
+  "review_order": 6,
+  "total_slices": 6,
+  "base_branch": "008-lsp-client-integration/05-us4",
+  "head_branch": "008-lsp-client-integration/06-polish",
+  "target": {
+    "base_branch": "008-lsp-client-integration/05-us4",
+    "head_branch": "008-lsp-client-integration/06-polish"
+  },
+  "generated_title": {
+    "value": "feat(speckit-pro): Update Polish & Cross-Cutting Concerns",
+    "type": "feat",
+    "scope": "speckit-pro",
+    "description": "Update Polish & Cross-Cutting Concerns",
+    "source_evidence": {
+      "kind": "layer_plan_increment",
+      "source": "polish",
+      "summary": "Source label and declared file scope normalized into a strict plain-English reviewer title."
+    },
+    "rejected_candidates": [
+      {
+        "value": "008-lsp-client-integration/06-polish",
+        "reason": "Branch names remain metadata and are not public title descriptions."
+      },
+      {
+        "value": "polish",
+        "reason": "Slice ids remain metadata and are not public title descriptions."
+      }
+    ]
+  },
+  "body_file": "specs/008-lsp-client-integration/.process/emission/candidates/pr-bodies/polish.md",
+  "declared_files": [
+    ".nvmrc",
+    ".specify/feature.json",
+    "scripts/spec-008-parity-gate.mjs",
+    "scripts/spec-008-validate-real-servers.mjs",
+    "specs/008-lsp-client-integration/checklists/data-integrity.md",
+    "specs/008-lsp-client-integration/checklists/integration.md",
+    "specs/008-lsp-client-integration/checklists/performance.md",
+    "specs/008-lsp-client-integration/checklists/reliability.md",
+    "specs/008-lsp-client-integration/checklists/requirements.md",
+    "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+    "specs/008-lsp-client-integration/contracts/edge-correction.md",
+    "specs/008-lsp-client-integration/contracts/status-and-prereqs.md",
+    "specs/008-lsp-client-integration/data-model.md",
+    "specs/008-lsp-client-integration/plan.md",
+    "specs/008-lsp-client-integration/quickstart.md",
+    "specs/008-lsp-client-integration/research.md",
+    "specs/008-lsp-client-integration/spec.md",
+    "specs/008-lsp-client-integration/tasks.md",
+    "specs/008-lsp-client-integration/validation/final-packet.md",
+    "specs/008-lsp-client-integration/validation/foundation.md",
+    "specs/008-lsp-client-integration/verify-tasks-report.md"
+  ],
+  "declared_tests": [],
+  "scoped_verification": {
+    "commands": [
+      {
+        "command": "<none>",
+        "gate_type": "no_scoped_tests",
+        "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+        "required": true,
+        "evidence_path": "specs/008-lsp-client-integration/.process/emission/polish/no_scoped_tests.txt",
+        "exit_status": 0,
+        "started_at": "2026-06-10T00:00:00Z",
+        "finished_at": "2026-06-10T00:00:01Z"
+      }
+    ]
+  },
+  "full_verification_evidence": "specs/008-lsp-client-integration/.process/emission/full-verification-evidence.md",
+  "traceability": [
+    {
+      "requirement": "FR-001",
+      "files": [
+        ".nvmrc",
+        ".specify/feature.json",
+        "scripts/spec-008-parity-gate.mjs",
+        "scripts/spec-008-validate-real-servers.mjs",
+        "specs/008-lsp-client-integration/checklists/data-integrity.md",
+        "specs/008-lsp-client-integration/checklists/integration.md",
+        "specs/008-lsp-client-integration/checklists/performance.md",
+        "specs/008-lsp-client-integration/checklists/reliability.md",
+        "specs/008-lsp-client-integration/checklists/requirements.md",
+        "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+        "specs/008-lsp-client-integration/contracts/edge-correction.md",
+        "specs/008-lsp-client-integration/contracts/status-and-prereqs.md",
+        "specs/008-lsp-client-integration/data-model.md",
+        "specs/008-lsp-client-integration/plan.md",
+        "specs/008-lsp-client-integration/quickstart.md",
+        "specs/008-lsp-client-integration/research.md",
+        "specs/008-lsp-client-integration/spec.md",
+        "specs/008-lsp-client-integration/tasks.md",
+        "specs/008-lsp-client-integration/validation/final-packet.md",
+        "specs/008-lsp-client-integration/validation/foundation.md",
+        "specs/008-lsp-client-integration/verify-tasks-report.md"
+      ],
+      "evidence": [
+        "specs/008-lsp-client-integration/.process/emission/full-verification-evidence.md"
+      ]
+    }
+  ],
+  "known_gaps": [],
+  "warnings": [],
+  "restack_note": "Style B incremental stack: first slice targets the integration base and later slices target the previous slice branch.",
+  "prs_row": {
+    "review_order": 6,
+    "slice_id": "polish",
+    "layer": "polish",
+    "branch": "008-lsp-client-integration/06-polish",
+    "base_branch": "008-lsp-client-integration/05-us4",
+    "pr_number": null,
+    "pr_url": null,
+    "declared_files": [
+      ".nvmrc",
+      ".specify/feature.json",
+      "scripts/spec-008-parity-gate.mjs",
+      "scripts/spec-008-validate-real-servers.mjs",
+      "specs/008-lsp-client-integration/checklists/data-integrity.md",
+      "specs/008-lsp-client-integration/checklists/integration.md",
+      "specs/008-lsp-client-integration/checklists/performance.md",
+      "specs/008-lsp-client-integration/checklists/reliability.md",
+      "specs/008-lsp-client-integration/checklists/requirements.md",
+      "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+      "specs/008-lsp-client-integration/contracts/edge-correction.md",
+      "specs/008-lsp-client-integration/contracts/status-and-prereqs.md",
+      "specs/008-lsp-client-integration/data-model.md",
+      "specs/008-lsp-client-integration/plan.md",
+      "specs/008-lsp-client-integration/quickstart.md",
+      "specs/008-lsp-client-integration/research.md",
+      "specs/008-lsp-client-integration/spec.md",
+      "specs/008-lsp-client-integration/tasks.md",
+      "specs/008-lsp-client-integration/validation/final-packet.md",
+      "specs/008-lsp-client-integration/validation/foundation.md",
+      "specs/008-lsp-client-integration/verify-tasks-report.md"
+    ],
+    "verification_evidence": "specs/008-lsp-client-integration/.process/emission/polish/no_scoped_tests.txt",
+    "status": "pending",
+    "head_sha": "0366d3cef02a36fc1e2d95e8928390cdfbdc7484",
+    "merged_sha": null
+  }
+}

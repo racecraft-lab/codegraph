@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe('SPEC-008 real-server validation script', () => {
-  it('validates the Slice 1 TypeScript/JavaScript server command and SDK evidence', () => {
+  it('validates the Slice 1 TypeScript-family server command and SDK evidence', () => {
     const dir = fakeBinDir({
       'typescript-language-server': 'fixture typescript-language-server 1.0.0',
     });
@@ -30,7 +30,12 @@ describe('SPEC-008 real-server validation script', () => {
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout);
     expect(report.missing).toEqual([]);
-    expect(report.observed.map((item: { language: string }) => item.language).sort()).toEqual(['javascript', 'typescript']);
+    expect(report.observed.map((item: { language: string }) => item.language).sort()).toEqual([
+      'javascript',
+      'jsx',
+      'tsx',
+      'typescript',
+    ]);
     expect(report.observed.every((item: { command: string }) => item.command === 'typescript-language-server --version')).toBe(true);
     expect(report.observed.every((item: { serverCommand: string }) => item.serverCommand === 'typescript-language-server --stdio')).toBe(true);
     expect(report.observed.every((item: { resolvedExecutable?: string }) => item.resolvedExecutable?.startsWith(dir))).toBe(true);
@@ -187,7 +192,9 @@ describe('SPEC-008 real-server validation script', () => {
     const report = JSON.parse(result.stdout);
     expect(report.observed.map((item: { language: string }) => item.language)).toEqual([
       'typescript',
+      'tsx',
       'javascript',
+      'jsx',
       'python',
       'go',
       'rust',
@@ -205,7 +212,7 @@ describe('SPEC-008 real-server validation script', () => {
     expect(report.dispositions).toEqual([
       expect.objectContaining({ language: 'cobol', status: 'future-owned' }),
     ]);
-    expect(report.paritySummary).toMatchObject({ verified: 15, futureOwned: 1, missing: 0, unowned: 0 });
+    expect(report.paritySummary).toMatchObject({ verified: 17, futureOwned: 1, missing: 0, unowned: 0 });
   });
 
   it('uses the validation-only missing-prereq error shape for absent Slice 1 commands', () => {

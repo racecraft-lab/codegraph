@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-06T02:18:40Z",
-  "active_step": "Post: Doctor Extension Check",
+  "updated_at": "2026-07-06T02:51:00Z",
+  "active_step": "Post: Reviewability Diff Gate",
   "confidence_gate_mode": "strict",
   "plan": [
     {
@@ -132,43 +132,43 @@
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "in_progress"
+      "status": "skipped: doctor extension not installed"
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Code Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "pending"
+      "status": "blocked: one-PR gate exceeded size thresholds; PRSG-009 dry-run candidate emission validated"
     },
     {
       "step": "Post: Self-Review",
-      "status": "pending"
+      "status": "pending: blocked behind final PR packet path"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "pending"
+      "status": "pending: blocked behind final PR packet path"
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "pending"
+      "status": "blocked: final packet/body generation requires valid live slice emission path or operator-owned typed exception"
     },
     {
       "step": "Post: PR Creation",
-      "status": "pending"
+      "status": "blocked: no PR created; one oversized PR is blocked"
     },
     {
       "step": "Post: Review Remediation",
@@ -497,10 +497,12 @@
     }
   },
   "layer_plan": {
-    "status": "skipped",
-    "reason": "atomicity route is one-navigable-PR; split-PR layer planning not required",
-    "route": "one-navigable-PR",
-    "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json"
+    "status": "completed_after_final_backstop",
+    "route": "layer_plan",
+    "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/layer-plan.json",
+    "increment_count": 6,
+    "task_count": 114,
+    "note": "Generated after final reviewability backstop requested PRSG-009 continuation."
   },
   "pr_marker_plan": {
     "schema_version": "pr-marker-plan.v1",
@@ -1438,15 +1440,80 @@
         "focused_lsp_disabled": "passed: npx vitest run __tests__/lsp-disabled.test.ts (1 file, 3 tests)",
         "build": "passed: npm run build",
         "typecheck": "passed: npm run typecheck",
-        "full_test": "passed: npm test (141 files, 2279 passed, 4 skipped)",
-        "full_verify": "passed: npm run build && npm run typecheck && npm test (141 files, 2279 passed, 4 skipped)",
-        "real_server_validation": "passed: 15 verified, 1 future-owned, 0 missing, 0 unowned",
-        "parity_gate": "passed: 16 language rows, 17 capability rows, 0 unowned",
-        "retrieval_probe": "passed: inactive audit rows hidden",
+        "full_test": "passed: npm test (141 files, 2280 passed, 4 skipped)",
+        "full_verify": "passed: npm run build && npm run typecheck && npm test (141 files, 2280 passed, 4 skipped)",
+        "real_server_validation": "passed: 17 verified, 1 future-owned, 0 missing, 0 unowned",
+        "parity_gate": "passed: 18 language rows, 17 capability rows, 0 unowned",
+        "retrieval_probe": "passed: public search/callers/callees/impact/explore-equivalent surfaces clean and inactive audit rows hidden",
         "diff_check": "passed: git diff --check",
         "restricted_name_scan": "passed: no matches",
         "outbound_link_scan": "passed: no matches"
       }
+    }
+  },
+  "post_implementation": {
+    "verify_implementation": {
+      "status": "completed",
+      "evidence": "Full build, typecheck, tests, real-server validation, parity gate, retrieval probe, restricted-name scan, and outbound-link scan passed."
+    },
+    "verify_tasks": {
+      "status": "completed",
+      "report_path": "specs/008-lsp-client-integration/verify-tasks-report.md",
+      "verified": 114,
+      "partial": 0,
+      "weak": 0,
+      "not_found": 0
+    },
+    "code_review": {
+      "status": "completed",
+      "remediation": [
+        "Added JSX and TSX as TypeScript-family LSP languages.",
+        "Expanded retrieval probe to public search, callers, callees, impact, explore-equivalent, and context surfaces."
+      ]
+    },
+    "integration_suite": {
+      "status": "completed",
+      "build": "passed",
+      "typecheck": "passed",
+      "tests": "passed: 141 files, 2280 passed, 4 skipped",
+      "real_server_validation": "passed: 17 verified, 1 future-owned, 0 missing, 0 unowned",
+      "parity_gate": "passed: 18 language rows, 17 capability rows, 0 unowned",
+      "retrieval_probe": "passed"
+    },
+    "reviewability_diff_gate": {
+      "status": "blocked",
+      "gate_state_path": "specs/008-lsp-client-integration/.process/final-reviewability/gate-state.json",
+      "reslicing_packet_path": "specs/008-lsp-client-integration/.process/final-reviewability/reslicing-packet.json",
+      "reason": "reviewable LOC 5511, production files 29, and total files 90 exceed one-PR block thresholds",
+      "blocked_operations": [
+        "pr-body-generation",
+        "single-pr-create",
+        "multi-pr-emission"
+      ]
+    },
+    "prsg_reslicing": {
+      "routing": {
+        "status": "completed",
+        "path": "specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json",
+        "route": "one-navigable-PR"
+      },
+      "layer_plan": {
+        "status": "completed",
+        "path": "specs/008-lsp-client-integration/.process/reviewability/layer-plan.json",
+        "increments": 6
+      },
+      "candidate_emission": {
+        "status": "validated_dry_run",
+        "slice_count": 6,
+        "mutation": {
+          "branches": false,
+          "pull_requests": false
+        },
+        "state": "specs/008-lsp-client-integration/.process/emission/candidates/multi-pr-emission-state.candidate.json",
+        "prs_manifest": "specs/008-lsp-client-integration/.process/emission/candidates/prs.candidate.json",
+        "command_capture": "specs/008-lsp-client-integration/.process/emission/candidates/commands.candidate.json"
+      },
+      "remaining_blocker": "Autopilot completion still requires valid slice PR emission or an operator-owned typed exception. No fake PR fixture or simulated opened PR was used."
     }
   }
 }

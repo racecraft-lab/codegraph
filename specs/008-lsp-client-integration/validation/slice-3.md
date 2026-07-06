@@ -104,7 +104,7 @@ Scope budget and non-goals:
 
 Parity closure:
 
-- `scripts/spec-008-parity-gate.mjs` passes with 16 language rows, 17
+- `scripts/spec-008-parity-gate.mjs` passes with 18 language rows, 17
   capability rows, and zero unowned rows.
 - Future-owned parser/resolver and non-LSP product capabilities are explicitly
   assigned to SPEC-024 in the parity artifacts.

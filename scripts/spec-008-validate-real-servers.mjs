@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const SLICE_LANGUAGES = {
-  us1: ['typescript', 'javascript'],
+  us1: ['typescript', 'tsx', 'javascript', 'jsx'],
   us2: ['python', 'go', 'rust', 'c', 'cpp', 'swift', 'java'],
   us3: ['csharp', 'kotlin', 'php', 'ruby', 'dart', 'vue', 'cobol'],
 };
@@ -20,6 +20,15 @@ const VALIDATION_ROWS = {
     sdk: 'typescript',
     smokeEvidence: ['TypeScript SDK is resolvable from the current project.'],
   }),
+  jsx: implementedRow('jsx', 'JSX', 'us1', [
+    {
+      serverCommand: ['typescript-language-server', '--stdio'],
+      versionCommand: ['typescript-language-server', '--version'],
+    },
+  ], {
+    sdk: 'typescript',
+    smokeEvidence: ['TypeScript SDK is resolvable from the current project for JSX validation.'],
+  }),
   typescript: implementedRow('typescript', 'TypeScript', 'us1', [
     {
       serverCommand: ['typescript-language-server', '--stdio'],
@@ -28,6 +37,15 @@ const VALIDATION_ROWS = {
   ], {
     sdk: 'typescript',
     smokeEvidence: ['TypeScript SDK is resolvable from the current project.'],
+  }),
+  tsx: implementedRow('tsx', 'TSX', 'us1', [
+    {
+      serverCommand: ['typescript-language-server', '--stdio'],
+      versionCommand: ['typescript-language-server', '--version'],
+    },
+  ], {
+    sdk: 'typescript',
+    smokeEvidence: ['TypeScript SDK is resolvable from the current project for TSX validation.'],
   }),
   python: implementedRow('python', 'Python', 'us2', [
     {

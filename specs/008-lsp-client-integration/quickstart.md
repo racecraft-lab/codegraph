@@ -208,7 +208,9 @@ node scripts/spec-008-parity-gate.mjs
 | Language | Owner | Evidence required | Future owner | Status |
 |---|---|---|---|---|
 | JavaScript | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
+| JSX | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
 | TypeScript | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
+| TSX | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
 | Python | SPEC-008 Slice 2 | Real-server validation and degraded/status fixture | SPEC-024 audit | Owned |
 | Java | SPEC-008 Slice 2 | Real-server validation and workspace/status fixture | SPEC-024 audit | Owned |
 | C | SPEC-008 Slice 2 | Real-server validation and degraded/status fixture | SPEC-024 audit | Owned |

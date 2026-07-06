@@ -530,6 +530,79 @@ describe('LSP precision provenance foundation', () => {
     });
   });
 
+  it('processes JSX and TSX candidates through the TypeScript-family server path', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const tsServer = makeExecutable(dir, 'typescript-language-server');
+    const jsxCandidate = makeCandidate({
+      edgeId: 10,
+      language: 'jsx',
+      sourceId: 'jsx-source',
+      targetId: 'jsx-target',
+      sourceFilePath: 'jsx/source.jsx',
+      targetFilePath: 'jsx/target.jsx',
+    });
+    const tsxCandidate = makeCandidate({
+      edgeId: 11,
+      language: 'tsx',
+      sourceId: 'tsx-source',
+      targetId: 'tsx-target',
+      sourceFilePath: 'tsx/source.tsx',
+      targetFilePath: 'tsx/target.tsx',
+    });
+    const targetNodes = new Map([
+      ['jsx', makeTargetNode({ id: 'jsx-target', language: 'jsx', filePath: 'jsx/target.jsx' })],
+      ['tsx', makeTargetNode({ id: 'tsx-target', language: 'tsx', filePath: 'tsx/target.tsx' })],
+    ]);
+    const createdLanguages: string[] = [];
+    const verifiedEdgeIds: number[] = [];
+    const config = resolveLspConfig({
+      projectRoot: dir,
+      cliActivation: 'enable',
+      env: {
+        PATH: '',
+        CODEGRAPH_LSP_JSX_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+        CODEGRAPH_LSP_TSX_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+      },
+    });
+
+    const status = await runLspPrecisionPass({
+      projectRoot: dir,
+      queries: {
+        getLspEdgeCandidates: (languages: string[]) =>
+          [jsxCandidate, tsxCandidate].filter((candidate) => languages.includes(candidate.language)),
+        findNodesAtLocation: (_filePath: string, _line: number, language: string) => [targetNodes.get(language)],
+        updateEdgeLspProvenance: (edgeId: number) => {
+          verifiedEdgeIds.push(edgeId);
+          return 1;
+        },
+      } as any,
+      config,
+      clientFactory: {
+        create: ({ language }) => {
+          createdLanguages.push(language);
+          return {
+            initialize: async () => ({ serverInfo: { name: `fake-${language}-lsp` } }),
+            request: async () => {
+              const targetFile = language === 'jsx' ? 'jsx/target.jsx' : 'tsx/target.tsx';
+              return {
+                uri: pathToFileURL(path.join(dir, targetFile)).href,
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
+              };
+            },
+            shutdown: async () => undefined,
+          };
+        },
+      },
+    });
+
+    expect(createdLanguages.sort()).toEqual(['jsx', 'tsx']);
+    expect(verifiedEdgeIds.sort((a, b) => a - b)).toEqual([10, 11]);
+    expect(status.edgeCounts.verified).toBe(2);
+    expect(status.coverage.find((record) => record.language === 'jsx')?.checkedWorkItems).toBe(1);
+    expect(status.coverage.find((record) => record.language === 'tsx')?.checkedWorkItems).toBe(1);
+  });
+
   it('attempts at most one fresh session restart per language before degrading remaining work', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
     dirs.push(dir);

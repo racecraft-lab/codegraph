@@ -116,7 +116,7 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - **FR-023**: CodeGraph MUST NOT include rename or refactor operations as part of SPEC-008.
 - **FR-024**: CodeGraph MUST NOT introduce remote network calls beyond user-configured local language-server subprocesses.
 - **FR-025**: SPEC-008 MUST remain one feature specification planned as three vertical review slices.
-- **FR-026**: The covered server set MUST include the full internal baseline prerequisite matrix: TypeScript/JavaScript via `typescript-language-server --stdio`; Python via `pyright-langserver --stdio` or `basedpyright-langserver --stdio`; Go via `gopls`; Rust via `rust-analyzer`; C/C++ via `clangd`; Swift via `sourcekit-lsp`; Java via `jdtls -configuration <dir> -data <workspace-data>` or an equivalent configured JDT LS Java command; C# via `csharp-ls`; Kotlin via `kotlin-language-server` or `kotlin-lsp`; PHP via `intelephense --stdio` or `phpactor language-server`; Ruby via `ruby-lsp` or `solargraph stdio`; Dart via `dart language-server`; Vue via `vue-language-server --stdio`; and a COBOL parity disposition.
+- **FR-026**: The covered server set MUST include the full internal baseline prerequisite matrix: TypeScript, TSX, JavaScript, and JSX via `typescript-language-server --stdio`; Python via `pyright-langserver --stdio` or `basedpyright-langserver --stdio`; Go via `gopls`; Rust via `rust-analyzer`; C/C++ via `clangd`; Swift via `sourcekit-lsp`; Java via `jdtls -configuration <dir> -data <workspace-data>` or an equivalent configured JDT LS Java command; C# via `csharp-ls`; Kotlin via `kotlin-language-server` or `kotlin-lsp`; PHP via `intelephense --stdio` or `phpactor language-server`; Ruby via `ruby-lsp` or `solargraph stdio`; Dart via `dart language-server`; Vue via `vue-language-server --stdio`; and a COBOL parity disposition.
 - **FR-027**: If COBOL is not assigned to a concrete local LSP target in SPEC-008, SPEC-008 MUST assign it to a concrete numbered future spec and preserve parser/resolver parity evidence.
 - **FR-028**: Incremental watch behavior MUST verify changed files with LSP precision when LSP is explicitly enabled and the relevant server is available.
 - **FR-029**: LSP target uniqueness MUST be based on exactly one normalized semantic target after normalizing `Location` and `LocationLink` responses and deduplicating equivalent target ranges.
@@ -146,7 +146,7 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 
 | Language | Required validation command or disposition | SPEC-008 validation rule |
 |---|---|---|
-| TypeScript / JavaScript | `typescript-language-server --stdio`; validate TypeScript SDK availability | Real-server validation required |
+| TypeScript / TSX / JavaScript / JSX | `typescript-language-server --stdio`; validate TypeScript SDK availability | Real-server validation required |
 | Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Real-server validation required |
 | Go | `gopls` | Real-server validation required |
 | Rust | `rust-analyzer` | Real-server validation required |
@@ -283,7 +283,7 @@ to the next lower-precedence value.
   and is enabled only when LSP precision is effectively enabled; it does not add
   a second watcher pipeline.
 - Final vertical slices are: Slice 1 activation/config/status contracts,
-  client lifecycle, prereq detection, and one complete TypeScript/JavaScript
+  client lifecycle, prereq detection, and complete TypeScript-family
   verification/correction path; Slice 2 correction/status generalization plus
   Python, Go, Rust, C/C++, Swift, and Java coverage; Slice 3 remaining baseline
   servers/dispositions, incremental watch verification, parity matrices,

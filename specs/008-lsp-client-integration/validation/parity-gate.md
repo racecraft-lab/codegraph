@@ -6,7 +6,7 @@
 node scripts/spec-008-parity-gate.mjs
 ```
 
-Expected result: pass, 16 language rows, 17 capability rows, 0 unowned rows.
+Expected result: pass, 18 language rows, 17 capability rows, 0 unowned rows.
 
 ```text
 node scripts/spec-008-parity-gate.mjs --language <negative-language-fixture> --capability specs/008-lsp-client-integration/validation/capability-parity.md --json
@@ -26,7 +26,7 @@ concrete numbered future owner for a future-owned row.
 Pass:
 
 ```text
-SPEC-008 parity gate passed: 16 language rows, 17 capability rows, 0 unowned rows.
+SPEC-008 parity gate passed: 18 language rows, 17 capability rows, 0 unowned rows.
 ```
 
 Negative fixtures:

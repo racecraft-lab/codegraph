@@ -38,8 +38,8 @@ npm test
 
 Result: passed on Node `24.11.1`.
 
-Evidence: 141 test files passed; 2,279 tests passed; 4 skipped; duration
-25.20s.
+Evidence: 141 test files passed; 2,280 tests passed; 4 skipped; duration
+25.05s.
 
 Note: the full-suite command was executed outside the sandbox with
 process-local Git signing disabled because the repo's temp-Git tests inherit
@@ -68,7 +68,7 @@ npm run build && npm run typecheck && npm test
 Result: passed on Node `24.11.1`.
 
 Evidence: build passed, typecheck passed, then the full suite passed with 141
-test files, 2,279 tests passed, 4 skipped, and duration 25.52s.
+test files, 2,280 tests passed, 4 skipped, and duration 25.05s.
 
 The combined run used the same process-local Git signing override for the test
 phase.
@@ -79,7 +79,7 @@ node scripts/spec-008-validate-real-servers.mjs
 
 Result: passed.
 
-Evidence: 15 verified local server rows, 1 future-owned COBOL disposition,
+Evidence: 17 verified local server rows, 1 future-owned COBOL disposition,
 0 missing rows, and 0 unowned rows.
 
 ```text
@@ -88,7 +88,7 @@ node scripts/spec-008-parity-gate.mjs
 
 Result: passed.
 
-Evidence: 16 language rows, 17 capability rows, and 0 unowned rows.
+Evidence: 18 language rows, 17 capability rows, and 0 unowned rows.
 
 Additional retrieval safety gate:
 
@@ -99,7 +99,7 @@ node scripts/spec-008-retrieval-probes.mjs
 Result: passed.
 
 Evidence: nodes +3, raw edges +2, active outgoing 1, inactive audit rows hidden
-1.
+1, and public search/callers/callees/impact/explore-equivalent surfaces clean.
 
 Final hygiene:
 
@@ -107,6 +107,34 @@ Final hygiene:
 - Restricted-name scan: no matches.
 - Outbound-link scan across SPEC-008 artifacts and validation scripts: no
   matches.
+
+## Post-Implementation Reviewability Status
+
+Final reviewability backstop:
+
+- Result: blocked before PR body generation or PR creation.
+- Reason: 5,511 reviewable LOC, 29 production files, and 90 total files exceed
+  the one-PR block thresholds.
+- Evidence:
+  `specs/008-lsp-client-integration/.process/final-reviewability/gate-state.json`
+  and
+  `specs/008-lsp-client-integration/.process/final-reviewability/reslicing-packet.json`.
+
+PRSG continuation:
+
+- PRSG-007 routing: completed, one navigable PR route with size warning
+  evidence in
+  `specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json`.
+- PRSG-008 layer plan: completed, 6 valid increments in
+  `specs/008-lsp-client-integration/.process/reviewability/layer-plan.json`.
+- PRSG-009 candidate emission: validated in dry-run mode, 6 layer slices,
+  `branches=false`, `pull_requests=false`.
+- Candidate artifacts:
+  `specs/008-lsp-client-integration/.process/emission/candidates/`.
+
+Remaining blocker: autopilot completion still requires valid slice PR emission
+or an operator-owned typed exception. No fake PR fixture or simulated opened PR
+was used.
 
 ## What Changed
 
@@ -120,6 +148,8 @@ Final hygiene:
   capped work items.
 - Added real-server validation, parity gates, retrieval probes, and self-repo
   dogfood evidence for SPEC-008.
+- Closed post-review gaps by adding JSX/TSX to the LSP-owned TypeScript-family
+  path and expanding the retrieval probe to named public surfaces.
 
 ## Why It Matters
 
@@ -150,7 +180,7 @@ SPEC-008 stays inside the three planned review slices:
 ## Traceability
 
 - T001-T018: LSP foundation and registry scaffolding.
-- T019-T037: opt-in indexing, JSON-RPC lifecycle, TypeScript/JavaScript
+- T019-T037: opt-in indexing, JSON-RPC lifecycle, TypeScript-family
   precision, and status.
 - T038-T049: project and environment configuration.
 - T050-T062: degradation, caps, batching, and status reason codes.

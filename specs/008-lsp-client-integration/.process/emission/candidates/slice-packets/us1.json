@@ -1,0 +1,118 @@
+{
+  "slice_id": "us1",
+  "review_order": 2,
+  "total_slices": 6,
+  "base_branch": "008-lsp-client-integration/01-foundation",
+  "head_branch": "008-lsp-client-integration/02-us1",
+  "target": {
+    "base_branch": "008-lsp-client-integration/01-foundation",
+    "head_branch": "008-lsp-client-integration/02-us1"
+  },
+  "generated_title": {
+    "value": "feat(speckit-pro): Update Opt Into Compiler-Accurate Graph Precision",
+    "type": "feat",
+    "scope": "speckit-pro",
+    "description": "Update Opt Into Compiler-Accurate Graph Precision",
+    "source_evidence": {
+      "kind": "layer_plan_increment",
+      "source": "us1",
+      "summary": "Source label and declared file scope normalized into a strict plain-English reviewer title."
+    },
+    "rejected_candidates": [
+      {
+        "value": "008-lsp-client-integration/02-us1",
+        "reason": "Branch names remain metadata and are not public title descriptions."
+      },
+      {
+        "value": "us1",
+        "reason": "Slice ids remain metadata and are not public title descriptions."
+      }
+    ]
+  },
+  "body_file": "specs/008-lsp-client-integration/.process/emission/candidates/pr-bodies/us1.md",
+  "declared_files": [
+    "__tests__/lsp-client.test.ts",
+    "__tests__/lsp-config.test.ts",
+    "__tests__/lsp-disabled.test.ts",
+    "__tests__/lsp-precision-pass.test.ts",
+    "__tests__/lsp-real-server-validation.test.ts",
+    "__tests__/lsp-status.test.ts",
+    "scripts/spec-008-validate-real-servers.mjs",
+    "specs/008-lsp-client-integration/validation/slice-1.md",
+    "src/bin/codegraph.ts",
+    "src/index.ts",
+    "src/lsp/client.ts",
+    "src/lsp/precision-pass.ts",
+    "src/lsp/status.ts"
+  ],
+  "declared_tests": [],
+  "scoped_verification": {
+    "commands": [
+      {
+        "command": "<none>",
+        "gate_type": "no_scoped_tests",
+        "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+        "required": true,
+        "evidence_path": "specs/008-lsp-client-integration/.process/emission/us1/no_scoped_tests.txt",
+        "exit_status": 0,
+        "started_at": "2026-06-10T00:00:00Z",
+        "finished_at": "2026-06-10T00:00:01Z"
+      }
+    ]
+  },
+  "full_verification_evidence": "specs/008-lsp-client-integration/.process/emission/full-verification-evidence.md",
+  "traceability": [
+    {
+      "requirement": "FR-001",
+      "files": [
+        "__tests__/lsp-client.test.ts",
+        "__tests__/lsp-config.test.ts",
+        "__tests__/lsp-disabled.test.ts",
+        "__tests__/lsp-precision-pass.test.ts",
+        "__tests__/lsp-real-server-validation.test.ts",
+        "__tests__/lsp-status.test.ts",
+        "scripts/spec-008-validate-real-servers.mjs",
+        "specs/008-lsp-client-integration/validation/slice-1.md",
+        "src/bin/codegraph.ts",
+        "src/index.ts",
+        "src/lsp/client.ts",
+        "src/lsp/precision-pass.ts",
+        "src/lsp/status.ts"
+      ],
+      "evidence": [
+        "specs/008-lsp-client-integration/.process/emission/full-verification-evidence.md"
+      ]
+    }
+  ],
+  "known_gaps": [],
+  "warnings": [],
+  "restack_note": "Style B incremental stack: first slice targets the integration base and later slices target the previous slice branch.",
+  "prs_row": {
+    "review_order": 2,
+    "slice_id": "us1",
+    "layer": "us1",
+    "branch": "008-lsp-client-integration/02-us1",
+    "base_branch": "008-lsp-client-integration/01-foundation",
+    "pr_number": null,
+    "pr_url": null,
+    "declared_files": [
+      "__tests__/lsp-client.test.ts",
+      "__tests__/lsp-config.test.ts",
+      "__tests__/lsp-disabled.test.ts",
+      "__tests__/lsp-precision-pass.test.ts",
+      "__tests__/lsp-real-server-validation.test.ts",
+      "__tests__/lsp-status.test.ts",
+      "scripts/spec-008-validate-real-servers.mjs",
+      "specs/008-lsp-client-integration/validation/slice-1.md",
+      "src/bin/codegraph.ts",
+      "src/index.ts",
+      "src/lsp/client.ts",
+      "src/lsp/precision-pass.ts",
+      "src/lsp/status.ts"
+    ],
+    "verification_evidence": "specs/008-lsp-client-integration/.process/emission/us1/no_scoped_tests.txt",
+    "status": "pending",
+    "head_sha": "0366d3cef02a36fc1e2d95e8928390cdfbdc7484",
+    "merged_sha": null
+  }
+}

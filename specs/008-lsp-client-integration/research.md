@@ -147,7 +147,7 @@ Command selection is environment override first, then registry defaults or accep
 **Rationale**: The clarified scope requires broad parity ownership, but a single large implementation would be hard to review. Three vertical slices keep each PR independently testable while preserving one SPEC-008 feature contract.
 
 **Slices**:
-1. Activation/config/status/client/prereq plus complete TypeScript/JavaScript path.
+1. Activation/config/status/client/prereq plus complete TypeScript-family path.
 2. Correction/status generalization plus Python, Go, Rust, C/C++, Swift, and Java.
 3. C#, Kotlin, PHP, Ruby, Dart, Vue, COBOL disposition, watch verification, parity matrices, dogfood, and validation packet.
 
