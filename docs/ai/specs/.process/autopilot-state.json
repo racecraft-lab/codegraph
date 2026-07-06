@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-06T00:49:41.614Z",
-  "active_step": "Phase 7: Implement - us1 T019-T037",
+  "updated_at": "2026-07-06T01:03:36.116Z",
+  "active_step": "Phase 7: Implement - us2 T038-T049",
   "confidence_gate_mode": "strict",
   "plan": [
     {
@@ -116,11 +116,11 @@
     },
     {
       "step": "Phase 7: Implement - us1 T019-T037",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - us2 T038-T049",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement - us3 T050-T062",
@@ -757,6 +757,18 @@
           {
             "operation": "MODIFIED",
             "path": "src/lsp/status.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/db/queries.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/index.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/types.ts"
           }
         ],
         "declared_tests": [],
@@ -774,7 +786,42 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "evidence_path": "specs/008-lsp-client-integration/validation/slice-1.md",
+          "commit_sha": "08a31ad81df7e27ee3d95377039ec72fa2d2b0e4",
+          "head_sha": "08a31ad81df7e27ee3d95377039ec72fa2d2b0e4",
+          "verified_at": "2026-07-06T01:03:36.116Z",
+          "tasks": [
+            "T019",
+            "T020",
+            "T021",
+            "T022",
+            "T023",
+            "T024",
+            "T025",
+            "T026",
+            "T027",
+            "T028",
+            "T029",
+            "T030",
+            "T031",
+            "T032",
+            "T033",
+            "T034",
+            "T035",
+            "T036",
+            "T037"
+          ],
+          "verification": [
+            "npm test -- __tests__/lsp-disabled.test.ts __tests__/lsp-client.test.ts __tests__/lsp-precision-pass.test.ts",
+            "npx vitest run __tests__/lsp-disabled.test.ts __tests__/lsp-config.test.ts __tests__/lsp-client.test.ts __tests__/lsp-precision-pass.test.ts __tests__/lsp-status.test.ts __tests__/lsp-real-server-validation.test.ts",
+            "npm run typecheck",
+            "npm run build",
+            "node scripts/spec-008-validate-real-servers.mjs --slice us1",
+            "git diff --check",
+            "restricted-name scan: no matches",
+            "outbound-link scan: no matches"
+          ]
         },
         "emission_mapping": {
           "status": "pending"
@@ -1202,6 +1249,23 @@
         "focused_tests": "passed: 4 files, 12 tests",
         "build": "passed: npm run build",
         "forbidden_name_scan": "passed: no matches",
+        "outbound_link_scan": "passed: no matches"
+      }
+    },
+    "us1": {
+      "status": "completed",
+      "marker_id": "us1",
+      "task_range": "T019-T037",
+      "checkpoint_sha": "08a31ad81df7e27ee3d95377039ec72fa2d2b0e4",
+      "evidence_path": "specs/008-lsp-client-integration/validation/slice-1.md",
+      "verification": {
+        "t035": "passed: npm test -- targeted US1 files (3 files, 14 tests)",
+        "focused_tests": "passed: 6 files, 24 tests",
+        "typecheck": "passed: npm run typecheck",
+        "build": "passed: npm run build",
+        "real_server_validation": "passed: TypeScript and JavaScript observed, 0 missing",
+        "diff_check": "passed: git diff --check",
+        "restricted_name_scan": "passed: no matches",
         "outbound_link_scan": "passed: no matches"
       }
     }
