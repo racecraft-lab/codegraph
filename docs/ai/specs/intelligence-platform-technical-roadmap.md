@@ -117,7 +117,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-020 | PR Blast-Radius Review Action | ⏳ Pending | [SPEC-020-workflow.md](SPEC-020-workflow.md) | Blocked by SPEC-012 |
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
-| SPEC-023 | OCaml Language Support | ⏳ Pending | [SPEC-023-workflow.md](SPEC-023-workflow.md) | Specify (parallel-safe) |
+| SPEC-023 | OCaml Language Support | 🔄 In Progress | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Scaffolded on `023-ocaml-language-support` |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked
 

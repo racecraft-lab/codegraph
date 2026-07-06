@@ -1,30 +1,17 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-004-workflow.md",
-  "updated_at": "2026-07-05T21:22:21Z",
-  "active_step": "archived",
-  "status": "completed_archived",
-  "archived_spec": {
-    "spec_id": "SPEC-004",
-    "source_feature_dir": "specs/004-web-framework-research-spike",
-    "archive_report": ".specify/memory/archive-reports/2026-07-05-SPEC-004.md",
-    "merged_pr": {
-      "number": 19,
-      "url": "https://github.com/racecraft-lab/codegraph/pull/19",
-      "title": "feat(speckit-pro): Add web framework research spike",
-      "merged_at": "2026-07-05T21:19:23Z",
-      "merge_commit": "0366d3cef02a36fc1e2d95e8928390cdfbdc7484"
-    }
-  },
+  "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
+  "updated_at": "2026-07-05T22:41:55Z",
+  "active_step": "complete",
+  "spec_id": "SPEC-023",
+  "feature_dir": "specs/023-ocaml-language-support",
+  "branch": "023-ocaml-language-support",
   "confidence_gate_mode": "advisory",
   "archive_sweep": {
+    "current_target": "specs/023-ocaml-language-support",
     "archive_extension_installed": false,
-    "current_target": "specs/004-web-framework-research-spike",
-    "cleanup_mode": "applied",
-    "safeToApplyCleanup": true,
-    "archive_report": ".specify/memory/archive-reports/2026-07-05-SPEC-004.md",
-    "cleanup_branch": "codex/spec-004-archive-cleanup",
-    "applied_at": "2026-07-05T21:22:21Z",
-    "note": "Post-merge archive cleanup applied after PR #19 merged."
+    "safeToApplyCleanup": false,
+    "mode": "unavailable",
+    "note": "Archive extension is not installed; no cleanup was applied."
   },
   "project_commands": {
     "BUILD": "npm run build",
@@ -33,7 +20,7 @@
     "LINT_FIX": "N/A",
     "UNIT_TEST": "npm test",
     "INTEGRATION_TEST": "N/A",
-    "SINGLE_FILE_TEST": "npm test --",
+    "SINGLE_FILE_TEST": "npx vitest run <file>",
     "SINGLE_FILE_INTEGRATION": "N/A",
     "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
   },
@@ -44,530 +31,219 @@
       "codegraph-project-overrides",
       "speckit-pro-reviewability"
     ],
-    "template_resolution": {
+    "templates": {
       "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
       "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
       "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
     }
   },
-  "preflight": {
+  "codex_agents": {
+    "validator": "ok: codex: 10 bundled agents installed",
     "model": "gpt-5.5",
-    "model_reasoning_effort": "xhigh",
-    "branch": "004-web-framework-research-spike",
-    "is_worktree": true,
-    "on_feature_branch": true,
-    "specify_version": "0.11.8",
-    "agent_install": "validate-agent-install.sh: ok: codex: 10 bundled agents installed",
-    "reviewability_setup_gate": {
-      "status": "warn",
-      "pass": true,
-      "warnings": [
-        "primary surfaces 6 exceeds warn threshold 1"
-      ]
-    },
-    "g0_verification": {
-      "build": "passed: npm run build",
-      "typecheck": "passed: npm run typecheck",
-      "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
-      "integration_test": "N/A"
-    },
-    "phase_1_specify": {
-      "status": "completed",
-      "functional_requirements": 17,
-      "user_stories": 3,
-      "acceptance_scenarios": 9,
-      "gate_g1": "passed: spec.md exists with 0 [NEEDS CLARIFICATION] markers",
-      "files": [
-        "specs/004-web-framework-research-spike/spec.md",
-        "specs/004-web-framework-research-spike/checklists/requirements.md",
-        ".specify/feature.json"
-      ]
-    },
-    "phase_2_clarify": {
-      "status": "completed",
-      "skipped": "G1 and G2 both found 0 active clarification markers; no clarify questions required."
-    },
-    "phase_3_plan": {
-      "status": "completed",
-      "gate_g3": "passed: plan.md exists with 0 unresolved markers",
-      "reviewability_budget": {
-        "status": "not_estimated",
-        "projected": null,
-        "note": "No declared production-file structure because SPEC-004 is a docs/process spike with 0 planned production files."
-      },
-      "files": [
-        "specs/004-web-framework-research-spike/plan.md",
-        "specs/004-web-framework-research-spike/research.md",
-        "specs/004-web-framework-research-spike/data-model.md",
-        "specs/004-web-framework-research-spike/contracts/decision-artifacts.md",
-        "specs/004-web-framework-research-spike/quickstart.md",
-        "CLAUDE.md"
-      ]
-    },
-    "phase_4_checklist": {
-      "ux": {
-        "status": "completed",
-        "items": 17,
-        "gaps_before": 5,
-        "gaps_after": 0,
-        "consensus": "skipped: no unresolved items",
-        "files": [
-          "specs/004-web-framework-research-spike/checklists/ux.md",
-          "specs/004-web-framework-research-spike/spec.md",
-          "specs/004-web-framework-research-spike/plan.md"
+    "model_reasoning_effort": "xhigh"
+  },
+  "phase0_evidence": {
+    "prerequisites": "check-prerequisites.sh all_pass=true",
+    "confidence_gate_mode": "advisory",
+    "reviewability_setup_gate": "status=warn, pass=true, reviewable_loc=325, production_files=4, total_files=10",
+    "build": "npm run build passed",
+    "typecheck": "npm run typecheck passed",
+    "unit_test": "npm test passed: 132 files, 2223 passed, 4 skipped"
+  },
+  "phase1_evidence": {
+    "executor": "phase-executor",
+    "files_created": [
+      ".specify/feature.json",
+      "specs/023-ocaml-language-support/spec.md",
+      "specs/023-ocaml-language-support/checklists/requirements.md"
+    ],
+    "user_stories": 4,
+    "functional_requirements": 17,
+    "acceptance_scenarios": 10,
+    "requirements_checklist": "16/16 complete",
+    "gate": "G1 pass: spec.md exists with 0 markers",
+    "after_specify_hook": "skipped: agent-context hook installed but no SPEC-023 plan.md exists yet; running without a plan could auto-detect unrelated plans"
+  },
+  "phase2_evidence": {
+    "session_1": {
+      "focus": "Grammar, Syntax Breadth, and Shipping",
+      "questions": 5,
+      "outcome": "Pinned vendored tree-sitter-ocaml@0.24.2 implementation and interface WASMs; required parser health checks and dist artifact assertion; locked first-slice syntax breadth; defined .ml/.mli pairing and interface node kinds.",
+      "consensus": {
+        "item": "Grammar source/artifacts",
+        "categories": "[codebase, domain]",
+        "round": 1,
+        "outcome": "both-agree",
+        "analysts": [
+          "codebase-analyst",
+          "domain-researcher"
         ]
       },
-      "performance": {
-        "status": "completed",
-        "items": 23,
-        "gaps_before": 0,
-        "gaps_after": 0,
-        "consensus": "skipped: no unresolved items",
-        "files": [
-          "specs/004-web-framework-research-spike/checklists/performance.md"
-        ]
-      },
-      "integration": {
-        "status": "completed",
-        "items": 24,
-        "gaps_before": 14,
-        "gaps_after": 0,
-        "consensus": "skipped: no unresolved items",
-        "files": [
-          "specs/004-web-framework-research-spike/checklists/integration.md",
-          "specs/004-web-framework-research-spike/spec.md",
-          "specs/004-web-framework-research-spike/plan.md"
-        ]
-      },
-      "reliability": {
-        "status": "completed",
-        "items": 26,
-        "gaps_before": 9,
-        "gaps_after": 0,
-        "consensus": "skipped: no unresolved items",
-        "files": [
-          "specs/004-web-framework-research-spike/checklists/reliability.md",
-          "specs/004-web-framework-research-spike/spec.md",
-          "specs/004-web-framework-research-spike/plan.md",
-          "specs/004-web-framework-research-spike/contracts/decision-artifacts.md"
-        ]
-      },
-      "gate_g4": "passed: 0 [Gap] markers"
+      "marker_check": "count-markers clarifications total=0"
     },
-    "phase_5_tasks": {
-      "status": "completed",
-      "total_tasks": 39,
-      "phases": 6,
-      "user_stories_covered": 3,
-      "parallel_opportunities": [
-        "T010-T016",
-        "T021-T022",
-        "T032-T034"
-      ],
-      "gate_g5": "passed: 39 tasks and 0 unresolved markers",
-      "reviewability_gate": {
-        "mode": "tasks",
-        "status": "block",
-        "pass": false,
-        "evidence_path": "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json",
-        "interpretation": "Current size-only block recorded as marker-planning input; no malformed, stale, unsafe, or correctness blocker detected."
-      },
-      "atomicity_route": {
-        "route": "one-navigable-PR",
-        "releasable": true,
-        "signals": [
-          "change-shape:modify-heavy"
-        ],
-        "warnings": []
-      },
-      "layer_plan": {
+    "session_2": {
+      "focus": "Resolution, Dune, Packages, and PPX Gate",
+      "questions": 5,
+      "outcome": "Dune-scoped unique-only local resolution; authoritative metadata limited to checked-in dune-project, dune stanzas, and root/opam *.opam; metadata gates local relationships only; ambiguity emits no edge; PPX expansion unsupported/future work.",
+      "consensus": {
         "status": "skipped",
-        "reason": "atomicity route is one-navigable-PR, not split-PR"
+        "reason": "clarify-executor reported no unresolved items and high-confidence recommendations"
       },
-      "files": [
-        "specs/004-web-framework-research-spike/tasks.md",
-        "specs/004-web-framework-research-spike/.process/reviewability/tasks-gate.json"
-      ]
+      "marker_check": "count-markers clarifications total=0"
     },
-    "phase_6_analyze": {
-      "status": "completed",
-      "findings": {
-        "critical": 0,
-        "high": 1,
-        "medium": 2,
-        "low": 0,
-        "remaining_high_or_critical": 0
+    "session_3": {
+      "focus": "Validation and Eval Bar",
+      "questions": 5,
+      "outcome": "Pinned smoke/eval corpus to Yojson, OCaml-LSP, and Dune; pinned three retrieval questions per repo; required first-PR fixture/parser/copy/full-verify/status/smoke/stability/probe evidence plus Yojson and OCaml-LSP A/B; allowed only Dune A/B and optional Irmin stress to split with an explicit follow-up gate; defined existing-language controls and compact smoke metrics.",
+      "consensus": {
+        "status": "skipped",
+        "reason": "clarify-executor reported no unresolved items and high or medium-high confidence recommendations"
       },
-      "gate_g6": "passed: 0 CRITICAL/HIGH findings",
-      "consensus": "skipped: no unresolved findings",
-      "confidence_scores": {
-        "spec_plan_alignment": 0.94,
-        "task_coverage": 0.93,
-        "non_goal_exclusion": 0.96,
-        "implementation_readiness": 0.9,
-        "evidence_grounding": 0.92,
-        "confidence_gate_composite": 0.93
-      },
-      "files": [
-        "docs/ai/specs/.process/SPEC-004-workflow.md",
-        "specs/004-web-framework-research-spike/spec.md",
-        "specs/004-web-framework-research-spike/plan.md",
-        "specs/004-web-framework-research-spike/tasks.md"
-      ]
-    },
-    "phase_6_5_confidence_gate": {
-      "status": "completed",
-      "mode": "advisory",
-      "threshold": 0.9,
-      "composite": 0.93,
-      "pass": true,
-      "recommended_action": "proceed"
-    },
-    "phase_7_implement": {
-      "status": "completed",
-      "tasks_completed": "T001-T039",
-      "selected_stack": "Vite + React SPA",
-      "selected_renderer": "Cytoscape.js",
-      "prototype": {
-        "workspace": "/tmp/spec-004-web-framework-research/prototype",
-        "self_repo_dataset": {
-          "nodes": 220,
-          "edges": 223,
-          "first_visible_render_ms": 353,
-          "frame_signal": "117 rAF ticks/sec",
-          "screenshot": "docs/design/assets/spec-004/self-repo-graph.png"
-        },
-        "one_k_dataset": {
-          "nodes": 1000,
-          "edges": 2500,
-          "first_visible_render_ms": 145,
-          "frame_signal": "102 rAF ticks/sec",
-          "screenshot": "docs/design/assets/spec-004/one-k-node-target.png"
-        }
-      },
-      "verification": {
-        "build": "passed: npm run build",
-        "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
-        "uat": "pass with limitation"
-      },
-      "files": [
-        "docs/design/web-framework-decision.md",
-        "docs/design/assets/spec-004/self-repo-graph.png",
-        "docs/design/assets/spec-004/one-k-node-target.png",
-        "specs/004-web-framework-research-spike/.process/uat-runbook.md",
-        "specs/004-web-framework-research-spike/quickstart.md",
-        "specs/004-web-framework-research-spike/tasks.md"
-      ]
-    },
-    "capability_path": {
-      "codebase_context": "local repository files plus RepoPrompt MCP when selected",
-      "library_documentation": "web search / official docs when current facts are required",
-      "web_or_domain_research": "web search available to parent; subagents receive gathered evidence or fallback notes",
-      "source_extraction": "local files and command outputs"
+      "marker_check": "count-markers clarifications total=0"
     }
   },
-  "pr_marker_plan": {
-    "schema_version": "pr-marker-plan.v1",
-    "kind": "pr_marker_plan",
-    "feature_id": "004-web-framework-research-spike",
-    "status": "emission_ready",
-    "source_fingerprint": {
-      "feature_spec_sha": "2cfa5174b87aeebdbc135a3d69f760558d9396e08fb59df2bc9b5d14aeec6047",
-      "plan_declared_scope_sha": "cfc19ad11595491b4b97eb19606bb5b30e82c22d3db2a33e589124dc54671a40",
-      "tasks_sha": "2750edb70c5273c8d779e8e2399343a7ade6acbc2c49a35e1e20d0630897b86c",
-      "reviewability_sha": "4d1b634010fb67710faab238916853334d4b63d5fdb37312ca00b412be803f38",
-      "hazard_route_sha": "68f01d9a0f5ff45656c900daf1d6f30b469a156a824735dc62f4ea724d73e783"
-    },
-    "markers": [
-      {
-        "id": "foundation",
-        "review_order": 1,
-        "kind": "foundation",
-        "parent_marker_id": null,
-        "source_boundary": {
-          "section": "Foundation",
-          "story_id": null,
-          "start_task_id": "T001",
-          "end_task_id": "T009"
-        },
-        "task_ids": [
-          "T001",
-          "T002",
-          "T003",
-          "T004",
-          "T005",
-          "T006",
-          "T007",
-          "T008",
-          "T009"
-        ],
-        "folded_polish_task_ids": [],
-        "folded_polish_target_reason": "",
-        "declared_files": [
-          {
-            "operation": "MODIFIED",
-            "path": "docs/design/web-framework-decision.md"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "specs/004-web-framework-research-spike/quickstart.md"
-          }
-        ],
-        "declared_tests": [],
-        "reviewability": {
-          "status": "block",
-          "mode": "tasks",
-          "scope": "foundation",
-          "evidence_path": ""
-        },
-        "hazards": [
-          "change-shape:modify-heavy"
-        ],
-        "subdivision": {
-          "status": "none",
-          "details": {}
-        },
-        "implementation_checkpoint": {
-          "status": "complete"
-        },
-        "emission_mapping": {
-          "status": "marker_split",
-          "source_marker_ids": [
-            "foundation"
-          ],
-          "packet_path": null
-        },
-        "warnings": []
-      },
-      {
-        "id": "us1",
-        "review_order": 2,
-        "kind": "user_story",
-        "parent_marker_id": null,
-        "source_boundary": {
-          "section": "User Story 1 - Review a grounded framework decision (Priority: P1) MVP",
-          "story_id": 1,
-          "start_task_id": "T010",
-          "end_task_id": "T020"
-        },
-        "task_ids": [
-          "T010",
-          "T011",
-          "T012",
-          "T013",
-          "T014",
-          "T015",
-          "T016",
-          "T017",
-          "T018",
-          "T019",
-          "T020"
-        ],
-        "folded_polish_task_ids": [],
-        "folded_polish_target_reason": "",
-        "declared_files": [
-          {
-            "operation": "MODIFIED",
-            "path": "docs/design/web-framework-decision.md"
-          }
-        ],
-        "declared_tests": [],
-        "reviewability": {
-          "status": "block",
-          "mode": "tasks",
-          "scope": "us1",
-          "evidence_path": ""
-        },
-        "hazards": [
-          "change-shape:modify-heavy"
-        ],
-        "subdivision": {
-          "status": "none",
-          "details": {}
-        },
-        "implementation_checkpoint": {
-          "status": "complete"
-        },
-        "emission_mapping": {
-          "status": "marker_split",
-          "source_marker_ids": [
-            "us1"
-          ],
-          "packet_path": null
-        },
-        "warnings": []
-      },
-      {
-        "id": "us2",
-        "review_order": 3,
-        "kind": "user_story",
-        "parent_marker_id": null,
-        "source_boundary": {
-          "section": "User Story 2 - Verify graph rendering before committing to the stack",
-          "story_id": 2,
-          "start_task_id": "T021",
-          "end_task_id": "T031"
-        },
-        "task_ids": [
-          "T021",
-          "T022",
-          "T023",
-          "T024",
-          "T025",
-          "T026",
-          "T027",
-          "T028",
-          "T029",
-          "T030",
-          "T031"
-        ],
-        "folded_polish_task_ids": [],
-        "folded_polish_target_reason": "",
-        "declared_files": [
-          {
-            "operation": "MODIFIED",
-            "path": "docs/design/assets/spec-004/one-k-node-target.png"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "docs/design/assets/spec-004/self-repo-graph.png"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "docs/design/web-framework-decision.md"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
-          }
-        ],
-        "declared_tests": [],
-        "reviewability": {
-          "status": "block",
-          "mode": "tasks",
-          "scope": "us2",
-          "evidence_path": ""
-        },
-        "hazards": [
-          "change-shape:modify-heavy"
-        ],
-        "subdivision": {
-          "status": "none",
-          "details": {}
-        },
-        "implementation_checkpoint": {
-          "status": "complete"
-        },
-        "emission_mapping": {
-          "status": "marker_split",
-          "source_marker_ids": [
-            "us2"
-          ],
-          "packet_path": null
-        },
-        "warnings": []
-      },
-      {
-        "id": "us3",
-        "review_order": 4,
-        "kind": "user_story",
-        "parent_marker_id": null,
-        "source_boundary": {
-          "section": "User Story 3 - Reuse the decision in later web specs",
-          "story_id": 3,
-          "start_task_id": "T032",
-          "end_task_id": "T035"
-        },
-        "task_ids": [
-          "T032",
-          "T033",
-          "T034",
-          "T035"
-        ],
-        "folded_polish_task_ids": [
-          "T036",
-          "T037",
-          "T038",
-          "T039"
-        ],
-        "folded_polish_target_reason": "nearest_preceding_non_polish_scope",
-        "declared_files": [
-          {
-            "operation": "MODIFIED",
-            "path": "docs/design/web-framework-decision.md"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "specs/004-web-framework-research-spike/.process/uat-runbook.md"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "specs/004-web-framework-research-spike/quickstart.md"
-          },
-          {
-            "operation": "MODIFIED",
-            "path": "specs/004-web-framework-research-spike/spec.md"
-          }
-        ],
-        "declared_tests": [],
-        "reviewability": {
-          "status": "block",
-          "mode": "tasks",
-          "scope": "us3",
-          "evidence_path": ""
-        },
-        "hazards": [
-          "change-shape:modify-heavy"
-        ],
-        "subdivision": {
-          "status": "none",
-          "details": {}
-        },
-        "implementation_checkpoint": {
-          "status": "complete"
-        },
-        "emission_mapping": {
-          "status": "marker_split",
-          "source_marker_ids": [
-            "us3"
-          ],
-          "packet_path": null
-        },
-        "warnings": []
-      }
+  "phase3_evidence": {
+    "executor": "phase-executor",
+    "files_created": [
+      "specs/023-ocaml-language-support/plan.md",
+      "specs/023-ocaml-language-support/research.md",
+      "specs/023-ocaml-language-support/data-model.md",
+      "specs/023-ocaml-language-support/quickstart.md",
+      "specs/023-ocaml-language-support/contracts/ocaml-language-support.md"
     ],
-    "warnings": [
-      {
-        "code": "reviewability_size_warning",
-        "severity": "warning",
-        "message": "Reviewability sizing result is marker-planning input.",
-        "source": "reviewability",
-        "details": {
-          "status": "block",
-          "mode": "tasks",
-          "evidence_path": ""
-        }
-      }
+    "files_modified": [
+      "CLAUDE.md"
+    ],
+    "reviewability_decision": "SPEC-023 remains one spec, but implementation must split into grammar/status, extraction, resolution, and validation/eval slices.",
+    "constitution_gate": "passed with required split; no PPX expansion, package nodes, or external package edges",
+    "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
+  },
+  "phase4_evidence": {
+    "language_coverage": {
+      "executor": "checklist-executor",
+      "items": 20,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "remediation": "Tightened source-level node-kind and span rules for functors, let forms, classes/objects, labeled/optional parameters, anonymous forms, and unsupported syntax."
+    },
+    "resolution_correctness": {
+      "executor": "checklist-executor",
+      "items": 23,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "remediation": "Added unique-only Dune-scoped functor reference/application wording and explicitly excluded functor result elaboration and type-equality inference."
+    },
+    "validation_eval": {
+      "executor": "checklist-executor",
+      "items": 32,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "remediation": "Clarified mandatory eval evidence belongs to the first PR/slice claiming complete OCaml support; earlier slices must preserve the completion gate."
+    },
+    "safety_license": {
+      "executor": "checklist-executor",
+      "items": 28,
+      "gaps_found": 0,
+      "gaps_remaining": 0,
+      "remediation": "No remediation required."
+    },
+    "consensus": "No unresolved consensus items reported for any checklist domain.",
+    "marker_check": "count-markers all returned 0 for gaps, clarifications, critical, high, medium, and low markers"
+  },
+  "phase5_evidence": {
+    "executor": "phase-executor",
+    "files_created": [
+      "specs/023-ocaml-language-support/tasks.md"
+    ],
+    "total_tasks": 74,
+    "phases": 7,
+    "parallel_opportunities": 22,
+    "setup_foundational_tasks": 18,
+    "us1_tasks": 11,
+    "us2_tasks": 14,
+    "us3_tasks": 18,
+    "us4_tasks": 5,
+    "polish_tasks": 8,
+    "coverage": "FR-001 through FR-017 and SC-001 through SC-006 covered",
+    "format_validation": "74/74 task lines match required checklist format",
+    "gate": "G5 pass: 74 tasks found",
+    "atomicity_route": {
+      "route": "one-navigable-PR",
+      "releasable": true,
+      "signals": [
+        "change-shape:modify-heavy"
+      ],
+      "warnings": []
+    },
+    "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
+  },
+  "phase6_evidence": {
+    "executor": "analyze-executor",
+    "findings_total": 3,
+    "critical": 0,
+    "high": 1,
+    "medium": 2,
+    "low": 0,
+    "remediations": [
+      "A1 High: clarified one public ocaml language token with internal extension-aware implementation/interface grammar selection and src/types.ts registry coverage.",
+      "A2 Medium: reworded copy-assets and status tasks to verify existing wildcard copy/status behavior instead of forcing unrelated package.json or src/bin/codegraph.ts edits.",
+      "A3 Medium: marked validated checklist items complete and corrected stale Quickstart reference."
+    ],
+    "consensus": "No unresolved consensus items reported by analyze-executor.",
+    "verification": [
+      "check-prerequisites.sh --json --require-tasks --include-tasks",
+      "count-markers findings returned 0",
+      "count-markers all returned 0",
+      "git diff --check clean"
     ]
   },
-  "extensions": {
-    "doctor": "skipped: doctor extension not installed",
-    "verify": "enabled",
-    "verify_tasks": "enabled",
-    "review": "enabled",
-    "cleanup": "enabled",
-    "retrospective": "enabled",
-    "agent_context": "enabled"
+  "phase6_5_evidence": {
+    "mode": "advisory",
+    "result": "soft_skip",
+    "pass": null,
+    "reason": "confidence-gate.sh returned NO_DATA because no synthesizer confidence emit was present in the workflow file",
+    "recommended_action": "soft_skip"
+  },
+  "phase7_evidence": {
+    "implementation": "Grammar/status, extraction, resolution/package metadata, PPX boundary, docs, local tests, real-repo smoke/probes, Yojson/OCaml-LSP A/B, existing-language local control, final reviewability backstop, and dry-run slice emission are recorded.",
+    "completed_task_ranges": [
+      "T001-T074"
+    ],
+    "open_tasks": [],
+    "blocked_gates": [],
+    "self_repo_smoke": "specs/023-ocaml-language-support/validation/self-repo-smoke.md",
+    "deferred_gates": [
+      {
+        "task": "T056",
+        "reason": "Dune A/B is explicitly recorded as a follow-up gate before support-completion claims, per the SPEC-023 validation plan.",
+        "evidence": "specs/023-ocaml-language-support/validation/dune-ab-gate.md"
+      }
+    ],
+    "existing_language_control": {
+      "status": "pass",
+      "mode": "local-only current-vs-baseline deterministic control",
+      "external_ab_status": "rejected_by_sandbox_reviewer_private_repo_context_exposure",
+      "summary": "/private/tmp/spec-023-existing-language-local.wbMHdR/summary.json",
+      "evidence": "specs/023-ocaml-language-support/validation/existing-language-ab-gate.md"
+    },
+    "final_reviewability": {
+      "status": "exception",
+      "reviewable_loc": 1250,
+      "production_files": 16,
+      "total_files": 90,
+      "primary_surface_count": 5,
+      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
+      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
+      "exception_class": "infra",
+      "exception_honored": true,
+      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
+      "blocked_operations": []
+    }
   },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
-      "status": "completed",
-      "note": "Archive extension not installed; cleanup disabled."
+      "status": "completed"
     },
     {
       "step": "Phase 0: Prerequisites",
@@ -578,54 +254,64 @@
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Decision matrix and evidence",
-      "status": "completed",
-      "skipped": "No active [NEEDS CLARIFICATION] markers after Specify."
+      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping",
+      "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Decision matrix and evidence Consensus",
-      "status": "completed",
-      "skipped": "No unresolved clarify items required consensus."
+      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Validation and Eval Bar",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Validation and Eval Bar Consensus",
+      "status": "completed"
     },
     {
       "step": "Phase 3: Plan",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - ux",
+      "step": "Phase 4: Checklist - Language Coverage",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - ux Consensus",
-      "status": "completed",
-      "skipped": "No unresolved UX checklist items required consensus."
-    },
-    {
-      "step": "Phase 4: Checklist - performance",
+      "step": "Phase 4: Checklist - Language Coverage Consensus",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - performance Consensus",
-      "status": "completed",
-      "skipped": "No unresolved performance checklist items required consensus."
-    },
-    {
-      "step": "Phase 4: Checklist - integration",
+      "step": "Phase 4: Checklist - Resolution Correctness",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - integration Consensus",
-      "status": "completed",
-      "skipped": "No unresolved integration checklist items required consensus."
-    },
-    {
-      "step": "Phase 4: Checklist - reliability",
+      "step": "Phase 4: Checklist - Resolution Correctness Consensus",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - reliability Consensus",
-      "status": "completed",
-      "skipped": "No unresolved reliability checklist items required consensus."
+      "step": "Phase 4: Checklist - Validation and Eval",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - Validation and Eval Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - Safety and License",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 4: Checklist - Safety and License Consensus",
+      "status": "completed"
     },
     {
       "step": "Phase 5: Tasks",
@@ -637,37 +323,31 @@
     },
     {
       "step": "Phase 6: Analyze - Consensus",
-      "status": "completed",
-      "skipped": "No unresolved analyze findings required consensus."
+      "status": "completed"
     },
     {
       "step": "Phase 6.5: Confidence Gate",
+      "status": "skipped: advisory confidence gate returned NO_DATA and recommended soft_skip"
+    },
+    {
+      "step": "Phase 7: Implement - setup, grammar, status, extraction, resolution, PPX, docs completed (T001-T047, T057-T058, T061-T069)",
       "status": "completed"
     },
     {
-      "step": "Phase 7: Implement - Setup and decision rules (T001-T009)",
+      "step": "Phase 7: Implement - real-repo smoke and deterministic probes (T048-T053)",
       "status": "completed"
     },
     {
-      "step": "Phase 7: Implement - US1 framework decision (T010-T020)",
+      "step": "Phase 7: Implement - A/B and existing-language control gates (T054-T056, T059-T060)",
       "status": "completed"
     },
     {
-      "step": "Phase 7: Implement - US2 prototype evidence (T021-T031)",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement - US3 downstream handoff (T032-T035)",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement - Polish and verification (T036-T039)",
+      "step": "Phase 7: Implement - quickstart, reviewability, PR packet, marker scan (T070-T074)",
       "status": "completed"
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "completed",
-      "skipped": "doctor extension not installed"
+      "status": "skipped: doctor extension not installed"
     },
     {
       "step": "Post: Verify Implementation",
@@ -687,7 +367,7 @@
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "completed"
+      "status": "completed: final backstop exception honored"
     },
     {
       "step": "Post: Self-Review",
@@ -714,85 +394,143 @@
       "status": "completed"
     }
   ],
-  "current_source_fingerprint": {
-    "feature_spec_sha": "2cfa5174b87aeebdbc135a3d69f760558d9396e08fb59df2bc9b5d14aeec6047",
-    "plan_declared_scope_sha": "cfc19ad11595491b4b97eb19606bb5b30e82c22d3db2a33e589124dc54671a40",
-    "tasks_sha": "2750edb70c5273c8d779e8e2399343a7ade6acbc2c49a35e1e20d0630897b86c",
-    "reviewability_sha": "4d1b634010fb67710faab238916853334d4b63d5fdb37312ca00b412be803f38",
-    "hazard_route_sha": "68f01d9a0f5ff45656c900daf1d6f30b469a156a824735dc62f4ea724d73e783"
-  },
-  "pr_marker_plan_current_source_fingerprint": {
-    "feature_spec_sha": "2cfa5174b87aeebdbc135a3d69f760558d9396e08fb59df2bc9b5d14aeec6047",
-    "plan_declared_scope_sha": "cfc19ad11595491b4b97eb19606bb5b30e82c22d3db2a33e589124dc54671a40",
-    "tasks_sha": "2750edb70c5273c8d779e8e2399343a7ade6acbc2c49a35e1e20d0630897b86c",
-    "reviewability_sha": "4d1b634010fb67710faab238916853334d4b63d5fdb37312ca00b412be803f38",
-    "hazard_route_sha": "68f01d9a0f5ff45656c900daf1d6f30b469a156a824735dc62f4ea724d73e783"
-  },
-  "post_implementation": {
-    "verify_implementation": {
-      "status": "completed",
-      "evidence": [
-        "check-prerequisites --require-tasks --include-tasks",
-        "phase coverage guard",
-        "39 completed tasks",
-        "artifact presence check"
+  "post_evidence": {
+    "deterministic_verification": {
+      "status": "pass",
+      "build": "npm run build passed",
+      "typecheck": "npm run typecheck passed",
+      "targeted_ocaml": "5 files, 16 tests passed",
+      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped"
+    },
+    "review_scouting": {
+      "status": "complete",
+      "findings": [
+        "stale existing-language A/B and reviewability evidence text"
+      ],
+      "fixes": [
+        "updated pr-packet traceability",
+        "updated quickstart wording"
+      ],
+      "verification": [
+        "stale-text scan clean",
+        "process JSON valid",
+        "git diff --check clean",
+        "autopilot coverage pass"
+      ]
+    },
+    "fix_forward_pass": {
+      "status": "complete",
+      "fixes": [
+        "stale evidence text corrected"
       ]
     },
     "verify_tasks": {
-      "status": "completed",
-      "report": "specs/004-web-framework-research-spike/verify-tasks-report.md",
-      "verified_tasks": 39,
-      "flagged_items": 0
+      "status": "pass",
+      "report": "specs/023-ocaml-language-support/verify-tasks-report.md",
+      "verified": 74,
+      "partial": 0,
+      "weak": 0,
+      "not_found": 0,
+      "skipped": 0
+    },
+    "verify_implementation": {
+      "status": "pass",
+      "max_findings": 50,
+      "findings": 0,
+      "requirement_coverage": "23/23 mapped",
+      "task_completion": "74/74",
+      "notes": [
+        "read-only verify gate completed from spec/plan/tasks/constitution and changed-file detection",
+        "external-agent A/B remains policy-blocked; local replacement control passed"
+      ]
     },
     "code_review": {
-      "status": "completed",
-      "evidence": [
-        "git diff --check origin/main",
-        "placeholder scan",
-        "forbidden production surface diff check"
+      "status": "pass",
+      "mode": "parent-session fallback",
+      "subagent_status": "RepoPrompt agent transport closed twice",
+      "findings": [],
+      "residual_risks": [
+        "Dune A/B follow-up gate remains",
+        "single PR reviewability size block remains"
       ]
     },
     "integration_suite": {
-      "status": "completed",
-      "commands": [
-        "npm run build",
-        "npm run typecheck",
-        "npm test"
-      ],
-      "tests": "132 files, 2223 passed, 4 skipped"
+      "status": "pass",
+      "build": "npm run build passed",
+      "typecheck": "npm run typecheck passed",
+      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped",
+      "evidence": "specs/023-ocaml-language-support/.process/emission/full-verification-evidence.md"
     },
-    "final_reviewability": {
-      "status": "completed",
-      "result": "proceed",
-      "evidence": "specs/004-web-framework-research-spike/.process/final-reviewability/gate-state.json"
+    "self_review": {
+      "status": "complete",
+      "evidence": "specs/023-ocaml-language-support/.process/self-review.md"
     },
     "uat_runbook": {
-      "status": "completed",
-      "validation": "validate-uat-runbook.sh ok"
+      "status": "pass",
+      "evidence": "specs/023-ocaml-language-support/.process/uat-runbook.md",
+      "validation": "validate-uat-runbook.sh passed"
     },
-    "pr_body": {
-      "status": "completed",
-      "body": "specs/004-web-framework-research-spike/.process/pr-body.md",
-      "packet": "specs/004-web-framework-research-spike/.process/pr-packets/single.json",
-      "validation": "passed"
+    "final_reviewability_backstop": {
+      "status": "exception",
+      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
+      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
+      "exception_class": "infra",
+      "exception_honored": true,
+      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
+      "blocked_operations": [],
+      "reason": "reviewable LOC 1250, production files 16, and total files 90 exceed block thresholds; operator-owned infra exception accepted",
+      "total_files": 90
     },
-    "retrospective": {
-      "status": "completed",
-      "report": "specs/004-web-framework-research-spike/retrospective.md"
+    "pr_packet_body_generation": {
+      "status": "pass",
+      "packet_location": "transient worktree-generated packet/body used for PR creation; not committed to avoid self-referential packet diffs",
+      "validation": "validate-pr-packet.sh passed for current packet",
+      "title": "feat(speckit-pro): Add OCaml language support",
+      "workflow_contract": "validate-pr-workflow-contract.sh passed"
     },
     "pr_creation": {
-      "status": "completed",
-      "number": 19,
-      "url": "https://github.com/racecraft-lab/codegraph/pull/19",
-      "title": "feat(speckit-pro): Add web framework research spike"
+      "status": "complete",
+      "pr_number": 21,
+      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/21",
+      "title": "feat(speckit-pro): Add OCaml language support",
+      "base": "main",
+      "head": "023-ocaml-language-support",
+      "mergeable": "MERGEABLE"
     },
     "review_remediation": {
-      "status": "completed",
+      "status": "complete",
+      "comments": 2,
       "reviews": 1,
-      "comments": 8,
-      "remediated_comments": 8,
-      "checks": "Copilot comments remediated; current PR checks are tracked on GitHub",
-      "checked_at": "2026-07-05T19:46:10.882Z"
+      "review_decision": "COMMENTED",
+      "fixes": [
+        "ignored root-level and nested opam.locked files",
+        "failed closed for implementation-only OCaml symbols hidden by a paired .mli",
+        "constrained bare OCaml calls to same-file visible callable targets",
+        "preserved same-source-unit private helper calls behind paired .mli files",
+        "regenerated final changed-files and reviewability state"
+      ],
+      "verification": [
+        "npm run build passed",
+        "npm run typecheck passed",
+        "OCaml focused suite passed: 5 files, 16 tests",
+        "npm test passed: 137 files, 2239 passed, 4 skipped"
+      ],
+      "action": "actionable Copilot and RepoPrompt findings fixed, pushed through 3269506, RepoPrompt clean-gate returned no actionable findings, and GitHub checks passed"
+    },
+    "retrospective": {
+      "status": "complete",
+      "report": "specs/023-ocaml-language-support/retrospective.md",
+      "spec_changes_proposed": false,
+      "spec_adherence": "97.8%"
     }
+  },
+  "status": "completed_pr_open",
+  "pr": {
+    "number": 21,
+    "url": "https://github.com/racecraft-lab/codegraph/pull/21",
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "MERGEABLE",
+    "checks": "all GitHub checks passed at 3269506"
   }
 }

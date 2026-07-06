@@ -11,12 +11,14 @@ import { Parser, Language as WasmLanguage } from 'web-tree-sitter';
 import { Language } from '../types';
 
 export type GrammarLanguage = Exclude<Language, 'svelte' | 'vue' | 'astro' | 'liquid' | 'razor' | 'yaml' | 'twig' | 'xml' | 'properties' | 'unknown'>;
+type InternalGrammarKey = 'ocaml_interface';
+type GrammarKey = GrammarLanguage | InternalGrammarKey;
 
 /**
  * WASM filename map — maps each language to its .wasm grammar file
  * in the tree-sitter-wasms package.
  */
-const WASM_GRAMMAR_FILES: Record<GrammarLanguage, string> = {
+const WASM_GRAMMAR_FILES: Record<GrammarKey, string> = {
   typescript: 'tree-sitter-typescript.wasm',
   tsx: 'tree-sitter-tsx.wasm',
   javascript: 'tree-sitter-javascript.wasm',
@@ -45,6 +47,8 @@ const WASM_GRAMMAR_FILES: Record<GrammarLanguage, string> = {
   cobol: 'tree-sitter-cobol.wasm',
   vbnet: 'tree-sitter-vbnet.wasm',
   erlang: 'tree-sitter-erlang.wasm',
+  ocaml: 'tree-sitter-ocaml.wasm',
+  ocaml_interface: 'tree-sitter-ocaml_interface.wasm',
 };
 
 /**
@@ -144,6 +148,10 @@ export const EXTENSION_MAP: Record<string, Language> = {
   // (`.app`/`.app.src` resource files route via isErlangAppFile below: their
   // last-dot extension is too generic for this map.)
   '.escript': 'erlang',
+  // OCaml implementation and interface files. Both report as public language
+  // `ocaml`; parser selection uses the extension-aware internal grammar key.
+  '.ml': 'ocaml',
+  '.mli': 'ocaml',
   // Spring config: `application.properties` / `application-*.properties`. Same
   // shape as the `.yml` variants — the YAML/properties extractor emits one node
   // per leaf key, and the Spring resolver links `@Value("${k}")` references.
@@ -208,9 +216,9 @@ export function isPlayRoutesFile(filePath: string): boolean {
 /**
  * Caches for loaded grammars and parsers
  */
-const parserCache = new Map<Language, Parser>();
-const languageCache = new Map<Language, WasmLanguage>();
-const unavailableGrammarErrors = new Map<Language, string>();
+const parserCache = new Map<GrammarKey, Parser>();
+const languageCache = new Map<GrammarKey, WasmLanguage>();
+const unavailableGrammarErrors = new Map<GrammarKey, string>();
 
 let parserInitialized = false;
 
@@ -253,18 +261,22 @@ export async function loadGrammarsForLanguages(languages: Language[]): Promise<v
     languages = [...languages, 'cfscript', 'cfquery'];
   }
 
-  // Deduplicate and filter to languages that have WASM grammars and aren't already loaded
-  const toLoad = [...new Set(languages)].filter(
-    (lang): lang is GrammarLanguage =>
-      lang in WASM_GRAMMAR_FILES &&
-      !languageCache.has(lang) &&
-      !unavailableGrammarErrors.has(lang)
+  const grammarKeys = languages.flatMap((lang): GrammarKey[] =>
+    lang === 'ocaml' ? ['ocaml', 'ocaml_interface'] : [lang as GrammarKey]
+  );
+
+  // Deduplicate and filter to grammars that have WASM files and aren't already loaded.
+  const toLoad = [...new Set(grammarKeys)].filter(
+    (key): key is GrammarKey =>
+      key in WASM_GRAMMAR_FILES &&
+      !languageCache.has(key) &&
+      !unavailableGrammarErrors.has(key)
   );
 
   // Load grammars sequentially to avoid web-tree-sitter WASM race condition on Node 20+
   // See: https://github.com/tree-sitter/tree-sitter/issues/2338
-  for (const lang of toLoad) {
-    const wasmFile = WASM_GRAMMAR_FILES[lang];
+  for (const grammarKey of toLoad) {
+    const wasmFile = WASM_GRAMMAR_FILES[grammarKey];
     try {
       // Some grammars ship their own WASMs (not in tree-sitter-wasms, or the
       // tree-sitter-wasms build is too old). Lua: tree-sitter-wasms ships an
@@ -275,15 +287,15 @@ export async function loadGrammarsForLanguages(languages: Language[]): Promise<v
       // `class Foo(...)` as an ERROR that swallows the whole class (#237); we
       // vendor the upstream ABI-15 tree-sitter-c-sharp 0.23.5 wasm, which parses
       // primary constructors natively.
-      const wasmPath = (lang === 'pascal' || lang === 'scala' || lang === 'lua' || lang === 'luau' || lang === 'csharp' || lang === 'r' || lang === 'cfml' || lang === 'cfscript' || lang === 'cfquery' || lang === 'cobol' || lang === 'vbnet' || lang === 'erlang')
+      const wasmPath = (grammarKey === 'pascal' || grammarKey === 'scala' || grammarKey === 'lua' || grammarKey === 'luau' || grammarKey === 'csharp' || grammarKey === 'r' || grammarKey === 'cfml' || grammarKey === 'cfscript' || grammarKey === 'cfquery' || grammarKey === 'cobol' || grammarKey === 'vbnet' || grammarKey === 'erlang' || grammarKey === 'ocaml' || grammarKey === 'ocaml_interface')
         ? path.join(__dirname, 'wasm', wasmFile)
         : require.resolve(`tree-sitter-wasms/out/${wasmFile}`);
       const language = await WasmLanguage.load(wasmPath);
-      languageCache.set(lang, language);
+      languageCache.set(grammarKey, language);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[CodeGraph] Failed to load ${lang} grammar — parsing will be unavailable: ${message}`);
-      unavailableGrammarErrors.set(lang, message);
+      console.warn(`[CodeGraph] Failed to load ${grammarKey} grammar — parsing will be unavailable: ${message}`);
+      unavailableGrammarErrors.set(grammarKey, message);
     }
   }
 }
@@ -293,7 +305,8 @@ export async function loadGrammarsForLanguages(languages: Language[]): Promise<v
  * backward compatibility. Prefer loadGrammarsForLanguages() in production.
  */
 export async function loadAllGrammars(): Promise<void> {
-  const allLanguages = Object.keys(WASM_GRAMMAR_FILES) as GrammarLanguage[];
+  const allLanguages = (Object.keys(WASM_GRAMMAR_FILES) as GrammarKey[])
+    .filter((key): key is GrammarLanguage => key !== 'ocaml_interface');
   await loadGrammarsForLanguages(allLanguages);
 }
 
@@ -308,20 +321,29 @@ export function isGrammarsInitialized(): boolean {
  * Get a parser for the specified language.
  * Returns synchronously from pre-loaded cache.
  */
-export function getParser(language: Language): Parser | null {
-  if (parserCache.has(language)) {
-    return parserCache.get(language)!;
+export function getParser(language: Language, filePath?: string): Parser | null {
+  const grammarKey = grammarKeyForLanguage(language, filePath);
+  if (!grammarKey) return null;
+  if (parserCache.has(grammarKey)) {
+    return parserCache.get(grammarKey)!;
   }
 
-  const lang = languageCache.get(language);
+  const lang = languageCache.get(grammarKey);
   if (!lang) {
     return null;
   }
 
   const parser = new Parser();
   parser.setLanguage(lang);
-  parserCache.set(language, parser);
+  parserCache.set(grammarKey, parser);
   return parser;
+}
+
+function grammarKeyForLanguage(language: Language, filePath?: string): GrammarKey | null {
+  if (language === 'ocaml' && filePath && path.extname(filePath).toLowerCase() === '.mli') {
+    return 'ocaml_interface';
+  }
+  return language in WASM_GRAMMAR_FILES ? language as GrammarLanguage : null;
 }
 
 /**
@@ -395,7 +417,8 @@ export function isGrammarLoaded(language: Language): boolean {
   if (language === 'svelte' || language === 'vue' || language === 'astro' || language === 'liquid' || language === 'razor') return true;
   if (language === 'yaml' || language === 'twig') return true; // no WASM grammar needed
   if (language === 'xml' || language === 'properties') return true; // no WASM grammar needed
-  return languageCache.has(language);
+  if (language === 'ocaml') return languageCache.has('ocaml') && languageCache.has('ocaml_interface');
+  return language in WASM_GRAMMAR_FILES && languageCache.has(language as GrammarKey);
 }
 
 /**
@@ -415,7 +438,14 @@ export function isFileLevelOnlyLanguage(language: Language): boolean {
  * Get all supported languages (those with grammar definitions).
  */
 export function getSupportedLanguages(): Language[] {
-  return [...(Object.keys(WASM_GRAMMAR_FILES) as GrammarLanguage[]), 'svelte', 'vue', 'astro', 'liquid'];
+  return [
+    ...(Object.keys(WASM_GRAMMAR_FILES) as GrammarKey[])
+      .filter((key): key is GrammarLanguage => key !== 'ocaml_interface'),
+    'svelte',
+    'vue',
+    'astro',
+    'liquid',
+  ];
 }
 
 /**
@@ -426,10 +456,13 @@ export function getSupportedLanguages(): Language[] {
  * large repos.
  */
 export function resetParser(language: Language): void {
-  const old = parserCache.get(language);
-  if (old) {
-    old.delete();
-    parserCache.delete(language);
+  const keys = language === 'ocaml' ? ['ocaml', 'ocaml_interface'] as GrammarKey[] : [language as GrammarKey];
+  for (const key of keys) {
+    const old = parserCache.get(key);
+    if (old) {
+      old.delete();
+      parserCache.delete(key);
+    }
   }
 }
 
@@ -451,8 +484,12 @@ export function clearParserCache(): void {
  */
 export function getUnavailableGrammarErrors(): Partial<Record<Language, string>> {
   const out: Partial<Record<Language, string>> = {};
-  for (const [language, message] of unavailableGrammarErrors.entries()) {
-    out[language] = message;
+  for (const [grammarKey, message] of unavailableGrammarErrors.entries()) {
+    if (grammarKey === 'ocaml_interface') {
+      out.ocaml = out.ocaml ? `${out.ocaml}; ocaml_interface: ${message}` : `ocaml_interface: ${message}`;
+    } else {
+      out[grammarKey] = message;
+    }
   }
   return out;
 }
@@ -499,6 +536,7 @@ export function getLanguageDisplayName(language: Language): string {
     cobol: 'COBOL',
     vbnet: 'Visual Basic .NET',
     erlang: 'Erlang',
+    ocaml: 'OCaml',
     unknown: 'Unknown',
   };
   return names[language] || language;
