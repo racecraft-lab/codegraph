@@ -4,7 +4,7 @@
 |-------|-------|
 | Spec | 023-ocaml-language-support |
 | Branch | 023-ocaml-language-support |
-| PR | Pending until PR is opened |
+| PR | #21 - https://github.com/racecraft-lab/codegraph/pull/21 |
 | Generated from | 2026-07-05T20:24:36Z |
 
 
@@ -24,41 +24,41 @@ Run these from the repository root before walking the acceptance tests.
 
 ### User Story 1 - Index OCaml repositories (Priority: P1)
 
-- [ ] Run `npm run build` and confirm both OCaml WASMs exist under
+- [x] Run `npm run build` and confirm both OCaml WASMs exist under
   `dist/extraction/wasm/`.
-- [ ] Run `npx vitest run __tests__/ocaml-parser-health.test.ts
+- [x] Run `npx vitest run __tests__/ocaml-parser-health.test.ts
   __tests__/ocaml-status.test.ts __tests__/ocaml-extraction.test.ts` and
   confirm `.ml` and `.mli` files parse and report as public language `ocaml`.
-- [ ] Inspect `specs/023-ocaml-language-support/validation/extraction.md` and
+- [x] Inspect `specs/023-ocaml-language-support/validation/extraction.md` and
   confirm broad syntax fixture coverage is recorded.
 
 ### User Story 2 - Explore OCaml structure (Priority: P2)
 
-- [ ] Run `npx vitest run __tests__/ocaml-resolution.test.ts` and confirm
+- [x] Run `npx vitest run __tests__/ocaml-resolution.test.ts` and confirm
   module paths, functors, opens/includes, interface pairs, and Dune/opam
   metadata resolve only when unique.
-- [ ] Inspect `specs/023-ocaml-language-support/validation/resolution.md` and
+- [x] Inspect `specs/023-ocaml-language-support/validation/resolution.md` and
   confirm positive and negative edge evidence is recorded.
-- [ ] Confirm no package nodes or external package edges are produced for the
+- [x] Confirm no package nodes or external package edges are produced for the
   OCaml fixtures.
 
 ### User Story 3 - Review shippable evidence (Priority: P3)
 
-- [ ] Review `validation/yojson-smoke.md`, `validation/ocaml-lsp-smoke.md`, and
+- [x] Review `validation/yojson-smoke.md`, `validation/ocaml-lsp-smoke.md`, and
   `validation/dune-smoke.md` for URL, commit, status, graph counts, stability,
   and probe outcomes.
-- [ ] Review `validation/yojson-probes.md`, `validation/ocaml-lsp-probes.md`,
+- [x] Review `validation/yojson-probes.md`, `validation/ocaml-lsp-probes.md`,
   and `validation/dune-probes.md` for the nine deterministic probe records.
-- [ ] Review `validation/yojson-ab.md`, `validation/ocaml-lsp-ab.md`, and
+- [x] Review `validation/yojson-ab.md`, `validation/ocaml-lsp-ab.md`, and
   `validation/dune-ab-gate.md`; confirm Dune A/B remains a follow-up gate before
   SPEC-023 completion.
 
 ### User Story 4 - Bound PPX explicitly (Priority: P4)
 
-- [ ] Run `npx vitest run __tests__/ocaml-ppx-policy.test.ts` and confirm PPX
+- [x] Run `npx vitest run __tests__/ocaml-ppx-policy.test.ts` and confirm PPX
   attributes/extension nodes do not create generated symbols or speculative
   relationships.
-- [ ] Review `ppx-policy.md` and `validation/ppx-boundary.md` and confirm PPX
+- [x] Review `ppx-policy.md` and `validation/ppx-boundary.md` and confirm PPX
   expansion is documented as unsupported/future work.
 
 
@@ -100,9 +100,13 @@ Run these from the repository root before walking the acceptance tests.
 
 Advisory only — these checkboxes block nothing.
 
-- [ ] Reviewer walked every Per-Story Acceptance Test above.
-- [ ] Reviewer confirmed the Negative-Path Tests behave as described.
-- [ ] Reviewer is satisfied the PR delivers the behavior the spec promised.
+Manual UAT was executed on 2026-07-06T15:48:23Z. Evidence is recorded in
+`specs/023-ocaml-language-support/validation/manual-uat.md`.
+
+- [x] Reviewer walked every Per-Story Acceptance Test above.
+- [x] Reviewer confirmed the Negative-Path Tests behave as described.
+- [x] Reviewer is satisfied the PR delivers the behavior the spec promised,
+  with Dune A/B still preserved as a follow-up gate before SPEC-023 completion.
 
 ## Rollback
 

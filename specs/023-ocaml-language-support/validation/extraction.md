@@ -8,7 +8,7 @@ npx vitest run __tests__/ocaml-extraction.test.ts
 
 ## Result
 
-Passed: 1 test file, 5 tests.
+Passed: 1 test file, 7 tests.
 
 ## Coverage
 

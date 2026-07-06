@@ -19,6 +19,7 @@ and OCaml-LSP A/B evidence is recorded; Dune A/B remains a follow-up gate.
 | Existing-language controls | `existing-language-controls.md`, `existing-language-ab-gate.md` | Test controls complete; A/B blocked |
 | Quickstart run and marker scan | `quickstart-run.md` | Complete with recorded follow-up gate |
 | PR packet traceability | `pr-packet-traceability.md` | Complete |
+| Manual UAT | `manual-uat.md`, `.process/uat-runbook.md` | Complete for PR #21; Dune A/B follow-up gate preserved |
 
 ## Smoke/Probe Fields
 

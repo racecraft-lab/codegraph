@@ -656,6 +656,16 @@ languages, resolver paths, MCP tools, or installer code.
 | Post: Review Remediation | Complete | Copilot and RepoPrompt review findings were fixed through `3269506`; RepoPrompt clean-gate returned no actionable findings, GitHub checks passed, and local verification passed with `npm run build`, `npm run typecheck`, focused OCaml tests, and full `npm test` (137 files, 2239 passed, 4 skipped). |
 | Post: Retrospective | Complete | `retrospective.md` saved with no proposed `spec.md` edits. |
 
+Manual UAT for PR #21 was executed on 2026-07-06T15:48:23Z. The runbook
+checkboxes are signed off in
+`specs/023-ocaml-language-support/.process/uat-runbook.md`, and execution
+evidence is recorded in
+`specs/023-ocaml-language-support/validation/manual-uat.md`. Dune A/B remains a
+follow-up gate before SPEC-023 may be described as complete; the attempted
+external Claude rerun was not accepted as valid evidence because the sandboxed
+run was unauthenticated and the unsandboxed authenticated run was denied by the
+command approval reviewer for external-data-disclosure risk.
+
 ## Project Structure Reference
 
 ```text
