@@ -37,8 +37,8 @@ plus feature parity against the internal baseline is a no-waiver gate.
 | Clarify | `$speckit-clarify` | ✅ Complete | G2 passed; prereqs, parity, correction semantics, config, and slices resolved |
 | Plan | `$speckit-plan` | ✅ Complete | G3 passed; parity tables have 0 unowned rows |
 | Checklist | `$speckit-checklist` | ✅ Complete | G4 passed; 90 checklist items, 0 gaps |
-| Tasks | `$speckit-tasks` | 🔄 In Progress | Generate slice-aware tasks |
-| Analyze | `$speckit-analyze` | ⏳ Pending | Check drift against Design Concept and roadmap |
+| Tasks | `$speckit-tasks` | ✅ Complete | G5 passed; 114 tasks across 7 phases |
+| Analyze | `$speckit-analyze` | 🔄 In Progress | Check drift against Design Concept and roadmap |
 | Implement | `$speckit-implement` | ⏳ Pending | TDD-first, real-server validation gate |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -501,10 +501,13 @@ Suggested implementation phases:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | ⏳ |
-| **Phases** | ⏳ |
-| **Parallel Opportunities** | ⏳ |
-| **User Stories Covered** | ⏳ |
+| **Total Tasks** | 114 |
+| **Phases** | 7 |
+| **Parallel Opportunities** | 48 `[P]` tasks |
+| **User Stories Covered** | 4 |
+| **Gate G5** | Passed: `{"gate":"G5","pass":true,"reason":"114 tasks found","markers":0,"task_count":114}` |
+| **Reviewability Gate** | Size-only block recorded in `specs/008-lsp-client-integration/.process/reviewability/tasks-reviewability.json`; marker planning required. |
+| **Marker Plan** | `specs/008-lsp-client-integration/.process/reviewability/pr-marker-plan.json`; markers: `foundation`, `us1`, `us2`, `us3`, `us4`. |
 
 ---
 
@@ -515,16 +518,27 @@ the read-only atomicity classifier and records its decision here.
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | ⏳ | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | ⏳ | `true` or `false`. |
-| **Signals** | ⏳ | Decisive detector findings. |
-| **Warnings** | ⏳ | Release-safety warnings. |
+| **Route** | `one-navigable-PR` | One navigable aggregate implementation path; marker evidence is retained for reviewability and downstream PR emission. |
+| **Releasable** | `true` | No release-safety warning from the classifier. |
+| **Signals** | `change-shape:modify-heavy` | Decisive detector findings. |
+| **Warnings** | None | Release-safety warnings. |
 
 To produce the decision, run the classifier against the feature directory:
 
 ```bash
 bash speckit-pro/skills/speckit-autopilot/scripts/atomicity-route.sh specs/008-lsp-client-integration
 ```
+
+---
+
+## Layer Plan
+
+| Field | Value |
+|-------|-------|
+| **Status** | `skipped` |
+| **Reason** | Atomicity route is `one-navigable-PR`; split-PR layer planning is not required before Analyze. |
+| **Marker Plan Evidence** | `specs/008-lsp-client-integration/.process/reviewability/pr-marker-plan.json` |
+| **Marker Order** | `foundation` -> `us1` -> `us2` -> `us3` -> `us4` |
 
 ---
 
