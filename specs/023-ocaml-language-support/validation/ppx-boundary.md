@@ -14,6 +14,8 @@ Passed: 1 test file, 1 test.
 
 - Attribute syntax on a source-level binding parses without blocking extraction.
 - Extension-node syntax parses without creating generated symbols.
+- Extension and attribute payloads containing parseable declarations or
+  references are not traversed into graph symbols or relationships.
 - No PPX-generated unresolved references or graph edges are emitted.
 - PPX expansion remains unsupported/future work as recorded in
   `../ppx-policy.md`.

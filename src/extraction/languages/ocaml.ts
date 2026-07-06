@@ -402,6 +402,13 @@ export const ocamlExtractor: LanguageExtractor = {
         return handleExternal(node, ctx);
       case 'value_specification':
         return handleValueSpecification(node, ctx);
+      case 'item_extension':
+      case 'extension':
+      case 'floating_attribute':
+      case 'item_attribute':
+      case 'attribute':
+      case 'attribute_payload':
+        return true;
       case 'method_definition':
       case 'method_specification':
         return handleMethod(node, ctx);

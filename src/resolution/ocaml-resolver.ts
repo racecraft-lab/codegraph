@@ -52,23 +52,40 @@ function sameLanguageCandidate(node: Node): boolean {
   return node.language === 'ocaml' && node.kind !== 'import' && !isIgnoredOcamlPath(node.filePath);
 }
 
+function visibleQualifiedNames(ref: UnresolvedRef, context: ResolutionContext): Set<string> {
+  const translated = ref.referenceName.replace(/\./g, '::');
+  const names = new Set<string>([translated]);
+  const fromNode = context.getNodeById?.(ref.fromNodeId);
+  if (!fromNode) return names;
+
+  const segments = fromNode.qualifiedName.split('::').filter(Boolean);
+  for (let i = segments.length; i > 0; i--) {
+    names.add(`${segments.slice(0, i).join('::')}::${translated}`);
+  }
+  return names;
+}
+
 function candidateNodes(ref: UnresolvedRef, context: ResolutionContext): Node[] {
   const name = ref.referenceName;
   if (!isOcamlUniqueOnlyReference(ref)) return [];
+  const visibleNames = visibleQualifiedNames(ref, context);
 
   if (!name.includes('.')) {
     return context
       .getNodesByName(name)
-      .filter((node) => sameLanguageCandidate(node) && MODULE_TARGET_KINDS.has(node.kind));
+      .filter((node) =>
+        sameLanguageCandidate(node) &&
+        MODULE_TARGET_KINDS.has(node.kind) &&
+        visibleNames.has(node.qualifiedName)
+      );
   }
 
-  const translated = name.replace(/\./g, '::');
   const leaf = lastSegment(name);
   return context
     .getNodesByName(leaf)
     .filter((node) => {
       if (!sameLanguageCandidate(node)) return false;
-      return node.qualifiedName === translated || node.qualifiedName.endsWith(`::${translated}`);
+      return visibleNames.has(node.qualifiedName);
     });
 }
 

@@ -42,9 +42,10 @@ proved the only remaining blocker is PR size, not correctness.
 - Final backstop artifacts:
   - `specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json`
   - `specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt`
-- Final backstop result after closeout commit `c5843db`: `status=exception`,
-  `total_files=87`, `exception_class=infra`, `exception_honored=true`; no PR
-  side-effect blocker remains.
+- Final backstop result after latest review remediation: `status=exception`,
+  `reviewable_loc=1214`, `production_files=16`, `total_files=90`,
+  `exception_class=infra`, `exception_honored=true`; no PR side-effect blocker
+  remains.
 
 ## Atomicity Output
 

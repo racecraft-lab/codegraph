@@ -17,8 +17,11 @@ describe('OCaml PPX policy', () => {
     expect(result.errors).toEqual([]);
     expect(result.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'function', name: 'marked', language: 'ocaml' }),
+      expect.objectContaining({ kind: 'constant', name: 'annotated', language: 'ocaml' }),
+      expect.objectContaining({ kind: 'constant', name: 'extension_value', language: 'ocaml' }),
     ]));
     expect(result.nodes.some((node) => node.name.includes('generated'))).toBe(false);
+    expect(result.nodes.some((node) => node.name === 'run')).toBe(false);
     expect(result.unresolvedReferences).toEqual([]);
   });
 });

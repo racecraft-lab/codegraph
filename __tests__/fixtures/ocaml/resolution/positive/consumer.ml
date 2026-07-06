@@ -1,7 +1,7 @@
 open Foo
 include Common.S
 
-module Built = Make(Foo)
+module Built = Functors.Make(Foo)
 
 let use () = Foo.run ()
 let leak () = Foo.hidden ()

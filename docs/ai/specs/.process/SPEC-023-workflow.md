@@ -653,7 +653,7 @@ languages, resolver paths, MCP tools, or installer code.
 | Post: Reviewability Diff Gate | Complete with exception | Final backstop wrote `.process/final-reviewability/gate-state.json` and accepted the infra reviewability exception in `implementation-slices.md`; no PR side-effect blocker remains. |
 | Post: PR Body Generation | Complete | Generated and validated the single-PR packet/body; `validate-pr-packet.sh` passed and workflow contract validation passed for `feat(speckit-pro): Add OCaml language support`. |
 | Post: PR Creation | Complete | Opened PR #21: https://github.com/racecraft-lab/codegraph/pull/21. The branch was merged with current `origin/main`, pushed, and GitHub now reports `mergeable=MERGEABLE`. |
-| Post: Review Remediation | Complete | Copilot and RepoPrompt review findings were fixed and verified with `npm run build`, `npm run typecheck`, focused OCaml tests, and full `npm test` (137 files, 2238 passed, 4 skipped). |
+| Post: Review Remediation | Complete | Copilot and RepoPrompt review findings were fixed and verified with `npm run build`, `npm run typecheck`, focused OCaml tests, and full `npm test` (137 files, 2239 passed, 4 skipped). |
 | Post: Retrospective | Complete | `retrospective.md` saved with no proposed `spec.md` edits. |
 
 ## Project Structure Reference

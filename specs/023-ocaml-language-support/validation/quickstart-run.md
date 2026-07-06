@@ -9,8 +9,8 @@ Latest local verification:
 
 - `npm run build`: passed.
 - `npm run typecheck`: passed.
-- Targeted OCaml suite: passed, 5 files, 15 tests.
-- `npm test`: passed, 137 files, 2238 tests passed, 4 skipped.
+- Targeted OCaml suite: passed, 5 files, 16 tests.
+- `npm test`: passed, 137 files, 2239 tests passed, 4 skipped.
 
 See `existing-language-controls.md` for command details.
 

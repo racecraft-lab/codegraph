@@ -228,9 +228,9 @@
     },
     "final_reviewability": {
       "status": "exception",
-      "reviewable_loc": 987,
+      "reviewable_loc": 1214,
       "production_files": 16,
-      "total_files": 87,
+      "total_files": 90,
       "primary_surface_count": 5,
       "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
       "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
@@ -399,8 +399,8 @@
       "status": "pass",
       "build": "npm run build passed",
       "typecheck": "npm run typecheck passed",
-      "targeted_ocaml": "5 files, 15 tests passed",
-      "unit_test": "npm test passed: 137 files, 2238 passed, 4 skipped"
+      "targeted_ocaml": "5 files, 16 tests passed",
+      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped"
     },
     "review_scouting": {
       "status": "complete",
@@ -458,7 +458,7 @@
       "status": "pass",
       "build": "npm run build passed",
       "typecheck": "npm run typecheck passed",
-      "unit_test": "npm test passed: 137 files, 2238 passed, 4 skipped",
+      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped",
       "evidence": "specs/023-ocaml-language-support/.process/emission/full-verification-evidence.md"
     },
     "self_review": {
@@ -478,8 +478,8 @@
       "exception_honored": true,
       "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
       "blocked_operations": [],
-      "reason": "reviewable LOC 987, production files 16, and total files 87 exceed block thresholds; operator-owned infra exception accepted",
-      "total_files": 87
+      "reason": "reviewable LOC 1214, production files 16, and total files 90 exceed block thresholds; operator-owned infra exception accepted",
+      "total_files": 90
     },
     "pr_packet_body_generation": {
       "status": "pass",
@@ -509,8 +509,8 @@
       "verification": [
         "npm run build passed",
         "npm run typecheck passed",
-        "OCaml focused suite passed: 5 files, 15 tests",
-        "npm test passed: 137 files, 2238 passed, 4 skipped"
+        "OCaml focused suite passed: 5 files, 16 tests",
+        "npm test passed: 137 files, 2239 passed, 4 skipped"
       ],
       "action": "actionable Copilot comments fixed locally; awaiting push and fresh GitHub rerun"
     },

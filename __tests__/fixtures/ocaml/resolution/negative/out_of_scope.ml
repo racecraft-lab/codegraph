@@ -1,0 +1,1 @@
+module Built = Make(Foo)

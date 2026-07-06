@@ -34,7 +34,7 @@
 
 - Build/typecheck: passed.
 - Targeted OCaml parser/status/extraction/resolution/PPX suite: passed.
-- Full `npm test`: passed, 137 files, 2238 tests passed, 4 skipped.
+- Full `npm test`: passed, 137 files, 2239 tests passed, 4 skipped.
 - Yojson, OCaml-LSP, and Dune real-repo smoke/probes: complete.
 - Yojson A/B: complete, weak-adoption signal.
 - OCaml-LSP A/B: complete with one exact run and one adjusted safer run; weak
@@ -43,14 +43,14 @@
 
 ## Scope Budget and Reviewability
 
-- Current committed changed-file count against `origin/main...HEAD`: 87 paths.
+- Current changed-file count against `origin/main...HEAD`: 90 paths.
 - Final reviewability gate after implementation commit `a336e44`: blocked by
   size, `status=block`, `reviewable_loc=987`, `production_files=16`,
   `total_files=80`, `primary_surface_count=5`.
-- Final backstop after closeout commit `c5843db`: `status=exception`,
-  `total_files=87`, `exception_class=infra`, `exception_honored=true`; the
-  accepted evidence is the infra reviewability exception in
-  `implementation-slices.md`.
+- Final backstop after latest review remediation: `status=exception`,
+  `reviewable_loc=1214`, `production_files=16`, `total_files=90`,
+  `exception_class=infra`, `exception_honored=true`; the accepted evidence is
+  the infra reviewability exception in `implementation-slices.md`.
 
 ## Unrelated-Scope Check
 

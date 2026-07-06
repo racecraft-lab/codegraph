@@ -93,6 +93,15 @@ describe('OCaml conservative resolution', () => {
     expect((graph.getStats().nodesByKind as Record<string, number>).package).toBeUndefined();
   });
 
+  it('does not resolve unique nested modules without an explicit visible path', async () => {
+    const graph = await indexFixture('workspace', 'positive', 'negative');
+
+    const built = findNode(graph, 'module', 'Built', 'out_of_scope.ml');
+    const makeFunctor = findNode(graph, 'module', 'Make', 'functors.ml');
+
+    expect(graph.getOutgoingEdges(built.id).some((edge) => edge.target === makeFunctor.id)).toBe(false);
+  });
+
   it('ignores opam lock files as workspace metadata', () => {
     expect(isIgnoredOcamlPath('opam.locked')).toBe(true);
     expect(isIgnoredOcamlPath('nested/opam.locked')).toBe(true);

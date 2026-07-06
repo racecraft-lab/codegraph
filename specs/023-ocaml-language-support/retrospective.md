@@ -78,7 +78,7 @@ or acceptance-criteria rewrite is proposed by this retrospective.
 
 | Criterion | Result | Notes |
 |-----------|--------|-------|
-| SC-001 | Pass | Targeted OCaml suite passed: 5 files, 15 tests. |
+| SC-001 | Pass | Targeted OCaml suite passed: 5 files, 16 tests. |
 | SC-002 | Pass | Yojson, OCaml-LSP, and Dune smoke records are complete with repeated stability. |
 | SC-003 | Partial | Dune deterministic smoke/probes passed, but large-repo Dune A/B is still an explicit follow-up gate. |
 | SC-004 | Pass | Negative resolution and PPX policy tests cover no speculative edge behavior. |
@@ -94,7 +94,7 @@ or acceptance-criteria rewrite is proposed by this retrospective.
 | Resolution scope | Conservative Dune-scoped local relationships only. | Implemented through OCaml-specific workspace/resolver modules and unique-only tests. | None |
 | PPX handling | Parse/preserve syntax only; no expansion or generated relationships. | Implemented and validated through PPX negative fixtures. | None |
 | Existing-language control | Run an existing-language A/B only if shared behavior changed. | Shared paths changed; external Claude A/B was policy-blocked, so a local-only current-vs-baseline deterministic control replaced it. | Minor |
-| Reviewability | Split-ready work, projected 10-16 total files. | Final gate reports 987 reviewable LOC, 16 production files, 87 total files; final backstop proceeds through a maintainer-authorized infra exception. | Significant |
+| Reviewability | Split-ready work, projected 10-16 total files. | Final gate reports 1214 reviewable LOC, 16 production files, 90 total files; final backstop proceeds through a maintainer-authorized infra exception. | Significant |
 
 ## Significant Deviations
 
@@ -114,11 +114,11 @@ support specs.
 
 ### SIGNIFICANT: Single-PR reviewability blocks by size
 
-Evidence: final reviewability reports `status=block`, `reviewable_loc=987`,
-`production_files=16`, `total_files=87`, and `primary_surface_count=5`.
-After closeout commit `c5843db`, the final-reviewability backstop accepted the
-infra reviewability exception from `implementation-slices.md` and returned
-`status=exception` with no blocked PR operations.
+Evidence: final reviewability reports `status=exception`, `reviewable_loc=1214`,
+`production_files=16`, `total_files=90`, and `primary_surface_count=5`.
+After the latest review remediation, the final-reviewability backstop accepted
+the infra reviewability exception from `implementation-slices.md` and returned
+no blocked PR operations.
 
 Root cause: the clarified OCaml scope required grammar assets, broad extraction,
 conservative resolution, PPX boundary tests, real-repo validation, and PR packet
