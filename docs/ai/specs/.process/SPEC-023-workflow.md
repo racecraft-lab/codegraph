@@ -39,7 +39,7 @@ setup.
 | Checklist | `$speckit-checklist` | Complete | Completed language-coverage, resolution-correctness, validation/eval, and safety/license with zero remaining gaps. |
 | Tasks | `$speckit-tasks` | Complete | Generated 74 split-ready tasks across 7 phases; FR-001 through FR-017 and SC-001 through SC-006 covered. |
 | Analyze | `$speckit-analyze` | Complete | Found and fixed three artifact-consistency issues; no critical PPX/package/eval drift remains. |
-| Implement | `$speckit-implement` | Blocked in post-PR gate | Local implementation and verification are complete. PR packet/body generation and PR creation are blocked by final reviewability until a valid marker-aware emission plan exists or an operator-owned typed exception is committed. |
+| Implement | `$speckit-implement` | Complete with reviewability exception | Local implementation, verification, PR packet/body generation, PR creation, and review remediation are complete. The final reviewability backstop accepted the operator-owned infra exception and records no blocked PR operations. |
 
 **Status Legend:** Pending | In Progress | Complete | Blocked
 
