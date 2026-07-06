@@ -228,7 +228,7 @@
     },
     "final_reviewability": {
       "status": "exception",
-      "reviewable_loc": 1214,
+      "reviewable_loc": 1240,
       "production_files": 16,
       "total_files": 90,
       "primary_surface_count": 5,
@@ -478,7 +478,7 @@
       "exception_honored": true,
       "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
       "blocked_operations": [],
-      "reason": "reviewable LOC 1214, production files 16, and total files 90 exceed block thresholds; operator-owned infra exception accepted",
+      "reason": "reviewable LOC 1240, production files 16, and total files 90 exceed block thresholds; operator-owned infra exception accepted",
       "total_files": 90
     },
     "pr_packet_body_generation": {

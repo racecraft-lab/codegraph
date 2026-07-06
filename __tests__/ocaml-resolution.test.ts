@@ -43,8 +43,11 @@ describe('OCaml conservative resolution', () => {
 
     const consumer = findNode(graph, 'module', 'Consumer', 'consumer.ml');
     const built = findNode(graph, 'module', 'Built', 'consumer.ml');
+    const localCall = findNode(graph, 'function', 'local_call', 'consumer.ml');
+    const helper = findNode(graph, 'function', 'helper', 'consumer.ml');
     const use = findNode(graph, 'function', 'use', 'consumer.ml');
     const leak = findNode(graph, 'function', 'leak', 'consumer.ml');
+    const bareLeak = findNode(graph, 'function', 'bare_leak', 'consumer.ml');
     const localOpen = findNode(graph, 'function', 'local_open', 'consumer.ml');
     const fooInterface = findNode(graph, 'module', 'Foo', 'foo.mli');
     const commonSignature = findNode(graph, 'interface', 'S', 'common.mli');
@@ -61,6 +64,9 @@ describe('OCaml conservative resolution', () => {
       expect.objectContaining({ kind: 'references', target: makeFunctor.id }),
       expect.objectContaining({ kind: 'references', target: fooInterface.id }),
     ]));
+    expect(graph.getOutgoingEdges(localCall.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'calls', target: helper.id }),
+    ]));
     expect(graph.getOutgoingEdges(use.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'calls', target: runImplementation.id }),
     ]));
@@ -68,6 +74,7 @@ describe('OCaml conservative resolution', () => {
       expect.objectContaining({ kind: 'imports', target: fooInterface.id }),
     ]));
     expect(graph.getOutgoingEdges(leak.id).some((edge) => edge.target === hiddenImplementation.id)).toBe(false);
+    expect(graph.getOutgoingEdges(bareLeak.id).some((edge) => edge.target === hiddenImplementation.id)).toBe(false);
     expect(graph.getOutgoingEdges(makeFunctor.id).some((edge) => edge.target === buildSignature.id)).toBe(false);
   });
 

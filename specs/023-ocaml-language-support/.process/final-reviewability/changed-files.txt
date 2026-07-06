@@ -11,13 +11,16 @@ __tests__/fixtures/ocaml/resolution/negative/a/util.ml
 __tests__/fixtures/ocaml/resolution/negative/ambiguous.ml
 __tests__/fixtures/ocaml/resolution/negative/b/util.ml
 __tests__/fixtures/ocaml/resolution/negative/external_package.ml
+__tests__/fixtures/ocaml/resolution/negative/out_of_scope.ml
 __tests__/fixtures/ocaml/resolution/positive/common.mli
 __tests__/fixtures/ocaml/resolution/positive/consumer.ml
 __tests__/fixtures/ocaml/resolution/positive/foo.ml
 __tests__/fixtures/ocaml/resolution/positive/foo.mli
 __tests__/fixtures/ocaml/resolution/positive/functors.ml
 __tests__/fixtures/ocaml/resolution/workspace/demo.opam
+__tests__/fixtures/ocaml/resolution/workspace/dune
 __tests__/fixtures/ocaml/resolution/workspace/dune-project
+__tests__/fixtures/ocaml/resolution/workspace/opam/extra.opam
 __tests__/fixtures/ocaml/status/main.ml
 __tests__/fixtures/ocaml/status/main.mli
 __tests__/ocaml-extraction.test.ts
@@ -31,6 +34,11 @@ docs/ai/specs/.process/autopilot-state.json
 docs/ai/specs/intelligence-platform-roadmap-MOC.md
 docs/ai/specs/intelligence-platform-technical-roadmap.md
 docs/grammars/tree-sitter-ocaml.md
+specs/023-ocaml-language-support/.process/emission/full-verification-evidence.md
+specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt
+specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json
+specs/023-ocaml-language-support/.process/self-review.md
+specs/023-ocaml-language-support/.process/uat-runbook.md
 specs/023-ocaml-language-support/SPEC-MOC.md
 specs/023-ocaml-language-support/checklists/language-coverage.md
 specs/023-ocaml-language-support/checklists/requirements.md
@@ -44,6 +52,7 @@ specs/023-ocaml-language-support/plan.md
 specs/023-ocaml-language-support/ppx-policy.md
 specs/023-ocaml-language-support/quickstart.md
 specs/023-ocaml-language-support/research.md
+specs/023-ocaml-language-support/retrospective.md
 specs/023-ocaml-language-support/spec.md
 specs/023-ocaml-language-support/tasks.md
 specs/023-ocaml-language-support/validation/README.md
@@ -67,6 +76,7 @@ specs/023-ocaml-language-support/validation/self-repo-smoke.md
 specs/023-ocaml-language-support/validation/yojson-ab.md
 specs/023-ocaml-language-support/validation/yojson-probes.md
 specs/023-ocaml-language-support/validation/yojson-smoke.md
+specs/023-ocaml-language-support/verify-tasks-report.md
 src/extraction/grammars.ts
 src/extraction/languages/index.ts
 src/extraction/languages/ocaml.ts

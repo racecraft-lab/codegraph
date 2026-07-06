@@ -27,6 +27,12 @@ const MODULE_TARGET_KINDS = new Set<Node['kind']>([
   'interface',
 ]);
 
+const CALL_TARGET_KINDS = new Set<Node['kind']>([
+  'function',
+  'method',
+  'constant',
+]);
+
 function firstSegment(name: string): string {
   return name.split('.')[0] ?? name;
 }
@@ -43,6 +49,7 @@ function isUpperModuleSegment(segment: string): boolean {
 export function isOcamlUniqueOnlyReference(ref: UnresolvedRef): boolean {
   if (ref.language !== 'ocaml') return false;
   const first = firstSegment(ref.referenceName);
+  if (ref.referenceKind === 'calls') return true;
   if (ref.referenceKind === 'imports') return true;
   if (ref.referenceKind === 'references' && isUpperModuleSegment(first)) return true;
   return ref.referenceName.includes('.') && isUpperModuleSegment(first);
@@ -69,6 +76,18 @@ function candidateNodes(ref: UnresolvedRef, context: ResolutionContext): Node[] 
   const name = ref.referenceName;
   if (!isOcamlUniqueOnlyReference(ref)) return [];
   const visibleNames = visibleQualifiedNames(ref, context);
+  const fromNode = context.getNodeById?.(ref.fromNodeId);
+
+  if (ref.referenceKind === 'calls') {
+    const leaf = lastSegment(name);
+    return context
+      .getNodesByName(leaf)
+      .filter((node) => {
+        if (!sameLanguageCandidate(node) || !CALL_TARGET_KINDS.has(node.kind)) return false;
+        if (!visibleNames.has(node.qualifiedName)) return false;
+        return name.includes('.') || node.filePath === fromNode?.filePath;
+      });
+  }
 
   if (!name.includes('.')) {
     return context
