@@ -38,8 +38,8 @@ plus feature parity against the internal baseline is a no-waiver gate.
 | Plan | `$speckit-plan` | ✅ Complete | G3 passed; parity tables have 0 unowned rows |
 | Checklist | `$speckit-checklist` | ✅ Complete | G4 passed; 90 checklist items, 0 gaps |
 | Tasks | `$speckit-tasks` | ✅ Complete | G5 passed; 114 tasks across 7 phases |
-| Analyze | `$speckit-analyze` | 🔄 In Progress | Check drift against Design Concept and roadmap |
-| Implement | `$speckit-implement` | ⏳ Pending | TDD-first, real-server validation gate |
+| Analyze | `$speckit-analyze` | ✅ Complete | G6 passed; 5 findings remediated, 0 remaining |
+| Implement | `$speckit-implement` | 🔄 In Progress | Foundation marker active: T001-T018 |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -575,7 +575,20 @@ Flag any mismatch as HIGH or CRITICAL if it could cause an implementation to shi
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| ⏳ | | | |
+| A1 | HIGH | Full-index LSP caps and concurrency enforcement were not explicit enough in tasks. | Expanded T054, T058, T061, and T062; updated marker plan for US3. |
+| A2 | HIGH | Representative small/medium/large validation evidence was required but not task-owned. | Expanded T105 and T114 to require bounded small/medium/large LSP validation evidence. |
+| A3 | HIGH | Retrieval hardening tasks referenced stale/non-existent paths. | Corrected T074 and marker plan paths to live retrieval files. |
+| A4 | MEDIUM | Watch integration tasks referenced stale watcher paths. | Corrected T091, T093, and marker plan paths to `src/sync/watcher.ts`, `src/sync/index.ts`, and `src/sync/watch-policy.ts`. |
+| A5 | LOW | Plan source tree omitted task-referenced LSP module files. | Added `types.ts`, `config.ts`, and `corrections.ts` to `plan.md`. |
+
+**Analysis verification:** 0 findings after 1 remediation loop.
+
+```text
+{"type":"findings","total":0,"critical":0,"high":0,"medium":0,"low":0}
+{"gaps":0,"clarifications":0,"critical":0,"high":0,"medium":0,"low":0}
+Marker plan validation: valid=true, fingerprintMatches=true, markerCount=5
+git diff --check: passed
+```
 
 ---
 
@@ -585,12 +598,17 @@ Run the strict pre-Implement confidence gate after Analyze and before Implement.
 
 ### Pre-Implement Confidence Emit
 
-⏳ Pending. Phase 6 Analyze must emit confidence scores before this gate runs.
+📊 Confidence: 0.93
+- Task understanding: 0.93
+- Approach clarity: 0.91
+- Requirements alignment: 0.94
+- Risk assessment: 0.92
+- Completeness: 0.94
 
 | Phase | Gate | Status | Notes |
 |-------|------|--------|-------|
-| Confidence Gate | G6.5 | ⏳ Pending | Mode: strict |
-| G6.5 | Confidence Gate | ⏳ Pending | Awaiting Phase 6 confidence emit |
+| Confidence Gate | G6.5 | ✅ Complete | Mode: strict |
+| G6.5 | Confidence Gate | ✅ Complete | Passed: composite 0.93 >= threshold 0.90 |
 
 ---
 

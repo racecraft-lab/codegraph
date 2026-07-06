@@ -72,10 +72,13 @@ specs/008-lsp-client-integration/
 ```text
 src/
 ├── lsp/
+│   ├── types.ts
+│   ├── config.ts
 │   ├── servers.ts
 │   ├── prereqs.ts
 │   ├── client.ts
 │   ├── precision-pass.ts
+│   ├── corrections.ts
 │   ├── status.ts
 │   └── index.ts
 ├── bin/codegraph.ts

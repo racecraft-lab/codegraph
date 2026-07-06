@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-06T00:27:44Z",
-  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-06T00:40:35Z",
+  "active_step": "Phase 7: Implement - foundation T001-T018",
   "confidence_gate_mode": "strict",
   "plan": [
     {
@@ -100,19 +100,19 @@
     },
     {
       "step": "Phase 6: Analyze",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 6: Analyze - Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 6.5: Confidence Gate",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - foundation T001-T018",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement - us1 T019-T037",
@@ -442,6 +442,58 @@
       "files": [
         "specs/008-lsp-client-integration/tasks.md"
       ]
+    },
+    "phase_6_analyze": {
+      "status": "completed",
+      "findings_before": {
+        "critical": 0,
+        "high": 3,
+        "medium": 1,
+        "low": 1,
+        "total": 5
+      },
+      "findings_after": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "total": 0
+      },
+      "remediation_loops": 1,
+      "consensus": "skipped: no unresolved items",
+      "confidence": {
+        "composite": 0.93,
+        "specification_alignment": 0.94,
+        "task_coverage": 0.93,
+        "reviewability": 0.91,
+        "validation_feasibility": 0.92,
+        "implementation_readiness": 0.94
+      },
+      "files": [
+        "specs/008-lsp-client-integration/tasks.md",
+        "specs/008-lsp-client-integration/plan.md",
+        "specs/008-lsp-client-integration/.process/reviewability/pr-marker-plan.json"
+      ],
+      "gate_g6": {
+        "status": "passed",
+        "reason": "0 CRITICAL/HIGH findings",
+        "markers": 0
+      }
+    },
+    "phase_6_5_confidence_gate": {
+      "status": "passed",
+      "mode": "strict",
+      "threshold": 0.9,
+      "composite": 0.93,
+      "reason": "composite at or above threshold",
+      "recommended_action": "proceed",
+      "criteria": {
+        "task_understanding": 0.93,
+        "approach_clarity": 0.91,
+        "requirements_alignment": 0.94,
+        "risk_assessment": 0.92,
+        "completeness": 0.94
+      }
     }
   },
   "layer_plan": {
@@ -457,8 +509,8 @@
     "status": "planned",
     "source_fingerprint": {
       "feature_spec_sha": "b9a43f91418bc2c351e6f0528cb7715f87077a0d9673f183b09019775abe8986",
-      "plan_declared_scope_sha": "c61cd0ecf9a77beb2d5c6bc75a81888541a6bad7595a3b479662e496feacdcfd",
-      "tasks_sha": "8ad42992c10a40e407a6c518335f2170874e778789cf83734486428cfcf27a0a",
+      "plan_declared_scope_sha": "7b962fb2475da78eeda4c5e3f32139db2c1c6c1a3a532aa594e85c101379af2e",
+      "tasks_sha": "a6c16176035648830f030e47d93ee4aec810a2e7ce1e830f17653efdb0eba779",
       "reviewability_sha": "677e24402fd6f6e4fdf63a0447b3cdd71ddea099b7321c69d14410d776a08022",
       "hazard_route_sha": "d5501ebfc29e3f67f6df2e4f36615efe1784a6d353ebd151a90d111a55a2ce91"
     },
@@ -816,6 +868,10 @@
           },
           {
             "operation": "MODIFIED",
+            "path": "__tests__/lsp-precision-pass.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
             "path": "__tests__/lsp-prereqs.test.ts"
           },
           {
@@ -833,6 +889,10 @@
           {
             "operation": "MODIFIED",
             "path": "src/lsp/client.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/precision-pass.ts"
           },
           {
             "operation": "MODIFIED",
@@ -996,15 +1056,23 @@
           },
           {
             "operation": "MODIFIED",
+            "path": "src/context/index.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/db/queries.ts"
+          },
+          {
+            "operation": "MODIFIED",
             "path": "src/db/schema.sql"
           },
           {
             "operation": "MODIFIED",
-            "path": "src/graph/graph-query-manager.ts"
+            "path": "src/graph/queries.ts"
           },
           {
             "operation": "MODIFIED",
-            "path": "src/graph/traverser.ts"
+            "path": "src/graph/traversal.ts"
           },
           {
             "operation": "MODIFIED",
@@ -1024,11 +1092,27 @@
           },
           {
             "operation": "MODIFIED",
-            "path": "src/search/index.ts"
+            "path": "src/mcp/tools.ts"
           },
           {
             "operation": "MODIFIED",
-            "path": "src/sync/file-watcher.ts"
+            "path": "src/search/query-parser.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/search/query-utils.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/sync/index.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/sync/watch-policy.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/sync/watcher.ts"
           }
         ],
         "declared_tests": [],
@@ -1070,8 +1154,8 @@
   },
   "current_source_fingerprint": {
     "feature_spec_sha": "b9a43f91418bc2c351e6f0528cb7715f87077a0d9673f183b09019775abe8986",
-    "plan_declared_scope_sha": "c61cd0ecf9a77beb2d5c6bc75a81888541a6bad7595a3b479662e496feacdcfd",
-    "tasks_sha": "8ad42992c10a40e407a6c518335f2170874e778789cf83734486428cfcf27a0a",
+    "plan_declared_scope_sha": "7b962fb2475da78eeda4c5e3f32139db2c1c6c1a3a532aa594e85c101379af2e",
+    "tasks_sha": "a6c16176035648830f030e47d93ee4aec810a2e7ce1e830f17653efdb0eba779",
     "reviewability_sha": "677e24402fd6f6e4fdf63a0447b3cdd71ddea099b7321c69d14410d776a08022",
     "hazard_route_sha": "d5501ebfc29e3f67f6df2e4f36615efe1784a6d353ebd151a90d111a55a2ce91"
   }

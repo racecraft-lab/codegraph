@@ -121,18 +121,18 @@
 - [ ] T051 [P] [US3] Write failing crash, initialize timeout, request timeout, malformed response, and shutdown failure tests in `__tests__/lsp-client.test.ts`
 - [ ] T052 [P] [US3] Write failing one-restart-per-language-per-run tests for bounded recovery in `__tests__/lsp-client.test.ts`
 - [ ] T053 [P] [US3] Write failing status tests for unavailable, skipped, degraded, not-present, not-applicable, and validation-only reason categories in `__tests__/lsp-status.test.ts`
-- [ ] T054 [P] [US3] Write failing performance status tests for elapsed time, work counts, caps, active session high-water mark, and in-flight request high-water mark in `__tests__/lsp-status.test.ts`
+- [ ] T054 [P] [US3] Write failing performance enforcement and status tests for elapsed time, full-index per-language source-file caps, candidate work-item caps, 250-item LSP batch size, active session high-water mark, in-flight request high-water mark, cap-exceeded skip reasons, and deterministic no-unbounded-fallback behavior in `__tests__/lsp-status.test.ts` and `__tests__/lsp-precision-pass.test.ts`
 
 ### Implementation for User Story 3
 
 - [ ] T055 [US3] Map missing, crashed, timed-out, malformed, and shutdown-failed server conditions to per-language degradation in `src/lsp/prereqs.ts` and `src/lsp/status.ts`
 - [ ] T056 [US3] Implement at-most-one fresh session restart per language per explicit index or sync run in `src/lsp/client.ts`
 - [ ] T057 [US3] Implement checked, verified, corrected, suppressed, skipped-by-reason, and degraded counters in `src/lsp/status.ts`
-- [ ] T058 [US3] Implement structural-index elapsed time, LSP elapsed time, enabled-overhead ratio, work caps, session high-water, and request high-water status records in `src/lsp/status.ts`
+- [ ] T058 [US3] Implement structural-index elapsed time, LSP elapsed time, enabled-overhead ratio, full-index per-language file/work caps, 250-item batching, active session concurrency limit, request concurrency limit, session high-water, and request high-water status records in `src/lsp/precision-pass.ts`, `src/lsp/client.ts`, and `src/lsp/status.ts`
 - [ ] T059 [US3] Add deterministic missing, crashed, timed-out, malformed, and shutdown-failure fake server fixtures in `__tests__/fixtures/lsp/degradation/README.md`
 - [ ] T060 [US3] Ensure `codegraph status` reads recorded LSP state and does not start or probe language servers solely because status is requested in `src/bin/codegraph.ts`
-- [ ] T061 [US3] Run `npm test -- __tests__/lsp-prereqs.test.ts __tests__/lsp-client.test.ts __tests__/lsp-status.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-2.md`
-- [ ] T062 [US3] Record graceful-degradation evidence for missing, crashed, timed-out, malformed, and shutdown-failed servers in `specs/008-lsp-client-integration/validation/slice-2.md`
+- [ ] T061 [US3] Run `npm test -- __tests__/lsp-prereqs.test.ts __tests__/lsp-client.test.ts __tests__/lsp-status.test.ts __tests__/lsp-precision-pass.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-2.md`
+- [ ] T062 [US3] Record graceful-degradation, full-index cap enforcement, batch-size enforcement, session/request concurrency, and no-unbounded-fallback evidence for missing, crashed, timed-out, malformed, shutdown-failed, and cap-exceeded scenarios in `specs/008-lsp-client-integration/validation/slice-2.md`
 
 **Checkpoint**: User Story 3 can be validated independently through status and degradation fixtures.
 
@@ -160,7 +160,7 @@
 - [ ] T071 [US4] Implement compatible CodeGraph node matching for unique in-workspace targets in `src/lsp/precision-pass.ts`
 - [ ] T072 [US4] Implement edge retargeting, replacement, suppression, and ambiguous-output no-op behavior in `src/lsp/precision-pass.ts`
 - [ ] T073 [US4] Implement correction and suppression audit metadata storage in `src/lsp/corrections.ts` and `src/db/schema.sql`
-- [ ] T074 [US4] Exclude inactive suppression/audit data from traversal, callers, callees, impact, search, and flow-building surfaces in `src/graph/graph-query-manager.ts`, `src/graph/traverser.ts`, and `src/search/index.ts`
+- [ ] T074 [US4] Exclude inactive suppression/audit data from traversal, callers, callees, impact, search, and flow-building surfaces in the existing retrieval paths, including `src/graph/queries.ts`, `src/graph/traversal.ts`, `src/db/queries.ts`, `src/context/index.ts`, `src/mcp/tools.ts`, and affected `src/search/` helpers
 - [ ] T075 [US4] Add retrieval regression probe script for `codegraph_explore`, callers, callees, impact, search, and flow-building surfaces in `scripts/spec-008-retrieval-probes.mjs`
 - [ ] T076 [US4] Run correction, suppression, ambiguity, and retrieval regression tests and record expected node/edge deltas in `specs/008-lsp-client-integration/validation/slice-2.md`
 
@@ -183,9 +183,9 @@
 - [ ] T088 [P] [US4] Add Dart real-server prereq and package smoke validation for `dart language-server` in `scripts/spec-008-validate-real-servers.mjs`
 - [ ] T089 [P] [US4] Add Vue real-server prereq, component smoke validation, and TypeScript SDK evidence for `vue-language-server --stdio` in `scripts/spec-008-validate-real-servers.mjs`
 - [ ] T090 [P] [US4] Add COBOL parser/resolver parity disposition with SPEC-024 LSP parity boundary in `specs/008-lsp-client-integration/validation/language-parity.md`
-- [ ] T091 [US4] Implement bounded incremental watch LSP verification after normal sync/reference resolution in `src/sync/file-watcher.ts` and `src/lsp/precision-pass.ts`
+- [ ] T091 [US4] Implement bounded incremental watch LSP verification after normal sync/reference resolution in `src/sync/watcher.ts`, `src/sync/index.ts`, and `src/lsp/precision-pass.ts`
 - [ ] T092 [US4] Implement absent, unbounded, oversized changed-file, and oversized candidate-work skip reasons for watch verification in `src/lsp/status.ts`
-- [ ] T093 [US4] Implement watch-mode restart budget keyed to a materially new bounded changed-file batch in `src/lsp/client.ts` and `src/sync/file-watcher.ts`
+- [ ] T093 [US4] Implement watch-mode restart budget keyed to a materially new bounded changed-file batch in `src/lsp/client.ts`, `src/sync/watcher.ts`, and `src/sync/watch-policy.ts`
 - [ ] T094 [US4] Run slice-3 real-server validation for C#, Kotlin, PHP, Ruby, Dart, Vue, and COBOL disposition and record evidence in `specs/008-lsp-client-integration/validation/slice-3.md`
 - [ ] T095 [US4] Run bounded watch tests and record changed-file, cap, skip, and restart-budget evidence in `specs/008-lsp-client-integration/validation/slice-3.md`
 
@@ -203,7 +203,7 @@
 - [ ] T102 [US4] Run self-repo non-LSP dogfood with `node dist/bin/codegraph.js index` and record graph/provenance baseline evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
 - [ ] T103 [US4] Run self-repo explicit LSP dogfood with `node dist/bin/codegraph.js index --lsp` and record coverage, degradation, performance, and observed server evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
 - [ ] T104 [US4] Run self-repo `node dist/bin/codegraph.js status --json` after explicit LSP opt-in and record status evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
-- [ ] T105 [US4] Record slice-3 traceability, scope budget, parity closure, known gaps, rollback note, and review order in `specs/008-lsp-client-integration/validation/slice-3.md`
+- [ ] T105 [US4] Run and record representative small, medium, and large LSP-enabled validation evidence showing bounded completion or deterministic per-language skip/degrade reasons, no unbounded repository-wide LSP pass, no duplicate active-edge growth, retrieval sufficiency preservation, traceability, scope budget, parity closure, known gaps, rollback note, and review order in `specs/008-lsp-client-integration/validation/slice-3.md`
 
 **Checkpoint**: User Story 4 validates correction, all server rows or SPEC-024 disposition, bounded watch behavior, parity gates, retrieval safety, and explicit self-repo dogfood.
 
@@ -221,7 +221,7 @@
 - [ ] T111 Run `npm run build && npm run typecheck && npm test` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
 - [ ] T112 Run `scripts/spec-008-validate-real-servers.mjs` and record final prerequisite status in `specs/008-lsp-client-integration/validation/final-packet.md`
 - [ ] T113 Run `scripts/spec-008-parity-gate.mjs` and record final zero-unowned-row status in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T114 Generate final PR review packet with what changed, why, non-goals, review order, scope budget, traceability, verification evidence, known gaps, rollback notes, and feature-flag notes in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [ ] T114 Generate final PR review packet with what changed, why, non-goals, review order, scope budget, traceability, verification evidence, representative small/medium/large validation evidence, known gaps, rollback notes, and feature-flag notes in `specs/008-lsp-client-integration/validation/final-packet.md`
 
 ---
 
@@ -307,4 +307,3 @@ Task: T082 Java real-server validation in scripts/spec-008-validate-real-servers
 ### TDD Rule
 
 Every test task in a user-story phase must be written and observed failing before its matching implementation task is completed. Completion evidence belongs in the matching `specs/008-lsp-client-integration/validation/*.md` artifact.
-
