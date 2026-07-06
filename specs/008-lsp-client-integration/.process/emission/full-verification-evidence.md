@@ -18,6 +18,7 @@ Result:
 - Real server validation: passed, 17 verified server rows, 1 future-owned COBOL row, 0 missing, 0 unowned.
 - Parity gate: passed, 18 language rows, 17 capability rows, 0 unowned.
 - Retrieval probe: passed with public search, callers, callees, impact, explore-equivalent, and context surfaces clean.
+- Manual CLI UAT: passed with isolated fixture `/var/folders/jp/nt5kjq_11m3fvxg9ftwjjqsw0000gn/T/spec008-manual-uat-xkntzk`; evidence recorded in `specs/008-lsp-client-integration/.process/uat-evidence.md`.
 - Diff hygiene: `git diff --check` passed.
 - Restricted-name scan: passed.
 - Outbound-link scan across SPEC-008 artifacts and scripts: passed.

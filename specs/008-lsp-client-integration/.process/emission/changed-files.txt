@@ -44,6 +44,8 @@ specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json
 specs/008-lsp-client-integration/.process/reviewability/layer-plan.json
 specs/008-lsp-client-integration/.process/reviewability/pr-marker-plan.json
 specs/008-lsp-client-integration/.process/reviewability/tasks-reviewability.json
+specs/008-lsp-client-integration/.process/uat-evidence.md
+specs/008-lsp-client-integration/.process/uat-runbook.md
 specs/008-lsp-client-integration/SPEC-MOC.md
 specs/008-lsp-client-integration/checklists/data-integrity.md
 specs/008-lsp-client-integration/checklists/integration.md
