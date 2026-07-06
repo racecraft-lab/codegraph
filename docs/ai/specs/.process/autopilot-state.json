@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-06T01:03:36.116Z",
-  "active_step": "Phase 7: Implement - us2 T038-T049",
+  "updated_at": "2026-07-06T19:06:12Z",
+  "active_step": "Phase 7: Implement - us3 T050-T062",
   "confidence_gate_mode": "strict",
   "plan": [
     {
@@ -120,11 +120,11 @@
     },
     {
       "step": "Phase 7: Implement - us2 T038-T049",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - us3 T050-T062",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement - us4 T063-T114",
@@ -900,7 +900,32 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "evidence_path": "specs/008-lsp-client-integration/validation/slice-1.md",
+          "commit_sha": "d1165eae02c919e722a6eac8bc570f98bb77f91c",
+          "head_sha": "d1165eae02c919e722a6eac8bc570f98bb77f91c",
+          "verified_at": "2026-07-06T19:06:12Z",
+          "tasks": [
+            "T038",
+            "T039",
+            "T040",
+            "T041",
+            "T042",
+            "T043",
+            "T044",
+            "T045",
+            "T046",
+            "T047",
+            "T048",
+            "T049"
+          ],
+          "verification": [
+            "npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts",
+            "npx vitest run __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts __tests__/lsp-status.test.ts __tests__/lsp-disabled.test.ts __tests__/lsp-precision-pass.test.ts __tests__/lsp-real-server-validation.test.ts",
+            "npm run typecheck",
+            "npm run build",
+            "git diff --check"
+          ]
         },
         "emission_mapping": {
           "status": "pending"
@@ -1267,6 +1292,20 @@
         "diff_check": "passed: git diff --check",
         "restricted_name_scan": "passed: no matches",
         "outbound_link_scan": "passed: no matches"
+      }
+    },
+    "us2": {
+      "status": "completed",
+      "marker_id": "us2",
+      "task_range": "T038-T049",
+      "checkpoint_sha": "d1165eae02c919e722a6eac8bc570f98bb77f91c",
+      "evidence_path": "specs/008-lsp-client-integration/validation/slice-1.md",
+      "verification": {
+        "t049": "passed: npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts (2 files, 15 tests)",
+        "focused_tests": "passed: 6 files, 34 tests",
+        "typecheck": "passed: npm run typecheck",
+        "build": "passed: npm run build",
+        "diff_check": "passed: git diff --check"
       }
     }
   }

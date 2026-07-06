@@ -43,6 +43,27 @@ describe('LSP config resolution', () => {
     });
   });
 
+  it('resolves watch activation from project config with deterministic fallback', () => {
+    withProjectConfig(undefined, (dir) => {
+      expect(resolveLspConfig({ projectRoot: dir, env: {} }).watchEnabled).toBe(true);
+    });
+
+    withProjectConfig({ lsp: { watch: { enabled: false } } }, (dir) => {
+      expect(resolveLspConfig({ projectRoot: dir, env: {} }).watchEnabled).toBe(false);
+    });
+
+    withProjectConfig({ lsp: { watch: { enabled: 'nope' } } }, (dir) => {
+      const config = resolveLspConfig({ projectRoot: dir, env: {} });
+      expect(config.watchEnabled).toBe(true);
+      expect(config.warnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'invalid-watch',
+          source: 'project',
+        }),
+      ]));
+    });
+  });
+
   it('models codegraph index, index --lsp, and index --no-lsp activation precedence', () => {
     withProjectConfig({ lsp: { enabled: true } }, (dir) => {
       expect(resolveLspConfig({ projectRoot: dir, cliActivation: 'unspecified', env: {} })).toMatchObject({
@@ -134,6 +155,7 @@ describe('LSP config resolution', () => {
       expect(config.servers.python.timeoutMs).toBe(5000);
       expect(config.servers.python.timeoutSource).toBe('env');
       expect(config.enabled).toBe(false);
+      expect(config.activationSource).toBe('default-off');
     });
   });
 
@@ -162,6 +184,33 @@ describe('LSP config resolution', () => {
       expect(config.warnings.map((w) => w.code)).toEqual(expect.arrayContaining([
         'invalid-command',
         'invalid-timeout',
+      ]));
+    });
+  });
+
+  it('warns and ignores unknown languages and blank command argv parts', () => {
+    withProjectConfig({
+      lsp: {
+        servers: {
+          unknown: { command: ['unknown-lsp'] },
+          typescript: { command: ['   ', '--stdio'] },
+        },
+      },
+    }, (dir) => {
+      const config = resolveLspConfig({
+        projectRoot: dir,
+        env: {
+          CODEGRAPH_LSP_UNKNOWN_COMMAND_JSON: '["unknown-lsp"]',
+          CODEGRAPH_LSP_UNKNOWN_TIMEOUT_MS: '1000',
+        },
+      });
+
+      expect(config.servers.typescript.command).toEqual(['typescript-language-server', '--stdio']);
+      expect(config.servers.typescript.commandSource).toBe('registry');
+      expect(config.warnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'invalid-language', source: 'project', language: 'unknown' }),
+        expect.objectContaining({ code: 'invalid-language', source: 'env', language: 'unknown' }),
+        expect.objectContaining({ code: 'invalid-command', source: 'project', language: 'typescript' }),
       ]));
     });
   });

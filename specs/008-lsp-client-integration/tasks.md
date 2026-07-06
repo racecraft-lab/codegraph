@@ -89,21 +89,21 @@
 
 ### Tests for User Story 2
 
-- [ ] T038 [P] [US2] Write failing project config tests for `lsp.enabled`, `lsp.defaultTimeoutMs`, `lsp.watch.enabled`, ignored committed command values, and `lsp.servers.<language>.timeoutMs` values in `__tests__/lsp-config.test.ts`
-- [ ] T039 [P] [US2] Write failing environment override tests for `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`, `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`, and `CODEGRAPH_LSP_TIMEOUT_MS` in `__tests__/lsp-config.test.ts`
-- [ ] T040 [P] [US2] Write failing invalid override tests proving malformed JSON, non-string argv elements, and invalid timeouts warn and fall back in `__tests__/lsp-config.test.ts`
-- [ ] T041 [P] [US2] Write failing command probing tests for PATH lookup, absolute argv, relative argv, selected argv reporting, and expected alternatives in `__tests__/lsp-prereqs.test.ts`
-- [ ] T042 [P] [US2] Write failing configured-command unavailable tests proving valid configured argv does not fall through to registry alternatives in `__tests__/lsp-prereqs.test.ts`
+- [X] T038 [P] [US2] Write failing project config tests for `lsp.enabled`, `lsp.defaultTimeoutMs`, `lsp.watch.enabled`, ignored committed command values, and `lsp.servers.<language>.timeoutMs` values in `__tests__/lsp-config.test.ts`
+- [X] T039 [P] [US2] Write failing environment override tests for `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`, `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`, and `CODEGRAPH_LSP_TIMEOUT_MS` in `__tests__/lsp-config.test.ts`
+- [X] T040 [P] [US2] Write failing invalid override tests proving malformed JSON, non-string argv elements, and invalid timeouts warn and fall back in `__tests__/lsp-config.test.ts`
+- [X] T041 [P] [US2] Write failing command probing tests for PATH lookup, absolute argv, relative argv, selected argv reporting, and expected alternatives in `__tests__/lsp-prereqs.test.ts`
+- [X] T042 [P] [US2] Write failing configured-command unavailable tests proving valid configured argv does not fall through to registry alternatives in `__tests__/lsp-prereqs.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T043 [US2] Implement command argv parsing and validation for environment values plus warning/ignore behavior for committed project command values in `src/lsp/config.ts`
-- [ ] T044 [US2] Implement timeout precedence and validation for project and environment values in `src/lsp/config.ts`
-- [ ] T045 [US2] Implement warning collection for ignored unknown languages, invalid commands, and invalid timeout values in `src/lsp/config.ts`
-- [ ] T046 [US2] Implement PATH, absolute path, and relative path command resolution with configured-command no-fallback semantics in `src/lsp/prereqs.ts`
-- [ ] T047 [US2] Apply environment command and timeout overrides during index runtime without allowing environment-only activation in `src/bin/codegraph.ts`
-- [ ] T048 [US2] Include selected argv, resolved executable path, expected alternatives, timeout source, and warnings in status data in `src/lsp/status.ts`
-- [ ] T049 [US2] Run `npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-1.md`
+- [X] T043 [US2] Implement command argv parsing and validation for environment values plus warning/ignore behavior for committed project command values in `src/lsp/config.ts`
+- [X] T044 [US2] Implement timeout precedence and validation for project and environment values in `src/lsp/config.ts`
+- [X] T045 [US2] Implement warning collection for ignored unknown languages, invalid commands, and invalid timeout values in `src/lsp/config.ts`
+- [X] T046 [US2] Implement PATH, absolute path, and relative path command resolution with configured-command no-fallback semantics in `src/lsp/prereqs.ts`
+- [X] T047 [US2] Apply environment command and timeout overrides during index runtime without allowing environment-only activation in `src/bin/codegraph.ts`
+- [X] T048 [US2] Include selected argv, resolved executable path, expected alternatives, timeout source, and warnings in status data in `src/lsp/status.ts`
+- [X] T049 [US2] Run `npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-1.md`
 
 **Checkpoint**: User Story 2 can be validated independently through config precedence and status evidence.
 

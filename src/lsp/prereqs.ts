@@ -8,6 +8,14 @@ import {
   LspServerStatusRecord,
 } from './types';
 
+export type LspServerStatusMetadata = {
+  commandSource: EffectiveLspServerConfig['commandSource'];
+  timeoutMs: number;
+  timeoutSource: EffectiveLspServerConfig['timeoutSource'];
+};
+
+export type ProbedLspServerStatusRecord = LspServerStatusRecord & LspServerStatusMetadata;
+
 export interface ProbeLspServerOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
@@ -16,17 +24,17 @@ export interface ProbeLspServerOptions {
 export function probeLspServerCommand(
   config: EffectiveLspServerConfig,
   options: ProbeLspServerOptions = {},
-): LspServerStatusRecord {
+): ProbedLspServerStatusRecord {
   const registry = LSP_SERVER_REGISTRY[config.language];
   if (registry.disposition === 'future-owned') {
-    return {
+    return withConfigMetadata({
       language: config.language,
       command: 'SPEC-024',
       state: 'future-owned',
       reasonCode: 'future-owned',
       detail: registry.validationNote,
       expectedAlternatives: [],
-    };
+    }, config);
   }
 
   const expectedAlternatives = registry.commands.map((command) => command.argv);
@@ -41,27 +49,27 @@ export function probeLspServerCommand(
     if (!executable) continue;
     const resolvedPath = resolveExecutablePath(executable, options);
     if (resolvedPath) {
-      return {
+      return withConfigMetadata({
         language: config.language,
         command: argv,
         state: 'available',
         resolvedPath,
         expectedAlternatives,
-      };
+      }, config);
     }
   }
 
   const reasonCode: LspReasonCode = config.commandSource === 'registry'
     ? 'missing-default-command'
     : 'configured-command-unavailable';
-  return {
+  return withConfigMetadata({
     language: config.language,
     command: config.command,
     state: 'unavailable',
     reasonCode,
     detail: unavailableDetail(config.language, reasonCode, config.command, expectedAlternatives),
     expectedAlternatives,
-  };
+  }, config);
 }
 
 export function resolveExecutablePath(command: string, options: ProbeLspServerOptions = {}): string | null {
@@ -103,6 +111,17 @@ function executableExtensions(command: string, extensions: string[]): string[] {
   const commandExt = path.extname(command).toUpperCase();
   const pathExts = extensions.map((ext) => ext.toUpperCase());
   return commandExt && pathExts.includes(commandExt) ? [''] : extensions;
+}
+
+function withConfigMetadata(
+  record: LspServerStatusRecord,
+  config: EffectiveLspServerConfig,
+): ProbedLspServerStatusRecord {
+  return Object.assign(record, {
+    commandSource: config.commandSource,
+    timeoutMs: config.timeoutMs,
+    timeoutSource: config.timeoutSource,
+  });
 }
 
 function unavailableDetail(

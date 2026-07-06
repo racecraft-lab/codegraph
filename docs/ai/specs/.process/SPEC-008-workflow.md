@@ -39,7 +39,7 @@ plus feature parity against the internal baseline is a no-waiver gate.
 | Checklist | `$speckit-checklist` | ✅ Complete | G4 passed; 90 checklist items, 0 gaps |
 | Tasks | `$speckit-tasks` | ✅ Complete | G5 passed; 114 tasks across 7 phases |
 | Analyze | `$speckit-analyze` | ✅ Complete | G6 passed; 5 findings remediated, 0 remaining |
-| Implement | `$speckit-implement` | 🔄 In Progress | Foundation checkpoint `fb6b893`; US1 checkpoint `08a31ad`; US2 marker active: T038-T049 |
+| Implement | `$speckit-implement` | 🔄 In Progress | Foundation checkpoint `fb6b893`; US1 checkpoint `08a31ad`; US2 checkpoint `d1165ea`; next marker: US3 T050-T062 |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -658,9 +658,10 @@ Verification expected before completion:
 |-------|-------|-----------|-------|
 | Foundation - LSP scaffolding, config, registry, status, provenance | ✅ | T001-T018 | Checkpoint `fb6b89399e3dc32abce0b2917449ce7ed3896fc1`; evidence: `specs/008-lsp-client-integration/validation/foundation.md`; typecheck, focused tests, build, forbidden-name scan, and outbound-link scan passed |
 | Slice 1 - Core client/config/status + first complete language path | ✅ | T019-T037 | Checkpoint `08a31ad81df7e27ee3d95377039ec72fa2d2b0e4`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; typecheck, focused tests, build, real-server validation, restricted-name scan, and outbound-link scan passed |
-| Slice 2 - Edge correction + middle language expansion | 🔄 | T038-T049 | Active marker for US2 config/status behavior |
-| Slice 3 - Remaining servers + watch/status/dogfood | ⏳ | | |
-| Polish - Docs, validation packet, final gates | ⏳ | | |
+| US2 config/status behavior (Slice 1) | ✅ | T038-T049 | Checkpoint `d1165ea`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; focused config/prereq tests, expanded LSP focused suite, typecheck, build, and diff check passed |
+| Slice 2 - Degradation/correction + middle language expansion | ⏳ | T050-T083 | Pending |
+| Slice 3 - Remaining servers + watch/status/dogfood | ⏳ | T084-T114 | Pending |
+| Polish - Docs, validation packet, final gates | ⏳ | | Pending |
 
 ---
 
