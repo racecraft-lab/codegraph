@@ -133,7 +133,13 @@ function collapseInterfacePairs(
     const intf = group.filter((node) => node.filePath.endsWith('.mli'));
     const key = sourceUnitKey(group[0]!.filePath);
 
-    if (implementation.length > 0 && intf.length === 0 && key && workspace.interfaceUnitKeys.has(key)) {
+    if (
+      implementation.length > 0 &&
+      intf.length === 0 &&
+      key &&
+      workspace.interfaceUnitKeys.has(key) &&
+      sourceUnitKey(ref.filePath) !== key
+    ) {
       continue;
     }
 

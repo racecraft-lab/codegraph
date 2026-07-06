@@ -48,7 +48,7 @@
   size, `status=block`, `reviewable_loc=987`, `production_files=16`,
   `total_files=80`, `primary_surface_count=5`.
 - Final backstop after latest review remediation: `status=exception`,
-  `reviewable_loc=1240`, `production_files=16`, `total_files=90`,
+  `reviewable_loc=1250`, `production_files=16`, `total_files=90`,
   `exception_class=infra`, `exception_honored=true`; the accepted evidence is
   the infra reviewability exception in `implementation-slices.md`.
 

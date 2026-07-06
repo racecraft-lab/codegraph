@@ -53,6 +53,7 @@ describe('OCaml conservative resolution', () => {
     const commonSignature = findNode(graph, 'interface', 'S', 'common.mli');
     const makeFunctor = findNode(graph, 'module', 'Make', 'functors.ml');
     const runImplementation = findNode(graph, 'function', 'run', 'foo.ml');
+    const fooHelper = findNode(graph, 'function', 'helper', 'foo.ml');
     const hiddenImplementation = findNode(graph, 'function', 'hidden', 'foo.ml');
     const buildSignature = findNode(graph, 'function', 'build', 'common.mli');
 
@@ -69,6 +70,9 @@ describe('OCaml conservative resolution', () => {
     ]));
     expect(graph.getOutgoingEdges(use.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'calls', target: runImplementation.id }),
+    ]));
+    expect(graph.getOutgoingEdges(runImplementation.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'calls', target: fooHelper.id }),
     ]));
     expect(graph.getOutgoingEdges(localOpen.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'imports', target: fooInterface.id }),
