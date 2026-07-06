@@ -10,6 +10,8 @@ import {
   LSP_REASON_CODES,
   LspCoverageRecord,
   LspEdgeCounts,
+  LspEdgeDecision,
+  LspLanguage,
   LspPerformanceCaps,
   LspReasonCode,
   LspStatus,
@@ -75,6 +77,74 @@ export function disabledLspCoverageRecord(): LspCoverageRecord {
   };
 }
 
+export type LspReasonCategory =
+  | 'unavailable'
+  | 'degraded'
+  | 'skipped'
+  | 'not-present'
+  | 'not-applicable'
+  | 'validation-only'
+  | 'future-owned';
+
+export function lspReasonCategory(reason: LspReasonCode): LspReasonCategory {
+  switch (reason) {
+    case 'missing-default-command':
+    case 'configured-command-unavailable':
+      return 'unavailable';
+    case 'server-crash':
+    case 'initialize-timeout':
+    case 'request-timeout':
+    case 'malformed-protocol-response':
+    case 'shutdown-failure':
+      return 'degraded';
+    case 'watch-changed-files-absent':
+    case 'watch-changed-files-unbounded':
+    case 'watch-changed-files-cap-exceeded':
+    case 'watch-work-cap-exceeded':
+    case 'full-index-file-cap-exceeded':
+    case 'full-index-work-cap-exceeded':
+      return 'skipped';
+    case 'language-not-present':
+      return 'not-present';
+    case 'language-not-applicable':
+      return 'not-applicable';
+    case 'validation-only-prereq-missing':
+      return 'validation-only';
+    case 'future-owned':
+      return 'future-owned';
+  }
+}
+
+export function createLspCoverageRecord(
+  language: LspLanguage | 'all',
+  counts: { sourceFilesSeen: number; candidateWorkItems: number },
+): LspCoverageRecord {
+  return {
+    language,
+    sourceFilesSeen: counts.sourceFilesSeen,
+    candidateWorkItems: counts.candidateWorkItems,
+    checkedWorkItems: 0,
+    skippedByReason: {},
+    capExceededReasons: [],
+  };
+}
+
+export function recordLspChecked(status: LspStatus, coverage: LspCoverageRecord, count = 1): void {
+  if (count <= 0) return;
+  status.edgeCounts.checked += count;
+  coverage.checkedWorkItems += count;
+}
+
+export function recordLspEdgeDecision(status: LspStatus, decision: LspEdgeDecision): void {
+  if (decision === 'verified') {
+    status.edgeCounts.verified += 1;
+  } else if (decision === 'corrected') {
+    status.edgeCounts.corrected += 1;
+  } else if (decision === 'suppressed') {
+    status.edgeCounts.suppressed += 1;
+  }
+}
+
 export function recordLspSkip(
   status: LspStatus,
   coverage: LspCoverageRecord,
@@ -95,6 +165,55 @@ export function recordLspDegradation(
   if (count <= 0) return;
   status.edgeCounts.degraded += count;
   recordLspSkip(status, coverage, reason, count);
+}
+
+export function recordLspCapExceeded(
+  status: LspStatus,
+  coverage: LspCoverageRecord,
+  reason: Extract<LspReasonCode, 'full-index-file-cap-exceeded' | 'full-index-work-cap-exceeded'>,
+  count: number,
+): void {
+  if (!coverage.capExceededReasons.includes(reason)) coverage.capExceededReasons.push(reason);
+  recordLspSkip(status, coverage, reason, count);
+}
+
+export interface LspWatchBatchScope {
+  changedSourceFiles: readonly string[] | 'unbounded' | undefined;
+  candidateWorkItemsByLanguage: Partial<Record<LspLanguage, number>>;
+  caps?: Pick<LspPerformanceCaps, 'watchChangedSourceFilesPerBatch' | 'watchWorkItemsPerLanguagePerBatch'>;
+}
+
+export interface LspWatchBatchScopeDecision {
+  canRun: boolean;
+  skippedByReason: Partial<Record<LspReasonCode, number>>;
+  skippedByLanguage: Partial<Record<LspLanguage, LspReasonCode>>;
+}
+
+export function evaluateLspWatchBatchScope(scope: LspWatchBatchScope): LspWatchBatchScopeDecision {
+  const caps = scope.caps ?? defaultLspPerformanceCaps();
+  const skippedByReason: Partial<Record<LspReasonCode, number>> = {};
+  const skippedByLanguage: Partial<Record<LspLanguage, LspReasonCode>> = {};
+
+  if (scope.changedSourceFiles === undefined) {
+    incrementReason(skippedByReason, 'watch-changed-files-absent', 1);
+  } else if (scope.changedSourceFiles === 'unbounded') {
+    incrementReason(skippedByReason, 'watch-changed-files-unbounded', 1);
+  } else if (scope.changedSourceFiles.length > caps.watchChangedSourceFilesPerBatch) {
+    incrementReason(skippedByReason, 'watch-changed-files-cap-exceeded', scope.changedSourceFiles.length);
+  }
+
+  for (const [language, count] of Object.entries(scope.candidateWorkItemsByLanguage) as Array<[LspLanguage, number | undefined]>) {
+    if ((count ?? 0) > caps.watchWorkItemsPerLanguagePerBatch) {
+      skippedByLanguage[language] = 'watch-work-cap-exceeded';
+      incrementReason(skippedByReason, 'watch-work-cap-exceeded', count ?? 0);
+    }
+  }
+
+  return {
+    canRun: Object.keys(skippedByReason).length === 0,
+    skippedByReason,
+    skippedByLanguage,
+  };
 }
 
 export function serializeLspStatus(status: LspStatus): string {

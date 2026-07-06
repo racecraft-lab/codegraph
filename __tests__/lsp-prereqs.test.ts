@@ -178,4 +178,31 @@ describe('LSP server prerequisite registry', () => {
     ]);
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
+
+  it('reports a missing default server as a normal per-language degradation prerequisite', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-prereq-'));
+    const config = resolveLspConfig({
+      projectRoot: tempDir,
+      cliActivation: 'enable',
+      env: { PATH: '' },
+    });
+    const result = probeLspServerCommand(config.servers.python, {
+      cwd: tempDir,
+      env: { PATH: '' },
+    });
+
+    expect(result).toMatchObject({
+      language: 'python',
+      state: 'unavailable',
+      reasonCode: 'missing-default-command',
+      command: ['pyright-langserver', '--stdio'],
+      commandSource: 'registry',
+      expectedAlternatives: [
+        ['pyright-langserver', '--stdio'],
+        ['basedpyright-langserver', '--stdio'],
+      ],
+    });
+    expect(result.detail).toContain('python: expected pyright-langserver --stdio or basedpyright-langserver --stdio');
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
 });
