@@ -39,7 +39,7 @@ plus feature parity against the internal baseline is a no-waiver gate.
 | Checklist | `$speckit-checklist` | ✅ Complete | G4 passed; 90 checklist items, 0 gaps |
 | Tasks | `$speckit-tasks` | ✅ Complete | G5 passed; 114 tasks across 7 phases |
 | Analyze | `$speckit-analyze` | ✅ Complete | G6 passed; 5 findings remediated, 0 remaining |
-| Implement | `$speckit-implement` | 🔄 In Progress | Foundation marker active: T001-T018 |
+| Implement | `$speckit-implement` | 🔄 In Progress | Foundation checkpoint `fb6b893`; US1 marker active: T019-T037 |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -656,6 +656,7 @@ Verification expected before completion:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
+| Foundation - LSP scaffolding, config, registry, status, provenance | ✅ | T001-T018 | Checkpoint `fb6b89399e3dc32abce0b2917449ce7ed3896fc1`; evidence: `specs/008-lsp-client-integration/validation/foundation.md`; typecheck, focused tests, build, forbidden-name scan, and outbound-link scan passed |
 | Slice 1 - Core client/config/status + first complete language path | ⏳ | | |
 | Slice 2 - Edge correction + middle language expansion | ⏳ | | |
 | Slice 3 - Remaining servers + watch/status/dogfood | ⏳ | | |

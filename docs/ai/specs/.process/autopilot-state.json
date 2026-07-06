@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-06T00:40:35Z",
-  "active_step": "Phase 7: Implement - foundation T001-T018",
+  "updated_at": "2026-07-06T00:49:41.614Z",
+  "active_step": "Phase 7: Implement - us1 T019-T037",
   "confidence_gate_mode": "strict",
   "plan": [
     {
@@ -112,11 +112,11 @@
     },
     {
       "step": "Phase 7: Implement - foundation T001-T018",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - us1 T019-T037",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement - us2 T038-T049",
@@ -633,7 +633,38 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "evidence_path": "specs/008-lsp-client-integration/validation/foundation.md",
+          "commit_sha": "fb6b89399e3dc32abce0b2917449ce7ed3896fc1",
+          "head_sha": "fb6b89399e3dc32abce0b2917449ce7ed3896fc1",
+          "verified_at": "2026-07-06T00:49:41.614Z",
+          "tasks": [
+            "T001",
+            "T002",
+            "T003",
+            "T004",
+            "T005",
+            "T006",
+            "T007",
+            "T008",
+            "T009",
+            "T010",
+            "T011",
+            "T012",
+            "T013",
+            "T014",
+            "T015",
+            "T016",
+            "T017",
+            "T018"
+          ],
+          "verification": [
+            "npm run typecheck",
+            "npx vitest run __tests__/lsp-prereqs.test.ts __tests__/lsp-config.test.ts __tests__/lsp-status.test.ts __tests__/lsp-precision-pass.test.ts",
+            "npm run build",
+            "forbidden-name scan: no matches",
+            "outbound-link scan: no matches"
+          ]
         },
         "emission_mapping": {
           "status": "pending"
@@ -1158,5 +1189,21 @@
     "tasks_sha": "a6c16176035648830f030e47d93ee4aec810a2e7ce1e830f17653efdb0eba779",
     "reviewability_sha": "677e24402fd6f6e4fdf63a0447b3cdd71ddea099b7321c69d14410d776a08022",
     "hazard_route_sha": "d5501ebfc29e3f67f6df2e4f36615efe1784a6d353ebd151a90d111a55a2ce91"
+  },
+  "phase_7_implementation": {
+    "foundation": {
+      "status": "completed",
+      "marker_id": "foundation",
+      "task_range": "T001-T018",
+      "checkpoint_sha": "fb6b89399e3dc32abce0b2917449ce7ed3896fc1",
+      "evidence_path": "specs/008-lsp-client-integration/validation/foundation.md",
+      "verification": {
+        "typecheck": "passed: npm run typecheck",
+        "focused_tests": "passed: 4 files, 12 tests",
+        "build": "passed: npm run build",
+        "forbidden_name_scan": "passed: no matches",
+        "outbound_link_scan": "passed: no matches"
+      }
+    }
   }
 }
