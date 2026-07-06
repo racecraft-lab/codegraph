@@ -1,23 +1,27 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
 
 const SERVER_COMMANDS = {
-  javascript: { command: ['typescript-language-server', '--version'], sdk: 'typescript' },
-  typescript: { command: ['typescript-language-server', '--version'], sdk: 'typescript' },
-  python: { command: ['pyright-langserver', '--version'] },
-  go: { command: ['gopls', 'version'] },
-  rust: { command: ['rust-analyzer', '--version'] },
-  c: { command: ['clangd', '--version'] },
-  cpp: { command: ['clangd', '--version'] },
-  swift: { command: ['sourcekit-lsp', '--version'] },
-  java: { command: ['jdtls', '--version'] },
-  csharp: { command: ['csharp-ls', '--version'] },
-  kotlin: { command: ['kotlin-language-server', '--version'] },
-  php: { command: ['intelephense', '--version'] },
-  ruby: { command: ['ruby-lsp', '--version'] },
-  dart: { command: ['dart', '--version'] },
-  vue: { command: ['vue-language-server', '--version'], sdk: 'typescript' },
+  javascript: { commands: [['typescript-language-server', '--version']], sdk: 'typescript' },
+  jsx: { commands: [['typescript-language-server', '--version']], sdk: 'typescript' },
+  typescript: { commands: [['typescript-language-server', '--version']], sdk: 'typescript' },
+  tsx: { commands: [['typescript-language-server', '--version']], sdk: 'typescript' },
+  python: { commands: [['pyright-langserver', '--version'], ['basedpyright-langserver', '--version']] },
+  go: { commands: [['gopls', 'version']] },
+  rust: { commands: [['rust-analyzer', '--version']] },
+  c: { commands: [['clangd', '--version']] },
+  cpp: { commands: [['clangd', '--version']] },
+  swift: { commands: [['sourcekit-lsp', '--version']] },
+  java: { commands: [['jdtls', '--version']] },
+  csharp: { commands: [['csharp-ls', '--version']] },
+  kotlin: { commands: [['kotlin-language-server', '--version'], ['kotlin-lsp', '--version']] },
+  php: { commands: [['intelephense', '--version'], ['phpactor', '--version']] },
+  ruby: { commands: [['ruby-lsp', '--version'], ['solargraph', '--version']] },
+  dart: { commands: [['dart', '--version']] },
+  vue: { commands: [['vue-language-server', '--version']], sdk: 'typescript' },
 };
 
 const argv = process.argv.slice(2);
@@ -32,9 +36,9 @@ for (const language of languages) {
     continue;
   }
 
-  const result = spawnSync(entry.command[0], entry.command.slice(1), { encoding: 'utf8' });
-  if (result.error) {
-    missing.push({ language, expected: entry.command.join(' '), error: result.error.message });
+  const selected = selectWorkingCommand(entry);
+  if (selected.missing) {
+    missing.push({ language, ...selected.missing });
     continue;
   }
 
@@ -46,9 +50,10 @@ for (const language of languages) {
 
   observed.push({
     language,
-    command: entry.command.join(' '),
-    status: result.status,
-    output: `${result.stdout || ''}${result.stderr || ''}`.trim().split('\n')[0] || '',
+    command: selected.command.join(' '),
+    resolvedPath: selected.resolvedPath,
+    status: selected.result.status,
+    output: selected.output,
     minimumRuntimeEvidence: sdkEvidence ? `${entry.sdk} SDK: ${sdkEvidence}` : undefined,
   });
 }
@@ -76,7 +81,7 @@ if (missing.length > 0) {
 function selectedLanguages(args) {
   const explicit = valueFor(args, '--languages');
   if (explicit) return explicit.split(',').map((item) => item.trim()).filter(Boolean);
-  if (valueFor(args, '--slice') === 'us1') return ['typescript', 'javascript'];
+  if (valueFor(args, '--slice') === 'us1') return ['typescript', 'tsx', 'javascript', 'jsx'];
   return Object.keys(SERVER_COMMANDS);
 }
 
@@ -95,4 +100,84 @@ function resolveNodePackage(packageName) {
   ], { encoding: 'utf8' });
   if (result.status !== 0 || result.error) return null;
   return result.stdout.trim();
+}
+
+function selectWorkingCommand(entry) {
+  const expected = expectedLabel(entry);
+  let lastFailure = null;
+
+  for (const command of entry.commands) {
+    const resolvedPath = resolveExecutablePath(command[0]);
+    if (!resolvedPath) {
+      lastFailure ??= { expected, error: 'command not found on PATH' };
+      continue;
+    }
+
+    const result = spawnSync(resolvedPath, command.slice(1), {
+      encoding: 'utf8',
+      shell: shouldSpawnWithShell(resolvedPath),
+    });
+    const output = `${result.stdout || ''}${result.stderr || ''}`.trim().split('\n')[0] || '';
+    if (result.error) {
+      lastFailure = { expected, resolvedPath, error: result.error.message };
+      continue;
+    }
+    if (result.status !== 0) {
+      lastFailure = {
+        expected,
+        resolvedPath,
+        status: result.status,
+        signal: result.signal,
+        output,
+        error: `validation command exited ${result.status ?? 'without status'}`,
+      };
+      continue;
+    }
+
+    return { command, resolvedPath, result, output };
+  }
+
+  return { missing: lastFailure ?? { expected, error: 'command not found on PATH' } };
+}
+
+function expectedLabel(entry) {
+  return entry.commands.map((command) => command.join(' ')).join(' or ');
+}
+
+function resolveExecutablePath(command) {
+  if (!command) return null;
+  if (path.isAbsolute(command)) return executablePath(command);
+  if (command.includes('/') || command.includes('\\')) return executablePath(path.resolve(process.cwd(), command));
+
+  const pathValue = process.env.PATH ?? '';
+  const extensions = process.platform === 'win32'
+    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')
+    : [''];
+  for (const dir of pathValue.split(path.delimiter).filter(Boolean)) {
+    for (const ext of executableExtensions(command, extensions)) {
+      const resolved = executablePath(path.join(dir, command + ext));
+      if (resolved) return resolved;
+    }
+  }
+  return null;
+}
+
+function executableExtensions(command, extensions) {
+  if (process.platform !== 'win32') return extensions;
+  const commandExt = path.extname(command).toUpperCase();
+  const pathExts = extensions.map((ext) => ext.toUpperCase());
+  return commandExt && pathExts.includes(commandExt) ? [''] : extensions;
+}
+
+function executablePath(candidate) {
+  try {
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
+function shouldSpawnWithShell(executable) {
+  return process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(executable);
 }

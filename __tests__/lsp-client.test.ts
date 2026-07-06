@@ -193,6 +193,36 @@ describe('LspJsonRpcClient', () => {
     await expect(client.waitForExit()).resolves.toMatchObject({ code: 17, signal: null });
   });
 
+  it('settles exit state when the server process cannot be spawned', async () => {
+    const { LspJsonRpcClient } = await loadClientModule();
+    const missingExecutable = path.join(os.tmpdir(), `cg-missing-lsp-${process.pid}-${Date.now()}`);
+    const client = new LspJsonRpcClient({
+      command: [missingExecutable],
+      timeoutMs: 25,
+    });
+    clients.push(client);
+
+    await expect(client.request('test/missing')).rejects.toMatchObject({
+      name: 'LspClientError',
+      reasonCode: 'server-crash',
+    });
+    await expect(client.waitForExit()).resolves.toMatchObject({ code: null, signal: null });
+  });
+
+  it('rejects pending requests when stdin emits a pipe error', async () => {
+    const client = await createClient(rpcServerSource(`
+  if (message.method === 'test/hang') return;
+`), { timeoutMs: 500 });
+
+    const request = client.request('test/hang');
+    client.child.stdin.emit('error', new Error('fixture EPIPE'));
+
+    await expect(request).rejects.toMatchObject({
+      name: 'LspClientError',
+      reasonCode: 'server-crash',
+    });
+  });
+
   it('drains multiple stdout frames delivered in a single chunk', async () => {
     const client = await createClient(rpcServerSource(`
   if (message.method === 'test/first') {

@@ -5,8 +5,8 @@
 Completed tasks: T019-T037.
 
 Slice 1 proves explicit LSP opt-in, default-off behavior, JSON-RPC stdio
-lifecycle, status rendering, and one complete TypeScript/JavaScript precision
-path.
+lifecycle, status rendering, and one complete TypeScript/JavaScript-family
+precision path, including TSX and JSX source files.
 
 ## Commands
 
@@ -20,7 +20,7 @@ Result: 3 files passed, 14 tests passed.
 npx vitest run __tests__/lsp-disabled.test.ts __tests__/lsp-config.test.ts __tests__/lsp-client.test.ts __tests__/lsp-precision-pass.test.ts __tests__/lsp-status.test.ts __tests__/lsp-real-server-validation.test.ts
 ```
 
-Result: 6 files passed, 24 tests passed.
+Result: 6 files passed, 35 tests passed.
 
 ```text
 npm run typecheck
@@ -51,19 +51,21 @@ Result: passed.
 | Language | Command | Resolved Path | Observed Version | SDK Evidence |
 |----------|---------|---------------|------------------|--------------|
 | TypeScript | `typescript-language-server --version` | `/opt/homebrew/bin/typescript-language-server` | `5.3.0` | `node_modules/typescript/package.json` |
+| TSX | `typescript-language-server --version` | `/opt/homebrew/bin/typescript-language-server` | `5.3.0` | `node_modules/typescript/package.json` |
 | JavaScript | `typescript-language-server --version` | `/opt/homebrew/bin/typescript-language-server` | `5.3.0` | `node_modules/typescript/package.json` |
+| JSX | `typescript-language-server --version` | `/opt/homebrew/bin/typescript-language-server` | `5.3.0` | `node_modules/typescript/package.json` |
 
-Coverage summary: 2 verified, 0 missing, 0 future-owned, 0 unowned.
+Coverage summary: 4 verified, 0 missing, 0 future-owned, 0 unowned.
 
 ## Evidence
 
 - `codegraph index` remains default-off; disabled index, sync, and watch-triggered sync paths record no LSP status or `lsp` provenance.
 - `codegraph index --lsp` and `codegraph index --no-lsp` activation precedence is covered, including last-flag-wins CLI behavior.
 - `LspJsonRpcClient` covers initialize, request routing, timeout rejection, shutdown/exit, stdout framing, stderr buffering, process exit rejection, and malformed response handling.
-- The TypeScript/JavaScript precision pass selects existing structural candidates after reference resolution and marks only matching in-workspace targets as `lsp`.
+- The TypeScript/JavaScript-family precision pass selects existing structural candidates after reference resolution and marks only matching in-workspace targets as `lsp`, including TSX/JSX sources and cross-extension targets such as TSX to TypeScript and JSX to JavaScript.
 - LSP status serialization preserves activation source, observed server evidence, coverage, edge counts, performance, and warnings.
 - `codegraph status --json` reads persisted LSP status, and human status renders LSP state without starting servers.
-- The real-server helper validates TypeScript and JavaScript server availability and TypeScript SDK evidence.
+- The real-server helper validates TypeScript, TSX, JavaScript, and JSX server availability and TypeScript SDK evidence.
 - Restricted-name scrub passed with no matches.
 - Outbound-link scrub for SPEC-008 artifacts passed with no matches.
 

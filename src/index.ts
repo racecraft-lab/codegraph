@@ -982,7 +982,6 @@ export class CodeGraph {
         return { filesChecked: 0, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 0 };
       }
       try {
-        const structuralStartedAt = Date.now();
         // Captured BEFORE the sync runs: the sync's own incremental writes
         // populate vocab rows for the files it touches, so an end-of-sync
         // emptiness check would see "non-empty" and skip the backfill forever,
@@ -1046,10 +1045,6 @@ export class CodeGraph {
           // Same lifecycle for `this.<member>` callback registrations whose
           // member is inherited from a supertype (#808).
           await this.resolver.resolveDeferredThisMemberRefs();
-        }
-
-        if (result.filesAdded > 0 || result.filesModified > 0) {
-          await this.maybeRunLspPrecisionPass(options.lsp, Date.now() - structuralStartedAt);
         }
 
         // Refresh planner stats + checkpoint the WAL after bulk writes.

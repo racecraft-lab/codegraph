@@ -28,8 +28,14 @@ describe('SPEC-008 real-server validation script', () => {
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout);
     expect(report.missing).toEqual([]);
-    expect(report.observed.map((item: { language: string }) => item.language).sort()).toEqual(['javascript', 'typescript']);
+    expect(report.observed.map((item: { language: string }) => item.language).sort()).toEqual([
+      'javascript',
+      'jsx',
+      'tsx',
+      'typescript',
+    ]);
     expect(report.observed.every((item: { command: string }) => item.command === 'typescript-language-server --version')).toBe(true);
+    expect(report.observed.every((item: { resolvedPath?: string }) => item.resolvedPath?.startsWith(dir))).toBe(true);
     expect(report.observed.every((item: { minimumRuntimeEvidence?: string }) => item.minimumRuntimeEvidence?.includes('typescript SDK:'))).toBe(true);
   });
 
@@ -47,13 +53,78 @@ describe('SPEC-008 real-server validation script', () => {
     expect(result.stderr).toContain('typescript: expected typescript-language-server --version');
     expect(result.stderr).toContain('Normal codegraph index --lsp still degrades per language');
   });
+
+  it('fails when an available validation command exits non-zero', () => {
+    const dir = fakeBinDir({
+      'pyright-langserver': { output: 'fixture pyright failure', status: 7 },
+    });
+    const result = spawnSync(process.execPath, [SCRIPT, '--languages', 'python'], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf8',
+      env: { ...process.env, PATH: dir },
+    });
+
+    expect(result.status).toBe(1);
+    const report = JSON.parse(result.stdout);
+    expect(report.observed).toEqual([]);
+    expect(report.missing).toEqual([
+      expect.objectContaining({
+        language: 'python',
+        status: 7,
+        output: 'fixture pyright failure',
+      }),
+    ]);
+    expect(report.missing[0].resolvedPath).toContain(dir);
+    expect(report.missing[0].error).toContain('validation command exited 7');
+  });
+
+  it('accepts an available validation alternative when the first command is absent', () => {
+    const dir = fakeBinDir({
+      'basedpyright-langserver': 'fixture basedpyright 1.0.0',
+    });
+    const result = spawnSync(process.execPath, [SCRIPT, '--languages', 'python'], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf8',
+      env: { ...process.env, PATH: dir },
+    });
+
+    expect(result.status).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.missing).toEqual([]);
+    expect(report.observed).toEqual([
+      expect.objectContaining({
+        language: 'python',
+        command: 'basedpyright-langserver --version',
+      }),
+    ]);
+    expect(report.observed[0].resolvedPath).toContain(dir);
+  });
+
+  it('lists accepted validation alternatives in missing-prereq errors', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-real-empty-'));
+    dirs.push(dir);
+    const result = spawnSync(process.execPath, [SCRIPT, '--languages', 'python'], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf8',
+      env: { ...process.env, PATH: dir },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('python: expected pyright-langserver --version or basedpyright-langserver --version');
+  });
 });
 
-function fakeBinDir(): string {
+function fakeBinDir(commands: Record<string, string | { output: string; status?: number }> = {
+  'typescript-language-server': 'fixture typescript-language-server 1.0.0',
+}): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-real-bin-'));
   dirs.push(dir);
-  const command = path.join(dir, 'typescript-language-server');
-  fs.writeFileSync(command, '#!/bin/sh\necho "fixture typescript-language-server 1.0.0"\n');
-  fs.chmodSync(command, 0o755);
+  for (const [name, commandSpec] of Object.entries(commands)) {
+    const output = typeof commandSpec === 'string' ? commandSpec : commandSpec.output;
+    const status = typeof commandSpec === 'string' ? 0 : commandSpec.status ?? 0;
+    const command = path.join(dir, name);
+    fs.writeFileSync(command, `#!/bin/sh\necho ${JSON.stringify(output)}\nexit ${status}\n`);
+    fs.chmodSync(command, 0o755);
+  }
   return dir;
 }

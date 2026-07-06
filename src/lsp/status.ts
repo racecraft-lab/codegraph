@@ -11,6 +11,7 @@ import {
   LspCoverageRecord,
   LspEdgeCounts,
   LspPerformanceCaps,
+  LspReasonCode,
   LspStatus,
 } from './types';
 
@@ -74,6 +75,28 @@ export function disabledLspCoverageRecord(): LspCoverageRecord {
   };
 }
 
+export function recordLspSkip(
+  status: LspStatus,
+  coverage: LspCoverageRecord,
+  reason: LspReasonCode,
+  count = 1,
+): void {
+  if (count <= 0) return;
+  incrementReason(status.edgeCounts.skippedByReason, reason, count);
+  incrementReason(coverage.skippedByReason, reason, count);
+}
+
+export function recordLspDegradation(
+  status: LspStatus,
+  coverage: LspCoverageRecord,
+  reason: LspReasonCode,
+  count = 1,
+): void {
+  if (count <= 0) return;
+  status.edgeCounts.degraded += count;
+  recordLspSkip(status, coverage, reason, count);
+}
+
 export function serializeLspStatus(status: LspStatus): string {
   return JSON.stringify(status);
 }
@@ -105,4 +128,12 @@ export function parsePersistedLspStatus(raw: string | null): LspStatus | null {
 
 export function isLspReasonCode(value: string): boolean {
   return (LSP_REASON_CODES as readonly string[]).includes(value);
+}
+
+function incrementReason(
+  reasons: Partial<Record<LspReasonCode, number>>,
+  reason: LspReasonCode,
+  count: number,
+): void {
+  reasons[reason] = (reasons[reason] ?? 0) + count;
 }

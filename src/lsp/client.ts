@@ -148,7 +148,8 @@ export class LspJsonRpcClient {
     });
     this.child.stdout.on('data', (chunk: Buffer) => this.handleStdout(chunk));
     this.child.stderr.on('data', (chunk: Buffer) => this.handleStderr(chunk));
-    this.child.on('error', (error) => this.rejectPending(error));
+    this.child.stdin.on('error', (error) => this.handleStdinError(error));
+    this.child.on('error', (error) => this.handleProcessError(error));
     this.child.on('exit', (code, signal) => this.handleExit({ code, signal }));
   }
 
@@ -195,7 +196,11 @@ export class LspJsonRpcClient {
 
   notify(method: string, params: JsonRpcParams = null): void {
     if (this.closed || this.exited) return;
-    this.writeMessage({ jsonrpc: '2.0', method, params });
+    try {
+      this.writeMessage({ jsonrpc: '2.0', method, params });
+    } catch (error) {
+      this.handleStdinError(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   async shutdown(): Promise<unknown> {
@@ -231,6 +236,9 @@ export class LspJsonRpcClient {
   }
 
   private writeMessage(message: Record<string, unknown>): void {
+    if (!this.canWriteStdin()) {
+      throw new LspClientError('LSP stdin is not writable', 'server-crash');
+    }
     const body = JSON.stringify(message);
     const encoded = Buffer.byteLength(body, 'utf8');
     this.child.stdin.write(`Content-Length: ${encoded}\r\n\r\n${body}`);
@@ -307,6 +315,20 @@ export class LspJsonRpcClient {
     }
   }
 
+  private handleStdinError(error: Error): void {
+    const wrapped = new LspClientError('LSP stdin write failed', 'server-crash', { cause: error });
+    this.closed = true;
+    this.rejectPending(wrapped);
+    this.kill();
+  }
+
+  private handleProcessError(error: Error): void {
+    const wrapped = new LspClientError('LSP server process error', 'server-crash', { cause: error });
+    this.closed = true;
+    this.rejectPending(wrapped);
+    this.handleExit({ code: null, signal: null });
+  }
+
   private handleExit(exit: LspClientExit): void {
     if (this.exited) return;
     this.exited = exit;
@@ -334,6 +356,13 @@ export class LspJsonRpcClient {
     if (!this.exited && !this.child.killed) {
       this.child.kill();
     }
+  }
+
+  private canWriteStdin(): boolean {
+    return !this.closed &&
+      !this.exited &&
+      !this.child.stdin.destroyed &&
+      !this.child.stdin.writableEnded;
   }
 
   private async waitForExitWithTimeout(timeoutMs: number): Promise<LspClientExit> {

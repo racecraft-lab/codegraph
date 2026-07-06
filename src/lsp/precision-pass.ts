@@ -7,14 +7,16 @@ import { probeLspServerCommand } from './prereqs';
 import {
   DEFAULT_LSP_FULL_INDEX_WORK_CAP,
   EffectiveLspConfig,
+  LSP_REASON_CODES,
   LspCoverageRecord,
   LspLanguage,
   LspReasonCode,
+  LspServerState,
   LspStatus,
 } from './types';
-import { createInitialLspStatus } from './status';
+import { createInitialLspStatus, recordLspDegradation, recordLspSkip } from './status';
 
-const US1_LANGUAGES: LspLanguage[] = ['typescript', 'javascript'];
+const US1_LANGUAGES: LspLanguage[] = ['typescript', 'tsx', 'javascript', 'jsx'];
 
 const DEFAULT_CLIENT_FACTORY: LspClientFactory = {
   create: ({ command, cwd, timeoutMs }) => new LspJsonRpcClient({
@@ -87,8 +89,7 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
 
     if (serverStatus.state !== 'available' || !Array.isArray(serverStatus.command)) {
       const reason = serverStatus.reasonCode ?? 'configured-command-unavailable';
-      coverage.skippedByReason[reason] = languageCandidates.length;
-      status.edgeCounts.degraded += languageCandidates.length;
+      recordLspDegradation(status, coverage, reason, languageCandidates.length);
       continue;
     }
 
@@ -119,21 +120,30 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
         if (decision === 'verified') {
           status.edgeCounts.verified += 1;
         } else if (decision) {
-          coverage.skippedByReason[decision] = (coverage.skippedByReason[decision] ?? 0) + 1;
+          recordLspSkip(status, coverage, decision);
         }
       }
     } catch (err) {
-      serverStatus.state = reasonFromError(err) === 'initialize-timeout' ? 'timed-out' : 'degraded';
-      serverStatus.reasonCode = reasonFromError(err);
+      const reason = reasonFromError(err);
+      serverStatus.state = serverStateForReason(reason);
+      serverStatus.reasonCode = reason;
       serverStatus.lastError = err instanceof Error ? err.message : String(err);
-      coverage.skippedByReason[serverStatus.reasonCode] = languageCandidates.length - coverage.checkedWorkItems;
-      status.edgeCounts.degraded += languageCandidates.length - coverage.checkedWorkItems;
+      recordLspDegradation(status, coverage, reason, languageCandidates.length - coverage.checkedWorkItems);
     } finally {
       try {
         await client.shutdown();
       } catch (err) {
-        serverStatus.reasonCode = 'shutdown-failure';
-        serverStatus.lastError = err instanceof Error ? err.message : String(err);
+        const shutdownMessage = err instanceof Error ? err.message : String(err);
+        if (!serverStatus.reasonCode) {
+          serverStatus.state = 'degraded';
+          serverStatus.reasonCode = 'shutdown-failure';
+          serverStatus.lastError = shutdownMessage;
+          recordLspDegradation(status, coverage, 'shutdown-failure', languageCandidates.length - coverage.checkedWorkItems);
+        } else {
+          serverStatus.lastError = serverStatus.lastError
+            ? `${serverStatus.lastError}; shutdown failed: ${shutdownMessage}`
+            : `shutdown failed: ${shutdownMessage}`;
+        }
       }
     }
 
@@ -207,7 +217,7 @@ function applyDefinitionResult(
 
   const target = targets[0]!;
   if (!target.filePath) return 'language-not-applicable';
-  const nodes = queries.findNodesAtLocation(target.filePath, target.line, candidate.language);
+  const nodes = queries.findNodesAtLocation(target.filePath, target.line);
   const compatible = nodes.filter((node) =>
     node.id === candidate.targetId ||
     (node.kind === candidate.targetKind && node.name === candidate.targetName)
@@ -262,9 +272,23 @@ function serverInfoText(value: unknown): string | undefined {
 }
 
 function reasonFromError(err: unknown): LspReasonCode {
+  if (err && typeof err === 'object') {
+    const reasonCode = (err as { reasonCode?: unknown }).reasonCode;
+    if (typeof reasonCode === 'string' && (LSP_REASON_CODES as readonly string[]).includes(reasonCode)) {
+      return reasonCode as LspReasonCode;
+    }
+  }
   const name = err instanceof Error ? err.name : '';
   const message = err instanceof Error ? err.message : String(err);
-  if (name === 'TimeoutError' || /timeout/i.test(message)) return 'request-timeout';
+  if (name === 'TimeoutError' || /initialize.*timeout|timeout.*initialize/i.test(message)) return 'initialize-timeout';
+  if (/timeout/i.test(message)) return 'request-timeout';
   if (/malformed|json/i.test(message)) return 'malformed-protocol-response';
   return 'server-crash';
+}
+
+function serverStateForReason(reason: LspReasonCode): LspServerState {
+  if (reason === 'server-crash') return 'crashed';
+  if (reason === 'initialize-timeout' || reason === 'request-timeout') return 'timed-out';
+  if (reason === 'missing-default-command' || reason === 'configured-command-unavailable') return 'unavailable';
+  return 'degraded';
 }
