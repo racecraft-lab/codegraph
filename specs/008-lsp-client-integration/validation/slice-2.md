@@ -81,7 +81,7 @@ Result: passed on `darwin/arm64`.
 
 | Language | Server command | Probe command | Resolved executable | Version/status evidence |
 |---|---|---|---|---|
-| Python | `pyright-langserver --stdio` | `pyright-langserver --version` | `/opt/homebrew/bin/pyright-langserver` | exit 1; probe reported the server expects stdio/socket input |
+| Python | `pyright-langserver --stdio` | `pyright --version` | `/opt/homebrew/bin/pyright-langserver` | exit 0; `pyright 1.1.411` |
 | Go | `gopls` | `gopls version` | `/opt/homebrew/bin/gopls` | exit 0; `golang.org/x/tools/gopls v0.22.0` |
 | Rust | `rust-analyzer` | `rust-analyzer --version` | `/opt/homebrew/bin/rust-analyzer` | exit 0; `rust-analyzer 0.0.0 (972c4e7bee 2026-06-28)` |
 | C | `clangd` | `clangd --version` | `/Users/fredrickgabelmann/.swiftly/bin/clangd` | exit 0; `Apple clangd version 21.0.0 ([redacted-url] b6f042d4515f83404d3f44012144b5e67b2c5791)` |
@@ -92,8 +92,8 @@ Result: passed on `darwin/arm64`.
 Coverage summary: 7 verified, 0 missing, 0 future-owned, 0 unowned.
 
 Validation remains prerequisite-only: the helper records command availability,
-resolved executable paths, and version/status evidence without installing
-servers or holding long-running stdio sessions open. Normal `codegraph index
+resolved executable paths, selected probe output, and stdio initialize smoke
+evidence where a server has no reliable version flag. Normal `codegraph index
 --lsp` degradation remains per-language runtime behavior if a resolved server
 later fails initialize, request, or shutdown.
 

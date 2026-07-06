@@ -27,16 +27,16 @@ Install or configure local language servers before running SPEC-008 validation. 
 |---|---|---|
 | JavaScript | `typescript-language-server --stdio` | Observed server version, TypeScript SDK evidence, status coverage |
 | TypeScript | `typescript-language-server --stdio` | Observed server version, TypeScript SDK evidence, status coverage |
-| Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Observed selected server version, status coverage |
+| Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Observed selected probe and server executable, status coverage |
 | Java | `jdtls -configuration <dir> -data <workspace-data>` or configured equivalent | Observed server version, workspace dir evidence |
 | C | `clangd` | Observed server version, compile-command evidence when used |
 | C++ | `clangd` | Observed server version, compile-command evidence when used |
 | C# | `csharp-ls` | Observed server version, status coverage |
 | Go | `gopls` | Observed server version, status coverage |
-| Ruby | `ruby-lsp` or `solargraph stdio` | Observed selected server version, status coverage |
+| Ruby | `ruby-lsp` or `solargraph stdio` | Observed selected server probe, status coverage |
 | Rust | `rust-analyzer` | Observed server version, status coverage |
-| PHP | `intelephense --stdio` or `phpactor language-server` | Observed selected server version, status coverage |
-| Kotlin | `kotlin-language-server` or `kotlin-lsp` | Observed selected server version, status coverage |
+| PHP | `intelephense --stdio` or `phpactor language-server` | Observed selected server probe or stdio initialize, status coverage |
+| Kotlin | `kotlin-language-server` or `kotlin-lsp` | Observed selected server probe or stdio initialize, status coverage |
 | Swift | `sourcekit-lsp` | Observed server version, status coverage |
 | Dart | `dart language-server` | Observed Dart SDK/server version, status coverage |
 | Vue | `vue-language-server --stdio` | Observed server version, TypeScript SDK evidence, status coverage |

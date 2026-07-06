@@ -1133,6 +1133,7 @@ export class CodeGraph {
   watch(options: WatchOptions = {}): boolean {
     if (this.watcher?.isActive()) return true;
 
+    this.lspWatchRestartBudget.clear();
     this.watcher = new FileWatcher(
       this.projectRoot,
       async (context) => {

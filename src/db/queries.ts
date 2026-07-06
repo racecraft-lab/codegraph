@@ -207,6 +207,24 @@ function rowToEdge(row: EdgeRow): Edge {
   };
 }
 
+function preserveInactiveLspAudit(
+  activeMetadata: Record<string, unknown>,
+  inactiveMetadata: string | null,
+): Record<string, unknown> {
+  const previous = inactiveMetadata ? safeJsonParse(inactiveMetadata, undefined) : undefined;
+  if (!previous || typeof previous !== 'object') return activeMetadata;
+  const currentLsp = activeMetadata.lsp && typeof activeMetadata.lsp === 'object'
+    ? activeMetadata.lsp as Record<string, unknown>
+    : {};
+  return {
+    ...activeMetadata,
+    lsp: {
+      ...currentLsp,
+      previousInactiveAudit: previous,
+    },
+  };
+}
+
 /**
  * Convert database row to FileRecord object
  */
@@ -249,6 +267,7 @@ export class QueryBuilder {
     getNodesByFile?: SqliteStatement;
     getNodesByKind?: SqliteStatement;
     insertEdge?: SqliteStatement;
+    reactivateInactiveEdge?: SqliteStatement;
     upsertFile?: SqliteStatement;
     deleteEdgesBySource?: SqliteStatement;
     deleteEdgesByTarget?: SqliteStatement;
@@ -1467,14 +1486,7 @@ export class QueryBuilder {
    * Insert a new edge
    */
   insertEdge(edge: Edge): void {
-    if (!this.stmts.insertEdge) {
-      this.stmts.insertEdge = this.db.prepare(`
-        INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, col, provenance)
-        VALUES (@source, @target, @kind, @metadata, @line, @col, @provenance)
-      `);
-    }
-
-    this.stmts.insertEdge.run({
+    const params = {
       source: edge.source,
       target: edge.target,
       kind: edge.kind,
@@ -1482,7 +1494,32 @@ export class QueryBuilder {
       line: edge.line ?? null,
       col: edge.column ?? null,
       provenance: edge.provenance ?? null,
-    });
+    };
+
+    if (!this.stmts.reactivateInactiveEdge) {
+      this.stmts.reactivateInactiveEdge = this.db.prepare(`
+        UPDATE edges
+        SET metadata = @metadata,
+            provenance = @provenance
+        WHERE source = @source
+          AND target = @target
+          AND kind = @kind
+          AND IFNULL(line, -1) = IFNULL(@line, -1)
+          AND IFNULL(col, -1) = IFNULL(@col, -1)
+          AND NOT ${activeEdgePredicate()}
+      `);
+    }
+    const reactivated = this.stmts.reactivateInactiveEdge.run(params);
+    if (reactivated.changes > 0) return;
+
+    if (!this.stmts.insertEdge) {
+      this.stmts.insertEdge = this.db.prepare(`
+        INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, col, provenance)
+        VALUES (@source, @target, @kind, @metadata, @line, @col, @provenance)
+      `);
+    }
+
+    this.stmts.insertEdge.run(params);
   }
 
   /**
@@ -1596,6 +1633,7 @@ export class QueryBuilder {
       JOIN nodes s ON s.id = e.source
       WHERE s.language IN (${placeholders})
         AND e.kind IN ('calls', 'references', 'imports', 'instantiates')
+        AND ${activeEdgePredicate('e')}
         AND e.line IS NOT NULL
       GROUP BY s.file_path
       ORDER BY s.file_path
@@ -1684,6 +1722,7 @@ export class QueryBuilder {
         AND kind = ?
         AND IFNULL(line, -1) = IFNULL(?, -1)
         AND IFNULL(col, -1) = IFNULL(?, -1)
+        AND ${activeEdgePredicate()}
       LIMIT 1
     `).get(edgeId, current.source, targetId, current.kind, current.line, current.col) as EdgeRow | undefined;
 
@@ -1694,6 +1733,35 @@ export class QueryBuilder {
             metadata = ?
         WHERE id = ?
       `).run(JSON.stringify(metadata), conflict.id);
+      this.db.prepare('UPDATE edges SET metadata = ? WHERE id = ?').run(
+        JSON.stringify(replacedMetadata),
+        edgeId,
+      );
+      return updateConflict.changes;
+    }
+
+    const inactiveConflict = this.db.prepare(`
+      SELECT * FROM edges
+      WHERE id != ?
+        AND source = ?
+        AND target = ?
+        AND kind = ?
+        AND IFNULL(line, -1) = IFNULL(?, -1)
+        AND IFNULL(col, -1) = IFNULL(?, -1)
+        AND NOT ${activeEdgePredicate()}
+      LIMIT 1
+    `).get(edgeId, current.source, targetId, current.kind, current.line, current.col) as EdgeRow | undefined;
+
+    if (inactiveConflict) {
+      const updateConflict = this.db.prepare(`
+        UPDATE edges
+        SET provenance = 'lsp',
+            metadata = ?
+        WHERE id = ?
+      `).run(
+        JSON.stringify(preserveInactiveLspAudit(metadata, inactiveConflict.metadata)),
+        inactiveConflict.id,
+      );
       this.db.prepare('UPDATE edges SET metadata = ? WHERE id = ?').run(
         JSON.stringify(replacedMetadata),
         edgeId,

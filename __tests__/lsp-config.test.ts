@@ -162,7 +162,8 @@ describe('LSP config resolution', () => {
   it('warns and falls back for invalid command and timeout values', () => {
     withProjectConfig({
       lsp: {
-        defaultTimeoutMs: true,
+        enabled: 'yes',
+        defaultTimeoutMs: -1,
         servers: {
           typescript: {
             command: ['project-ts-lsp'],
@@ -182,8 +183,16 @@ describe('LSP config resolution', () => {
       expect(config.servers.typescript.commandSource).toBe('registry');
       expect(config.servers.typescript.timeoutMs).toBe(5000);
       expect(config.warnings.map((w) => w.code)).toEqual(expect.arrayContaining([
+        'invalid-project-lsp',
         'invalid-command',
         'invalid-timeout',
+      ]));
+      expect(config.warnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'invalid-project-lsp',
+          source: 'project',
+          detail: 'lsp.enabled must be a boolean when provided',
+        }),
       ]));
     });
   });

@@ -61,7 +61,17 @@ export function compatibleLspTargetNodes(
   candidate: LspEdgeCandidateRow,
   nodes: Node[],
 ): Node[] {
-  return nodes.filter((node) => isCompatibleLspTargetNode(candidate, node));
+  const compatible = nodes.filter((node) => isCompatibleLspTargetNode(candidate, node));
+  if (compatible.length <= 1) return compatible;
+
+  const exactId = compatible.filter((node) => node.id === candidate.targetId);
+  if (exactId.length > 0) return exactId;
+
+  const exactKindAndName = compatible.filter((node) =>
+    node.kind === candidate.targetKind && node.name === candidate.targetName);
+  if (exactKindAndName.length > 0) return narrowestNodes(exactKindAndName);
+
+  return narrowestNodes(compatible);
 }
 
 export function isCompatibleLspTargetNode(candidate: LspEdgeCandidateRow, node: Node): boolean {
@@ -71,6 +81,18 @@ export function isCompatibleLspTargetNode(candidate: LspEdgeCandidateRow, node: 
   }
   if (node.kind === candidate.targetKind) return true;
   return COMPATIBLE_TARGET_KINDS[candidate.kind]?.has(node.kind) ?? false;
+}
+
+function narrowestNodes(nodes: Node[]): Node[] {
+  const ranked = [...nodes].sort((left, right) => nodeSpan(left) - nodeSpan(right));
+  const narrowestSpan = nodeSpan(ranked[0]!);
+  return ranked.filter((node) => nodeSpan(node) === narrowestSpan);
+}
+
+function nodeSpan(node: Node): number {
+  const lineSpan = Math.max(0, node.endLine - node.startLine);
+  const columnSpan = Math.max(0, node.endColumn - node.startColumn);
+  return (lineSpan * 100000) + columnSpan;
 }
 
 export function lspDecisionMetadata(

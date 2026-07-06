@@ -45,6 +45,7 @@ describe('SPEC-008 real-server validation script', () => {
   it('validates Slice 2 real-server rows with resolved paths and smoke evidence', () => {
     const urlLikeBanner = `${'https'}://example.invalid/build`;
     const dir = fakeBinDir({
+      pyright: 'fixture pyright 1.0.0',
       'pyright-langserver': 'fixture pyright-langserver 1.0.0',
       gopls: 'fixture gopls 1.0.0',
       'rust-analyzer': 'fixture rust-analyzer 1.0.0',
@@ -79,7 +80,7 @@ describe('SPEC-008 real-server validation script', () => {
 
     const byLanguage = new Map(report.observed.map((item: { language: string }) => [item.language, item]));
     expect(byLanguage.get('python')).toMatchObject({
-      command: 'pyright-langserver --version',
+      command: 'pyright --version',
       serverCommand: 'pyright-langserver --stdio',
       status: 0,
     });
@@ -97,6 +98,64 @@ describe('SPEC-008 real-server validation script', () => {
     expect(report.observed.every((item: { smokeValidation?: { status: string; evidence: string[] } }) => item.smokeValidation?.status === 'prereq-only')).toBe(true);
     expect(report.observed.every((item: { smokeValidation?: { evidence: string[] } }) => item.smokeValidation?.evidence.length)).toBe(true);
   });
+
+  it('accepts the alternate Python server when pyright is unavailable', () => {
+    const dir = fakeBinDir({
+      basedpyright: 'fixture basedpyright 1.0.0',
+      'basedpyright-langserver': 'fixture basedpyright-langserver 1.0.0',
+    });
+
+    const result = spawnSync(process.execPath, [SCRIPT, '--languages', 'python'], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: dir,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.missing).toEqual([]);
+    expect(report.observed).toEqual([
+      expect.objectContaining({
+        language: 'python',
+        command: 'basedpyright --version',
+        serverCommand: 'basedpyright-langserver --stdio',
+      }),
+    ]);
+  });
+
+  it('tries the next accepted candidate when the validation command exits non-zero', () => {
+    const dir = fakeBinDir({
+      pyright: { output: 'broken pyright', status: 1 },
+      'pyright-langserver': 'fixture pyright-langserver 1.0.0',
+      basedpyright: 'fixture basedpyright 1.0.0',
+      'basedpyright-langserver': 'fixture basedpyright-langserver 1.0.0',
+    });
+
+    const result = spawnSync(process.execPath, [SCRIPT, '--languages', 'python'], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: dir,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.missing).toEqual([]);
+    expect(report.observed).toEqual([
+      expect.objectContaining({
+        language: 'python',
+        command: 'basedpyright --version',
+        serverCommand: 'basedpyright-langserver --stdio',
+        status: 0,
+      }),
+    ]);
+  });
+
 
   it('validates Slice 3 rows with alternate commands, TypeScript SDK evidence, and COBOL disposition', () => {
     const dir = fakeBinDir({
@@ -162,9 +221,38 @@ describe('SPEC-008 real-server validation script', () => {
     expect(report.observed.every((item: { resolvedExecutable?: string }) => item.resolvedExecutable?.startsWith(dir))).toBe(true);
   });
 
+  it('tries the next accepted stdio candidate when initialize is followed by non-zero exit', () => {
+    const dir = fakeBinDir({
+      'kotlin-language-server': { output: '{"id":1,"capabilities":{}}', status: 1, delayMs: 200 },
+      'kotlin-lsp': 'fixture kotlin-lsp 1.0.0',
+    });
+
+    const result = spawnSync(process.execPath, [SCRIPT, '--languages', 'kotlin'], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: dir,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.missing).toEqual([]);
+    expect(report.observed).toEqual([
+      expect.objectContaining({
+        language: 'kotlin',
+        command: 'kotlin-lsp --version',
+        serverCommand: 'kotlin-lsp',
+        status: 0,
+      }),
+    ]);
+  });
+
   it('defaults to all implemented validation rows plus future-owned dispositions', () => {
     const dir = fakeBinDir({
       'typescript-language-server': 'fixture typescript-language-server 1.0.0',
+      pyright: 'fixture pyright 1.0.0',
       'pyright-langserver': 'fixture pyright-langserver 1.0.0',
       gopls: 'fixture gopls 1.0.0',
       'rust-analyzer': 'fixture rust-analyzer 1.0.0',
@@ -173,7 +261,9 @@ describe('SPEC-008 real-server validation script', () => {
       jdtls: 'fixture jdtls 1.0.0',
       'csharp-ls': 'fixture csharp-ls 1.0.0',
       'kotlin-language-server': 'fixture kotlin-language-server 1.0.0',
+      'kotlin-lsp': 'fixture kotlin-lsp 1.0.0',
       intelephense: 'fixture intelephense 1.0.0',
+      phpactor: 'fixture phpactor 1.0.0',
       'ruby-lsp': 'fixture ruby-lsp 1.0.0',
       dart: 'fixture dart 1.0.0',
       'vue-language-server': 'fixture vue-language-server 1.0.0',
@@ -246,16 +336,21 @@ describe('SPEC-008 real-server validation script', () => {
   });
 });
 
-function fakeBinDir(commands: Record<string, string>): string {
+function fakeBinDir(commands: Record<string, string | { output: string; status?: number; delayMs?: number }>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-real-bin-'));
   dirs.push(dir);
-  for (const [name, output] of Object.entries(commands)) {
+  for (const [name, fixture] of Object.entries(commands)) {
+    const output = typeof fixture === 'string' ? fixture : fixture.output;
+    const status = typeof fixture === 'string' ? 0 : fixture.status ?? 0;
+    const delayMs = typeof fixture === 'string' ? 0 : fixture.delayMs ?? 0;
+    const posixDelay = delayMs > 0 ? `sleep ${(delayMs / 1000).toFixed(3)}\n` : '';
+    const windowsDelay = delayMs > 0 ? `ping -n ${Math.max(2, Math.ceil(delayMs / 1000) + 1)} 127.0.0.1 >nul\r\n` : '';
     const command = path.join(dir, name);
-    fs.writeFileSync(command, `#!/bin/sh\necho ${JSON.stringify(output)}\n`);
-    fs.chmodSync(command, 0o755);
+    fs.writeFileSync(command, `#!/bin/sh\nprintf '%s\\n' ${JSON.stringify(output)}\n${posixDelay}exit ${status}\n`);
+    if (process.platform !== 'win32') fs.chmodSync(command, 0o755);
 
     const windowsCommand = path.join(dir, `${name}.cmd`);
-    fs.writeFileSync(windowsCommand, `@echo off\r\necho ${output}\r\n`);
+    fs.writeFileSync(windowsCommand, `@echo off\r\necho ${output}\r\n${windowsDelay}exit /b ${status}\r\n`);
   }
   return dir;
 }

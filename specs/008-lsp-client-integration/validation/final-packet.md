@@ -59,7 +59,7 @@ The focused verification passed:
 npx vitest run __tests__/lsp-disabled.test.ts
 ```
 
-Result: 1 test file passed; 3 tests passed.
+Result: 1 test file passed; 4 tests passed.
 
 ```text
 npm run build && npm run typecheck && npm test

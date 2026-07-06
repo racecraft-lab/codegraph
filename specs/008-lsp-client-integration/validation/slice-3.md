@@ -11,8 +11,8 @@ Result: passed on `darwin/arm64`.
 | Language | Server command | Probe command | Resolved executable | Version/status evidence | SDK/disposition evidence |
 |---|---|---|---|---|---|
 | C# | `csharp-ls` | `csharp-ls --version` | `/opt/homebrew/bin/csharp-ls` | exit 0; `csharp-ls, 0.25.0 (Punia)+19a9574d7577521555f49bf49e94688a3ba67dd2` | n/a |
-| Kotlin | `kotlin-language-server` | `kotlin-language-server --version` | `/opt/homebrew/bin/kotlin-language-server` | exit 1; probe reported unsupported `--version` flag | n/a |
-| PHP | `intelephense --stdio` | `intelephense --version` | `/opt/homebrew/bin/intelephense` | exit 1; probe reached the installed executable and emitted its local error banner | n/a |
+| Kotlin | `kotlin-language-server` | `kotlin-language-server` stdio initialize | `/opt/homebrew/bin/kotlin-language-server` | exit 0; LSP initialize response observed | n/a |
+| PHP | `intelephense --stdio` | `intelephense --stdio` initialize | `/opt/homebrew/bin/intelephense` | exit 0; LSP initialize response observed | n/a |
 | Ruby | `ruby-lsp` | `ruby-lsp --version` | `/opt/homebrew/bin/ruby-lsp` | exit 0; `0.26.9` | n/a |
 | Dart | `dart language-server` | `dart --version` | `/opt/homebrew/bin/dart` | exit 0; Dart SDK `3.12.2` on `macos_arm64` | n/a |
 | Vue | `vue-language-server --stdio` | `vue-language-server --version` | `/opt/homebrew/bin/vue-language-server` | exit 0; `3.3.6` | TypeScript SDK resolved at `node_modules/typescript/package.json` |
@@ -21,11 +21,11 @@ Result: passed on `darwin/arm64`.
 Coverage summary: 6 verified, 1 future-owned, 0 missing, 0 unowned.
 
 Validation remains prerequisite-only: the helper records command availability,
-resolved executable paths, TypeScript SDK evidence for Vue, and the COBOL
-future-owned disposition without installing servers or holding long-running
-stdio sessions open. Normal `codegraph index --lsp` degradation remains
-per-language runtime behavior if a resolved server later fails initialize,
-request, or shutdown.
+resolved executable paths, selected probe output, TypeScript SDK evidence for
+Vue, stdio initialize smoke evidence where a server has no reliable version
+flag, and the COBOL future-owned disposition. Normal `codegraph index --lsp`
+degradation remains per-language runtime behavior if a resolved server later
+fails initialize, request, or shutdown.
 
 ## Bounded Watch Verification (T068-T069, T091-T095)
 

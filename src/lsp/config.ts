@@ -110,6 +110,13 @@ function normalizeProjectLsp(raw: unknown, warnings: LspConfigWarning[]): Projec
     return undefined;
   }
   const config = raw as ProjectLspConfig;
+  if (config.enabled !== undefined && typeof config.enabled !== 'boolean') {
+    warnings.push({
+      code: 'invalid-project-lsp',
+      source: 'project',
+      detail: 'lsp.enabled must be a boolean when provided',
+    });
+  }
   if (config.servers && (typeof config.servers !== 'object' || Array.isArray(config.servers))) {
     warnings.push({ code: 'invalid-project-lsp', source: 'project', detail: 'lsp.servers must be an object when provided' });
     return { ...config, servers: undefined };

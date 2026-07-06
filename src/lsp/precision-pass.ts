@@ -87,6 +87,8 @@ export type LspWatchRestartBudget = Map<
   Partial<Record<LspLanguage, LspWatchRestartBudgetEntry>>
 >;
 
+export const MAX_LSP_WATCH_RESTART_BATCHES = 128;
+
 interface NormalizedLspTarget extends LspTargetAudit {
   uri: string;
   filePath: string | null;
@@ -127,6 +129,7 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
   }
 
   for (const language of LSP_PRECISION_LANGUAGES) {
+    const languageStartedAt = Date.now();
     const discoveredCandidates = options.queries.getLspEdgeCandidates(
       [language] as Language[],
       lspCandidateDiscoveryLimit(caps, watchChangedFiles !== null),
@@ -156,7 +159,7 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
         });
 
     if (languageCandidates.length === 0) {
-      coverage.elapsedMs = Date.now() - started;
+      coverage.elapsedMs = Date.now() - languageStartedAt;
       continue;
     }
 
@@ -175,7 +178,7 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
         timeoutSource: serverConfig.timeoutSource,
       });
       recordLspDegradation(status, coverage, exhaustedReason, languageCandidates.length);
-      coverage.elapsedMs = Date.now() - started;
+      coverage.elapsedMs = Date.now() - languageStartedAt;
       continue;
     }
 
@@ -185,6 +188,7 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
     if (serverStatus.state !== 'available' || !Array.isArray(serverStatus.command)) {
       const reason = serverStatus.reasonCode ?? 'configured-command-unavailable';
       recordLspDegradation(status, coverage, reason, languageCandidates.length);
+      coverage.elapsedMs = Date.now() - languageStartedAt;
       continue;
     }
 
@@ -199,12 +203,12 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
       status,
       serverStatus,
       caps,
-      passStartedAt: started,
+      languageStartedAt,
       watchBatchKey,
       watchRestartBudget: watch?.restartBudget,
     });
 
-    coverage.elapsedMs = Date.now() - started;
+    coverage.elapsedMs = Date.now() - languageStartedAt;
   }
 
   status.performance.lspElapsedMs = Date.now() - started;
@@ -271,7 +275,7 @@ interface RunLanguageOptions {
   status: LspStatus;
   serverStatus: LspServerStatusRecord;
   caps: LspPerformanceCaps;
-  passStartedAt: number;
+  languageStartedAt: number;
   watchBatchKey: string | null;
   watchRestartBudget?: LspWatchRestartBudget;
 }
@@ -313,6 +317,8 @@ async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<vo
       });
       initializedAtLeastOnce = true;
       run.serverStatus.state = 'initialized';
+      delete run.serverStatus.reasonCode;
+      delete run.serverStatus.lastError;
       run.serverStatus.observedVersion = serverInfoText(initializeResult);
 
       const processed = await processCandidateRequests(client, remaining, run);
@@ -344,7 +350,7 @@ async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<vo
       markLanguageDegraded(run, reason, err, remaining, shutdownError);
       return;
     } finally {
-      run.coverage.elapsedMs = Date.now() - run.passStartedAt;
+      run.coverage.elapsedMs = Date.now() - run.languageStartedAt;
     }
   }
 
@@ -505,9 +511,30 @@ function getWatchRestartExhaustion(
 
 function rememberWatchRestartExhaustion(run: RunLanguageOptions, reason: LspReasonCode): void {
   if (!run.watchBatchKey || !run.watchRestartBudget) return;
-  const entry = run.watchRestartBudget.get(run.watchBatchKey) ?? {};
+  const entry = getOrCreateWatchRestartBudgetEntry(run.watchRestartBudget, run.watchBatchKey);
   entry[run.language] = { reason };
-  run.watchRestartBudget.set(run.watchBatchKey, entry);
+}
+
+function getOrCreateWatchRestartBudgetEntry(
+  budget: LspWatchRestartBudget,
+  batchKey: string,
+): Partial<Record<LspLanguage, LspWatchRestartBudgetEntry>> {
+  const existing = budget.get(batchKey);
+  if (existing) {
+    budget.delete(batchKey);
+    budget.set(batchKey, existing);
+    return existing;
+  }
+
+  while (budget.size >= MAX_LSP_WATCH_RESTART_BATCHES) {
+    const oldest = budget.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    budget.delete(oldest);
+  }
+
+  const entry: Partial<Record<LspLanguage, LspWatchRestartBudgetEntry>> = {};
+  budget.set(batchKey, entry);
+  return entry;
 }
 
 function applyFullIndexCaps(
@@ -585,7 +612,7 @@ function applyDefinitionResult(
     return 'suppressed';
   }
 
-  const nodes = queries.findNodesAtLocation(target.filePath, target.line, candidate.language, target.character);
+  const nodes = queries.findNodesAtLocation(target.filePath, target.line, undefined, target.character);
   const compatible = compatibleLspTargetNodes(candidate, nodes);
   if (compatible.length === 0) {
     queries.suppressEdgeWithLspAudit(

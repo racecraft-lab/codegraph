@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -23,9 +23,13 @@ afterEach(() => {
 });
 
 function makeExecutable(dir: string, name: string): string {
-  const executable = path.join(dir, name);
-  fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n');
-  fs.chmodSync(executable, 0o755);
+  const executable = path.join(dir, process.platform === 'win32' ? `${name}.cmd` : name);
+  if (process.platform === 'win32') {
+    fs.writeFileSync(executable, '@echo off\r\nexit /b 0\r\n');
+  } else {
+    fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(executable, 0o755);
+  }
   return executable;
 }
 
@@ -314,6 +318,7 @@ describe('LSP precision provenance foundation', () => {
 
         expect(status.coverage.some((record) => record.language === 'tsx' && record.checkedWorkItems > 0)).toBe(true);
         expect(status.coverage.some((record) => record.language === 'jsx' && record.checkedWorkItems > 0)).toBe(true);
+        expect(status.edgeCounts.verified).toBeGreaterThanOrEqual(2);
       } finally {
         db.close();
       }
@@ -551,8 +556,8 @@ describe('LSP precision provenance foundation', () => {
       targetFilePath: 'tsx/target.tsx',
     });
     const targetNodes = new Map([
-      ['jsx', makeTargetNode({ id: 'jsx-target', language: 'jsx', filePath: 'jsx/target.jsx' })],
-      ['tsx', makeTargetNode({ id: 'tsx-target', language: 'tsx', filePath: 'tsx/target.tsx' })],
+      ['jsx/target.jsx', makeTargetNode({ id: 'jsx-target', language: 'jsx', filePath: 'jsx/target.jsx' })],
+      ['tsx/target.tsx', makeTargetNode({ id: 'tsx-target', language: 'tsx', filePath: 'tsx/target.tsx' })],
     ]);
     const createdLanguages: string[] = [];
     const verifiedEdgeIds: number[] = [];
@@ -571,7 +576,16 @@ describe('LSP precision provenance foundation', () => {
       queries: {
         getLspEdgeCandidates: (languages: string[]) =>
           [jsxCandidate, tsxCandidate].filter((candidate) => languages.includes(candidate.language)),
-        findNodesAtLocation: (_filePath: string, _line: number, language: string) => [targetNodes.get(language)],
+        getLspEdgeCandidateCounts: (languages: string[]) => {
+          const scoped = [jsxCandidate, tsxCandidate].filter((candidate) => languages.includes(candidate.language));
+          return {
+            sourceFilesSeen: new Set(scoped.map((candidate) => candidate.sourceFilePath)).size,
+            candidateWorkItems: scoped.length,
+            fileCapSkippedWorkItems: 0,
+            workCapSkippedWorkItems: 0,
+          };
+        },
+        findNodesAtLocation: (filePath: string) => [targetNodes.get(filePath)],
         updateEdgeLspProvenance: (edgeId: number) => {
           verifiedEdgeIds.push(edgeId);
           return 1;
@@ -688,6 +702,129 @@ describe('LSP precision provenance foundation', () => {
     expect(status.edgeCounts.verified).toBe(1);
     expect(status.edgeCounts.degraded).toBe(0);
     expect(status.coverage.find((record) => record.language === 'typescript')?.skippedByReason).toEqual({});
+  });
+
+  it('preserves initialize-timeout as the primary failure when shutdown also fails', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const tsServer = makeExecutable(dir, 'typescript-lsp');
+    const config = resolveLspConfig({
+      projectRoot: dir,
+      cliActivation: 'enable',
+      env: {
+        PATH: '',
+        CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+      },
+    });
+
+    const status = await runLspPrecisionPass({
+      projectRoot: dir,
+      queries: mockQueries([makeCandidate()], makeTargetNode()),
+      config,
+      clientFactory: {
+        create: () => ({
+          initialize: async () => {
+            throw new LspClientError('fixture initialize timed out', 'initialize-timeout');
+          },
+          request: async () => null,
+          shutdown: async () => {
+            throw new LspClientError('fixture shutdown failed', 'shutdown-failure');
+          },
+        }),
+      },
+    });
+
+    expect(status.servers.find((server) => server.language === 'typescript')).toMatchObject({
+      state: 'timed-out',
+      reasonCode: 'initialize-timeout',
+      lastError: 'fixture initialize timed out; shutdown failed: fixture shutdown failed',
+    });
+    expect(status.coverage.find((record) => record.language === 'typescript')?.skippedByReason).toMatchObject({
+      'initialize-timeout': 1,
+    });
+    expect(status.coverage.find((record) => record.language === 'typescript')?.skippedByReason['shutdown-failure']).toBeUndefined();
+  });
+
+  it('records coverage elapsed time per language instead of cumulatively', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const tsServer = makeExecutable(dir, 'typescript-lsp');
+    const jsServer = makeExecutable(dir, 'javascript-lsp');
+    let now = 1000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const config = resolveLspConfig({
+        projectRoot: dir,
+        cliActivation: 'enable',
+        env: {
+          PATH: '',
+          CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+          CODEGRAPH_LSP_JAVASCRIPT_COMMAND_JSON: JSON.stringify([jsServer, '--stdio']),
+        },
+      });
+      const candidates = [
+        makeCandidate({ edgeId: 1, language: 'typescript', sourceFilePath: 'typescript/source.ts' }),
+        makeCandidate({
+          edgeId: 2,
+          language: 'javascript',
+          sourceFilePath: 'javascript/source.js',
+          targetId: 'javascript-target',
+          targetFilePath: 'javascript/target.js',
+        }),
+      ];
+
+      const status = await runLspPrecisionPass({
+        projectRoot: dir,
+        queries: {
+          getLspEdgeCandidates: (languages: string[]) =>
+            candidates.filter((candidate) => languages.includes(candidate.language)),
+          getLspEdgeCandidateCounts: (languages: string[]) => {
+            const scoped = candidates.filter((candidate) => languages.includes(candidate.language));
+            return {
+              sourceFilesSeen: new Set(scoped.map((candidate) => candidate.sourceFilePath)).size,
+              candidateWorkItems: scoped.length,
+              fileCapSkippedWorkItems: 0,
+              workCapSkippedWorkItems: 0,
+            };
+          },
+          findNodesAtLocation: (filePath: string) => [
+            makeTargetNode({
+              id: filePath === 'javascript/target.js' ? 'javascript-target' : 'typescript-target',
+              language: filePath === 'javascript/target.js' ? 'javascript' : 'typescript',
+              filePath,
+            }),
+          ],
+          updateEdgeLspProvenance: () => 1,
+        } as any,
+        config,
+        clientFactory: {
+          create: ({ language }) => ({
+            initialize: async () => {
+              now += language === 'typescript' ? 50 : 5;
+              return { serverInfo: { name: `fixture-${language}` } };
+            },
+            request: async () => {
+              now += language === 'typescript' ? 20 : 5;
+              return {
+                uri: pathToFileURL(path.join(dir, language === 'javascript' ? 'javascript/target.js' : 'typescript/target.ts')).href,
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
+              };
+            },
+            shutdown: async () => {
+              now += language === 'typescript' ? 10 : 5;
+            },
+          }),
+        },
+      });
+
+      const tsElapsed = status.coverage.find((record) => record.language === 'typescript')?.elapsedMs;
+      const jsElapsed = status.coverage.find((record) => record.language === 'javascript')?.elapsedMs;
+      expect(tsElapsed).toBe(80);
+      expect(jsElapsed).toBe(15);
+      expect(status.performance.lspElapsedMs).toBe(95);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('enforces full-index caps, bounded batches, and session/request high-water status', async () => {
@@ -836,10 +973,20 @@ describe('LSP precision provenance foundation', () => {
       });
       insertTestNode(queries, {
         id: 'correct-target',
+        kind: 'method',
         name: 'helper',
         qualifiedName: 'correct.helper',
         filePath: 'src/correct.ts',
         startLine: 3,
+      });
+      insertTestNode(queries, {
+        id: 'correct-container',
+        kind: 'class',
+        name: 'Container',
+        qualifiedName: 'Container',
+        filePath: 'src/correct.ts',
+        startLine: 1,
+        endLine: 20,
       });
       queries.insertEdge({ source: 'source', target: 'wrong-target', kind: 'calls', line: 10, column: 8, provenance: 'tree-sitter' });
       queries.insertEdge({ source: 'source', target: 'correct-target', kind: 'calls', line: 10, column: 8, provenance: 'tree-sitter' });
@@ -891,6 +1038,204 @@ describe('LSP precision provenance foundation', () => {
         active: false,
         replacementTargetId: 'correct-target',
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('preserves inactive audit metadata when a corrected edge reuses its unique identity', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const db = DatabaseConnection.initialize(path.join(dir, 'codegraph.db'));
+    try {
+      const queries = new QueryBuilder(db.getDb());
+      insertTestNode(queries, {
+        id: 'source',
+        name: 'caller',
+        qualifiedName: 'caller',
+        filePath: 'src/caller.ts',
+        startLine: 1,
+        endLine: 20,
+      });
+      insertTestNode(queries, {
+        id: 'wrong-target',
+        name: 'helper',
+        qualifiedName: 'wrong.helper',
+        filePath: 'src/wrong.ts',
+        startLine: 1,
+      });
+      insertTestNode(queries, {
+        id: 'correct-target',
+        name: 'helper',
+        qualifiedName: 'correct.helper',
+        filePath: 'src/correct.ts',
+        startLine: 1,
+      });
+      queries.insertEdge({ source: 'source', target: 'wrong-target', kind: 'calls', line: 10, column: 8, provenance: 'tree-sitter' });
+      queries.insertEdge({
+        source: 'source',
+        target: 'correct-target',
+        kind: 'calls',
+        line: 10,
+        column: 8,
+        provenance: 'lsp',
+        metadata: {
+          lsp: {
+            decision: 'suppressed',
+            active: false,
+            reason: 'external-target',
+          },
+        },
+      });
+      const wrong = rawEdgeRows(db.getDb()).find((edge) => edge.target === 'wrong-target');
+      expect(wrong).toBeDefined();
+
+      const changes = queries.retargetEdgeWithLspCorrection(
+        wrong!.id,
+        'correct-target',
+        {
+          lsp: {
+            decision: 'corrected',
+            active: true,
+            previousTargetId: 'wrong-target',
+          },
+        },
+        {
+          lsp: {
+            decision: 'suppressed',
+            active: false,
+            replacementTargetId: 'correct-target',
+          },
+        },
+      );
+
+      const active = queries.getOutgoingEdges('source', ['calls']);
+      const raw = rawEdgeRows(db.getDb());
+      const corrected = raw.find((edge) => edge.target === 'correct-target');
+      const correctedMetadata = corrected?.metadata ? JSON.parse(corrected.metadata).lsp : undefined;
+
+      expect(changes).toBe(1);
+      expect(raw).toHaveLength(2);
+      expect(active).toHaveLength(1);
+      expect(active[0]?.target).toBe('correct-target');
+      expect(correctedMetadata).toMatchObject({
+        decision: 'corrected',
+        active: true,
+        previousInactiveAudit: {
+          lsp: {
+            decision: 'suppressed',
+            active: false,
+            reason: 'external-target',
+          },
+        },
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('excludes inactive LSP audit edges from candidate counts', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const db = DatabaseConnection.initialize(path.join(dir, 'codegraph.db'));
+    try {
+      const queries = new QueryBuilder(db.getDb());
+      insertTestNode(queries, {
+        id: 'source',
+        name: 'caller',
+        qualifiedName: 'caller',
+        filePath: 'src/caller.ts',
+        startLine: 1,
+        endLine: 20,
+      });
+      insertTestNode(queries, {
+        id: 'active-target',
+        name: 'active',
+        qualifiedName: 'active',
+        filePath: 'src/active.ts',
+        startLine: 1,
+      });
+      insertTestNode(queries, {
+        id: 'inactive-target',
+        name: 'inactive',
+        qualifiedName: 'inactive',
+        filePath: 'src/inactive.ts',
+        startLine: 1,
+      });
+
+      queries.insertEdge({ source: 'source', target: 'active-target', kind: 'calls', line: 10, column: 4, provenance: 'tree-sitter' });
+      queries.insertEdge({
+        source: 'source',
+        target: 'inactive-target',
+        kind: 'calls',
+        line: 11,
+        column: 4,
+        provenance: 'lsp',
+        metadata: {
+          lsp: {
+            decision: 'suppressed',
+            active: false,
+            reason: 'external-target',
+          },
+        },
+      });
+
+      expect(queries.getLspEdgeCandidates(['typescript'], 10).map((candidate) => candidate.targetId)).toEqual(['active-target']);
+      expect(queries.getLspEdgeCandidateCounts(['typescript'])).toMatchObject({
+        sourceFilesSeen: 1,
+        candidateWorkItems: 1,
+        fileCapSkippedWorkItems: 0,
+        workCapSkippedWorkItems: 0,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('reactivates an inactive LSP audit edge when structural indexing emits the same edge again', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const db = DatabaseConnection.initialize(path.join(dir, 'codegraph.db'));
+    try {
+      const queries = new QueryBuilder(db.getDb());
+      insertTestNode(queries, {
+        id: 'source',
+        name: 'caller',
+        qualifiedName: 'caller',
+        filePath: 'src/caller.ts',
+        startLine: 1,
+      });
+      insertTestNode(queries, {
+        id: 'target',
+        name: 'callee',
+        qualifiedName: 'callee',
+        filePath: 'src/callee.ts',
+        startLine: 1,
+      });
+
+      queries.insertEdge({ source: 'source', target: 'target', kind: 'calls', line: 10, column: 4, provenance: 'tree-sitter' });
+      const edgeId = rawEdgeRows(db.getDb())[0]!.id;
+      queries.suppressEdgeWithLspAudit(edgeId, {
+        lsp: {
+          decision: 'suppressed',
+          active: false,
+          reason: 'unindexed-target',
+        },
+      });
+      expect(queries.getOutgoingEdges('source', ['calls'])).toEqual([]);
+
+      queries.insertEdge({ source: 'source', target: 'target', kind: 'calls', line: 10, column: 4, provenance: 'tree-sitter' });
+
+      const raw = rawEdgeRows(db.getDb());
+      expect(raw).toHaveLength(1);
+      expect(raw[0]).toMatchObject({
+        source: 'source',
+        target: 'target',
+        kind: 'calls',
+        metadata: null,
+        provenance: 'tree-sitter',
+      });
+      expect(queries.getOutgoingEdges('source', ['calls'])).toHaveLength(1);
     } finally {
       db.close();
     }

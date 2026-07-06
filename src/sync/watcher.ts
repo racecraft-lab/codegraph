@@ -199,7 +199,7 @@ export interface WatchOptions {
 export interface WatchSyncContext {
   /** Source files observed by this debounce batch, before the sync began. */
   changedSourceFiles: readonly string[];
-  /** Stable key for comparing material watch batches across debounce cycles. */
+  /** Unique key for the current debounce batch. */
   materialBatchKey: string;
 }
 
@@ -295,6 +295,7 @@ export class FileWatcher {
    * this edit) from "currently being indexed" (lastSeen <= syncStarted).
    */
   private syncStartedMs = 0;
+  private syncBatchSequence = 0;
   private syncing = false;
   private stopped = false;
   /**
@@ -351,6 +352,7 @@ export class FileWatcher {
     this.degradedReason = null;
     this.lockRetryCount = 0;
     this.syncFailureRetryCount = 0;
+    this.syncBatchSequence = 0;
 
     // Some environments make filesystem watching unusable — most notably
     // WSL2 /mnt/ drives, where the underlying fs.watch calls block long
@@ -910,9 +912,11 @@ export class FileWatcher {
         changedSourceFiles.push(filePath);
       }
     }
+    const filesKey = [...changedSourceFiles].sort().join('\n');
+    const batchId = ++this.syncBatchSequence;
     return {
       changedSourceFiles,
-      materialBatchKey: [...changedSourceFiles].sort().join('\n'),
+      materialBatchKey: `watch-batch:${batchId}\n${filesKey}`,
     };
   }
 }

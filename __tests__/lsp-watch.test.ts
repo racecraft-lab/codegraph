@@ -3,9 +3,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { FileWatcher } from '../src';
+import { CodeGraph, FileWatcher } from '../src';
 import {
   LspClientError,
+  MAX_LSP_WATCH_RESTART_BATCHES,
   defaultLspPerformanceCaps,
   resolveLspConfig,
   runLspPrecisionPass,
@@ -27,9 +28,13 @@ function makeTempProject(): string {
 }
 
 function makeExecutable(dir: string, name: string): string {
-  const executable = path.join(dir, name);
-  fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n');
-  fs.chmodSync(executable, 0o755);
+  const executable = path.join(dir, process.platform === 'win32' ? `${name}.cmd` : name);
+  if (process.platform === 'win32') {
+    fs.writeFileSync(executable, '@echo off\r\nexit /b 0\r\n');
+  } else {
+    fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(executable, 0o755);
+  }
   return executable;
 }
 
@@ -129,9 +134,60 @@ describe('LSP watch verification', () => {
 
       await waitUntil(() => contexts.length === 1);
       expect(contexts[0]?.changedSourceFiles).toEqual(['src/changed.ts', 'src/also-changed.ts']);
-      expect(contexts[0]?.materialBatchKey).toBe('src/also-changed.ts\nsrc/changed.ts');
+      expect(contexts[0]?.materialBatchKey).toBe('watch-batch:1\nsrc/also-changed.ts\nsrc/changed.ts');
     } finally {
       watcher.stop();
+    }
+  });
+
+  it('uses a fresh material batch key for a later same-file debounce batch', async () => {
+    const dir = makeTempProject();
+    const contexts: any[] = [];
+    const watcher = new FileWatcher(
+      dir,
+      async (context?: any) => {
+        contexts.push(context);
+        return { filesChanged: 1, durationMs: 1 };
+      },
+      { debounceMs: 1, inertForTests: true },
+    );
+
+    try {
+      expect(watcher.start()).toBe(true);
+      await watcher.waitUntilReady();
+
+      watcher.ingestEventForTests('src/changed.ts');
+      await waitUntil(() => contexts.length === 1);
+      watcher.ingestEventForTests('src/changed.ts');
+      await waitUntil(() => contexts.length === 2);
+
+      expect(contexts[0]?.changedSourceFiles).toEqual(['src/changed.ts']);
+      expect(contexts[1]?.changedSourceFiles).toEqual(['src/changed.ts']);
+      expect(contexts[0]?.materialBatchKey).toBe('watch-batch:1\nsrc/changed.ts');
+      expect(contexts[1]?.materialBatchKey).toBe('watch-batch:2\nsrc/changed.ts');
+    } finally {
+      watcher.stop();
+    }
+  });
+
+  it('clears the shared LSP restart budget when starting a new watcher session', async () => {
+    const dir = makeTempProject();
+    const cg = await CodeGraph.init(dir);
+    try {
+      const budget = (cg as any).lspWatchRestartBudget as Map<string, unknown>;
+      budget.set('watch-batch:1\nsrc/changed.ts', { typescript: { reason: 'server-crash' } });
+
+      expect(cg.watch({ debounceMs: 1, inertForTests: true })).toBe(true);
+      expect(budget.size).toBe(0);
+
+      cg.unwatch();
+      budget.set('watch-batch:1\nsrc/changed.ts', { typescript: { reason: 'server-crash' } });
+
+      expect(cg.watch({ debounceMs: 1, inertForTests: true })).toBe(true);
+      expect(budget.size).toBe(0);
+    } finally {
+      cg.unwatch();
+      cg.close();
     }
   });
 
@@ -293,7 +349,7 @@ describe('LSP watch verification', () => {
     const first = await runLspPrecisionPass({
       ...baseOptions,
       queries: mockQueries([1, 2, 3].map((edgeId) => makeCandidate({ edgeId, sourceFilePath: 'src/changed.ts' }))),
-      watch: { changedSourceFiles: ['src/changed.ts'], restartBudget },
+      watch: { changedSourceFiles: ['src/changed.ts'], restartBudget, materialBatchKey: 'batch-1' },
     } as any);
     expect(createCalls).toBe(2);
     expect(first.edgeCounts.degraded).toBe(3);
@@ -301,17 +357,51 @@ describe('LSP watch verification', () => {
     const second = await runLspPrecisionPass({
       ...baseOptions,
       queries: mockQueries([1, 2, 3].map((edgeId) => makeCandidate({ edgeId, sourceFilePath: 'src/changed.ts' }))),
-      watch: { changedSourceFiles: ['src/changed.ts'], restartBudget },
+      watch: { changedSourceFiles: ['src/changed.ts'], restartBudget, materialBatchKey: 'batch-1' },
     } as any);
     expect(createCalls).toBe(2);
     expect(second.edgeCounts.degraded).toBe(3);
 
     const third = await runLspPrecisionPass({
       ...baseOptions,
-      queries: mockQueries([1, 2, 3].map((edgeId) => makeCandidate({ edgeId, sourceFilePath: 'src/new-change.ts' }))),
-      watch: { changedSourceFiles: ['src/new-change.ts'], restartBudget },
+      queries: mockQueries([1, 2, 3].map((edgeId) => makeCandidate({ edgeId, sourceFilePath: 'src/changed.ts' }))),
+      watch: { changedSourceFiles: ['src/changed.ts'], restartBudget, materialBatchKey: 'batch-2' },
     } as any);
     expect(createCalls).toBe(4);
     expect(third.edgeCounts.degraded).toBe(3);
+  });
+
+  it('prunes stale watch restart budget batches to a fixed cap', async () => {
+    const dir = makeTempProject();
+    const server = makeExecutable(dir, 'typescript-lsp');
+    const restartBudget = new Map();
+    const clientFactory = {
+      create: () => ({
+        initialize: async () => ({ serverInfo: { name: 'crashy-watch-lsp' } }),
+        request: async () => {
+          throw new LspClientError('fixture crash', 'server-crash');
+        },
+        shutdown: async () => undefined,
+      }),
+    };
+    const baseOptions = {
+      projectRoot: dir,
+      config: makeConfig(dir, server),
+      clientFactory,
+    };
+
+    for (let index = 0; index < MAX_LSP_WATCH_RESTART_BATCHES + 2; index += 1) {
+      const sourceFilePath = `src/changed-${index}.ts`;
+      await runLspPrecisionPass({
+        ...baseOptions,
+        queries: mockQueries([makeCandidate({ edgeId: index + 1, sourceFilePath })]),
+        watch: { changedSourceFiles: [sourceFilePath], restartBudget },
+      } as any);
+    }
+
+    expect(restartBudget.size).toBe(MAX_LSP_WATCH_RESTART_BATCHES);
+    expect(restartBudget.has('src/changed-0.ts')).toBe(false);
+    expect(restartBudget.has('src/changed-1.ts')).toBe(false);
+    expect(restartBudget.has(`src/changed-${MAX_LSP_WATCH_RESTART_BATCHES + 1}.ts`)).toBe(true);
   });
 });

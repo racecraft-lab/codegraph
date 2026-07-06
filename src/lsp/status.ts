@@ -238,12 +238,8 @@ export function parsePersistedLspStatus(raw: string | null): LspStatus | null {
       lastRunAt: typeof parsed.lastRunAt === 'string' ? parsed.lastRunAt : null,
       servers: Array.isArray(parsed.servers) ? parsed.servers as LspStatus['servers'] : [],
       coverage: Array.isArray(parsed.coverage) ? parsed.coverage as LspStatus['coverage'] : [],
-      edgeCounts: parsed.edgeCounts ?? emptyLspEdgeCounts(),
-      performance: parsed.performance ?? {
-        activeSessionHighWatermark: 0,
-        inFlightRequestHighWatermark: 0,
-        caps: defaultLspPerformanceCaps(),
-      },
+      edgeCounts: normalizeLspEdgeCounts(parsed.edgeCounts),
+      performance: normalizeLspPerformance(parsed.performance),
       warnings: parsed.warnings,
     };
   } catch {
@@ -261,4 +257,70 @@ function incrementReason(
   count: number,
 ): void {
   reasons[reason] = (reasons[reason] ?? 0) + count;
+}
+
+function normalizeLspEdgeCounts(value: unknown): LspEdgeCounts {
+  const defaults = emptyLspEdgeCounts();
+  if (!value || typeof value !== 'object') return defaults;
+  const record = value as Partial<LspEdgeCounts>;
+  return {
+    checked: numericOrDefault(record.checked, defaults.checked),
+    verified: numericOrDefault(record.verified, defaults.verified),
+    corrected: numericOrDefault(record.corrected, defaults.corrected),
+    suppressed: numericOrDefault(record.suppressed, defaults.suppressed),
+    skippedByReason: normalizeReasonCounts(record.skippedByReason),
+    degraded: numericOrDefault(record.degraded, defaults.degraded),
+  };
+}
+
+function normalizeLspPerformance(value: unknown): LspStatus['performance'] {
+  const defaults: LspStatus['performance'] = {
+    activeSessionHighWatermark: 0,
+    inFlightRequestHighWatermark: 0,
+    caps: defaultLspPerformanceCaps(),
+  };
+  if (!value || typeof value !== 'object') return defaults;
+  const record = value as Partial<LspStatus['performance']>;
+  return {
+    structuralElapsedMs: numericOrUndefined(record.structuralElapsedMs),
+    lspElapsedMs: numericOrUndefined(record.lspElapsedMs),
+    enabledOverheadRatio: numericOrUndefined(record.enabledOverheadRatio),
+    activeSessionHighWatermark: numericOrDefault(record.activeSessionHighWatermark, 0),
+    inFlightRequestHighWatermark: numericOrDefault(record.inFlightRequestHighWatermark, 0),
+    caps: normalizeLspPerformanceCaps(record.caps),
+    zeroWorkWhenDisabled: record.zeroWorkWhenDisabled,
+  };
+}
+
+function normalizeLspPerformanceCaps(value: unknown): LspPerformanceCaps {
+  const defaults = defaultLspPerformanceCaps();
+  if (!value || typeof value !== 'object') return defaults;
+  const record = value as Partial<LspPerformanceCaps>;
+  return {
+    activeSessionsPerProject: numericOrDefault(record.activeSessionsPerProject, defaults.activeSessionsPerProject),
+    inFlightRequestsPerSession: numericOrDefault(record.inFlightRequestsPerSession, defaults.inFlightRequestsPerSession),
+    fullIndexSourceFilesPerLanguage: numericOrDefault(record.fullIndexSourceFilesPerLanguage, defaults.fullIndexSourceFilesPerLanguage),
+    fullIndexWorkItemsPerLanguage: numericOrDefault(record.fullIndexWorkItemsPerLanguage, defaults.fullIndexWorkItemsPerLanguage),
+    fullIndexBatchSize: numericOrDefault(record.fullIndexBatchSize, defaults.fullIndexBatchSize),
+    watchChangedSourceFilesPerBatch: numericOrDefault(record.watchChangedSourceFilesPerBatch, defaults.watchChangedSourceFilesPerBatch),
+    watchWorkItemsPerLanguagePerBatch: numericOrDefault(record.watchWorkItemsPerLanguagePerBatch, defaults.watchWorkItemsPerLanguagePerBatch),
+  };
+}
+
+function normalizeReasonCounts(value: unknown): Partial<Record<LspReasonCode, number>> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Partial<Record<LspReasonCode, number>> = {};
+  for (const [reason, count] of Object.entries(value)) {
+    if (!isLspReasonCode(reason) || typeof count !== 'number' || !Number.isFinite(count)) continue;
+    out[reason as LspReasonCode] = count;
+  }
+  return out;
+}
+
+function numericOrDefault(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function numericOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

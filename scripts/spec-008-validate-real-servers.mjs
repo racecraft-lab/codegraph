@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -50,11 +50,11 @@ const VALIDATION_ROWS = {
   python: implementedRow('python', 'Python', 'us2', [
     {
       serverCommand: ['pyright-langserver', '--stdio'],
-      versionCommand: ['pyright-langserver', '--version'],
+      versionCommand: ['pyright', '--version'],
     },
     {
       serverCommand: ['basedpyright-langserver', '--stdio'],
-      versionCommand: ['basedpyright-langserver', '--version'],
+      versionCommand: ['basedpyright', '--version'],
     },
   ], {
     smokeEvidence: ['Selected stdio server command is available for Python definition/reference validation.'],
@@ -118,7 +118,8 @@ const VALIDATION_ROWS = {
   kotlin: implementedRow('kotlin', 'Kotlin', 'us3', [
     {
       serverCommand: ['kotlin-language-server'],
-      versionCommand: ['kotlin-language-server', '--version'],
+      versionCommand: ['kotlin-language-server'],
+      validationMode: 'lsp-stdio',
     },
     {
       serverCommand: ['kotlin-lsp'],
@@ -130,7 +131,8 @@ const VALIDATION_ROWS = {
   php: implementedRow('php', 'PHP', 'us3', [
     {
       serverCommand: ['intelephense', '--stdio'],
-      versionCommand: ['intelephense', '--version'],
+      versionCommand: ['intelephense', '--stdio'],
+      validationMode: 'lsp-stdio',
     },
     {
       serverCommand: ['phpactor', 'language-server'],
@@ -210,31 +212,13 @@ for (const language of languages) {
     continue;
   }
 
-  const selected = selectAvailableCandidate(row);
+  const selected = await selectWorkingCandidate(row);
   if (!selected) {
     missing.push({
       language,
       expected: expectedLabel(row),
       reasonCode: 'validation-only-prereq-missing',
-      error: 'no accepted server executable was found on PATH',
-    });
-    continue;
-  }
-
-  const result = spawnSync(selected.resolvedExecutable, selected.candidate.versionCommand.slice(1), {
-    encoding: 'utf8',
-    env: process.env,
-    shell: shouldSpawnWithShell(selected.resolvedExecutable),
-    timeout: 5000,
-  });
-  if (result.error) {
-    missing.push({
-      language,
-      expected: expectedLabel(row),
-      selectedCommand: commandLabel(selected.candidate.versionCommand),
-      resolvedExecutable: selected.resolvedExecutable,
-      reasonCode: 'validation-only-prereq-missing',
-      error: result.error.message,
+      error: `no accepted server candidate passed validation${row.lastCandidateError ? `: ${row.lastCandidateError}` : ''}`,
     });
     continue;
   }
@@ -245,7 +229,8 @@ for (const language of languages) {
       language,
       expected: `${row.sdk} SDK resolvable from current project`,
       selectedCommand: commandLabel(selected.candidate.versionCommand),
-      resolvedExecutable: selected.resolvedExecutable,
+      resolvedExecutable: selected.resolvedServerExecutable,
+      resolvedProbeExecutable: selected.resolvedProbeExecutable,
       reasonCode: 'validation-only-prereq-missing',
       error: 'SDK package not resolvable',
     });
@@ -259,10 +244,11 @@ for (const language of languages) {
     command: commandLabel(selected.candidate.versionCommand),
     serverCommand: commandLabel(selected.candidate.serverCommand),
     expectedAlternatives: row.candidates.map((candidate) => commandLabel(candidate.serverCommand)),
-    resolvedExecutable: selected.resolvedExecutable,
-    status: result.status,
-    statusText: result.status === null ? 'signal' : `exit ${result.status}`,
-    output: sanitizeOutput(firstLine(`${result.stdout || ''}${result.stderr || ''}`)),
+    resolvedExecutable: selected.resolvedServerExecutable,
+    resolvedProbeExecutable: selected.resolvedProbeExecutable,
+    status: selected.result.status,
+    statusText: `exit ${selected.result.status}`,
+    output: probeOutput(selected.candidate, selected.result),
     minimumRuntimeEvidence: sdkEvidence ? `${row.sdk} SDK: ${sdkEvidence}` : undefined,
     smokeValidation: {
       status: 'prereq-only',
@@ -329,12 +315,128 @@ function valueFor(args, name) {
   return args[index + 1] ?? null;
 }
 
-function selectAvailableCandidate(row) {
+async function selectWorkingCandidate(row) {
+  let lastCandidateError = null;
   for (const candidate of row.candidates) {
-    const resolvedExecutable = resolveExecutablePath(candidate.versionCommand[0]);
-    if (resolvedExecutable) return { candidate, resolvedExecutable };
+    const resolvedServerExecutable = resolveExecutablePath(candidate.serverCommand[0]);
+    const resolvedProbeExecutable = resolveExecutablePath(candidate.versionCommand[0]);
+    if (!resolvedServerExecutable || !resolvedProbeExecutable) {
+      lastCandidateError = `${commandLabel(candidate.serverCommand)} or ${commandLabel(candidate.versionCommand)} was not found`;
+      continue;
+    }
+    const result = candidate.validationMode === 'lsp-stdio'
+      ? await runLspStdioProbe(resolvedProbeExecutable, candidate.versionCommand.slice(1))
+      : spawnSync(resolvedProbeExecutable, candidate.versionCommand.slice(1), {
+        encoding: 'utf8',
+        env: process.env,
+        shell: shouldSpawnWithShell(resolvedProbeExecutable),
+        timeout: 5000,
+      });
+    if (result.error) {
+      lastCandidateError = `${commandLabel(candidate.versionCommand)} failed: ${result.error.message}`;
+      continue;
+    }
+    if (result.status !== 0 || result.signal) {
+      const status = result.signal ? `signal ${result.signal}` : `exit ${result.status}`;
+      lastCandidateError = `${commandLabel(candidate.versionCommand)} returned ${status}`;
+      continue;
+    }
+    return { candidate, resolvedServerExecutable, resolvedProbeExecutable, result };
   }
+  row.lastCandidateError = lastCandidateError;
   return null;
+}
+
+function runLspStdioProbe(executable, args) {
+  return new Promise((resolve) => {
+    const child = spawnForProbe(executable, args);
+    let stdout = '';
+    let stderr = '';
+    let responded = false;
+    let finished = false;
+    let shutdownTimer = null;
+    let responseTimer = null;
+    let cleanupTimedOut = false;
+
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      if (shutdownTimer) clearTimeout(shutdownTimer);
+      if (responseTimer) clearTimeout(responseTimer);
+      resolve(result);
+    };
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+      if (!responded && hasLspInitializeResponse(stdout)) {
+        responded = true;
+        child.stdin.write(lspFrame({ jsonrpc: '2.0', method: 'initialized', params: {} }));
+        child.stdin.write(lspFrame({ jsonrpc: '2.0', id: 2, method: 'shutdown', params: null }));
+        child.stdin.write(lspFrame({ jsonrpc: '2.0', method: 'exit', params: null }));
+        shutdownTimer = setTimeout(() => {
+          cleanupTimedOut = true;
+          child.kill();
+        }, 1500);
+      }
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.stdin.on('error', () => {
+      // A short-lived fake or real server can close after initialize before our
+      // shutdown writes flush. The close event below remains authoritative.
+    });
+    child.on('error', (error) => {
+      finish({ status: null, signal: null, stdout, stderr, error });
+    });
+    child.on('close', (status, signal) => {
+      if (responded && cleanupTimedOut) {
+        finish({ status: 0, signal: null, stdout, stderr });
+        return;
+      }
+      finish({
+        status: responded ? status : (status === 0 ? 1 : status),
+        signal,
+        stdout,
+        stderr,
+      });
+    });
+
+    child.stdin.write(lspFrame({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+      },
+    }));
+
+    responseTimer = setTimeout(() => {
+      if (!responded) {
+        child.kill();
+        finish({ status: null, signal: 'TIMEOUT', stdout, stderr });
+      }
+    }, 5000);
+  });
+}
+
+function spawnForProbe(executable, args) {
+  return spawn(executable, args, {
+    env: process.env,
+    shell: shouldSpawnWithShell(executable),
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+
+function hasLspInitializeResponse(output) {
+  return output.includes('"id":1') && output.includes('"capabilities"');
+}
+
+function lspFrame(message) {
+  const body = JSON.stringify(message);
+  return `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
 }
 
 function resolveExecutablePath(command) {
@@ -346,13 +448,21 @@ function resolveExecutablePath(command) {
   const extensions = process.platform === 'win32'
     ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')
     : [''];
+  const commandExtensions = executableExtensions(command, extensions);
   for (const dir of pathValue.split(path.delimiter).filter(Boolean)) {
-    for (const ext of executableExtensions(command, extensions)) {
+    for (const ext of commandExtensions) {
       const resolved = executablePath(path.join(dir, command + ext));
       if (resolved) return resolved;
     }
   }
   return null;
+}
+
+function executableExtensions(command, extensions) {
+  if (process.platform !== 'win32') return extensions;
+  const commandExt = path.extname(command).toUpperCase();
+  if (commandExt && extensions.map((ext) => ext.toUpperCase()).includes(commandExt)) return [''];
+  return extensions;
 }
 
 function executablePath(candidate) {
@@ -362,13 +472,6 @@ function executablePath(candidate) {
   } catch {
     return null;
   }
-}
-
-function executableExtensions(command, extensions) {
-  if (process.platform !== 'win32') return extensions;
-  const commandExt = path.extname(command).toUpperCase();
-  const pathExts = extensions.map((ext) => ext.toUpperCase());
-  return commandExt && pathExts.includes(commandExt) ? [''] : extensions;
 }
 
 function shouldSpawnWithShell(executable) {
@@ -390,6 +493,13 @@ function expectedLabel(row) {
 
 function commandLabel(command) {
   return command.join(' ');
+}
+
+function probeOutput(candidate, result) {
+  if (candidate.validationMode === 'lsp-stdio') {
+    return 'LSP initialize response observed';
+  }
+  return sanitizeOutput(firstLine(`${result.stdout || ''}${result.stderr || ''}`));
 }
 
 function firstLine(output) {
