@@ -504,7 +504,10 @@
       "review_decision": "COMMENTED",
       "fixes": [
         "ignored root-level and nested opam.locked files",
-        "failed closed for implementation-only OCaml symbols hidden by a paired .mli"
+        "failed closed for implementation-only OCaml symbols hidden by a paired .mli",
+        "constrained bare OCaml calls to same-file visible callable targets",
+        "preserved same-source-unit private helper calls behind paired .mli files",
+        "regenerated final changed-files and reviewability state"
       ],
       "verification": [
         "npm run build passed",
@@ -512,7 +515,7 @@
         "OCaml focused suite passed: 5 files, 16 tests",
         "npm test passed: 137 files, 2239 passed, 4 skipped"
       ],
-      "action": "actionable Copilot comments fixed locally; awaiting push and fresh GitHub rerun"
+      "action": "actionable Copilot and RepoPrompt findings fixed, pushed through 3269506, RepoPrompt clean-gate returned no actionable findings, and GitHub checks passed"
     },
     "retrospective": {
       "status": "complete",
@@ -528,6 +531,6 @@
     "state": "OPEN",
     "isDraft": false,
     "mergeable": "MERGEABLE",
-    "checks": "passed before review-remediation follow-up; review fixes pending fresh GitHub rerun after push"
+    "checks": "all GitHub checks passed at 3269506"
   }
 }
