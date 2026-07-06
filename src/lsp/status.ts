@@ -8,10 +8,13 @@ import {
   DEFAULT_LSP_WATCH_WORK_CAP,
   EffectiveLspConfig,
   LSP_REASON_CODES,
+  LspCoverageRecord,
   LspEdgeCounts,
   LspPerformanceCaps,
   LspStatus,
 } from './types';
+
+export const LSP_STATUS_METADATA_KEY = 'lsp_status';
 
 export function defaultLspPerformanceCaps(): LspPerformanceCaps {
   return {
@@ -56,7 +59,48 @@ export function createInitialLspStatus(config: EffectiveLspConfig): LspStatus {
         graphMutations: 0,
       },
     },
+    warnings: config.warnings.length > 0 ? config.warnings : undefined,
   };
+}
+
+export function disabledLspCoverageRecord(): LspCoverageRecord {
+  return {
+    language: 'all',
+    sourceFilesSeen: 0,
+    candidateWorkItems: 0,
+    checkedWorkItems: 0,
+    skippedByReason: {},
+    capExceededReasons: [],
+  };
+}
+
+export function serializeLspStatus(status: LspStatus): string {
+  return JSON.stringify(status);
+}
+
+export function parsePersistedLspStatus(raw: string | null): LspStatus | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<LspStatus>;
+    if (typeof parsed.enabled !== 'boolean') return null;
+    if (typeof parsed.activationSource !== 'string') return null;
+    return {
+      enabled: parsed.enabled,
+      activationSource: parsed.activationSource as LspStatus['activationSource'],
+      lastRunAt: typeof parsed.lastRunAt === 'string' ? parsed.lastRunAt : null,
+      servers: Array.isArray(parsed.servers) ? parsed.servers as LspStatus['servers'] : [],
+      coverage: Array.isArray(parsed.coverage) ? parsed.coverage as LspStatus['coverage'] : [],
+      edgeCounts: parsed.edgeCounts ?? emptyLspEdgeCounts(),
+      performance: parsed.performance ?? {
+        activeSessionHighWatermark: 0,
+        inFlightRequestHighWatermark: 0,
+        caps: defaultLspPerformanceCaps(),
+      },
+      warnings: parsed.warnings,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function isLspReasonCode(value: string): boolean {

@@ -126,6 +126,26 @@ interface UnresolvedRefRow {
   language: string;
 }
 
+export interface LspEdgeCandidateRow {
+  edgeId: number;
+  sourceId: string;
+  targetId: string;
+  kind: EdgeKind;
+  line: number | null;
+  column: number | null;
+  provenance: Edge['provenance'] | null;
+  metadata: Record<string, unknown> | undefined;
+  sourceFilePath: string;
+  language: Language;
+  targetFilePath: string;
+  targetStartLine: number;
+  targetEndLine: number;
+  targetStartColumn: number;
+  targetEndColumn: number;
+  targetKind: NodeKind;
+  targetName: string;
+}
+
 /**
  * Convert database row to Node object
  */
@@ -1444,6 +1464,115 @@ export class QueryBuilder {
       col: edge.column ?? null,
       provenance: edge.provenance ?? null,
     });
+  }
+
+  /**
+   * Candidate active edges for an opt-in LSP verification pass. This is a
+   * deliberately narrow API so the LSP layer does not reach through QueryBuilder
+   * into raw SQL.
+   */
+  getLspEdgeCandidates(languages: Language[], limit: number): LspEdgeCandidateRow[] {
+    if (languages.length === 0 || limit <= 0) return [];
+    const placeholders = languages.map(() => '?').join(',');
+    const rows = this.db.prepare(`
+      SELECT
+        e.id AS edge_id,
+        e.source AS source_id,
+        e.target AS target_id,
+        e.kind AS edge_kind,
+        e.line AS edge_line,
+        e.col AS edge_col,
+        e.provenance AS edge_provenance,
+        e.metadata AS edge_metadata,
+        s.file_path AS source_file_path,
+        s.language AS source_language,
+        t.file_path AS target_file_path,
+        t.start_line AS target_start_line,
+        t.end_line AS target_end_line,
+        t.start_column AS target_start_column,
+        t.end_column AS target_end_column,
+        t.kind AS target_kind,
+        t.name AS target_name
+      FROM edges e
+      JOIN nodes s ON s.id = e.source
+      JOIN nodes t ON t.id = e.target
+      WHERE s.language IN (${placeholders})
+        AND e.kind IN ('calls', 'references', 'imports', 'instantiates')
+        AND e.line IS NOT NULL
+      ORDER BY s.file_path, e.line, e.col
+      LIMIT ?
+    `).all(...languages, limit) as Array<{
+      edge_id: number;
+      source_id: string;
+      target_id: string;
+      edge_kind: string;
+      edge_line: number | null;
+      edge_col: number | null;
+      edge_provenance: string | null;
+      edge_metadata: string | null;
+      source_file_path: string;
+      source_language: string;
+      target_file_path: string;
+      target_start_line: number;
+      target_end_line: number;
+      target_start_column: number;
+      target_end_column: number;
+      target_kind: string;
+      target_name: string;
+    }>;
+
+    return rows.map((row) => ({
+      edgeId: row.edge_id,
+      sourceId: row.source_id,
+      targetId: row.target_id,
+      kind: row.edge_kind as EdgeKind,
+      line: row.edge_line,
+      column: row.edge_col,
+      provenance: row.edge_provenance as Edge['provenance'] | null,
+      metadata: row.edge_metadata ? safeJsonParse(row.edge_metadata, undefined) : undefined,
+      sourceFilePath: row.source_file_path,
+      language: row.source_language as Language,
+      targetFilePath: row.target_file_path,
+      targetStartLine: row.target_start_line,
+      targetEndLine: row.target_end_line,
+      targetStartColumn: row.target_start_column,
+      targetEndColumn: row.target_end_column,
+      targetKind: row.target_kind as NodeKind,
+      targetName: row.target_name,
+    }));
+  }
+
+  /**
+   * Find graph nodes that cover a 1-based source location in one indexed file.
+   */
+  findNodesAtLocation(filePath: string, line: number, language?: Language): Node[] {
+    let sql = `
+      SELECT * FROM nodes
+      WHERE file_path = ?
+        AND start_line <= ?
+        AND end_line >= ?
+    `;
+    const params: (string | number)[] = [filePath, line, line];
+    if (language) {
+      sql += ' AND language = ?';
+      params.push(language);
+    }
+    sql += ' ORDER BY (end_line - start_line) ASC, length(name) DESC';
+    const rows = this.db.prepare(sql).all(...params) as NodeRow[];
+    return rows.map(rowToNode);
+  }
+
+  /**
+   * Mark an existing edge row as LSP-verified/corrected without duplicating it.
+   */
+  updateEdgeLspProvenance(edgeId: number, metadata: Record<string, unknown>): number {
+    const result = this.db.prepare(`
+      UPDATE edges
+      SET provenance = 'lsp',
+          metadata = ?
+      WHERE id = ?
+    `).run(JSON.stringify(metadata), edgeId);
+    return result.changes;
   }
 
   /**

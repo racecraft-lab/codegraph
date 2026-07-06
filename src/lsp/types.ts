@@ -186,6 +186,7 @@ export interface LspStatus {
   coverage: LspCoverageRecord[];
   edgeCounts: LspEdgeCounts;
   performance: LspPerformanceRecord;
+  warnings?: LspConfigWarning[];
 }
 
 export type LspEdgeDecision = 'unchanged' | 'verified' | 'corrected' | 'suppressed' | 'skipped';
