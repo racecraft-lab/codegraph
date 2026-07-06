@@ -53,6 +53,12 @@ export interface ProjectConfig {
    * and your `.gitignore`.
    */
   exclude?: string[];
+  /**
+   * SPEC-008 LSP precision configuration. Validation is owned by
+   * `src/lsp/config.ts`; the project config loader only preserves the raw
+   * object so existing config parsing stays dependency-light.
+   */
+  lsp?: unknown;
 }
 
 /** Parsed, validated view of a project's `codegraph.json`. */
@@ -60,6 +66,7 @@ interface ParsedConfig {
   extensions: Record<string, Language>;
   includeIgnored: string[];
   exclude: string[];
+  lsp?: unknown;
 }
 
 interface CacheEntry {
@@ -81,6 +88,7 @@ const EMPTY_CONFIG: ParsedConfig = Object.freeze({
   extensions: EMPTY_EXTENSIONS,
   includeIgnored: Object.freeze([]) as unknown as string[],
   exclude: Object.freeze([]) as unknown as string[],
+  lsp: undefined,
 });
 
 /**
@@ -132,10 +140,11 @@ function parseConfig(file: string): ParsedConfig {
   const extensions = extractExtensions(parsed, file);
   const includeIgnored = extractIncludeIgnored(parsed, file);
   const exclude = extractExclude(parsed, file);
-  if (extensions === EMPTY_EXTENSIONS && includeIgnored.length === 0 && exclude.length === 0) {
+  const lsp = extractLspConfig(parsed);
+  if (extensions === EMPTY_EXTENSIONS && includeIgnored.length === 0 && exclude.length === 0 && lsp === undefined) {
     return EMPTY_CONFIG;
   }
-  return { extensions, includeIgnored, exclude };
+  return { extensions, includeIgnored, exclude, lsp };
 }
 
 /**
@@ -214,6 +223,11 @@ function extractExclude(parsed: object, file: string): string[] {
   return out;
 }
 
+function extractLspConfig(parsed: object): unknown {
+  if (!Object.prototype.hasOwnProperty.call(parsed, 'lsp')) return undefined;
+  return (parsed as ProjectConfig).lsp;
+}
+
 /**
  * Load the parsed `codegraph.json` for a project, mtime-cached. A missing or
  * malformed file yields the zero-config default. One `stat` (and at most one
@@ -273,6 +287,10 @@ export function loadIncludeIgnoredPatterns(rootDir: string): string[] {
  */
 export function loadExcludePatterns(rootDir: string): string[] {
   return loadParsedConfig(rootDir).exclude;
+}
+
+export function loadLspProjectConfig(rootDir: string): unknown {
+  return loadParsedConfig(rootDir).lsp;
 }
 
 /** Test/maintenance hook: forget cached config (e.g. after rewriting it in a test). */

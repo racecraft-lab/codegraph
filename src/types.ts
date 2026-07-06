@@ -59,6 +59,15 @@ export type EdgeKind =
   | 'overrides'       // Method overrides parent method
   | 'decorates';      // Decorator applied to symbol
 
+export const EDGE_PROVENANCES = [
+  'tree-sitter',
+  'scip',
+  'heuristic',
+  'lsp',
+] as const;
+
+export type EdgeProvenance = (typeof EDGE_PROVENANCES)[number];
+
 /**
  * Supported programming languages. See NODE_KINDS for why this is a
  * runtime-iterable const array.
@@ -208,7 +217,7 @@ export interface Edge {
   column?: number;
 
   /** How this edge was created */
-  provenance?: 'tree-sitter' | 'scip' | 'heuristic';
+  provenance?: EdgeProvenance;
 }
 
 /**

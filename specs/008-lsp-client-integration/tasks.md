@@ -14,11 +14,11 @@
 
 **Purpose**: Create the SPEC-008 implementation and validation scaffolding without changing runtime behavior.
 
-- [ ] T001 Create LSP module scaffold exports in `src/lsp/index.ts` and `src/lsp/types.ts`
-- [ ] T002 [P] Create deterministic fake LSP fixture layout in `__tests__/fixtures/lsp/README.md`
-- [ ] T003 [P] Create SPEC-008 validation artifact directory and notes in `specs/008-lsp-client-integration/validation/README.md`
-- [ ] T004 [P] Create real-server validation script scaffold in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T005 Create three-slice review plan and file ownership map in `specs/008-lsp-client-integration/validation/slice-plan.md`
+- [X] T001 Create LSP module scaffold exports in `src/lsp/index.ts` and `src/lsp/types.ts`
+- [X] T002 [P] Create deterministic fake LSP fixture layout in `__tests__/fixtures/lsp/README.md`
+- [X] T003 [P] Create SPEC-008 validation artifact directory and notes in `specs/008-lsp-client-integration/validation/README.md`
+- [X] T004 [P] Create real-server validation script scaffold in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T005 Create three-slice review plan and file ownership map in `specs/008-lsp-client-integration/validation/slice-plan.md`
 
 ---
 
@@ -28,19 +28,19 @@
 
 **Critical**: No user story work starts until this phase is complete.
 
-- [ ] T006 [P] Write failing registry completeness tests for every SPEC-008 language row and the COBOL SPEC-024 disposition in `__tests__/lsp-prereqs.test.ts`
-- [ ] T007 [P] Write failing activation/config precedence tests for CLI, project config, environment overrides, invalid values, and default-off behavior in `__tests__/lsp-config.test.ts`
-- [ ] T008 [P] Write failing status contract tests for stable LSP state, reason codes, coverage fields, and performance fields in `__tests__/lsp-status.test.ts`
-- [ ] T009 [P] Write failing provenance typing tests that preserve `null` and `heuristic` edges and allow only verified/corrected active edges to use `lsp` in `__tests__/lsp-precision-pass.test.ts`
-- [ ] T010 Implement LSP activation, config, registry, status, performance, reason-code, and correction metadata types in `src/lsp/types.ts`
-- [ ] T011 Implement the server registry for JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL disposition in `src/lsp/servers.ts`
-- [ ] T012 Implement project and environment LSP config parsing with activation, command, and timeout precedence in `src/lsp/config.ts`
-- [ ] T013 Implement command probing, accepted-alternative selection, configured-command no-fallback behavior, and prereq report data in `src/lsp/prereqs.ts`
-- [ ] T014 Implement LSP status aggregation models for server availability, coverage, edge counts, skip reasons, degradation, and performance in `src/lsp/status.ts`
-- [ ] T015 Extend edge provenance typing and storage compatibility for additive `lsp` provenance in `src/types.ts` and `src/db/schema.sql`
-- [ ] T016 Export the LSP foundation modules from `src/lsp/index.ts`
-- [ ] T017 Wire `codegraph.json.lsp` loading into the project config path in `src/project-config.ts`
-- [ ] T018 Record the accepted reviewability warning, three-slice boundary, and implementation file budget in `specs/008-lsp-client-integration/validation/slice-plan.md`
+- [X] T006 [P] Write failing registry completeness tests for every SPEC-008 language row and the COBOL SPEC-024 disposition in `__tests__/lsp-prereqs.test.ts`
+- [X] T007 [P] Write failing activation/config precedence tests for CLI, project config, environment overrides, invalid values, and default-off behavior in `__tests__/lsp-config.test.ts`
+- [X] T008 [P] Write failing status contract tests for stable LSP state, reason codes, coverage fields, and performance fields in `__tests__/lsp-status.test.ts`
+- [X] T009 [P] Write failing provenance typing tests that preserve `null` and `heuristic` edges and allow only verified/corrected active edges to use `lsp` in `__tests__/lsp-precision-pass.test.ts`
+- [X] T010 Implement LSP activation, config, registry, status, performance, reason-code, and correction metadata types in `src/lsp/types.ts`
+- [X] T011 Implement the server registry for JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL disposition in `src/lsp/servers.ts`
+- [X] T012 Implement project and environment LSP config parsing with activation, command, and timeout precedence in `src/lsp/config.ts`
+- [X] T013 Implement command probing, accepted-alternative selection, configured-command no-fallback behavior, and prereq report data in `src/lsp/prereqs.ts`
+- [X] T014 Implement LSP status aggregation models for server availability, coverage, edge counts, skip reasons, degradation, and performance in `src/lsp/status.ts`
+- [X] T015 Extend edge provenance typing and storage compatibility for additive `lsp` provenance in `src/types.ts` and `src/db/schema.sql`
+- [X] T016 Export the LSP foundation modules from `src/lsp/index.ts`
+- [X] T017 Wire `codegraph.json.lsp` loading into the project config path in `src/project-config.ts`
+- [X] T018 Record the accepted reviewability warning, three-slice boundary, and implementation file budget in `specs/008-lsp-client-integration/validation/slice-plan.md`
 
 **Checkpoint**: Foundation ready. User stories can start in slice order or in parallel where file ownership does not conflict.
 

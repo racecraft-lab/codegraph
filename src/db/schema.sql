@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS edges (
     metadata TEXT, -- JSON object
     line INTEGER,
     col INTEGER,
+    -- Provenance is intentionally unconstrained text for forward-compatible
+    -- additive sources; SPEC-008 adds "lsp" without a schema migration.
     provenance TEXT DEFAULT NULL,
     FOREIGN KEY (source) REFERENCES nodes(id) ON DELETE CASCADE,
     FOREIGN KEY (target) REFERENCES nodes(id) ON DELETE CASCADE
