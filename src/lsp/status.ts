@@ -170,7 +170,13 @@ export function recordLspDegradation(
 export function recordLspCapExceeded(
   status: LspStatus,
   coverage: LspCoverageRecord,
-  reason: Extract<LspReasonCode, 'full-index-file-cap-exceeded' | 'full-index-work-cap-exceeded'>,
+  reason: Extract<
+    LspReasonCode,
+    | 'full-index-file-cap-exceeded'
+    | 'full-index-work-cap-exceeded'
+    | 'watch-changed-files-cap-exceeded'
+    | 'watch-work-cap-exceeded'
+  >,
   count: number,
 ): void {
   if (!coverage.capExceededReasons.includes(reason)) coverage.capExceededReasons.push(reason);

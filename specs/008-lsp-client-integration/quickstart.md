@@ -118,7 +118,11 @@ Expected outcome:
 
 ## Scenario 4: Strict SPEC-008 Prereq Validation
 
-Run the implemented prereq validation command or test path for SPEC-008.
+Run the SPEC-008 prereq validation command:
+
+```bash
+node scripts/spec-008-validate-real-servers.mjs
+```
 
 Expected outcome when all servers are present:
 
@@ -194,6 +198,12 @@ Expected outcome:
 - Final SPEC-008 validation packet includes real-server evidence for all SPEC-008-owned rows.
 
 ## Language Parity Gate
+
+Run:
+
+```bash
+node scripts/spec-008-parity-gate.mjs
+```
 
 | Language | Owner | Evidence required | Future owner | Status |
 |---|---|---|---|---|

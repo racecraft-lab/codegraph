@@ -72,6 +72,8 @@ import {
   resolveLspConfig,
   runLspPrecisionPass,
   serializeLspStatus,
+  LspWatchRestartBudget,
+  LspWatchPrecisionPassOptions,
 } from './lsp';
 
 // Re-export types for consumers
@@ -156,6 +158,9 @@ export interface IndexOptions {
 
   /** LSP precision activation for this indexing/sync run */
   lsp?: CliLspActivation;
+
+  /** Bounded changed-file context for a watch-triggered LSP precision pass. */
+  lspWatch?: LspWatchPrecisionPassOptions;
 }
 
 /**
@@ -348,6 +353,7 @@ export class CodeGraph {
 
   // File watcher for auto-sync on file changes
   private watcher: FileWatcher | null = null;
+  private readonly lspWatchRestartBudget: LspWatchRestartBudget = new Map();
 
   private constructor(
     db: DatabaseConnection,
@@ -909,6 +915,7 @@ export class CodeGraph {
   private async maybeRunLspPrecisionPass(
     cliActivation: CliLspActivation | undefined,
     structuralElapsedMs: number,
+    watch?: LspWatchPrecisionPassOptions,
   ): Promise<void> {
     const config = resolveLspConfig({
       projectRoot: this.projectRoot,
@@ -921,6 +928,7 @@ export class CodeGraph {
       queries: this.queries,
       config,
       structuralElapsedMs,
+      watch,
     });
     this.queries.setMetadata(LSP_STATUS_METADATA_KEY, serializeLspStatus(status));
   }
@@ -982,6 +990,7 @@ export class CodeGraph {
         return { filesChecked: 0, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 0 };
       }
       try {
+        const structuralStartedAt = Date.now();
         // Captured BEFORE the sync runs: the sync's own incremental writes
         // populate vocab rows for the files it touches, so an end-of-sync
         // emptiness check would see "non-empty" and skip the backfill forever,
@@ -1045,6 +1054,14 @@ export class CodeGraph {
           // Same lifecycle for `this.<member>` callback registrations whose
           // member is inherited from a supertype (#808).
           await this.resolver.resolveDeferredThisMemberRefs();
+        }
+
+        if (result.filesAdded > 0 || result.filesModified > 0) {
+          await this.maybeRunLspPrecisionPass(
+            options.lsp,
+            Date.now() - structuralStartedAt,
+            options.lspWatch,
+          );
         }
 
         // Refresh planner stats + checkpoint the WAL after bulk writes.
@@ -1118,8 +1135,14 @@ export class CodeGraph {
 
     this.watcher = new FileWatcher(
       this.projectRoot,
-      async () => {
-        const result = await this.sync();
+      async (context) => {
+        const result = await this.sync({
+          lspWatch: {
+            changedSourceFiles: context.changedSourceFiles,
+            materialBatchKey: context.materialBatchKey,
+            restartBudget: this.lspWatchRestartBudget,
+          },
+        });
         // sync() returns this exact zero-shape iff it failed to acquire the
         // file lock (a real empty sync always has filesChecked > 0 because
         // scanDirectory ran). Surface that to the watcher as a typed error

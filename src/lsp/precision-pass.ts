@@ -2,8 +2,15 @@ import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { QueryBuilder, LspEdgeCandidateRow } from '../db/queries';
 import { Language } from '../types';
+import { isGeneratedFile } from '../extraction/generated-detection';
 import { LspJsonRpcClient } from './client';
 import { probeLspServerCommand } from './prereqs';
+import {
+  compatibleLspTargetNodes,
+  lspDecisionMetadata,
+  lspReplacementSuppressionMetadata,
+  LspTargetAudit,
+} from './corrections';
 import {
   EffectiveLspConfig,
   LSP_LANGUAGES,
@@ -20,6 +27,7 @@ import {
   createInitialLspStatus,
   createLspCoverageRecord,
   defaultLspPerformanceCaps,
+  evaluateLspWatchBatchScope,
   recordLspCapExceeded,
   recordLspChecked,
   recordLspDegradation,
@@ -61,9 +69,25 @@ export interface RunLspPrecisionPassOptions {
   structuralElapsedMs?: number;
   performanceCaps?: LspPerformanceCaps;
   clientFactory?: LspClientFactory;
+  watch?: LspWatchPrecisionPassOptions;
 }
 
-interface NormalizedLspTarget {
+export interface LspWatchPrecisionPassOptions {
+  changedSourceFiles: readonly string[] | 'unbounded' | undefined;
+  restartBudget?: LspWatchRestartBudget;
+  materialBatchKey?: string;
+}
+
+export interface LspWatchRestartBudgetEntry {
+  reason: LspReasonCode;
+}
+
+export type LspWatchRestartBudget = Map<
+  string,
+  Partial<Record<LspLanguage, LspWatchRestartBudgetEntry>>
+>;
+
+interface NormalizedLspTarget extends LspTargetAudit {
   uri: string;
   filePath: string | null;
   line: number;
@@ -77,27 +101,86 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
   const started = Date.now();
   const caps = options.performanceCaps ?? defaultLspPerformanceCaps();
   const clientFactory = options.clientFactory ?? DEFAULT_CLIENT_FACTORY;
+  const watch = options.watch;
+  const watchChangedFiles = Array.isArray(watch?.changedSourceFiles)
+    ? normalizeChangedSourceFiles(watch.changedSourceFiles)
+    : null;
+  const watchBatchKey = watchChangedFiles
+    ? (watch?.materialBatchKey ?? materialWatchBatchKey(watchChangedFiles))
+    : null;
   status.lastRunAt = new Date(started).toISOString();
   status.performance.structuralElapsedMs = options.structuralElapsedMs;
   status.performance.caps = caps;
 
+  if (watch) {
+    if (!options.config.watchEnabled) return status;
+    const fileScopeDecision = evaluateLspWatchBatchScope({
+      changedSourceFiles: watch.changedSourceFiles,
+      candidateWorkItemsByLanguage: {},
+      caps,
+    });
+    if (!fileScopeDecision.canRun) {
+      recordWatchScopeSkip(status, watch.changedSourceFiles, fileScopeDecision.skippedByReason);
+      status.performance.lspElapsedMs = Date.now() - started;
+      return status;
+    }
+  }
+
   for (const language of LSP_PRECISION_LANGUAGES) {
-    const candidateCounts = options.queries.getLspEdgeCandidateCounts([language] as Language[], caps);
     const discoveredCandidates = options.queries.getLspEdgeCandidates(
       [language] as Language[],
-      lspCandidateDiscoveryLimit(caps),
+      lspCandidateDiscoveryLimit(caps, watchChangedFiles !== null),
+      watchChangedFiles ? [...watchChangedFiles] : undefined,
     );
-    if (discoveredCandidates.length === 0) continue;
+    const scopedCandidates = watchChangedFiles
+      ? discoveredCandidates.filter((candidate) => watchChangedFiles.has(candidate.sourceFilePath))
+      : discoveredCandidates;
+    if (scopedCandidates.length === 0) continue;
 
     const serverConfig = options.config.servers[language];
-    const serverStatus = probeLspServerCommand(serverConfig, { cwd: options.projectRoot });
-    status.servers.push(serverStatus);
+    const candidateCounts = watchChangedFiles
+      ? {
+          sourceFilesSeen: countDistinctSourceFiles(scopedCandidates),
+          candidateWorkItems: scopedCandidates.length,
+          fileCapSkippedWorkItems: undefined,
+          workCapSkippedWorkItems: undefined,
+        }
+      : options.queries.getLspEdgeCandidateCounts([language] as Language[], caps);
     const coverage = createLspCoverageRecord(language, candidateCounts);
     status.coverage.push(coverage);
-    const languageCandidates = applyFullIndexCaps(status, coverage, discoveredCandidates, caps, {
-      fileCapSkippedWorkItems: candidateCounts.fileCapSkippedWorkItems,
-      workCapSkippedWorkItems: candidateCounts.workCapSkippedWorkItems,
-    });
+    const languageCandidates = watchChangedFiles
+      ? applyWatchCaps(status, coverage, scopedCandidates, caps)
+      : applyFullIndexCaps(status, coverage, scopedCandidates, caps, {
+          fileCapSkippedWorkItems: candidateCounts.fileCapSkippedWorkItems,
+          workCapSkippedWorkItems: candidateCounts.workCapSkippedWorkItems,
+        });
+
+    if (languageCandidates.length === 0) {
+      coverage.elapsedMs = Date.now() - started;
+      continue;
+    }
+
+    const exhaustedReason = watchBatchKey
+      ? getWatchRestartExhaustion(watch?.restartBudget, watchBatchKey, language)
+      : null;
+    if (exhaustedReason) {
+      status.servers.push({
+        language,
+        command: serverConfig.command,
+        commandSource: serverConfig.commandSource,
+        state: serverStateForReason(exhaustedReason),
+        reasonCode: exhaustedReason,
+        detail: 'LSP watch restart budget already exhausted for this changed-file batch',
+        timeoutMs: serverConfig.timeoutMs,
+        timeoutSource: serverConfig.timeoutSource,
+      });
+      recordLspDegradation(status, coverage, exhaustedReason, languageCandidates.length);
+      coverage.elapsedMs = Date.now() - started;
+      continue;
+    }
+
+    const serverStatus = probeLspServerCommand(serverConfig, { cwd: options.projectRoot });
+    status.servers.push(serverStatus);
 
     if (serverStatus.state !== 'available' || !Array.isArray(serverStatus.command)) {
       const reason = serverStatus.reasonCode ?? 'configured-command-unavailable';
@@ -117,6 +200,8 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
       serverStatus,
       caps,
       passStartedAt: started,
+      watchBatchKey,
+      watchRestartBudget: watch?.restartBudget,
     });
 
     coverage.elapsedMs = Date.now() - started;
@@ -141,12 +226,18 @@ export function normalizeLspTargets(projectRoot: string, result: unknown): Norma
       : typeof record.targetUri === 'string'
         ? record.targetUri
         : null;
-    const range = isRange(record.range) ? record.range : isRange(record.targetRange) ? record.targetRange : null;
+    const range = isRange(record.range)
+      ? record.range
+      : isRange(record.targetSelectionRange)
+        ? record.targetSelectionRange
+        : isRange(record.targetRange)
+          ? record.targetRange
+          : null;
     if (!uri || !range) continue;
     const line = range.start.line + 1;
     const character = range.start.character;
     const filePath = uriToProjectPath(projectRoot, uri);
-    const key = `${uri}:${line}:${character}`;
+    const key = `${filePath ?? uri}:${line}:${character}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ uri, filePath, line, character });
@@ -181,6 +272,8 @@ interface RunLanguageOptions {
   serverStatus: LspServerStatusRecord;
   caps: LspPerformanceCaps;
   passStartedAt: number;
+  watchBatchKey: string | null;
+  watchRestartBudget?: LspWatchRestartBudget;
 }
 
 interface CandidateFailure {
@@ -227,6 +320,7 @@ async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<vo
         const shutdownError = await shutdownLanguageClient(client);
         if (shutdownError) {
           recordShutdownFailure(run, shutdownError, remaining.length - run.coverage.checkedWorkItems);
+          rememberWatchRestartExhaustion(run, 'shutdown-failure');
         }
         return;
       }
@@ -272,7 +366,6 @@ async function processCandidateRequests(
         run.status.performance.inFlightRequestHighWatermark,
         chunk.length,
       );
-
       const results = await Promise.all(chunk.map(async (candidate, index) => {
         try {
           return {
@@ -296,13 +389,13 @@ async function processCandidateRequests(
           };
         }
 
-        recordLspChecked(run.status, run.coverage);
         const decision = applyDefinitionResult(
           run.options.queries,
           run.options.projectRoot,
           item.candidate,
           item.result,
         );
+        recordLspChecked(run.status, run.coverage);
         if (decision === 'verified' || decision === 'corrected' || decision === 'suppressed') {
           recordLspEdgeDecision(run.status, decision);
         } else if (decision) {
@@ -350,6 +443,71 @@ function markLanguageDegraded(
     ? `${primaryError}; shutdown failed: ${shutdownError}`
     : primaryError;
   recordLspDegradation(run.status, run.coverage, reason, remainingCandidates.length);
+  rememberWatchRestartExhaustion(run, reason);
+}
+
+function applyWatchCaps(
+  status: LspStatus,
+  coverage: LspCoverageRecord,
+  candidates: LspEdgeCandidateRow[],
+  caps: LspPerformanceCaps,
+): LspEdgeCandidateRow[] {
+  const decision = evaluateLspWatchBatchScope({
+    changedSourceFiles: Array.from(new Set(candidates.map((candidate) => candidate.sourceFilePath))),
+    candidateWorkItemsByLanguage: {
+      [coverage.language as LspLanguage]: candidates.length,
+    },
+    caps,
+  });
+  const reason = decision.skippedByLanguage[coverage.language as LspLanguage];
+  if (reason === 'watch-work-cap-exceeded') {
+    recordLspCapExceeded(status, coverage, reason, candidates.length);
+    return [];
+  }
+  return candidates;
+}
+
+function recordWatchScopeSkip(
+  status: LspStatus,
+  changedSourceFiles: readonly string[] | 'unbounded' | undefined,
+  skippedByReason: Partial<Record<LspReasonCode, number>>,
+): void {
+  const coverage = createLspCoverageRecord('all', {
+    sourceFilesSeen: Array.isArray(changedSourceFiles) ? changedSourceFiles.length : 0,
+    candidateWorkItems: 0,
+  });
+  status.coverage.push(coverage);
+
+  for (const [reason, count] of Object.entries(skippedByReason) as Array<[LspReasonCode, number]>) {
+    if (reason === 'watch-changed-files-cap-exceeded') {
+      recordLspCapExceeded(status, coverage, reason, count);
+    } else {
+      recordLspSkip(status, coverage, reason, count);
+    }
+  }
+}
+
+function normalizeChangedSourceFiles(files: readonly string[]): Set<string> {
+  return new Set(files.map((filePath) => normalizeProjectPath(filePath)));
+}
+
+function materialWatchBatchKey(files: ReadonlySet<string>): string {
+  return [...files].sort().join('\n');
+}
+
+function getWatchRestartExhaustion(
+  budget: LspWatchRestartBudget | undefined,
+  batchKey: string,
+  language: LspLanguage,
+): LspReasonCode | null {
+  return budget?.get(batchKey)?.[language]?.reason ?? null;
+}
+
+function rememberWatchRestartExhaustion(run: RunLanguageOptions, reason: LspReasonCode): void {
+  if (!run.watchBatchKey || !run.watchRestartBudget) return;
+  const entry = run.watchRestartBudget.get(run.watchBatchKey) ?? {};
+  entry[run.language] = { reason };
+  run.watchRestartBudget.set(run.watchBatchKey, entry);
 }
 
 function applyFullIndexCaps(
@@ -357,9 +515,9 @@ function applyFullIndexCaps(
   coverage: LspCoverageRecord,
   candidates: LspEdgeCandidateRow[],
   caps: LspPerformanceCaps,
-  aggregateSkips?: {
-    fileCapSkippedWorkItems: number;
-    workCapSkippedWorkItems: number;
+  aggregateSkippedCounts?: {
+    fileCapSkippedWorkItems?: number;
+    workCapSkippedWorkItems?: number;
   },
 ): LspEdgeCandidateRow[] {
   const allowedFiles = new Set<string>();
@@ -377,23 +535,28 @@ function applyFullIndexCaps(
     fileCappedCandidates.push(candidate);
   }
 
-  const fileCapSkippedWorkItems = aggregateSkips?.fileCapSkippedWorkItems ?? skippedByFileCap;
-  if (fileCapSkippedWorkItems > 0) {
-    recordLspCapExceeded(status, coverage, 'full-index-file-cap-exceeded', fileCapSkippedWorkItems);
+  const totalSkippedByFileCap = aggregateSkippedCounts?.fileCapSkippedWorkItems ?? skippedByFileCap;
+  if (totalSkippedByFileCap > 0) {
+    recordLspCapExceeded(status, coverage, 'full-index-file-cap-exceeded', totalSkippedByFileCap);
   }
 
   const runnable = fileCappedCandidates.slice(0, caps.fullIndexWorkItemsPerLanguage);
   const skippedByWorkCap = fileCappedCandidates.length - runnable.length;
-  const workCapSkippedWorkItems = aggregateSkips?.workCapSkippedWorkItems ?? skippedByWorkCap;
-  if (workCapSkippedWorkItems > 0) {
-    recordLspCapExceeded(status, coverage, 'full-index-work-cap-exceeded', workCapSkippedWorkItems);
+  const totalSkippedByWorkCap = aggregateSkippedCounts?.workCapSkippedWorkItems ?? skippedByWorkCap;
+  if (totalSkippedByWorkCap > 0) {
+    recordLspCapExceeded(status, coverage, 'full-index-work-cap-exceeded', totalSkippedByWorkCap);
   }
 
   return runnable;
 }
 
-function lspCandidateDiscoveryLimit(caps: LspPerformanceCaps): number {
+function lspCandidateDiscoveryLimit(caps: LspPerformanceCaps, isWatch: boolean): number {
+  if (isWatch) return caps.watchWorkItemsPerLanguagePerBatch + 1;
   return caps.fullIndexWorkItemsPerLanguage + caps.fullIndexSourceFilesPerLanguage + 1;
+}
+
+function countDistinctSourceFiles(candidates: LspEdgeCandidateRow[]): number {
+  return new Set(candidates.map((candidate) => candidate.sourceFilePath)).size;
 }
 
 function applyDefinitionResult(
@@ -407,29 +570,51 @@ function applyDefinitionResult(
   if (targets.length > 1) return 'language-not-applicable';
 
   const target = targets[0]!;
-  if (!target.filePath) return 'language-not-applicable';
-  const nodes = queries.findNodesAtLocation(target.filePath, target.line);
-  const compatible = nodes.filter((node) =>
-    node.id === candidate.targetId ||
-    (node.kind === candidate.targetKind && node.name === candidate.targetName)
-  );
+  if (!target.filePath) {
+    queries.suppressEdgeWithLspAudit(
+      candidate.edgeId,
+      lspDecisionMetadata(candidate, 'suppressed', target, { reason: 'external-target' }),
+    );
+    return 'suppressed';
+  }
+  if (isGeneratedFile(target.filePath)) {
+    queries.suppressEdgeWithLspAudit(
+      candidate.edgeId,
+      lspDecisionMetadata(candidate, 'suppressed', target, { reason: 'generated-target' }),
+    );
+    return 'suppressed';
+  }
+
+  const nodes = queries.findNodesAtLocation(target.filePath, target.line, candidate.language, target.character);
+  const compatible = compatibleLspTargetNodes(candidate, nodes);
+  if (compatible.length === 0) {
+    queries.suppressEdgeWithLspAudit(
+      candidate.edgeId,
+      lspDecisionMetadata(candidate, 'suppressed', target, { reason: 'unindexed-target' }),
+    );
+    return 'suppressed';
+  }
   if (compatible.length !== 1) return 'language-not-applicable';
   const node = compatible[0]!;
-  if (node.id !== candidate.targetId) return 'language-not-applicable';
 
-  const metadata = {
-    ...(candidate.metadata ?? {}),
-    lsp: {
-      decision: 'verified',
-      previousProvenance: candidate.provenance ?? null,
-      targetUri: target.uri,
-      targetLine: target.line,
-      targetCharacter: target.character,
-      verifiedAt: new Date().toISOString(),
-    },
-  };
-  queries.updateEdgeLspProvenance(candidate.edgeId, metadata);
-  return 'verified';
+  if (node.id === candidate.targetId) {
+    queries.updateEdgeLspProvenance(
+      candidate.edgeId,
+      lspDecisionMetadata(candidate, 'verified', target),
+    );
+    return 'verified';
+  }
+
+  queries.retargetEdgeWithLspCorrection(
+    candidate.edgeId,
+    node.id,
+    lspDecisionMetadata(candidate, 'corrected', target, {
+      replacementTargetId: node.id,
+      replacementTargetFilePath: node.filePath,
+    }),
+    lspReplacementSuppressionMetadata(candidate, target, node.id),
+  );
+  return 'corrected';
 }
 
 function uriToProjectPath(projectRoot: string, uri: string): string | null {
@@ -442,6 +627,10 @@ function uriToProjectPath(projectRoot: string, uri: string): string | null {
   } catch {
     return null;
   }
+}
+
+function normalizeProjectPath(filePath: string): string {
+  return filePath.split(path.sep).join('/').replace(/^\.\//, '');
 }
 
 function isRange(value: unknown): value is { start: { line: number; character: number } } {

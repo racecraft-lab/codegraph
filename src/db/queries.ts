@@ -126,6 +126,16 @@ interface UnresolvedRefRow {
   language: string;
 }
 
+function activeEdgePredicate(alias?: string): string {
+  const column = alias ? `${alias}.metadata` : 'metadata';
+  return `(CASE
+    WHEN ${column} IS NULL THEN 1
+    WHEN json_valid(${column}) = 0 THEN 1
+    WHEN json_extract(${column}, '$.lsp.active') = 0 THEN 0
+    ELSE 1
+  END) = 1`;
+}
+
 export interface LspEdgeCandidateRow {
   edgeId: number;
   sourceId: string;
@@ -772,6 +782,7 @@ export class QueryBuilder {
         JOIN nodes n ON e.source = n.id
         JOIN nodes m ON e.target = m.id
         WHERE n.file_path = m.file_path
+          AND ${activeEdgePredicate('e')}
         GROUP BY n.file_path
         ORDER BY edge_count DESC
         LIMIT 20
@@ -853,6 +864,7 @@ export class QueryBuilder {
         JOIN nodes h ON e.target = h.id
         WHERE r.kind = 'route'
           AND e.kind IN ('references', 'calls')
+          AND ${activeEdgePredicate('e')}
           AND h.kind IN ('function', 'method', 'class')
         ORDER BY r.file_path, r.start_line
         LIMIT ?
@@ -1478,9 +1490,18 @@ export class QueryBuilder {
    * deliberately narrow API so the LSP layer does not reach through QueryBuilder
    * into raw SQL.
    */
-  getLspEdgeCandidates(languages: Language[], limit: number): LspEdgeCandidateRow[] {
+  getLspEdgeCandidates(
+    languages: Language[],
+    limit: number,
+    sourceFilePaths?: readonly string[],
+  ): LspEdgeCandidateRow[] {
     if (languages.length === 0 || limit <= 0) return [];
-    const placeholders = languages.map(() => '?').join(',');
+    const uniqueSourceFilePaths = sourceFilePaths ? [...new Set(sourceFilePaths)] : [];
+    if (sourceFilePaths && uniqueSourceFilePaths.length === 0) return [];
+    const languagePlaceholders = languages.map(() => '?').join(',');
+    const sourceFileFilter = uniqueSourceFilePaths.length > 0
+      ? `AND s.file_path IN (${uniqueSourceFilePaths.map(() => '?').join(',')})`
+      : '';
     const rows = this.db.prepare(`
       SELECT
         e.id AS edge_id,
@@ -1503,12 +1524,14 @@ export class QueryBuilder {
       FROM edges e
       JOIN nodes s ON s.id = e.source
       JOIN nodes t ON t.id = e.target
-      WHERE s.language IN (${placeholders})
+      WHERE s.language IN (${languagePlaceholders})
+        ${sourceFileFilter}
         AND e.kind IN ('calls', 'references', 'imports', 'instantiates')
         AND e.line IS NOT NULL
-      ORDER BY s.file_path, e.line, e.col
+        AND ${activeEdgePredicate('e')}
+      ORDER BY s.file_path, e.line, e.col, e.id
       LIMIT ?
-    `).all(...languages, limit) as Array<{
+    `).all(...languages, ...uniqueSourceFilePaths, limit) as Array<{
       edge_id: number;
       source_id: string;
       target_id: string;
@@ -1603,7 +1626,7 @@ export class QueryBuilder {
   /**
    * Find graph nodes that cover a 1-based source location in one indexed file.
    */
-  findNodesAtLocation(filePath: string, line: number, language?: Language): Node[] {
+  findNodesAtLocation(filePath: string, line: number, language?: Language, column?: number): Node[] {
     let sql = `
       SELECT * FROM nodes
       WHERE file_path = ?
@@ -1611,11 +1634,18 @@ export class QueryBuilder {
         AND end_line >= ?
     `;
     const params: (string | number)[] = [filePath, line, line];
+    if (column !== undefined) {
+      sql += `
+        AND (start_line < ? OR (start_line = ? AND start_column <= ?))
+        AND (end_line > ? OR (end_line = ? AND end_column >= ?))
+      `;
+      params.push(line, line, column, line, line, column);
+    }
     if (language) {
       sql += ' AND language = ?';
       params.push(language);
     }
-    sql += ' ORDER BY (end_line - start_line) ASC, length(name) DESC';
+    sql += ' ORDER BY (end_line - start_line) ASC, (end_column - start_column) ASC, length(name) DESC';
     const rows = this.db.prepare(sql).all(...params) as NodeRow[];
     return rows.map(rowToNode);
   }
@@ -1630,6 +1660,63 @@ export class QueryBuilder {
           metadata = ?
       WHERE id = ?
     `).run(JSON.stringify(metadata), edgeId);
+    return result.changes;
+  }
+
+  /**
+   * Retarget an LSP-corrected edge. If an equivalent active edge already exists,
+   * keep that edge active and mark the old row inactive with audit metadata.
+   */
+  retargetEdgeWithLspCorrection(
+    edgeId: number,
+    targetId: string,
+    metadata: Record<string, unknown>,
+    replacedMetadata: Record<string, unknown>,
+  ): number {
+    const current = this.db.prepare('SELECT * FROM edges WHERE id = ?').get(edgeId) as EdgeRow | undefined;
+    if (!current) return 0;
+
+    const conflict = this.db.prepare(`
+      SELECT * FROM edges
+      WHERE id != ?
+        AND source = ?
+        AND target = ?
+        AND kind = ?
+        AND IFNULL(line, -1) = IFNULL(?, -1)
+        AND IFNULL(col, -1) = IFNULL(?, -1)
+      LIMIT 1
+    `).get(edgeId, current.source, targetId, current.kind, current.line, current.col) as EdgeRow | undefined;
+
+    if (conflict) {
+      const updateConflict = this.db.prepare(`
+        UPDATE edges
+        SET provenance = 'lsp',
+            metadata = ?
+        WHERE id = ?
+      `).run(JSON.stringify(metadata), conflict.id);
+      this.db.prepare('UPDATE edges SET metadata = ? WHERE id = ?').run(
+        JSON.stringify(replacedMetadata),
+        edgeId,
+      );
+      return updateConflict.changes;
+    }
+
+    const result = this.db.prepare(`
+      UPDATE edges
+      SET target = ?,
+          provenance = 'lsp',
+          metadata = ?
+      WHERE id = ?
+    `).run(targetId, JSON.stringify(metadata), edgeId);
+    return result.changes;
+  }
+
+  /**
+   * Keep the historical row for audit, but remove it from active retrieval.
+   */
+  suppressEdgeWithLspAudit(edgeId: number, metadata: Record<string, unknown>): number {
+    const result = this.db.prepare('UPDATE edges SET metadata = ? WHERE id = ?')
+      .run(JSON.stringify(metadata), edgeId);
     return result.changes;
   }
 
@@ -1671,7 +1758,7 @@ export class QueryBuilder {
    */
   getOutgoingEdges(sourceId: string, kinds?: EdgeKind[], provenance?: string): Edge[] {
     if ((kinds && kinds.length > 0) || provenance) {
-      let sql = 'SELECT * FROM edges WHERE source = ?';
+      let sql = `SELECT * FROM edges WHERE source = ? AND ${activeEdgePredicate()}`;
       const params: (string | number)[] = [sourceId];
 
       if (kinds && kinds.length > 0) {
@@ -1689,7 +1776,7 @@ export class QueryBuilder {
     }
 
     if (!this.stmts.getEdgesBySource) {
-      this.stmts.getEdgesBySource = this.db.prepare('SELECT * FROM edges WHERE source = ?');
+      this.stmts.getEdgesBySource = this.db.prepare(`SELECT * FROM edges WHERE source = ? AND ${activeEdgePredicate()}`);
     }
     const rows = this.stmts.getEdgesBySource.all(sourceId) as EdgeRow[];
     return rows.map(rowToEdge);
@@ -1700,13 +1787,13 @@ export class QueryBuilder {
    */
   getIncomingEdges(targetId: string, kinds?: EdgeKind[]): Edge[] {
     if (kinds && kinds.length > 0) {
-      const sql = `SELECT * FROM edges WHERE target = ? AND kind IN (${kinds.map(() => '?').join(',')})`;
+      const sql = `SELECT * FROM edges WHERE target = ? AND ${activeEdgePredicate()} AND kind IN (${kinds.map(() => '?').join(',')})`;
       const rows = this.db.prepare(sql).all(targetId, ...kinds) as EdgeRow[];
       return rows.map(rowToEdge);
     }
 
     if (!this.stmts.getEdgesByTarget) {
-      this.stmts.getEdgesByTarget = this.db.prepare('SELECT * FROM edges WHERE target = ?');
+      this.stmts.getEdgesByTarget = this.db.prepare(`SELECT * FROM edges WHERE target = ? AND ${activeEdgePredicate()}`);
     }
     const rows = this.stmts.getEdgesByTarget.all(targetId) as EdgeRow[];
     return rows.map(rowToEdge);
@@ -1720,7 +1807,7 @@ export class QueryBuilder {
     if (nodeIds.length === 0) return [];
 
     const idsJson = JSON.stringify(nodeIds);
-    let sql = `SELECT * FROM edges WHERE source IN (SELECT value FROM json_each(?)) AND target IN (SELECT value FROM json_each(?))`;
+    let sql = `SELECT * FROM edges WHERE source IN (SELECT value FROM json_each(?)) AND target IN (SELECT value FROM json_each(?)) AND ${activeEdgePredicate()}`;
     const params: string[] = [idsJson, idsJson];
 
     if (kinds && kinds.length > 0) {
@@ -1755,7 +1842,8 @@ export class QueryBuilder {
       JOIN nodes src ON src.id = e.source
       WHERE tgt.file_path = ?
         AND e.kind != 'contains'
-        AND src.file_path != ?`;
+        AND src.file_path != ?
+        AND ${activeEdgePredicate('e')}`;
     const rows = this.db.prepare(sql).all(filePath, filePath) as Array<{ fp: string }>;
     return rows.map((r) => r.fp);
   }
@@ -1773,7 +1861,8 @@ export class QueryBuilder {
       JOIN nodes tgt ON tgt.id = e.target
       WHERE src.file_path = ?
         AND e.kind != 'contains'
-        AND tgt.file_path != ?`;
+        AND tgt.file_path != ?
+        AND ${activeEdgePredicate('e')}`;
     const rows = this.db.prepare(sql).all(filePath, filePath) as Array<{ fp: string }>;
     return rows.map((r) => r.fp);
   }
@@ -1795,7 +1884,8 @@ export class QueryBuilder {
       JOIN nodes src ON src.id = e.source
       WHERE tgt.file_path = ?
         AND e.kind != 'contains'
-        AND src.file_path != ?`;
+        AND src.file_path != ?
+        AND ${activeEdgePredicate('e')}`;
     const rows = this.db.prepare(sql).all(filePath, filePath) as Array<EdgeRow & { target_name: string; target_kind: NodeKind }>;
     return rows.map(row => ({
       ...rowToEdge(row),

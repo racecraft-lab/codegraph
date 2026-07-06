@@ -123,6 +123,39 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   }
 }
 
+function insertTestNode(queries: QueryBuilder, overrides: Record<string, unknown>): void {
+  const startLine = (overrides.startLine as number) ?? 1;
+  queries.insertNode({
+    id: overrides.id as string,
+    kind: (overrides.kind as any) ?? 'function',
+    name: (overrides.name as string) ?? 'helper',
+    qualifiedName: (overrides.qualifiedName as string) ?? (overrides.name as string) ?? 'helper',
+    filePath: overrides.filePath as string,
+    language: (overrides.language as any) ?? 'typescript',
+    startLine,
+    endLine: (overrides.endLine as number) ?? startLine,
+    startColumn: (overrides.startColumn as number) ?? 0,
+    endColumn: (overrides.endColumn as number) ?? 20,
+    visibility: 'public',
+    isExported: true,
+    isAsync: false,
+    isStatic: false,
+    isAbstract: false,
+    updatedAt: Date.now(),
+  });
+}
+
+function rawEdgeRows(db: ReturnType<DatabaseConnection['getDb']>): Array<{
+  id: number;
+  source: string;
+  target: string;
+  kind: string;
+  metadata: string | null;
+  provenance: string | null;
+}> {
+  return db.prepare('SELECT id, source, target, kind, metadata, provenance FROM edges ORDER BY id').all() as any[];
+}
+
 describe('LSP precision provenance foundation', () => {
   it('adds lsp provenance without removing existing provenance values', () => {
     expect([...EDGE_PROVENANCES]).toEqual(['tree-sitter', 'scip', 'heuristic', 'lsp']);
@@ -676,5 +709,272 @@ describe('LSP precision provenance foundation', () => {
     expect(status.performance.structuralElapsedMs).toBe(5);
     expect(status.performance.lspElapsedMs).toBeGreaterThanOrEqual(0);
     expect(status.performance.enabledOverheadRatio).toBeGreaterThanOrEqual(1);
+  });
+
+  it('normalizes Location and LocationLink targets by selection range and deduplicates them', async () => {
+    const { normalizeLspTargets } = await import('../src/lsp');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const uri = pathToFileURL(path.join(dir, 'src/target.ts')).href;
+
+    const targets = normalizeLspTargets(dir, [
+      {
+        uri,
+        range: { start: { line: 8, character: 4 }, end: { line: 8, character: 10 } },
+      },
+      {
+        targetUri: uri,
+        targetRange: { start: { line: 0, character: 0 }, end: { line: 20, character: 0 } },
+        targetSelectionRange: { start: { line: 8, character: 4 }, end: { line: 8, character: 10 } },
+      },
+    ]);
+
+    expect(targets).toEqual([
+      {
+        uri,
+        filePath: 'src/target.ts',
+        line: 9,
+        character: 4,
+      },
+    ]);
+  });
+
+  it('retargets a corrected edge and leaves exactly one active edge at the call site', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const tsServer = makeExecutable(dir, 'typescript-lsp');
+    const db = DatabaseConnection.initialize(path.join(dir, 'codegraph.db'));
+    try {
+      const queries = new QueryBuilder(db.getDb());
+      insertTestNode(queries, {
+        id: 'source',
+        name: 'caller',
+        qualifiedName: 'caller',
+        filePath: 'src/caller.ts',
+        startLine: 1,
+        endLine: 20,
+      });
+      insertTestNode(queries, {
+        id: 'wrong-target',
+        name: 'helper',
+        qualifiedName: 'wrong.helper',
+        filePath: 'src/wrong.ts',
+        startLine: 1,
+      });
+      insertTestNode(queries, {
+        id: 'correct-target',
+        name: 'helper',
+        qualifiedName: 'correct.helper',
+        filePath: 'src/correct.ts',
+        startLine: 3,
+      });
+      queries.insertEdge({ source: 'source', target: 'wrong-target', kind: 'calls', line: 10, column: 8, provenance: 'tree-sitter' });
+      queries.insertEdge({ source: 'source', target: 'correct-target', kind: 'calls', line: 10, column: 8, provenance: 'tree-sitter' });
+      const getCandidates = queries.getLspEdgeCandidates.bind(queries);
+      queries.getLspEdgeCandidates = (...args) =>
+        getCandidates(...args).filter((candidate) => candidate.targetId === 'wrong-target');
+
+      const status = await runLspPrecisionPass({
+        projectRoot: dir,
+        queries,
+        config: resolveLspConfig({
+          projectRoot: dir,
+          cliActivation: 'enable',
+          env: {
+            PATH: '',
+            CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+          },
+        }),
+        clientFactory: {
+          create: () => ({
+            initialize: async () => ({ serverInfo: { name: 'correcting-ts-lsp' } }),
+            request: async () => ({
+              uri: pathToFileURL(path.join(dir, 'src/correct.ts')).href,
+              range: { start: { line: 2, character: 0 }, end: { line: 2, character: 20 } },
+            }),
+            shutdown: async () => undefined,
+          }),
+        },
+      });
+
+      const active = queries.getOutgoingEdges('source', ['calls']);
+      const raw = rawEdgeRows(db.getDb());
+      const suppressed = raw.find((edge) => edge.target === 'wrong-target');
+      const activeMetadata = active[0]?.metadata?.lsp as Record<string, unknown> | undefined;
+      const suppressedMetadata = suppressed?.metadata ? JSON.parse(suppressed.metadata).lsp : undefined;
+
+      expect(status.edgeCounts.corrected).toBe(1);
+      expect(active).toHaveLength(1);
+      expect(active[0]?.target).toBe('correct-target');
+      expect(active[0]?.provenance).toBe('lsp');
+      expect(activeMetadata).toMatchObject({
+        decision: 'corrected',
+        active: true,
+        previousTargetId: 'wrong-target',
+      });
+      expect(raw).toHaveLength(2);
+      expect(suppressedMetadata).toMatchObject({
+        decision: 'suppressed',
+        active: false,
+        replacementTargetId: 'correct-target',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('suppresses external, generated, and unindexed LSP targets without creating graph nodes', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const tsServer = makeExecutable(dir, 'typescript-lsp');
+    const db = DatabaseConnection.initialize(path.join(dir, 'codegraph.db'));
+    try {
+      const queries = new QueryBuilder(db.getDb());
+      insertTestNode(queries, {
+        id: 'source',
+        name: 'caller',
+        qualifiedName: 'caller',
+        filePath: 'src/caller.ts',
+        startLine: 1,
+        endLine: 20,
+      });
+      insertTestNode(queries, {
+        id: 'wrong-target',
+        name: 'helper',
+        qualifiedName: 'wrong.helper',
+        filePath: 'src/wrong.ts',
+        startLine: 1,
+      });
+      queries.insertEdge({ source: 'source', target: 'wrong-target', kind: 'calls', line: 10, column: 4, provenance: 'tree-sitter' });
+      queries.insertEdge({ source: 'source', target: 'wrong-target', kind: 'calls', line: 11, column: 4, provenance: 'tree-sitter' });
+      queries.insertEdge({ source: 'source', target: 'wrong-target', kind: 'calls', line: 12, column: 4, provenance: 'tree-sitter' });
+      const before = queries.getNodeAndEdgeCount();
+
+      const status = await runLspPrecisionPass({
+        projectRoot: dir,
+        queries,
+        config: resolveLspConfig({
+          projectRoot: dir,
+          cliActivation: 'enable',
+          env: {
+            PATH: '',
+            CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+          },
+        }),
+        clientFactory: {
+          create: () => ({
+            initialize: async () => ({ serverInfo: { name: 'suppressing-ts-lsp' } }),
+            request: async (_method, params) => {
+              const line = (params.position as { line: number }).line + 1;
+              const targetPath = line === 10
+                ? path.join(os.tmpdir(), 'external-target.ts')
+                : line === 11
+                  ? path.join(dir, 'src/generated.pb.ts')
+                  : path.join(dir, 'src/unindexed.ts');
+              return {
+                uri: pathToFileURL(targetPath).href,
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 20 } },
+              };
+            },
+            shutdown: async () => undefined,
+          }),
+        },
+      });
+
+      const after = queries.getNodeAndEdgeCount();
+      const raw = rawEdgeRows(db.getDb());
+      const suppressionDecisions = raw.map((edge) => JSON.parse(edge.metadata ?? '{}').lsp);
+
+      expect(after.nodes).toBe(before.nodes);
+      expect(after.edges).toBe(before.edges);
+      expect(status.edgeCounts.suppressed).toBe(3);
+      expect(queries.getOutgoingEdges('source', ['calls'])).toEqual([]);
+      expect(suppressionDecisions).toEqual([
+        expect.objectContaining({ decision: 'suppressed', active: false, reason: 'external-target' }),
+        expect.objectContaining({ decision: 'suppressed', active: false, reason: 'generated-target' }),
+        expect.objectContaining({ decision: 'suppressed', active: false, reason: 'unindexed-target' }),
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('leaves ambiguous LSP definitions as a no-op without speculative replacement edges', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const tsServer = makeExecutable(dir, 'typescript-lsp');
+    const db = DatabaseConnection.initialize(path.join(dir, 'codegraph.db'));
+    try {
+      const queries = new QueryBuilder(db.getDb());
+      insertTestNode(queries, {
+        id: 'source',
+        name: 'caller',
+        qualifiedName: 'caller',
+        filePath: 'src/caller.ts',
+        startLine: 1,
+        endLine: 20,
+      });
+      insertTestNode(queries, {
+        id: 'wrong-target',
+        name: 'helper',
+        qualifiedName: 'wrong.helper',
+        filePath: 'src/wrong.ts',
+        startLine: 1,
+      });
+      insertTestNode(queries, {
+        id: 'candidate-a',
+        name: 'helper',
+        qualifiedName: 'a.helper',
+        filePath: 'src/a.ts',
+        startLine: 1,
+      });
+      insertTestNode(queries, {
+        id: 'candidate-b',
+        name: 'helper',
+        qualifiedName: 'b.helper',
+        filePath: 'src/b.ts',
+        startLine: 1,
+      });
+      queries.insertEdge({ source: 'source', target: 'wrong-target', kind: 'calls', line: 10, column: 4, provenance: 'tree-sitter' });
+
+      const status = await runLspPrecisionPass({
+        projectRoot: dir,
+        queries,
+        config: resolveLspConfig({
+          projectRoot: dir,
+          cliActivation: 'enable',
+          env: {
+            PATH: '',
+            CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+          },
+        }),
+        clientFactory: {
+          create: () => ({
+            initialize: async () => ({ serverInfo: { name: 'ambiguous-ts-lsp' } }),
+            request: async () => ([
+              {
+                uri: pathToFileURL(path.join(dir, 'src/a.ts')).href,
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 20 } },
+              },
+              {
+                uri: pathToFileURL(path.join(dir, 'src/b.ts')).href,
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 20 } },
+              },
+            ]),
+            shutdown: async () => undefined,
+          }),
+        },
+      });
+
+      const active = queries.getOutgoingEdges('source', ['calls']);
+      const raw = rawEdgeRows(db.getDb());
+
+      expect(status.edgeCounts.skippedByReason).toEqual({ 'language-not-applicable': 1 });
+      expect(active).toHaveLength(1);
+      expect(active[0]?.target).toBe('wrong-target');
+      expect(raw.filter((edge) => edge.target === 'candidate-a' || edge.target === 'candidate-b')).toEqual([]);
+    } finally {
+      db.close();
+    }
   });
 });
