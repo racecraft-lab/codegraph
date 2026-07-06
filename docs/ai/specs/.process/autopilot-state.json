@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-05T23:05:00Z",
-  "active_step": "Phase 4: Checklist - Integration",
+  "updated_at": "2026-07-06T00:19:40Z",
+  "active_step": "Phase 5: Tasks",
   "confidence_gate_mode": "strict",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
@@ -20,15 +20,15 @@
     {"step": "Phase 2: Clarify - Activation, config, and slicing", "status": "completed"},
     {"step": "Phase 2: Clarify - Activation, config, and slicing Consensus", "status": "completed"},
     {"step": "Phase 3: Plan", "status": "completed"},
-    {"step": "Phase 4: Checklist - Integration", "status": "in_progress"},
-    {"step": "Phase 4: Checklist - Integration Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - Reliability", "status": "pending"},
-    {"step": "Phase 4: Checklist - Reliability Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - Data Integrity", "status": "pending"},
-    {"step": "Phase 4: Checklist - Data Integrity Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - Performance", "status": "pending"},
-    {"step": "Phase 4: Checklist - Performance Consensus", "status": "pending"},
-    {"step": "Phase 5: Tasks", "status": "pending"},
+    {"step": "Phase 4: Checklist - Integration", "status": "completed"},
+    {"step": "Phase 4: Checklist - Integration Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Reliability", "status": "completed"},
+    {"step": "Phase 4: Checklist - Reliability Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Data Integrity", "status": "completed"},
+    {"step": "Phase 4: Checklist - Data Integrity Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Performance", "status": "completed"},
+    {"step": "Phase 4: Checklist - Performance Consensus", "status": "completed"},
+    {"step": "Phase 5: Tasks", "status": "in_progress"},
     {"step": "Phase 6: Analyze", "status": "pending"},
     {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
     {"step": "Phase 6.5: Confidence Gate", "status": "pending"},
@@ -180,6 +180,68 @@
         "specs/008-lsp-client-integration/contracts/edge-correction.md",
         "CLAUDE.md"
       ]
+    },
+    "phase_4_checklist": {
+      "integration": {
+        "status": "completed",
+        "items": 27,
+        "gaps_before": 3,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/integration.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md"
+        ]
+      },
+      "reliability": {
+        "status": "completed",
+        "items": 18,
+        "gaps_before": 3,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/reliability.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md"
+        ]
+      },
+      "data_integrity": {
+        "status": "completed",
+        "items": 21,
+        "gaps_before": 4,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/data-integrity.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md",
+          "specs/008-lsp-client-integration/data-model.md",
+          "specs/008-lsp-client-integration/contracts/edge-correction.md"
+        ]
+      },
+      "performance": {
+        "status": "completed",
+        "items": 24,
+        "gaps_before": 9,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/performance.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md",
+          "specs/008-lsp-client-integration/research.md",
+          "specs/008-lsp-client-integration/data-model.md",
+          "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+          "specs/008-lsp-client-integration/contracts/status-and-prereqs.md"
+        ]
+      },
+      "gate_g4": {
+        "status": "passed",
+        "reason": "0 [Gap] markers",
+        "checklist_items": 90,
+        "gaps_after": 0
+      }
     }
   }
 }

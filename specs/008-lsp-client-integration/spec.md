@@ -122,10 +122,25 @@ As a maintainer, I want SPEC-008 validation to prove real-server coverage and in
 - **FR-029**: LSP target uniqueness MUST be based on exactly one normalized semantic target after normalizing `Location` and `LocationLink` responses and deduplicating equivalent target ranges.
 - **FR-030**: In-workspace LSP corrections MUST require exactly one compatible CodeGraph node for the normalized target; external or unindexed LSP targets MAY suppress a conflicting active edge with audit metadata but MUST NOT create external graph nodes.
 - **FR-031**: Status output MUST include LSP precision state for human and JSON output: enabled state, last run, server availability, observed versions, per-language file coverage, and aggregate edge counts for checked, verified, corrected, suppressed, skipped-by-reason, and degraded.
+- **FR-031a**: Human and JSON status MUST include stable machine-readable reason codes and short human-readable detail for every unavailable, skipped, degraded, not-present, not-applicable, and validation-only LSP condition. Required reason categories MUST distinguish missing default command, configured command unavailable, server crash, initialize timeout, request timeout, malformed protocol response, shutdown failure, absent or unbounded watch changed-file set, oversized watch changed-file batch, language not present, language not applicable, and missing real-server prerequisite that applies only to SPEC-008 validation. Command-related reasons MUST include the selected argv and expected alternatives when relevant, and version fields remain observational evidence rather than normal runtime success criteria.
 - **FR-032**: Project configuration MUST use a top-level `lsp` object with `enabled`, `defaultTimeoutMs`, optional `watch.enabled`, and `servers.<language>.command` / `servers.<language>.timeoutMs` entries keyed by CodeGraph language id.
 - **FR-033**: Environment overrides MUST use `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`, `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`, and `CODEGRAPH_LSP_TIMEOUT_MS`; command JSON MUST parse to a string array, invalid values MUST warn and fall back, and environment variables MUST NOT activate LSP precision by themselves.
 - **FR-034**: Effective activation precedence MUST be explicit CLI flag first, then `codegraph.json.lsp.enabled === true`, then default off; the CLI MUST support disabling LSP for one run even when project config opts in.
 - **FR-035**: Incremental watch LSP verification MUST reuse the existing sync/watch path, run only after normal sync/reference resolution, process only bounded changed-file sets, and skip with a recorded reason when no bounded changed-file list is available.
+- **FR-035a**: Incremental watch LSP verification MUST enforce measurable default work bounds before issuing LSP requests: at most 100 changed source files per bounded watch batch and at most 1,000 candidate LSP work items per language per batch. If the changed-file set is absent, unbounded, or any bound is exceeded, LSP watch verification MUST skip that batch or affected language with a recorded reason and MUST NOT fall back to a repository-wide LSP pass.
+- **FR-036**: Language-server command selection MUST use this order: valid environment command override, project server command, then registry default or accepted alternatives in listed order. A valid configured argv that cannot be resolved MUST report that language as unavailable and MUST NOT silently fall through to lower-precedence registry alternatives.
+- **FR-037**: Command probing MUST resolve bare executables through the current process `PATH`; absolute or relative argv paths MUST be used as configured. Status and validation MUST report the selected argv, resolved executable path when available, unavailable-command state when resolution fails, and expected command alternatives.
+- **FR-038**: Runtime and watch verification MUST use bounded server recovery. A crash, initialize timeout, request timeout, malformed protocol response, or shutdown failure MUST NOT fail normal structural indexing; at most one fresh session restart MAY be attempted per language per run or bounded watch batch before marking that language degraded with a recorded reason.
+- **FR-038a**: Watch-mode server recovery MUST be keyed to the bounded watch batch, not to every file-watch debounce cycle. After the one allowed fresh-session restart for a language is exhausted, repeated debounce cycles for the same still-pending failed changed-file set MUST keep that language degraded and MUST NOT spawn additional server restarts; the restart budget MAY reset only for an explicit index or sync command, or for a materially new bounded watch batch with a changed-file set different from the failed batch.
+- **FR-039**: LSP correction MUST leave at most one active graph edge for a single semantic reference identity, defined for the LSP work item by source node, edge kind, reference document URI, reference line/character or origin range, and normalized reference name when available. A corrected edge MUST NOT remain active beside the old static or heuristic target for that same semantic reference.
+- **FR-040**: For a unique in-workspace LSP target that resolves to exactly one compatible CodeGraph node, CodeGraph MUST either retarget the existing active edge or retire the old active edge and insert one replacement edge, but the post-correction graph MUST contain exactly one active edge for that semantic reference. For unique generated, external, or unindexed targets, CodeGraph MUST suppress the conflicting active edge and MUST NOT create a replacement active edge or external graph node.
+- **FR-041**: Suppressed edge history kept for audit MUST be inactive graph data. Suppressed audit records or inactive edge rows MUST be excluded from traversal, callers, callees, impact, search, and flow-building surfaces by default, and may appear only in status, debug, or audit output.
+- **FR-042**: When LSP precision is disabled for an index, sync, or watch-triggered sync path, CodeGraph MUST perform zero LSP runtime work: no language-server command probing, no language-server subprocess startup, no JSON-RPC messages, no LSP coverage/correction/audit status writes, and no LSP-only graph mutations. Disabled-path validation MUST prove unchanged graph behavior and provenance semantics plus zero observed LSP runtime operations.
+- **FR-043**: LSP-enabled full indexing MUST enforce measurable default per-language work bounds before issuing LSP requests: at most 2,000 source files and at most 10,000 candidate LSP work items per language per full-index run, processed in batches of at most 250 work items. If either bound is exceeded, CodeGraph MUST skip the excess LSP work for that language with a recorded reason, preserve structural indexing results, and MUST NOT replace the skipped work with an unbounded repository-wide LSP pass.
+- **FR-044**: LSP-enabled runtime MUST enforce language-server concurrency limits: at most two language-server sessions may be active at once for one project, and at most eight definition/reference requests may be in flight per language-server session. Session initialize and shutdown MUST remain bounded by the effective timeout/retry policy, and stdout/stderr pipes MUST be drained while the subprocess is alive.
+- **FR-045**: LSP-enabled indexing, sync, and watch verification MUST record performance evidence for each run: structural-index elapsed time, LSP precision-pass elapsed time, enabled-overhead ratio when a comparable non-LSP baseline exists, per-language source-file counts, candidate work-item counts, checked/skipped/degraded counts, cap-exceeded reasons, active session concurrency, and peak in-flight request count.
+- **FR-046**: LSP-enabled corrections and suppressions MUST NOT regress retrieval tool sufficiency. Validation MUST include targeted probes for `codegraph_explore`, callers, callees, impact, search, and flow-building surfaces, using the existing repo-size explore-call budget and proving that suppressed audit-only data remains absent from default retrieval outputs.
+- **FR-047**: SPEC-008 validation MUST include large-repo performance behavior for representative small, medium, and large repositories or fixtures. Large-repo evidence MUST show bounded completion or deterministic per-language skip/degrade reasons under the default work and concurrency caps, with no unbounded LSP pass, no duplicate active-edge growth, and no retrieval sufficiency regression.
 
 ### Server Prerequisite Matrix
 
@@ -184,6 +199,7 @@ validation.`
 - **Language Coverage Record**: The per-language result describing whether files for that language were verified, degraded, or not present.
 - **Edge Verification Record**: The result of verifying an existing graph edge, including unchanged, upgraded, corrected, suppressed, or ambiguous.
 - **Correction Metadata**: Audit information explaining why a previous graph target was replaced or suppressed by a unique LSP result, including previous target, new target when present, previous provenance, reason, language, server, and timestamp.
+- **LSP Performance Record**: Runtime evidence for a disabled or LSP-enabled run, including elapsed time, effective work caps, per-language work counts, skip/degrade reasons, session concurrency, request concurrency, and observed zero-work proof for disabled paths.
 - **Language Parity Row**: A baseline language row with SPEC-008 coverage status or concrete numbered future-spec ownership.
 - **Capability Parity Row**: A baseline feature or capability row with implementation evidence or concrete numbered future-spec ownership.
 
@@ -205,6 +221,11 @@ previous provenance and target details in correction metadata or an audit record
 - **SC-007**: In ambiguous LSP fixtures, 0 speculative replacement edges are emitted.
 - **SC-008**: The final SPEC-008 review packet includes a language parity table and a feature/capability parity table with 0 unowned gaps.
 - **SC-009**: The final SPEC-008 validation evidence covers all three vertical PR slices and records self-repo dogfood results with LSP explicitly enabled.
+- **SC-010**: In correction and suppression fixtures, 100% of LSP-processed semantic references leave 0 duplicate active edges, 0 suppressed audit-only records visible through traversal/callers/callees/impact/search surfaces, and node/edge-count deltas that match only the expected correction or suppression action.
+- **SC-011**: In disabled-path index, sync, and watch-triggered sync fixtures, 100% of runs record zero LSP command probes, zero LSP subprocess starts, zero LSP JSON-RPC requests, zero LSP status writes, and graph/provenance output equivalent to the non-LSP structural path.
+- **SC-012**: In LSP-enabled validation fixtures, 100% of runs report structural-index elapsed time, LSP precision-pass elapsed time, per-language source-file and candidate counts, cap-exceeded skips, active session concurrency, and peak in-flight request counts.
+- **SC-013**: In large-repo validation fixtures, 100% of LSP-enabled runs either complete within the default per-language work/concurrency caps or report deterministic per-language skip/degrade reasons without falling back to unbounded repository-wide LSP verification.
+- **SC-014**: In retrieval regression probes, 100% of LSP-enabled correction and suppression scenarios preserve existing `codegraph_explore`, callers, callees, impact, search, and flow-building sufficiency within the current repo-size explore-call budget.
 
 ## Configuration Contract
 
@@ -231,6 +252,15 @@ Language keys use CodeGraph language ids such as `typescript`, `javascript`,
 arrays or timeouts for the current machine, but cannot activate LSP precision.
 Activation precedence is: explicit CLI enable/disable, then
 `codegraph.json.lsp.enabled === true`, then default off.
+
+Command precedence is: `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`,
+`codegraph.json.lsp.servers.<language>.command`, then the registry default or
+accepted alternatives. Timeout precedence is:
+`CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`,
+`codegraph.json.lsp.servers.<language>.timeoutMs`,
+`CODEGRAPH_LSP_TIMEOUT_MS`, `codegraph.json.lsp.defaultTimeoutMs`, then the
+registry/default timeout. Invalid command or timeout values warn and fall back
+to the next lower-precedence value.
 
 ## Assumptions
 

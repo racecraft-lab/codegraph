@@ -122,6 +122,28 @@
 - Shutdown/exit is attempted after use.
 - Crashes and timeouts produce degraded status, not whole-index failure.
 
+## Entity: LspPerformanceRecord
+
+**Purpose**: Runtime evidence for disabled-path zero work, LSP-enabled overhead, work caps, concurrency limits, and large-repo behavior.
+
+**Fields**:
+- `runId`: stable id for the index, sync, or watch-triggered sync run.
+- `enabled`: boolean effective LSP activation for the run.
+- `structuralElapsedMs`: elapsed time for structural indexing or sync before LSP work, when measured.
+- `lspElapsedMs`: elapsed time for the LSP precision pass, when LSP ran.
+- `enabledOverheadRatio`: LSP-enabled elapsed time divided by comparable non-LSP elapsed time, when a baseline exists.
+- `caps`: effective caps for active sessions, in-flight requests, full-index files, full-index work items, full-index batch size, watch files, and watch work items.
+- `activeSessionHighWatermark`: maximum simultaneous language-server sessions observed.
+- `inFlightRequestHighWatermark`: maximum simultaneous definition/reference requests observed for any session.
+- `disabledZeroWork`: optional evidence summary for disabled runs: command probes, subprocess starts, JSON-RPC requests, LSP status writes, and LSP graph mutations all observed as zero.
+- `languageCounts`: per-language source-file, candidate, checked, skipped, degraded, and cap-exceeded counts.
+
+**Validation rules**:
+- Disabled runs must record zero LSP runtime operations when the performance fixture asks for zero-work evidence.
+- Enabled runs must never exceed the active-session or in-flight request caps.
+- Full-index and watch cap skips must be recorded as reasons instead of starting unbounded fallback work.
+- Large-repo validation may report partial LSP coverage only when cap-exceeded reasons are explicit.
+
 ## Entity: EdgeVerificationWorkItem
 
 **Purpose**: Existing graph reference or edge selected for LSP verification.
@@ -133,6 +155,7 @@
 - `language`: CodeGraph language id.
 - `documentUri`: file URI.
 - `position`: line/character for LSP request.
+- `semanticReferenceKey`: normalized key for the work item, composed from source node, edge kind, reference document URI, reference line/character or origin range, and normalized reference name when available.
 - `currentProvenance`: `null | heuristic | lsp`.
 - `reason`: `definition-check | reference-check | watch-change`.
 
@@ -140,6 +163,7 @@
 - Work items are generated only after structural extraction and reference resolution.
 - Watch work items are restricted to bounded changed-file sets.
 - Generated or unindexed positions may be skipped with a status reason.
+- A completed correction or suppression may leave at most one active graph edge for the same `semanticReferenceKey`.
 
 ## Entity: NormalizedLspTarget
 
@@ -173,6 +197,8 @@
 - Only `verified` and `corrected` surviving active edges receive `provenance: "lsp"`.
 - `ambiguous` results do not create replacement edges.
 - External or unindexed unique targets may suppress a conflicting edge but must not create external graph nodes.
+- In-workspace correction results either retarget the current active edge or retire it and create one replacement, but never leave both old and new targets active for the same semantic reference key.
+- Suppressed results are inactive for graph traversal; audit data is visible only to status, debug, or audit output.
 
 ## Entity: CorrectionMetadata
 
@@ -194,6 +220,7 @@
 **Validation rules**:
 - Suppressed edges do not remain active solely for audit history.
 - Metadata must be queryable enough for status and debug output.
+- Suppression metadata does not participate in callers, callees, impact, search, or flow traversal as an active edge.
 
 ## Entity: LanguageCoverageRecord
 
@@ -210,6 +237,8 @@
 - `suppressedEdges`: integer.
 - `skippedByReason`: map of reason to count.
 - `degradedReason`: optional string.
+- `capExceededReason`: optional string for full-index or watch work caps.
+- `elapsedMs`: optional language-specific LSP elapsed time.
 
 **Validation rules**:
 - Languages with no files report `not-present`, not failure.
@@ -281,4 +310,3 @@ pending -> partially-verified
 pending -> degraded
 future-owned
 ```
-

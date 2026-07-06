@@ -92,10 +92,27 @@ LSP watch verification runs only when all conditions hold:
 
 When the changed-file set is absent or unbounded, watch verification is skipped and status records the reason.
 
+## Performance Bounds
+
+When LSP is disabled for `index`, `sync`, or watch-triggered sync, the LSP runtime path is dormant: no server command probing, no server subprocess startup, no JSON-RPC messages, no LSP status/correction/audit writes, and no LSP graph mutations.
+
+When LSP is enabled, SPEC-008 uses fixed default runtime bounds:
+
+| Bound | Default |
+|---|---:|
+| Active language-server sessions per project | 2 |
+| In-flight definition/reference requests per session | 8 |
+| Full-index source files per language | 2,000 |
+| Full-index candidate work items per language | 10,000 |
+| Full-index LSP batch size | 250 work items |
+| Watch changed source files per bounded batch | 100 |
+| Watch candidate work items per language per batch | 1,000 |
+
+Exceeded full-index bounds skip the excess LSP work for that language with `full-index-file-cap-exceeded` or `full-index-work-cap-exceeded`. Exceeded watch bounds use the watch skip reasons from the status contract. Structural indexing results remain intact, and CodeGraph must not replace skipped work with an unbounded repository-wide LSP pass.
+
 ## Non-Goals Enforced by This Contract
 
 - No auto-install of language servers.
 - No auto-enable based on `PATH` detection.
 - No CodeGraph-as-LSP-server behavior.
 - No rename or refactor behavior.
-

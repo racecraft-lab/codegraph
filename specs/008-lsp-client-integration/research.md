@@ -116,6 +116,31 @@
 - Run full-project LSP verification on every watch event: rejected for performance and stability.
 - Add a second watcher pipeline: rejected as unnecessary complexity.
 
+## Decision: Use fixed SPEC-008 LSP performance caps before adding user-facing tuning
+
+**Rationale**: LSP requests run against user-managed subprocesses, so SPEC-008 needs explicit default work and concurrency limits before issuing requests. CodeGraph already uses bounded-worker precedents for parsing, query serving, and endpoint-style batches: leave a core for the main loop, cap cold starts, process work in bounded chunks, and report skips instead of silently expanding work. LSP also permits parallel request handling when correctness is preserved, but correctness still depends on initialize ordering, per-request responses, and bounded cancellation/timeout handling.
+
+**Accepted defaults**:
+- Disabled index/sync/watch paths do zero LSP runtime work.
+- LSP-enabled full index runs at most two language-server sessions per project.
+- Each language-server session runs at most eight in-flight definition/reference requests.
+- Full-index verification considers at most 2,000 source files and 10,000 candidate work items per language per run.
+- Full-index work is processed in batches of at most 250 LSP work items.
+- Existing watch bounds remain 100 changed source files and 1,000 candidate work items per language per bounded watch batch.
+
+**Alternatives considered**:
+- Expose user-facing concurrency knobs in SPEC-008: rejected as premature; fixed defaults are enough to make the first implementation bounded and reviewable.
+- Let full-index LSP verification exhaustively process every source file and candidate edge: rejected because large repositories could turn opt-in precision into an unbounded subprocess workload.
+- Disable LSP entirely when a full-index cap is exceeded: rejected because partial coverage with explicit cap-exceeded reasons is more useful than discarding all verified languages.
+
+## Decision: Treat retrieval sufficiency as part of LSP performance validation
+
+**Rationale**: LSP correction can improve precision, but extra active edges, visible suppressed audit rows, or changed query output can push agents back to fallback file reads. SPEC-008 therefore validates performance not only by elapsed time and work caps, but also by whether existing retrieval surfaces remain sufficient after LSP-enabled correction and suppression.
+
+**Alternatives considered**:
+- Measure only elapsed indexing time: rejected because retrieval output sufficiency is a protected project performance surface.
+- Validate only correction metadata: rejected because audit data that leaks into traversal/query surfaces would still degrade agent behavior.
+
 ## Decision: Preserve one spec with three vertical slices
 
 **Rationale**: The clarified scope requires broad parity ownership, but a single large implementation would be hard to review. Three vertical slices keep each PR independently testable while preserving one SPEC-008 feature contract.
@@ -128,4 +153,3 @@
 **Alternatives considered**:
 - One large PR: rejected for reviewability risk.
 - Child specs for every language: rejected because the parity gate must be planned now and most language rows can share the same LSP client path.
-

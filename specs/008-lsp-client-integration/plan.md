@@ -22,7 +22,7 @@ SPEC-008 adds an opt-in LSP precision pass to the existing CodeGraph indexing pi
 
 **Project Type**: TypeScript library + CLI + MCP server.
 
-**Performance Goals**: Zero LSP overhead and byte-compatible graph behavior when LSP is disabled; bounded per-language work when enabled; no noisy duplicate edges; callers/impact/search behavior must not regress on non-LSP or heuristic-only repos.
+**Performance Goals**: Zero LSP runtime work and byte-compatible graph behavior when LSP is disabled; bounded per-language work when enabled; explicit session/request concurrency limits; deterministic skip/degrade reasons when caps are exceeded; no noisy duplicate edges; and no regression to retrieval tool sufficiency. LSP correction preserves one active edge per verified semantic reference, and any suppressed audit history is excluded from traversal/query surfaces by default. LSP-enabled validation records structural-index elapsed time, LSP pass elapsed time, work counts, cap skips, active session concurrency, peak in-flight request count, and retrieval regression probe results.
 
 **Constraints**: Default-off; explicit opt-in only; no auto-install; no CodeGraph-as-LSP-server; no rename/refactor behavior; no network calls beyond user-configured local subprocess commands; normal runtime degrades per language; SPEC-008 validation is strict about real-server prerequisites and parity ownership.
 
@@ -106,9 +106,9 @@ __tests__/
 
 | Slice | Scope | Languages | Completion evidence |
 |---|---|---|---|
-| 1. Activation/config/status/client/prereq + complete TypeScript/JavaScript path | `codegraph.json.lsp`, env overrides, CLI enable/disable precedence, status skeleton, prereq detection, JSON-RPC lifecycle, first precision-pass path | TypeScript, JavaScript | Non-LSP byte-compatible fixture, config precedence tests, fake protocol tests, real `typescript-language-server --stdio` validation, status shows observed version and coverage |
-| 2. Correction/status generalization + middle language expansion | Unique-target correction/suppression, correction metadata, aggregate status counters, shared server adapters and fixtures | Python, Go, Rust, C, C++, Swift, Java | Fake ambiguity/correction tests, real-server prereq and smoke validation for each language, callers/impact/search regression probes |
-| 3. Remaining baseline servers/dispositions + watch + parity matrices + dogfood | Remaining server adapters, bounded watch verification, full language/capability parity evidence, self-repo validation packet | C#, Kotlin, PHP, Ruby, Dart, Vue, COBOL disposition | Real-server evidence for implemented LSP rows, COBOL parser/resolver evidence plus SPEC-024 owner, watch bounds tests, self-repo `index --lsp`, status coverage, final parity tables with 0 unowned rows |
+| 1. Activation/config/status/client/prereq + complete TypeScript/JavaScript path | `codegraph.json.lsp`, env overrides, CLI enable/disable precedence, status skeleton, prereq detection, JSON-RPC lifecycle, first precision-pass path | TypeScript, JavaScript | Non-LSP byte-compatible and zero-LSP-runtime-work fixture, config precedence tests, fake protocol tests, real `typescript-language-server --stdio` validation, status shows observed version and coverage |
+| 2. Correction/status generalization + middle language expansion | Unique-target correction/suppression, correction metadata, aggregate status counters, shared server adapters and fixtures | Python, Go, Rust, C, C++, Swift, Java | Fake ambiguity/correction tests, real-server prereq and smoke validation for each language, callers/impact/search regression probes, LSP work-count and concurrency evidence |
+| 3. Remaining baseline servers/dispositions + watch + parity matrices + dogfood | Remaining server adapters, bounded watch verification, full language/capability parity evidence, self-repo validation packet | C#, Kotlin, PHP, Ruby, Dart, Vue, COBOL disposition | Real-server evidence for implemented LSP rows, COBOL parser/resolver evidence plus SPEC-024 owner, watch bounds tests, large-repo performance evidence, self-repo `index --lsp`, status coverage, final parity tables with 0 unowned rows |
 
 ## Activation, Config, and Watch Contract
 
@@ -142,15 +142,92 @@ Environment overrides:
 | `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS` | Timeout for one language | None |
 | `CODEGRAPH_LSP_TIMEOUT_MS` | Default timeout for all LSP servers unless language-specific timeout wins | None |
 
+Command precedence:
+
+1. `CODEGRAPH_LSP_<LANG>_COMMAND_JSON`
+2. `codegraph.json.lsp.servers.<language>.command`
+3. Registry default command or accepted alternatives in listed order
+
+Configured argv that is syntactically valid but unavailable is reported as
+unavailable instead of silently falling back to lower-precedence registry
+alternatives.
+
+Timeout precedence:
+
+1. `CODEGRAPH_LSP_<LANG>_TIMEOUT_MS`
+2. `codegraph.json.lsp.servers.<language>.timeoutMs`
+3. `CODEGRAPH_LSP_TIMEOUT_MS`
+4. `codegraph.json.lsp.defaultTimeoutMs`
+5. Registry/default timeout
+
+Invalid command or timeout values warn and fall back to the next
+lower-precedence value.
+
 Incremental watch verification runs only when LSP is effectively enabled, after the normal sync/reference-resolution path, and only for bounded changed-file sets from the existing watcher. When a bounded changed-file list is unavailable, LSP watch verification is skipped with a recorded status reason.
+
+Measurable watch bounds for SPEC-008 are:
+
+- Max changed source files per bounded watch batch: 100.
+- Max LSP candidate work items per language per watch batch: 1,000.
+- No repository-wide LSP pass may start from watch when the changed-file set is absent, unbounded, or over either limit.
+- Over-limit, absent, or unbounded batches skip LSP watch verification with a stable status reason and leave structural sync results intact.
 
 ## Prerequisite and Version Evidence Policy
 
+- Command probing uses the same registry/prereq source of truth for CLI, status,
+  validation, and watch paths. Bare executables resolve through the current
+  process `PATH`; absolute or relative argv paths are used as configured.
+- Registry alternatives are tried in listed order only when no higher-precedence
+  command is configured. A configured argv that cannot be resolved records the
+  language as unavailable rather than trying lower-precedence alternatives.
+- Status and validation record the selected argv, resolved executable path when
+  available, observed version/serverInfo when available, unavailable-command
+  state, and expected command alternatives.
+- Human and JSON status use stable reason codes plus short detail for every unavailable, skipped, or degraded LSP entry. Required categories distinguish missing default command, configured command unavailable, server crash, initialize timeout, request timeout, malformed protocol response, shutdown failure, absent or unbounded watch batch, oversized watch batch, language not present, language not applicable, and validation-only prerequisite failure. Command reasons include selected argv and expected alternatives when relevant. Exact versions remain evidence, not normal runtime success criteria.
 - SPEC-008 validation records observed server command, resolved executable path when available, observed version from `--version` or LSP `initialize.serverInfo`, platform, CodeGraph version/commit, and timestamp.
 - Exact server versions are evidence, not pins. The artifacts do not require a fixed version unless a server's own current minimum runtime requirement makes older versions invalid.
 - Upstream minimum runtime requirements are captured as text evidence during validation, without outbound links in spec artifacts.
 - Missing real-server prerequisites stop SPEC-008 validation before completion, but normal `codegraph index --lsp` degrades only the affected language.
 - The missing-prereq message shape remains: `SPEC-008 real-server validation prerequisites failed. Missing required local language servers: <language>: expected <command or alternatives>. Install the server or configure codegraph.json/environment overrides. Normal codegraph index --lsp still degrades per language; this failure applies only to SPEC-008 validation.`
+
+## Runtime Restart and Retry Policy
+
+- Normal indexing and bounded watch verification never use an unbounded language-server restart loop.
+- A server crash, initialize timeout, request timeout, malformed protocol response, or shutdown failure degrades only that language for the current run or bounded watch batch.
+- At most one fresh session restart may be attempted per language per run or bounded watch batch. After the retry budget is exhausted, remaining candidates for that language are skipped with a degraded reason.
+- The one-restart budget is keyed by language and by explicit index/sync run or bounded watch batch.
+- Repeated file-watch debounce cycles for the same still-pending failed changed-file set do not create a new LSP batch and MUST NOT reset the restart budget.
+- The restart budget may reset only when a user runs an explicit index/sync command or when watch observes a materially new bounded changed-file batch whose changed-file set differs from the failed batch.
+- Any watch retry or reprobe follows the existing watcher debounce/backoff cadence; SPEC-008 does not add a tight independent retry timer.
+- Shutdown/exit is best-effort and advisory; shutdown failure is reported but does not fail normal indexing.
+
+## Performance Budgets and Large-Repo Behavior
+
+Disabled LSP precision is a zero-runtime-work path for `index`, `sync`, and watch-triggered sync: activation may resolve to disabled, but the LSP subsystem does not probe commands, spawn subprocesses, send JSON-RPC messages, write LSP status/correction/audit data, or mutate graph rows. Status may read already-recorded LSP fields, but it does not launch servers unless an explicit validation command asks for prerequisite evidence.
+
+LSP-enabled full indexing uses fixed default bounds in SPEC-008 rather than a new user-facing concurrency API:
+
+| Budget | Default | Behavior when exceeded |
+|---|---:|---|
+| Active language-server sessions per project | 2 | Queue remaining languages; do not spawn more sessions |
+| In-flight definition/reference requests per session | 8 | Queue remaining requests for that server |
+| Full-index source files per language | 2,000 | Skip excess LSP verification for that language with `full-index-file-cap-exceeded` |
+| Full-index candidate work items per language | 10,000 | Skip excess LSP verification for that language with `full-index-work-cap-exceeded` |
+| Full-index LSP batch size | 250 work items | Process the next batch only after capacity is available |
+| Bounded watch changed source files | 100 | Skip the watch batch or affected language with the existing oversized watch reason |
+| Bounded watch candidate work items per language | 1,000 | Skip the affected language with the existing oversized watch reason |
+
+The LSP client may keep one initialized session warm while queued work remains for that language, but initialize, requests, shutdown, and any restart follow the same timeout and one-restart policy. stdout and stderr are drained for every subprocess while it is alive so a verbose server cannot block on a full pipe.
+
+Large repositories are intentionally bounded instead of exhaustive by default. If a language exceeds the full-index file or work-item caps, CodeGraph preserves structural indexing results, reports partial LSP coverage with the cap-exceeded reason, and never substitutes an unbounded repository-wide LSP pass. Future specs may add configurable tuning if real validation shows the defaults are too conservative.
+
+Performance evidence recorded for every LSP-enabled validation run:
+
+- Structural-index elapsed time and LSP precision-pass elapsed time.
+- Enabled-overhead ratio when a comparable non-LSP baseline run exists.
+- Per-language source-file count, candidate work-item count, checked count, skipped/degraded count, and cap-exceeded reason counts.
+- Active language-server session high-water mark and per-session in-flight request high-water mark.
+- Retrieval regression probe result for `codegraph_explore`, callers, callees, impact, search, and flow-building surfaces.
 
 ## Language Parity Matrix
 
@@ -205,7 +282,10 @@ Incremental watch verification runs only when LSP is effectively enabled, after 
 
 1. Unit and contract tests prove config parsing, env override validation, CLI precedence, JSON-RPC lifecycle, unique-target normalization, correction metadata, status counters, and watch bounds.
 2. Fake LSP fixtures cover deterministic success, ambiguity, missing server, crash, timeout, malformed response, external target suppression, and generated/unindexed targets.
-3. Real-server validation records observed version evidence for every SPEC-008-owned language row.
-4. Regression probes compare non-LSP indexing behavior and retrieval surfaces before and after LSP-enabled paths.
-5. Self-repo dogfood runs `codegraph index` without LSP, `codegraph index --lsp`, `codegraph status`, and targeted correction/status probes.
-
+3. Data-integrity fixtures prove in-workspace corrections leave exactly one active edge for the semantic reference, external/generated/unindexed suppressions leave no replacement active edge, suppressed audit history is absent from callers/callees/impact/search traversal surfaces, and node/edge-count deltas match the expected correction or suppression action.
+4. Real-server validation records observed version evidence for every SPEC-008-owned language row.
+5. Disabled-path performance fixtures compare `index`, `sync`, and watch-triggered sync with LSP disabled and assert zero LSP command probes, subprocess starts, JSON-RPC requests, LSP status writes, and graph/provenance differences.
+6. LSP-enabled performance fixtures record structural-index elapsed time, LSP precision-pass elapsed time, work counts, cap skips, session/request concurrency high-water marks, and enabled-overhead ratio when a comparable non-LSP baseline exists.
+7. Large-repo validation covers representative small, medium, and large repositories or fixtures and proves bounded completion or deterministic per-language skip/degrade reasons under default caps.
+8. Retrieval regression probes compare non-LSP and LSP-enabled outputs for `codegraph_explore`, callers, callees, impact, search, and flow-building surfaces before and after correction/suppression paths, using the current repo-size explore-call budget.
+9. Self-repo dogfood runs `codegraph index` without LSP, `codegraph index --lsp`, `codegraph status`, and targeted correction/status/performance probes.

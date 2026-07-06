@@ -23,6 +23,13 @@ This contract defines status output and strict SPEC-008 real-server validation b
 | `lsp.edgeCounts.suppressed` | Count of conflicting active edges suppressed due to unique external/unindexed targets |
 | `lsp.edgeCounts.skippedByReason` | Map of skip reasons to counts |
 | `lsp.edgeCounts.degraded` | Count of candidate edges skipped due to unavailable server/language degradation |
+| `lsp.performance.structuralElapsedMs` | Structural-index elapsed time for the comparable run, when recorded |
+| `lsp.performance.lspElapsedMs` | LSP precision-pass elapsed time, when LSP ran |
+| `lsp.performance.enabledOverheadRatio` | Ratio of LSP-enabled elapsed time to comparable non-LSP elapsed time, when available |
+| `lsp.performance.activeSessionHighWatermark` | Maximum simultaneous language-server sessions observed |
+| `lsp.performance.inFlightRequestHighWatermark` | Maximum simultaneous definition/reference requests observed for any session |
+| `lsp.performance.caps` | Effective full-index and watch work/concurrency caps |
+| `lsp.performance.zeroWorkWhenDisabled` | Disabled-path evidence that no LSP runtime work occurred, when validation records it |
 
 ### Server record
 
@@ -35,6 +42,18 @@ This contract defines status output and strict SPEC-008 real-server validation b
 | `minimumRuntimeEvidence` | Text evidence for upstream minimum runtime when relevant |
 | `lastError` | Short failure text when unavailable/crashed/timed out |
 
+### Performance record
+
+| Field | Meaning |
+|---|---|
+| `language` | CodeGraph language id or `all` for run-level disabled-path evidence |
+| `sourceFilesSeen` | Source files considered for LSP work |
+| `candidateWorkItems` | Candidate LSP work items before cap skips |
+| `checkedWorkItems` | Candidate work items actually sent to LSP |
+| `skippedByReason` | Map of performance, applicability, and degradation skip reasons to counts |
+| `capExceededReasons` | Full-index or watch cap reasons observed for this language |
+| `elapsedMs` | Language-specific LSP elapsed time when measurable |
+
 ## Normal Runtime Degradation
 
 During normal `codegraph index --lsp`:
@@ -44,6 +63,7 @@ During normal `codegraph index --lsp`:
 - Other available language servers may still verify their languages.
 - Structural indexing succeeds unless a non-LSP indexing failure occurs.
 - Status names unavailable languages and degraded reasons.
+- Full-index caps, watch caps, and concurrency caps report skip/degrade reasons rather than silently broadening work.
 
 ## SPEC-008 Validation Prereq Check
 
@@ -81,4 +101,3 @@ Validation fails if any language or capability parity row is unowned. Valid owne
 - Future-owned by SPEC-024 or another concrete numbered child spec.
 
 Generic backlog ownership is invalid.
-

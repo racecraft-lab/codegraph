@@ -37,6 +37,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [contracts/config-and-activation.md](contracts/config-and-activation.md)
 - [contracts/edge-correction.md](contracts/edge-correction.md)
 - [contracts/status-and-prereqs.md](contracts/status-and-prereqs.md)
+- [checklists/data-integrity.md](checklists/data-integrity.md)
+- [checklists/integration.md](checklists/integration.md)
+- [checklists/performance.md](checklists/performance.md)
+- [checklists/reliability.md](checklists/reliability.md)
 - [checklists/requirements.md](checklists/requirements.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

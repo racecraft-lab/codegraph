@@ -36,8 +36,8 @@ plus feature parity against the internal baseline is a no-waiver gate.
 | Specify | `$speckit-specify` | ✅ Complete | G1 passed; 28 FRs, 4 user stories, 14 acceptance scenarios |
 | Clarify | `$speckit-clarify` | ✅ Complete | G2 passed; prereqs, parity, correction semantics, config, and slices resolved |
 | Plan | `$speckit-plan` | ✅ Complete | G3 passed; parity tables have 0 unowned rows |
-| Checklist | `$speckit-checklist` | 🔄 In Progress | Run integration, reliability, performance, and data-integrity domains |
-| Tasks | `$speckit-tasks` | ⏳ Pending | Generate slice-aware tasks |
+| Checklist | `$speckit-checklist` | ✅ Complete | G4 passed; 90 checklist items, 0 gaps |
+| Tasks | `$speckit-tasks` | 🔄 In Progress | Generate slice-aware tasks |
 | Analyze | `$speckit-analyze` | ⏳ Pending | Check drift against Design Concept and roadmap |
 | Implement | `$speckit-implement` | ⏳ Pending | TDD-first, real-server validation gate |
 
@@ -454,11 +454,11 @@ Focus on SPEC-008 LSP Client Integration requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| integration | ⏳ | | |
-| reliability | ⏳ | | |
-| data-integrity | ⏳ | | |
-| performance | ⏳ | | |
-| **Total** | ⏳ | | |
+| integration | 27 | 0 | Added command/PATH probing, restart/degrade policy, and timeout precedence detail to spec/plan |
+| reliability | 18 | 0 | Added stable reason codes, measurable watch bounds, and restart-budget rules to spec/plan |
+| data-integrity | 21 | 0 | Added active-edge uniqueness, replace-vs-suppress rules, traversal exclusion for suppressed audit data, and duplicate/count-stability criteria |
+| performance | 24 | 0 | Added disabled-overhead invariants, enabled-run telemetry, full-index caps, concurrency limits, large-repo checks, and retrieval-sufficiency regression criteria |
+| **Total** | 90 | 0 | G4 passed: `{"gate":"G4","pass":true,"reason":"0 [Gap] markers","markers":0,"details":[]}` |
 
 ---
 
