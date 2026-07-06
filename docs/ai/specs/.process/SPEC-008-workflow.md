@@ -39,7 +39,7 @@ plus feature parity against the internal baseline is a no-waiver gate.
 | Checklist | `$speckit-checklist` | ✅ Complete | G4 passed; 90 checklist items, 0 gaps |
 | Tasks | `$speckit-tasks` | ✅ Complete | G5 passed; 114 tasks across 7 phases |
 | Analyze | `$speckit-analyze` | ✅ Complete | G6 passed; 5 findings remediated, 0 remaining |
-| Implement | `$speckit-implement` | 🔄 In Progress | Foundation checkpoint `fb6b893`; US1 checkpoint `08a31ad`; US2 checkpoint `d1165ea`; next marker: US3 T050-T062 |
+| Implement | `$speckit-implement` | ✅ Complete | Foundation checkpoint `fb6b893`; US1 checkpoint `08a31ad`; US2 checkpoint `89808b3`; US3 checkpoint `3c993c6`; US4 checkpoint `45a5f85`; G7 passed |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -657,11 +657,10 @@ Verification expected before completion:
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
 | Foundation - LSP scaffolding, config, registry, status, provenance | ✅ | T001-T018 | Checkpoint `fb6b89399e3dc32abce0b2917449ce7ed3896fc1`; evidence: `specs/008-lsp-client-integration/validation/foundation.md`; typecheck, focused tests, build, forbidden-name scan, and outbound-link scan passed |
-| Slice 1 - Core client/config/status + first complete language path | ✅ | T019-T037 | Checkpoint `08a31ad81df7e27ee3d95377039ec72fa2d2b0e4`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; typecheck, focused tests, build, real-server validation, restricted-name scan, and outbound-link scan passed |
-| US2 config/status behavior (Slice 1) | ✅ | T038-T049 | Checkpoint `d1165ea`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; focused config/prereq tests, expanded LSP focused suite, typecheck, build, and diff check passed |
-| Slice 2 - Degradation/correction + middle language expansion | ⏳ | T050-T083 | Pending |
-| Slice 3 - Remaining servers + watch/status/dogfood | ⏳ | T084-T114 | Pending |
-| Polish - Docs, validation packet, final gates | ⏳ | | Pending |
+| Slice 1 - Core client/config/status + first complete language path | ✅ | T019-T049 | Checkpoints `08a31ad81df7e27ee3d95377039ec72fa2d2b0e4` and `89808b3c5472eabedebc4c65c93892f55efd1bcb`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; typecheck, focused tests, build, TypeScript/JavaScript real-server validation, restricted-name scan, and outbound-link scan passed |
+| Slice 2 - Edge correction + middle language expansion | ✅ | T050-T062 | Checkpoint `3c993c6cb813a76d299aa882f45972efe7c47285`; evidence: `specs/008-lsp-client-integration/validation/slice-2.md`; focused tests, typecheck, build, restricted-name scan, and outbound-link scan passed |
+| Slice 3 - Remaining servers + watch/status/dogfood | ✅ | T063-T114 | Checkpoint `45a5f85`; evidence: `specs/008-lsp-client-integration/validation/final-packet.md`; build, typecheck, full test suite, combined full verify, real-server validation, parity gate, retrieval probe, restricted-name scan, and outbound-link scan passed |
+| Polish - Docs, validation packet, final gates | ✅ | T106-T114 | Folded into US4 marker; final packet generated and all final validation commands passed |
 
 ---
 
@@ -669,7 +668,7 @@ Verification expected before completion:
 
 | Phase | Item | Status | Notes |
 |-------|------|--------|-------|
-| Post | Post: Doctor Extension Check | ⏳ Pending | Doctor extension availability to be checked |
+| Post | Post: Doctor Extension Check | 🔄 In Progress | Doctor extension availability to be checked |
 | Post | Post: Verify Implementation | ⏳ Pending | Verify extension is installed |
 | Post | Post: Verify Tasks Phantom Check | ⏳ Pending | Verify-tasks extension is installed |
 | Post | Post: Code Review | ⏳ Pending | Built-in post-implementation review |
@@ -682,15 +681,15 @@ Verification expected before completion:
 | Post | Post: Review Remediation | ⏳ Pending | Monitor and resolve review comments |
 | Post | Post: Retrospective | ⏳ Pending | Final retrospective artifact |
 
-- [ ] All tasks marked complete in `specs/008-lsp-client-integration/tasks.md`
-- [ ] `npm run build` passes
-- [ ] `npm run typecheck` passes
-- [ ] `npm test` passes
-- [ ] Real-server validation passes for all required language servers
-- [ ] Language parity table has no unowned or backlog-only gaps
-- [ ] Feature/capability parity table has no unowned or backlog-only gaps
-- [ ] Self-repo LSP dogfood evidence recorded
-- [ ] Non-LSP indexing regression evidence recorded
+- [X] All tasks marked complete in `specs/008-lsp-client-integration/tasks.md`
+- [X] `npm run build` passes
+- [X] `npm run typecheck` passes
+- [X] `npm test` passes
+- [X] Real-server validation passes for all required language servers
+- [X] Language parity table has no unowned or backlog-only gaps
+- [X] Feature/capability parity table has no unowned or backlog-only gaps
+- [X] Self-repo LSP dogfood evidence recorded
+- [X] Non-LSP indexing regression evidence recorded
 - [ ] Final reviewability gate passes
 - [ ] PR packet generated and validated
 
