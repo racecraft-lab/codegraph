@@ -448,9 +448,12 @@ describe('Shared MCP daemon (issue #411)', () => {
     await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, 8000, 25, '#662 daemon lockfile pid');
     const daemonPid = readLockPid(realRoot)!;
 
-    // A warm call goes through the daemon.
-    sendMessage(server.child, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'codegraph_status', arguments: {} } });
-    await waitFor(() => findResponse(server.stdout, 2), 20000, 25, '#662 warm tools/call response (id 2)');
+    // A warm request goes through the daemon. Use tools/list here because this
+    // lifecycle test only needs to prove the transport is alive; project-scoped
+    // tool execution is covered by the MCP tool suites and can be much slower on
+    // saturated hosted macOS runners.
+    sendMessage(server.child, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    await waitFor(() => findResponse(server.stdout, 2), 20000, 25, '#662 warm tools/list response (id 2)');
 
     // Kill the daemon out from under the live proxy.
     process.kill(daemonPid, 'SIGTERM');
@@ -459,7 +462,7 @@ describe('Shared MCP daemon (issue #411)', () => {
     // The proxy must still be alive and still answer — served in-process now.
     expect(isAlive(server.child.pid!)).toBe(true);
     await waitFor(() => server.stderr.some((l) => l.includes('serving this session in-process')), 8000, 25, '#662 in-process fallback log');
-    sendMessage(server.child, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'codegraph_status', arguments: {} } });
+    sendMessage(server.child, { jsonrpc: '2.0', id: 3, method: 'tools/list' });
     const resp = await waitFor(() => findResponse(server.stdout, 3), 15000, 25, '#662 post-fallback response (id 3)');
     expect(resp.result !== undefined || resp.error !== undefined).toBe(true);
     expect(isAlive(server.child.pid!)).toBe(true);
