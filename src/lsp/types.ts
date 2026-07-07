@@ -72,6 +72,7 @@ export interface EffectiveLspConfig {
   defaultTimeoutMs: number;
   watchEnabled: boolean;
   servers: Record<LspLanguage, EffectiveLspServerConfig>;
+  performanceCaps: LspPerformanceCaps;
   warnings: LspConfigWarning[];
 }
 
@@ -82,7 +83,8 @@ export interface LspConfigWarning {
     | 'invalid-command'
     | 'project-command-ignored'
     | 'invalid-timeout'
-    | 'invalid-watch';
+    | 'invalid-watch'
+    | 'invalid-caps';
   source: 'project' | 'env';
   language?: string;
   detail: string;

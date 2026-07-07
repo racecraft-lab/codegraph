@@ -921,6 +921,46 @@ describe('LSP precision provenance foundation', () => {
     expect(status.performance.enabledOverheadRatio).toBeGreaterThanOrEqual(1);
   });
 
+  it('honors committed lsp.caps from codegraph.json when no explicit performanceCaps option is supplied', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const tsServer = makeExecutable(dir, 'typescript-lsp');
+    fs.writeFileSync(path.join(dir, 'codegraph.json'), JSON.stringify({
+      lsp: { enabled: true, caps: { fullIndexWorkItemsPerLanguage: 1 } },
+    }));
+    const config = resolveLspConfig({
+      projectRoot: dir,
+      cliActivation: 'enable',
+      env: {
+        PATH: '',
+        CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([tsServer, '--stdio']),
+      },
+    });
+
+    const status = await runLspPrecisionPass({
+      projectRoot: dir,
+      queries: mockQueries([
+        makeCandidate({ edgeId: 1, sourceFilePath: 'a.ts' }),
+        makeCandidate({ edgeId: 2, sourceFilePath: 'a.ts' }),
+      ], makeTargetNode()),
+      config,
+      clientFactory: {
+        create: () => ({
+          initialize: async () => ({ serverInfo: { name: 'caps-ts-lsp' } }),
+          request: async () => ({
+            uri: pathToFileURL(path.join(dir, 'typescript/target.ts')).href,
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
+          }),
+          shutdown: async () => undefined,
+        }),
+      },
+    });
+
+    expect(status.performance.caps.fullIndexWorkItemsPerLanguage).toBe(1);
+    expect(status.edgeCounts.checked).toBe(1);
+    expect(status.edgeCounts.skippedByReason['full-index-work-cap-exceeded']).toBe(1);
+  });
+
   it('normalizes Location and LocationLink targets by selection range and deduplicates them', async () => {
     const { normalizeLspTargets } = await import('../src/lsp');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));

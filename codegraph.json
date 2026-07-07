@@ -1,5 +1,8 @@
 {
   "lsp": {
-    "enabled": true
+    "enabled": true,
+    "caps": {
+      "fullIndexWorkItemsPerLanguage": 1000000000
+    }
   }
 }

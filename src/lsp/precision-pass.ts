@@ -27,7 +27,6 @@ import {
 import {
   createInitialLspStatus,
   createLspCoverageRecord,
-  defaultLspPerformanceCaps,
   evaluateLspWatchBatchScope,
   recordLspCapExceeded,
   recordLspChecked,
@@ -108,7 +107,7 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
   if (!options.config.enabled) return status;
 
   const started = Date.now();
-  const caps = options.performanceCaps ?? defaultLspPerformanceCaps();
+  const caps = options.performanceCaps ?? options.config.performanceCaps;
   const clientFactory = options.clientFactory ?? DEFAULT_CLIENT_FACTORY;
   const watch = options.watch;
   const watchChangedFiles = Array.isArray(watch?.changedSourceFiles)
