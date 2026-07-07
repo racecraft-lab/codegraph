@@ -56,9 +56,13 @@ import { CodeGraphPackageVersion } from './mcp/version';
 import { segmentLookupVariants, splitIdentifierSegments } from './search/identifier-segments';
 import { createYielder } from './resolution/cooperative-yield';
 import { logWarn } from './errors';
-import { loadEmbeddingConfig, plaintextRemoteWarning, redactEndpoint } from './embeddings/config';
+import { loadEmbeddingConfig, isEmbeddingProviderOff, plaintextRemoteWarning, redactEndpoint, LOCAL_VECTOR_MODEL, displayEmbeddingModel, type EmbeddingProviderSelection } from './embeddings/config';
 import { EndpointProvider } from './embeddings/endpoint-provider';
+import { LocalProvider } from './embeddings/local-provider';
+import type { LocalProviderOverrides } from './embeddings/local-provider';
 import { runEmbeddingPass } from './embeddings/indexer-hook';
+import { probeLocalModelCache } from './embeddings/model-fetch';
+import type { ProbeLocalModelCacheOverrides } from './embeddings/model-fetch';
 
 // Re-export types for consumers
 export * from './types';
@@ -129,6 +133,16 @@ export interface IndexOptions {
 
   /** Enable verbose logging (worker lifecycle, memory, timeouts) */
   verbose?: boolean;
+
+  /**
+   * Override the embedding provider for this single call only — `'local'`,
+   * `'endpoint'`, or `'off'` (SPEC-002 FR-002). Threaded straight into
+   * `loadEmbeddingConfig` as `providerOverride`, taking precedence over
+   * `CODEGRAPH_EMBEDDING_PROVIDER` for this one `indexAll`/`sync` call; omit to
+   * resolve from the environment as-is. This is what `codegraph index
+   * --embeddings <provider>` sets.
+   */
+  embeddingsProvider?: EmbeddingProviderSelection;
 }
 
 /**
@@ -142,15 +156,55 @@ export interface EmbeddingCoverageStatus {
   percent: number;
 }
 
-/** Active embedding status: the feature is on (both URL and MODEL set, FR-001). */
+/**
+ * Distinct, best-effort reason a LOCAL-provider status shows 0% coverage
+ * (SPEC-002 FR-020), derived at status time from a network-free filesystem
+ * probe of the model cache ({@link probeLocalModelCache} in
+ * `src/embeddings/model-fetch.ts`) — never from a persisted record of a past
+ * pass's actual abort (none is kept; see `embedding_*` metadata keys, which
+ * stay exactly `embedding_dims`/`embedding_model`):
+ *  - `offline` — the model/tokenizer are not present+verified in the cache.
+ *    Also covers a discarded checksum mismatch: a failed download's bytes are
+ *    ALWAYS discarded before promotion (FR-014), so a mismatch and "never
+ *    attempted" leave the identical on-disk footprint (FR-020's own allowance
+ *    for a generic reason when the transient one isn't persisted);
+ *  - `cache` — the resolved cache directory itself is invalid/unwritable;
+ *  - `invalid-base-url` — the model is not cached AND `CODEGRAPH_MODEL_BASE_URL`
+ *    is set but unusable (unparseable, or a non-http/https scheme), so a download
+ *    would fail on the override, not on connectivity — "retry online" would misdirect;
+ *  - `session-init-timeout` — the model IS present+verified in cache, so the
+ *    skip must be downstream of acquisition (worker/session init or inference).
+ * `misconfig` is deliberately NOT a member here: an invalid/unrecognized
+ * provider selection reports via {@link EmbeddingStatusMisconfigured} instead
+ * — a wholly different (non-`active`) branch of {@link EmbeddingStatus}.
+ */
+export type LocalEmbeddingSkipReason = 'offline' | 'cache' | 'session-init-timeout' | 'invalid-base-url' | 'insecure-permissions';
+
+/** Active embedding status: the feature is on (FR-001, or an explicit SPEC-002 local selection). */
 export interface EmbeddingStatusActive {
   active: true;
-  /** Endpoint redacted to scheme + host + port only — never userinfo/path/query (FR-023). */
-  endpoint: string;
+  /**
+   * Which provider produced this status (SPEC-002 FR-021): the SPEC-001 HTTP
+   * endpoint, or the bundled local model. A dedicated discriminant rather than
+   * overloading `endpoint` — `endpoint` is meaningful ONLY for `'endpoint'`.
+   */
+  provider: 'endpoint' | 'local';
+  /**
+   * Endpoint redacted to scheme + host + port only — never userinfo/path/query
+   * (FR-023). Present only when `provider === 'endpoint'`; the local provider
+   * has no endpoint to report.
+   */
+  endpoint?: string;
   model: string;
   /** Enforced/inferred dimension, or null when neither a scalar nor config supplies one. */
   dims: number | null;
   coverage: EmbeddingCoverageStatus;
+  /**
+   * See {@link LocalEmbeddingSkipReason}. Present only when `provider ===
+   * 'local'` and there was something to embed but nothing carries a vector
+   * under the active model (FR-020).
+   */
+  skipReason?: LocalEmbeddingSkipReason;
 }
 
 /** Dormant embedding status: the feature is off (neither URL nor MODEL set, FR-002). */
@@ -158,6 +212,14 @@ export interface EmbeddingStatusDormant {
   active: false;
   /** The two variables that would activate the feature. */
   activationVars: string[];
+  /**
+   * True when dormancy is an EXPLICIT `CODEGRAPH_EMBEDDING_PROVIDER=off` (a deliberate kill
+   * switch), NOT an unset environment. Lets `status` say "disabled by …=off; set it to local
+   * or endpoint" instead of the plain-dormant "set URL and MODEL to enable" — which would not
+   * take effect while `off` is set. config still resolves `off`→null (FR-003), so the indexing
+   * pass stays byte-identically dormant; only this observability snapshot distinguishes them.
+   */
+  disabledByProvider?: boolean;
   /** Prior-run snapshot, present only when on-disk scalars + live vectors exist. */
   previousRun?: { model: string; dims: number | null; coverage: EmbeddingCoverageStatus };
 }
@@ -166,8 +228,25 @@ export interface EmbeddingStatusDormant {
 export interface EmbeddingStatusMisconfigured {
   active: false;
   misconfigured: true;
-  /** The single unset variable (`CODEGRAPH_EMBEDDING_URL` or `CODEGRAPH_EMBEDDING_MODEL`). */
+  /**
+   * The single unset variable (`CODEGRAPH_EMBEDDING_URL`/`CODEGRAPH_EMBEDDING_MODEL`),
+   * or `CODEGRAPH_EMBEDDING_PROVIDER` for an unrecognized provider value.
+   */
   missingVariable: string;
+  /**
+   * ALL unset variables, populated ONLY when more than one is missing (explicit
+   * `CODEGRAPH_EMBEDDING_PROVIDER=endpoint` with BOTH URL and MODEL unset) — lets a
+   * renderer avoid the "X is set but Y is missing" phrasing that would falsely claim the
+   * counterpart is set. Absent for a genuine one-variable half-config.
+   */
+  missingVariables?: string[];
+  /**
+   * Set only for an INVALID (not missing) provider value: the offending value + the
+   * recognized set, so a renderer says "must be one of: …" instead of "not set"
+   * (SPEC-002 P2-1). Absent for a genuine URL/MODEL half-config.
+   */
+  invalidValue?: string;
+  allowedValues?: string[];
   activationVars: string[];
 }
 
@@ -175,10 +254,14 @@ export interface EmbeddingStatusMisconfigured {
  * Embedding observability snapshot returned by {@link CodeGraph.getEmbeddingStatus}
  * — the machine shape behind `codegraph status` / `--json` (contract:
  * `status-embedding-json.md`). A discriminated union over the activation state:
- *  - active (URL+MODEL set): redacted endpoint + model/dims + live coverage;
+ *  - active (URL+MODEL set, OR an explicit SPEC-002 local selection): `provider`
+ *    discriminates `endpoint` (redacted URL) vs `local` (no endpoint) — plus
+ *    model/dims/live coverage, and for `local`, a best-effort FR-020 skip
+ *    reason when coverage is 0%;
  *  - dormant (neither set): the two activation variables, plus `previousRun` IFF a
  *    prior run's scalars and live vectors survive on disk;
- *  - misconfigured (exactly one set): the single missing variable.
+ *  - misconfigured (exactly one set, or an unrecognized provider selection): the
+ *    single missing variable.
  * Every state is network-free — dormancy is never broken to compute it (FR-023).
  */
 export type EmbeddingStatus =
@@ -194,6 +277,36 @@ function parseStoredDims(raw: string | null): number | null {
   if (raw === null) return null;
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * Test-only seam (mirrors `__setFsWatchForTests` in `src/sync/watcher.ts`): inject
+ * hermetic {@link LocalProvider} dependencies — a fake `worker_threads` worker and a
+ * fake `acquireLocalModel` — so the SPEC-002 local embed path can be driven end-to-end
+ * through `indexAll`/`sync` without spawning a thread or downloading the 22MB model.
+ * Production never sets this (it stays `undefined`), so `maybeRunEmbeddingPass` builds
+ * a real LocalProvider; only a test injects fakes. Clear with `undefined`.
+ * @internal
+ */
+let localProviderOverridesForTests: LocalProviderOverrides | undefined;
+export function __setLocalProviderOverridesForTests(overrides: LocalProviderOverrides | undefined): void {
+  localProviderOverridesForTests = overrides;
+}
+
+/**
+ * Test-only seam so {@link CodeGraph.getEmbeddingStatus}'s FR-020 best-effort
+ * cache probe can be exercised hermetically — substituting tiny fixture
+ * artifacts (a fake sha256+size) in place of the real ~22MB pinned model,
+ * mirroring the seam `AcquireLocalModelOverrides.artifacts` already provides
+ * for acquisition itself (SHA-256 preimage resistance makes the real pin
+ * infeasible to satisfy by hand). Production never sets this (stays
+ * `undefined`), so `getEmbeddingStatus` probes the real pinned artifacts; only
+ * a test injects fixtures. Clear with `undefined`.
+ * @internal
+ */
+let localModelCacheProbeOverridesForTests: ProbeLocalModelCacheOverrides | undefined;
+export function __setLocalModelCacheProbeOverridesForTests(overrides: ProbeLocalModelCacheOverrides | undefined): void {
+  localModelCacheProbeOverridesForTests = overrides;
 }
 
 /**
@@ -589,7 +702,7 @@ export class CodeGraph {
         // is swallowed here so a broken embed can never fail an index (FR-014/019).
         if (result.success && result.filesIndexed > 0) {
           try {
-            await this.maybeRunEmbeddingPass(options.onProgress);
+            await this.maybeRunEmbeddingPass(options.onProgress, options.embeddingsProvider, options.signal);
           } catch (err) {
             // Advisory — an unexpected throw from the embedding wiring itself (config
             // load, provider construction) never fails the index, but it must not be
@@ -623,23 +736,111 @@ export class CodeGraph {
    * The pass itself never throws (it reports an advisory abort instead), and the
    * call site additionally wraps this in a try/catch, so embedding can never fail
    * the surrounding index (FR-014/019).
+   *
+   * @param providerOverride the caller's `IndexOptions.embeddingsProvider`, if any
+   *   (SPEC-002 FR-002) — threaded into `loadEmbeddingConfig` so it wins over
+   *   `CODEGRAPH_EMBEDDING_PROVIDER` for this one call only.
    */
   private async maybeRunEmbeddingPass(
-    onProgress?: (progress: IndexProgress) => void
+    onProgress?: (progress: IndexProgress) => void,
+    providerOverride?: string,
+    signal?: AbortSignal,
   ): Promise<void> {
-    const config = loadEmbeddingConfig(process.env);
+    // Honor the caller's IndexOptions.signal (extraction already does): if it aborted after
+    // extraction, do NO embedding work — no model download, no worker spawn, no scan/inference.
+    if (signal?.aborted) return;
+    const config = loadEmbeddingConfig(process.env, providerOverride);
     // Fully dormant — indistinguishable from a build without the feature (FR-002).
     if (config === null) return;
-    // Half-config — feature stays off, but name the missing variable (FR-001a).
+    // Half-config — feature stays off, but name the missing variable (FR-001a). An
+    // unrecognized provider value gets its own message: the variable IS set, just to
+    // something bad, so "not set" would mislead — name it + the allowed set (P2-1).
     if ('misconfigured' in config) {
-      logWarn(
-        `Embedding is disabled because ${config.missingVariable} is not set — ` +
-        `set both CODEGRAPH_EMBEDDING_URL and CODEGRAPH_EMBEDDING_MODEL to enable it.`
-      );
+      if (config.invalidValue !== undefined) {
+        logWarn(
+          `Embedding is disabled because CODEGRAPH_EMBEDDING_PROVIDER="${config.invalidValue}" is not a valid provider — ` +
+          `set it to one of: ${(config.allowedValues ?? []).join(', ')}.`
+        );
+      } else {
+        logWarn(
+          `Embedding is disabled because ${config.missingVariable} is not set — ` +
+          `set both CODEGRAPH_EMBEDDING_URL and CODEGRAPH_EMBEDDING_MODEL to enable it.`
+        );
+      }
+      return;
+    }
+    // SPEC-002: the local provider is a distinct arm of EmbeddingConfigResult (no
+    // `url`) — the bundled ONNX model, no endpoint. It drives the SAME advisory
+    // `runEmbeddingPass` over `node_vectors`, reusing SPEC-001's model-column re-embed
+    // (a symbol embedded under a prior model is re-selected here — FR-022, no new
+    // mechanism). Acquisition/session-init failures degrade to an advisory abort exactly
+    // like the endpoint arm (FR-008/019): the pass reports `{ aborted, abortReason }`,
+    // the structural index/sync is unaffected. The worker + one-time model download are
+    // the provider's own concern; here we only wire it to the pass and tear it down after.
+    if ('provider' in config) {
+      const localLockPath = path.join(getCodeGraphDir(this.projectRoot), 'codegraph.lock');
+      const provider = new LocalProvider(config, localProviderOverridesForTests, (message) => {
+        // FR-021a: surface the one-time model acquisition + session cold-load (first run
+        // downloads ~22MB, then a ~215ms session build) over the same progress channel.
+        onProgress?.({ phase: 'embedding', current: 0, total: 0, currentFile: message });
+      });
+      // Cancel the ~22MB model acquisition mid-flight when the caller aborts: closing the provider
+      // aborts its in-progress download (idempotent with the finally close below; the pass loop
+      // separately honors `signal` for the scan + inference).
+      const onAcquireAbort = (): void => { void provider.close(); };
+      signal?.addEventListener('abort', onAcquireAbort, { once: true });
+      try {
+        const localResult = await runEmbeddingPass({
+          queries: this.queries,
+          provider,
+          // Persist local vectors under the provider-qualified key so they never collide
+          // with an endpoint pointed at the same model name (FR-022): the pass keys
+          // selection/upsert/coverage + the embedding_model scalar off config.model, and
+          // LOCAL_VECTOR_MODEL keeps that distinct from the bare display id. `status` still
+          // DISPLAYS the unprefixed model (getEmbeddingStatus below).
+          //
+          // Also force concurrency:1. runEmbeddingPass sizes its super-chunk as
+          // batchSize*concurrency to keep an ENDPOINT's concurrent request pool busy, but the
+          // local worker serializes one session (no pool — it processes the super-chunk one
+          // text at a time), so a >1 multiplier gives zero throughput gain and only inflates
+          // the single-message size, the memory held at once, and the span of the one embed
+          // timeout. A batchSize-sized super-chunk preserves the per-batch commit cadence
+          // (FR-029) and shrinks the abort-loss window.
+          config: { ...config, model: LOCAL_VECTOR_MODEL, concurrency: 1 },
+          transaction: <T>(fn: () => T): T => this.db.transaction(fn),
+          runMaintenance: () => this.db.runMaintenance(),
+          onProgress: (current, total) => onProgress?.({ phase: 'embedding', current, total }),
+          refreshLock: () => {
+            try {
+              const now = new Date();
+              fs.utimesSync(localLockPath, now, now);
+            } catch { /* lock refresh is advisory */ }
+          },
+          readSource: (() => {
+            const fileLines = new Map<string, string[] | undefined>();
+            return (node: Node) => this.readNodeSource(node, fileLines);
+          })(),
+          signal,
+        });
+        // Don't warn about an abort the CALLER requested (cancellation is not a degradation).
+        if (localResult.aborted && !signal?.aborted) {
+          // Already redacted by construction (the LocalProvider reason is source-free —
+          // FR-019c/FR-025a); carries the actionable degrade guidance (offline/checksum/
+          // cache, or a session-init timeout). The pass never threw — embedding stays advisory.
+          logWarn(
+            'Embedding pass aborted; some symbols are unembedded but the enclosing index/sync operation is unaffected. ' +
+            `Reason: ${localResult.abortReason ?? 'unknown'}`
+          );
+        }
+      } finally {
+        signal?.removeEventListener('abort', onAcquireAbort);
+        // Tear down the worker at end of pass (idempotent; a no-op if init never spawned one).
+        await provider.close();
+      }
       return;
     }
 
-    // Active. Warn once if source code would cross the network in cleartext (FR-023).
+    // Active (endpoint). Warn once if source code would cross the network in cleartext (FR-023).
     const cleartextWarning = plaintextRemoteWarning(config.url);
     if (cleartextWarning) logWarn(cleartextWarning);
 
@@ -669,6 +870,7 @@ export class CodeGraph {
         const fileLines = new Map<string, string[] | undefined>();
         return (node: Node) => this.readNodeSource(node, fileLines);
       })(),
+      signal,
     });
 
     // Surface an advisory abort's reason to the log rather than silently discarding the
@@ -677,7 +879,8 @@ export class CodeGraph {
     // guidance a user needs: FR-021's `CODEGRAPH_EMBEDDING_DIMS` message on a dimension
     // conflict, or the redacted endpoint-failure reason on an outage. The pass itself
     // never threw — embedding stays advisory, the index/sync is unaffected either way.
-    if (result.aborted) {
+    // A caller-requested cancellation is not a degradation → no warning for it.
+    if (result.aborted && !signal?.aborted) {
       logWarn(
         'Embedding pass aborted; some symbols are unembedded but the enclosing index/sync operation is unaffected. ' +
         `Reason: ${result.abortReason ?? 'unknown'}`
@@ -835,7 +1038,7 @@ export class CodeGraph {
         // can never fail a sync (FR-014/019). The file watcher and the daemon both
         // drive this same sync(), so they inherit the pass with no extra wiring (FR-015).
         try {
-          await this.maybeRunEmbeddingPass(options.onProgress);
+          await this.maybeRunEmbeddingPass(options.onProgress, options.embeddingsProvider, options.signal);
         } catch (err) {
           // Advisory — an unexpected throw from the embedding wiring never fails a sync,
           // but must not be invisible. Only the error's NAME is surfaced (never its
@@ -1090,23 +1293,74 @@ export class CodeGraph {
     const config = loadEmbeddingConfig(process.env);
 
     // Half-config — exactly one of URL/MODEL set: feature off, name the gap (FR-001a).
+    // Or an unrecognized CODEGRAPH_EMBEDDING_PROVIDER value: propagate the invalid-value
+    // shape so the status renderer says "must be one of: …" instead of "not set" (P2-1).
     if (config !== null && 'misconfigured' in config) {
-      return {
+      const status: EmbeddingStatusMisconfigured = {
         active: false,
         misconfigured: true,
         missingVariable: config.missingVariable,
         activationVars: EMBEDDING_ACTIVATION_VARS.slice(),
       };
+      if (config.missingVariables !== undefined) status.missingVariables = config.missingVariables;
+      if (config.invalidValue !== undefined) {
+        status.invalidValue = config.invalidValue;
+        if (config.allowedValues !== undefined) status.allowedValues = config.allowedValues;
+      }
+      return status;
     }
 
-    // Active — both URL and MODEL set (FR-001). Model/dims come from the persisted
-    // scalars (what was actually embedded), falling back to the live config when a
-    // pass has not yet written them; coverage is computed for that model.
-    if (config !== null) {
-      const model = this.queries.getMetadata('embedding_model') ?? config.model;
-      const dims = parseStoredDims(this.queries.getMetadata('embedding_dims')) ?? config.dims ?? null;
+    // SPEC-002: an explicit local selection is active — no endpoint exists to reach
+    // (network-free). Report the ACTIVE local model, NOT the persisted scalar: a
+    // project embedded via an endpoint before the switch to local still carries that
+    // PRIOR model's scalars + vectors on disk, and surfacing them (a stale model and
+    // its stale coverage) would hide that no local vectors exist yet. Coverage is for
+    // the active model too (0% until a local pass runs), and the persisted dimension
+    // is trusted ONLY when the persisted model IS this active model — otherwise it
+    // describes the other (endpoint) model, so the config's pinned 384 stands in. When
+    // there was something to embed but nothing carries a vector under this model,
+    // attach the best-effort FR-020 skip reason.
+    if (config !== null && 'provider' in config) {
+      // Vectors persist under the provider-qualified key (see maybeRunEmbeddingPass) —
+      // coverage + the dims scalar are keyed by it, while the user sees the unprefixed model.
+      const displayModel = config.model;
+      const storageModel = LOCAL_VECTOR_MODEL;
+      const persistedModel = this.queries.getMetadata('embedding_model');
+      const dims = persistedModel === storageModel
+        ? parseStoredDims(this.queries.getMetadata('embedding_dims')) ?? config.dims
+        : config.dims;
+      const coverage = this.embeddingCoverageOf(storageModel);
+      const status: EmbeddingStatusActive = {
+        active: true,
+        provider: 'local',
+        model: displayModel,
+        dims,
+        coverage,
+      };
+      if (coverage.embeddable > 0 && coverage.embedded === 0) {
+        status.skipReason = this.localEmbeddingSkipReason();
+      }
+      return status;
+    }
+
+    // Active — both URL and MODEL set (FR-001). Report the ACTIVE endpoint model, NOT
+    // the persisted scalar (mirrors the local branch above / P1-1): a project embedded
+    // under a DIFFERENT model — a prior endpoint model, or local before the switch to
+    // endpoint — still carries that model's scalars + vectors on disk, and surfacing them
+    // (a stale model at its stale/100% coverage) would hide that no vectors exist for the
+    // ACTIVE endpoint model yet. Coverage is for the active model too; the persisted
+    // dimension is trusted ONLY when the persisted model IS this active model — otherwise
+    // it describes the other model, so the live config's dimension (which may be null for
+    // an endpoint) stands in.
+    if (config !== null && !('provider' in config)) {
+      const model = config.model;
+      const persistedModel = this.queries.getMetadata('embedding_model');
+      const dims = persistedModel === model
+        ? parseStoredDims(this.queries.getMetadata('embedding_dims')) ?? config.dims ?? null
+        : config.dims ?? null;
       return {
         active: true,
+        provider: 'endpoint',
         endpoint: redactEndpoint(config.url),
         model,
         dims,
@@ -1114,19 +1368,24 @@ export class CodeGraph {
       };
     }
 
-    // Fully dormant — neither set (FR-002). Attach a prior-run snapshot ONLY when a
-    // model scalar and at least one live vector for it survive on disk; read entirely
-    // from disk, so reporting a prior run never reaches the (now-unset) endpoint.
+    // Fully dormant — neither set (FR-002), OR an explicit CODEGRAPH_EMBEDDING_PROVIDER=off
+    // (which config collapses to null too). Flag the explicit-off case so `status` can give
+    // accurate guidance rather than the plain "set URL and MODEL" hint. Attach a prior-run
+    // snapshot ONLY when a model scalar and at least one live vector for it survive on disk;
+    // read entirely from disk, so reporting a prior run never reaches the (now-unset) endpoint.
     const dormant: EmbeddingStatusDormant = {
       active: false,
       activationVars: EMBEDDING_ACTIVATION_VARS.slice(),
     };
+    if (isEmbeddingProviderOff(process.env)) dormant.disabledByProvider = true;
     const previousModel = this.queries.getMetadata('embedding_model');
     if (previousModel !== null) {
       const coverage = this.embeddingCoverageOf(previousModel);
       if (coverage.embedded > 0) {
         dormant.previousRun = {
-          model: previousModel,
+          // Coverage is keyed by the raw stored key; the display strips a local: prefix
+          // so a prior local run shows the bare checkpoint id (mirrors the active branch).
+          model: displayEmbeddingModel(previousModel),
           dims: parseStoredDims(this.queries.getMetadata('embedding_dims')),
           coverage,
         };
@@ -1143,6 +1402,22 @@ export class CodeGraph {
     const { embeddable, embedded } = this.queries.getEmbeddingCoverage(model);
     const percent = embeddable === 0 ? 100 : Math.round((embedded / embeddable) * 100);
     return { embedded, embeddable, percent };
+  }
+
+  /**
+   * Best-effort FR-020 skip reason for a 0%-coverage LOCAL-provider status —
+   * a network-free filesystem probe of the resolved model cache (never a
+   * persisted record of a specific past pass's abort; none is kept). See
+   * {@link LocalEmbeddingSkipReason}.
+   */
+  private localEmbeddingSkipReason(): LocalEmbeddingSkipReason {
+    switch (probeLocalModelCache(process.env, localModelCacheProbeOverridesForTests)) {
+      case 'invalid-cache': return 'cache';
+      case 'invalid-base-url': return 'invalid-base-url';
+      case 'insecure-permissions': return 'insecure-permissions';
+      case 'verified': return 'session-init-timeout';
+      case 'missing': default: return 'offline';
+    }
   }
 
   // ===========================================================================

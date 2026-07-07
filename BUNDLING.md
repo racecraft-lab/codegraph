@@ -39,6 +39,28 @@ on one Linux runner). Cross-compilation isn't a concern; only *run-testing* a
 bundle needs the target platform (or emulation, e.g. `docker run --platform
 linux/amd64`).
 
+## Local embedding runtime (onnxruntime-web)
+
+The optional local embedding provider (`CODEGRAPH_EMBEDDING_PROVIDER=local`) adds
+one production dependency, **`onnxruntime-web`** (MIT, pure-JS/WASM — no native
+addon), so it lands in `lib/node_modules/` via the bundle's `npm ci --omit=dev`
+like any other production dep. Notes:
+
+- **Footprint**: ~131 MB unpacked in `node_modules` — a Node-tuned build plus four
+  `.wasm` execution-engine variants (`ort-wasm-simd-threaded[.asyncify|.jsep|.jspi].wasm`,
+  ~13–27 MB each). All transitive deps are pure JS. This is an installed/bundled cost
+  only — the **published npm shim tarball does not grow** (`files: [dist, scripts, README]`
+  excludes `node_modules`; the shim just downloads the platform bundle).
+- **No `copy-assets` step**: unlike the in-repo tree-sitter `.wasm` grammars (copied into
+  `dist/` by `copy-assets`), onnxruntime-web resolves its own `.wasm` by relative path from
+  `node_modules/onnxruntime-web/dist/` at runtime — the Node runtime locates it
+  automatically (no `wasmPaths` wiring). It ships as an ordinary dependency; nothing to copy.
+- **Model weights are NOT bundled**: the ~22 MB quantized model + tokenizer are
+  **lazy-downloaded** on first local use, checksum-verified, and cached machine-wide
+  (`~/.codegraph/models/`; `%LOCALAPPDATA%` on Windows) — never shipped in the package or
+  the bundle. The dependency stays dormant (never loaded) unless a project opts into
+  `CODEGRAPH_EMBEDDING_PROVIDER=local`.
+
 ## Install channels (all deliver the same bundle)
 
 1. **`curl | sh`** ([`install.sh`](install.sh)) — no Node required; ideal for a

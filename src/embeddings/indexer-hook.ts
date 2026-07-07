@@ -9,7 +9,6 @@
 
 import { createHash } from 'node:crypto';
 import type { EmbeddingProvider } from './provider';
-import type { EmbeddingConfig } from './config';
 import type { QueryBuilder } from '../db/queries';
 import type { Node } from '../types';
 
@@ -164,14 +163,27 @@ export interface EmbeddingPassResult {
   abortReason?: string;
 }
 
+/**
+ * The structural subset of the active embedding config the pass actually reads
+ * (data-model.md §1) — satisfied by BOTH `EmbeddingConfig` (endpoint, SPEC-001) and
+ * `EmbeddingLocalConfig` (local, SPEC-002) without requiring a `url`, so the same pass
+ * drives either provider unchanged.
+ */
+export interface EmbedPassConfig {
+  model: string;
+  batchSize: number;
+  concurrency: number;
+  dims?: number;
+}
+
 /** The seam `runEmbeddingPass` drives — supplied by the indexer (or a test harness). */
 export interface RunEmbeddingPassOptions {
   /** Query surface: eligible-node selection, vector upsert, metadata scalars. */
   queries: QueryBuilder;
   /** The active embedding provider (endpoint client, or a test fake). */
   provider: EmbeddingProvider;
-  /** Active embedding config — model, batchSize, and any enforced dimension. */
-  config: EmbeddingConfig;
+  /** Active embedding config — model, batchSize, concurrency, and any enforced dimension. */
+  config: EmbedPassConfig;
   /**
    * Run one unit of writes inside a single transaction (BEGIN/COMMIT, ROLLBACK on
    * throw). Called once per completed batch — wire to `DatabaseConnection.transaction`.
@@ -198,6 +210,16 @@ export interface RunEmbeddingPassOptions {
    * from the symbol's in-graph fields alone.
    */
   readSource?: (node: Node) => string | undefined;
+  /**
+   * Cancellation for the whole pass (the caller's `IndexOptions.signal`). Checked at the
+   * scan's cooperative-yield points and before every super-chunk `embed()`, so an abort
+   * after extraction stops the (potentially long) staleness scan + worker/endpoint inference
+   * instead of running to completion. A cancellation is reported as an advisory abort
+   * (`aborted: true`, `abortReason: 'cancelled'`) — never thrown; prior committed batches stay
+   * durable. Model ACQUISITION (the local provider's ~22MB download) is cancelled separately by
+   * the caller, which aborts the provider when the same signal fires.
+   */
+  signal?: AbortSignal;
 }
 
 /** Map a graph node to the deterministic composition input (§3 / D11). */
@@ -236,57 +258,87 @@ function parseStoredDims(raw: string | null): number | undefined {
  * (FR-014/019).
  */
 export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<EmbeddingPassResult> {
-  const { queries, provider, config, transaction, runMaintenance, onProgress, refreshLock, readSource } = opts;
+  const { queries, provider, config, transaction, runMaintenance, onProgress, refreshLock, readSource, signal } = opts;
   const model = config.model;
 
-  // Selection (bounded metadata only — the composed inputs that carry source are built
-  // per-chunk below so they never all coexist, FR-028):
-  //   (1) symbols with NO current-model vector — missing, or embedded under a prior
-  //       model (a model switch, FR-010). Always re-embedded.
-  const missing = queries.selectEmbeddableNodesMissingVector(model);
-  //   (2) symbols that DO carry a current-model vector but whose freshly-composed input
-  //       no longer hashes to the stored value — genuinely edited symbols. This
-  //       compose-and-compare is the network-free O(embeddable) staleness scan: only
-  //       symbols whose input actually changed are queued for the endpoint (FR-016/
-  //       FR-027). Each composed input is hashed then discarded, so the whole graph's
-  //       source never materializes at once (FR-028).
-  const changed: Node[] = [];
-  for (const { node, inputHash } of queries.selectEmbeddedNodeHashes(model)) {
-    if (computeInputHash(composeEmbeddingInput(toSymbolInput(node, readSource))) !== inputHash) {
-      changed.push(node);
-    }
-  }
-  const eligible = [...missing, ...changed];
-  const attempted = eligible.length;
-
-  // Enforcement target, read at pass start (D9/FR-021): an explicit
-  // CODEGRAPH_EMBEDDING_DIMS (config.dims) enforces from the start; otherwise a
-  // dimension already persisted for THIS SAME model enforces across passes. A scalar
-  // left by a DIFFERENT model does not enforce — the model changed, so the first batch
-  // re-infers and overwrites it (FR-010).
-  const storedModel = queries.getMetadata('embedding_model');
-  const enforcedDims =
-    config.dims ?? (storedModel === model ? parseStoredDims(queries.getMetadata('embedding_dims')) : undefined);
-
-  let embedded = 0;
-  let wroteAnyBatch = false;
-  let aborted = false;
-  let abortReason: string | undefined;
-  let dims: number | undefined; // established by the first successful batch
-
   // Refresh the held index lock on a wall-clock interval that spans the WHOLE pass —
-  // NOT only at batch boundaries. A single batch's full retry ladder (up to maxRetries ×
-  // the per-request timeout, plus backoff) can otherwise run for minutes with zero
-  // refreshes and let the lock be reaped as stale (FR-031). The timer is unref'd so it
-  // never keeps the process alive, and is cleared in `finally` so it can't outlive the
-  // pass. A refresh throw is swallowed — lock refresh is always advisory.
+  // NOT only at batch boundaries. STARTED BEFORE the staleness scan below (not after
+  // it): that scan recomposes + hashes every already-embedded symbol, and on a large
+  // graph it can alone outlast the 30s stale-lock window and let the lock be reaped
+  // mid-pass. A single batch's full retry ladder (up to maxRetries × the per-request
+  // timeout, plus backoff) is likewise covered (FR-031). The timer is unref'd so it
+  // never keeps the process alive, and is cleared in the `finally` below — which now
+  // also spans the scan — so it can't outlive the pass. A refresh throw is swallowed
+  // — lock refresh is always advisory.
   const LOCK_REFRESH_INTERVAL_MS = 30_000;
+  // Yield to the event loop every N scanned nodes so the synchronous recompose+hash scan
+  // below does not starve the daemon's query serving or the file watcher on a large graph
+  // (FR-010). Sized to amortize the macrotask hop over enough work to stay cheap.
+  const SCAN_YIELD_INTERVAL = 256;
   const refreshTimer = refreshLock
     ? setInterval(() => { try { refreshLock(); } catch { /* lock refresh is advisory */ } }, LOCK_REFRESH_INTERVAL_MS)
     : undefined;
   refreshTimer?.unref?.();
 
+  // Hoisted above the try so they remain in scope for the result below; assigned/
+  // mutated inside as the scan and embed loop run.
+  let attempted = 0;
+  let embedded = 0;
+  let aborted = false;
+  let abortReason: string | undefined;
+
   try {
+    // Selection (bounded metadata only — the composed inputs that carry source are built
+    // per-chunk below so they never all coexist, FR-028):
+    //   (1) symbols with NO current-model vector — missing, or embedded under a prior
+    //       model (a model switch, FR-010). Always re-embedded.
+    const missing = queries.selectEmbeddableNodesMissingVector(model);
+    //   (2) symbols that DO carry a current-model vector but whose freshly-composed input
+    //       no longer hashes to the stored value — genuinely edited symbols. This
+    //       compose-and-compare is the network-free O(embeddable) staleness scan: only
+    //       symbols whose input actually changed are queued for the endpoint (FR-016/
+    //       FR-027). Each composed input is hashed then discarded, so the whole graph's
+    //       source never materializes at once (FR-028).
+    const changed: Node[] = [];
+    // The interval timer above CANNOT fire during this scan: recomposing + hashing every
+    // embedded node is synchronous and blocks the event loop, so on a large graph the scan
+    // alone can outlast the 30s stale-lock window and let the lock be reaped mid-pass. Drive
+    // the refresh INLINE here by elapsed wall time (advisory — a throw is swallowed).
+    let lastRefresh = Date.now();
+    let scanned = 0;
+    for (const { node, inputHash } of queries.selectEmbeddedNodeHashes(model)) {
+      if (computeInputHash(composeEmbeddingInput(toSymbolInput(node, readSource))) !== inputHash) {
+        changed.push(node);
+      }
+      if (refreshLock && Date.now() - lastRefresh >= LOCK_REFRESH_INTERVAL_MS) {
+        try { refreshLock(); } catch { /* lock refresh is advisory */ }
+        lastRefresh = Date.now();
+      }
+      // Cooperative yield: the recompose+hash above is synchronous, so an un-yielded scan
+      // over a large graph blocks the daemon event loop (query serving + file watcher). Hand
+      // control back periodically (FR-010); the held lock is refreshed inline + by the timer.
+      if (++scanned % SCAN_YIELD_INTERVAL === 0) {
+        // Honor caller cancellation at the same cadence as the cooperative yield — a large-graph
+        // staleness scan can itself take a while, so an abort after extraction stops it here.
+        if (signal?.aborted) { aborted = true; abortReason = 'cancelled'; break; }
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    }
+    const eligible = [...missing, ...changed];
+    attempted = eligible.length;
+
+    // Enforcement target, read at pass start (D9/FR-021): an explicit
+    // CODEGRAPH_EMBEDDING_DIMS (config.dims) enforces from the start; otherwise a
+    // dimension already persisted for THIS SAME model enforces across passes. A scalar
+    // left by a DIFFERENT model does not enforce — the model changed, so the first batch
+    // re-infers and overwrites it (FR-010).
+    const storedModel = queries.getMetadata('embedding_model');
+    const enforcedDims =
+      config.dims ?? (storedModel === model ? parseStoredDims(queries.getMetadata('embedding_dims')) : undefined);
+
+    let wroteAnyBatch = false;
+    let dims: number | undefined; // established by the first successful batch
+
     // Super-chunk the eligible symbols by `batchSize × concurrency` and hand each
     // super-chunk to the provider in ONE `embed()` call. The provider splits it into
     // `batchSize` batches and runs its bounded (`concurrency`) pool over them, so several
@@ -303,6 +355,9 @@ export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<E
     // `batchSize × concurrency` symbols.
     const superChunkSize = config.batchSize * config.concurrency;
     for (let offset = 0; offset < eligible.length; offset += superChunkSize) {
+      // Stop before spending a (potentially slow) worker/endpoint embed on the next super-chunk
+      // if the caller cancelled — prior committed slices stay durable (advisory abort).
+      if (signal?.aborted) { aborted = true; abortReason = 'cancelled'; break; }
       const superChunk = eligible.slice(offset, offset + superChunkSize);
       const composed = superChunk.map((node) => composeEmbeddingInput(toSymbolInput(node, readSource)));
 
@@ -316,6 +371,11 @@ export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<E
         break;
       }
 
+      // The signal may have fired DURING the await — an in-flight endpoint request isn't
+      // interrupted, so on resolve don't validate or PERSIST a super-chunk the caller cancelled
+      // (the pre-embed check above only guards NOT-yet-started chunks). Prior slices stay durable.
+      if (signal?.aborted) { aborted = true; abortReason = 'cancelled'; break; }
+
       // Defensive contract check: the EndpointProvider enforces one-vector-per-input
       // (FR-021a), but the pass accepts ANY EmbeddingProvider — a future provider that
       // returns a short/long batch must abort here, never misalign vectors to symbols.
@@ -325,20 +385,57 @@ export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<E
         break;
       }
 
-      if (dims === undefined) {
-        const established = vectors[0]?.length ?? 0;
-        if (enforcedDims !== undefined && established !== enforcedDims) {
-          // Advisory abort BEFORE writing anything — the enforced dimension wins, and the
-          // message names the escape hatch (FR-021). No source is referenced.
-          aborted = true;
-          abortReason =
-            `embedding dimension mismatch: the endpoint returned ${established}-dimension vectors ` +
-            `but ${enforcedDims} is enforced (CODEGRAPH_EMBEDDING_DIMS). Set CODEGRAPH_EMBEDDING_DIMS=${established} ` +
-            `to accept this model, or clear it to re-infer, then re-index.`;
+      // Validate the ENTIRE batch BEFORE establishing dims or persisting anything, so a
+      // malformed response never leaves orphan embedding_dims/embedding_model scalars:
+      //  - the dimension must be > 0 (a Float32Array(0) response would otherwise persist
+      //    dims=0 + zero-byte vectors);
+      //  - on the FIRST batch it must match an enforced CODEGRAPH_EMBEDDING_DIMS (FR-021); and
+      //  - every vector must be exactly that length and all-finite — a ragged length would
+      //    write a blob whose byte length disagrees with the stored dims (breaking decode/
+      //    search), and a NaN/Infinity would poison similarity.
+      const established = dims ?? (vectors[0]?.length ?? 0);
+      if (established <= 0) {
+        aborted = true;
+        abortReason = 'provider returned a zero-dimension embedding';
+        break;
+      }
+      if (dims === undefined && enforcedDims !== undefined && established !== enforcedDims) {
+        // The enforced dimension wins; the message names the escape hatch (FR-021). No source.
+        // Reachable only for the ENDPOINT provider: the local provider fixes dims at the
+        // checkpoint's 384 (config.dims) and the pinned model always returns 384, so
+        // established === enforcedDims and this branch never fires for local — the "endpoint"
+        // wording + CODEGRAPH_EMBEDDING_DIMS guidance are accurate wherever it can fire.
+        aborted = true;
+        abortReason =
+          `embedding dimension mismatch: the endpoint returned ${established}-dimension vectors ` +
+          `but ${enforcedDims} is enforced (CODEGRAPH_EMBEDDING_DIMS). Set CODEGRAPH_EMBEDDING_DIMS=${established} ` +
+          `to accept this model, or clear it to re-infer, then re-index.`;
+        break;
+      }
+      let badVector: string | undefined;
+      for (let k = 0; k < vectors.length && badVector === undefined; k++) {
+        const v = vectors[k]!;
+        if (v.length !== established) {
+          badVector = `provider returned a ${v.length}-dimension vector where ${established} was expected`;
           break;
         }
+        for (let d = 0; d < v.length; d++) {
+          if (!Number.isFinite(v[d]!)) {
+            badVector = 'provider returned a non-finite value in an embedding vector';
+            break;
+          }
+        }
+      }
+      if (badVector !== undefined) {
+        aborted = true;
+        abortReason = badVector;
+        break;
+      }
+
+      // Batch fully validated → NOW establish dims + persist the enforcement scalars once
+      // (idempotent upsert), on the first successful batch only.
+      if (dims === undefined) {
         dims = established;
-        // Persist the enforcement scalars once, on first success (idempotent upsert).
         queries.setMetadata('embedding_dims', String(dims));
         queries.setMetadata('embedding_model', model);
       }

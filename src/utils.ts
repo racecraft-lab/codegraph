@@ -47,6 +47,17 @@ const SENSITIVE_PATHS = new Set([
 ]);
 
 /**
+ * Read-only view of {@link SENSITIVE_PATHS} for reuse by other write-sink validators
+ * (e.g. the SPEC-002 model cache directory) that need a PREFIX match against this same
+ * denylist rather than `validateProjectPath`'s exact-match root check — see {@link isWithinDir}.
+ *
+ * A FROZEN array, not the live `Set`: the mutable set stays module-private so no importer
+ * can weaken the guard process-wide by mutating a shared denylist. (Freezing an array truly
+ * blocks push/index writes under ES-module strict mode; `Object.freeze` on a `Set` would not.)
+ */
+export const SENSITIVE_SYSTEM_PATHS: readonly string[] = Object.freeze([...SENSITIVE_PATHS]);
+
+/**
  * Config "languages" whose nodes are pure key/value DATA lifted from a config
  * file (e.g. Spring `application.{yml,properties}`), not source code.
  */
@@ -69,15 +80,27 @@ export function isConfigLeafNode(node: { kind: string; language?: string }): boo
  * Whether `child` is `parent` itself or sits underneath it. Case-insensitive on
  * Windows — NTFS is case-insensitive, and realpathSync can hand back a different
  * case than the lexical root, which would otherwise false-reject a valid file.
+ *
+ * Exported so other write-sink validators can reuse this exact PREFIX-match
+ * semantics against {@link SENSITIVE_PATHS} (see model-fetch.ts's cache-dir
+ * validator, which needs prefix — not exact — matching).
  */
-function isWithinDir(child: string, parent: string): boolean {
+export function isWithinDir(child: string, parent: string): boolean {
   let c = child;
   let p = parent;
   if (process.platform === 'win32') {
     c = c.toLowerCase();
     p = p.toLowerCase();
   }
-  return c === p || c.startsWith(p + path.sep);
+  if (c === p) return true;
+  // Strip a single trailing separator from the parent so a root like "/" (or
+  // "c:\") does not become a double-separator prefix ("//") that never matches —
+  // that would be a false negative against the helper's "child under parent"
+  // contract. NB: this makes a root match every absolute path, so a prefix-match
+  // caller that also lists roots (SENSITIVE_PATHS) must treat roots as exact-only
+  // (see model-fetch.ts's isSensitivePath).
+  const pPrefix = p.endsWith(path.sep) ? p.slice(0, -1) : p;
+  return c.startsWith(pPrefix + path.sep);
 }
 
 /**

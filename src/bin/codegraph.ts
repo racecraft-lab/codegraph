@@ -32,6 +32,8 @@ import { detectWorktreeIndexMismatch, worktreeMismatchWarning } from '../sync/wo
 import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
 import { ensureCodegraphIgnored } from '../utils';
+import type { LocalEmbeddingSkipReason } from '../index';
+import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
 import { installFatalHandlers } from './fatal-handler';
@@ -231,6 +233,48 @@ function resolveProjectPath(pathArg?: string): string {
  */
 function formatNumber(n: number): string {
   return n.toLocaleString();
+}
+
+/**
+ * Human-readable FR-020 skip-reason line for a 0%-coverage local-provider
+ * status — echoes the same acquisition/cold-load vocabulary the live index
+ * progress uses (FR-021a: "downloading model…", "loading model…") so the
+ * wording stays consistent between an index/sync run and a later `status`.
+ */
+function localSkipReasonText(reason: LocalEmbeddingSkipReason): string {
+  switch (reason) {
+    case 'cache':
+      return 'local model cache directory is unwritable or invalid — set CODEGRAPH_MODEL_CACHE_DIR and retry.';
+    case 'invalid-base-url':
+      return 'local model is not cached and CODEGRAPH_MODEL_BASE_URL is set but invalid (must be an http/https URL) — fix or unset it, then retry index/sync.';
+    case 'insecure-permissions':
+      return 'the cached local model files could be modified by another local user (group/other-writable or owned by a different user) — make them yours at mode 0600, or set CODEGRAPH_MODEL_CACHE_DIR to a private path, then retry.';
+    case 'session-init-timeout':
+      return 'local model is cached but no symbols are embedded yet — run index/sync; if you already ran one, a session cold-load may have timed out or failed, so retry.';
+    case 'offline':
+    default:
+      return 'local model has not been downloaded/verified yet (first run needs network access, ~22MB) — retry index/sync once online.';
+  }
+}
+
+/**
+ * Validate a `--embeddings <local|endpoint|off>` flag value (SPEC-002 FR-002): a typo exits
+ * fast with a clear message rather than surfacing only as a buried advisory warning once the
+ * (otherwise silent) embed pass runs. Shared by the `index`, `sync`, and `init` commands.
+ *
+ * Both the accepted set and the "must be one of" wording derive from
+ * {@link EMBEDDING_PROVIDER_VALUES} (config's single source of truth), so this CLI check can
+ * never drift from the config-layer validation. Returns the value narrowed to
+ * {@link EmbeddingProviderSelection} (or `undefined`) so callers thread a typed provider into
+ * `indexAll`/`sync` without a cast.
+ */
+function validateEmbeddingsOption(value: string | undefined): EmbeddingProviderSelection | undefined {
+  if (value === undefined) return undefined;
+  if (!(EMBEDDING_PROVIDER_VALUES as readonly string[]).includes(value)) {
+    error(`Invalid --embeddings value "${value}" — must be one of: ${EMBEDDING_PROVIDER_VALUES.join(', ')}.`);
+    process.exit(1);
+  }
+  return value as EmbeddingProviderSelection;
 }
 
 /**
@@ -472,13 +516,16 @@ program
   .option('-i, --index', 'Deprecated: indexing now runs by default; flag accepted for backward compatibility')
   .option('-f, --force', 'Initialize even if the path looks like your home directory or a filesystem root')
   .option('-v, --verbose', 'Show detailed worker lifecycle and memory info')
-  .action(async (pathArg: string | undefined, options: { index?: boolean; force?: boolean; verbose?: boolean }) => {
+  .option('--embeddings <local|endpoint|off>', 'Override the embedding provider for the initial index')
+  .action(async (pathArg: string | undefined, options: { index?: boolean; force?: boolean; verbose?: boolean; embeddings?: string }) => {
     const projectPath = path.resolve(pathArg || process.cwd());
     const clack = await importESM('@clack/prompts');
 
     clack.intro('Initializing CodeGraph');
 
     try {
+      // SPEC-002: the initial index runs the embedding pass, so the one-invocation override applies.
+      const embeddingsProvider = validateEmbeddingsOption(options.embeddings);
       // Refuse to index your home directory / a filesystem root — it pulls in
       // caches, other projects, and your whole tree (a multi-GB index + watcher
       // churn, and on pre-1.0 macOS a machine-crashing fd blowup, #845).
@@ -523,12 +570,14 @@ program
           result = await cg.indexAll({
             onProgress: createVerboseProgress(),
             verbose: true,
+            embeddingsProvider,
           });
         } else {
           process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
           const progress = createShimmerProgress();
           result = await cg.indexAll({
             onProgress: progress.onProgress,
+            embeddingsProvider,
           });
           await progress.stop();
         }
@@ -621,10 +670,15 @@ program
   .option('-f, --force', 'Index even if the path looks like your home directory or a filesystem root')
   .option('-q, --quiet', 'Suppress progress output')
   .option('-v, --verbose', 'Show detailed worker lifecycle and memory info')
-  .action(async (pathArg: string | undefined, options: { force?: boolean; quiet?: boolean; verbose?: boolean }) => {
+  .option('--embeddings <local|endpoint|off>', 'Override the embedding provider for this run')
+  .action(async (pathArg: string | undefined, options: { force?: boolean; quiet?: boolean; verbose?: boolean; embeddings?: string }) => {
     const projectPath = resolveProjectPath(pathArg);
 
     try {
+      // SPEC-002: --embeddings overrides CODEGRAPH_EMBEDDING_PROVIDER for this one
+      // invocation. Validate early so a typo fails fast (shared with sync/init).
+      const embeddingsProvider = validateEmbeddingsOption(options.embeddings);
+
       // Don't (re)index your home directory / a filesystem root (#845). --force
       // doubles as the override.
       const unsafe = unsafeIndexRootReason(projectPath);
@@ -657,7 +711,7 @@ program
       try {
         if (options.quiet) {
           // Quiet mode: no UI, just run against the freshly-recreated graph.
-          const result = await cg.indexAll();
+          const result = await cg.indexAll({ embeddingsProvider });
           if (!result.success) process.exit(1);
           cg.destroy();
           return;
@@ -672,12 +726,14 @@ program
           result = await cg.indexAll({
             onProgress: createVerboseProgress(),
             verbose: true,
+            embeddingsProvider,
           });
         } else {
           process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
           const progress = createShimmerProgress();
           result = await cg.indexAll({
             onProgress: progress.onProgress,
+            embeddingsProvider,
           });
           await progress.stop();
         }
@@ -707,10 +763,13 @@ program
   .command('sync [path]')
   .description('Sync changes since last index')
   .option('-q, --quiet', 'Suppress output (for git hooks)')
-  .action(async (pathArg: string | undefined, options: { quiet?: boolean }) => {
+  .option('--embeddings <local|endpoint|off>', 'Override the embedding provider for this run')
+  .action(async (pathArg: string | undefined, options: { quiet?: boolean; embeddings?: string }) => {
     const projectPath = resolveProjectPath(pathArg);
 
     try {
+      // SPEC-002: sync runs the embedding pass too, so the one-invocation override applies here.
+      const embeddingsProvider = validateEmbeddingsOption(options.embeddings);
       if (!isInitialized(projectPath)) {
         if (!options.quiet) {
           error(`CodeGraph not initialized in ${projectPath}`);
@@ -722,7 +781,7 @@ program
       const cg = await CodeGraph.open(projectPath);
 
       if (options.quiet) {
-        await cg.sync();
+        await cg.sync({ embeddingsProvider });
         cg.destroy();
         return;
       }
@@ -735,6 +794,7 @@ program
 
       const result = await cg.sync({
         onProgress: progress.onProgress,
+        embeddingsProvider,
       });
 
       await progress.stop();
@@ -874,24 +934,50 @@ program
       console.log(`  Journal:   ${journalLabel}`);
       console.log();
 
-      // Embeddings (SPEC-001 FR-022): active shows endpoint/model/dims/coverage;
-      // dormant is neutral (never warn-styled — dormancy is not an error); a
-      // half-configuration is a distinct advisory (the user signaled intent).
+      // Embeddings (SPEC-001 FR-022 / SPEC-002 FR-021): active shows
+      // provider/[endpoint]/model/dims/coverage — `endpoint` only for the
+      // SPEC-001 HTTP provider; a local 0%-coverage skip names the best-effort
+      // FR-020 reason. Dormant is neutral (never warn-styled — dormancy is not
+      // an error); a half-configuration is a distinct advisory (the user
+      // signaled intent).
       const embedding = cg.getEmbeddingStatus();
       console.log(chalk.bold('Embeddings:'));
       if (embedding.active) {
-        console.log(`  Endpoint:  ${embedding.endpoint}`);
+        console.log(`  Provider:  ${embedding.provider}`);
+        if (embedding.provider === 'endpoint') {
+          console.log(`  Endpoint:  ${embedding.endpoint}`);
+        }
         console.log(`  Model:     ${embedding.model}`);
         console.log(`  Dims:      ${embedding.dims ?? 'unknown'}`);
         const { embedded, embeddable, percent } = embedding.coverage;
         console.log(`  Coverage:  ${formatNumber(embedded)}/${formatNumber(embeddable)} (${percent}%)`);
+        if (embedding.provider === 'local' && embedding.skipReason) {
+          console.log('  ' + chalk.yellow(`${getGlyphs().warn} ${localSkipReasonText(embedding.skipReason)}`));
+        }
       } else if ('misconfigured' in embedding) {
-        const setVar = embedding.missingVariable === 'CODEGRAPH_EMBEDDING_MODEL'
-          ? 'CODEGRAPH_EMBEDDING_URL'
-          : 'CODEGRAPH_EMBEDDING_MODEL';
-        warn(`Misconfigured ${getGlyphs().dash} ${setVar} is set but ${embedding.missingVariable} is missing. Set ${embedding.missingVariable} to activate embeddings.`);
+        if (embedding.invalidValue !== undefined) {
+          // An unrecognized CODEGRAPH_EMBEDDING_PROVIDER value: the variable is set, just
+          // not to a recognized provider — name the value + the allowed set (P2-1), never
+          // the misleading "X is set but Y is missing" half-config phrasing below.
+          warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_EMBEDDING_PROVIDER="${embedding.invalidValue}" is not a valid provider. Set it to one of: ${(embedding.allowedValues ?? []).join(', ')}.`);
+        } else if (embedding.missingVariables !== undefined && embedding.missingVariables.length > 1) {
+          // Explicit endpoint selection with BOTH URL and MODEL unset: name both, never
+          // claim (as the half-config branch below would) that the counterpart is set.
+          warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_EMBEDDING_PROVIDER=endpoint but ${embedding.missingVariables.join(' and ')} are not set. Set both to activate endpoint embeddings.`);
+        } else {
+          const setVar = embedding.missingVariable === 'CODEGRAPH_EMBEDDING_MODEL'
+            ? 'CODEGRAPH_EMBEDDING_URL'
+            : 'CODEGRAPH_EMBEDDING_MODEL';
+          warn(`Misconfigured ${getGlyphs().dash} ${setVar} is set but ${embedding.missingVariable} is missing. Set ${embedding.missingVariable} to activate embeddings.`);
+        }
       } else {
-        console.log('  ' + chalk.dim(`Dormant ${getGlyphs().dash} set ${embedding.activationVars[0]} and ${embedding.activationVars[1]} to enable.`));
+        if (embedding.disabledByProvider) {
+          // Explicit CODEGRAPH_EMBEDDING_PROVIDER=off: setting URL/MODEL would NOT take effect
+          // while off is set, so give the accurate action rather than the plain-dormant hint.
+          console.log('  ' + chalk.yellow(`${getGlyphs().warn} Disabled by CODEGRAPH_EMBEDDING_PROVIDER=off ${getGlyphs().dash} set it to local or endpoint to enable.`));
+        } else {
+          console.log('  ' + chalk.dim(`Dormant ${getGlyphs().dash} set CODEGRAPH_EMBEDDING_PROVIDER=local for the bundled model, or ${embedding.activationVars[0]} and ${embedding.activationVars[1]} for an endpoint, to enable.`));
+        }
         if (embedding.previousRun) {
           const pr = embedding.previousRun;
           console.log('  ' + chalk.dim(`(from a previous run: model ${pr.model}, dims ${pr.dims ?? 'unknown'}, coverage ${formatNumber(pr.coverage.embedded)}/${formatNumber(pr.coverage.embeddable)} (${pr.coverage.percent}%))`));
