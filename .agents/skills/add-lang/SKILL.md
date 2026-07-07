@@ -3,6 +3,11 @@ name: add-lang
 description: Add tree-sitter language support to codegraph end-to-end — wire the grammar + extractor, write tests, then benchmark extraction quality and retrieval value on 3 popular real-world repos. Use when the user runs /add-lang <language> or asks to add/support a new language (e.g. Lua, Elixir, Zig, OCaml) in codegraph.
 ---
 
+<!-- Codex mirror of .claude/skills/add-lang/SKILL.md — keep the two in sync. The
+     `claude -p` benchmark arm is the eval subject (Claude runs regardless of which
+     agent orchestrates the audit); the canonical corpus lives at
+     .claude/skills/agent-eval/corpus.json (single copy, shared). -->
+
 # Add a language to CodeGraph
 
 Wire a new tree-sitter language into codegraph's extraction pipeline, prove it
