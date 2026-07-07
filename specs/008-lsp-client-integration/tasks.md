@@ -117,22 +117,22 @@
 
 ### Tests for User Story 3
 
-- [ ] T050 [P] [US3] Write failing missing-server degradation tests for normal runtime in `__tests__/lsp-prereqs.test.ts`
-- [ ] T051 [P] [US3] Write failing crash, initialize timeout, request timeout, malformed response, and shutdown failure tests in `__tests__/lsp-client.test.ts`
-- [ ] T052 [P] [US3] Write failing one-restart-per-language-per-run tests for bounded recovery in `__tests__/lsp-client.test.ts`
-- [ ] T053 [P] [US3] Write failing status tests for unavailable, skipped, degraded, not-present, not-applicable, and validation-only reason categories in `__tests__/lsp-status.test.ts`
-- [ ] T054 [P] [US3] Write failing performance enforcement and status tests for elapsed time, full-index per-language source-file caps, candidate work-item caps, 250-item LSP batch size, active session high-water mark, in-flight request high-water mark, cap-exceeded skip reasons, and deterministic no-unbounded-fallback behavior in `__tests__/lsp-status.test.ts` and `__tests__/lsp-precision-pass.test.ts`
+- [X] T050 [P] [US3] Write failing missing-server degradation tests for normal runtime in `__tests__/lsp-prereqs.test.ts`
+- [X] T051 [P] [US3] Write failing crash, initialize timeout, request timeout, malformed response, and shutdown failure tests in `__tests__/lsp-client.test.ts`
+- [X] T052 [P] [US3] Write failing one-restart-per-language-per-run tests for bounded recovery in `__tests__/lsp-precision-pass.test.ts`
+- [X] T053 [P] [US3] Write failing status tests for unavailable, skipped, degraded, not-present, not-applicable, and validation-only reason categories in `__tests__/lsp-status.test.ts`
+- [X] T054 [P] [US3] Write failing performance enforcement and status tests for elapsed time, full-index per-language source-file caps, candidate work-item caps, 250-item LSP batch size, active session high-water mark, in-flight request high-water mark, cap-exceeded skip reasons, and deterministic no-unbounded-fallback behavior in `__tests__/lsp-status.test.ts` and `__tests__/lsp-precision-pass.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T055 [US3] Map missing, crashed, timed-out, malformed, and shutdown-failed server conditions to per-language degradation in `src/lsp/prereqs.ts` and `src/lsp/status.ts`
-- [ ] T056 [US3] Implement at-most-one fresh session restart per language per explicit index or sync run in `src/lsp/client.ts`
-- [ ] T057 [US3] Implement checked, verified, corrected, suppressed, skipped-by-reason, and degraded counters in `src/lsp/status.ts`
-- [ ] T058 [US3] Implement structural-index elapsed time, LSP elapsed time, enabled-overhead ratio, full-index per-language file/work caps, 250-item batching, active session concurrency limit, request concurrency limit, session high-water, and request high-water status records in `src/lsp/precision-pass.ts`, `src/lsp/client.ts`, and `src/lsp/status.ts`
-- [ ] T059 [US3] Add deterministic missing, crashed, timed-out, malformed, and shutdown-failure fake server fixtures in `__tests__/fixtures/lsp/degradation/README.md`
-- [ ] T060 [US3] Ensure `codegraph status` reads recorded LSP state and does not start or probe language servers solely because status is requested in `src/bin/codegraph.ts`
-- [ ] T061 [US3] Run `npm test -- __tests__/lsp-prereqs.test.ts __tests__/lsp-client.test.ts __tests__/lsp-status.test.ts __tests__/lsp-precision-pass.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-2.md`
-- [ ] T062 [US3] Record graceful-degradation, full-index cap enforcement, batch-size enforcement, session/request concurrency, and no-unbounded-fallback evidence for missing, crashed, timed-out, malformed, shutdown-failed, and cap-exceeded scenarios in `specs/008-lsp-client-integration/validation/slice-2.md`
+- [X] T055 [US3] Map missing, crashed, timed-out, malformed, and shutdown-failed server conditions to per-language degradation in `src/lsp/prereqs.ts` and `src/lsp/status.ts`
+- [X] T056 [US3] Implement at-most-one fresh session restart per language per explicit index or sync run in `src/lsp/precision-pass.ts`
+- [X] T057 [US3] Implement checked, verified, corrected, suppressed, skipped-by-reason, and degraded counters in `src/lsp/status.ts`
+- [X] T058 [US3] Implement structural-index elapsed time, LSP elapsed time, enabled-overhead ratio, full-index per-language file/work caps, 250-item batching, active session concurrency limit, request concurrency limit, session high-water, and request high-water status records in `src/lsp/precision-pass.ts`, `src/lsp/client.ts`, and `src/lsp/status.ts`
+- [X] T059 [US3] Add deterministic missing, crashed, timed-out, malformed, and shutdown-failure fake server fixtures in `__tests__/fixtures/lsp/degradation/README.md`
+- [X] T060 [US3] Ensure `codegraph status` reads recorded LSP state and does not start or probe language servers solely because status is requested in `src/bin/codegraph.ts`
+- [X] T061 [US3] Run `npm test -- __tests__/lsp-prereqs.test.ts __tests__/lsp-client.test.ts __tests__/lsp-status.test.ts __tests__/lsp-precision-pass.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-2.md`
+- [X] T062 [US3] Record graceful-degradation, full-index cap enforcement, batch-size enforcement, session/request concurrency, and no-unbounded-fallback evidence for missing, crashed, timed-out, malformed, shutdown-failed, and cap-exceeded scenarios in `specs/008-lsp-client-integration/validation/slice-2.md`
 
 **Checkpoint**: User Story 3 can be validated independently through status and degradation fixtures.
 

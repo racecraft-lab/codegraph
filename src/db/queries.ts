@@ -146,6 +146,13 @@ export interface LspEdgeCandidateRow {
   targetName: string;
 }
 
+export interface LspEdgeCandidateCounts {
+  sourceFilesSeen: number;
+  candidateWorkItems: number;
+  fileCapSkippedWorkItems: number;
+  workCapSkippedWorkItems: number;
+}
+
 /**
  * Convert database row to Node object
  */
@@ -1540,6 +1547,57 @@ export class QueryBuilder {
       targetKind: row.target_kind as NodeKind,
       targetName: row.target_name,
     }));
+  }
+
+  getLspEdgeCandidateCounts(
+    languages: Language[],
+    caps?: {
+      fullIndexSourceFilesPerLanguage: number;
+      fullIndexWorkItemsPerLanguage: number;
+    },
+  ): LspEdgeCandidateCounts {
+    if (languages.length === 0) {
+      return {
+        sourceFilesSeen: 0,
+        candidateWorkItems: 0,
+        fileCapSkippedWorkItems: 0,
+        workCapSkippedWorkItems: 0,
+      };
+    }
+    const placeholders = languages.map(() => '?').join(',');
+    const rows = this.db.prepare(`
+      SELECT
+        s.file_path AS source_file_path,
+        COUNT(*) AS candidate_work_items
+      FROM edges e
+      JOIN nodes s ON s.id = e.source
+      WHERE s.language IN (${placeholders})
+        AND e.kind IN ('calls', 'references', 'imports', 'instantiates')
+        AND e.line IS NOT NULL
+      GROUP BY s.file_path
+      ORDER BY s.file_path
+    `).all(...languages) as Array<{
+      source_file_path: string;
+      candidate_work_items: number;
+    }>;
+
+    const perFileCounts = rows.map((row) => row.candidate_work_items);
+    const allowedFileCounts = caps
+      ? perFileCounts.slice(0, caps.fullIndexSourceFilesPerLanguage)
+      : perFileCounts;
+    const fileCapSkippedWorkItems = caps
+      ? perFileCounts.slice(caps.fullIndexSourceFilesPerLanguage).reduce((sum, count) => sum + count, 0)
+      : 0;
+    const allowedFileWorkItems = allowedFileCounts.reduce((sum, count) => sum + count, 0);
+
+    return {
+      sourceFilesSeen: rows.length,
+      candidateWorkItems: perFileCounts.reduce((sum, count) => sum + count, 0),
+      fileCapSkippedWorkItems,
+      workCapSkippedWorkItems: caps
+        ? Math.max(0, allowedFileWorkItems - caps.fullIndexWorkItemsPerLanguage)
+        : 0,
+    };
   }
 
   /**

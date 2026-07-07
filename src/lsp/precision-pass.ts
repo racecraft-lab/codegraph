@@ -5,18 +5,29 @@ import { Language } from '../types';
 import { LspJsonRpcClient } from './client';
 import { probeLspServerCommand } from './prereqs';
 import {
-  DEFAULT_LSP_FULL_INDEX_WORK_CAP,
   EffectiveLspConfig,
+  LSP_LANGUAGES,
   LSP_REASON_CODES,
   LspCoverageRecord,
   LspLanguage,
+  LspPerformanceCaps,
   LspReasonCode,
   LspServerState,
+  LspServerStatusRecord,
   LspStatus,
 } from './types';
-import { createInitialLspStatus, recordLspDegradation, recordLspSkip } from './status';
+import {
+  createInitialLspStatus,
+  createLspCoverageRecord,
+  defaultLspPerformanceCaps,
+  recordLspCapExceeded,
+  recordLspChecked,
+  recordLspDegradation,
+  recordLspEdgeDecision,
+  recordLspSkip,
+} from './status';
 
-const US1_LANGUAGES: LspLanguage[] = ['typescript', 'tsx', 'javascript', 'jsx'];
+const LSP_PRECISION_LANGUAGES = LSP_LANGUAGES.filter((language) => language !== 'cobol') as LspLanguage[];
 
 const DEFAULT_CLIENT_FACTORY: LspClientFactory = {
   create: ({ command, cwd, timeoutMs }) => new LspJsonRpcClient({
@@ -48,6 +59,7 @@ export interface RunLspPrecisionPassOptions {
   queries: QueryBuilder;
   config: EffectiveLspConfig;
   structuralElapsedMs?: number;
+  performanceCaps?: LspPerformanceCaps;
   clientFactory?: LspClientFactory;
 }
 
@@ -63,29 +75,29 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
   if (!options.config.enabled) return status;
 
   const started = Date.now();
+  const caps = options.performanceCaps ?? defaultLspPerformanceCaps();
   const clientFactory = options.clientFactory ?? DEFAULT_CLIENT_FACTORY;
   status.lastRunAt = new Date(started).toISOString();
   status.performance.structuralElapsedMs = options.structuralElapsedMs;
+  status.performance.caps = caps;
 
-  const candidates = options.queries.getLspEdgeCandidates(US1_LANGUAGES as Language[], DEFAULT_LSP_FULL_INDEX_WORK_CAP);
-  const candidatesByLanguage = new Map<LspLanguage, LspEdgeCandidateRow[]>();
-  for (const candidate of candidates) {
-    if (!US1_LANGUAGES.includes(candidate.language as LspLanguage)) continue;
-    const language = candidate.language as LspLanguage;
-    const existing = candidatesByLanguage.get(language) ?? [];
-    existing.push(candidate);
-    candidatesByLanguage.set(language, existing);
-  }
-
-  for (const language of US1_LANGUAGES) {
-    const languageCandidates = candidatesByLanguage.get(language) ?? [];
-    if (languageCandidates.length === 0) continue;
+  for (const language of LSP_PRECISION_LANGUAGES) {
+    const candidateCounts = options.queries.getLspEdgeCandidateCounts([language] as Language[], caps);
+    const discoveredCandidates = options.queries.getLspEdgeCandidates(
+      [language] as Language[],
+      lspCandidateDiscoveryLimit(caps),
+    );
+    if (discoveredCandidates.length === 0) continue;
 
     const serverConfig = options.config.servers[language];
     const serverStatus = probeLspServerCommand(serverConfig, { cwd: options.projectRoot });
     status.servers.push(serverStatus);
-    const coverage = createCoverageRecord(language, languageCandidates);
+    const coverage = createLspCoverageRecord(language, candidateCounts);
     status.coverage.push(coverage);
+    const languageCandidates = applyFullIndexCaps(status, coverage, discoveredCandidates, caps, {
+      fileCapSkippedWorkItems: candidateCounts.fileCapSkippedWorkItems,
+      workCapSkippedWorkItems: candidateCounts.workCapSkippedWorkItems,
+    });
 
     if (serverStatus.state !== 'available' || !Array.isArray(serverStatus.command)) {
       const reason = serverStatus.reasonCode ?? 'configured-command-unavailable';
@@ -93,64 +105,27 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
       continue;
     }
 
-    const client = clientFactory.create({
+    await runLanguageWithRestartBudget({
       language,
       command: serverStatus.command,
-      cwd: options.projectRoot,
       timeoutMs: serverConfig.timeoutMs,
+      candidates: languageCandidates,
+      clientFactory,
+      coverage,
+      options,
+      status,
+      serverStatus,
+      caps,
+      passStartedAt: started,
     });
-
-    try {
-      const initializeResult = await client.initialize({
-        processId: process.pid,
-        rootUri: pathToFileURL(options.projectRoot).href,
-        capabilities: {},
-      });
-      serverStatus.state = 'initialized';
-      serverStatus.observedVersion = serverInfoText(initializeResult);
-      status.performance.activeSessionHighWatermark = Math.max(status.performance.activeSessionHighWatermark, 1);
-
-      for (const candidate of languageCandidates) {
-        const result = await requestDefinition(client, options.projectRoot, candidate);
-        coverage.checkedWorkItems += 1;
-        status.edgeCounts.checked += 1;
-        status.performance.inFlightRequestHighWatermark = Math.max(status.performance.inFlightRequestHighWatermark, 1);
-
-        const decision = applyDefinitionResult(options.queries, options.projectRoot, candidate, result);
-        if (decision === 'verified') {
-          status.edgeCounts.verified += 1;
-        } else if (decision) {
-          recordLspSkip(status, coverage, decision);
-        }
-      }
-    } catch (err) {
-      const reason = reasonFromError(err);
-      serverStatus.state = serverStateForReason(reason);
-      serverStatus.reasonCode = reason;
-      serverStatus.lastError = err instanceof Error ? err.message : String(err);
-      recordLspDegradation(status, coverage, reason, languageCandidates.length - coverage.checkedWorkItems);
-    } finally {
-      try {
-        await client.shutdown();
-      } catch (err) {
-        const shutdownMessage = err instanceof Error ? err.message : String(err);
-        if (!serverStatus.reasonCode) {
-          serverStatus.state = 'degraded';
-          serverStatus.reasonCode = 'shutdown-failure';
-          serverStatus.lastError = shutdownMessage;
-          recordLspDegradation(status, coverage, 'shutdown-failure', languageCandidates.length - coverage.checkedWorkItems);
-        } else {
-          serverStatus.lastError = serverStatus.lastError
-            ? `${serverStatus.lastError}; shutdown failed: ${shutdownMessage}`
-            : `shutdown failed: ${shutdownMessage}`;
-        }
-      }
-    }
 
     coverage.elapsedMs = Date.now() - started;
   }
 
   status.performance.lspElapsedMs = Date.now() - started;
+  if (options.structuralElapsedMs !== undefined && options.structuralElapsedMs > 0) {
+    status.performance.enabledOverheadRatio = (options.structuralElapsedMs + status.performance.lspElapsedMs) / options.structuralElapsedMs;
+  }
   return status;
 }
 
@@ -179,17 +154,6 @@ export function normalizeLspTargets(projectRoot: string, result: unknown): Norma
   return out;
 }
 
-function createCoverageRecord(language: LspLanguage, candidates: LspEdgeCandidateRow[]): LspCoverageRecord {
-  return {
-    language,
-    sourceFilesSeen: new Set(candidates.map((candidate) => candidate.sourceFilePath)).size,
-    candidateWorkItems: candidates.length,
-    checkedWorkItems: 0,
-    skippedByReason: {},
-    capExceededReasons: [],
-  };
-}
-
 async function requestDefinition(
   client: LspDefinitionClient,
   projectRoot: string,
@@ -205,12 +169,239 @@ async function requestDefinition(
   });
 }
 
+interface RunLanguageOptions {
+  language: LspLanguage;
+  command: string[];
+  timeoutMs: number;
+  candidates: LspEdgeCandidateRow[];
+  clientFactory: LspClientFactory;
+  coverage: LspCoverageRecord;
+  options: RunLspPrecisionPassOptions;
+  status: LspStatus;
+  serverStatus: LspServerStatusRecord;
+  caps: LspPerformanceCaps;
+  passStartedAt: number;
+}
+
+interface CandidateFailure {
+  reason: LspReasonCode;
+  error: unknown;
+  failedCandidateIndex: number;
+}
+
+interface ProcessCandidatesResult {
+  failure?: CandidateFailure;
+}
+
+async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<void> {
+  if (run.candidates.length === 0) return;
+
+  let remaining = run.candidates;
+  let restartAttempts = 0;
+  let initializedAtLeastOnce = false;
+
+  while (remaining.length > 0) {
+    const client = run.clientFactory.create({
+      language: run.language,
+      command: run.command,
+      cwd: run.options.projectRoot,
+      timeoutMs: run.timeoutMs,
+    });
+    run.status.performance.activeSessionHighWatermark = Math.max(
+      run.status.performance.activeSessionHighWatermark,
+      1,
+    );
+
+    try {
+      const initializeResult = await client.initialize({
+        processId: process.pid,
+        rootUri: pathToFileURL(run.options.projectRoot).href,
+        capabilities: {},
+      });
+      initializedAtLeastOnce = true;
+      run.serverStatus.state = 'initialized';
+      run.serverStatus.observedVersion = serverInfoText(initializeResult);
+
+      const processed = await processCandidateRequests(client, remaining, run);
+      if (!processed.failure) {
+        const shutdownError = await shutdownLanguageClient(client);
+        if (shutdownError) {
+          recordShutdownFailure(run, shutdownError, remaining.length - run.coverage.checkedWorkItems);
+        }
+        return;
+      }
+
+      const failure = processed.failure;
+      const shutdownError = await shutdownLanguageClient(client);
+      if (restartAttempts < 1) {
+        restartAttempts += 1;
+        remaining = remaining.slice(failure.failedCandidateIndex);
+        continue;
+      }
+      markLanguageDegraded(run, failure.reason, failure.error, remaining.slice(failure.failedCandidateIndex), shutdownError);
+      return;
+    } catch (err) {
+      const reason = reasonFromError(err);
+      const shutdownError = await shutdownLanguageClient(client);
+      if (restartAttempts < 1) {
+        restartAttempts += 1;
+        continue;
+      }
+      markLanguageDegraded(run, reason, err, remaining, shutdownError);
+      return;
+    } finally {
+      run.coverage.elapsedMs = Date.now() - run.passStartedAt;
+    }
+  }
+
+  if (!initializedAtLeastOnce) {
+    run.serverStatus.state = 'degraded';
+  }
+}
+
+async function processCandidateRequests(
+  client: LspDefinitionClient,
+  candidates: LspEdgeCandidateRow[],
+  run: RunLanguageOptions,
+): Promise<ProcessCandidatesResult> {
+  for (let batchStart = 0; batchStart < candidates.length; batchStart += run.caps.fullIndexBatchSize) {
+    const batch = candidates.slice(batchStart, batchStart + run.caps.fullIndexBatchSize);
+    for (let chunkStart = 0; chunkStart < batch.length; chunkStart += run.caps.inFlightRequestsPerSession) {
+      const chunk = batch.slice(chunkStart, chunkStart + run.caps.inFlightRequestsPerSession);
+      run.status.performance.inFlightRequestHighWatermark = Math.max(
+        run.status.performance.inFlightRequestHighWatermark,
+        chunk.length,
+      );
+
+      const results = await Promise.all(chunk.map(async (candidate, index) => {
+        try {
+          return {
+            candidate,
+            index,
+            result: await requestDefinition(client, run.options.projectRoot, candidate),
+          };
+        } catch (error) {
+          return { candidate, index, error };
+        }
+      }));
+
+      for (const item of results) {
+        if ('error' in item) {
+          return {
+            failure: {
+              reason: reasonFromError(item.error),
+              error: item.error,
+              failedCandidateIndex: batchStart + chunkStart + item.index,
+            },
+          };
+        }
+
+        recordLspChecked(run.status, run.coverage);
+        const decision = applyDefinitionResult(
+          run.options.queries,
+          run.options.projectRoot,
+          item.candidate,
+          item.result,
+        );
+        if (decision === 'verified' || decision === 'corrected' || decision === 'suppressed') {
+          recordLspEdgeDecision(run.status, decision);
+        } else if (decision) {
+          recordLspSkip(run.status, run.coverage, decision);
+        }
+      }
+    }
+  }
+  return {};
+}
+
+async function shutdownLanguageClient(
+  client: LspDefinitionClient,
+): Promise<string | undefined> {
+  try {
+    await client.shutdown();
+    return undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+function recordShutdownFailure(
+  run: RunLanguageOptions,
+  shutdownError: string,
+  unprocessedCount: number,
+): void {
+  run.serverStatus.state = 'degraded';
+  run.serverStatus.reasonCode = 'shutdown-failure';
+  run.serverStatus.lastError = shutdownError;
+  recordLspDegradation(run.status, run.coverage, 'shutdown-failure', unprocessedCount);
+}
+
+function markLanguageDegraded(
+  run: RunLanguageOptions,
+  reason: LspReasonCode,
+  error: unknown,
+  remainingCandidates: LspEdgeCandidateRow[],
+  shutdownError?: string,
+): void {
+  run.serverStatus.state = serverStateForReason(reason);
+  run.serverStatus.reasonCode = reason;
+  const primaryError = error instanceof Error ? error.message : String(error);
+  run.serverStatus.lastError = shutdownError
+    ? `${primaryError}; shutdown failed: ${shutdownError}`
+    : primaryError;
+  recordLspDegradation(run.status, run.coverage, reason, remainingCandidates.length);
+}
+
+function applyFullIndexCaps(
+  status: LspStatus,
+  coverage: LspCoverageRecord,
+  candidates: LspEdgeCandidateRow[],
+  caps: LspPerformanceCaps,
+  aggregateSkips?: {
+    fileCapSkippedWorkItems: number;
+    workCapSkippedWorkItems: number;
+  },
+): LspEdgeCandidateRow[] {
+  const allowedFiles = new Set<string>();
+  const fileCappedCandidates: LspEdgeCandidateRow[] = [];
+  let skippedByFileCap = 0;
+
+  for (const candidate of candidates) {
+    if (!allowedFiles.has(candidate.sourceFilePath)) {
+      if (allowedFiles.size >= caps.fullIndexSourceFilesPerLanguage) {
+        skippedByFileCap += 1;
+        continue;
+      }
+      allowedFiles.add(candidate.sourceFilePath);
+    }
+    fileCappedCandidates.push(candidate);
+  }
+
+  const fileCapSkippedWorkItems = aggregateSkips?.fileCapSkippedWorkItems ?? skippedByFileCap;
+  if (fileCapSkippedWorkItems > 0) {
+    recordLspCapExceeded(status, coverage, 'full-index-file-cap-exceeded', fileCapSkippedWorkItems);
+  }
+
+  const runnable = fileCappedCandidates.slice(0, caps.fullIndexWorkItemsPerLanguage);
+  const skippedByWorkCap = fileCappedCandidates.length - runnable.length;
+  const workCapSkippedWorkItems = aggregateSkips?.workCapSkippedWorkItems ?? skippedByWorkCap;
+  if (workCapSkippedWorkItems > 0) {
+    recordLspCapExceeded(status, coverage, 'full-index-work-cap-exceeded', workCapSkippedWorkItems);
+  }
+
+  return runnable;
+}
+
+function lspCandidateDiscoveryLimit(caps: LspPerformanceCaps): number {
+  return caps.fullIndexWorkItemsPerLanguage + caps.fullIndexSourceFilesPerLanguage + 1;
+}
+
 function applyDefinitionResult(
   queries: QueryBuilder,
   projectRoot: string,
   candidate: LspEdgeCandidateRow,
   result: unknown,
-): 'verified' | LspReasonCode | null {
+): 'verified' | 'corrected' | 'suppressed' | LspReasonCode | null {
   const targets = normalizeLspTargets(projectRoot, result);
   if (targets.length === 0) return 'language-not-applicable';
   if (targets.length > 1) return 'language-not-applicable';

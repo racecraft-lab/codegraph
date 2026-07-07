@@ -31,7 +31,7 @@ async function createClient(serverSource: string, options: Record<string, unknow
   const { LspJsonRpcClient } = await loadClientModule();
   const client = new LspJsonRpcClient({
     command: [process.execPath, serverPath],
-    timeoutMs: 500,
+    timeoutMs: 2000,
     ...options,
   });
   clients.push(client);
@@ -163,6 +163,17 @@ describe('LspJsonRpcClient', () => {
     });
   });
 
+  it('maps initialize timeout to the initialize-specific degradation reason', async () => {
+    const client = await createClient(rpcServerSource(`
+  if (message.method === 'initialize') return;
+`), { timeoutMs: 25 });
+
+    await expect(client.initialize({ rootUri: 'file:///fixture-workspace' })).rejects.toMatchObject({
+      name: 'LspRequestTimeoutError',
+      reasonCode: 'initialize-timeout',
+    });
+  });
+
   it('performs shutdown by sending shutdown then exit and waiting for process exit', async () => {
     const client = await createClient(rpcServerSource(`
   if (message.method === 'shutdown') {
@@ -179,6 +190,17 @@ describe('LspJsonRpcClient', () => {
     await expect(client.shutdown()).resolves.toBeNull();
     await expect(client.waitForExit()).resolves.toMatchObject({ code: 0, signal: null });
     expect(client.getStderr()).toContain('shutdown-seen=true');
+  });
+
+  it('maps shutdown failures to a degradation reason without hanging disposal', async () => {
+    const client = await createClient(rpcServerSource(`
+  if (message.method === 'shutdown') return;
+`), { timeoutMs: 25 });
+
+    await expect(client.shutdown()).rejects.toMatchObject({
+      name: 'LspClientError',
+      reasonCode: 'shutdown-failure',
+    });
   });
 
   it('rejects pending requests when the server process exits', async () => {
