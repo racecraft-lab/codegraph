@@ -2,6 +2,7 @@ import { Node, Edge, ExtractionResult, ExtractionError, UnresolvedReference, Lan
 import { generateNodeId } from './tree-sitter-helpers';
 import { TreeSitterExtractor } from './tree-sitter';
 import { isLanguageSupported } from './grammars';
+import { findMarkupBlocks } from './markup-utils';
 
 /**
  * Vue built-in components — skipped so a `<Transition>` / `<KeepAlive>` in the
@@ -130,33 +131,17 @@ export class VueExtractor {
       isTypeScript: boolean;
     }> = [];
 
-    const scriptRegex = /<script(\s[^>]*)?>(?<content>[\s\S]*?)<\/script>/g;
-    let match;
-
-    while ((match = scriptRegex.exec(this.source)) !== null) {
-      const attrs = match[1] || '';
-      const content = match.groups?.content || match[2] || '';
-
+    for (const block of findMarkupBlocks(this.source, ['script'])) {
+      const attrs = block.attrs;
       // Detect TypeScript from lang attribute
-      const isTypeScript = /lang\s*=\s*["'](ts|typescript)["']/.test(attrs);
+      const isTypeScript = /lang\s*=\s*["'](ts|typescript)["']/i.test(attrs);
 
       // Detect <script setup>
-      const isSetup = /\bsetup\b/.test(attrs);
-
-      // Calculate the 0-indexed line where the content begins. The content
-      // starts right after the opening tag's `>` — its leading `\n` is part
-      // of the content, so relative line 1 sits ON the tag's closing line
-      // (adding 1 here double-counted the embedded newline and shifted every
-      // script-block symbol down a line).
-      const beforeScript = this.source.substring(0, match.index);
-      const scriptTagLine = (beforeScript.match(/\n/g) || []).length;
-      const openingTag = match[0].substring(0, match[0].indexOf('>') + 1);
-      const openingTagLines = (openingTag.match(/\n/g) || []).length;
-      const contentStartLine = scriptTagLine + openingTagLines; // 0-indexed line
+      const isSetup = /\bsetup\b/i.test(attrs);
 
       blocks.push({
-        content,
-        startLine: contentStartLine,
+        content: block.content,
+        startLine: block.contentStartLine,
         isSetup,
         isTypeScript,
       });
@@ -247,14 +232,8 @@ export class VueExtractor {
     // identifiers and CSS selectors aren't mistaken for template tags. This
     // also correctly handles nested <template> tags (v-if / slots), which a
     // single non-greedy <template>…</template> match would mis-bound.
-    const coveredRanges: Array<[number, number]> = [];
-    const blockRegex = /<(script|style)(\s[^>]*)?>[\s\S]*?<\/\1>/g;
-    let blockMatch;
-    while ((blockMatch = blockRegex.exec(this.source)) !== null) {
-      const startLine = (this.source.substring(0, blockMatch.index).match(/\n/g) || []).length;
-      const endLine = startLine + (blockMatch[0].match(/\n/g) || []).length;
-      coveredRanges.push([startLine, endLine]);
-    }
+    const coveredRanges: Array<[number, number]> = findMarkupBlocks(this.source, ['script', 'style'])
+      .map((block) => [block.startLine, block.endLine] as [number, number]);
 
     const lines = this.source.split('\n');
     // Opening / self-closing tags (closing `</Foo>` starts with `</`, so the

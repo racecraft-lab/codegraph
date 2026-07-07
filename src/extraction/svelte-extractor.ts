@@ -2,6 +2,7 @@ import { Node, Edge, ExtractionResult, ExtractionError, UnresolvedReference, Lan
 import { generateNodeId } from './tree-sitter-helpers';
 import { TreeSitterExtractor } from './tree-sitter';
 import { isLanguageSupported } from './grammars';
+import { findBraceExpressions, findMarkupBlocks } from './markup-utils';
 
 /** Svelte 5 rune names — compiler builtins, not real functions */
 const SVELTE_RUNES = new Set([
@@ -122,33 +123,17 @@ export class SvelteExtractor {
       isTypeScript: boolean;
     }> = [];
 
-    const scriptRegex = /<script(\s[^>]*)?>(?<content>[\s\S]*?)<\/script>/g;
-    let match;
-
-    while ((match = scriptRegex.exec(this.source)) !== null) {
-      const attrs = match[1] || '';
-      const content = match.groups?.content || match[2] || '';
-
+    for (const block of findMarkupBlocks(this.source, ['script'])) {
+      const attrs = block.attrs;
       // Detect TypeScript from lang attribute
-      const isTypeScript = /lang\s*=\s*["'](ts|typescript)["']/.test(attrs);
+      const isTypeScript = /lang\s*=\s*["'](ts|typescript)["']/i.test(attrs);
 
       // Detect module script
-      const isModule = /context\s*=\s*["']module["']/.test(attrs);
-
-      // Calculate the 0-indexed line where the content begins. The content
-      // starts right after the opening tag's `>` — its leading `\n` is part
-      // of the content, so relative line 1 sits ON the tag's closing line
-      // (adding 1 here double-counted the embedded newline and shifted every
-      // script-block symbol down a line).
-      const beforeScript = this.source.substring(0, match.index);
-      const scriptTagLine = (beforeScript.match(/\n/g) || []).length;
-      const openingTag = match[0].substring(0, match[0].indexOf('>') + 1);
-      const openingTagLines = (openingTag.match(/\n/g) || []).length;
-      const contentStartLine = scriptTagLine + openingTagLines; // 0-indexed line
+      const isModule = /context\s*=\s*["']module["']/i.test(attrs);
 
       blocks.push({
-        content,
-        startLine: contentStartLine,
+        content: block.content,
+        startLine: block.contentStartLine,
         isModule,
         isTypeScript,
       });
@@ -234,33 +219,26 @@ export class SvelteExtractor {
     // Build a set of line ranges covered by <script> and <style> blocks so we skip them
     const coveredRanges: Array<[number, number]> = [];
 
-    // Find all <script>...</script> and <style>...</style> ranges
-    const tagRegex = /<(script|style)(\s[^>]*)?>[\s\S]*?<\/\1>/g;
-    let tagMatch;
-    while ((tagMatch = tagRegex.exec(this.source)) !== null) {
-      const startLine = (this.source.substring(0, tagMatch.index).match(/\n/g) || []).length;
-      const endLine = startLine + (tagMatch[0].match(/\n/g) || []).length;
-      coveredRanges.push([startLine, endLine]);
+    for (const block of findMarkupBlocks(this.source, ['script', 'style'])) {
+      coveredRanges.push([block.startLine, block.endLine]);
     }
 
     // Find template expressions: {...} outside of script/style blocks
     // Matches curly-brace expressions, excluding Svelte block syntax ({#if}, {:else}, {/if}, {@html}, {@render})
     const lines = this.source.split('\n');
-    const exprRegex = /\{([^}#/:@][^}]*)\}/g;
+    const excludedExpressionStarts = new Set(['#', '/', ':', '@']);
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       // Skip lines inside script/style blocks
       if (coveredRanges.some(([start, end]) => lineIdx >= start && lineIdx <= end)) continue;
 
       const line = lines[lineIdx]!;
-      let exprMatch;
-      while ((exprMatch = exprRegex.exec(line)) !== null) {
-        const expr = exprMatch[1]!;
+      for (const expr of findBraceExpressions(line, excludedExpressionStarts)) {
         // Extract function calls: identifiers followed by (
         // Matches: cn(...), buttonVariants(...), obj.method(...)
         const callRegex = /\b([a-zA-Z_$][\w$.]*)\s*\(/g;
         let callMatch;
-        while ((callMatch = callRegex.exec(expr)) !== null) {
+        while ((callMatch = callRegex.exec(expr.text)) !== null) {
           const calleeName = callMatch[1]!;
           // Skip Svelte runes, control flow keywords, and common non-function patterns
           if (SVELTE_RUNES.has(calleeName)) continue;
@@ -271,7 +249,7 @@ export class SvelteExtractor {
             referenceName: calleeName,
             referenceKind: 'calls',
             line: lineIdx + 1, // 1-indexed
-            column: exprMatch.index + callMatch.index,
+            column: expr.offset + callMatch.index,
             filePath: this.filePath,
             language: 'svelte',
           });
@@ -290,14 +268,8 @@ export class SvelteExtractor {
    */
   private extractTemplateComponents(componentNodeId: string): void {
     // Build ranges covered by <script> and <style> blocks to skip them
-    const coveredRanges: Array<[number, number]> = [];
-    const tagRegex = /<(script|style)(\s[^>]*)?>[\s\S]*?<\/\1>/g;
-    let tagMatch;
-    while ((tagMatch = tagRegex.exec(this.source)) !== null) {
-      const startLine = (this.source.substring(0, tagMatch.index).match(/\n/g) || []).length;
-      const endLine = startLine + (tagMatch[0].match(/\n/g) || []).length;
-      coveredRanges.push([startLine, endLine]);
-    }
+    const coveredRanges: Array<[number, number]> = findMarkupBlocks(this.source, ['script', 'style'])
+      .map((block) => [block.startLine, block.endLine]);
 
     const lines = this.source.split('\n');
     // Match PascalCase opening/self-closing tags (closing tags </Foo> start with </ so won't match)

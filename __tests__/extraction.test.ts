@@ -6576,6 +6576,23 @@ def processData(): Unit = {
   });
 });
 
+describe('Svelte Extraction', () => {
+  it('extracts script blocks with case-insensitive loose closing tags', () => {
+    const code = `<SCRIPT lang="ts">
+function handleClick(): void {
+  console.log('clicked');
+}
+</SCRIPT >
+<button>{handleClick()}</button>
+`;
+    const result = extractFromSource('LooseClose.svelte', code);
+
+    const funcNode = result.nodes.find((n) => n.kind === 'function' && n.name === 'handleClick');
+    expect(funcNode).toBeDefined();
+    expect(funcNode?.language).toBe('svelte');
+  });
+});
+
 describe('Vue Extraction', () => {
   it('should detect Vue files', () => {
     expect(detectLanguage('App.vue')).toBe('vue');
@@ -6658,6 +6675,24 @@ function increment(): void {
     for (const node of result.nodes) {
       expect(node.language).toBe('vue');
     }
+  });
+
+  it('should extract from case-insensitive script tags with loose closing syntax', () => {
+    const code = `<template>
+  <button @click="save">Save</button>
+</template>
+
+<SCRIPT setup lang="ts">
+function save(): void {
+  console.log('saved');
+}
+</SCRIPT >
+`;
+    const result = extractFromSource('LooseVue.vue', code);
+
+    const funcNode = result.nodes.find((n) => n.kind === 'function' && n.name === 'save');
+    expect(funcNode).toBeDefined();
+    expect(funcNode?.language).toBe('vue');
   });
 
   it('should extract calls from top-level <script setup> initializers', () => {
@@ -6965,6 +7000,23 @@ function trackView(page: string) {
     const fn = result.nodes.find((n) => n.kind === 'function' && n.name === 'trackView');
     expect(fn).toBeDefined();
     expect(fn?.startLine).toBe(6);
+    expect(fn?.language).toBe('astro');
+  });
+
+  it('should extract script blocks with case-insensitive loose closing tags', () => {
+    const code = `---
+const a = 1;
+---
+<SCRIPT>
+function trackLoose() {
+  return true;
+}
+</SCRIPT >
+`;
+    const result = extractFromSource('LooseAstro.astro', code);
+
+    const fn = result.nodes.find((n) => n.kind === 'function' && n.name === 'trackLoose');
+    expect(fn).toBeDefined();
     expect(fn?.language).toBe('astro');
   });
 

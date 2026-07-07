@@ -8,13 +8,13 @@
 // Env: REPS (default 3) · CG_ENGINE (engine repo) · AGENT_EVAL_OUT (repos under /repos) · CONC (judge concurrency)
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { resolve, dirname, join } from 'node:path';
-import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENGINE = process.env.CG_ENGINE || resolve(HERE, '..', '..');
-const OUT = process.env.AGENT_EVAL_OUT || '/tmp/cg-offload-eval';
+const OUT = process.env.AGENT_EVAL_OUT || mkdtempSync(join(tmpdir(), 'cg-offload-eval-'));
 const REPOS = join(OUT, 'repos');
 const GT = JSON.parse(readFileSync(resolve(HERE, 'offload-eval-ground-truth.json'), 'utf8'));
 const REPS = Number(process.env.REPS || 3);
@@ -30,6 +30,19 @@ const CodeGraph = idx.default?.default ?? idx.default ?? idx.CodeGraph;
 const ToolHandler = toolsMod.ToolHandler ?? toolsMod.default?.ToolHandler;
 if (typeof CodeGraph?.openSync !== 'function' || typeof ToolHandler !== 'function') {
   console.error('could not load engine from', ENGINE); process.exit(2);
+}
+
+function writeFileAtomic(filePath, content) {
+  const dir = dirname(filePath);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const tempDir = mkdtempSync(join(dir, '.write-'));
+  const tempPath = join(tempDir, 'content');
+  try {
+    writeFileSync(tempPath, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    renameSync(tempPath, filePath);
+  } finally {
+    try { rmSync(tempDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
 }
 
 const fidPrompt = (gt, ans) => `You are scoring the FIDELITY of a machine-synthesized code-exploration answer against verified ground truth. Do NOT use any tools.
@@ -66,8 +79,8 @@ for (const repo of Object.keys(GT)) {
   for (const effort of EFFORTS) {
     for (let rep = 1; rep <= REPS; rep++) {
       process.env.CODEGRAPH_OFFLOAD_EFFORT = effort;
-      const usageLog = join(tmpdir(), `effort-${repo}-${effort}-${rep}.jsonl`);
-      try { rmSync(usageLog); } catch { /* none */ }
+      const usageDir = mkdtempSync(join(tmpdir(), 'cg-offload-usage-'));
+      const usageLog = join(usageDir, 'usage.jsonl');
       process.env.CODEGRAPH_OFFLOAD_USAGE_LOG = usageLog;
       let answer = '';
       try { answer = (await h.execute('codegraph_explore', { query: GT[repo].question }))?.content?.[0]?.text ?? ''; }
@@ -77,6 +90,7 @@ for (const repo of Object.keys(GT)) {
       if (existsSync(usageLog)) for (const e of readFileSync(usageLog, 'utf8').split('\n').filter(Boolean).map(JSON.parse)) {
         ai.tokens += e.totalTokens || 0; ai.cost += e.costUsd || 0; ai.ms += e.ms || 0;
       }
+      try { rmSync(usageDir, { recursive: true, force: true }); } catch { /* best effort */ }
       records.push({ repo, tier: TIER[repo], effort, rep, fired, ai, answer });
       console.error(`  ${repo}/${effort}#${rep}: fired=${fired} ${ai.tokens}tok $${ai.cost.toFixed(4)} ${ai.ms}ms`);
     }
@@ -90,7 +104,7 @@ let done = 0;
 const q = [...records];
 async function worker() { while (q.length) { const r = q.shift(); r.fid = await askJudge(fidPrompt(GT[r.repo], r.answer)); console.error(`  [${++done}/${records.length}] ${r.repo}/${r.effort}#${r.rep}: ${r.fid.verdict} ${r.fid.score ?? ''}`); } }
 await Promise.all(Array.from({ length: CONC }, worker));
-writeFileSync(join(OUT, 'effort-results.jsonl'), records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+writeFileAtomic(join(OUT, 'effort-results.jsonl'), records.map((r) => JSON.stringify(r)).join('\n') + '\n');
 
 // ---- 3. Aggregate: low vs high per repo ------------------------------------
 const med = (a) => { a = a.filter((x) => x != null).sort((x, y) => x - y); return a.length ? (a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2) : null; };

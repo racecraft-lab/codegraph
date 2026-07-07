@@ -6,6 +6,7 @@
 
 import { Language, Node } from '../types';
 import { UnresolvedRef, ResolvedRef, ResolutionContext } from './types';
+import { stripAngleBracketGroups } from '../utils';
 
 /**
  * Ceiling on how many same-named definitions a FUZZY name-match strategy will
@@ -1026,7 +1027,7 @@ function inferJavaFieldReceiverType(
   const typeRaw = beforeName.trim();
   if (!typeRaw) return null;
 
-  const typeNoGenerics = typeRaw.replace(/<[^>]*>/g, '').trim();
+  const typeNoGenerics = stripAngleBracketGroups(typeRaw).trim();
   const typeNoArray = typeNoGenerics.replace(/\[\s*\]/g, '').replace(/\.\.\.$/, '').trim();
   const parts = typeNoArray.split(/[.\s]+/).filter(Boolean);
   const lastPart = parts[parts.length - 1];
@@ -1059,7 +1060,7 @@ const NON_TYPE_RECEIVER_TOKENS = new Set([
  * reject obvious non-types.
  */
 function normalizeInferredTypeName(raw: string): string | null {
-  const cleaned = raw.replace(/<[^>]*>/g, '').replace(/[&*]/g, '').trim();
+  const cleaned = stripAngleBracketGroups(raw).replace(/[&*]/g, '').trim();
   const seg = cleaned.split(/[.:]+/).filter(Boolean).pop();
   if (!seg) return null;
   if (NON_TYPE_RECEIVER_TOKENS.has(seg)) return null;

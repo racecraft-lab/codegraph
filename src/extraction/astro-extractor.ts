@@ -2,6 +2,7 @@ import { Node, Edge, ExtractionResult, ExtractionError, UnresolvedReference } fr
 import { generateNodeId } from './tree-sitter-helpers';
 import { TreeSitterExtractor } from './tree-sitter';
 import { isLanguageSupported } from './grammars';
+import { findBraceExpressions, findMarkupBlocks } from './markup-utils';
 
 /**
  * Astro built-in components — compiler-provided (`<Fragment>`) or shipped by
@@ -156,23 +157,8 @@ export class AstroExtractor {
   private extractScriptBlocks(): Array<{ content: string; startLine: number }> {
     const blocks: Array<{ content: string; startLine: number }> = [];
 
-    const scriptRegex = /<script(\s[^>]*)?>(?<content>[\s\S]*?)<\/script>/g;
-    let match;
-
-    while ((match = scriptRegex.exec(this.source)) !== null) {
-      const content = match.groups?.content || match[2] || '';
-
-      // Calculate the 0-indexed line where the content begins. The content
-      // starts right after the opening tag's `>` — its leading `\n` is part
-      // of the content, so relative line 1 sits ON the tag's closing line
-      // (do not add 1 here; that double-counts the embedded newline).
-      const beforeScript = this.source.substring(0, match.index);
-      const scriptTagLine = (beforeScript.match(/\n/g) || []).length;
-      const openingTag = match[0].substring(0, match[0].indexOf('>') + 1);
-      const openingTagLines = (openingTag.match(/\n/g) || []).length;
-      const contentStartLine = scriptTagLine + openingTagLines; // 0-indexed
-
-      blocks.push({ content, startLine: contentStartLine });
+    for (const block of findMarkupBlocks(this.source, ['script'])) {
+      blocks.push({ content: block.content, startLine: block.contentStartLine });
     }
 
     return blocks;
@@ -254,12 +240,8 @@ export class AstroExtractor {
       coveredRanges.push([frontmatter.startLine - 1, frontmatter.endLine]);
     }
 
-    const tagRegex = /<(script|style)(\s[^>]*)?>[\s\S]*?<\/\1>/g;
-    let tagMatch;
-    while ((tagMatch = tagRegex.exec(this.source)) !== null) {
-      const startLine = (this.source.substring(0, tagMatch.index).match(/\n/g) || []).length;
-      const endLine = startLine + (tagMatch[0].match(/\n/g) || []).length;
-      coveredRanges.push([startLine, endLine]);
+    for (const block of findMarkupBlocks(this.source, ['script', 'style'])) {
+      coveredRanges.push([block.startLine, block.endLine]);
     }
 
     return coveredRanges;
@@ -280,25 +262,13 @@ export class AstroExtractor {
     coveredRanges: Array<[number, number]>
   ): void {
     const lines = this.source.split('\n');
-    // Complete groups: {...} — excluding JSX comments ({/* ... */})
-    const exprRegex = /\{([^}/][^}]*)\}/g;
-    // A group opened but not closed on this line
-    const openExprRegex = /\{([^}/][^}]*)$/;
+    const excludedExpressionStarts = new Set(['}', '/']);
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       if (coveredRanges.some(([start, end]) => lineIdx >= start && lineIdx <= end)) continue;
 
       const line = lines[lineIdx]!;
-      const exprs: Array<{ text: string; offset: number }> = [];
-
-      let exprMatch;
-      while ((exprMatch = exprRegex.exec(line)) !== null) {
-        exprs.push({ text: exprMatch[1]!, offset: exprMatch.index });
-      }
-      const openMatch = openExprRegex.exec(line.replace(exprRegex, ''));
-      if (openMatch) {
-        exprs.push({ text: openMatch[1]!, offset: line.lastIndexOf('{') });
-      }
+      const exprs = findBraceExpressions(line, excludedExpressionStarts, true);
 
       for (const expr of exprs) {
         // Extract function calls: identifiers followed by (

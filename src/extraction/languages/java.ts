@@ -1,6 +1,7 @@
 import type { Node as SyntaxNode } from 'web-tree-sitter';
 import { getNodeText, getChildByField } from '../tree-sitter-helpers';
 import type { ExtractorContext, LanguageExtractor } from '../tree-sitter-types';
+import { stripAngleBracketGroups } from '../../utils';
 
 /**
  * Tree-sitter-java node types for a method's `type` (return) field that can
@@ -27,7 +28,7 @@ function normalizeJavaType(typeNode: SyntaxNode | null, source: string): string 
   // An array (`Foo[]`) isn't a receiver you call instance methods on.
   if (typeNode.type === 'array_type') return undefined;
   // Strip type arguments (`List<Foo>` → `List`) — the chain resolves on the base.
-  const raw = getNodeText(typeNode, source).trim().replace(/<[^>]*>/g, '');
+  const raw = stripAngleBracketGroups(getNodeText(typeNode, source).trim());
   // Strip a dotted package / outer-class qualifier (`java.util.List` → `List`).
   const last = raw.split('.').pop()?.trim();
   if (!last || !/^[A-Za-z_]\w*$/.test(last)) return undefined;

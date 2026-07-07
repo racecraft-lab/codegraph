@@ -276,19 +276,14 @@ export class LiquidExtractor {
    * Extract {% schema %}...{% endschema %} blocks
    */
   private extractSchema(fileNodeId: string): void {
-    // Match {% schema %}...{% endschema %}
-    const schemaRegex = /\{%[-]?\s*schema\s*[-]?%\}([\s\S]*?)\{%[-]?\s*endschema\s*[-]?%\}/g;
-    let match;
-
-    while ((match = schemaRegex.exec(this.source)) !== null) {
-      const [fullMatch, schemaContent] = match;
-      const startLine = this.getLineNumber(match.index);
-      const endLine = this.getLineNumber(match.index + fullMatch.length);
+    for (const schemaBlock of this.findLiquidBlocks('schema', 'endschema')) {
+      const startLine = this.getLineNumber(schemaBlock.startIndex);
+      const endLine = this.getLineNumber(schemaBlock.endIndex);
 
       // Try to parse the schema JSON to get the name
       let schemaName = 'schema';
       try {
-        const schemaJson = JSON.parse(schemaContent!);
+        const schemaJson = JSON.parse(schemaBlock.content);
         if (schemaJson.name) {
           // Shopify schema names can be translation objects like {"en": "...", "fr": "..."}
           schemaName = typeof schemaJson.name === 'string'
@@ -311,7 +306,7 @@ export class LiquidExtractor {
         language: 'liquid',
         startLine,
         endLine,
-        startColumn: match.index - this.getLineStart(startLine),
+        startColumn: schemaBlock.startIndex - this.getLineStart(startLine),
         endColumn: 0,
         // SECURITY (#383): don't dump the raw {% schema %} JSON (section settings
         // + default values) into the docstring — the schema name is already in
@@ -329,6 +324,50 @@ export class LiquidExtractor {
         kind: 'contains',
       });
     }
+  }
+
+  private findLiquidBlocks(
+    openName: string,
+    closeName: string,
+  ): Array<{ content: string; startIndex: number; endIndex: number }> {
+    const blocks: Array<{ content: string; startIndex: number; endIndex: number }> = [];
+    let search = 0;
+
+    while (search < this.source.length) {
+      const open = this.findLiquidTag(openName, search);
+      if (!open) break;
+      const close = this.findLiquidTag(closeName, open.endIndex);
+      if (!close) break;
+
+      blocks.push({
+        content: this.source.slice(open.endIndex, close.startIndex),
+        startIndex: open.startIndex,
+        endIndex: close.endIndex,
+      });
+      search = close.endIndex;
+    }
+
+    return blocks;
+  }
+
+  private findLiquidTag(name: string, from: number): { startIndex: number; endIndex: number } | null {
+    let search = from;
+    while (search < this.source.length) {
+      const start = this.source.indexOf('{%', search);
+      if (start === -1) return null;
+      const end = this.source.indexOf('%}', start + 2);
+      if (end === -1) return null;
+
+      const body = this.source
+        .slice(start + 2, end)
+        .trim()
+        .replace(/^-/, '')
+        .replace(/-$/, '')
+        .trim();
+      if (body === name) return { startIndex: start, endIndex: end + 2 };
+      search = end + 2;
+    }
+    return null;
   }
 
   /**

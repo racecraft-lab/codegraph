@@ -29,6 +29,7 @@ import { stripCommentsForRegex } from './strip-comments';
 import { cFnPointerDispatchEdges } from './c-fnptr-synthesizer';
 import { goframeRouteEdges } from './goframe-synthesizer';
 import { createYielder, type MaybeYield } from './cooperative-yield';
+import { findMarkupBlocks } from '../extraction/markup-utils';
 
 const REGISTRAR_NAME = /^(on[A-Z]\w*|subscribe|addListener|addEventListener|register|watch|listen|addCallback)$/;
 const DISPATCHER_NAME = /(emit|trigger|notify|dispatch|fire|publish|flush)/i;
@@ -924,7 +925,7 @@ function vueTemplateEdges(ctx: ResolutionContext): Edge[] {
   for (const file of ctx.getAllFiles()) {
     if (!file.endsWith('.vue')) continue;
     const content = ctx.readFile(file);
-    const tpl = content && content.match(/<template[^>]*>([\s\S]*)<\/template>/i)?.[1];
+    const tpl = content && findMarkupBlocks(content, ['template'])[0]?.content;
     if (!tpl) continue;
     const comp = ctx.getNodesInFile(file).find((n) => n.kind === 'component');
     if (!comp) continue;
@@ -932,7 +933,7 @@ function vueTemplateEdges(ctx: ResolutionContext): Edge[] {
     // Composable-destructure map: alias → { composable, key }. Lets us resolve a
     // template handler that isn't a local function but a destructured composable
     // return (`@click="closeSidebar"` ← `const { close: closeSidebar } = useSidebarControl()`).
-    const script = content.match(/<script[^>]*>([\s\S]*?)<\/script>/i)?.[1] ?? '';
+    const script = findMarkupBlocks(content, ['script']).map((block) => block.content).join('\n');
     const destructured = new Map<string, { composable: string; key: string }>();
     VUE_DESTRUCTURE_RE.lastIndex = 0;
     let dm: RegExpExecArray | null;

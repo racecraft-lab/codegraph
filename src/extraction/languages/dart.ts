@@ -1,6 +1,7 @@
 import type { Node as SyntaxNode } from 'web-tree-sitter';
 import { getNodeText } from '../tree-sitter-helpers';
 import type { LanguageExtractor } from '../tree-sitter-types';
+import { stripAngleBracketGroups } from '../../utils';
 
 /**
  * The `function_signature` carrying a method's return type — unwrapped from a
@@ -85,7 +86,7 @@ function extractDartReturnType(node: SyntaxNode, source: string): string | undef
   // (generic args sit in a sibling `type_arguments`, so this is the container).
   const retType = sig.namedChildren.find((c: SyntaxNode) => c.type === 'type_identifier');
   if (!retType) return undefined;
-  const text = getNodeText(retType, source).replace(/<[^>]*>/g, '').trim();
+  const text = stripAngleBracketGroups(getNodeText(retType, source)).trim();
   const last = text.split('.').pop(); // prefixed `p.Bar` → `Bar`
   if (!last || !/^[A-Za-z_]\w*$/.test(last)) return undefined;
   return last;

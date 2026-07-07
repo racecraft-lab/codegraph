@@ -6,15 +6,30 @@
 // JSON-only verdicts. Writes judged.jsonl (one line per run, verdicts merged).
 //
 // Usage: judge.mjs --results <f> --truth <f> --out <f> [--concurrency 4]
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { execFile } from 'child_process';
+import { dirname, join } from 'path';
+import { tmpdir } from 'os';
 
 const A = {};
 for (let i = 2; i < process.argv.length; i += 2) A[process.argv[i].replace(/^--/, '')] = process.argv[i + 1];
 const results = readFileSync(A.results, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
 const truth = JSON.parse(readFileSync(A.truth, 'utf8'));
-const OUT = A.out || '/tmp/cg-offload-eval/judged.jsonl';
+const OUT = A.out || join(mkdtempSync(join(tmpdir(), 'cg-offload-eval-')), 'judged.jsonl');
 const CONC = Number(A.concurrency || 4);
+
+function writeFileAtomic(filePath, content) {
+  const dir = dirname(filePath);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const tempDir = mkdtempSync(join(dir, '.write-'));
+  const tempPath = join(tempDir, 'content');
+  try {
+    writeFileSync(tempPath, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    renameSync(tempPath, filePath);
+  } finally {
+    try { rmSync(tempDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
 
 function askJudge(prompt) {
   return new Promise((resolve) => {
@@ -99,5 +114,5 @@ for (const r of results) {
   }
   delete r._fid;
 }
-writeFileSync(OUT, results.map(r => JSON.stringify(r)).join('\n') + '\n');
+writeFileAtomic(OUT, results.map(r => JSON.stringify(r)).join('\n') + '\n');
 console.error(`wrote ${OUT}`);

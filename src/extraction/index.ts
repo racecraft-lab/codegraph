@@ -1719,9 +1719,11 @@ export class ExtractionOrchestrator {
     // Read file content and stats
     let content: string;
     let stats: fs.Stats;
+    let handle: fsp.FileHandle | null = null;
     try {
-      stats = await fsp.stat(fullPath);
-      content = await fsp.readFile(fullPath, 'utf-8');
+      handle = await fsp.open(fullPath, 'r');
+      stats = await handle.stat();
+      content = await handle.readFile('utf-8');
     } catch (error) {
       return {
         nodes: [],
@@ -1737,6 +1739,10 @@ export class ExtractionOrchestrator {
         ],
         durationMs: 0,
       };
+    } finally {
+      if (handle) {
+        try { await handle.close(); } catch { /* ignore */ }
+      }
     }
 
     return this.indexFileWithContent(relativePath, content, stats);

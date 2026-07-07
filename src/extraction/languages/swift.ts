@@ -1,6 +1,7 @@
 import type { Node as SyntaxNode } from 'web-tree-sitter';
 import { getNodeText, getChildByField } from '../tree-sitter-helpers';
 import type { LanguageExtractor } from '../tree-sitter-types';
+import { stripAngleBracketGroups } from '../../utils';
 
 /**
  * A Swift function's declared return type, normalized to the bare class name a
@@ -31,7 +32,7 @@ function extractSwiftReturnType(node: SyntaxNode, source: string): string | unde
       // Use the whole type node's text, strip generics, then take the LAST
       // dotted segment — a member type `KF.Builder` resolves to `Builder` (its
       // first type_identifier is the OUTER `KF`, which would be wrong).
-      const name = getNodeText(typeNode, source).trim().replace(/<[^>]*>/g, '');
+      const name = stripAngleBracketGroups(getNodeText(typeNode, source).trim());
       const last = name.split('.').pop()?.trim();
       if (!last || !/^[A-Za-z_]\w*$/.test(last) || last === 'Void') return undefined;
       return last;

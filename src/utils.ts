@@ -64,6 +64,31 @@ export const SENSITIVE_SYSTEM_PATHS: readonly string[] = Object.freeze([...SENSI
 export const CONFIG_LEAF_LANGUAGES: ReadonlySet<string> = new Set(['yaml', 'properties']);
 
 /**
+ * Strip angle-bracketed generic/type-argument groups without using a broad
+ * multi-character regex replacement.
+ */
+export function stripAngleBracketGroups(input: string): string {
+  let depth = 0;
+  let output = '';
+
+  for (const ch of input) {
+    if (ch === '<') {
+      depth++;
+      continue;
+    }
+    if (ch === '>') {
+      if (depth > 0) {
+        depth--;
+        continue;
+      }
+    }
+    if (depth === 0) output += ch;
+  }
+
+  return output;
+}
+
+/**
  * A config-leaf node is a single key lifted out of a pure config/data file —
  * `kind: 'constant'` in a {@link CONFIG_LEAF_LANGUAGES} language. Its on-disk
  * line is `key = <value>`, and that value is routinely a secret (DB password,
@@ -318,47 +343,64 @@ export class FileLock {
    * Acquire the lock. Throws if the lock is held by another live process.
    */
   acquire(): void {
-    // Check for existing lock
-    if (fs.existsSync(this.lockPath)) {
-      try {
-        const content = fs.readFileSync(this.lockPath, 'utf-8').trim();
-        const pid = parseInt(content, 10);
-        const stat = fs.statSync(this.lockPath);
-        const lockAge = Date.now() - stat.mtimeMs;
-
-        // Treat locks older than the timeout as stale, regardless of PID
-        if (lockAge < FileLock.STALE_TIMEOUT_MS && !isNaN(pid) && this.isProcessAlive(pid)) {
-          throw new Error(
-            `CodeGraph database is locked by another process (PID ${pid}). ` +
-            `If this is stale, run 'codegraph unlock' or delete ${this.lockPath}`
-          );
-        }
-
-        // Stale lock (dead process or timed out) - remove it
-        fs.unlinkSync(this.lockPath);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes('locked by another')) {
-          throw err;
-        }
-        // Other errors reading lock file - try to remove it
-        try { fs.unlinkSync(this.lockPath); } catch { /* ignore */ }
-      }
-    }
-
-    // Write our PID to the lock file using exclusive create flag
     try {
-      fs.writeFileSync(this.lockPath, String(process.pid), { flag: 'wx' });
-      this.held = true;
+      this.createLockFile();
+      return;
     } catch (err: any) {
-      if (err.code === 'EEXIST') {
-        // Race condition: another process grabbed the lock between our check and write
-        throw new Error(
-          'CodeGraph database is locked by another process. ' +
-          `If this is stale, run 'codegraph unlock' or delete ${this.lockPath}`
-        );
-      }
-      throw err;
+      if (err.code !== 'EEXIST') throw err;
     }
+
+    this.removeStaleLockIfPresent();
+
+    try {
+      this.createLockFile();
+    } catch (err: any) {
+      if (err.code !== 'EEXIST') throw err;
+      throw new Error(
+        'CodeGraph database is locked by another process. ' +
+        `If this is stale, run 'codegraph unlock' or delete ${this.lockPath}`
+      );
+    }
+  }
+
+  private createLockFile(): void {
+    fs.writeFileSync(this.lockPath, String(process.pid), { flag: 'wx', mode: 0o600 });
+    this.held = true;
+  }
+
+  private readLockInfo(): { pid: number; mtimeMs: number } | null {
+    let fd: number | null = null;
+    try {
+      fd = fs.openSync(this.lockPath, 'r');
+      const stat = fs.fstatSync(fd);
+      const content = fs.readFileSync(fd, 'utf-8').trim();
+      return { pid: parseInt(content, 10), mtimeMs: stat.mtimeMs };
+    } catch {
+      return null;
+    } finally {
+      if (fd !== null) {
+        try { fs.closeSync(fd); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  private removeStaleLockIfPresent(): void {
+    const info = this.readLockInfo();
+    const lockAge = info ? Date.now() - info.mtimeMs : Number.POSITIVE_INFINITY;
+
+    if (
+      info &&
+      lockAge < FileLock.STALE_TIMEOUT_MS &&
+      !isNaN(info.pid) &&
+      this.isProcessAlive(info.pid)
+    ) {
+      throw new Error(
+        `CodeGraph database is locked by another process (PID ${info.pid}). ` +
+        `If this is stale, run 'codegraph unlock' or delete ${this.lockPath}`
+      );
+    }
+
+    try { fs.unlinkSync(this.lockPath); } catch { /* ignore */ }
   }
 
   /**

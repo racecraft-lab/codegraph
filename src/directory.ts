@@ -630,10 +630,23 @@ function ensureGitignore(gitignorePath: string): boolean {
   // Current default or a user-authored file: nothing to do.
   if (existing !== null && !isStaleDefaultGitignore(existing)) return true;
   try {
-    fs.writeFileSync(gitignorePath, GITIGNORE_CONTENT, 'utf-8');
+    writeFileViaPrivateTemp(gitignorePath, GITIGNORE_CONTENT);
     return true;
   } catch {
     return false;
+  }
+}
+
+function writeFileViaPrivateTemp(filePath: string, content: string): void {
+  const dir = path.dirname(filePath);
+  const tempDir = fs.mkdtempSync(path.join(dir, '.gitignore-'));
+  const tempPath = path.join(tempDir, 'content');
+
+  try {
+    fs.writeFileSync(tempPath, content, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* best effort */ }
   }
 }
 

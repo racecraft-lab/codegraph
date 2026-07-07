@@ -16,7 +16,19 @@ import * as path from 'path';
 import * as os from 'os';
 import CodeGraph from '../src/index';
 import { LOW_CONFIDENCE_MARKER } from '../src/context';
-import { isDistinctiveIdentifier, scorePathRelevance, deriveProjectNameTokens } from '../src/search/query-utils';
+import { extractSearchTerms, isDistinctiveIdentifier, scorePathRelevance, deriveProjectNameTokens } from '../src/search/query-utils';
+
+describe('extractSearchTerms', () => {
+  it('preserves compound identifiers while splitting their parts', () => {
+    const terms = extractSearchTerms('getUserName user_service 404');
+    expect(terms).toContain('getusername');
+    expect(terms).toContain('user');
+    expect(terms).toContain('name');
+    expect(terms).toContain('user_service');
+    expect(terms).toContain('service');
+    expect(terms).toContain('404');
+  });
+});
 
 describe('isDistinctiveIdentifier', () => {
   it('treats plain dictionary words as non-distinctive', () => {

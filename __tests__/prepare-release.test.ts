@@ -217,5 +217,17 @@ describe('prepare-release.mjs', () => {
       expect(notes).toContain('### Fixed');
       expect(notes).toContain('Bug fix');
     });
+
+    it('extracts versions containing regex metacharacters literally', () => {
+      dir = setup(
+        HEADER +
+          `## [1.2.3+canary]\n\n### Fixed\n- Exact version\n\n## [1.2.333canary]\n\n### Fixed\n- Wrong version\n`,
+      );
+
+      const extractor = path.resolve(__dirname, '..', 'scripts', 'extract-release-notes.mjs');
+      const notes = execFileSync('node', [extractor, '1.2.3+canary'], { cwd: dir, encoding: 'utf8' });
+      expect(notes).toContain('Exact version');
+      expect(notes).not.toContain('Wrong version');
+    });
   });
 });
