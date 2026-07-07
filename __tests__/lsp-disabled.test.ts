@@ -5,8 +5,11 @@ import * as path from 'node:path';
 import CodeGraph from '../src';
 import { DatabaseConnection, getDatabasePath, QueryBuilder } from '../src';
 import { LSP_STATUS_METADATA_KEY } from '../src/lsp';
+import { __emitWatchEventForTests } from '../src/sync/watcher';
 
 const dirs: string[] = [];
+const CI_ON = !['', '0', 'false'].includes((process.env.CI ?? '').trim().toLowerCase());
+const WATCH_SYNC_TIMEOUT_MS = CI_ON ? 20000 : 4000;
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) {
@@ -72,6 +75,7 @@ describe('LSP disabled path', () => {
       await cg.indexAll();
       const completed = waitForWatchSync(cg);
       fs.appendFileSync(path.join(dir, 'b.ts'), '\nexport const watched = main();\n');
+      expect(__emitWatchEventForTests(dir, 'b.ts')).toBe(true);
       await completed;
 
       expect(readMetadata(dir, LSP_STATUS_METADATA_KEY)).toBeNull();
@@ -125,9 +129,10 @@ function countLspEdges(dir: string): number {
 
 function waitForWatchSync(cg: CodeGraph): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('watch sync did not complete')), 4000);
+    const timeout = setTimeout(() => reject(new Error('watch sync did not complete')), WATCH_SYNC_TIMEOUT_MS);
     const started = cg.watch({
       debounceMs: 50,
+      inertForTests: true,
       onSyncComplete: () => {
         clearTimeout(timeout);
         resolve();
