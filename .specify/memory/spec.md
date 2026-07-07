@@ -24,3 +24,40 @@ path, with Sigma.js retained as the SPEC-006 WebGL runner-up. Canonical artifact
 The active `specs/004-web-framework-research-spike/` folder was removed because
 the decision doc, screenshots, roadmap entry, and preserved workflow/process files
 carry the durable record.
+
+## SPEC-002 - Bundled Local Embedding Fallback (archived 2026-07-07)
+
+The local embedding fallback shipped in PR #22. It added explicit opt-in local
+embedding support through `src/embeddings/local-provider.ts`,
+`src/embeddings/local-tokenizer.ts`, `src/embeddings/local-embed-worker.ts`, and
+`src/embeddings/model-fetch.ts`, with CLI/library status integration and local
+provider regression coverage. Detailed provenance + recovery:
+[archive-reports/2026-07-07-SPEC-002.md](archive-reports/2026-07-07-SPEC-002.md).
+The active `specs/002-local-embedding-fallback/` folder was removed because the
+runtime code, tests, preserved workflow files, and archive report carry the
+durable record.
+
+## SPEC-008 - LSP Client Integration (archived 2026-07-07)
+
+The LSP client integration shipped as stacked PRs #23 through #27. It added
+default-off LSP discovery/configuration, JSON-RPC client lifecycle, compiler-backed
+edge correction/provenance, graceful degradation, retrieval filtering, and parity
+gates with zero unowned language or capability rows. Canonical artifacts live in
+`src/lsp/`, `src/db/queries.ts`, `src/db/schema.sql`, `src/sync/`, `src/bin/codegraph.ts`,
+the LSP-focused test suites, and the `scripts/spec-008-*.mjs` validation gates.
+Detailed provenance + recovery:
+[archive-reports/2026-07-07-SPEC-008.md](archive-reports/2026-07-07-SPEC-008.md).
+The active `specs/008-lsp-client-integration/` folder was removed because all
+implementation and validation evidence is preserved in shipped code, process
+ledgers, and the archive report.
+
+## SPEC-023 - OCaml Language Support (archived 2026-07-07)
+
+OCaml language support shipped in PR #21. It added OCaml/interface tree-sitter
+WASMs, `src/extraction/languages/ocaml.ts`, Dune-aware local resolution helpers,
+fixture coverage, grammar docs, status listing support, and validation evidence.
+Detailed provenance + recovery:
+[archive-reports/2026-07-07-SPEC-023.md](archive-reports/2026-07-07-SPEC-023.md).
+The active `specs/023-ocaml-language-support/` folder was removed because the
+grammar/extractor/resolver/test artifacts and preserved workflow files carry the
+durable record.

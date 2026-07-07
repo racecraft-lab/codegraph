@@ -6,7 +6,7 @@
  * 3 int64 tensors the ONNX `Xenova/all-MiniLM-L6-v2` model consumes:
  * `input_ids`/`attention_mask`/`token_type_ids`, each a `BigInt64Array` whose
  * flat length is the `seqLen` of a `[1, seqLen]` tensor
- * (specs/002-local-embedding-fallback/contracts/local-provider.md, FR-009).
+ * (archived SPEC-002 local-provider contract, FR-009).
  * Unit-testable without ONNX — this suite never touches `onnxruntime-web` or
  * the network.
  *

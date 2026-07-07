@@ -9,8 +9,8 @@
  * actionable {@link LocalModelUnavailable} the caller treats as an advisory
  * skip, mirroring `runEmbeddingPass`'s `{ aborted, abortReason }` posture.
  *
- * Verify-before-use, atomic acquisition (per artifact — see
- * specs/002-local-embedding-fallback/contracts/model-fetch.md):
+ * Verify-before-use, atomic acquisition (per artifact; archived SPEC-002
+ * model-fetch contract):
  *   cached + sha256 verified?  -> reuse, no download (FR-018)
  *   else download to a temp file created EXCLUSIVELY (O_EXCL, unpredictable
  *   name, never follows a pre-existing symlink) under a byte + wall-clock

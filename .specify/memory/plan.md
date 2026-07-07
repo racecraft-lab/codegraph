@@ -21,3 +21,30 @@ small screenshot evidence. SPEC-005 now owns the explicit local server/static mo
 activation path; SPEC-006 owns the production web app, asset copy/package wiring,
 and large-graph UX/WebGL validation. Full plan recoverable:
 `git show 0366d3c:specs/004-web-framework-research-spike/plan.md`.
+
+## SPEC-002 - Bundled Local Embedding Fallback (archived 2026-07-07)
+
+Plan shape that shipped: explicit opt-in local embeddings layered behind the
+existing embedding provider seam, with lazy model acquisition, tokenizer/worker
+separation, status reporting, and no endpoint-first behavior regression. The
+provider remains dormant unless selected. Full plan recoverable:
+`git show 7c11f27:specs/002-local-embedding-fallback/plan.md`.
+
+## SPEC-008 - LSP Client Integration (archived 2026-07-07)
+
+Plan shape that shipped: a default-off LSP precision layer split across a stacked
+review route. The implementation added server discovery/config, prereq/status
+reporting, JSON-RPC client lifecycle, precision-pass correction audit storage,
+watch/sync integration, public retrieval filtering, and parity gates. SPEC-010 is
+now ready because the compiler-backed correction substrate exists. SPEC-024 has no
+current implementation work because the final parity gate closed with zero unowned
+rows. Full plan recoverable:
+`git show 8c53f53:specs/008-lsp-client-integration/plan.md`.
+
+## SPEC-023 - OCaml Language Support (archived 2026-07-07)
+
+Plan shape that shipped: standard add-language pipeline for OCaml, including
+vendored implementation/interface grammar WASMs, extraction support, Dune-scoped
+unique-only local resolution, fixture-backed tests, docs, and validation evidence.
+PPX expansion and external package graphing stayed out of scope. Full plan
+recoverable: `git show 100a675:specs/023-ocaml-language-support/plan.md`.

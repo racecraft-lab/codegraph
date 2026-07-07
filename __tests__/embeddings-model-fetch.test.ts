@@ -16,10 +16,11 @@
  * atomic O_EXCL/no-symlink/unpredictable temp; mid-download I/O -> cache not
  * offline), FR-018 (reuse without re-download), FR-019/FR-019a (three distinct,
  * actionable, redacted messages), FR-019c (no source/composed-input echo),
- * contracts/model-fetch.md (the verify-before-use state machine).
+ * the archived SPEC-002 model-fetch contract (the verify-before-use state
+ * machine).
  *
- * See specs/002-local-embedding-fallback/contracts/model-fetch.md and
- * data-model.md §3 for the authoritative contract this suite pins.
+ * See the archived SPEC-002 model-fetch contract and data model for the
+ * authoritative behavior this suite pins.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';

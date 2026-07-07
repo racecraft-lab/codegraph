@@ -98,15 +98,15 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | Spec | Name | Status | Workflow File | Next Phase |
 |------|------|--------|---------------|------------|
 | SPEC-001 | Embedding Infrastructure & Endpoint Provider | ✅ Complete | [SPEC-001-workflow.md](.process/SPEC-001-workflow.md) | Merged (#16, #17) |
-| SPEC-002 | Bundled Local Embedding Fallback | 🔄 In Progress | [SPEC-002-workflow.md](.process/SPEC-002-workflow.md) | Scaffolded on `002-local-embedding-fallback` |
+| SPEC-002 | Bundled Local Embedding Fallback | ✅ Complete | [SPEC-002-workflow.md](.process/SPEC-002-workflow.md) | Merged (#22); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-002.md` |
 | SPEC-003 | Hybrid Semantic Search | ⏳ Pending | [SPEC-003-workflow.md](SPEC-003-workflow.md) | Ready (SPEC-001 complete) |
 | SPEC-004 | Web Framework Research Spike | ✅ Complete | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Merged (#19); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-004.md` |
 | SPEC-005 | Local HTTP Server & REST API | ⏳ Pending | [SPEC-005-workflow.md](SPEC-005-workflow.md) | Ready (SPEC-004 complete; see `docs/design/web-framework-decision.md`) |
 | SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Blocked by SPEC-005 |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
-| SPEC-008 | LSP Client Integration | 🔄 In Progress | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Scaffolded on `008-lsp-client-integration` |
+| SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Blocked by SPEC-005 |
-| SPEC-010 | Graph-Aware Rename | ⏳ Pending | [SPEC-010-workflow.md](SPEC-010-workflow.md) | Blocked by SPEC-008 |
+| SPEC-010 | Graph-Aware Rename | ⏳ Pending | [SPEC-010-workflow.md](SPEC-010-workflow.md) | Ready (SPEC-008 complete) |
 | SPEC-011 | Execution Flows & Clusters | ⏳ Pending | [SPEC-011-workflow.md](SPEC-011-workflow.md) | Specify (parallel-safe) |
 | SPEC-012 | Change Impact Detection | ⏳ Pending | [SPEC-012-workflow.md](SPEC-012-workflow.md) | Prefers SPEC-011 |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
@@ -119,8 +119,8 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-020 | PR Blast-Radius Review Action | ⏳ Pending | [SPEC-020-workflow.md](SPEC-020-workflow.md) | Blocked by SPEC-012 |
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
-| SPEC-023 | OCaml Language Support | 🔄 In Progress | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Scaffolded on `023-ocaml-language-support` |
-| SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Pending SPEC-008 parity matrix |
+| SPEC-023 | OCaml Language Support | ✅ Complete | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Merged (#21); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-023.md` |
+| SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Dormant; SPEC-008 parity gate closed with 0 unowned rows |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked
 
@@ -192,6 +192,11 @@ Budget result: within budget
 - `src/embeddings/model-fetch.ts` — lazy download + checksum + cache
 - `src/embeddings/config.ts` — selection order (modify)
 - `BUNDLING.md` — size-impact note
+
+**Completion:** Merged in PR #22 (`7c11f27`) and archived on 2026-07-07. The active
+spec folder was removed after the local embedding provider, tokenizer/worker,
+model-fetch path, status/config integration, tests, workflow ledger, and archive
+report became the durable record.
 
 ---
 
@@ -367,6 +372,13 @@ Budget result: warning accepted after parity expansion; use vertical slices or h
 - `src/lsp/client.ts` — JSON-RPC lifecycle
 - `src/lsp/precision-pass.ts` — edge verification/upgrade
 - `src/db/schema.sql` — edge provenance column (modify)
+
+**Completion:** Merged as stacked PRs #23-#27 (`77c282b`, `53a9adf`, `096fef1`,
+`052f8b0`, `8c53f53`) and archived on 2026-07-07. The active spec folder was
+removed after `src/lsp/`, schema/query changes, sync integration, validation gates,
+public retrieval filtering, zero-unowned-row parity evidence, workflow ledger, and
+archive report became the durable record. SPEC-010 is now ready; SPEC-024 is dormant
+unless future parity drift creates a concrete unowned row.
 
 ---
 
@@ -772,6 +784,11 @@ Budget result: within budget
 - `src/extraction/languages/ocaml.ts` — extractor
 - `src/resolution/` — module-path handling (minimal modify)
 - `__tests__/fixtures/ocaml/` — fixture + tests
+
+**Completion:** Merged in PR #21 (`100a675`) and archived on 2026-07-07. The active
+spec folder was removed after the OCaml/interface grammar WASMs, extractor,
+Dune-aware resolver, fixtures, tests, grammar docs, workflow ledger, and archive
+report became the durable record.
 
 ---
 
