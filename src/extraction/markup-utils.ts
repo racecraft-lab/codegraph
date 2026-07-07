@@ -43,22 +43,57 @@ function findLineNumber(source: string, index: number): number {
   return line;
 }
 
-function findClosingTag(source: string, tagName: string, from: number): { start: number; end: number } | null {
+function findTagStart(source: string, needle: string, from: number): number {
   const lower = source.toLowerCase();
-  const needle = `</${tagName.toLowerCase()}`;
   let search = from;
   while (search < source.length) {
     const start = lower.indexOf(needle, search);
-    if (start === -1) return null;
+    if (start === -1) return -1;
     const afterName = start + needle.length;
     if (!isTagBoundary(source[afterName])) {
       search = afterName;
       continue;
     }
-    const end = findTagEnd(source, afterName);
-    if (end === -1) return null;
-    return { start, end };
+    return start;
   }
+  return -1;
+}
+
+function isSelfClosingTag(source: string, tagEnd: number): boolean {
+  let i = tagEnd - 1;
+  while (i >= 0 && /\s/.test(source[i]!)) i--;
+  return source[i] === '/';
+}
+
+function findClosingTag(source: string, tagName: string, from: number): { start: number; end: number } | null {
+  const openNeedle = `<${tagName.toLowerCase()}`;
+  const closeNeedle = `</${tagName.toLowerCase()}`;
+  const allowNested = tagName === 'template';
+  let depth = 0;
+  let search = from;
+
+  while (search < source.length) {
+    const closeStart = findTagStart(source, closeNeedle, search);
+    if (closeStart === -1) return null;
+
+    if (allowNested) {
+      const openStart = findTagStart(source, openNeedle, search);
+      if (openStart !== -1 && openStart < closeStart) {
+        const openEnd = findTagEnd(source, openStart + openNeedle.length);
+        if (openEnd === -1) return null;
+        if (!isSelfClosingTag(source, openEnd)) depth++;
+        search = openEnd + 1;
+        continue;
+      }
+    }
+
+    const end = findTagEnd(source, closeStart + closeNeedle.length);
+    if (end === -1) return null;
+    if (depth === 0) return { start: closeStart, end };
+    depth--;
+    search = end + 1;
+  }
+
   return null;
 }
 

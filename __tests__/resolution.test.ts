@@ -2554,6 +2554,32 @@ func main() {
       const callers = cg.getCallers(widgetNode!.id);
       expect(callers.some((c) => c.node.filePath === 'src/App.vue')).toBe(true);
     });
+
+    it('keeps Vue outer template content when nested template wrappers close first', async () => {
+      fs.mkdirSync(path.join(tempDir, 'src/lib'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempDir, 'src/lib/Widget.vue'),
+        `<script setup lang="ts">\ndefineProps<{ label?: string }>();\n</script>\n<template><button>x</button></template>\n`
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'src/lib/index.ts'),
+        `export { default as Thing } from './Widget.vue';\n`
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'src/App.vue'),
+        `<script setup lang="ts">\nimport { Thing } from './lib';\nconst ok = true;\n</script>\n<template>\n  <section>\n    <template v-if="ok">\n      <span>ready</span>\n    </template>\n    <Thing />\n  </section>\n</template>\n`
+      );
+
+      cg = await CodeGraph.init(tempDir, { index: true });
+      cg.resolveReferences();
+
+      const widgetNode = cg
+        .getNodesByKind('component')
+        .find((n) => n.name === 'Widget' && n.filePath === 'src/lib/Widget.vue');
+      expect(widgetNode).toBeDefined();
+      const callers = cg.getCallers(widgetNode!.id);
+      expect(callers.some((c) => c.node.filePath === 'src/App.vue')).toBe(true);
+    });
   });
 
   describe('C/C++ Import Resolution', () => {
