@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -203,5 +203,67 @@ describe('codegraph index — recovers a stale/oversized prior index (#1067)', (
     const counts = graphCounts(tempDir);
     expect(counts.nodes).toBeGreaterThan(0);
     expect(counts.edges).toBeGreaterThan(0);
+  });
+});
+
+describe('codegraph index — lock contention must not destroy the index', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-index-lock-'));
+    fs.writeFileSync(
+      path.join(tempDir, 'a.ts'),
+      'export function helper(): number {\n  return 1;\n}\n',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'b.ts'),
+      "import { helper } from './a';\nexport function main(): number {\n  return helper();\n}\n",
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('recreate throws and leaves the graph intact while another live process holds the lock', async () => {
+    const cg = await CodeGraph.init(tempDir);
+    try {
+      await cg.indexAll();
+    } finally {
+      cg.close();
+    }
+    const before = graphCounts(tempDir);
+    expect(before.nodes).toBeGreaterThan(0);
+
+    // A live "foreign" process holds the lock: a real child pid in the lock
+    // file, exactly what a daemon mid-sync looks like to the CLI.
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+      stdio: 'ignore',
+    });
+    const lockPath = path.join(tempDir, '.codegraph', 'codegraph.lock');
+    try {
+      fs.writeFileSync(lockPath, String(child.pid));
+
+      // The destructive rebuild must refuse up front…
+      await expect(CodeGraph.recreate(tempDir)).rejects.toThrow(/locked by another process/);
+
+      // …and the data must be untouched.
+      expect(graphCounts(tempDir)).toEqual(before);
+
+      // The CLI in quiet mode fails loudly (exit 1 + a stderr line), data intact.
+      let failure: { status?: number; stderr?: string } | null = null;
+      try {
+        runCodegraph(['index', '--quiet'], tempDir);
+      } catch (err) {
+        failure = err as { status?: number; stderr?: string };
+      }
+      expect(failure).not.toBeNull();
+      expect(failure?.status).toBe(1);
+      expect(String(failure?.stderr)).toMatch(/locked by another process/);
+      expect(graphCounts(tempDir)).toEqual(before);
+    } finally {
+      child.kill();
+      fs.rmSync(lockPath, { force: true });
+    }
   });
 });

@@ -1396,3 +1396,180 @@ describe('LSP precision provenance foundation', () => {
     }
   });
 });
+
+describe('LSP document lifecycle — didOpen before definition requests', () => {
+  it('opens each source document before its first definition request and closes it after the batch', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-didopen-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'a.ts'), [
+      'export function helper(): number {',
+      '  return 1;',
+      '}',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(dir, 'b.ts'), [
+      "import { helper } from './a';",
+      'export function main(): number {',
+      '  return helper();',
+      '}',
+      '',
+    ].join('\n'));
+
+    const fakeServer = path.join(dir, 'typescript-language-server');
+    fs.writeFileSync(fakeServer, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeServer, 0o755);
+
+    interface RecordedEvent {
+      type: 'notify' | 'request';
+      method: string;
+      uri?: string;
+      languageId?: string;
+      text?: string;
+    }
+    const events: RecordedEvent[] = [];
+
+    const cg = await CodeGraph.init(dir);
+    try {
+      await cg.indexAll();
+      const db = DatabaseConnection.open(getDatabasePath(dir));
+      try {
+        const queries = new QueryBuilder(db.getDb());
+        const config = resolveLspConfig({
+          projectRoot: dir,
+          cliActivation: 'enable',
+          env: {
+            CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([fakeServer, '--stdio']),
+          },
+        });
+
+        await runLspPrecisionPass({
+          projectRoot: dir,
+          queries,
+          config,
+          clientFactory: {
+            create: () => ({
+              initialize: async () => ({}),
+              notify: (method: string, params: Record<string, unknown>) => {
+                const doc = (params as { textDocument?: { uri?: string; languageId?: string; text?: string } }).textDocument;
+                events.push({ type: 'notify', method, uri: doc?.uri, languageId: doc?.languageId, text: doc?.text });
+              },
+              request: async (method: string, params: Record<string, unknown>) => {
+                const doc = (params as { textDocument?: { uri?: string } }).textDocument;
+                events.push({ type: 'request', method, uri: doc?.uri });
+                return {
+                  uri: pathToFileURL(path.join(dir, 'a.ts')).href,
+                  range: { start: { line: 0, character: 16 }, end: { line: 2, character: 1 } },
+                };
+              },
+              shutdown: async () => undefined,
+            }),
+          },
+        });
+
+        const requests = events.filter((event) => event.type === 'request' && event.method === 'textDocument/definition');
+        expect(requests.length).toBeGreaterThan(0);
+
+        // Real servers only answer for documents they were handed via didOpen:
+        // every definition request must be preceded by a didOpen for ITS document.
+        for (const request of requests) {
+          const requestIndex = events.indexOf(request);
+          const opened = events.slice(0, requestIndex).some(
+            (event) => event.type === 'notify' && event.method === 'textDocument/didOpen' && event.uri === request.uri,
+          );
+          expect(opened, `expected didOpen for ${request.uri} before its definition request`).toBe(true);
+        }
+
+        // didOpen carries the on-disk text and a languageId.
+        const opens = events.filter((event) => event.method === 'textDocument/didOpen');
+        expect(opens.length).toBeGreaterThan(0);
+        for (const open of opens) {
+          expect(open.languageId).toBe('typescript');
+          expect(open.text?.length ?? 0).toBeGreaterThan(0);
+        }
+
+        // Every opened document is closed again by the end of the pass.
+        const closes = events.filter((event) => event.method === 'textDocument/didClose');
+        expect(new Set(closes.map((event) => event.uri))).toEqual(new Set(opens.map((event) => event.uri)));
+      } finally {
+        db.close();
+      }
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('verifies via line-span retry when LSP anchors the name but the node anchors the initializer', async () => {
+    // `const block = (reason) => …` — LSP definitions point at the declared
+    // NAME (column 6); the extractor anchors the arrow-function node at the
+    // initializer (column 14). The column-constrained lookup misses, and the
+    // pass used to suppress the (correct!) edge as unindexed-target. A column
+    // miss on the RIGHT line must fall back to the line span, find the target,
+    // and verify.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-linespan-'));
+    dirs.push(dir);
+    const fakeServer = makeExecutable(dir, 'typescript-language-server');
+
+    const targetNode = makeTargetNode({
+      id: 'typescript-target',
+      kind: 'function',
+      name: 'block',
+      filePath: 'typescript/target.ts',
+      startLine: 12,
+      startColumn: 14,
+      endLine: 12,
+      endColumn: 107,
+    });
+    const candidate = makeCandidate({
+      edgeId: 41,
+      targetId: 'typescript-target',
+      targetName: 'block',
+      targetKind: 'function',
+      targetFilePath: 'typescript/target.ts',
+      targetStartLine: 12,
+      targetStartColumn: 14,
+      targetEndLine: 12,
+      targetEndColumn: 107,
+    });
+
+    const suppressions: unknown[] = [];
+    const verifications: unknown[] = [];
+    const queries: any = {
+      ...mockQueries([candidate], targetNode),
+      // Column-constrained lookup misses (LSP char 6 < node start 14); the
+      // line-span lookup (no column) finds the node.
+      findNodesAtLocation: (_file: string, _line: number, _language?: unknown, column?: number) =>
+        column === undefined ? [targetNode] : [],
+      updateEdgeLspProvenance: (edgeId: number) => { verifications.push(edgeId); return 1; },
+      suppressEdgeWithLspAudit: (edgeId: number) => { suppressions.push(edgeId); return 1; },
+    };
+
+    const config = resolveLspConfig({
+      projectRoot: dir,
+      cliActivation: 'enable',
+      env: {
+        CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([fakeServer, '--stdio']),
+      },
+    });
+
+    const status = await runLspPrecisionPass({
+      projectRoot: dir,
+      queries,
+      config,
+      clientFactory: {
+        create: () => ({
+          initialize: async () => ({}),
+          request: async () => ({
+            uri: pathToFileURL(path.join(dir, 'typescript/target.ts')).href,
+            range: { start: { line: 11, character: 6 }, end: { line: 11, character: 11 } },
+          }),
+          shutdown: async () => undefined,
+        }),
+      },
+    });
+
+    expect(suppressions).toEqual([]);
+    expect(verifications).toEqual([41]);
+    expect(status.edgeCounts.verified).toBe(1);
+    expect(status.edgeCounts.suppressed).toBe(0);
+  });
+});

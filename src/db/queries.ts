@@ -1689,6 +1689,33 @@ export class QueryBuilder {
   }
 
   /**
+   * Targets of `imports` edges recorded at an exact (line, column) in a file —
+   * the graph-side view of an import/export BINDING. The LSP precision pass
+   * uses this to resolve a definition answer that lands on the binding
+   * (tsserver's alias behavior: `helper()` resolves to the
+   * `import { helper } from './a'` specifier in the caller's own file) through
+   * our own edge instead of treating it as a disproof. Exact (line, col) match
+   * first; falls back to a UNIQUE imports edge on that line (column
+   * conventions can differ per grammar), else empty.
+   */
+  getImportBindingTargetsAt(filePath: string, line: number, column: number): string[] {
+    const exact = this.db.prepare(`
+      SELECT e.target AS target FROM edges e
+      JOIN nodes s ON s.id = e.source
+      WHERE e.kind = 'imports' AND s.file_path = ? AND e.line = ? AND e.col = ?
+        AND ${activeEdgePredicate('e')}
+    `).all(filePath, line, column) as Array<{ target: string }>;
+    if (exact.length > 0) return exact.map((row) => row.target);
+    const sameLine = this.db.prepare(`
+      SELECT e.target AS target FROM edges e
+      JOIN nodes s ON s.id = e.source
+      WHERE e.kind = 'imports' AND s.file_path = ? AND e.line = ?
+        AND ${activeEdgePredicate('e')}
+    `).all(filePath, line) as Array<{ target: string }>;
+    return sameLine.length === 1 ? sameLine.map((row) => row.target) : [];
+  }
+
+  /**
    * Mark an existing edge row as LSP-verified/corrected without duplicating it.
    */
   updateEdgeLspProvenance(edgeId: number, metadata: Record<string, unknown>): number {

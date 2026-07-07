@@ -237,6 +237,9 @@ describe('Telemetry', () => {
   });
 
   describe('buffer robustness', () => {
+    // 600 synchronous rewrites of an up-to-256KB queue file is pure IO work
+    // that can exceed the default 5s under full-suite parallel load (the suite
+    // now also spawns real language servers); give it headroom.
     it('caps the queue and drops oldest lines without leaving partial JSON', () => {
       const t = make();
       const bigProps = { targets: Array.from({ length: 50 }, (_, i) => `agent-${i}`) };
@@ -249,7 +252,7 @@ describe('Telemetry', () => {
       const first = content.slice(0, content.indexOf('\n'));
       expect(() => JSON.parse(first)).not.toThrow(); // no partial first line
       expect(JSON.parse(first).props.seq).toBeGreaterThan(0); // oldest dropped
-    });
+    }, 20_000);
 
     it('skips corrupt lines and still delivers the valid ones', async () => {
       const t = make();

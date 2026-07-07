@@ -54,14 +54,18 @@ describe('FileLock', () => {
     expect(fs.existsSync(lockPath)).toBe(false);
   });
 
-  it('should prevent double acquisition within same process', () => {
+  it('allows re-acquisition within the same process (re-entrant handoff)', () => {
     const lock1 = new FileLock(lockPath);
     const lock2 = new FileLock(lockPath);
 
     lock1.acquire();
 
-    // Second lock should fail because our PID is alive
-    expect(() => lock2.acquire()).toThrow(/locked by another process/);
+    // A lock file carrying OUR pid is a success, not contention:
+    // CodeGraph.recreate() takes the lock before its destructive rebuild and
+    // hands the same lock file to the instance whose indexAll() re-acquires
+    // it. Cross-process contention (a live FOREIGN pid) still throws — see the
+    // index-command lock-contention test.
+    expect(() => lock2.acquire()).not.toThrow();
 
     lock1.release();
   });
@@ -700,5 +704,37 @@ describe('Symlink Cycle Detection', () => {
     // Should not throw
     const files = scanDirectory(tempDir);
     expect(files).toContain('src/valid.ts');
+  });
+});
+
+describe('FileLock same-process re-entrancy (recreate → indexAll handoff)', () => {
+  let tempDir: string;
+  let lockPath: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+    lockPath = path.join(tempDir, 'reentrant.lock');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  it('acquire succeeds when the lock is already held by this same process', () => {
+    const first = new FileLock(lockPath);
+    first.acquire();
+
+    // Same object re-acquire must not throw…
+    expect(() => first.acquire()).not.toThrow();
+
+    // …and neither must a different FileLock object on the same path — this is
+    // how CodeGraph.recreate() hands the lock it took before the destructive
+    // rebuild to the instance whose indexAll() re-acquires it.
+    const second = new FileLock(lockPath);
+    expect(() => second.acquire()).not.toThrow();
+
+    // Whichever re-entrant holder releases removes the single lock file.
+    second.release();
+    expect(fs.existsSync(lockPath)).toBe(false);
   });
 });

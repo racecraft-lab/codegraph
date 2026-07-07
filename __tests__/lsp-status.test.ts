@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   createInitialLspStatus,
@@ -19,7 +20,12 @@ import {
 
 describe('LSP status contract foundation', () => {
   it('creates stable disabled-path zero-work status evidence', () => {
-    const config = resolveLspConfig({ projectRoot: process.cwd(), env: {} });
+    // A project with NO opt-in anywhere needs a fresh temp root — process.cwd()
+    // is this repo itself, which now ships its own codegraph.json LSP opt-in
+    // (dogfooding) and would resolve to project-config enabled.
+    const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-status-'));
+    const config = resolveLspConfig({ projectRoot: emptyRoot, env: {} });
+    fs.rmSync(emptyRoot, { recursive: true, force: true });
     const status = createInitialLspStatus(config);
     status.servers.push({
       language: 'typescript',
