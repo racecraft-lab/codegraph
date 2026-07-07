@@ -14,3 +14,21 @@
   removed with provenance in
   [archive-reports/2026-07-05-SPEC-004.md](archive-reports/2026-07-05-SPEC-004.md);
   `.specify/feature.json` cleared (no feature in flight).
+
+- **2026-07-07** - SPEC-023 archived. PR #21 (`100a675`) merged; roadmap row
+  flipped to complete; `specs/023-ocaml-language-support/` removed with
+  provenance in
+  [archive-reports/2026-07-07-SPEC-023.md](archive-reports/2026-07-07-SPEC-023.md).
+
+- **2026-07-07** - SPEC-002 archived. PR #22 (`7c11f27`) merged; roadmap row
+  flipped to complete; `specs/002-local-embedding-fallback/` removed with
+  provenance in
+  [archive-reports/2026-07-07-SPEC-002.md](archive-reports/2026-07-07-SPEC-002.md).
+
+- **2026-07-07** - SPEC-008 archived. PRs #23 (`77c282b`), #24 (`53a9adf`),
+  #25 (`096fef1`), #26 (`052f8b0`), and #27 (`8c53f53`) merged; roadmap row
+  flipped to complete; SPEC-010 moved to ready because the LSP substrate shipped;
+  SPEC-024 moved to no-current-gap/dormant because the final parity gate recorded
+  zero unowned rows; `specs/008-lsp-client-integration/` removed with provenance
+  in [archive-reports/2026-07-07-SPEC-008.md](archive-reports/2026-07-07-SPEC-008.md);
+  `.specify/feature.json` cleared (no feature in flight).

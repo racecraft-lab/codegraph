@@ -297,42 +297,23 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-SPEC-001 and SPEC-004 are complete and archived; provenance and recovery
-commands live in `.specify/memory/archive-reports/`.
+No spec is currently in flight.
 
-SPEC-004's canonical web-stack decision is `docs/design/web-framework-decision.md`:
-Vite + React SPA for the future production app, Cytoscape.js for the proven
-throwaway prototype path, and Sigma.js as the SPEC-006 WebGL runner-up. SPEC-005
-is ready to scaffold against that decision; SPEC-006 and SPEC-007 remain
-downstream.
+SPEC-001, SPEC-002, SPEC-004, SPEC-008, and SPEC-023 are complete and archived;
+provenance and recovery commands live in `.specify/memory/archive-reports/`.
 
-SPEC-008 (LSP Client Integration) is in Plan phase.
+Canonical completed-spec artifacts:
+- SPEC-002: local embedding fallback in `src/embeddings/` plus model-fetch and
+  local-provider tests.
+- SPEC-004: web-stack decision in `docs/design/web-framework-decision.md`.
+- SPEC-008: default-off LSP precision layer in `src/lsp/`, LSP provenance schema
+  and query updates, sync integration, validation gates, and zero-unowned-row
+  parity evidence.
+- SPEC-023: OCaml grammar, extractor, Dune-aware resolver, fixtures, tests, and
+  grammar docs.
 
-Current SPEC-008 plan artifact:
-`specs/008-lsp-client-integration/plan.md`
-
-SPEC-008 plan constraints: LSP remains default-off; no auto-install; no
-CodeGraph-as-LSP-server; no rename/refactor behavior; real-server validation
-records observed versions rather than exact pins; language and capability parity
-rows must have SPEC-008 evidence or concrete SPEC-024/future-spec ownership with
-no unowned gaps.
-
-SPEC-023 (OCaml Language Support) is in flight on branch
-`023-ocaml-language-support`; PR #21 is open and autopilot closeout is complete.
-
-Current plan: `specs/023-ocaml-language-support/plan.md`
-
-Supporting artifacts: `specs/023-ocaml-language-support/tasks.md`,
-`specs/023-ocaml-language-support/research.md`,
-`specs/023-ocaml-language-support/data-model.md`,
-`specs/023-ocaml-language-support/quickstart.md`, and
-`specs/023-ocaml-language-support/contracts/ocaml-language-support.md`.
-
-Workflow: `docs/ai/specs/.process/SPEC-023-workflow.md`.
-
-Preserve the clarified decisions: vendor `tree-sitter-ocaml@0.24.2`
-implementation and interface WASMs; use Dune-scoped unique-only local
-resolution; add no package nodes, external package edges, or PPX expansion; and
-keep Yojson, OCaml-LSP, and Dune validation with the nine pinned retrieval
-questions plus Yojson/OCaml-LSP A/B evidence.
+SPEC-003 and SPEC-005 are ready to scaffold. SPEC-006 and SPEC-007 remain
+downstream of SPEC-005. SPEC-010 is ready because SPEC-008 shipped the LSP
+substrate. SPEC-024 is dormant unless future parity drift creates a concrete
+unowned language, feature, or capability row.
 <!-- SPECKIT END -->

@@ -3,7 +3,8 @@
  *
  * Turns text into the 3 int64 tensors the ONNX `Xenova/all-MiniLM-L6-v2`
  * model consumes: `input_ids`, `attention_mask`, `token_type_ids`
- * (specs/002-local-embedding-fallback/contracts/local-provider.md). A pure
+ * (archived SPEC-002 local-provider contract recoverable from
+ * `.specify/memory/archive-reports/2026-07-07-SPEC-002.md`). A pure
  * function of (tokenizer.json, text) — no ONNX import, no filesystem access,
  * no hardcoded vocab. `local-embed-worker.ts` reads + JSON.parses the
  * verified `tokenizerPath` from `model-fetch.ts` and passes the parsed
