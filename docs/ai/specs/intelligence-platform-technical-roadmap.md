@@ -937,11 +937,12 @@ builds on top of live, real-scale instances of everything before it.
    (`( . ../../.envrc.local 2>/dev/null; node dist/bin/codegraph.js init . )`), and
    `codegraph status` confirming 100% embedding coverage with the LSP pass enabled
    (the committed root `codegraph.json` turns it on for every index/sync). Both
-   hosts' MCP configs start the server through `scripts/mcp-dogfood.sh`, which pins
-   cwd to the checkout root and re-sources `.envrc.local` (worktrees fall back to
-   the main checkout's copy) — so every agent session serves the HEAD build with
-   live embeddings, and query-time semantic search activates automatically when
-   SPEC-003 merges. Sessions in this repo treat `codegraph_explore` as the primary
+   hosts' MCP configs start the server through `scripts/mcp-dogfood.mjs` — a
+   cross-platform Node launcher that anchors to the checkout root and applies
+   `.envrc.local` to the daemon environment whether or not values are
+   `export`ed (worktrees fall back to the main checkout's copy) — so every
+   agent session serves the HEAD build with live embeddings, and query-time
+   semantic search activates automatically when SPEC-003 merges. Sessions in this repo treat `codegraph_explore` as the primary
    retrieval tool (steering lives in CLAUDE.md § Dogfooding). Out-of-repo
    enablement is owned in racecraft-plugins-public (PR #298): speckit-pro's
    subagents inherit the operator's full tool surface — no per-vendor

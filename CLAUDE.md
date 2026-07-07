@@ -38,9 +38,13 @@ This repo runs on its own graph; roadmap **§ Dogfooding Protocol**
 binding for every spec. The wiring:
 
 - Both hosts (Claude Code `.mcp.json`, Codex `.codex/config.toml`) launch the MCP
-  server at HEAD through **`scripts/mcp-dogfood.sh`** — it pins cwd to the checkout
-  root, sources the untracked `.envrc.local` (private embedding endpoint; a spec
-  worktree falls back to the main checkout's copy), and execs
+  server at HEAD through **`scripts/mcp-dogfood.mjs`** — a cross-platform Node
+  launcher (no POSIX `sh`, so Windows dogfood clones work), reached via a tiny
+  `node -e` walk-up locator that finds the checkout root from any cwd inside the
+  repo. It anchors to the checkout root, applies the untracked `.envrc.local` to
+  the daemon's environment whether or not values are `export`ed (private embedding
+  endpoint; a spec worktree falls back to the main checkout's copy, resolved via
+  `git rev-parse --git-common-dir`), and spawns
   `node dist/bin/codegraph.js serve --mcp`.
 - **`codegraph.json`** opts this repo into the SPEC-008 LSP precision pass (any
   index/sync runs it; degrades gracefully where no language server is installed).
