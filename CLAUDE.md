@@ -306,6 +306,17 @@ throwaway prototype path, and Sigma.js as the SPEC-006 WebGL runner-up. SPEC-005
 is ready to scaffold against that decision; SPEC-006 and SPEC-007 remain
 downstream.
 
+SPEC-008 (LSP Client Integration) is in Plan phase.
+
+Current SPEC-008 plan artifact:
+`specs/008-lsp-client-integration/plan.md`
+
+SPEC-008 plan constraints: LSP remains default-off; no auto-install; no
+CodeGraph-as-LSP-server; no rename/refactor behavior; real-server validation
+records observed versions rather than exact pins; language and capability parity
+rows must have SPEC-008 evidence or concrete SPEC-024/future-spec ownership with
+no unowned gaps.
+
 SPEC-023 (OCaml Language Support) is in flight on branch
 `023-ocaml-language-support`; PR #21 is open and autopilot closeout is complete.
 

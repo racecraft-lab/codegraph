@@ -23,7 +23,7 @@ This document defines the **SPEC catalog** for the Intelligence Platform: an ord
 
 ## Roadmap Overview
 
-The platform is decomposed into **23 specifications** across **6 dependency tiers** (phases):
+The platform is decomposed into **24 specifications** across **6 dependency tiers** (phases):
 
 | Tier | Specs | Purpose | Parallelization |
 |------|-------|---------|-----------------|
@@ -32,9 +32,9 @@ The platform is decomposed into **23 specifications** across **6 dependency tier
 | **2** | SPEC-008, SPEC-009, SPEC-010 | LSP precision & rename | 008 ∥ 009 (009 needs 005); 010 after 008 |
 | **3** | SPEC-011, SPEC-012, SPEC-013 | Analysis breadth | All three parallelizable (012 prefers 011) |
 | **4** | SPEC-014, SPEC-015, SPEC-016, SPEC-017 | Dataflow depth (CFG→PDG→taint) | Strict chain |
-| **5** | SPEC-018 … SPEC-023 | Team & enterprise capabilities | 018 first; 019/020 consume it; 021→022; 023 anytime |
+| **5** | SPEC-018 … SPEC-024 | Team, enterprise, and language parity closure | 018 first; 019/020 consume it; 021→022; 023 anytime; 024 after 008 baseline findings |
 
-**Execution Order:** SPEC-001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017 → 018 → 019 → 020 → 021 → 022 → 023
+**Execution Order:** SPEC-001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017 → 018 → 019 → 020 → 021 → 022 → 023 → 024
 
 **Dependency Constraints:**
 - SPEC-002/003 require SPEC-001 (provider interface + vector store).
@@ -44,6 +44,7 @@ The platform is decomposed into **23 specifications** across **6 dependency tier
 - SPEC-015 → 014, SPEC-016 → 015, SPEC-017 → 016 (strict analysis chain).
 - SPEC-019 requires SPEC-011 + SPEC-018; SPEC-020 requires SPEC-012 (SPEC-018 optional); SPEC-022 requires SPEC-021.
 - SPEC-013, SPEC-023 have no dependencies and can fill parallel capacity at any point.
+- SPEC-024 is mandatory if SPEC-008 planning identifies any language, feature, or capability parity gap from the internal baseline that cannot be safely closed inside SPEC-008. It is not a backlog bucket; it is the no-waiver closure spec.
 
 ## Reviewability Contract
 
@@ -86,6 +87,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
    ─► SPEC-016 (PDG) ─► SPEC-017 (taint)      └──────────────────► SPEC-020 (PR action) ◄─ SPEC-012
                                             SPEC-021 (contracts) ─► SPEC-022 (bridge/impact)
                                             SPEC-023 (OCaml) [independent]
+                                            SPEC-024 (parity closure) ◄─ SPEC-008
                                             ─── PLATFORM COMPLETE ───
 ```
 
@@ -102,7 +104,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-005 | Local HTTP Server & REST API | ⏳ Pending | [SPEC-005-workflow.md](SPEC-005-workflow.md) | Ready (SPEC-004 complete; see `docs/design/web-framework-decision.md`) |
 | SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Blocked by SPEC-005 |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
-| SPEC-008 | LSP Client Integration | ⏳ Pending | [SPEC-008-workflow.md](SPEC-008-workflow.md) | Specify (parallel-safe) |
+| SPEC-008 | LSP Client Integration | 🔄 In Progress | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Scaffolded on `008-lsp-client-integration` |
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Blocked by SPEC-005 |
 | SPEC-010 | Graph-Aware Rename | ⏳ Pending | [SPEC-010-workflow.md](SPEC-010-workflow.md) | Blocked by SPEC-008 |
 | SPEC-011 | Execution Flows & Clusters | ⏳ Pending | [SPEC-011-workflow.md](SPEC-011-workflow.md) | Specify (parallel-safe) |
@@ -118,6 +120,7 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | 🔄 In Progress | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Scaffolded on `023-ocaml-language-support` |
+| SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Pending SPEC-008 parity matrix |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked
 
@@ -341,18 +344,20 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 
 **Priority:** P0 | **Depends On:** None | **Enables:** SPEC-010; compiler-accurate edges platform-wide
 
-**Goal:** Where a language server is installed, graph definitions/references become compiler-accurate, with per-edge provenance and graceful per-language degradation.
+**Goal:** Where a language server is installed, graph definitions/references become compiler-accurate, with per-edge provenance, graceful per-language degradation, and no-waiver parity against the reproduced language/feature baseline.
 
 **Reviewability Budget:** Primary surface: harness/adapter |
 Projected reviewable LOC: 565 (net-new) |
 Production files: ~7 |
 Total files: ~14 |
-Budget result: within greenfield allowance (estimator suggested 2 slices — advisory)
+Budget result: warning accepted after parity expansion; use vertical slices or hand concrete leftovers to SPEC-024, never backlog-only ownership
 
 **Scope:**
-- `src/lsp/` module: `servers.ts` registry (typescript-language-server, pyright/basedpyright, gopls, rust-analyzer, clangd, SourceKit-LSP, jdtls; PATH probe + user config override), `client.ts` JSON-RPC over stdio (initialize/shutdown lifecycle, per-workspace instances, request timeout + crash restart), `precision-pass.ts` (for each heuristic edge in LSP-covered files: textDocument/definition + references verification; upgrade/correct/annotate).
+- `src/lsp/` module: `servers.ts` registry (typescript-language-server, pyright/basedpyright, gopls, rust-analyzer, clangd, SourceKit-LSP, jdtls, plus concrete entries or dispositions for C#, Kotlin, PHP, Ruby, Dart, Vue, and COBOL from the SPEC-008 plan; PATH probe + user config override), `client.ts` JSON-RPC over stdio (initialize/shutdown lifecycle, per-workspace instances, request timeout + crash restart), `precision-pass.ts` (for each heuristic edge in LSP-covered files: textDocument/definition + references verification; upgrade/correct/annotate).
 - Schema: `resolution` provenance column on edges (`heuristic` default, `lsp` when verified); status reporting of per-language coverage % and detected servers.
 - Opt-in via `codegraph index --lsp` / config; incremental verification on watch events for changed files.
+- Parity gate using `docs/ai/specs/.process/language-feature-parity-baseline.md`: every language, matrix cell, and capability row must have implementation evidence or concrete numbered spec ownership.
+- Required language baseline: JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL.
 
 **Out of Scope:**
 - Exposing an LSP server (SPEC-009); rename (SPEC-010); auto-installing language servers.
@@ -770,6 +775,38 @@ Budget result: within budget
 
 ---
 
+### SPEC-024: Language and Feature Parity Closure
+
+**Priority:** P0 | **Depends On:** SPEC-008 parity matrix | **Enables:** no-waiver parity claims
+
+**Goal:** Close every remaining language, feature, and capability gap between CodeGraph and the reproduced parity baseline, with implementation and validation evidence for each row.
+
+**Reviewability Budget:** Primary surface: docs/process + whichever implementation surface is required by the remaining gaps |
+Projected reviewable LOC: TBD after SPEC-008 plan |
+Production files: TBD |
+Total files: TBD |
+Budget result: must decompose into numbered child specs before implementation if the gap list exceeds review budget
+
+**Scope:**
+- Use `docs/ai/specs/.process/language-feature-parity-baseline.md` as the no-waiver source of truth.
+- Close the 13-language x 9-feature matrix: imports, named bindings, exports, heritage, type annotations, constructor inference, config, frameworks, and entry points.
+- Close the additional language baseline for Dart, Vue, and COBOL.
+- Close the reproduced capability list: MCP tools/resources/prompts, CLI surfaces, hybrid search, flows, clusters, impact, detect-changes, rename, Cypher, wiki generation, multi-repo registry, repo groups, remote embeddings, agent support, and operational analyzer flags.
+- Implement missing rows directly or create concrete numbered child specs before SPEC-024 can complete.
+- Add regression checks that fail when the parity baseline drifts without an owner or validation update.
+
+**Out of Scope:**
+- Claiming parity from intent, partial implementation, or backlog language.
+- Adding external project names or outbound source links to spec artifacts; reproduce required baseline rows instead.
+- Non-baseline language expansion except already tracked SPEC-023.
+
+**Key Files:**
+- `docs/ai/specs/.process/language-feature-parity-baseline.md` — no-waiver baseline
+- `src/mcp/`, `src/bin/codegraph.ts`, `src/graph/`, `src/search/`, `src/resolution/`, `src/extraction/` — surfaces audited or extended as needed
+- `__tests__/` — parity regression fixtures and surface tests
+
+---
+
 ## Decomposition Principles
 
 When breaking a feature into specs:
@@ -779,7 +816,8 @@ When breaking a feature into specs:
 3. **Backend foundations first** — establish APIs before frontend integration
 4. **Mock data for blocked specs** — UI specs can use static data while backend specs complete
 5. **Integration spec last** — wire everything together as the final spec
-6. **Each spec gets its own directory**: `specs/<number>-<name>/`
+6. **Parity gaps need concrete owners** — no language, feature, or capability row may be assigned to an unnamed backlog
+7. **Each spec gets its own directory**: `specs/<number>-<name>/`
 
 ## Dogfooding Protocol
 
@@ -794,7 +832,7 @@ builds on top of live, real-scale instances of everything before it.
    the new spec added (schema migrations apply additively; derived layers backfill);
    the file watcher keeps everything fresh between merges.
 2. **Local endpoint configuration** lives in the untracked `.envrc.local` (loaded by the
-   committed `.envrc` direnv shim — same pattern as gitnexus). Committed artifacts stay
+   committed `.envrc` direnv shim). Committed artifacts stay
    host- and vendor-neutral; private infrastructure details never land in the repo.
 3. **Every spec's UAT runbook MUST include a self-repo step**: exercise the new
    capability against this repository's own index, at its real scale, not only against

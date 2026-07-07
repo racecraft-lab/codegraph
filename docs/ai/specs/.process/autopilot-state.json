@@ -1,245 +1,10 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-023-workflow.md",
-  "updated_at": "2026-07-05T22:41:55Z",
-  "active_step": "complete",
-  "spec_id": "SPEC-023",
-  "feature_dir": "specs/023-ocaml-language-support",
-  "branch": "023-ocaml-language-support",
-  "confidence_gate_mode": "advisory",
-  "archive_sweep": {
-    "current_target": "specs/023-ocaml-language-support",
-    "archive_extension_installed": false,
-    "safeToApplyCleanup": false,
-    "mode": "unavailable",
-    "note": "Archive extension is not installed; no cleanup was applied."
-  },
-  "project_commands": {
-    "BUILD": "npm run build",
-    "TYPECHECK": "npm run typecheck",
-    "LINT": "N/A",
-    "LINT_FIX": "N/A",
-    "UNIT_TEST": "npm test",
-    "INTEGRATION_TEST": "N/A",
-    "SINGLE_FILE_TEST": "npx vitest run <file>",
-    "SINGLE_FILE_INTEGRATION": "N/A",
-    "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
-  },
-  "preset_conventions": {
-    "has_presets": true,
-    "presets": [
-      "claude-ask-questions",
-      "codegraph-project-overrides",
-      "speckit-pro-reviewability"
-    ],
-    "templates": {
-      "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
-      "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
-      "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
-    }
-  },
-  "codex_agents": {
-    "validator": "ok: codex: 10 bundled agents installed",
-    "model": "gpt-5.5",
-    "model_reasoning_effort": "xhigh"
-  },
-  "phase0_evidence": {
-    "prerequisites": "check-prerequisites.sh all_pass=true",
-    "confidence_gate_mode": "advisory",
-    "reviewability_setup_gate": "status=warn, pass=true, reviewable_loc=325, production_files=4, total_files=10",
-    "build": "npm run build passed",
-    "typecheck": "npm run typecheck passed",
-    "unit_test": "npm test passed: 132 files, 2223 passed, 4 skipped"
-  },
-  "phase1_evidence": {
-    "executor": "phase-executor",
-    "files_created": [
-      ".specify/feature.json",
-      "specs/023-ocaml-language-support/spec.md",
-      "specs/023-ocaml-language-support/checklists/requirements.md"
-    ],
-    "user_stories": 4,
-    "functional_requirements": 17,
-    "acceptance_scenarios": 10,
-    "requirements_checklist": "16/16 complete",
-    "gate": "G1 pass: spec.md exists with 0 markers",
-    "after_specify_hook": "skipped: agent-context hook installed but no SPEC-023 plan.md exists yet; running without a plan could auto-detect unrelated plans"
-  },
-  "phase2_evidence": {
-    "session_1": {
-      "focus": "Grammar, Syntax Breadth, and Shipping",
-      "questions": 5,
-      "outcome": "Pinned vendored tree-sitter-ocaml@0.24.2 implementation and interface WASMs; required parser health checks and dist artifact assertion; locked first-slice syntax breadth; defined .ml/.mli pairing and interface node kinds.",
-      "consensus": {
-        "item": "Grammar source/artifacts",
-        "categories": "[codebase, domain]",
-        "round": 1,
-        "outcome": "both-agree",
-        "analysts": [
-          "codebase-analyst",
-          "domain-researcher"
-        ]
-      },
-      "marker_check": "count-markers clarifications total=0"
-    },
-    "session_2": {
-      "focus": "Resolution, Dune, Packages, and PPX Gate",
-      "questions": 5,
-      "outcome": "Dune-scoped unique-only local resolution; authoritative metadata limited to checked-in dune-project, dune stanzas, and root/opam *.opam; metadata gates local relationships only; ambiguity emits no edge; PPX expansion unsupported/future work.",
-      "consensus": {
-        "status": "skipped",
-        "reason": "clarify-executor reported no unresolved items and high-confidence recommendations"
-      },
-      "marker_check": "count-markers clarifications total=0"
-    },
-    "session_3": {
-      "focus": "Validation and Eval Bar",
-      "questions": 5,
-      "outcome": "Pinned smoke/eval corpus to Yojson, OCaml-LSP, and Dune; pinned three retrieval questions per repo; required first-PR fixture/parser/copy/full-verify/status/smoke/stability/probe evidence plus Yojson and OCaml-LSP A/B; allowed only Dune A/B and optional Irmin stress to split with an explicit follow-up gate; defined existing-language controls and compact smoke metrics.",
-      "consensus": {
-        "status": "skipped",
-        "reason": "clarify-executor reported no unresolved items and high or medium-high confidence recommendations"
-      },
-      "marker_check": "count-markers clarifications total=0"
-    }
-  },
-  "phase3_evidence": {
-    "executor": "phase-executor",
-    "files_created": [
-      "specs/023-ocaml-language-support/plan.md",
-      "specs/023-ocaml-language-support/research.md",
-      "specs/023-ocaml-language-support/data-model.md",
-      "specs/023-ocaml-language-support/quickstart.md",
-      "specs/023-ocaml-language-support/contracts/ocaml-language-support.md"
-    ],
-    "files_modified": [
-      "CLAUDE.md"
-    ],
-    "reviewability_decision": "SPEC-023 remains one spec, but implementation must split into grammar/status, extraction, resolution, and validation/eval slices.",
-    "constitution_gate": "passed with required split; no PPX expansion, package nodes, or external package edges",
-    "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
-  },
-  "phase4_evidence": {
-    "language_coverage": {
-      "executor": "checklist-executor",
-      "items": 20,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "remediation": "Tightened source-level node-kind and span rules for functors, let forms, classes/objects, labeled/optional parameters, anonymous forms, and unsupported syntax."
-    },
-    "resolution_correctness": {
-      "executor": "checklist-executor",
-      "items": 23,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "remediation": "Added unique-only Dune-scoped functor reference/application wording and explicitly excluded functor result elaboration and type-equality inference."
-    },
-    "validation_eval": {
-      "executor": "checklist-executor",
-      "items": 32,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "remediation": "Clarified mandatory eval evidence belongs to the first PR/slice claiming complete OCaml support; earlier slices must preserve the completion gate."
-    },
-    "safety_license": {
-      "executor": "checklist-executor",
-      "items": 28,
-      "gaps_found": 0,
-      "gaps_remaining": 0,
-      "remediation": "No remediation required."
-    },
-    "consensus": "No unresolved consensus items reported for any checklist domain.",
-    "marker_check": "count-markers all returned 0 for gaps, clarifications, critical, high, medium, and low markers"
-  },
-  "phase5_evidence": {
-    "executor": "phase-executor",
-    "files_created": [
-      "specs/023-ocaml-language-support/tasks.md"
-    ],
-    "total_tasks": 74,
-    "phases": 7,
-    "parallel_opportunities": 22,
-    "setup_foundational_tasks": 18,
-    "us1_tasks": 11,
-    "us2_tasks": 14,
-    "us3_tasks": 18,
-    "us4_tasks": 5,
-    "polish_tasks": 8,
-    "coverage": "FR-001 through FR-017 and SC-001 through SC-006 covered",
-    "format_validation": "74/74 task lines match required checklist format",
-    "gate": "G5 pass: 74 tasks found",
-    "atomicity_route": {
-      "route": "one-navigable-PR",
-      "releasable": true,
-      "signals": [
-        "change-shape:modify-heavy"
-      ],
-      "warnings": []
-    },
-    "markers": "0 [NEEDS CLARIFICATION], 0 [Gap], 0 [CRITICAL]"
-  },
-  "phase6_evidence": {
-    "executor": "analyze-executor",
-    "findings_total": 3,
-    "critical": 0,
-    "high": 1,
-    "medium": 2,
-    "low": 0,
-    "remediations": [
-      "A1 High: clarified one public ocaml language token with internal extension-aware implementation/interface grammar selection and src/types.ts registry coverage.",
-      "A2 Medium: reworded copy-assets and status tasks to verify existing wildcard copy/status behavior instead of forcing unrelated package.json or src/bin/codegraph.ts edits.",
-      "A3 Medium: marked validated checklist items complete and corrected stale Quickstart reference."
-    ],
-    "consensus": "No unresolved consensus items reported by analyze-executor.",
-    "verification": [
-      "check-prerequisites.sh --json --require-tasks --include-tasks",
-      "count-markers findings returned 0",
-      "count-markers all returned 0",
-      "git diff --check clean"
-    ]
-  },
-  "phase6_5_evidence": {
-    "mode": "advisory",
-    "result": "soft_skip",
-    "pass": null,
-    "reason": "confidence-gate.sh returned NO_DATA because no synthesizer confidence emit was present in the workflow file",
-    "recommended_action": "soft_skip"
-  },
-  "phase7_evidence": {
-    "implementation": "Grammar/status, extraction, resolution/package metadata, PPX boundary, docs, local tests, real-repo smoke/probes, Yojson/OCaml-LSP A/B, existing-language local control, final reviewability backstop, and dry-run slice emission are recorded.",
-    "completed_task_ranges": [
-      "T001-T074"
-    ],
-    "open_tasks": [],
-    "blocked_gates": [],
-    "self_repo_smoke": "specs/023-ocaml-language-support/validation/self-repo-smoke.md",
-    "deferred_gates": [
-      {
-        "task": "T056",
-        "reason": "Dune A/B is explicitly recorded as a follow-up gate before support-completion claims, per the SPEC-023 validation plan.",
-        "evidence": "specs/023-ocaml-language-support/validation/dune-ab-gate.md"
-      }
-    ],
-    "existing_language_control": {
-      "status": "pass",
-      "mode": "local-only current-vs-baseline deterministic control",
-      "external_ab_status": "rejected_by_sandbox_reviewer_private_repo_context_exposure",
-      "summary": "/private/tmp/spec-023-existing-language-local.wbMHdR/summary.json",
-      "evidence": "specs/023-ocaml-language-support/validation/existing-language-ab-gate.md"
-    },
-    "final_reviewability": {
-      "status": "exception",
-      "reviewable_loc": 1250,
-      "production_files": 16,
-      "total_files": 90,
-      "primary_surface_count": 5,
-      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
-      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
-      "exception_class": "infra",
-      "exception_honored": true,
-      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
-      "blocked_operations": []
-    }
-  },
+  "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
+  "spec_id": "SPEC-008",
+  "feature_dir": "specs/008-lsp-client-integration",
+  "updated_at": "2026-07-06T00:40:35Z",
+  "active_step": "Phase 7: Implement - foundation T001-T018",
+  "confidence_gate_mode": "strict",
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -254,27 +19,43 @@
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping",
+      "step": "Phase 2: Clarify - Server prereqs and validation",
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Grammar, Syntax Breadth, and Shipping Consensus",
+      "step": "Phase 2: Clarify - Server prereqs and validation Consensus",
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate",
+      "step": "Phase 2: Clarify - Language parity baseline",
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Resolution, Dune, Packages, and PPX Gate Consensus",
+      "step": "Phase 2: Clarify - Language parity baseline Consensus",
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Validation and Eval Bar",
+      "step": "Phase 2: Clarify - Feature and capability parity baseline",
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify - Validation and Eval Bar Consensus",
+      "step": "Phase 2: Clarify - Feature and capability parity baseline Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Edge correction and provenance",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Edge correction and provenance Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Activation, config, and slicing",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Activation, config, and slicing Consensus",
       "status": "completed"
     },
     {
@@ -282,35 +63,35 @@
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Language Coverage",
+      "step": "Phase 4: Checklist - Integration",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Language Coverage Consensus",
+      "step": "Phase 4: Checklist - Integration Consensus",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Resolution Correctness",
+      "step": "Phase 4: Checklist - Reliability",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Resolution Correctness Consensus",
+      "step": "Phase 4: Checklist - Reliability Consensus",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Validation and Eval",
+      "step": "Phase 4: Checklist - Data Integrity",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Validation and Eval Consensus",
+      "step": "Phase 4: Checklist - Data Integrity Consensus",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Safety and License",
+      "step": "Phase 4: Checklist - Performance",
       "status": "completed"
     },
     {
-      "step": "Phase 4: Checklist - Safety and License Consensus",
+      "step": "Phase 4: Checklist - Performance Consensus",
       "status": "completed"
     },
     {
@@ -327,210 +108,1055 @@
     },
     {
       "step": "Phase 6.5: Confidence Gate",
-      "status": "skipped: advisory confidence gate returned NO_DATA and recommended soft_skip"
-    },
-    {
-      "step": "Phase 7: Implement - setup, grammar, status, extraction, resolution, PPX, docs completed (T001-T047, T057-T058, T061-T069)",
       "status": "completed"
     },
     {
-      "step": "Phase 7: Implement - real-repo smoke and deterministic probes (T048-T053)",
-      "status": "completed"
+      "step": "Phase 7: Implement - foundation T001-T018",
+      "status": "in_progress"
     },
     {
-      "step": "Phase 7: Implement - A/B and existing-language control gates (T054-T056, T059-T060)",
-      "status": "completed"
+      "step": "Phase 7: Implement - us1 T019-T037",
+      "status": "pending"
     },
     {
-      "step": "Phase 7: Implement - quickstart, reviewability, PR packet, marker scan (T070-T074)",
-      "status": "completed"
+      "step": "Phase 7: Implement - us2 T038-T049",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - us3 T050-T062",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement - us4 T063-T114",
+      "status": "pending"
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "skipped: doctor extension not installed"
+      "status": "pending"
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Code Review",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "completed: final backstop exception honored"
+      "status": "pending"
     },
     {
       "step": "Post: Self-Review",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: PR Creation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Review Remediation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Retrospective",
-      "status": "completed"
+      "status": "pending"
     }
   ],
-  "post_evidence": {
-    "deterministic_verification": {
-      "status": "pass",
-      "build": "npm run build passed",
-      "typecheck": "npm run typecheck passed",
-      "targeted_ocaml": "5 files, 16 tests passed",
-      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped"
-    },
-    "review_scouting": {
-      "status": "complete",
-      "findings": [
-        "stale existing-language A/B and reviewability evidence text"
-      ],
-      "fixes": [
-        "updated pr-packet traceability",
-        "updated quickstart wording"
-      ],
-      "verification": [
-        "stale-text scan clean",
-        "process JSON valid",
-        "git diff --check clean",
-        "autopilot coverage pass"
-      ]
-    },
-    "fix_forward_pass": {
-      "status": "complete",
-      "fixes": [
-        "stale evidence text corrected"
-      ]
-    },
-    "verify_tasks": {
-      "status": "pass",
-      "report": "specs/023-ocaml-language-support/verify-tasks-report.md",
-      "verified": 74,
-      "partial": 0,
-      "weak": 0,
-      "not_found": 0,
-      "skipped": 0
-    },
-    "verify_implementation": {
-      "status": "pass",
-      "max_findings": 50,
-      "findings": 0,
-      "requirement_coverage": "23/23 mapped",
-      "task_completion": "74/74",
-      "notes": [
-        "read-only verify gate completed from spec/plan/tasks/constitution and changed-file detection",
-        "external-agent A/B remains policy-blocked; local replacement control passed"
-      ]
-    },
-    "code_review": {
-      "status": "pass",
-      "mode": "parent-session fallback",
-      "subagent_status": "RepoPrompt agent transport closed twice",
-      "findings": [],
-      "residual_risks": [
-        "Dune A/B follow-up gate remains",
-        "single PR reviewability size block remains"
-      ]
-    },
-    "integration_suite": {
-      "status": "pass",
-      "build": "npm run build passed",
-      "typecheck": "npm run typecheck passed",
-      "unit_test": "npm test passed: 137 files, 2239 passed, 4 skipped",
-      "evidence": "specs/023-ocaml-language-support/.process/emission/full-verification-evidence.md"
-    },
-    "self_review": {
-      "status": "complete",
-      "evidence": "specs/023-ocaml-language-support/.process/self-review.md"
-    },
-    "uat_runbook": {
-      "status": "pass",
-      "evidence": "specs/023-ocaml-language-support/.process/uat-runbook.md",
-      "validation": "validate-uat-runbook.sh passed"
-    },
-    "final_reviewability_backstop": {
-      "status": "exception",
-      "gate_state": "specs/023-ocaml-language-support/.process/final-reviewability/gate-state.json",
-      "changed_files": "specs/023-ocaml-language-support/.process/final-reviewability/changed-files.txt",
-      "exception_class": "infra",
-      "exception_honored": true,
-      "exception_evidence": "specs/023-ocaml-language-support/implementation-slices.md:17",
-      "blocked_operations": [],
-      "reason": "reviewable LOC 1250, production files 16, and total files 90 exceed block thresholds; operator-owned infra exception accepted",
-      "total_files": 90
-    },
-    "pr_packet_body_generation": {
-      "status": "pass",
-      "packet_location": "transient worktree-generated packet/body used for PR creation; not committed to avoid self-referential packet diffs",
-      "validation": "validate-pr-packet.sh passed for current packet",
-      "title": "feat(speckit-pro): Add OCaml language support",
-      "workflow_contract": "validate-pr-workflow-contract.sh passed"
-    },
-    "pr_creation": {
-      "status": "complete",
-      "pr_number": 21,
-      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/21",
-      "title": "feat(speckit-pro): Add OCaml language support",
-      "base": "main",
-      "head": "023-ocaml-language-support",
-      "mergeable": "MERGEABLE"
-    },
-    "review_remediation": {
-      "status": "complete",
-      "comments": 2,
-      "reviews": 1,
-      "review_decision": "COMMENTED",
-      "fixes": [
-        "ignored root-level and nested opam.locked files",
-        "failed closed for implementation-only OCaml symbols hidden by a paired .mli",
-        "constrained bare OCaml calls to same-file visible callable targets",
-        "preserved same-source-unit private helper calls behind paired .mli files",
-        "regenerated final changed-files and reviewability state"
-      ],
-      "verification": [
-        "npm run build passed",
-        "npm run typecheck passed",
-        "OCaml focused suite passed: 5 files, 16 tests",
-        "npm test passed: 137 files, 2239 passed, 4 skipped"
-      ],
-      "action": "actionable Copilot and RepoPrompt findings fixed, pushed through 3269506, RepoPrompt clean-gate returned no actionable findings, and GitHub checks passed"
-    },
-    "retrospective": {
-      "status": "complete",
-      "report": "specs/023-ocaml-language-support/retrospective.md",
-      "spec_changes_proposed": false,
-      "spec_adherence": "97.8%"
+  "archive_sweep": {
+    "archive_extension_installed": false,
+    "current_target": "specs/008-lsp-client-integration",
+    "cleanup_mode": "disabled",
+    "safeToApplyCleanup": false,
+    "note": "Archive extension not installed; no previously merged spec cleanup was applied."
+  },
+  "project_commands": {
+    "BUILD": "npm run build",
+    "TYPECHECK": "npm run typecheck",
+    "LINT": "N/A",
+    "LINT_FIX": "N/A",
+    "UNIT_TEST": "npm test",
+    "INTEGRATION_TEST": "N/A",
+    "SINGLE_FILE_TEST": "npm test --",
+    "SINGLE_FILE_INTEGRATION": "N/A",
+    "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
+  },
+  "preset_conventions": {
+    "has_presets": true,
+    "presets": [
+      "claude-ask-questions",
+      "codegraph-project-overrides",
+      "speckit-pro-reviewability"
+    ],
+    "template_resolution": {
+      "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
+      "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
+      "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
     }
   },
-  "status": "completed_pr_open",
-  "pr": {
-    "number": 21,
-    "url": "https://github.com/racecraft-lab/codegraph/pull/21",
-    "state": "OPEN",
-    "isDraft": false,
-    "mergeable": "MERGEABLE",
-    "checks": "all GitHub checks passed at 3269506"
+  "preflight": {
+    "model": "parent session not directly introspectable; custom phase agents are installed with gpt-5.5/xhigh",
+    "model_reasoning_effort": "parent session not directly introspectable; strict run proceeds with xhigh custom agents",
+    "branch": "008-lsp-client-integration",
+    "is_worktree": true,
+    "on_feature_branch": true,
+    "specify_version": "0.11.8",
+    "agent_install": "validate-agent-install.sh: ok: codex: 10 bundled agents installed",
+    "coverage_guard": "passed: validate-autopilot-phase-coverage.py",
+    "g0_verification": {
+      "build": "passed: npm run build",
+      "typecheck": "passed: npm run typecheck",
+      "unit_test": "passed: npm test (132 files, 2223 passed, 4 skipped)",
+      "integration_test": "N/A"
+    },
+    "capability_path": {
+      "codebase_context": "local repository files plus available codebase context tools",
+      "library_documentation": "web search or official docs when current facts are required",
+      "web_or_domain_research": "web search available to parent; subagents receive gathered evidence or fallback notes",
+      "source_extraction": "local files and command outputs"
+    },
+    "phase_1_specify": {
+      "status": "completed",
+      "functional_requirements": 28,
+      "user_stories": 4,
+      "acceptance_scenarios": 14,
+      "gate_g1": "passed: spec.md exists with 0 active [NEEDS CLARIFICATION] markers",
+      "files": [
+        "specs/008-lsp-client-integration/spec.md",
+        "specs/008-lsp-client-integration/checklists/requirements.md",
+        ".specify/feature.json"
+      ]
+    },
+    "phase_2_clarify": {
+      "session_1_server_prereqs": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "completed: baseline-full prerequisite matrix accepted with concrete local command alternatives",
+        "files": [
+          "specs/008-lsp-client-integration/spec.md",
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_1b_language_parity": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "skipped: no unresolved items",
+        "outcome": "SPEC-008 covers all baseline LSP rows except COBOL disposition; COBOL requires parser/resolver evidence plus SPEC-024 ownership unless Plan selects a concrete local LSP target.",
+        "files": [
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_1c_capability_parity": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "skipped: no unresolved items",
+        "outcome": "Baseline capability contract owner map accepted as authoritative; SPEC-024 remains concrete closure owner for remaining parity gaps unless Plan creates numbered child specs.",
+        "files": [
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_2_edge_provenance": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "completed: additive provenance semantics accepted by spec-context and codebase analysts",
+        "outcome": "Unique LSP target rules, correction audit metadata, active-edge provenance semantics, and status count requirements added to spec.md.",
+        "files": [
+          "specs/008-lsp-client-integration/spec.md",
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      },
+      "session_3_activation_config_slicing": {
+        "status": "completed",
+        "questions": 5,
+        "consensus": "skipped: no unresolved items",
+        "outcome": "codegraph.json.lsp contract, environment override names, activation precedence, watch bounds, and final vertical slice boundaries added to spec.md.",
+        "files": [
+          "specs/008-lsp-client-integration/spec.md",
+          "docs/ai/specs/.process/SPEC-008-workflow.md"
+        ]
+      }
+    },
+    "phase_3_plan": {
+      "status": "completed",
+      "gate_g3": "passed: plan.md exists with 0 unresolved markers",
+      "reviewability_budget": {
+        "status": "not_estimated",
+        "projected": null,
+        "note": "No parseable production-file count entries were found by estimate-reviewable-loc.sh; advisory only."
+      },
+      "language_parity_rows": 16,
+      "capability_parity_rows": 17,
+      "unowned_parity_gaps": 0,
+      "files": [
+        "specs/008-lsp-client-integration/plan.md",
+        "specs/008-lsp-client-integration/research.md",
+        "specs/008-lsp-client-integration/data-model.md",
+        "specs/008-lsp-client-integration/quickstart.md",
+        "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+        "specs/008-lsp-client-integration/contracts/status-and-prereqs.md",
+        "specs/008-lsp-client-integration/contracts/edge-correction.md",
+        "CLAUDE.md"
+      ]
+    },
+    "phase_4_checklist": {
+      "integration": {
+        "status": "completed",
+        "items": 27,
+        "gaps_before": 3,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/integration.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md"
+        ]
+      },
+      "reliability": {
+        "status": "completed",
+        "items": 18,
+        "gaps_before": 3,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/reliability.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md"
+        ]
+      },
+      "data_integrity": {
+        "status": "completed",
+        "items": 21,
+        "gaps_before": 4,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/data-integrity.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md",
+          "specs/008-lsp-client-integration/data-model.md",
+          "specs/008-lsp-client-integration/contracts/edge-correction.md"
+        ]
+      },
+      "performance": {
+        "status": "completed",
+        "items": 24,
+        "gaps_before": 9,
+        "gaps_after": 0,
+        "consensus": "skipped: no unresolved items",
+        "files": [
+          "specs/008-lsp-client-integration/checklists/performance.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/plan.md",
+          "specs/008-lsp-client-integration/research.md",
+          "specs/008-lsp-client-integration/data-model.md",
+          "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+          "specs/008-lsp-client-integration/contracts/status-and-prereqs.md"
+        ]
+      },
+      "gate_g4": {
+        "status": "passed",
+        "reason": "0 [Gap] markers",
+        "checklist_items": 90,
+        "gaps_after": 0
+      }
+    },
+    "phase_5_tasks": {
+      "status": "completed",
+      "gate_g5": "passed: 114 tasks found, 0 markers",
+      "total_tasks": 114,
+      "phase_count": 7,
+      "parallel_opportunities": 48,
+      "user_stories_covered": 4,
+      "task_counts_by_story": {
+        "US1": 19,
+        "US2": 12,
+        "US3": 13,
+        "US4": 43
+      },
+      "vertical_pr_slices": 3,
+      "functional_requirements_represented": 51,
+      "acceptance_scenarios_represented": 14,
+      "reviewability_gate": {
+        "exit_code": 1,
+        "status": "block",
+        "mode": "tasks",
+        "pass": false,
+        "is_size_only": true,
+        "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/tasks-reviewability.json",
+        "reviewable_loc": 4560,
+        "production_files": 32,
+        "total_files": 126,
+        "blockers": [
+          "reviewable LOC 4560 exceeds block threshold 800",
+          "production files 32 exceeds block threshold 8",
+          "total files 126 exceeds block threshold 25"
+        ],
+        "warnings": [
+          "reviewable LOC 4560 exceeds warn threshold 400",
+          "production files 32 exceeds warn threshold 6",
+          "total files 126 exceeds warn threshold 15",
+          "primary surfaces 6 exceeds warn threshold 1"
+        ]
+      },
+      "atomicity_route": {
+        "exit_code": 0,
+        "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json",
+        "route": "one-navigable-PR",
+        "releasable": true,
+        "signals": [
+          "change-shape:modify-heavy"
+        ],
+        "hints": [
+          "hint:flag-system:weak"
+        ],
+        "warnings": []
+      },
+      "marker_plan": {
+        "status": "planned",
+        "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/pr-marker-plan.json",
+        "marker_ids": [
+          "foundation",
+          "us1",
+          "us2",
+          "us3",
+          "us4"
+        ],
+        "warning_count": 1
+      },
+      "files": [
+        "specs/008-lsp-client-integration/tasks.md"
+      ]
+    },
+    "phase_6_analyze": {
+      "status": "completed",
+      "findings_before": {
+        "critical": 0,
+        "high": 3,
+        "medium": 1,
+        "low": 1,
+        "total": 5
+      },
+      "findings_after": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "total": 0
+      },
+      "remediation_loops": 1,
+      "consensus": "skipped: no unresolved items",
+      "confidence": {
+        "composite": 0.93,
+        "specification_alignment": 0.94,
+        "task_coverage": 0.93,
+        "reviewability": 0.91,
+        "validation_feasibility": 0.92,
+        "implementation_readiness": 0.94
+      },
+      "files": [
+        "specs/008-lsp-client-integration/tasks.md",
+        "specs/008-lsp-client-integration/plan.md",
+        "specs/008-lsp-client-integration/.process/reviewability/pr-marker-plan.json"
+      ],
+      "gate_g6": {
+        "status": "passed",
+        "reason": "0 CRITICAL/HIGH findings",
+        "markers": 0
+      }
+    },
+    "phase_6_5_confidence_gate": {
+      "status": "passed",
+      "mode": "strict",
+      "threshold": 0.9,
+      "composite": 0.93,
+      "reason": "composite at or above threshold",
+      "recommended_action": "proceed",
+      "criteria": {
+        "task_understanding": 0.93,
+        "approach_clarity": 0.91,
+        "requirements_alignment": 0.94,
+        "risk_assessment": 0.92,
+        "completeness": 0.94
+      }
+    }
+  },
+  "layer_plan": {
+    "status": "skipped",
+    "reason": "atomicity route is one-navigable-PR; split-PR layer planning not required",
+    "route": "one-navigable-PR",
+    "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json"
+  },
+  "pr_marker_plan": {
+    "schema_version": "pr-marker-plan.v1",
+    "kind": "pr_marker_plan",
+    "feature_id": "008-lsp-client-integration",
+    "status": "planned",
+    "source_fingerprint": {
+      "feature_spec_sha": "b9a43f91418bc2c351e6f0528cb7715f87077a0d9673f183b09019775abe8986",
+      "plan_declared_scope_sha": "7b962fb2475da78eeda4c5e3f32139db2c1c6c1a3a532aa594e85c101379af2e",
+      "tasks_sha": "a6c16176035648830f030e47d93ee4aec810a2e7ce1e830f17653efdb0eba779",
+      "reviewability_sha": "677e24402fd6f6e4fdf63a0447b3cdd71ddea099b7321c69d14410d776a08022",
+      "hazard_route_sha": "d5501ebfc29e3f67f6df2e4f36615efe1784a6d353ebd151a90d111a55a2ce91"
+    },
+    "markers": [
+      {
+        "id": "foundation",
+        "review_order": 1,
+        "kind": "foundation",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "Foundation",
+          "story_id": null,
+          "start_task_id": "T001",
+          "end_task_id": "T018"
+        },
+        "task_ids": [
+          "T001",
+          "T002",
+          "T003",
+          "T004",
+          "T005",
+          "T006",
+          "T007",
+          "T008",
+          "T009",
+          "T010",
+          "T011",
+          "T012",
+          "T013",
+          "T014",
+          "T015",
+          "T016",
+          "T017",
+          "T018"
+        ],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/fixtures/lsp/README.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-config.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-precision-pass.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-prereqs.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-status.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "scripts/spec-008-validate-real-servers.mjs"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/README.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/slice-plan.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/db/schema.sql"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/config.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/index.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/prereqs.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/servers.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/status.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/types.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/project-config.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/types.ts"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "foundation",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us1",
+        "review_order": 2,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 1 - Opt Into Compiler-Accurate Graph Precision",
+          "story_id": 1,
+          "start_task_id": "T019",
+          "end_task_id": "T037"
+        },
+        "task_ids": [
+          "T019",
+          "T020",
+          "T021",
+          "T022",
+          "T023",
+          "T024",
+          "T025",
+          "T026",
+          "T027",
+          "T028",
+          "T029",
+          "T030",
+          "T031",
+          "T032",
+          "T033",
+          "T034",
+          "T035",
+          "T036",
+          "T037"
+        ],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-client.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-config.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-disabled.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-precision-pass.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-real-server-validation.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-status.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "scripts/spec-008-validate-real-servers.mjs"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/slice-1.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/bin/codegraph.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/index.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/client.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/precision-pass.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/status.ts"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "us1",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us2",
+        "review_order": 3,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 2 - Configure Local Language-Server Behavior",
+          "story_id": 2,
+          "start_task_id": "T038",
+          "end_task_id": "T049"
+        },
+        "task_ids": [
+          "T038",
+          "T039",
+          "T040",
+          "T041",
+          "T042",
+          "T043",
+          "T044",
+          "T045",
+          "T046",
+          "T047",
+          "T048",
+          "T049"
+        ],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-config.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-prereqs.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/slice-1.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/bin/codegraph.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/config.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/prereqs.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/status.ts"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "us2",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us3",
+        "review_order": 4,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 3 - Understand LSP Availability and Graceful Degradation",
+          "story_id": 3,
+          "start_task_id": "T050",
+          "end_task_id": "T062"
+        },
+        "task_ids": [
+          "T050",
+          "T051",
+          "T052",
+          "T053",
+          "T054",
+          "T055",
+          "T056",
+          "T057",
+          "T058",
+          "T059",
+          "T060",
+          "T061",
+          "T062"
+        ],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/fixtures/lsp/degradation/README.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-client.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-precision-pass.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-prereqs.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-status.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/slice-2.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/bin/codegraph.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/client.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/precision-pass.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/prereqs.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/status.ts"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "us3",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us4",
+        "review_order": 5,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 4 - Complete SPEC-008 With No Unowned Parity Gaps",
+          "story_id": 4,
+          "start_task_id": "T063",
+          "end_task_id": "T105"
+        },
+        "task_ids": [
+          "T063",
+          "T064",
+          "T065",
+          "T066",
+          "T067",
+          "T068",
+          "T069",
+          "T070",
+          "T071",
+          "T072",
+          "T073",
+          "T074",
+          "T075",
+          "T076",
+          "T077",
+          "T078",
+          "T079",
+          "T080",
+          "T081",
+          "T082",
+          "T083",
+          "T084",
+          "T085",
+          "T086",
+          "T087",
+          "T088",
+          "T089",
+          "T090",
+          "T091",
+          "T092",
+          "T093",
+          "T094",
+          "T095",
+          "T096",
+          "T097",
+          "T098",
+          "T099",
+          "T100",
+          "T101",
+          "T102",
+          "T103",
+          "T104",
+          "T105"
+        ],
+        "folded_polish_task_ids": [
+          "T106",
+          "T107",
+          "T108",
+          "T109",
+          "T110",
+          "T111",
+          "T112",
+          "T113",
+          "T114"
+        ],
+        "folded_polish_target_reason": "nearest_preceding_non_polish_scope",
+        "declared_files": [
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-precision-pass.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-retrieval-regression.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "__tests__/lsp-watch.test.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "dist/bin/codegraph.js"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "scripts/spec-008-parity-gate.mjs"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "scripts/spec-008-retrieval-probes.mjs"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "scripts/spec-008-validate-real-servers.mjs"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/quickstart.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/capability-parity.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/final-packet.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/language-parity.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/parity-gate.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/self-repo-dogfood.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/slice-2.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "specs/008-lsp-client-integration/validation/slice-3.md"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/context/index.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/db/queries.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/db/schema.sql"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/graph/queries.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/graph/traversal.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/client.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/corrections.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/precision-pass.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/status.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/mcp/tools.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/search/query-parser.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/search/query-utils.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/sync/index.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/sync/watch-policy.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/sync/watcher.ts"
+          }
+        ],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "block",
+          "mode": "tasks",
+          "scope": "us4",
+          "evidence_path": ""
+        },
+        "hazards": [
+          "change-shape:modify-heavy"
+        ],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      }
+    ],
+    "warnings": [
+      {
+        "code": "reviewability_size_warning",
+        "severity": "warning",
+        "message": "Reviewability sizing result is marker-planning input.",
+        "source": "reviewability",
+        "details": {
+          "status": "block",
+          "mode": "tasks",
+          "evidence_path": ""
+        }
+      }
+    ]
+  },
+  "current_source_fingerprint": {
+    "feature_spec_sha": "b9a43f91418bc2c351e6f0528cb7715f87077a0d9673f183b09019775abe8986",
+    "plan_declared_scope_sha": "7b962fb2475da78eeda4c5e3f32139db2c1c6c1a3a532aa594e85c101379af2e",
+    "tasks_sha": "a6c16176035648830f030e47d93ee4aec810a2e7ce1e830f17653efdb0eba779",
+    "reviewability_sha": "677e24402fd6f6e4fdf63a0447b3cdd71ddea099b7321c69d14410d776a08022",
+    "hazard_route_sha": "d5501ebfc29e3f67f6df2e4f36615efe1784a6d353ebd151a90d111a55a2ce91"
   }
 }
