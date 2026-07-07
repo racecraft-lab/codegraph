@@ -192,6 +192,45 @@ describe('LSP status contract foundation', () => {
     expect(parsed).toEqual(status);
   });
 
+  it('normalizes partial persisted status from older versions with current defaults', () => {
+    const parsed = parsePersistedLspStatus(JSON.stringify({
+      enabled: true,
+      activationSource: 'cli-enable',
+      edgeCounts: {
+        checked: 2,
+        verified: 1,
+      },
+      performance: {
+        activeSessionHighWatermark: 1,
+        caps: {
+          activeSessionsPerProject: 3,
+        },
+      },
+    }));
+
+    expect(parsed?.edgeCounts).toEqual({
+      checked: 2,
+      verified: 1,
+      corrected: 0,
+      suppressed: 0,
+      skippedByReason: {},
+      degraded: 0,
+    });
+    expect(parsed?.performance).toMatchObject({
+      activeSessionHighWatermark: 1,
+      inFlightRequestHighWatermark: 0,
+      caps: {
+        activeSessionsPerProject: 3,
+        inFlightRequestsPerSession: 8,
+        fullIndexSourceFilesPerLanguage: 2000,
+        fullIndexWorkItemsPerLanguage: 10000,
+        fullIndexBatchSize: 250,
+        watchChangedSourceFilesPerBatch: 100,
+        watchWorkItemsPerLanguagePerBatch: 1000,
+      },
+    });
+  });
+
   it('keeps the graceful-degradation fixture README scoped to local scenarios', () => {
     const readme = fs.readFileSync(
       path.join(process.cwd(), '__tests__/fixtures/lsp/degradation/README.md'),

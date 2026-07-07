@@ -1,0 +1,262 @@
+{
+  "multi_pr_emission": {
+    "schema_version": 1,
+    "status": "pending",
+    "emission_mode": "layer",
+    "route": "layer_plan",
+    "base_branch": "main",
+    "base_sha": "0366d3cef02a36fc1e2d95e8928390cdfbdc7484",
+    "next_slice_id": "foundation",
+    "reconciled_at": "",
+    "slices": [
+      {
+        "slice_id": "foundation",
+        "review_order": 1,
+        "expected_branch": "008-lsp-client-integration/01-foundation",
+        "expected_base_branch": "main",
+        "head_sha": null,
+        "declared_files": [
+          "__tests__/fixtures/lsp/README.md",
+          "__tests__/lsp-config.test.ts",
+          "__tests__/lsp-precision-pass.test.ts",
+          "__tests__/lsp-prereqs.test.ts",
+          "__tests__/lsp-status.test.ts",
+          "scripts/spec-008-validate-real-servers.mjs",
+          "specs/008-lsp-client-integration/validation/README.md",
+          "specs/008-lsp-client-integration/validation/slice-plan.md",
+          "src/db/schema.sql",
+          "src/lsp/config.ts",
+          "src/lsp/index.ts",
+          "src/lsp/prereqs.ts",
+          "src/lsp/servers.ts",
+          "src/lsp/status.ts",
+          "src/lsp/types.ts",
+          "src/project-config.ts",
+          "src/types.ts"
+        ],
+        "declared_scoped_tests": [],
+        "scoped_verification": {
+          "commands": [
+            {
+              "command": "<none>",
+              "gate_type": "no_scoped_tests",
+              "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+              "required": true,
+              "evidence_path": "specs/008-lsp-client-integration/.process/emission/foundation/no_scoped_tests.txt",
+              "exit_status": 0,
+              "started_at": "2026-06-10T00:00:00Z",
+              "finished_at": "2026-06-10T00:00:01Z"
+            }
+          ]
+        },
+        "status": "pending"
+      },
+      {
+        "slice_id": "us1",
+        "review_order": 2,
+        "expected_branch": "008-lsp-client-integration/02-us1",
+        "expected_base_branch": "008-lsp-client-integration/01-foundation",
+        "head_sha": null,
+        "declared_files": [
+          "__tests__/lsp-client.test.ts",
+          "__tests__/lsp-config.test.ts",
+          "__tests__/lsp-disabled.test.ts",
+          "__tests__/lsp-precision-pass.test.ts",
+          "__tests__/lsp-real-server-validation.test.ts",
+          "__tests__/lsp-status.test.ts",
+          "scripts/spec-008-validate-real-servers.mjs",
+          "specs/008-lsp-client-integration/validation/slice-1.md",
+          "src/bin/codegraph.ts",
+          "src/index.ts",
+          "src/lsp/client.ts",
+          "src/lsp/precision-pass.ts",
+          "src/lsp/status.ts"
+        ],
+        "declared_scoped_tests": [],
+        "scoped_verification": {
+          "commands": [
+            {
+              "command": "<none>",
+              "gate_type": "no_scoped_tests",
+              "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+              "required": true,
+              "evidence_path": "specs/008-lsp-client-integration/.process/emission/us1/no_scoped_tests.txt",
+              "exit_status": 0,
+              "started_at": "2026-06-10T00:00:00Z",
+              "finished_at": "2026-06-10T00:00:01Z"
+            }
+          ]
+        },
+        "status": "pending"
+      },
+      {
+        "slice_id": "us2",
+        "review_order": 3,
+        "expected_branch": "008-lsp-client-integration/03-us2",
+        "expected_base_branch": "008-lsp-client-integration/02-us1",
+        "head_sha": null,
+        "declared_files": [
+          "__tests__/lsp-config.test.ts",
+          "__tests__/lsp-prereqs.test.ts",
+          "specs/008-lsp-client-integration/validation/slice-1.md",
+          "src/bin/codegraph.ts",
+          "src/lsp/config.ts",
+          "src/lsp/prereqs.ts",
+          "src/lsp/status.ts"
+        ],
+        "declared_scoped_tests": [],
+        "scoped_verification": {
+          "commands": [
+            {
+              "command": "<none>",
+              "gate_type": "no_scoped_tests",
+              "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+              "required": true,
+              "evidence_path": "specs/008-lsp-client-integration/.process/emission/us2/no_scoped_tests.txt",
+              "exit_status": 0,
+              "started_at": "2026-06-10T00:00:00Z",
+              "finished_at": "2026-06-10T00:00:01Z"
+            }
+          ]
+        },
+        "status": "pending"
+      },
+      {
+        "slice_id": "us3",
+        "review_order": 4,
+        "expected_branch": "008-lsp-client-integration/04-us3",
+        "expected_base_branch": "008-lsp-client-integration/03-us2",
+        "head_sha": null,
+        "declared_files": [
+          "__tests__/fixtures/lsp/degradation/README.md",
+          "__tests__/lsp-client.test.ts",
+          "__tests__/lsp-precision-pass.test.ts",
+          "__tests__/lsp-prereqs.test.ts",
+          "__tests__/lsp-status.test.ts",
+          "specs/008-lsp-client-integration/validation/slice-2.md",
+          "src/bin/codegraph.ts",
+          "src/lsp/client.ts",
+          "src/lsp/precision-pass.ts",
+          "src/lsp/prereqs.ts",
+          "src/lsp/status.ts"
+        ],
+        "declared_scoped_tests": [],
+        "scoped_verification": {
+          "commands": [
+            {
+              "command": "<none>",
+              "gate_type": "no_scoped_tests",
+              "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+              "required": true,
+              "evidence_path": "specs/008-lsp-client-integration/.process/emission/us3/no_scoped_tests.txt",
+              "exit_status": 0,
+              "started_at": "2026-06-10T00:00:00Z",
+              "finished_at": "2026-06-10T00:00:01Z"
+            }
+          ]
+        },
+        "status": "pending"
+      },
+      {
+        "slice_id": "us4",
+        "review_order": 5,
+        "expected_branch": "008-lsp-client-integration/05-us4",
+        "expected_base_branch": "008-lsp-client-integration/04-us3",
+        "head_sha": null,
+        "declared_files": [
+          "__tests__/lsp-precision-pass.test.ts",
+          "__tests__/lsp-retrieval-regression.test.ts",
+          "__tests__/lsp-watch.test.ts",
+          "dist/bin/codegraph.js",
+          "scripts/spec-008-parity-gate.mjs",
+          "scripts/spec-008-retrieval-probes.mjs",
+          "scripts/spec-008-validate-real-servers.mjs",
+          "specs/008-lsp-client-integration/validation/capability-parity.md",
+          "specs/008-lsp-client-integration/validation/language-parity.md",
+          "specs/008-lsp-client-integration/validation/parity-gate.md",
+          "specs/008-lsp-client-integration/validation/self-repo-dogfood.md",
+          "specs/008-lsp-client-integration/validation/slice-2.md",
+          "specs/008-lsp-client-integration/validation/slice-3.md",
+          "src/context/index.ts",
+          "src/db/queries.ts",
+          "src/db/schema.sql",
+          "src/graph/queries.ts",
+          "src/graph/traversal.ts",
+          "src/lsp/client.ts",
+          "src/lsp/corrections.ts",
+          "src/lsp/precision-pass.ts",
+          "src/lsp/status.ts",
+          "src/mcp/tools.ts",
+          "src/sync/index.ts",
+          "src/sync/watch-policy.ts",
+          "src/sync/watcher.ts"
+        ],
+        "declared_scoped_tests": [],
+        "scoped_verification": {
+          "commands": [
+            {
+              "command": "<none>",
+              "gate_type": "no_scoped_tests",
+              "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+              "required": true,
+              "evidence_path": "specs/008-lsp-client-integration/.process/emission/us4/no_scoped_tests.txt",
+              "exit_status": 0,
+              "started_at": "2026-06-10T00:00:00Z",
+              "finished_at": "2026-06-10T00:00:01Z"
+            }
+          ]
+        },
+        "status": "pending"
+      },
+      {
+        "slice_id": "polish",
+        "review_order": 6,
+        "expected_branch": "008-lsp-client-integration/06-polish",
+        "expected_base_branch": "008-lsp-client-integration/05-us4",
+        "head_sha": null,
+        "declared_files": [
+          ".nvmrc",
+          ".specify/feature.json",
+          "scripts/spec-008-parity-gate.mjs",
+          "scripts/spec-008-validate-real-servers.mjs",
+          "specs/008-lsp-client-integration/checklists/data-integrity.md",
+          "specs/008-lsp-client-integration/checklists/integration.md",
+          "specs/008-lsp-client-integration/checklists/performance.md",
+          "specs/008-lsp-client-integration/checklists/reliability.md",
+          "specs/008-lsp-client-integration/checklists/requirements.md",
+          "specs/008-lsp-client-integration/contracts/config-and-activation.md",
+          "specs/008-lsp-client-integration/contracts/edge-correction.md",
+          "specs/008-lsp-client-integration/contracts/status-and-prereqs.md",
+          "specs/008-lsp-client-integration/data-model.md",
+          "specs/008-lsp-client-integration/plan.md",
+          "specs/008-lsp-client-integration/quickstart.md",
+          "specs/008-lsp-client-integration/research.md",
+          "specs/008-lsp-client-integration/spec.md",
+          "specs/008-lsp-client-integration/tasks.md",
+          "specs/008-lsp-client-integration/validation/final-packet.md",
+          "specs/008-lsp-client-integration/validation/foundation.md",
+          "specs/008-lsp-client-integration/verify-tasks-report.md"
+        ],
+        "declared_scoped_tests": [],
+        "scoped_verification": {
+          "commands": [
+            {
+              "command": "<none>",
+              "gate_type": "no_scoped_tests",
+              "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+              "required": true,
+              "evidence_path": "specs/008-lsp-client-integration/.process/emission/polish/no_scoped_tests.txt",
+              "exit_status": 0,
+              "started_at": "2026-06-10T00:00:00Z",
+              "finished_at": "2026-06-10T00:00:01Z"
+            }
+          ]
+        },
+        "status": "pending"
+      }
+    ],
+    "source_layer_plan": {
+      "path": "specs/008-lsp-client-integration/.process/reviewability/layer-plan.json"
+    }
+  }
+}

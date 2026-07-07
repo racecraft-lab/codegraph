@@ -6,7 +6,7 @@
 
 **Tests**: TDD-first is required for this feature. Each user-story phase starts with failing tests for the behavior it implements.
 
-**Reviewability**: SPEC-008 remains one spec delivered as three vertical PR slices. Slice 1 covers activation/config/status/client/prereq plus TypeScript/JavaScript; Slice 2 covers correction/status generalization plus Python, Go, Rust, C/C++, Swift, and Java; Slice 3 covers remaining servers/dispositions, bounded watch verification, parity matrices, dogfood, and the final packet.
+**Reviewability**: SPEC-008 remains one spec delivered as three vertical PR slices. Slice 1 covers activation/config/status/client/prereq plus TypeScript, TSX, JavaScript, and JSX; Slice 2 covers correction/status generalization plus Python, Go, Rust, C/C++, Swift, and Java; Slice 3 covers remaining servers/dispositions, bounded watch verification, parity matrices, dogfood, and the final packet.
 
 **Non-goals enforced by tasks**: No auto-install tasks, no CodeGraph-as-LSP-server facade tasks, and no rename/refactor tasks.
 
@@ -33,7 +33,7 @@
 - [X] T008 [P] Write failing status contract tests for stable LSP state, reason codes, coverage fields, and performance fields in `__tests__/lsp-status.test.ts`
 - [X] T009 [P] Write failing provenance typing tests that preserve `null` and `heuristic` edges and allow only verified/corrected active edges to use `lsp` in `__tests__/lsp-precision-pass.test.ts`
 - [X] T010 Implement LSP activation, config, registry, status, performance, reason-code, and correction metadata types in `src/lsp/types.ts`
-- [X] T011 Implement the server registry for JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL disposition in `src/lsp/servers.ts`
+- [X] T011 Implement the server registry for JavaScript, JSX, TypeScript, TSX, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL disposition in `src/lsp/servers.ts`
 - [X] T012 Implement project and environment LSP config parsing with activation, env-only command selection, project/env timeout precedence, and committed-command warning behavior in `src/lsp/config.ts`
 - [X] T013 Implement command probing, accepted-alternative selection, configured-command no-fallback behavior, and prereq report data in `src/lsp/prereqs.ts`
 - [X] T014 Implement LSP status aggregation models for server availability, coverage, edge counts, skip reasons, degradation, and performance in `src/lsp/status.ts`
@@ -50,16 +50,16 @@
 
 **Goal**: Users can explicitly enable LSP precision while default indexing remains unchanged.
 
-**Independent Test**: Index the same fixture with and without LSP precision enabled and confirm the disabled run performs zero LSP runtime work while the enabled TypeScript/JavaScript run records LSP coverage and verified/corrected edges.
+**Independent Test**: Index the same fixture with and without LSP precision enabled and confirm the disabled run performs zero LSP runtime work while the enabled TypeScript-family run records LSP coverage and verified/corrected edges.
 
 ### Tests for User Story 1
 
 - [X] T019 [P] [US1] Write failing disabled-path index, sync, and watch-triggered sync tests proving zero LSP command probes, subprocess starts, JSON-RPC messages, status writes, and graph mutations in `__tests__/lsp-disabled.test.ts`
 - [X] T020 [P] [US1] Write failing CLI activation tests for `codegraph index`, `codegraph index --lsp`, and `codegraph index --no-lsp` precedence in `__tests__/lsp-config.test.ts`
 - [X] T021 [P] [US1] Write failing JSON-RPC lifecycle tests for initialize, request id routing, timeout, shutdown, stderr/stdout draining, and malformed response handling in `__tests__/lsp-client.test.ts`
-- [X] T022 [P] [US1] Write failing TypeScript/JavaScript precision-pass tests for one complete definition/reference verification path in `__tests__/lsp-precision-pass.test.ts`
+- [X] T022 [P] [US1] Write failing TypeScript-family precision-pass tests for complete definition/reference verification paths in `__tests__/lsp-precision-pass.test.ts`
 - [X] T023 [P] [US1] Write failing status tests for CLI activation source, observed server evidence, per-language coverage, and edge counts in `__tests__/lsp-status.test.ts`
-- [X] T024 [P] [US1] Write failing TypeScript/JavaScript real-server prereq validation tests for `typescript-language-server --stdio` and TypeScript SDK evidence in `__tests__/lsp-real-server-validation.test.ts`
+- [X] T024 [P] [US1] Write failing TypeScript-family real-server prereq validation tests for `typescript-language-server --stdio` and TypeScript SDK evidence in `__tests__/lsp-real-server-validation.test.ts`
 
 ### Implementation for User Story 1
 
@@ -67,17 +67,17 @@
 - [X] T026 [US1] Pass effective LSP activation from CLI and project config into index and sync entry points in `src/index.ts`
 - [X] T027 [US1] Implement the JSON-RPC stdio client lifecycle in `src/lsp/client.ts`
 - [X] T028 [US1] Implement bounded request timeout, shutdown, process exit, stdout draining, and stderr draining behavior in `src/lsp/client.ts`
-- [X] T029 [US1] Implement TypeScript/JavaScript work-item selection after structural extraction and reference resolution in `src/lsp/precision-pass.ts`
-- [X] T030 [US1] Implement verified-edge marking for matching TypeScript/JavaScript LSP targets in `src/lsp/precision-pass.ts`
+- [X] T029 [US1] Implement TypeScript-family work-item selection after structural extraction and reference resolution in `src/lsp/precision-pass.ts`
+- [X] T030 [US1] Implement verified-edge marking for matching TypeScript-family LSP targets in `src/lsp/precision-pass.ts`
 - [X] T031 [US1] Persist slice-1 coverage, edge-count, and performance status for LSP-enabled runs in `src/lsp/status.ts`
 - [X] T032 [US1] Integrate the LSP precision pass after existing reference resolution while preserving disabled-path behavior in `src/index.ts`
 - [X] T033 [US1] Render LSP state in human and JSON status output without starting language servers from status in `src/bin/codegraph.ts`
-- [X] T034 [US1] Implement TypeScript/JavaScript real-server validation in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T034 [US1] Implement TypeScript-family real-server validation in `scripts/spec-008-validate-real-servers.mjs`
 - [X] T035 [US1] Run `npm test -- __tests__/lsp-disabled.test.ts __tests__/lsp-client.test.ts __tests__/lsp-precision-pass.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-1.md`
-- [X] T036 [US1] Run TypeScript/JavaScript real-server validation and record observed command, resolved path, version, SDK evidence, and coverage in `specs/008-lsp-client-integration/validation/slice-1.md`
+- [X] T036 [US1] Run TypeScript-family real-server validation and record observed command, resolved path, version, SDK evidence, and coverage in `specs/008-lsp-client-integration/validation/slice-1.md`
 - [X] T037 [US1] Record slice-1 traceability, scope budget, non-goals, rollback note, and known gaps in `specs/008-lsp-client-integration/validation/slice-1.md`
 
-**Checkpoint**: Slice 1 MVP proves explicit opt-in, default-off unchanged behavior, JSON-RPC lifecycle, status output, and one complete TypeScript/JavaScript path.
+**Checkpoint**: Slice 1 MVP proves explicit opt-in, default-off unchanged behavior, JSON-RPC lifecycle, status output, and complete TypeScript-family paths.
 
 ---
 
@@ -146,64 +146,64 @@
 
 ### Tests for User Story 4
 
-- [ ] T063 [P] [US4] Write failing `Location` and `LocationLink` normalization and deduplication tests in `__tests__/lsp-precision-pass.test.ts`
-- [ ] T064 [P] [US4] Write failing unique in-workspace correction tests proving exactly one active edge remains for a semantic reference in `__tests__/lsp-precision-pass.test.ts`
-- [ ] T065 [P] [US4] Write failing external, generated, and unindexed target suppression tests proving no external graph nodes are created in `__tests__/lsp-precision-pass.test.ts`
-- [ ] T066 [P] [US4] Write failing ambiguous LSP output tests proving no speculative replacement edge is emitted in `__tests__/lsp-precision-pass.test.ts`
-- [ ] T067 [P] [US4] Write failing retrieval regression tests proving suppressed audit data is absent from traversal, callers, callees, impact, search, and flow-building outputs in `__tests__/lsp-retrieval-regression.test.ts`
-- [ ] T068 [P] [US4] Write failing bounded watch verification tests for changed-file sets, absent changed-file sets, oversized batches, and candidate work caps in `__tests__/lsp-watch.test.ts`
-- [ ] T069 [P] [US4] Write failing watch restart-budget tests keyed to the bounded changed-file batch rather than each debounce cycle in `__tests__/lsp-watch.test.ts`
+- [X] T063 [P] [US4] Write failing `Location` and `LocationLink` normalization and deduplication tests in `__tests__/lsp-precision-pass.test.ts`
+- [X] T064 [P] [US4] Write failing unique in-workspace correction tests proving exactly one active edge remains for a semantic reference in `__tests__/lsp-precision-pass.test.ts`
+- [X] T065 [P] [US4] Write failing external, generated, and unindexed target suppression tests proving no external graph nodes are created in `__tests__/lsp-precision-pass.test.ts`
+- [X] T066 [P] [US4] Write failing ambiguous LSP output tests proving no speculative replacement edge is emitted in `__tests__/lsp-precision-pass.test.ts`
+- [X] T067 [P] [US4] Write failing retrieval regression tests proving suppressed audit data is absent from traversal, callers, callees, impact, search, and flow-building outputs in `__tests__/lsp-retrieval-regression.test.ts`
+- [X] T068 [P] [US4] Write failing bounded watch verification tests for changed-file sets, absent changed-file sets, oversized batches, and candidate work caps in `__tests__/lsp-watch.test.ts`
+- [X] T069 [P] [US4] Write failing watch restart-budget tests keyed to the bounded changed-file batch rather than each debounce cycle in `__tests__/lsp-watch.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T070 [US4] Implement LSP target normalization, equivalent range deduplication, and uniqueness checks in `src/lsp/precision-pass.ts`
-- [ ] T071 [US4] Implement compatible CodeGraph node matching for unique in-workspace targets in `src/lsp/precision-pass.ts`
-- [ ] T072 [US4] Implement edge retargeting, replacement, suppression, and ambiguous-output no-op behavior in `src/lsp/precision-pass.ts`
-- [ ] T073 [US4] Implement correction and suppression audit metadata storage in `src/lsp/corrections.ts` and `src/db/schema.sql`
-- [ ] T074 [US4] Exclude inactive suppression/audit data from traversal, callers, callees, impact, search, and flow-building surfaces in the existing retrieval paths, including `src/graph/queries.ts`, `src/graph/traversal.ts`, `src/db/queries.ts`, `src/context/index.ts`, `src/mcp/tools.ts`, and affected `src/search/` helpers
-- [ ] T075 [US4] Add retrieval regression probe script for `codegraph_explore`, callers, callees, impact, search, and flow-building surfaces in `scripts/spec-008-retrieval-probes.mjs`
-- [ ] T076 [US4] Run correction, suppression, ambiguity, and retrieval regression tests and record expected node/edge deltas in `specs/008-lsp-client-integration/validation/slice-2.md`
+- [X] T070 [US4] Implement LSP target normalization, equivalent range deduplication, and uniqueness checks in `src/lsp/precision-pass.ts`
+- [X] T071 [US4] Implement compatible CodeGraph node matching for unique in-workspace targets in `src/lsp/precision-pass.ts`
+- [X] T072 [US4] Implement edge retargeting, replacement, suppression, and ambiguous-output no-op behavior in `src/lsp/precision-pass.ts`
+- [X] T073 [US4] Implement correction and suppression audit metadata storage in `src/lsp/corrections.ts` and `src/db/schema.sql`
+- [X] T074 [US4] Exclude inactive suppression/audit data from traversal, callers, callees, impact, search, and flow-building surfaces in the existing retrieval paths, including `src/graph/queries.ts`, `src/graph/traversal.ts`, `src/db/queries.ts`, `src/context/index.ts`, `src/mcp/tools.ts`, and affected `src/search/` helpers
+- [X] T075 [US4] Add retrieval regression probe script for `codegraph_explore`, callers, callees, impact, search, and flow-building surfaces in `scripts/spec-008-retrieval-probes.mjs`
+- [X] T076 [US4] Run correction, suppression, ambiguity, and retrieval regression tests and record expected node/edge deltas in `specs/008-lsp-client-integration/validation/slice-2.md`
 
 ### Slice 2 Real-Server Validation
 
-- [ ] T077 [P] [US4] Add Python real-server prereq and smoke validation for `pyright-langserver --stdio` or `basedpyright-langserver --stdio` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T078 [P] [US4] Add Go real-server prereq and module workspace smoke validation for `gopls` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T079 [P] [US4] Add Rust real-server prereq and cargo workspace smoke validation for `rust-analyzer` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T080 [P] [US4] Add C and C++ real-server prereq and compile-command-aware smoke validation for `clangd` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T081 [P] [US4] Add Swift real-server prereq and package/source workspace smoke validation for `sourcekit-lsp` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T082 [P] [US4] Add Java real-server prereq and workspace initialization smoke validation for configured JDT LS command in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T083 [US4] Run slice-2 real-server validation for Python, Go, Rust, C, C++, Swift, and Java and record observed versions, paths, status coverage, and degradation evidence in `specs/008-lsp-client-integration/validation/slice-2.md`
+- [X] T077 [P] [US4] Add Python real-server prereq and smoke validation for `pyright-langserver --stdio` or `basedpyright-langserver --stdio` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T078 [P] [US4] Add Go real-server prereq and module workspace smoke validation for `gopls` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T079 [P] [US4] Add Rust real-server prereq and cargo workspace smoke validation for `rust-analyzer` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T080 [P] [US4] Add C and C++ real-server prereq and compile-command-aware smoke validation for `clangd` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T081 [P] [US4] Add Swift real-server prereq and package/source workspace smoke validation for `sourcekit-lsp` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T082 [P] [US4] Add Java real-server prereq and workspace initialization smoke validation for configured JDT LS command in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T083 [US4] Run slice-2 real-server validation for Python, Go, Rust, C, C++, Swift, and Java and record observed versions, paths, status coverage, and degradation evidence in `specs/008-lsp-client-integration/validation/slice-2.md`
 
 ### Slice 3 Real-Server Validation and Watch
 
-- [ ] T084 [P] [US4] Add C# real-server prereq and workspace smoke validation for `csharp-ls` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T085 [P] [US4] Add Kotlin real-server prereq and workspace smoke validation for `kotlin-language-server` or `kotlin-lsp` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T086 [P] [US4] Add PHP real-server prereq and definition/reference smoke validation for `intelephense --stdio` or `phpactor language-server` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T087 [P] [US4] Add Ruby real-server prereq and definition/reference smoke validation for `ruby-lsp` or `solargraph stdio` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T088 [P] [US4] Add Dart real-server prereq and package smoke validation for `dart language-server` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T089 [P] [US4] Add Vue real-server prereq, component smoke validation, and TypeScript SDK evidence for `vue-language-server --stdio` in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T090 [P] [US4] Add COBOL parser/resolver parity disposition with SPEC-024 LSP parity boundary in `specs/008-lsp-client-integration/validation/language-parity.md`
-- [ ] T091 [US4] Implement bounded incremental watch LSP verification after normal sync/reference resolution in `src/sync/watcher.ts`, `src/sync/index.ts`, and `src/lsp/precision-pass.ts`
-- [ ] T092 [US4] Implement absent, unbounded, oversized changed-file, and oversized candidate-work skip reasons for watch verification in `src/lsp/status.ts`
-- [ ] T093 [US4] Implement watch-mode restart budget keyed to a materially new bounded changed-file batch in `src/lsp/client.ts`, `src/sync/watcher.ts`, and `src/sync/watch-policy.ts`
-- [ ] T094 [US4] Run slice-3 real-server validation for C#, Kotlin, PHP, Ruby, Dart, Vue, and COBOL disposition and record evidence in `specs/008-lsp-client-integration/validation/slice-3.md`
-- [ ] T095 [US4] Run bounded watch tests and record changed-file, cap, skip, and restart-budget evidence in `specs/008-lsp-client-integration/validation/slice-3.md`
+- [X] T084 [P] [US4] Add C# real-server prereq and workspace smoke validation for `csharp-ls` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T085 [P] [US4] Add Kotlin real-server prereq and workspace smoke validation for `kotlin-language-server` or `kotlin-lsp` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T086 [P] [US4] Add PHP real-server prereq and definition/reference smoke validation for `intelephense --stdio` or `phpactor language-server` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T087 [P] [US4] Add Ruby real-server prereq and definition/reference smoke validation for `ruby-lsp` or `solargraph stdio` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T088 [P] [US4] Add Dart real-server prereq and package smoke validation for `dart language-server` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T089 [P] [US4] Add Vue real-server prereq, component smoke validation, and TypeScript SDK evidence for `vue-language-server --stdio` in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T090 [P] [US4] Add COBOL parser/resolver parity disposition with SPEC-024 LSP parity boundary in `specs/008-lsp-client-integration/validation/language-parity.md`
+- [X] T091 [US4] Implement bounded incremental watch LSP verification after normal sync/reference resolution in `src/sync/watcher.ts`, `src/sync/index.ts`, and `src/lsp/precision-pass.ts`
+- [X] T092 [US4] Implement absent, unbounded, oversized changed-file, and oversized candidate-work skip reasons for watch verification in `src/lsp/status.ts`
+- [X] T093 [US4] Implement watch-mode restart budget keyed to a materially new bounded changed-file batch in `src/lsp/client.ts`, `src/sync/watcher.ts`, and `src/sync/watch-policy.ts`
+- [X] T094 [US4] Run slice-3 real-server validation for C#, Kotlin, PHP, Ruby, Dart, Vue, and COBOL disposition and record evidence in `specs/008-lsp-client-integration/validation/slice-3.md`
+- [X] T095 [US4] Run bounded watch tests and record changed-file, cap, skip, and restart-budget evidence in `specs/008-lsp-client-integration/validation/slice-3.md`
 
 ### Language and Capability Parity
 
-- [ ] T096 [US4] Implement language and capability parity gate checks that fail on any unowned row in `scripts/spec-008-parity-gate.mjs`
-- [ ] T097 [US4] Record language parity rows for JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL with SPEC-008 or SPEC-024 validation boundaries in `specs/008-lsp-client-integration/validation/language-parity.md`
-- [ ] T098 [P] [US4] Record capability parity rows for multi-phase graph pipeline, field/property binding, hybrid search, process groups, functional clusters, and blast-radius impact with SPEC-024 validation boundaries where future-owned in `specs/008-lsp-client-integration/validation/capability-parity.md`
-- [ ] T099 [P] [US4] Record capability parity rows for git diff impact, multi-file rename, raw Cypher queries, MCP resources, MCP prompts, and wiki generation with SPEC-024 validation boundaries where future-owned in `specs/008-lsp-client-integration/validation/capability-parity.md`
-- [ ] T100 [P] [US4] Record capability parity rows for multi-repo registry, repository groups, remote embeddings, installer setup/uninstall, agent skills/hooks, and analyzer operational flags with SPEC-024 validation boundaries where future-owned in `specs/008-lsp-client-integration/validation/capability-parity.md`
-- [ ] T101 [US4] Run parity gate positive and negative fixtures and record zero unowned language and capability rows in `specs/008-lsp-client-integration/validation/parity-gate.md`
+- [X] T096 [US4] Implement language and capability parity gate checks that fail on any unowned row in `scripts/spec-008-parity-gate.mjs`
+- [X] T097 [US4] Record language parity rows for JavaScript, JSX, TypeScript, TSX, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL with SPEC-008 or SPEC-024 validation boundaries in `specs/008-lsp-client-integration/validation/language-parity.md`
+- [X] T098 [P] [US4] Record capability parity rows for multi-phase graph pipeline, field/property binding, hybrid search, process groups, functional clusters, and blast-radius impact with SPEC-024 validation boundaries where future-owned in `specs/008-lsp-client-integration/validation/capability-parity.md`
+- [X] T099 [P] [US4] Record capability parity rows for git diff impact, multi-file rename, raw Cypher queries, MCP resources, MCP prompts, and wiki generation with SPEC-024 validation boundaries where future-owned in `specs/008-lsp-client-integration/validation/capability-parity.md`
+- [X] T100 [P] [US4] Record capability parity rows for multi-repo registry, repository groups, remote embeddings, installer setup/uninstall, agent skills/hooks, and analyzer operational flags with SPEC-024 validation boundaries where future-owned in `specs/008-lsp-client-integration/validation/capability-parity.md`
+- [X] T101 [US4] Run parity gate positive and negative fixtures and record zero unowned language and capability rows in `specs/008-lsp-client-integration/validation/parity-gate.md`
 
 ### Self-Repo Dogfood and Slice 3 Packet
 
-- [ ] T102 [US4] Run self-repo non-LSP dogfood with `node dist/bin/codegraph.js index` and record graph/provenance baseline evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
-- [ ] T103 [US4] Run self-repo explicit LSP dogfood with `node dist/bin/codegraph.js index --lsp` and record coverage, degradation, performance, and observed server evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
-- [ ] T104 [US4] Run self-repo `node dist/bin/codegraph.js status --json` after explicit LSP opt-in and record status evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
-- [ ] T105 [US4] Run and record representative small, medium, and large LSP-enabled validation evidence showing bounded completion or deterministic per-language skip/degrade reasons, no unbounded repository-wide LSP pass, no duplicate active-edge growth, retrieval sufficiency preservation, traceability, scope budget, parity closure, known gaps, rollback note, and review order in `specs/008-lsp-client-integration/validation/slice-3.md`
+- [X] T102 [US4] Run self-repo non-LSP dogfood with `node dist/bin/codegraph.js index` and record graph/provenance baseline evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
+- [X] T103 [US4] Run self-repo explicit LSP dogfood with `node dist/bin/codegraph.js index --lsp` and record coverage, degradation, performance, and observed server evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
+- [X] T104 [US4] Run self-repo `node dist/bin/codegraph.js status --json` after explicit LSP opt-in and record status evidence in `specs/008-lsp-client-integration/validation/self-repo-dogfood.md`
+- [X] T105 [US4] Run and record representative small, medium, and large LSP-enabled validation evidence showing bounded completion or deterministic per-language skip/degrade reasons, no unbounded repository-wide LSP pass, no duplicate active-edge growth, retrieval sufficiency preservation, traceability, scope budget, parity closure, known gaps, rollback note, and review order in `specs/008-lsp-client-integration/validation/slice-3.md`
 
 **Checkpoint**: User Story 4 validates correction, all server rows or SPEC-024 disposition, bounded watch behavior, parity gates, retrieval safety, and explicit self-repo dogfood.
 
@@ -213,15 +213,15 @@
 
 **Purpose**: Validate the complete feature packet and prepare it for review without widening SPEC-008 scope.
 
-- [ ] T106 [P] Update SPEC-008 quickstart validation notes with final implemented command names and artifact paths in `specs/008-lsp-client-integration/quickstart.md`
-- [ ] T107 [P] Record README and CHANGELOG applicability decision without adding outbound links in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T108 Run `npm run build` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T109 Run `npm run typecheck` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T110 Run `npm test` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T111 Run `npm run build && npm run typecheck && npm test` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T112 Run `scripts/spec-008-validate-real-servers.mjs` and record final prerequisite status in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T113 Run `scripts/spec-008-parity-gate.mjs` and record final zero-unowned-row status in `specs/008-lsp-client-integration/validation/final-packet.md`
-- [ ] T114 Generate final PR review packet with what changed, why, non-goals, review order, scope budget, traceability, verification evidence, representative small/medium/large validation evidence, known gaps, rollback notes, and feature-flag notes in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T106 [P] Update SPEC-008 quickstart validation notes with final implemented command names and artifact paths in `specs/008-lsp-client-integration/quickstart.md`
+- [X] T107 [P] Record README and CHANGELOG applicability decision without adding outbound links in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T108 Run `npm run build` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T109 Run `npm run typecheck` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T110 Run `npm test` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T111 Run `npm run build && npm run typecheck && npm test` and record output in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T112 Run `scripts/spec-008-validate-real-servers.mjs` and record final prerequisite status in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T113 Run `scripts/spec-008-parity-gate.mjs` and record final zero-unowned-row status in `specs/008-lsp-client-integration/validation/final-packet.md`
+- [X] T114 Generate final PR review packet with what changed, why, non-goals, review order, scope budget, traceability, verification evidence, representative small/medium/large validation evidence, known gaps, rollback notes, feature-flag notes, and scaffold/post-implementation artifact traceability for `.nvmrc`, `.specify/feature.json`, `specs/008-lsp-client-integration/spec.md`, `specs/008-lsp-client-integration/plan.md`, `specs/008-lsp-client-integration/research.md`, `specs/008-lsp-client-integration/data-model.md`, `specs/008-lsp-client-integration/tasks.md`, `specs/008-lsp-client-integration/checklists/data-integrity.md`, `specs/008-lsp-client-integration/checklists/integration.md`, `specs/008-lsp-client-integration/checklists/performance.md`, `specs/008-lsp-client-integration/checklists/reliability.md`, `specs/008-lsp-client-integration/checklists/requirements.md`, `specs/008-lsp-client-integration/contracts/config-and-activation.md`, `specs/008-lsp-client-integration/contracts/edge-correction.md`, `specs/008-lsp-client-integration/contracts/status-and-prereqs.md`, `specs/008-lsp-client-integration/validation/foundation.md`, `specs/008-lsp-client-integration/verify-tasks-report.md`, and `specs/008-lsp-client-integration/validation/final-packet.md`
 
 ---
 
@@ -271,7 +271,7 @@
 Task: T019 disabled-path tests in __tests__/lsp-disabled.test.ts
 Task: T020 CLI activation tests in __tests__/lsp-config.test.ts
 Task: T021 JSON-RPC lifecycle tests in __tests__/lsp-client.test.ts
-Task: T022 TypeScript/JavaScript precision tests in __tests__/lsp-precision-pass.test.ts
+Task: T022 TypeScript-family precision tests in __tests__/lsp-precision-pass.test.ts
 Task: T023 status output tests in __tests__/lsp-status.test.ts
 Task: T024 real-server prereq tests in __tests__/lsp-real-server-validation.test.ts
 ```
@@ -296,7 +296,7 @@ Task: T082 Java real-server validation in scripts/spec-008-validate-real-servers
 1. Complete Phase 1 setup.
 2. Complete Phase 2 foundation.
 3. Complete Phase 3 US1 / Slice 1 MVP.
-4. Stop and validate explicit opt-in, default-off unchanged behavior, JSON-RPC lifecycle, status output, and TypeScript/JavaScript real-server evidence.
+4. Stop and validate explicit opt-in, default-off unchanged behavior, JSON-RPC lifecycle, status output, and TypeScript-family real-server evidence.
 
 ### Incremental Delivery
 

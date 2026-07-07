@@ -79,7 +79,27 @@ describe('LSP server prerequisite registry', () => {
     }
   });
 
-  it('resolves a Windows PATH command that already includes a PATHEXT extension', () => {
+  it('resolves a project PATH command that already includes a PATHEXT extension', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-prereq-'));
+    try {
+      const binDir = path.join(tempDir, 'bin');
+      fs.mkdirSync(binDir);
+      const clangd = writeFixtureExecutable(binDir, 'clangd');
+      const command = process.platform === 'win32' ? 'clangd.cmd' : 'clangd';
+      const result = probeLspServerCommand({
+        ...resolveLspConfig({ projectRoot: tempDir, env: { PATH: '' } }).servers.c,
+        command: [command, '--stdio'],
+        commandSource: 'project',
+      }, { env: { PATH: binDir } });
+
+      expect(result.state).toBe('available');
+      expect(result.resolvedPath).toBe(clangd);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves an environment PATH command that already includes a PATHEXT extension', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-prereq-'));
     try {
       const binDir = path.join(tempDir, 'bin');

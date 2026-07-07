@@ -109,8 +109,8 @@ function executablePath(candidate: string): string | null {
 function executableExtensions(command: string, extensions: string[]): string[] {
   if (process.platform !== 'win32') return extensions;
   const commandExt = path.extname(command).toUpperCase();
-  const pathExts = extensions.map((ext) => ext.toUpperCase());
-  return commandExt && pathExts.includes(commandExt) ? [''] : extensions;
+  if (commandExt && extensions.map((ext) => ext.toUpperCase()).includes(commandExt)) return [''];
+  return extensions;
 }
 
 function withConfigMetadata(

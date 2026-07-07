@@ -27,16 +27,16 @@ Install or configure local language servers before running SPEC-008 validation. 
 |---|---|---|
 | JavaScript | `typescript-language-server --stdio` | Observed server version, TypeScript SDK evidence, status coverage |
 | TypeScript | `typescript-language-server --stdio` | Observed server version, TypeScript SDK evidence, status coverage |
-| Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Observed selected server version, status coverage |
+| Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Observed selected probe and server executable, status coverage |
 | Java | `jdtls -configuration <dir> -data <workspace-data>` or configured equivalent | Observed server version, workspace dir evidence |
 | C | `clangd` | Observed server version, compile-command evidence when used |
 | C++ | `clangd` | Observed server version, compile-command evidence when used |
 | C# | `csharp-ls` | Observed server version, status coverage |
 | Go | `gopls` | Observed server version, status coverage |
-| Ruby | `ruby-lsp` or `solargraph stdio` | Observed selected server version, status coverage |
+| Ruby | `ruby-lsp` or `solargraph stdio` | Observed selected server probe, status coverage |
 | Rust | `rust-analyzer` | Observed server version, status coverage |
-| PHP | `intelephense --stdio` or `phpactor language-server` | Observed selected server version, status coverage |
-| Kotlin | `kotlin-language-server` or `kotlin-lsp` | Observed selected server version, status coverage |
+| PHP | `intelephense --stdio` or `phpactor language-server` | Observed selected server probe or stdio initialize, status coverage |
+| Kotlin | `kotlin-language-server` or `kotlin-lsp` | Observed selected server probe or stdio initialize, status coverage |
 | Swift | `sourcekit-lsp` | Observed server version, status coverage |
 | Dart | `dart language-server` | Observed Dart SDK/server version, status coverage |
 | Vue | `vue-language-server --stdio` | Observed server version, TypeScript SDK evidence, status coverage |
@@ -118,7 +118,11 @@ Expected outcome:
 
 ## Scenario 4: Strict SPEC-008 Prereq Validation
 
-Run the implemented prereq validation command or test path for SPEC-008.
+Run the SPEC-008 prereq validation command:
+
+```bash
+node scripts/spec-008-validate-real-servers.mjs
+```
 
 Expected outcome when all servers are present:
 
@@ -195,10 +199,18 @@ Expected outcome:
 
 ## Language Parity Gate
 
+Run:
+
+```bash
+node scripts/spec-008-parity-gate.mjs
+```
+
 | Language | Owner | Evidence required | Future owner | Status |
 |---|---|---|---|---|
 | JavaScript | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
+| JSX | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
 | TypeScript | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
+| TSX | SPEC-008 Slice 1 | Real-server validation and correction/status fixture | SPEC-024 audit | Owned |
 | Python | SPEC-008 Slice 2 | Real-server validation and degraded/status fixture | SPEC-024 audit | Owned |
 | Java | SPEC-008 Slice 2 | Real-server validation and workspace/status fixture | SPEC-024 audit | Owned |
 | C | SPEC-008 Slice 2 | Real-server validation and degraded/status fixture | SPEC-024 audit | Owned |

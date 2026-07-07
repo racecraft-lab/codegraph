@@ -53,7 +53,7 @@ describe('LSP disabled path', () => {
     }
   });
 
-  it('defers project-enabled LSP work during sync until bounded sync precision exists', async () => {
+  it('records bounded project-enabled LSP status during sync', async () => {
     const dir = createProject({ lsp: { enabled: true } });
     const cg = await CodeGraph.init(dir);
     try {
@@ -61,7 +61,10 @@ describe('LSP disabled path', () => {
       fs.appendFileSync(path.join(dir, 'b.ts'), '\nexport const changed = main();\n');
       await cg.sync();
 
-      expect(readMetadata(dir, LSP_STATUS_METADATA_KEY)).toBeNull();
+      expect(JSON.parse(readMetadata(dir, LSP_STATUS_METADATA_KEY) ?? '{}')).toMatchObject({
+        enabled: true,
+        activationSource: 'project-config',
+      });
       expect(countLspEdges(dir)).toBe(0);
     } finally {
       cg.close();

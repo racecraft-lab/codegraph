@@ -5,8 +5,8 @@
 Completed tasks: T019-T049.
 
 Slice 1 proves explicit LSP opt-in, default-off behavior, JSON-RPC stdio
-lifecycle, status rendering, and one complete TypeScript/JavaScript-family
-precision path, including TSX and JSX source files.
+lifecycle, status rendering, and complete TypeScript-family precision paths,
+including TypeScript, TSX, JavaScript, and JSX source files.
 
 ## Commands
 

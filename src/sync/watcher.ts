@@ -196,6 +196,13 @@ export interface WatchOptions {
   inertForTests?: boolean;
 }
 
+export interface WatchSyncContext {
+  /** Source files observed by this debounce batch, before the sync began. */
+  changedSourceFiles: readonly string[];
+  /** Unique key for the current debounce batch. */
+  materialBatchKey: string;
+}
+
 /**
  * Thrown by a `syncFn` to signal that the underlying sync couldn't acquire
  * the cross-process write lock (#449). The watcher treats this as "no
@@ -288,6 +295,7 @@ export class FileWatcher {
    * this edit) from "currently being indexed" (lastSeen <= syncStarted).
    */
   private syncStartedMs = 0;
+  private syncBatchSequence = 0;
   private syncing = false;
   private stopped = false;
   /**
@@ -314,7 +322,7 @@ export class FileWatcher {
 
   private readonly projectRoot: string;
   private readonly debounceMs: number;
-  private readonly syncFn: () => Promise<{ filesChanged: number; durationMs: number }>;
+  private readonly syncFn: (context: WatchSyncContext) => Promise<{ filesChanged: number; durationMs: number }>;
   private readonly onSyncComplete?: WatchOptions['onSyncComplete'];
   private readonly onSyncError?: WatchOptions['onSyncError'];
   private readonly onDegraded?: WatchOptions['onDegraded'];
@@ -322,7 +330,7 @@ export class FileWatcher {
 
   constructor(
     projectRoot: string,
-    syncFn: () => Promise<{ filesChanged: number; durationMs: number }>,
+    syncFn: (context: WatchSyncContext) => Promise<{ filesChanged: number; durationMs: number }>,
     options: WatchOptions = {}
   ) {
     this.projectRoot = projectRoot;
@@ -344,6 +352,7 @@ export class FileWatcher {
     this.degradedReason = null;
     this.lockRetryCount = 0;
     this.syncFailureRetryCount = 0;
+    this.syncBatchSequence = 0;
 
     // Some environments make filesystem watching unusable — most notably
     // WSL2 /mnt/ drives, where the underlying fs.watch calls block long
@@ -775,9 +784,10 @@ export class FileWatcher {
 
     this.syncStartedMs = Date.now();
     this.syncing = true;
+    const syncContext = this.createSyncContext();
 
     try {
-      const result = await this.syncFn();
+      const result = await this.syncFn(syncContext);
       this.lockRetryCount = 0; // a clean sync clears any contention backoff
       this.syncFailureRetryCount = 0; // ...and any generic-failure backoff
       // Remove entries whose most recent event predates this sync — those
@@ -893,6 +903,21 @@ export class FileWatcher {
       });
     }
     return result;
+  }
+
+  private createSyncContext(): WatchSyncContext {
+    const changedSourceFiles: string[] = [];
+    for (const [filePath, info] of this.pendingFiles) {
+      if (info.lastSeenMs <= this.syncStartedMs) {
+        changedSourceFiles.push(filePath);
+      }
+    }
+    const filesKey = [...changedSourceFiles].sort().join('\n');
+    const batchId = ++this.syncBatchSequence;
+    return {
+      changedSourceFiles,
+      materialBatchKey: `watch-batch:${batchId}\n${filesKey}`,
+    };
   }
 }
 

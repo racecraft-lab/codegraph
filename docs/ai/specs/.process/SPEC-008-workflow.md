@@ -39,7 +39,7 @@ plus feature parity against the internal baseline is a no-waiver gate.
 | Checklist | `$speckit-checklist` | ✅ Complete | G4 passed; 90 checklist items, 0 gaps |
 | Tasks | `$speckit-tasks` | ✅ Complete | G5 passed; 114 tasks across 7 phases |
 | Analyze | `$speckit-analyze` | ✅ Complete | G6 passed; 5 findings remediated, 0 remaining |
-| Implement | `$speckit-implement` | 🔄 In Progress | Foundation checkpoint `fb6b893`; US1 checkpoint `08a31ad`; US2 checkpoint `d1165ea`; next marker: US3 T050-T062 |
+| Implement | `$speckit-implement` | ✅ Complete | Foundation checkpoint `fb6b893`; US1 checkpoint `08a31ad`; US2 checkpoint `89808b3`; US3 checkpoint `3c993c6`; US4 checkpoint `45a5f85`; G7 passed |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -97,7 +97,7 @@ degradation.
 
 SPEC-008 owns:
 
-- `src/lsp/servers.ts`: registry for baseline language coverage, starting from TypeScript/JavaScript, Python, Go, Rust, C/C++, Swift, Java, C#, Kotlin, PHP, Ruby, Dart, and Vue language servers; PATH probe; user config override.
+- `src/lsp/servers.ts`: registry for baseline language coverage, starting from TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, C/C++, Swift, Java, C#, Kotlin, PHP, Ruby, Dart, and Vue language servers; PATH probe; user config override.
 - A parity disposition for every language in the internal baseline, including experimental Vue and COBOL. A language not implemented in SPEC-008 must be assigned to a concrete numbered future spec before SPEC-008 can pass final validation; backlog-only ownership is not sufficient.
 - `src/lsp/client.ts`: JSON-RPC over stdio, initialize/shutdown lifecycle, per-workspace instances, timeout handling, and crash restart.
 - `src/lsp/precision-pass.ts`: verify/correct/annotate existing graph edges using `textDocument/definition` and `textDocument/references`.
@@ -129,8 +129,8 @@ SPEC-008 owns:
 - [ ] Running without LSP remains byte-compatible for existing indexing behavior.
 - [ ] `codegraph index --lsp` or config opt-in runs the precision pass for covered languages.
 - [ ] Missing/crashed servers degrade per language and are surfaced in status.
-- [ ] Real-server validation covers TypeScript/JavaScript, Python, Go, Rust, C/C++, Swift, Java, C#, Kotlin, PHP, Ruby, Dart, and Vue where implemented in SPEC-008.
-- [ ] Language parity table covers JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL with no backlog-only owners.
+- [ ] Real-server validation covers TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, C/C++, Swift, Java, C#, Kotlin, PHP, Ruby, Dart, and Vue where implemented in SPEC-008.
+- [ ] Language parity table covers JavaScript, JSX, TypeScript, TSX, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL with no backlog-only owners.
 - [ ] Feature/capability parity table covers every row in `docs/ai/specs/.process/language-feature-parity-baseline.md` with implementation evidence or concrete numbered spec ownership.
 - [ ] Unique LSP conflicts correct graph targets with auditable metadata.
 - [ ] Callers/impact/search behavior does not regress on non-LSP and heuristic-only repos.
@@ -168,7 +168,7 @@ authority.
 - Validation/completion requires language and feature parity tables with no unowned gaps.
 
 ### Covered language servers
-- TypeScript/JavaScript: typescript-language-server
+- TypeScript/TSX/JavaScript/JSX: typescript-language-server
 - Python: pyright or basedpyright
 - Go: gopls
 - Rust: rust-analyzer
@@ -254,7 +254,7 @@ $speckit-clarify Focus on SPEC-008 server prerequisites and validation:
 ```bash
 $speckit-clarify Focus on SPEC-008 language parity:
 - Use `docs/ai/specs/.process/language-feature-parity-baseline.md` as the controlling baseline.
-- Confirm the required disposition for every language: JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL.
+- Confirm the required disposition for every language: JavaScript, JSX, TypeScript, TSX, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL.
 - Decide which additional local LSP servers are in SPEC-008 now and which require concrete numbered follow-on specs.
 - Do not accept backlog-only, undocumented, or "not in original roadmap" answers.
 - Confirm how the parity table is represented in `plan.md`, `quickstart.md`, and final validation evidence.
@@ -396,7 +396,7 @@ Real language servers, subprocess lifecycle, PATH probing, and project/env confi
 $speckit-checklist integration
 
 Focus on SPEC-008 LSP Client Integration requirements:
-- Language-server registry entries for TypeScript/JavaScript, Python, Go, Rust, C/C++, Swift, and Java.
+- Language-server registry entries for TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, C/C++, Swift, and Java.
 - Baseline registry/disposition entries for C#, Kotlin, PHP, Ruby, Dart, Vue, and COBOL.
 - Feature/capability parity entries from `docs/ai/specs/.process/language-feature-parity-baseline.md`.
 - PATH probing, `codegraph.json` overrides, environment overrides, and timeout precedence.
@@ -565,7 +565,7 @@ Focus on:
 3. Coverage gaps: every FR and user story must have tasks, tests, and validation evidence.
 4. Reviewability: tasks must preserve the three-slice plan or justify a safer route.
 5. Validation feasibility: real-server prereq checks must fail early and name missing binaries.
-6. Language parity: JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL must have SPEC-008 coverage or concrete numbered future-spec ownership.
+6. Language parity: JavaScript, JSX, TypeScript, TSX, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL must have SPEC-008 coverage or concrete numbered future-spec ownership.
 7. Feature/capability parity: every row in `docs/ai/specs/.process/language-feature-parity-baseline.md` must have implementation evidence or concrete numbered future-spec ownership.
 
 Flag any mismatch as HIGH or CRITICAL if it could cause an implementation to ship a partial LSP path, duplicate noisy edges, or cross into SPEC-009/SPEC-010 scope.
@@ -644,8 +644,8 @@ Verification expected before completion:
 - `npm run build`
 - `npm run typecheck`
 - `npm test`
-- Real-server validation for TypeScript/JavaScript, Python, Go, Rust, C/C++, Swift, Java, C#, Kotlin, PHP, Ruby, Dart, and Vue where covered in SPEC-008.
-- Language parity validation for JavaScript, TypeScript, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL with no backlog-only dispositions.
+- Real-server validation for TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, C/C++, Swift, Java, C#, Kotlin, PHP, Ruby, Dart, and Vue where covered in SPEC-008.
+- Language parity validation for JavaScript, JSX, TypeScript, TSX, Python, Java, C, C++, C#, Go, Ruby, Rust, PHP, Kotlin, Swift, Dart, Vue, and COBOL with no backlog-only dispositions.
 - Feature/capability parity validation for every baseline row with no backlog-only dispositions.
 - Self-repo dogfood with LSP explicitly enabled.
 - Status output shows coverage/degradation accurately.
@@ -657,11 +657,10 @@ Verification expected before completion:
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
 | Foundation - LSP scaffolding, config, registry, status, provenance | ✅ | T001-T018 | Checkpoint `fb6b89399e3dc32abce0b2917449ce7ed3896fc1`; evidence: `specs/008-lsp-client-integration/validation/foundation.md`; typecheck, focused tests, build, forbidden-name scan, and outbound-link scan passed |
-| Slice 1 - Core client/config/status + first complete language path | ✅ | T019-T037 | Checkpoint `08a31ad81df7e27ee3d95377039ec72fa2d2b0e4`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; typecheck, focused tests, build, real-server validation, restricted-name scan, and outbound-link scan passed |
-| US2 config/status behavior (Slice 1) | ✅ | T038-T049 | Checkpoint `d1165ea`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; focused config/prereq tests, expanded LSP focused suite, typecheck, build, and diff check passed |
-| Slice 2 - Degradation/correction + middle language expansion | ⏳ | T050-T083 | Pending |
-| Slice 3 - Remaining servers + watch/status/dogfood | ⏳ | T084-T114 | Pending |
-| Polish - Docs, validation packet, final gates | ⏳ | | Pending |
+| Slice 1 - Core client/config/status + first complete language path | ✅ | T019-T049 | Checkpoints `08a31ad81df7e27ee3d95377039ec72fa2d2b0e4` and `89808b3c5472eabedebc4c65c93892f55efd1bcb`; evidence: `specs/008-lsp-client-integration/validation/slice-1.md`; typecheck, focused tests, build, TypeScript-family real-server validation, restricted-name scan, and outbound-link scan passed |
+| Slice 2 - Edge correction + middle language expansion | ✅ | T050-T062 | Checkpoint `3c993c6cb813a76d299aa882f45972efe7c47285`; evidence: `specs/008-lsp-client-integration/validation/slice-2.md`; focused tests, typecheck, build, restricted-name scan, and outbound-link scan passed |
+| Slice 3 - Remaining servers + watch/status/dogfood | ✅ | T063-T114 | Checkpoint `45a5f85`; evidence: `specs/008-lsp-client-integration/validation/final-packet.md`; build, typecheck, full test suite, combined full verify, real-server validation, parity gate, retrieval probe, restricted-name scan, and outbound-link scan passed |
+| Polish - Docs, validation packet, final gates | ✅ | T106-T114 | Folded into US4 marker; final packet generated and all final validation commands passed |
 
 ---
 
@@ -669,30 +668,55 @@ Verification expected before completion:
 
 | Phase | Item | Status | Notes |
 |-------|------|--------|-------|
-| Post | Post: Doctor Extension Check | ⏳ Pending | Doctor extension availability to be checked |
-| Post | Post: Verify Implementation | ⏳ Pending | Verify extension is installed |
-| Post | Post: Verify Tasks Phantom Check | ⏳ Pending | Verify-tasks extension is installed |
-| Post | Post: Code Review | ⏳ Pending | Built-in post-implementation review |
-| Post | Post: Integration Suite | ⏳ Pending | Full repo verification after implementation |
-| Post | Post: Reviewability Diff Gate | ⏳ Pending | Final reviewability backstop |
-| Post | Post: Self-Review | ⏳ Pending | Four-question audit before PR body |
-| Post | Post: UAT Runbook Generation | ⏳ Pending | Generate and author runbook |
-| Post | Post: PR Body Generation | ⏳ Pending | Generate and validate PR packet/body |
-| Post | Post: PR Creation | ⏳ Pending | Open PR after passing packet validation |
+| Post | Post: Doctor Extension Check | ⏭️ Skipped | Doctor extension not installed |
+| Post | Post: Verify Implementation | ✅ Complete | Full build, typecheck, tests, real-server validation, parity gate, retrieval probe, restricted-name scan, and outbound-link scan passed |
+| Post | Post: Verify Tasks Phantom Check | ✅ Complete | 114/114 completed tasks verified in `specs/008-lsp-client-integration/verify-tasks-report.md` |
+| Post | Post: Code Review | ✅ Complete | Post-review gaps remediated: JSX/TSX language ownership and public retrieval probe coverage |
+| Post | Post: Integration Suite | ✅ Complete | Full suite passed: 141 files, 2,280 tests passed, 4 skipped |
+| Post | Post: Reviewability Diff Gate | ⚠️ Blocked | Final one-PR gate blocked on size: 5,511 reviewable LOC, 29 production files, 90 total files; reslicing packet written |
+| Post | Post: PRSG-009 Candidate Emission | ✅ Complete | Dry-run candidate emission validated: 6 layer slices, no branches or PRs mutated |
+| Post | Post: Self-Review | ⏳ Pending | Blocked behind final PR packet path |
+| Post | Post: UAT Runbook Generation | ⏳ Pending | Blocked behind final PR packet path |
+| Post | Post: PR Body Generation | ⏳ Pending | Final packet/body generation blocked until valid live slice emission path or operator-owned typed exception |
+| Post | Post: PR Creation | ⏳ Pending | No PR created; final reviewability backstop blocks one oversized PR |
 | Post | Post: Review Remediation | ⏳ Pending | Monitor and resolve review comments |
 | Post | Post: Retrospective | ⏳ Pending | Final retrospective artifact |
 
-- [ ] All tasks marked complete in `specs/008-lsp-client-integration/tasks.md`
-- [ ] `npm run build` passes
-- [ ] `npm run typecheck` passes
-- [ ] `npm test` passes
-- [ ] Real-server validation passes for all required language servers
-- [ ] Language parity table has no unowned or backlog-only gaps
-- [ ] Feature/capability parity table has no unowned or backlog-only gaps
-- [ ] Self-repo LSP dogfood evidence recorded
-- [ ] Non-LSP indexing regression evidence recorded
-- [ ] Final reviewability gate passes
-- [ ] PR packet generated and validated
+- [X] All tasks marked complete in `specs/008-lsp-client-integration/tasks.md`
+- [X] `npm run build` passes
+- [X] `npm run typecheck` passes
+- [X] `npm test` passes
+- [X] Real-server validation passes for all required language servers
+- [X] Language parity table has no unowned or backlog-only gaps
+- [X] Feature/capability parity table has no unowned or backlog-only gaps
+- [X] Self-repo LSP dogfood evidence recorded
+- [X] Non-LSP indexing regression evidence recorded
+- [X] Final reviewability backstop executed and wrote a reslicing packet
+- [X] PRSG-009 dry-run candidate emission validated 6 layer slices
+- [ ] Final reviewability gate passes for a single PR
+- [ ] Final PR packet generated and validated
+- [ ] PR created
+
+---
+
+### Post-Implementation Resumption Notes
+
+- Final reviewability backstop evidence:
+  `specs/008-lsp-client-integration/.process/final-reviewability/gate-state.json`
+  and `specs/008-lsp-client-integration/.process/final-reviewability/reslicing-packet.json`.
+- Gate result: blocked before PR body generation or PR creation because the
+  single diff is above the reviewability thresholds.
+- PRSG-007 routing result: one navigable PR route with size warning evidence in
+  `specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json`.
+- PRSG-008 layer plan result: 6 valid increments in
+  `specs/008-lsp-client-integration/.process/reviewability/layer-plan.json`.
+- PRSG-009 result: dry-run candidate emission validated 6 layer slices with
+  `branches=false` and `pull_requests=false`; candidate state, command capture,
+  slice packets, and bodies were written under
+  `specs/008-lsp-client-integration/.process/emission/candidates/`.
+- Remaining blocker: autopilot completion still requires valid slice PR
+  emission or an operator-owned typed exception. No fake PR fixture or simulated
+  opened PR was used.
 
 ---
 

@@ -1,0 +1,157 @@
+{
+  "slice_id": "us4",
+  "review_order": 5,
+  "total_slices": 6,
+  "base_branch": "008-lsp-client-integration/04-us3",
+  "head_branch": "008-lsp-client-integration/05-us4",
+  "target": {
+    "base_branch": "008-lsp-client-integration/04-us3",
+    "head_branch": "008-lsp-client-integration/05-us4"
+  },
+  "generated_title": {
+    "value": "feat(speckit-pro): Update Complete SPEC-008 With No Unowned Parity Gaps",
+    "type": "feat",
+    "scope": "speckit-pro",
+    "description": "Update Complete SPEC-008 With No Unowned Parity Gaps",
+    "source_evidence": {
+      "kind": "layer_plan_increment",
+      "source": "us4",
+      "summary": "Source label and declared file scope normalized into a strict plain-English reviewer title."
+    },
+    "rejected_candidates": [
+      {
+        "value": "008-lsp-client-integration/05-us4",
+        "reason": "Branch names remain metadata and are not public title descriptions."
+      },
+      {
+        "value": "us4",
+        "reason": "Slice ids remain metadata and are not public title descriptions."
+      }
+    ]
+  },
+  "body_file": "specs/008-lsp-client-integration/.process/emission/candidates/pr-bodies/us4.md",
+  "declared_files": [
+    "__tests__/lsp-precision-pass.test.ts",
+    "__tests__/lsp-retrieval-regression.test.ts",
+    "__tests__/lsp-watch.test.ts",
+    "dist/bin/codegraph.js",
+    "scripts/spec-008-parity-gate.mjs",
+    "scripts/spec-008-retrieval-probes.mjs",
+    "scripts/spec-008-validate-real-servers.mjs",
+    "specs/008-lsp-client-integration/validation/capability-parity.md",
+    "specs/008-lsp-client-integration/validation/language-parity.md",
+    "specs/008-lsp-client-integration/validation/parity-gate.md",
+    "specs/008-lsp-client-integration/validation/self-repo-dogfood.md",
+    "specs/008-lsp-client-integration/validation/slice-2.md",
+    "specs/008-lsp-client-integration/validation/slice-3.md",
+    "src/context/index.ts",
+    "src/db/queries.ts",
+    "src/db/schema.sql",
+    "src/graph/queries.ts",
+    "src/graph/traversal.ts",
+    "src/lsp/client.ts",
+    "src/lsp/corrections.ts",
+    "src/lsp/precision-pass.ts",
+    "src/lsp/status.ts",
+    "src/mcp/tools.ts",
+    "src/sync/index.ts",
+    "src/sync/watch-policy.ts",
+    "src/sync/watcher.ts"
+  ],
+  "declared_tests": [],
+  "scoped_verification": {
+    "commands": [
+      {
+        "command": "<none>",
+        "gate_type": "no_scoped_tests",
+        "reason": "No declared scoped tests or applicable project command; full regression evidence remains required.",
+        "required": true,
+        "evidence_path": "specs/008-lsp-client-integration/.process/emission/us4/no_scoped_tests.txt",
+        "exit_status": 0,
+        "started_at": "2026-06-10T00:00:00Z",
+        "finished_at": "2026-06-10T00:00:01Z"
+      }
+    ]
+  },
+  "full_verification_evidence": "specs/008-lsp-client-integration/.process/emission/full-verification-evidence.md",
+  "traceability": [
+    {
+      "requirement": "FR-001",
+      "files": [
+        "__tests__/lsp-precision-pass.test.ts",
+        "__tests__/lsp-retrieval-regression.test.ts",
+        "__tests__/lsp-watch.test.ts",
+        "dist/bin/codegraph.js",
+        "scripts/spec-008-parity-gate.mjs",
+        "scripts/spec-008-retrieval-probes.mjs",
+        "scripts/spec-008-validate-real-servers.mjs",
+        "specs/008-lsp-client-integration/validation/capability-parity.md",
+        "specs/008-lsp-client-integration/validation/language-parity.md",
+        "specs/008-lsp-client-integration/validation/parity-gate.md",
+        "specs/008-lsp-client-integration/validation/self-repo-dogfood.md",
+        "specs/008-lsp-client-integration/validation/slice-2.md",
+        "specs/008-lsp-client-integration/validation/slice-3.md",
+        "src/context/index.ts",
+        "src/db/queries.ts",
+        "src/db/schema.sql",
+        "src/graph/queries.ts",
+        "src/graph/traversal.ts",
+        "src/lsp/client.ts",
+        "src/lsp/corrections.ts",
+        "src/lsp/precision-pass.ts",
+        "src/lsp/status.ts",
+        "src/mcp/tools.ts",
+        "src/sync/index.ts",
+        "src/sync/watch-policy.ts",
+        "src/sync/watcher.ts"
+      ],
+      "evidence": [
+        "specs/008-lsp-client-integration/.process/emission/full-verification-evidence.md"
+      ]
+    }
+  ],
+  "known_gaps": [],
+  "warnings": [],
+  "restack_note": "Style B incremental stack: first slice targets the integration base and later slices target the previous slice branch.",
+  "prs_row": {
+    "review_order": 5,
+    "slice_id": "us4",
+    "layer": "us4",
+    "branch": "008-lsp-client-integration/05-us4",
+    "base_branch": "008-lsp-client-integration/04-us3",
+    "pr_number": null,
+    "pr_url": null,
+    "declared_files": [
+      "__tests__/lsp-precision-pass.test.ts",
+      "__tests__/lsp-retrieval-regression.test.ts",
+      "__tests__/lsp-watch.test.ts",
+      "dist/bin/codegraph.js",
+      "scripts/spec-008-parity-gate.mjs",
+      "scripts/spec-008-retrieval-probes.mjs",
+      "scripts/spec-008-validate-real-servers.mjs",
+      "specs/008-lsp-client-integration/validation/capability-parity.md",
+      "specs/008-lsp-client-integration/validation/language-parity.md",
+      "specs/008-lsp-client-integration/validation/parity-gate.md",
+      "specs/008-lsp-client-integration/validation/self-repo-dogfood.md",
+      "specs/008-lsp-client-integration/validation/slice-2.md",
+      "specs/008-lsp-client-integration/validation/slice-3.md",
+      "src/context/index.ts",
+      "src/db/queries.ts",
+      "src/db/schema.sql",
+      "src/graph/queries.ts",
+      "src/graph/traversal.ts",
+      "src/lsp/client.ts",
+      "src/lsp/corrections.ts",
+      "src/lsp/precision-pass.ts",
+      "src/lsp/status.ts",
+      "src/mcp/tools.ts",
+      "src/sync/index.ts",
+      "src/sync/watch-policy.ts",
+      "src/sync/watcher.ts"
+    ],
+    "verification_evidence": "specs/008-lsp-client-integration/.process/emission/us4/no_scoped_tests.txt",
+    "status": "pending",
+    "head_sha": "0366d3cef02a36fc1e2d95e8928390cdfbdc7484",
+    "merged_sha": null
+  }
+}

@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
   "spec_id": "SPEC-008",
   "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-06T19:06:12Z",
-  "active_step": "Phase 7: Implement - us3 T050-T062",
+  "updated_at": "2026-07-06T02:51:00Z",
+  "active_step": "Post: Reviewability Diff Gate",
   "confidence_gate_mode": "strict",
   "plan": [
     {
@@ -124,51 +124,51 @@
     },
     {
       "step": "Phase 7: Implement - us3 T050-T062",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement - us4 T063-T114",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "pending"
+      "status": "skipped: doctor extension not installed"
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Code Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "pending"
+      "status": "blocked: one-PR gate exceeded size thresholds; PRSG-009 dry-run candidate emission validated"
     },
     {
       "step": "Post: Self-Review",
-      "status": "pending"
+      "status": "pending: blocked behind final PR packet path"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "pending"
+      "status": "pending: blocked behind final PR packet path"
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "pending"
+      "status": "blocked: final packet/body generation requires valid live slice emission path or operator-owned typed exception"
     },
     {
       "step": "Post: PR Creation",
-      "status": "pending"
+      "status": "blocked: no PR created; one oversized PR is blocked"
     },
     {
       "step": "Post: Review Remediation",
@@ -497,10 +497,12 @@
     }
   },
   "layer_plan": {
-    "status": "skipped",
-    "reason": "atomicity route is one-navigable-PR; split-PR layer planning not required",
-    "route": "one-navigable-PR",
-    "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json"
+    "status": "completed_after_final_backstop",
+    "route": "layer_plan",
+    "evidence_path": "specs/008-lsp-client-integration/.process/reviewability/layer-plan.json",
+    "increment_count": 6,
+    "task_count": 114,
+    "note": "Generated after final reviewability backstop requested PRSG-009 continuation."
   },
   "pr_marker_plan": {
     "schema_version": "pr-marker-plan.v1",
@@ -883,6 +885,10 @@
           {
             "operation": "MODIFIED",
             "path": "src/lsp/status.ts"
+          },
+          {
+            "operation": "MODIFIED",
+            "path": "src/lsp/types.ts"
           }
         ],
         "declared_tests": [],
@@ -902,9 +908,9 @@
         "implementation_checkpoint": {
           "status": "complete",
           "evidence_path": "specs/008-lsp-client-integration/validation/slice-1.md",
-          "commit_sha": "d1165eae02c919e722a6eac8bc570f98bb77f91c",
-          "head_sha": "d1165eae02c919e722a6eac8bc570f98bb77f91c",
-          "verified_at": "2026-07-06T19:06:12Z",
+          "commit_sha": "89808b3c5472eabedebc4c65c93892f55efd1bcb",
+          "head_sha": "89808b3c5472eabedebc4c65c93892f55efd1bcb",
+          "verified_at": "2026-07-06T01:11:43.032Z",
           "tasks": [
             "T038",
             "T039",
@@ -921,10 +927,12 @@
           ],
           "verification": [
             "npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts",
-            "npx vitest run __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts __tests__/lsp-status.test.ts __tests__/lsp-disabled.test.ts __tests__/lsp-precision-pass.test.ts __tests__/lsp-real-server-validation.test.ts",
+            "npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts __tests__/lsp-status.test.ts",
             "npm run typecheck",
             "npm run build",
-            "git diff --check"
+            "git diff --check",
+            "restricted-name scan: no matches",
+            "outbound-link scan: no matches"
           ]
         },
         "emission_mapping": {
@@ -1021,7 +1029,34 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "evidence_path": "specs/008-lsp-client-integration/validation/slice-2.md",
+          "commit_sha": "3c993c6cb813a76d299aa882f45972efe7c47285",
+          "head_sha": "3c993c6cb813a76d299aa882f45972efe7c47285",
+          "verified_at": "2026-07-06T01:23:00.422Z",
+          "tasks": [
+            "T050",
+            "T051",
+            "T052",
+            "T053",
+            "T054",
+            "T055",
+            "T056",
+            "T057",
+            "T058",
+            "T059",
+            "T060",
+            "T061",
+            "T062"
+          ],
+          "verification": [
+            "npm test -- __tests__/lsp-prereqs.test.ts __tests__/lsp-client.test.ts __tests__/lsp-status.test.ts __tests__/lsp-precision-pass.test.ts",
+            "npm run typecheck",
+            "npm run build",
+            "git diff --check",
+            "restricted-name scan: no matches",
+            "outbound-link scan: no matches"
+          ]
         },
         "emission_mapping": {
           "status": "pending"
@@ -1233,7 +1268,77 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "evidence_path": "specs/008-lsp-client-integration/validation/final-packet.md",
+          "commit_sha": "45a5f85702754189b9d5bc74686f94866cd7061b",
+          "head_sha": "45a5f85702754189b9d5bc74686f94866cd7061b",
+          "verified_at": "2026-07-06T02:18:40Z",
+          "tasks": [
+            "T063",
+            "T064",
+            "T065",
+            "T066",
+            "T067",
+            "T068",
+            "T069",
+            "T070",
+            "T071",
+            "T072",
+            "T073",
+            "T074",
+            "T075",
+            "T076",
+            "T077",
+            "T078",
+            "T079",
+            "T080",
+            "T081",
+            "T082",
+            "T083",
+            "T084",
+            "T085",
+            "T086",
+            "T087",
+            "T088",
+            "T089",
+            "T090",
+            "T091",
+            "T092",
+            "T093",
+            "T094",
+            "T095",
+            "T096",
+            "T097",
+            "T098",
+            "T099",
+            "T100",
+            "T101",
+            "T102",
+            "T103",
+            "T104",
+            "T105",
+            "T106",
+            "T107",
+            "T108",
+            "T109",
+            "T110",
+            "T111",
+            "T112",
+            "T113",
+            "T114"
+          ],
+          "verification": [
+            "npm run build",
+            "npm run typecheck",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false npm test",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false npm run build && npm run typecheck && npm test",
+            "node scripts/spec-008-validate-real-servers.mjs",
+            "node scripts/spec-008-parity-gate.mjs",
+            "node scripts/spec-008-retrieval-probes.mjs",
+            "git diff --check",
+            "restricted-name scan: no matches",
+            "outbound-link scan: no matches"
+          ]
         },
         "emission_mapping": {
           "status": "pending"
@@ -1298,15 +1403,117 @@
       "status": "completed",
       "marker_id": "us2",
       "task_range": "T038-T049",
-      "checkpoint_sha": "d1165eae02c919e722a6eac8bc570f98bb77f91c",
+      "checkpoint_sha": "89808b3c5472eabedebc4c65c93892f55efd1bcb",
       "evidence_path": "specs/008-lsp-client-integration/validation/slice-1.md",
       "verification": {
-        "t049": "passed: npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts (2 files, 15 tests)",
-        "focused_tests": "passed: 6 files, 34 tests",
+        "t049": "passed: npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts (2 files, 12 tests)",
+        "focused_tests": "passed: config/prereqs/status set (3 files, 15 tests)",
         "typecheck": "passed: npm run typecheck",
         "build": "passed: npm run build",
-        "diff_check": "passed: git diff --check"
+        "diff_check": "passed: git diff --check",
+        "restricted_name_scan": "passed: no matches",
+        "outbound_link_scan": "passed: no matches"
       }
+    },
+    "us3": {
+      "status": "completed",
+      "marker_id": "us3",
+      "task_range": "T050-T062",
+      "checkpoint_sha": "3c993c6cb813a76d299aa882f45972efe7c47285",
+      "evidence_path": "specs/008-lsp-client-integration/validation/slice-2.md",
+      "verification": {
+        "t061": "passed: focused US3 test set (4 files, 37 tests)",
+        "typecheck": "passed: npm run typecheck",
+        "build": "passed: npm run build",
+        "diff_check": "passed: git diff --check",
+        "restricted_name_scan": "passed: no matches",
+        "outbound_link_scan": "passed: no matches"
+      }
+    },
+    "us4": {
+      "status": "completed",
+      "marker_id": "us4",
+      "task_range": "T063-T114",
+      "checkpoint_sha": "45a5f85702754189b9d5bc74686f94866cd7061b",
+      "evidence_path": "specs/008-lsp-client-integration/validation/final-packet.md",
+      "verification": {
+        "focused_lsp_disabled": "passed: npx vitest run __tests__/lsp-disabled.test.ts (1 file, 3 tests)",
+        "build": "passed: npm run build",
+        "typecheck": "passed: npm run typecheck",
+        "full_test": "passed: npm test (141 files, 2280 passed, 4 skipped)",
+        "full_verify": "passed: npm run build && npm run typecheck && npm test (141 files, 2280 passed, 4 skipped)",
+        "real_server_validation": "passed: 17 verified, 1 future-owned, 0 missing, 0 unowned",
+        "parity_gate": "passed: 18 language rows, 17 capability rows, 0 unowned",
+        "retrieval_probe": "passed: public search/callers/callees/impact/explore-equivalent surfaces clean and inactive audit rows hidden",
+        "diff_check": "passed: git diff --check",
+        "restricted_name_scan": "passed: no matches",
+        "outbound_link_scan": "passed: no matches"
+      }
+    }
+  },
+  "post_implementation": {
+    "verify_implementation": {
+      "status": "completed",
+      "evidence": "Full build, typecheck, tests, real-server validation, parity gate, retrieval probe, restricted-name scan, and outbound-link scan passed."
+    },
+    "verify_tasks": {
+      "status": "completed",
+      "report_path": "specs/008-lsp-client-integration/verify-tasks-report.md",
+      "verified": 114,
+      "partial": 0,
+      "weak": 0,
+      "not_found": 0
+    },
+    "code_review": {
+      "status": "completed",
+      "remediation": [
+        "Added JSX and TSX as TypeScript-family LSP languages.",
+        "Expanded retrieval probe to public search, callers, callees, impact, explore-equivalent, and context surfaces."
+      ]
+    },
+    "integration_suite": {
+      "status": "completed",
+      "build": "passed",
+      "typecheck": "passed",
+      "tests": "passed: 141 files, 2280 passed, 4 skipped",
+      "real_server_validation": "passed: 17 verified, 1 future-owned, 0 missing, 0 unowned",
+      "parity_gate": "passed: 18 language rows, 17 capability rows, 0 unowned",
+      "retrieval_probe": "passed"
+    },
+    "reviewability_diff_gate": {
+      "status": "blocked",
+      "gate_state_path": "specs/008-lsp-client-integration/.process/final-reviewability/gate-state.json",
+      "reslicing_packet_path": "specs/008-lsp-client-integration/.process/final-reviewability/reslicing-packet.json",
+      "reason": "reviewable LOC 5511, production files 29, and total files 90 exceed one-PR block thresholds",
+      "blocked_operations": [
+        "pr-body-generation",
+        "single-pr-create",
+        "multi-pr-emission"
+      ]
+    },
+    "prsg_reslicing": {
+      "routing": {
+        "status": "completed",
+        "path": "specs/008-lsp-client-integration/.process/reviewability/atomicity-route.json",
+        "route": "one-navigable-PR"
+      },
+      "layer_plan": {
+        "status": "completed",
+        "path": "specs/008-lsp-client-integration/.process/reviewability/layer-plan.json",
+        "increments": 6
+      },
+      "candidate_emission": {
+        "status": "validated_dry_run",
+        "slice_count": 6,
+        "mutation": {
+          "branches": false,
+          "pull_requests": false
+        },
+        "state": "specs/008-lsp-client-integration/.process/emission/candidates/multi-pr-emission-state.candidate.json",
+        "prs_manifest": "specs/008-lsp-client-integration/.process/emission/candidates/prs.candidate.json",
+        "command_capture": "specs/008-lsp-client-integration/.process/emission/candidates/commands.candidate.json"
+      },
+      "remaining_blocker": "Autopilot completion still requires valid slice PR emission or an operator-owned typed exception. No fake PR fixture or simulated opened PR was used."
     }
   }
 }

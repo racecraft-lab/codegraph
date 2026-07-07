@@ -90,16 +90,16 @@ Command selection is environment override first, then registry defaults or accep
 |---|---|---|
 | JavaScript | `typescript-language-server --stdio` with TypeScript SDK evidence | Record observed server version and SDK evidence |
 | TypeScript | `typescript-language-server --stdio` with TypeScript SDK evidence | Record observed server version and SDK evidence |
-| Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Record observed selected server version |
+| Python | `pyright-langserver --stdio` or `basedpyright-langserver --stdio` | Record observed selected probe and server executable |
 | Java | `jdtls -configuration <dir> -data <workspace-data>` or configured equivalent | Record observed server version and required workspace dirs |
 | C | `clangd` | Record observed server version and compile-command evidence when used |
 | C++ | `clangd` | Record observed server version and compile-command evidence when used |
 | C# | `csharp-ls` | Record observed server version |
 | Go | `gopls` | Record observed server version |
-| Ruby | `ruby-lsp` or `solargraph stdio` | Record observed selected server version |
+| Ruby | `ruby-lsp` or `solargraph stdio` | Record observed selected server probe |
 | Rust | `rust-analyzer` | Record observed server version |
-| PHP | `intelephense --stdio` or `phpactor language-server` | Record observed selected server version |
-| Kotlin | `kotlin-language-server` or `kotlin-lsp` | Record observed selected server version |
+| PHP | `intelephense --stdio` or `phpactor language-server` | Record observed selected server probe or stdio initialize |
+| Kotlin | `kotlin-language-server` or `kotlin-lsp` | Record observed selected server probe or stdio initialize |
 | Swift | `sourcekit-lsp` | Record observed server version |
 | Dart | `dart language-server` | Record observed Dart SDK/server version |
 | Vue | `vue-language-server --stdio` with TypeScript SDK evidence and configured SDK path when required | Record observed server version and SDK evidence |
@@ -147,7 +147,7 @@ Command selection is environment override first, then registry defaults or accep
 **Rationale**: The clarified scope requires broad parity ownership, but a single large implementation would be hard to review. Three vertical slices keep each PR independently testable while preserving one SPEC-008 feature contract.
 
 **Slices**:
-1. Activation/config/status/client/prereq plus complete TypeScript/JavaScript path.
+1. Activation/config/status/client/prereq plus complete TypeScript-family path.
 2. Correction/status generalization plus Python, Go, Rust, C/C++, Swift, and Java.
 3. C#, Kotlin, PHP, Ruby, Dart, Vue, COBOL disposition, watch verification, parity matrices, dogfood, and validation packet.
 
