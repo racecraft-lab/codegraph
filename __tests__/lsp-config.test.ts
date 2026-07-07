@@ -43,6 +43,23 @@ describe('LSP config resolution', () => {
     });
   });
 
+  it('models codegraph index, index --lsp, and index --no-lsp activation precedence', () => {
+    withProjectConfig({ lsp: { enabled: true } }, (dir) => {
+      expect(resolveLspConfig({ projectRoot: dir, cliActivation: 'unspecified', env: {} })).toMatchObject({
+        enabled: true,
+        activationSource: 'project-config',
+      });
+      expect(resolveLspConfig({ projectRoot: dir, cliActivation: 'enable', env: {} })).toMatchObject({
+        enabled: true,
+        activationSource: 'cli-enable',
+      });
+      expect(resolveLspConfig({ projectRoot: dir, cliActivation: 'disable', env: {} })).toMatchObject({
+        enabled: false,
+        activationSource: 'cli-disable',
+      });
+    });
+  });
+
   it('applies machine-local command and timeout precedence without letting env activate LSP', () => {
     withProjectConfig({
       lsp: {

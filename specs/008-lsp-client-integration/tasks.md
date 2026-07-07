@@ -54,28 +54,28 @@
 
 ### Tests for User Story 1
 
-- [ ] T019 [P] [US1] Write failing disabled-path index, sync, and watch-triggered sync tests proving zero LSP command probes, subprocess starts, JSON-RPC messages, status writes, and graph mutations in `__tests__/lsp-disabled.test.ts`
-- [ ] T020 [P] [US1] Write failing CLI activation tests for `codegraph index`, `codegraph index --lsp`, and `codegraph index --no-lsp` precedence in `__tests__/lsp-config.test.ts`
-- [ ] T021 [P] [US1] Write failing JSON-RPC lifecycle tests for initialize, request id routing, timeout, shutdown, stderr/stdout draining, and malformed response handling in `__tests__/lsp-client.test.ts`
-- [ ] T022 [P] [US1] Write failing TypeScript/JavaScript precision-pass tests for one complete definition/reference verification path in `__tests__/lsp-precision-pass.test.ts`
-- [ ] T023 [P] [US1] Write failing status tests for CLI activation source, observed server evidence, per-language coverage, and edge counts in `__tests__/lsp-status.test.ts`
-- [ ] T024 [P] [US1] Write failing TypeScript/JavaScript real-server prereq validation tests for `typescript-language-server --stdio` and TypeScript SDK evidence in `__tests__/lsp-real-server-validation.test.ts`
+- [X] T019 [P] [US1] Write failing disabled-path index, sync, and watch-triggered sync tests proving zero LSP command probes, subprocess starts, JSON-RPC messages, status writes, and graph mutations in `__tests__/lsp-disabled.test.ts`
+- [X] T020 [P] [US1] Write failing CLI activation tests for `codegraph index`, `codegraph index --lsp`, and `codegraph index --no-lsp` precedence in `__tests__/lsp-config.test.ts`
+- [X] T021 [P] [US1] Write failing JSON-RPC lifecycle tests for initialize, request id routing, timeout, shutdown, stderr/stdout draining, and malformed response handling in `__tests__/lsp-client.test.ts`
+- [X] T022 [P] [US1] Write failing TypeScript/JavaScript precision-pass tests for one complete definition/reference verification path in `__tests__/lsp-precision-pass.test.ts`
+- [X] T023 [P] [US1] Write failing status tests for CLI activation source, observed server evidence, per-language coverage, and edge counts in `__tests__/lsp-status.test.ts`
+- [X] T024 [P] [US1] Write failing TypeScript/JavaScript real-server prereq validation tests for `typescript-language-server --stdio` and TypeScript SDK evidence in `__tests__/lsp-real-server-validation.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T025 [US1] Add `--lsp` and `--no-lsp` index activation options without changing default behavior in `src/bin/codegraph.ts`
-- [ ] T026 [US1] Pass effective LSP activation from CLI and project config into index and sync entry points in `src/index.ts`
-- [ ] T027 [US1] Implement the JSON-RPC stdio client lifecycle in `src/lsp/client.ts`
-- [ ] T028 [US1] Implement bounded request timeout, shutdown, process exit, stdout draining, and stderr draining behavior in `src/lsp/client.ts`
-- [ ] T029 [US1] Implement TypeScript/JavaScript work-item selection after structural extraction and reference resolution in `src/lsp/precision-pass.ts`
-- [ ] T030 [US1] Implement verified-edge marking for matching TypeScript/JavaScript LSP targets in `src/lsp/precision-pass.ts`
-- [ ] T031 [US1] Persist slice-1 coverage, edge-count, and performance status for LSP-enabled runs in `src/lsp/status.ts`
-- [ ] T032 [US1] Integrate the LSP precision pass after existing reference resolution while preserving disabled-path behavior in `src/index.ts`
-- [ ] T033 [US1] Render LSP state in human and JSON status output without starting language servers from status in `src/bin/codegraph.ts`
-- [ ] T034 [US1] Implement TypeScript/JavaScript real-server validation in `scripts/spec-008-validate-real-servers.mjs`
-- [ ] T035 [US1] Run `npm test -- __tests__/lsp-disabled.test.ts __tests__/lsp-client.test.ts __tests__/lsp-precision-pass.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-1.md`
-- [ ] T036 [US1] Run TypeScript/JavaScript real-server validation and record observed command, resolved path, version, SDK evidence, and coverage in `specs/008-lsp-client-integration/validation/slice-1.md`
-- [ ] T037 [US1] Record slice-1 traceability, scope budget, non-goals, rollback note, and known gaps in `specs/008-lsp-client-integration/validation/slice-1.md`
+- [X] T025 [US1] Add `--lsp` and `--no-lsp` index activation options without changing default behavior in `src/bin/codegraph.ts`
+- [X] T026 [US1] Pass effective LSP activation from CLI and project config into index and sync entry points in `src/index.ts`
+- [X] T027 [US1] Implement the JSON-RPC stdio client lifecycle in `src/lsp/client.ts`
+- [X] T028 [US1] Implement bounded request timeout, shutdown, process exit, stdout draining, and stderr draining behavior in `src/lsp/client.ts`
+- [X] T029 [US1] Implement TypeScript/JavaScript work-item selection after structural extraction and reference resolution in `src/lsp/precision-pass.ts`
+- [X] T030 [US1] Implement verified-edge marking for matching TypeScript/JavaScript LSP targets in `src/lsp/precision-pass.ts`
+- [X] T031 [US1] Persist slice-1 coverage, edge-count, and performance status for LSP-enabled runs in `src/lsp/status.ts`
+- [X] T032 [US1] Integrate the LSP precision pass after existing reference resolution while preserving disabled-path behavior in `src/index.ts`
+- [X] T033 [US1] Render LSP state in human and JSON status output without starting language servers from status in `src/bin/codegraph.ts`
+- [X] T034 [US1] Implement TypeScript/JavaScript real-server validation in `scripts/spec-008-validate-real-servers.mjs`
+- [X] T035 [US1] Run `npm test -- __tests__/lsp-disabled.test.ts __tests__/lsp-client.test.ts __tests__/lsp-precision-pass.test.ts` and record output in `specs/008-lsp-client-integration/validation/slice-1.md`
+- [X] T036 [US1] Run TypeScript/JavaScript real-server validation and record observed command, resolved path, version, SDK evidence, and coverage in `specs/008-lsp-client-integration/validation/slice-1.md`
+- [X] T037 [US1] Record slice-1 traceability, scope budget, non-goals, rollback note, and known gaps in `specs/008-lsp-client-integration/validation/slice-1.md`
 
 **Checkpoint**: Slice 1 MVP proves explicit opt-in, default-off unchanged behavior, JSON-RPC lifecycle, status output, and one complete TypeScript/JavaScript path.
 

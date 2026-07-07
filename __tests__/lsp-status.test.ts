@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createInitialLspStatus, defaultLspPerformanceCaps, isLspReasonCode, resolveLspConfig } from '../src/lsp';
+import {
+  createInitialLspStatus,
+  defaultLspPerformanceCaps,
+  isLspReasonCode,
+  parsePersistedLspStatus,
+  resolveLspConfig,
+  serializeLspStatus,
+} from '../src/lsp';
 
 describe('LSP status contract foundation', () => {
   it('creates stable disabled-path zero-work status evidence', () => {
@@ -66,5 +73,34 @@ describe('LSP status contract foundation', () => {
     ]) {
       expect(isLspReasonCode(code)).toBe(true);
     }
+  });
+
+  it('round-trips activation source, server evidence, coverage, and edge counts', () => {
+    const config = resolveLspConfig({ projectRoot: process.cwd(), cliActivation: 'enable', env: {} });
+    const status = createInitialLspStatus(config);
+    status.lastRunAt = '2026-07-06T00:00:00.000Z';
+    status.servers.push({
+      language: 'typescript',
+      command: ['typescript-language-server', '--stdio'],
+      state: 'initialized',
+      observedVersion: 'fixture-server 1.0.0',
+      resolvedPath: '/tmp/typescript-language-server',
+      expectedAlternatives: [['typescript-language-server', '--stdio']],
+    });
+    status.coverage.push({
+      language: 'typescript',
+      sourceFilesSeen: 2,
+      candidateWorkItems: 3,
+      checkedWorkItems: 3,
+      skippedByReason: {},
+      capExceededReasons: [],
+      elapsedMs: 12,
+    });
+    status.edgeCounts.checked = 3;
+    status.edgeCounts.verified = 2;
+    status.performance.lspElapsedMs = 12;
+
+    const parsed = parsePersistedLspStatus(serializeLspStatus(status));
+    expect(parsed).toEqual(status);
   });
 });

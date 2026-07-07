@@ -293,6 +293,15 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
 }
 
+function cliLspActivationFromArgv(argv: string[] = process.argv): 'enable' | 'disable' | 'unspecified' {
+  let activation: 'enable' | 'disable' | 'unspecified' = 'unspecified';
+  for (const arg of argv) {
+    if (arg === '--lsp') activation = 'enable';
+    if (arg === '--no-lsp') activation = 'disable';
+  }
+  return activation;
+}
+
 // Shimmer progress renderer (runs in a worker thread for smooth animation)
 // Imported at top of file from '../ui/shimmer-progress'
 
@@ -671,8 +680,11 @@ program
   .option('-q, --quiet', 'Suppress progress output')
   .option('-v, --verbose', 'Show detailed worker lifecycle and memory info')
   .option('--embeddings <local|endpoint|off>', 'Override the embedding provider for this run')
+  .option('--lsp', 'Enable opt-in LSP precision for this indexing run')
+  .option('--no-lsp', 'Disable LSP precision for this indexing run, even when project config enables it')
   .action(async (pathArg: string | undefined, options: { force?: boolean; quiet?: boolean; verbose?: boolean; embeddings?: string }) => {
     const projectPath = resolveProjectPath(pathArg);
+    const lsp = cliLspActivationFromArgv();
 
     try {
       // SPEC-002: --embeddings overrides CODEGRAPH_EMBEDDING_PROVIDER for this one
@@ -711,7 +723,7 @@ program
       try {
         if (options.quiet) {
           // Quiet mode: no UI, just run against the freshly-recreated graph.
-          const result = await cg.indexAll({ embeddingsProvider });
+          const result = await cg.indexAll({ embeddingsProvider, lsp });
           if (!result.success) process.exit(1);
           cg.destroy();
           return;
@@ -727,6 +739,7 @@ program
             onProgress: createVerboseProgress(),
             verbose: true,
             embeddingsProvider,
+            lsp,
           });
         } else {
           process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
@@ -734,6 +747,7 @@ program
           result = await cg.indexAll({
             onProgress: progress.onProgress,
             embeddingsProvider,
+            lsp,
           });
           await progress.stop();
         }
@@ -862,6 +876,7 @@ program
       const changes = cg.getChangedFiles();
       const backend = cg.getBackend();
       const journalMode = cg.getJournalMode();
+      const lsp = cg.getLspStatus();
 
       const buildInfo = cg.getIndexBuildInfo();
       const reindexRecommended = cg.isIndexStale();
@@ -900,6 +915,7 @@ program
           // Embedding observability (SPEC-001 FR-022): parallel to the human
           // section below; automated probes read this machine shape.
           embedding: cg.getEmbeddingStatus(),
+          lsp,
         }));
         cg.destroy();
         return;
@@ -982,6 +998,22 @@ program
           const pr = embedding.previousRun;
           console.log('  ' + chalk.dim(`(from a previous run: model ${pr.model}, dims ${pr.dims ?? 'unknown'}, coverage ${formatNumber(pr.coverage.embedded)}/${formatNumber(pr.coverage.embeddable)} (${pr.coverage.percent}%))`));
         }
+      }
+      console.log();
+
+      // LSP precision. Reading status never starts language servers; this is
+      // either the last persisted LSP run or the current config context.
+      console.log(chalk.bold('LSP Precision:'));
+      console.log(`  Enabled:   ${lsp.enabled ? chalk.green('yes') : chalk.dim('no')}`);
+      console.log(`  Source:    ${lsp.activationSource}`);
+      console.log(`  Last Run:  ${lsp.lastRunAt ?? 'never'}`);
+      const checked = lsp.edgeCounts.checked;
+      console.log(`  Edges:     ${formatNumber(checked)} checked, ${formatNumber(lsp.edgeCounts.verified)} verified, ${formatNumber(lsp.edgeCounts.corrected)} corrected`);
+      if (lsp.servers.length > 0) {
+        const serverSummary = lsp.servers
+          .map((server) => `${server.language}:${server.state}`)
+          .join(', ');
+        console.log(`  Servers:   ${serverSummary}`);
       }
       console.log();
 

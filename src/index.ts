@@ -63,6 +63,16 @@ import type { LocalProviderOverrides } from './embeddings/local-provider';
 import { runEmbeddingPass } from './embeddings/indexer-hook';
 import { probeLocalModelCache } from './embeddings/model-fetch';
 import type { ProbeLocalModelCacheOverrides } from './embeddings/model-fetch';
+import {
+  CliLspActivation,
+  createInitialLspStatus,
+  LSP_STATUS_METADATA_KEY,
+  LspStatus,
+  parsePersistedLspStatus,
+  resolveLspConfig,
+  runLspPrecisionPass,
+  serializeLspStatus,
+} from './lsp';
 
 // Re-export types for consumers
 export * from './types';
@@ -143,6 +153,9 @@ export interface IndexOptions {
    * --embeddings <provider>` sets.
    */
   embeddingsProvider?: EmbeddingProviderSelection;
+
+  /** LSP precision activation for this indexing/sync run */
+  lsp?: CliLspActivation;
 }
 
 /**
@@ -619,6 +632,7 @@ export class CodeGraph {
         return { success: false, filesIndexed: 0, filesSkipped: 0, filesErrored: 0, nodesCreated: 0, edgesCreated: 0, errors: [{ message: 'Could not acquire file lock - another process may be indexing', severity: 'error' as const }], durationMs: 0 };
       }
       try {
+        const structuralStartedAt = Date.now();
         const before = this.queries.getNodeAndEdgeCount();
         // Segment vocabulary starts empty and is repopulated by the node write
         // path as every file (re-)indexes below — so a full index is also the
@@ -667,6 +681,10 @@ export class CodeGraph {
           // Same lifecycle for `this.<member>` callback registrations whose
           // member is inherited from a supertype (#808).
           await this.resolver.resolveDeferredThisMemberRefs();
+        }
+
+        if (result.success && result.filesIndexed > 0) {
+          await this.maybeRunLspPrecisionPass(options.lsp, Date.now() - structuralStartedAt);
         }
 
         // Refresh planner stats + checkpoint the WAL after bulk writes.
@@ -886,6 +904,25 @@ export class CodeGraph {
         `Reason: ${result.abortReason ?? 'unknown'}`
       );
     }
+  }
+
+  private async maybeRunLspPrecisionPass(
+    cliActivation: CliLspActivation | undefined,
+    structuralElapsedMs: number,
+  ): Promise<void> {
+    const config = resolveLspConfig({
+      projectRoot: this.projectRoot,
+      cliActivation: cliActivation ?? 'unspecified',
+    });
+    if (!config.enabled) return;
+
+    const status = await runLspPrecisionPass({
+      projectRoot: this.projectRoot,
+      queries: this.queries,
+      config,
+      structuralElapsedMs,
+    });
+    this.queries.setMetadata(LSP_STATUS_METADATA_KEY, serializeLspStatus(status));
   }
 
   /**
@@ -1392,6 +1429,18 @@ export class CodeGraph {
       }
     }
     return dormant;
+  }
+
+  /**
+   * LSP precision status for `codegraph status`. Reading status never starts a
+   * language server; it returns the last persisted LSP run when present, or the
+   * current default/project config context otherwise.
+   */
+  getLspStatus(): LspStatus {
+    const persisted = parsePersistedLspStatus(this.queries.getMetadata(LSP_STATUS_METADATA_KEY));
+    if (persisted) return persisted;
+    const config = resolveLspConfig({ projectRoot: this.projectRoot });
+    return createInitialLspStatus(config);
   }
 
   /**
