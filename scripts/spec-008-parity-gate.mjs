@@ -8,24 +8,28 @@ const repoRoot = process.cwd();
 const languagePath = valueFor('--language');
 const capabilityPath = valueFor('--capability');
 const outputJson = args.includes('--json');
+const usage = 'node scripts/spec-008-parity-gate.mjs --language <path> --capability <path> [--json]';
 
 if (!languagePath || !capabilityPath) {
   const message =
     'SPEC-008 parity gate requires --language and --capability markdown files. SPEC-008 has been archived; restore the validation files from git history or pass explicit paths.';
+  const result = {
+    status: 'fail',
+    checkedAt: new Date().toISOString(),
+    usage,
+    files: {
+      language: languagePath,
+      capability: capabilityPath,
+    },
+    language: { rows: 0, unowned: 0, failures: [] },
+    capability: { rows: 0, unowned: 0, failures: [] },
+    failures: [message],
+  };
   if (outputJson) {
-    console.log(
-      JSON.stringify(
-        {
-          status: 'fail',
-          checkedAt: new Date().toISOString(),
-          failures: [message],
-        },
-        null,
-        2,
-      ),
-    );
+    console.log(JSON.stringify(result, null, 2));
   } else {
     console.error(message);
+    console.error(`Usage: ${usage}`);
   }
   process.exit(1);
 }
@@ -33,6 +37,7 @@ if (!languagePath || !capabilityPath) {
 const result = {
   status: 'pass',
   checkedAt: new Date().toISOString(),
+  usage,
   files: {
     language: languagePath,
     capability: capabilityPath,
@@ -48,6 +53,7 @@ const result = {
 };
 
 const failures = [...result.language.failures, ...result.capability.failures];
+result.failures = failures;
 if (failures.length > 0) result.status = 'fail';
 
 if (outputJson || result.status === 'fail') {

@@ -19,8 +19,9 @@
  * the archived SPEC-002 model-fetch contract (the verify-before-use state
  * machine).
  *
- * See the archived SPEC-002 model-fetch contract and data model for the
- * authoritative behavior this suite pins.
+ * See `.specify/memory/archive-reports/2026-07-07-SPEC-002.md` for recovery
+ * commands for the archived SPEC-002 model-fetch contract and data model that
+ * define the authoritative behavior this suite pins.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';

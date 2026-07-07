@@ -10,7 +10,8 @@
  * skip, mirroring `runEmbeddingPass`'s `{ aborted, abortReason }` posture.
  *
  * Verify-before-use, atomic acquisition (per artifact; archived SPEC-002
- * model-fetch contract):
+ * model-fetch contract recoverable from
+ * `.specify/memory/archive-reports/2026-07-07-SPEC-002.md`):
  *   cached + sha256 verified?  -> reuse, no download (FR-018)
  *   else download to a temp file created EXCLUSIVELY (O_EXCL, unpredictable
  *   name, never follows a pre-existing symlink) under a byte + wall-clock
@@ -26,7 +27,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { SENSITIVE_SYSTEM_PATHS, isWithinDir } from '../utils';
 import { redactEndpoint } from './config';
 
-// --- Contract types (contracts/model-fetch.md) ------------------------------
+// --- Contract types (archived SPEC-002 model-fetch contract) -----------------
 
 /** Verified local paths for both artifacts. */
 export interface LocalModelArtifacts {
