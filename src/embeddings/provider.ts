@@ -3,7 +3,8 @@
  *
  * The single interface downstream specs consume: SPEC-002 (bundled model) and
  * SPEC-003 (retrieval) depend only on this shape, never on a concrete provider.
- * The one shipped implementation is the OpenAI-compatible `EndpointProvider`.
+ * Two implementations ship: the OpenAI-compatible `EndpointProvider` (SPEC-001) and
+ * the bundled WASM/ONNX `LocalProvider` (SPEC-002).
  *
  * Contract: specs/001-embedding-infrastructure/contracts/embedding-provider.md §1.
  */

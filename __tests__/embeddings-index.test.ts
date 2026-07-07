@@ -456,6 +456,51 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     expect(progress).toEqual([[2, 5], [4, 5], [5, 5]]);
   });
 
+  it('honors a caller AbortSignal (P1-b): a pre-aborted pass embeds nothing, runs no inference, and reports an advisory `cancelled` abort', async () => {
+    const { db, q } = open();
+    const ids = ['n0', 'n1', 'n2', 'n3', 'n4'];
+    q.insertNodes(ids.map((id) => mkNode(id, 'function')));
+
+    const provider = new FakeProvider({ id: 'nomic', vectorDims: 4 });
+    const controller = new AbortController();
+    controller.abort(); // caller cancelled (e.g. after extraction) before the embed pass runs
+    const { opts } = harness(db, q, provider, baseConfig({ batchSize: 2 }), { signal: controller.signal });
+
+    const result = await runEmbeddingPass(opts);
+
+    expect(result.aborted).toBe(true);
+    expect(result.abortReason).toBe('cancelled');
+    expect(result.embedded).toBe(0);
+    expect(provider.calls).toHaveLength(0); // no worker/endpoint inference ran
+    expect(allVectors(db)).toEqual([]);     // nothing persisted
+  });
+
+  it('honors an AbortSignal that fires DURING provider.embed() (iter-39 P1): the resolved vectors are discarded, not persisted', async () => {
+    const { db, q } = open();
+    const ids = ['n0', 'n1', 'n2'];
+    q.insertNodes(ids.map((id) => mkNode(id, 'function')));
+
+    const controller = new AbortController();
+    // An in-flight (endpoint) request isn't interrupted; it resolves AFTER the caller cancels.
+    class AbortDuringEmbed extends FakeProvider {
+      override async embed(texts: string[]): Promise<Float32Array[]> {
+        const v = await super.embed(texts);
+        controller.abort(); // caller cancelled while the request was in flight
+        return v;
+      }
+    }
+    const provider = new AbortDuringEmbed({ id: 'nomic', vectorDims: 4 });
+    const { opts } = harness(db, q, provider, baseConfig({ batchSize: 4 }), { signal: controller.signal });
+
+    const result = await runEmbeddingPass(opts);
+
+    expect(result.aborted).toBe(true);
+    expect(result.abortReason).toBe('cancelled');
+    expect(result.embedded).toBe(0);
+    expect(provider.calls).toHaveLength(1); // embed WAS called (in-flight)…
+    expect(allVectors(db)).toEqual([]);     // …but nothing was validated/persisted after the cancel
+  });
+
   it('commits per batch: a provider failure on batch 2 keeps batch 1 durable, writes no partial batch-2 rows, and aborts without throwing (FR-014/019/029)', async () => {
     const { db, q } = open();
     const ids = ['a0', 'a1', 'a2', 'a3'];
@@ -482,6 +527,75 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     expect(counters.refresh).toBe(0);
     expect(counters.maintenance).toBe(1);
     expect(progress).toEqual([[2, 4]]);
+  });
+
+  it('aborts advisorily and persists NOTHING when the provider returns a ragged vector (length ≠ established dims)', async () => {
+    const { db, q } = open();
+    q.insertNodes(['r0', 'r1', 'r2'].map((id) => mkNode(id, 'function')));
+
+    // First vector establishes dims=4; the second is short (length 2). A per-vector check
+    // must abort before any write — persisting it would store a blob whose byte length
+    // disagrees with the stored dims.
+    const provider: EmbeddingProvider = {
+      id: 'ragged',
+      get dims() { return 4; },
+      async embed(texts: string[]): Promise<Float32Array[]> {
+        return texts.map((_t, i) => (i === 1 ? Float32Array.from([1, 2]) : Float32Array.from({ length: 4 }, (_v, d) => d)));
+      },
+    };
+    const { opts } = harness(db, q, provider, baseConfig({ batchSize: 3 }));
+    const result = await runEmbeddingPass(opts);
+
+    expect(result.aborted).toBe(true);
+    expect(result.abortReason).toMatch(/2-dimension vector where 4/);
+    expect(result.embedded).toBe(0);
+    expect(allVectors(db)).toHaveLength(0); // nothing persisted
+    // No orphan scalars: the whole batch is validated BEFORE embedding_dims/model are written.
+    expect(q.getMetadata('embedding_model')).toBeNull();
+    expect(q.getMetadata('embedding_dims')).toBeNull();
+  });
+
+  it('aborts (persists nothing, writes no scalars) when the provider returns a zero-dimension vector', async () => {
+    const { db, q } = open();
+    q.insertNodes(['z0', 'z1'].map((id) => mkNode(id, 'function')));
+
+    // An empty Float32Array would otherwise establish dims=0 and persist zero-byte vectors.
+    const provider: EmbeddingProvider = {
+      id: 'zerodim',
+      get dims() { return 0; },
+      async embed(texts: string[]): Promise<Float32Array[]> { return texts.map(() => new Float32Array(0)); },
+    };
+    const { opts } = harness(db, q, provider, baseConfig({ batchSize: 2 }));
+    const result = await runEmbeddingPass(opts);
+
+    expect(result.aborted).toBe(true);
+    expect(result.abortReason).toMatch(/zero-dimension/);
+    expect(allVectors(db)).toHaveLength(0);
+    expect(q.getMetadata('embedding_model')).toBeNull();
+    expect(q.getMetadata('embedding_dims')).toBeNull();
+  });
+
+  it('aborts advisorily and persists NOTHING when the provider returns a non-finite value (NaN/Infinity)', async () => {
+    const { db, q } = open();
+    q.insertNodes(['f0', 'f1'].map((id) => mkNode(id, 'function')));
+
+    const provider: EmbeddingProvider = {
+      id: 'nonfinite',
+      get dims() { return 4; },
+      async embed(texts: string[]): Promise<Float32Array[]> {
+        return texts.map((_t, i) => {
+          const v = Float32Array.from({ length: 4 }, (_v, d) => d);
+          if (i === 1) v[2] = NaN;
+          return v;
+        });
+      },
+    };
+    const { opts } = harness(db, q, provider, baseConfig({ batchSize: 2 }));
+    const result = await runEmbeddingPass(opts);
+
+    expect(result.aborted).toBe(true);
+    expect(result.abortReason).toMatch(/non-finite/);
+    expect(allVectors(db)).toHaveLength(0);
   });
 
   it('enforces a configured CODEGRAPH_EMBEDDING_DIMS: a provider-dim mismatch aborts before any write, names the variable, and leaves the scalars untouched (FR-021)', async () => {
@@ -711,6 +825,42 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
         await passPromise;                          // finishes and clears the interval in finally
       } finally {
         vi.useRealTimers();
+      }
+    });
+
+    it('refreshes the lock INLINE during the synchronous staleness scan, which the interval timer cannot preempt (FR-031)', async () => {
+      const { db, q } = open();
+      const ids = ['h0', 'h1', 'h2'];
+      q.insertNodes(ids.map((id) => mkNode(id, 'function')));
+      // Pre-embed each node with its CURRENT correct input hash, so the O(embeddable)
+      // staleness scan finds every one FRESH — the pass's only work is that synchronous
+      // scan (nothing eligible, no embed() call). On a huge repo the scan alone can
+      // outlast the 30s stale-lock window; the setInterval refresh CANNOT fire while the
+      // scan blocks the event loop, so the refresh must be driven INLINE by elapsed time.
+      for (const id of ids) {
+        const hash = computeInputHash(composeEmbeddingInput({ kind: 'function', name: id }));
+        q.upsertNodeVector(id, 'nomic', 4, Buffer.alloc(16), hash);
+      }
+      q.setMetadata('embedding_dims', '4');
+      q.setMetadata('embedding_model', 'nomic');
+
+      // Make each Date.now() reading jump a full interval so the inline elapsed-time
+      // check trips on every scanned node. The interval is a REAL setInterval (real
+      // timers here) that cannot fire during the synchronous scan — so every refresh
+      // counted below can ONLY have come from the inline path.
+      let wallClock = 0;
+      const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => (wallClock += 31_000));
+      try {
+        const provider = new FakeProvider({ id: 'nomic', vectorDims: 4 });
+        const { opts, counters } = harness(db, q, provider, baseConfig());
+
+        const result = await runEmbeddingPass(opts);
+
+        expect(result).toEqual({ attempted: 0, embedded: 0, aborted: false }); // scan found nothing stale
+        expect(provider.calls).toHaveLength(0);                                 // no embed() — scan only
+        expect(counters.refresh).toBeGreaterThanOrEqual(3);                     // inline refresh fired per scanned node
+      } finally {
+        nowSpy.mockRestore();
       }
     });
   });
@@ -1099,6 +1249,7 @@ describe.skipIf(!HAS_SQLITE)('getEmbeddingStatus (T020)', () => {
     // Whole-object equality proves BOTH the values AND the absence of extra keys.
     expect(status).toEqual({
       active: true,
+      provider: 'endpoint',
       endpoint: 'https://api.example.com:8443',
       model: 'nomic',
       dims: 4,
@@ -1127,6 +1278,7 @@ describe.skipIf(!HAS_SQLITE)('getEmbeddingStatus (T020)', () => {
 
     expect(status).toEqual({
       active: true,
+      provider: 'endpoint',
       endpoint: 'https://api.example.com:8443',
       model: 'nomic',
       dims: 4,
@@ -1245,6 +1397,7 @@ describe.skipIf(!HAS_SQLITE)('getEmbeddingStatus (T020)', () => {
 
     expect(status).toEqual({
       active: true,
+      provider: 'endpoint',
       endpoint: 'https://api.example.com:8443',
       model: 'nomic', // no scalar → falls back to the active config's model
       dims: null,      // no scalar and no CODEGRAPH_EMBEDDING_DIMS → null
@@ -1662,14 +1815,16 @@ describe.skipIf(!HAS_SQLITE)('Slice A security invariants (T021)', () => {
     }
   }, 30000);
 
-  it('4. embedding adds NO new runtime dependency — package.json deps/peerDeps are unchanged (FR-025/SC-008)', () => {
+  it('4. embedding adds NO unplanned runtime dependency — package.json deps are the SPEC-001 baseline plus the SPEC-002 addition of onnxruntime-web; peerDeps unchanged (FR-025/SC-008)', () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')) as {
       dependencies?: Record<string, string>;
       peerDependencies?: Record<string, string>;
     };
-    // The exact runtime dependency set as of this feature — embeddings ride on the
-    // built-in fetch + node:crypto, so this list must NOT grow (no telemetry SDK, no HTTP
-    // client). A new entry here means a new runtime dep slipped in with the feature.
+    // The exact runtime dependency set — the SPEC-001 endpoint provider rides on the
+    // built-in fetch + node:crypto alone (no telemetry SDK, no HTTP client). SPEC-002
+    // (T002) adds exactly one deliberate entry, onnxruntime-web, for the local ONNX
+    // embedding fallback. Any OTHER new entry here means an unplanned runtime dep
+    // slipped in with the feature.
     expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual([
       '@clack/prompts',
       'commander',
@@ -1677,6 +1832,7 @@ describe.skipIf(!HAS_SQLITE)('Slice A security invariants (T021)', () => {
       'fast-wrap-ansi',
       'ignore',
       'jsonc-parser',
+      'onnxruntime-web',
       'picomatch',
       'sisteransi',
       'tree-sitter-wasms',

@@ -1,9 +1,0 @@
-# Memory Index
-
-- [Embedding EndpointProvider design](project_embedding-endpoint-provider.md) — SPEC-001 HTTP client: retry budget (4 total = 1+3), fetch credential-URL leak quirk, full error replacement, dims inference
-- [Embedding pass (runEmbeddingPass)](project_embedding-pass.md) — SPEC-001 T016 embed-pass seam: caller MUST supply readSource (Node has no source), dims-enforce precedence, checkpoint only if ≥1 batch written, never throws
-- [Embedding indexAll wiring](project_embedding-indexall-wiring.md) — SPEC-001 T019: maybeRunEmbeddingPass in indexAll's advisory slot; dormant-silent when unconfigured, IndexResult NOT extended, refreshLock/readSource construction
-- [Embedding incremental freshness](project_embedding-incremental-freshness.md) — SPEC-001 T024/T025 Slice B: runEmbeddingPass unified full+incremental; hash-compare staleness + anti-join reconcile; selectStaleVectors folded in; result shape unchanged; node-id-includes-line test constraint
-- [Embedding sync/watcher wiring](project_embedding-sync-watcher-wiring.md) — SPEC-001 T026/T027: embed pass in sync()'s advisory slot, UNCONDITIONAL (FR-018 zero-change heal); watcher/daemon inherit via shared sync() (FR-015, src/mcp untouched); deterministic __emitWatchEventForTests seam; redaction-via-header test technique
-- [Embedding backfill/resume resilience](project_embedding-backfill-resume-resilience.md) — SPEC-001 T028-T031: backfill+abort/resume ALL emergent (no new prod code); stateless re-selection = resume; TWO dims-conflict paths (later-batch caught by provider._dims only); abortReason invisible at library level; bounded abort = 4 requests
-- [init auto-gitignore](project_init-auto-gitignore.md) — SPEC-001: ensureCodegraphIgnored in utils.ts wired CLI-only (never library/index.ts, deliberate); advisory/idempotent; .git dir OR file; 4 spellings + trailing ws; pure append
