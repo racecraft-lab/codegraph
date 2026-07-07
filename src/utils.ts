@@ -385,19 +385,31 @@ export class FileLock {
   }
 
   private removeStaleLockIfPresent(): void {
+    const staleGuidance =
+      `If this is stale, run 'codegraph unlock' or delete ${this.lockPath}`;
     const info = this.readLockInfo();
-    const lockAge = info ? Date.now() - info.mtimeMs : Number.POSITIVE_INFINITY;
-
-    if (
-      info &&
-      lockAge < FileLock.STALE_TIMEOUT_MS &&
-      !isNaN(info.pid) &&
-      this.isProcessAlive(info.pid)
-    ) {
+    if (!info) {
       throw new Error(
-        `CodeGraph database is locked by another process (PID ${info.pid}). ` +
-        `If this is stale, run 'codegraph unlock' or delete ${this.lockPath}`
+        `CodeGraph database lock state could not be read. ${staleGuidance}`
       );
+    }
+
+    const lockAge = Date.now() - info.mtimeMs;
+    const hasValidPid = Number.isInteger(info.pid) && info.pid > 0;
+
+    if (lockAge < FileLock.STALE_TIMEOUT_MS) {
+      if (!hasValidPid) {
+        throw new Error(
+          `CodeGraph database lock state could not be read. ${staleGuidance}`
+        );
+      }
+
+      if (this.isProcessAlive(info.pid)) {
+        throw new Error(
+          `CodeGraph database is locked by another process (PID ${info.pid}). ` +
+          staleGuidance
+        );
+      }
     }
 
     try { fs.unlinkSync(this.lockPath); } catch { /* ignore */ }

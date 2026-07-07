@@ -78,6 +78,16 @@ describe('FileLock', () => {
     lock.release();
   });
 
+  it('should not remove a fresh lock with indeterminate state', () => {
+    fs.writeFileSync(lockPath, '');
+
+    const lock = new FileLock(lockPath);
+
+    expect(() => lock.acquire()).toThrow(/lock state could not be read/);
+    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe('');
+  });
+
   it('should execute function with withLock', () => {
     const lock = new FileLock(lockPath);
 
