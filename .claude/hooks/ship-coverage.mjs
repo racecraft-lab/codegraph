@@ -12,7 +12,13 @@ try {
   try { input = JSON.parse(fs.readFileSync(0, 'utf8')); } catch {}
   if (input.stop_hook_active) process.exit(0); // don't re-block a stop we already blocked
 
-  const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  // Resolve the git repo root so the checks work even when the agent (notably
+  // Codex, which has no CLAUDE_PROJECT_DIR) is launched from a subdirectory —
+  // otherwise `git status` paths and package.json resolution are relative to the
+  // subdir. Falls back to the start dir; the outer try/catch keeps the hook fail-open.
+  const startDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  let root = startDir;
+  try { root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: startDir, encoding: 'utf8' }).trim() || startDir; } catch {}
   const status = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' });
   const entries = status.split('\n').filter(Boolean).map((l) => {
     let p = l.slice(3);

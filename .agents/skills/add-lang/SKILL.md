@@ -192,7 +192,7 @@ Read each `parse-run.mjs` summary printed by `run-all.sh`: tool calls, file
   row to the **Supported Languages** table:
   `| <Lang> | \`.ext\` | Full support (classes, methods, …) |`.
 - **CHANGELOG.md**: add an `## [Unreleased]` section at the top (above the
-  latest version) with `### Added` → a user-perspective bullet, e.g.
+  latest version) with `### New Features` → a user-perspective bullet, e.g.
   *"CodeGraph now indexes **<Lang>** (`.ext`) — functions, classes, imports, and
   call edges."* If `## [Unreleased]` already exists, append under it. (It's
   folded into the next versioned block at release time.)
