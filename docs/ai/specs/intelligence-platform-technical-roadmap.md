@@ -867,6 +867,21 @@ builds on top of live, real-scale instances of everything before it.
    stays opt-in/dormant-by-default so an unconfigured clone behaves identically. A
    dogfooding outage (endpoint down, feature unconfigured) must degrade advisorily,
    never break indexing or retrieval.
+6. **Spec-session preflight:** a spec's worktree is bootstrapped BEFORE agent work
+   begins — `npm install && npm run build`, then `codegraph init` with the main
+   checkout's `.envrc.local` sourced
+   (`( . ../../.envrc.local 2>/dev/null; node dist/bin/codegraph.js init . )`), and
+   `codegraph status` confirming 100% embedding coverage with the LSP pass enabled
+   (the committed root `codegraph.json` turns it on for every index/sync). Both
+   hosts' MCP configs start the server through `scripts/mcp-dogfood.sh`, which pins
+   cwd to the checkout root and re-sources `.envrc.local` (worktrees fall back to
+   the main checkout's copy) — so every agent session serves the HEAD build with
+   live embeddings, and query-time semantic search activates automatically when
+   SPEC-003 merges. Sessions in this repo treat `codegraph_explore` as the primary
+   retrieval tool (steering lives in CLAUDE.md § Dogfooding). Known out-of-repo
+   gaps, owned in racecraft-plugins-public: speckit-pro's subagents don't yet list
+   `mcp__codegraph__codegraph_explore` in their `tools:`, and speckit-scaffold-spec
+   doesn't yet run this bootstrap.
 
 ## Environment & Deployment Context
 

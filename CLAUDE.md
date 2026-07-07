@@ -31,6 +31,42 @@ npx vitest run __tests__/extraction.test.ts -t "TypeScript"
 
 Node engines: `>=20.0.0 <25.0.0`. There is a hard exit on Node 25.x and below 20 (see `src/bin/node-version-check.ts`).
 
+## Dogfooding — develop CodeGraph with CodeGraph
+
+This repo runs on its own graph; roadmap **§ Dogfooding Protocol**
+(`docs/ai/specs/intelligence-platform-technical-roadmap.md`) is the normative text,
+binding for every spec. The wiring:
+
+- Both hosts (Claude Code `.mcp.json`, Codex `.codex/config.toml`) launch the MCP
+  server at HEAD through **`scripts/mcp-dogfood.sh`** — it pins cwd to the checkout
+  root, sources the untracked `.envrc.local` (private embedding endpoint; a spec
+  worktree falls back to the main checkout's copy), and execs
+  `node dist/bin/codegraph.js serve --mcp`.
+- **`codegraph.json`** opts this repo into the SPEC-008 LSP precision pass (any
+  index/sync runs it; degrades gracefully where no language server is installed).
+- **`.claude/settings.json`** pre-approves `mcp__codegraph__*` and front-loads the
+  `UserPromptSubmit` context hook (silently skipped until `dist/` is built).
+- Query-time semantic search arrives with SPEC-003 — until then vectors are
+  produce-only; the env plumbing above means it activates with zero extra wiring.
+
+**Retrieval policy for sessions in this repo:** `codegraph_explore` is the primary
+retrieval tool — call it BEFORE Read/Grep/file_search for structural questions and
+pre-edit surveys, treat returned source as already Read, and don't delegate
+exploration one explore call can answer. (Instructions-file steering is the lever
+that measurably works — see "Adapt the tool to the agent" below.)
+
+**Spec-worktree preflight (binding):** after scaffolding `.worktrees/<spec>/`,
+bootstrap BEFORE any agent work:
+
+```bash
+cd .worktrees/<spec> && npm install && npm run build
+( . ../../.envrc.local 2>/dev/null; node dist/bin/codegraph.js init . \
+    && node dist/bin/codegraph.js status )   # expect: embeddings 100%, LSP enabled
+```
+
+After every merge to `main`: `npm run build`, then `codegraph sync` (protocol
+step 1); the daemon file watcher keeps the index fresh between merges.
+
 ## Architecture
 
 ### Layered pipeline

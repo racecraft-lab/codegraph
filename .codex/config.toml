@@ -1,12 +1,15 @@
 # Project-scoped Codex CLI config (read in trusted projects only) — CodeGraph dogfooding.
 # The MCP server runs the LOCAL build so Codex sessions exercise HEAD:
 # run `npm run build` and `node dist/bin/codegraph.js init .` once per clone.
+# The server starts through scripts/mcp-dogfood.sh, which pins cwd to the
+# checkout root and sources the untracked .envrc.local (spec worktrees fall
+# back to the main checkout's copy) so daemons carry the dogfood embedding env.
 
 # Root project doc (AGENTS.md -> CLAUDE.md symlink) is ~37 KB; raise the cap so
 # Codex reads the whole manual instead of truncating at the 32 KiB default.
 project_doc_max_bytes = 65536
 
 [mcp_servers.codegraph]
-command = "node"
-args = ["dist/bin/codegraph.js", "serve", "--mcp"]
+command = "sh"
+args = ["-c", 'exec "$(git rev-parse --show-toplevel)/scripts/mcp-dogfood.sh"']
 startup_timeout_sec = 30
