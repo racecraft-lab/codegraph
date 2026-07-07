@@ -99,20 +99,83 @@ describe('LSP server prerequisite registry', () => {
     }
   });
 
+  it('resolves environment absolute and relative command paths with status metadata', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-prereq-'));
+    const toolsDir = path.join(tempDir, 'tools');
+    fs.mkdirSync(toolsDir);
+    const relativeServer = writeFixtureExecutable(toolsDir, 'custom-python-lsp');
+    const absoluteServer = writeFixtureExecutable(toolsDir, 'absolute-python-lsp');
+    const relativeCommand = `./${path.relative(tempDir, relativeServer).split(path.sep).join('/')}`;
+
+    fs.writeFileSync(path.join(tempDir, 'codegraph.json'), JSON.stringify({
+      lsp: {
+        defaultTimeoutMs: 6000,
+      },
+    }));
+
+    const config = resolveLspConfig({
+      projectRoot: tempDir,
+      env: {
+        CODEGRAPH_LSP_PYTHON_COMMAND_JSON: JSON.stringify([relativeCommand, '--stdio']),
+        CODEGRAPH_LSP_RUBY_COMMAND_JSON: JSON.stringify([absoluteServer]),
+        PATH: '',
+      },
+    });
+    const relativeResult = probeLspServerCommand(config.servers.python, {
+      cwd: tempDir,
+      env: { PATH: '' },
+    });
+    const absoluteResult = probeLspServerCommand(config.servers.ruby, {
+      cwd: tempDir,
+      env: { PATH: '' },
+    });
+
+    expect(relativeResult).toMatchObject({
+      state: 'available',
+      command: [relativeCommand, '--stdio'],
+      commandSource: 'env',
+      resolvedPath: relativeServer,
+      timeoutMs: 6000,
+      timeoutSource: 'project',
+      expectedAlternatives: [
+        ['pyright-langserver', '--stdio'],
+        ['basedpyright-langserver', '--stdio'],
+      ],
+    });
+    expect(absoluteResult).toMatchObject({
+      state: 'available',
+      command: [absoluteServer],
+      commandSource: 'env',
+      resolvedPath: absoluteServer,
+      timeoutSource: 'project',
+    });
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
   it('does not fall back when a valid machine-local configured command cannot be resolved', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-prereq-'));
+    const binDir = path.join(tempDir, 'bin');
+    fs.mkdirSync(binDir);
+    writeFixtureExecutable(binDir, 'pyright-langserver');
+
     const config = resolveLspConfig({
       projectRoot: tempDir,
       env: {
         CODEGRAPH_LSP_PYTHON_COMMAND_JSON: '["missing-custom-python-lsp","--stdio"]',
-        PATH: '',
+        PATH: binDir,
       },
     });
-    const result = probeLspServerCommand(config.servers.python, { env: { PATH: '' } });
+    const result = probeLspServerCommand(config.servers.python, { env: { PATH: binDir } });
 
     expect(result.state).toBe('unavailable');
     expect(result.reasonCode).toBe('configured-command-unavailable');
     expect(result.command).toEqual(['missing-custom-python-lsp', '--stdio']);
+    expect(result.commandSource).toBe('env');
+    expect(result.expectedAlternatives).toEqual([
+      ['pyright-langserver', '--stdio'],
+      ['basedpyright-langserver', '--stdio'],
+    ]);
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 });

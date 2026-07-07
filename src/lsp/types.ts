@@ -123,6 +123,7 @@ export type LspServerState =
 export interface LspServerStatusRecord {
   language: LspLanguage;
   command: string[] | string | null;
+  commandSource?: EffectiveLspServerConfig['commandSource'];
   state: LspServerState;
   reasonCode?: LspReasonCode;
   detail?: string;
@@ -130,6 +131,8 @@ export interface LspServerStatusRecord {
   minimumRuntimeEvidence?: string;
   resolvedPath?: string;
   expectedAlternatives?: string[][];
+  timeoutMs?: number;
+  timeoutSource?: EffectiveLspServerConfig['timeoutSource'];
   lastError?: string;
 }
 

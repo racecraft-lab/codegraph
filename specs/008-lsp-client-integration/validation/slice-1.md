@@ -2,7 +2,7 @@
 
 ## Scope
 
-Completed tasks: T019-T037.
+Completed tasks: T019-T049.
 
 Slice 1 proves explicit LSP opt-in, default-off behavior, JSON-RPC stdio
 lifecycle, status rendering, and one complete TypeScript/JavaScript-family
@@ -17,10 +17,10 @@ npm test -- __tests__/lsp-disabled.test.ts __tests__/lsp-client.test.ts __tests_
 Result: 3 files passed, 14 tests passed.
 
 ```text
-npx vitest run __tests__/lsp-disabled.test.ts __tests__/lsp-config.test.ts __tests__/lsp-client.test.ts __tests__/lsp-precision-pass.test.ts __tests__/lsp-status.test.ts __tests__/lsp-real-server-validation.test.ts
+npx vitest run __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts __tests__/lsp-status.test.ts __tests__/lsp-disabled.test.ts __tests__/lsp-precision-pass.test.ts __tests__/lsp-real-server-validation.test.ts
 ```
 
-Result: 6 files passed, 35 tests passed.
+Result: 6 files passed, 34 tests passed.
 
 ```text
 npm run typecheck
@@ -69,6 +69,43 @@ Coverage summary: 4 verified, 0 missing, 0 future-owned, 0 unowned.
 - Restricted-name scrub passed with no matches.
 - Outbound-link scrub for SPEC-008 artifacts passed with no matches.
 
+## US2 Configuration Evidence
+
+```text
+npm test -- __tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts
+```
+
+RED result: focused config/prereq failures covered timeout source precedence,
+blank argv fallback, probe metadata, watch config resolution, and
+configured-command no-fallback metadata.
+
+GREEN/REFACTOR result: 2 files passed, 15 tests passed.
+
+```text
+npm run typecheck
+```
+
+Result: passed.
+
+```text
+npm run build
+```
+
+Result: passed.
+
+Main-session verification also passed `npx vitest run
+__tests__/lsp-config.test.ts __tests__/lsp-prereqs.test.ts
+__tests__/lsp-status.test.ts __tests__/lsp-disabled.test.ts
+__tests__/lsp-precision-pass.test.ts
+__tests__/lsp-real-server-validation.test.ts` with 6 files and 34 tests.
+
+US2 coverage added: project and environment command/timeout overrides,
+invalid override fallback warnings, ignored unknown-language warnings, PATH /
+absolute / relative command resolution, configured-command no-fallback
+semantics, env-only non-activation, and selected argv / resolved executable /
+expected alternatives / timeout source metadata in server status records, plus
+`lsp.watch.enabled` default, disabled, and invalid-value fallback behavior.
+
 ## Scope Budget
 
 Slice 1 changed the intended activation, client, status, validation, and first
@@ -93,7 +130,6 @@ reference resolution remain the fallback.
 
 ## Known Gaps
 
-- US2 still owns full project/environment command and timeout override behavior.
 - US3 still owns broader degradation, restart, and cap-enforcement behavior.
 - US4 still owns correction/suppression semantics, retrieval regression probes,
   remaining real-server rows, bounded watch verification, parity gates, and

@@ -51,6 +51,7 @@ export function resolveLspConfig(options: ResolveLspConfigOptions): EffectiveLsp
   const env = options.env ?? process.env;
   const warnings: LspConfigWarning[] = [];
   const project = normalizeProjectLsp(loadLspProjectConfig(options.projectRoot), warnings);
+  collectUnknownEnvOverrides(env, warnings);
   const activationSource = resolveActivation(project, options.cliActivation ?? 'unspecified');
   const enabled = activationSource === 'cli-enable' || activationSource === 'project-config';
   const globalEnvTimeout = parseTimeout(env.CODEGRAPH_LSP_TIMEOUT_MS, 'env', undefined, 'CODEGRAPH_LSP_TIMEOUT_MS');
@@ -80,6 +81,26 @@ export function resolveLspConfig(options: ResolveLspConfigOptions): EffectiveLsp
     servers,
     warnings,
   };
+}
+
+function collectUnknownEnvOverrides(env: Record<string, string | undefined>, warnings: LspConfigWarning[]): void {
+  const unknownLanguages = new Set<string>();
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined || value === '') continue;
+    const match = /^CODEGRAPH_LSP_([A-Z0-9_]+)_(?:COMMAND_JSON|TIMEOUT_MS)$/.exec(key);
+    if (!match) continue;
+    const language = match[1]!.toLowerCase();
+    if (!isLspLanguage(language)) unknownLanguages.add(language);
+  }
+
+  for (const language of unknownLanguages) {
+    warnings.push({
+      code: 'invalid-language',
+      source: 'env',
+      language,
+      detail: `Ignoring unsupported LSP language "${language}" from environment override`,
+    });
+  }
 }
 
 function normalizeProjectLsp(raw: unknown, warnings: LspConfigWarning[]): ProjectLspConfig | undefined {
