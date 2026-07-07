@@ -351,5 +351,8 @@ Canonical completed-spec artifacts:
 SPEC-003 and SPEC-005 are ready to scaffold. SPEC-006 and SPEC-007 remain
 downstream of SPEC-005. SPEC-010 is ready because SPEC-008 shipped the LSP
 substrate. SPEC-024 is dormant unless future parity drift creates a concrete
-unowned language, feature, or capability row.
+unowned language, feature, or capability row. SPEC-025 (plugin platform
+mechanics spike) is ready to scaffold and parallel-safe; SPEC-026
+(plugin-channel distribution — Claude Code + Codex plugins carrying the MCP
+server, prompt hook, skills, and agents) is downstream of SPEC-025.
 <!-- SPECKIT END -->
