@@ -4,7 +4,7 @@
  * Tests for the CodeGraph foundation layer.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -12,6 +12,11 @@ import { CodeGraph } from '../src';
 import { Node, Edge } from '../src/types';
 import { isInitialized, getCodeGraphDir, validateDirectory, codeGraphDirName, isCodeGraphDataDir } from '../src/directory';
 import { DatabaseConnection, getDatabasePath, removeDatabaseFiles } from '../src/db';
+
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return { ...actual, renameSync: vi.fn(actual.renameSync) };
+});
 
 // Create a temporary directory for each test
 function createTempDir(): string {
@@ -271,6 +276,27 @@ describe('CodeGraph Foundation', () => {
       expect(upgraded).toContain('\n*\n'); // wildcard ignores everything…
       expect(upgraded).toContain('!.gitignore'); // …except this file
       expect(upgraded).not.toContain('.dirty'); // old explicit list is gone
+    });
+
+    it('upgrades a stale .gitignore when Windows rejects rename over an existing destination', () => {
+      const cg = CodeGraph.initSync(tempDir);
+      cg.close();
+
+      const gitignorePath = path.join(getCodeGraphDir(tempDir), '.gitignore');
+      fs.writeFileSync(gitignorePath, '# CodeGraph data files\n*.db\n', 'utf-8');
+
+      vi.mocked(fs.renameSync).mockImplementationOnce(((_from: fs.PathLike, to: fs.PathLike) => {
+        expect(path.resolve(String(to))).toBe(path.resolve(gitignorePath));
+        throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+      }) as typeof fs.renameSync);
+
+      const cg2 = CodeGraph.openSync(tempDir);
+      cg2.close();
+
+      const upgraded = fs.readFileSync(gitignorePath, 'utf-8');
+      expect(upgraded).toContain('\n*\n');
+      expect(upgraded).toContain('!.gitignore');
+      expect(upgraded).not.toContain('*.db');
     });
 
     it('leaves a user-customized .codegraph/.gitignore untouched', () => {

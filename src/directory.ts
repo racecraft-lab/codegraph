@@ -622,32 +622,62 @@ function isStaleDefaultGitignore(content: string): boolean {
  */
 function ensureGitignore(gitignorePath: string): boolean {
   let existing: string | null;
+  let replaceExisting: boolean;
   try {
     existing = fs.readFileSync(gitignorePath, 'utf-8');
-  } catch {
+    replaceExisting = true;
+  } catch (error) {
     existing = null; // absent (ENOENT) or unreadable — (re)create below
+    replaceExisting = !hasErrorCode(error, 'ENOENT');
   }
   // Current default or a user-authored file: nothing to do.
   if (existing !== null && !isStaleDefaultGitignore(existing)) return true;
   try {
-    writeFileViaPrivateTemp(gitignorePath, GITIGNORE_CONTENT);
+    writeFileViaPrivateTemp(gitignorePath, GITIGNORE_CONTENT, replaceExisting);
     return true;
   } catch {
     return false;
   }
 }
 
-function writeFileViaPrivateTemp(filePath: string, content: string): void {
+function writeFileViaPrivateTemp(filePath: string, content: string, replaceExisting: boolean): void {
   const dir = path.dirname(filePath);
   const tempDir = fs.mkdtempSync(path.join(dir, '.gitignore-'));
   const tempPath = path.join(tempDir, 'content');
 
   try {
     fs.writeFileSync(tempPath, content, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
-    fs.renameSync(tempPath, filePath);
+    promoteTempFile(tempPath, filePath, replaceExisting);
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* best effort */ }
   }
+}
+
+function promoteTempFile(tempPath: string, filePath: string, replaceExisting: boolean): void {
+  try {
+    fs.renameSync(tempPath, filePath);
+    return;
+  } catch (renameError) {
+    if (!replaceExisting) throw renameError;
+
+    // Windows does not reliably rename over an existing destination. Remove the
+    // known stale/default path (or symlink) and retry the same temp promotion.
+    try {
+      fs.unlinkSync(filePath);
+    } catch (unlinkError) {
+      if (!hasErrorCode(unlinkError, 'ENOENT')) throw renameError;
+    }
+    fs.renameSync(tempPath, filePath);
+  }
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === code
+  );
 }
 
 /**
