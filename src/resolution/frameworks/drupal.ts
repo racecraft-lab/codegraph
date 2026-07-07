@@ -259,14 +259,10 @@ function extractDrupalHooks(
 
   // Strategy A: docblock `Implements hook_X().` followed by function definition.
   // The docblock and function may be separated by blank lines.
-  const docblockPattern =
-    /\/\*\*[\s\S]*?(?:@|\*\s+)Implements\s+(hook_\w+)\s*\(\)[\s\S]*?\*\/\s*\n(?:\s*\n)*function\s+(\w+)\s*\(/g;
   const docblockMatched = new Set<string>();
-  let match: RegExpExecArray | null;
-  while ((match = docblockPattern.exec(content)) !== null) {
-    const [, hookName, funcName] = match;
-    emitHookRef(hookName!, funcName!);
-    docblockMatched.add(funcName!);
+  for (const match of findDrupalDocblockHooks(content)) {
+    emitHookRef(match.hookName, match.funcName);
+    docblockMatched.add(match.funcName);
   }
 
   // Strategy B: fallback name-pattern matching for functions without docblocks.
@@ -287,6 +283,74 @@ function extractDrupalHooks(
   }
 
   return { nodes: [], references };
+}
+
+function findDrupalDocblockHooks(content: string): Array<{ hookName: string; funcName: string }> {
+  const matches: Array<{ hookName: string; funcName: string }> = [];
+  let search = 0;
+
+  while (search < content.length) {
+    const start = content.indexOf('/**', search);
+    if (start === -1) break;
+    const end = content.indexOf('*/', start + 3);
+    if (end === -1) break;
+
+    const hookName = readImplementedHookName(content.slice(start, end + 2));
+    const next = skipWhitespace(content, end + 2);
+    const funcName = hookName ? readFunctionNameAt(content, next) : null;
+    if (hookName && funcName) matches.push({ hookName, funcName });
+
+    search = end + 2;
+  }
+
+  return matches;
+}
+
+function readImplementedHookName(docblock: string): string | null {
+  const marker = 'Implements';
+  for (const line of docblock.split('\n')) {
+    const markerIndex = line.indexOf(marker);
+    if (markerIndex === -1) continue;
+
+    const hookStart = line.indexOf('hook_', markerIndex + marker.length);
+    if (hookStart === -1) continue;
+
+    let hookEnd = hookStart + 'hook_'.length;
+    while (hookEnd < line.length && /\w/.test(line[hookEnd]!)) hookEnd++;
+
+    let pos = hookEnd;
+    while (pos < line.length && /\s/.test(line[pos]!)) pos++;
+    if (line[pos] === '(') {
+      pos++;
+      while (pos < line.length && /\s/.test(line[pos]!)) pos++;
+      if (line[pos] === ')') return line.slice(hookStart, hookEnd);
+    }
+  }
+  return null;
+}
+
+function skipWhitespace(content: string, from: number): number {
+  let pos = from;
+  while (pos < content.length && /\s/.test(content[pos]!)) pos++;
+  return pos;
+}
+
+function readFunctionNameAt(content: string, from: number): string | null {
+  const keyword = 'function';
+  if (!content.startsWith(keyword, from)) return null;
+
+  let pos = from + keyword.length;
+  if (!/\s/.test(content[pos] ?? '')) return null;
+  while (pos < content.length && /\s/.test(content[pos]!)) pos++;
+
+  const nameStart = pos;
+  if (!/[A-Za-z_]/.test(content[pos] ?? '')) return null;
+  pos++;
+  while (pos < content.length && /\w/.test(content[pos]!)) pos++;
+
+  const name = content.slice(nameStart, pos);
+  while (pos < content.length && /\s/.test(content[pos]!)) pos++;
+  return content[pos] === '(' ? name : null;
 }
 
 // ---------------------------------------------------------------------------

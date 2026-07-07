@@ -185,7 +185,11 @@ export function isSourceFile(filePath: string, overrides?: Record<string, Langua
 export function isShopifyLiquidJson(filePath: string): boolean {
   // Allow nested template dirs (`templates/customers/login.json`), not just
   // top-level (`templates/product.json`).
-  return /(^|\/)(templates|sections)\/.+\.json$/i.test(filePath);
+  const parts = filePath.replace(/\\/g, '/').toLowerCase().split('/');
+  if (!parts.at(-1)?.endsWith('.json')) return false;
+  return parts.some((part, index) =>
+    (part === 'templates' || part === 'sections') && index < parts.length - 1
+  );
 }
 
 /**

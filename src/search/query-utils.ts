@@ -157,34 +157,22 @@ export function extractSearchTerms(query: string, options?: { stems?: boolean })
   const includeStems = options?.stems !== false;
   const tokens = new Set<string>();
 
-  // First, extract and preserve compound identifiers before splitting
-  // CamelCase: scrapeLoop, UserService, getCallGraph
-  const compoundPattern = /\b([a-zA-Z][a-zA-Z0-9]*(?:[A-Z][a-z]+)+|[A-Z][a-z]+(?:[A-Z][a-z]*)+)\b/g;
-  let match;
-  while ((match = compoundPattern.exec(query)) !== null) {
-    if (match[1] && match[1].length >= 3) {
-      tokens.add(match[1].toLowerCase()); // preserve full compound: "scrapeloop"
+  const words: string[] = [];
+  for (const run of identifierRuns(query)) {
+    for (const dotted of splitOnSeparators(run, '.')) {
+      if (!dotted) continue;
+      for (const segment of splitOnSeparators(dotted, '_')) {
+        if (!segment) continue;
+        if (hasCamelBoundary(segment) && segment.length >= 3) {
+          tokens.add(segment.toLowerCase()); // preserve full compound: "scrapeloop"
+        }
+        words.push(...splitCamelIdentifier(segment));
+      }
+      if (dotted.includes('_') && dotted.length >= 3) {
+        tokens.add(dotted.toLowerCase()); // preserve snake_case compound
+      }
     }
   }
-
-  // snake_case: scrape_loop, user_service
-  const snakePattern = /\b([a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+)\b/g;
-  while ((match = snakePattern.exec(query)) !== null) {
-    if (match[1] && match[1].length >= 3) {
-      tokens.add(match[1].toLowerCase());
-    }
-  }
-
-  // Split camelCase / PascalCase: "getUserName" → "get User Name"
-  const camelSplit = query
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
-
-  // Replace underscores and dots with spaces (snake_case, dot.notation)
-  const normalised = camelSplit.replace(/[_.]+/g, ' ');
-
-  // Split on any non-alphanumeric character
-  const words = normalised.split(/[^a-zA-Z0-9]+/).filter(Boolean);
 
   for (const word of words) {
     const lower = word.toLowerCase();
@@ -212,6 +200,81 @@ export function extractSearchTerms(query: string, options?: { stems?: boolean })
   }
 
   return [...tokens];
+}
+
+function identifierRuns(input: string): string[] {
+  const runs: string[] = [];
+  let start = -1;
+
+  for (let i = 0; i <= input.length; i++) {
+    const ch = input[i];
+    if (ch && isIdentifierRunChar(ch)) {
+      if (start === -1) start = i;
+    } else if (start !== -1) {
+      runs.push(input.slice(start, i));
+      start = -1;
+    }
+  }
+
+  return runs;
+}
+
+function splitOnSeparators(input: string, sep: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i <= input.length; i++) {
+    if (i === input.length || input[i] === sep) {
+      parts.push(input.slice(start, i));
+      start = i + 1;
+    }
+  }
+  return parts;
+}
+
+function splitCamelIdentifier(input: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+
+  for (let i = 1; i < input.length; i++) {
+    const prev = input[i - 1]!;
+    const ch = input[i]!;
+    const next = input[i + 1];
+    const boundary =
+      isAsciiUpper(ch) &&
+      (isAsciiLower(prev) || isAsciiDigit(prev) || (isAsciiUpper(prev) && !!next && isAsciiLower(next)));
+
+    if (boundary) {
+      parts.push(input.slice(start, i));
+      start = i;
+    }
+  }
+
+  parts.push(input.slice(start));
+  return parts;
+}
+
+function hasCamelBoundary(input: string): boolean {
+  return splitCamelIdentifier(input).length > 1;
+}
+
+function isIdentifierRunChar(ch: string): boolean {
+  return isAsciiLetter(ch) || isAsciiDigit(ch) || ch === '_' || ch === '.';
+}
+
+function isAsciiLetter(ch: string): boolean {
+  return isAsciiLower(ch) || isAsciiUpper(ch);
+}
+
+function isAsciiLower(ch: string): boolean {
+  return ch >= 'a' && ch <= 'z';
+}
+
+function isAsciiUpper(ch: string): boolean {
+  return ch >= 'A' && ch <= 'Z';
+}
+
+function isAsciiDigit(ch: string): boolean {
+  return ch >= '0' && ch <= '9';
 }
 
 /**

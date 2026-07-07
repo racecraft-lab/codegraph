@@ -13,6 +13,7 @@ import { Node, UnresolvedReference } from '../src/types';
 import { ReferenceResolver, createResolver, ResolutionContext } from '../src/resolution';
 import { matchReference, resolveMethodOnType, matchByQualifiedName, preferCallSiteFile, matchMethodCall } from '../src/resolution/name-matcher';
 import { resolveImportPath, extractImportMappings, resolveJvmImport, loadCppIncludeDirs, clearCppIncludeDirCache, isPhpIncludePathRef } from '../src/resolution/import-resolver';
+import { applyAliases } from '../src/resolution/path-aliases';
 import type { UnresolvedRef } from '../src/resolution/types';
 import { detectFrameworks, getAllFrameworkResolvers } from '../src/resolution/frameworks';
 import { QueryBuilder } from '../src/db/queries';
@@ -2194,6 +2195,20 @@ func main() {
   });
 
   describe('tsconfig path aliases', () => {
+    it('fills every wildcard occurrence in an alias target', () => {
+      const result = applyAliases('pkg/button', {
+        baseUrl: tempDir,
+        patterns: [{
+          prefix: 'pkg/',
+          suffix: '',
+          hasWildcard: true,
+          replacements: ['packages/*/src/*'],
+        }],
+      }, tempDir);
+
+      expect(result).toEqual(['packages/button/src/button']);
+    });
+
     it('resolves an aliased import to the alias-mapped file (not a same-named file elsewhere)', async () => {
       // Two same-named exports in different directories. Without alias
       // resolution, name-matcher would pick whichever it finds first;
@@ -2527,6 +2542,32 @@ func main() {
       fs.writeFileSync(
         path.join(tempDir, 'src/App.vue'),
         `<script setup lang="ts">\nimport { Thing } from './lib';\n</script>\n<template>\n  <Thing />\n</template>\n`
+      );
+
+      cg = await CodeGraph.init(tempDir, { index: true });
+      cg.resolveReferences();
+
+      const widgetNode = cg
+        .getNodesByKind('component')
+        .find((n) => n.name === 'Widget' && n.filePath === 'src/lib/Widget.vue');
+      expect(widgetNode).toBeDefined();
+      const callers = cg.getCallers(widgetNode!.id);
+      expect(callers.some((c) => c.node.filePath === 'src/App.vue')).toBe(true);
+    });
+
+    it('keeps Vue outer template content when nested template wrappers close first', async () => {
+      fs.mkdirSync(path.join(tempDir, 'src/lib'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempDir, 'src/lib/Widget.vue'),
+        `<script setup lang="ts">\ndefineProps<{ label?: string }>();\n</script>\n<template><button>x</button></template>\n`
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'src/lib/index.ts'),
+        `export { default as Thing } from './Widget.vue';\n`
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'src/App.vue'),
+        `<script setup lang="ts">\nimport { Thing } from './lib';\nconst ok = true;\n</script>\n<template>\n  <section>\n    <template v-if="ok">\n      <span>ready</span>\n    </template>\n    <Thing />\n  </section>\n</template>\n`
       );
 
       cg = await CodeGraph.init(tempDir, { index: true });

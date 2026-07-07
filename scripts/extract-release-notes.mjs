@@ -27,11 +27,15 @@ if (!arg) {
 }
 
 let block;
+function escapeRegExpLiteral(value) {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
 if (arg === '--stdin') {
   block = readFileSync(0, 'utf8').replace(/\r\n?/g, '\n').split('\n');
 } else {
   const version = arg;
-  const escaped = version.replace(/\./g, '\\.');
+  const escaped = escapeRegExpLiteral(version);
   const headerRe = new RegExp(`^## \\[${escaped}\\]`);
   const anyHeaderRe = /^## \[/;
   const lines = readFileSync('CHANGELOG.md', 'utf8').split('\n');

@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { FileLock, validateProjectPath, validatePathWithinRoot } from '../src/utils';
+import { FileLock, stripAngleBracketGroups, validateProjectPath, validatePathWithinRoot } from '../src/utils';
 import CodeGraph from '../src/index';
 import { ToolHandler, tools } from '../src/mcp/tools';
 import { scanDirectory, isSourceFile } from '../src/extraction';
@@ -78,6 +78,16 @@ describe('FileLock', () => {
     lock.release();
   });
 
+  it('should not remove a fresh lock with indeterminate state', () => {
+    fs.writeFileSync(lockPath, '');
+
+    const lock = new FileLock(lockPath);
+
+    expect(() => lock.acquire()).toThrow(/lock state could not be read/);
+    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe('');
+  });
+
   it('should execute function with withLock', () => {
     const lock = new FileLock(lockPath);
 
@@ -132,6 +142,13 @@ describe('FileLock', () => {
     lock.release();
     // Second release should not throw
     expect(() => lock.release()).not.toThrow();
+  });
+});
+
+describe('Type normalization helpers', () => {
+  it('strips nested angle-bracket groups in one pass', () => {
+    expect(stripAngleBracketGroups('Map<String, List<User>>')).toBe('Map');
+    expect(stripAngleBracketGroups('Result<script<Value>>')).toBe('Result');
   });
 });
 

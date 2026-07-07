@@ -449,14 +449,21 @@ export class Telemetry {
       for (const name of fs.readdirSync(this.dir)) {
         if (!name.startsWith('telemetry-queue.sending.')) continue;
         const full = path.join(this.dir, name);
+        let fd: number | null = null;
         try {
-          if (fs.statSync(full).mtimeMs < cutoff) {
-            const content = fs.readFileSync(full, 'utf8');
-            fs.rmSync(full, { force: true });
-            if (content.trim()) fs.appendFileSync(this.queuePath, content.endsWith('\n') ? content : content + '\n');
-          }
+          const nofollow = 'O_NOFOLLOW' in fs.constants ? fs.constants.O_NOFOLLOW : 0;
+          fd = fs.openSync(full, fs.constants.O_RDONLY | nofollow);
+          const stat = fs.fstatSync(fd);
+          if (!stat.isFile() || stat.mtimeMs >= cutoff) continue;
+          const content = fs.readFileSync(fd, 'utf8');
+          fs.rmSync(full, { force: true });
+          if (content.trim()) fs.appendFileSync(this.queuePath, content.endsWith('\n') ? content : content + '\n');
         } catch {
           /* fail silent */
+        } finally {
+          if (fd !== null) {
+            try { fs.closeSync(fd); } catch { /* fail silent */ }
+          }
         }
       }
     } catch {

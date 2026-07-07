@@ -144,13 +144,14 @@ export function installGitSyncHook(
     const file = path.join(hooksDir, hook);
     let content: string;
 
-    if (fs.existsSync(file)) {
+    try {
       // Strip any prior block, then re-append the current one.
       const base = stripMarkerBlock(fs.readFileSync(file, 'utf8')).replace(/\s*$/, '');
       content = base.length > 0
         ? `${base}\n\n${block}\n`
         : `#!/bin/sh\n${block}\n`;
-    } else {
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') continue;
       content = `#!/bin/sh\n${block}\n`;
     }
 
@@ -180,9 +181,13 @@ export function removeGitSyncHook(
 
   for (const hook of hooks) {
     const file = path.join(hooksDir, hook);
-    if (!fs.existsSync(file)) continue;
-
-    const original = fs.readFileSync(file, 'utf8');
+    let original: string;
+    try {
+      original = fs.readFileSync(file, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      continue;
+    }
     if (!original.includes(MARKER_BEGIN)) continue;
 
     const stripped = stripMarkerBlock(original);
@@ -207,6 +212,10 @@ export function isSyncHookInstalled(
   if (!hooksDir) return false;
   return hooks.some((hook) => {
     const file = path.join(hooksDir, hook);
-    return fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes(MARKER_BEGIN);
+    try {
+      return fs.readFileSync(file, 'utf8').includes(MARKER_BEGIN);
+    } catch {
+      return false;
+    }
   });
 }

@@ -1,6 +1,7 @@
 import type { Node as SyntaxNode } from 'web-tree-sitter';
 import { getNodeText, getChildByField } from '../tree-sitter-helpers';
 import type { LanguageExtractor } from '../tree-sitter-types';
+import { stripAngleBracketGroups } from '../../utils';
 
 /**
  * A Go function's declared return type, normalized to the bare type a chained
@@ -28,11 +29,10 @@ function extractGoReturnType(node: SyntaxNode, source: string): string | undefin
       ) ?? result;
   }
   if (!result) return undefined;
-  const text = getNodeText(result, source)
+  const raw = getNodeText(result, source)
     .trim()
-    .replace(/^\*/, '')
-    .replace(/<[^>]*>/g, '')
-    .replace(/\[[^\]]*\]/g, ''); // strip generic args `Foo[T]`
+    .replace(/^\*/, '');
+  const text = stripAngleBracketGroups(raw).replace(/\[[^\]]*\]/g, ''); // strip generic args `Foo[T]`
   const last = text.split('.').pop()?.trim(); // qualified `pkg.Foo` → `Foo`
   if (!last || !/^[A-Za-z_]\w*$/.test(last)) return undefined;
   return last;

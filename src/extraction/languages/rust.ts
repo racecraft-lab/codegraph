@@ -1,6 +1,7 @@
 import type { Node as SyntaxNode } from 'web-tree-sitter';
 import { getNodeText, getChildByField } from '../tree-sitter-helpers';
 import type { LanguageExtractor } from '../tree-sitter-types';
+import { stripAngleBracketGroups } from '../../utils';
 
 /**
  * A Rust function's declared return type, normalized to the bare type a chained
@@ -26,7 +27,7 @@ function extractRustReturnType(node: SyntaxNode, source: string): string | undef
   if (!rt || rt.type === 'primitive_type' || rt.type === 'unit_type' || rt.type === 'tuple_type') {
     return undefined;
   }
-  const text = getNodeText(rt, source).trim().replace(/<[^>]*>/g, '');
+  const text = stripAngleBracketGroups(getNodeText(rt, source).trim());
   const last = text.split('::').pop()?.trim();
   if (!last || !/^[A-Za-z_]\w*$/.test(last)) return undefined;
   return last === 'Self' ? 'self' : last;

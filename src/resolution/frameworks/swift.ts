@@ -362,18 +362,10 @@ export const vaporResolver: FrameworkResolver = {
       groupPrefix.set(gm[3]!, segJoin(groupPrefix.get(gm[1]!) ?? '', gm[2]!));
     }
 
-    // Vapor: <builder>.METHOD([path segs,] use: handler). Any receiver (app,
-    // routes, or a grouped var); path segments optional and may be non-string
-    // (`BlogUser.parameter`, `:id`, a path constant) so accept any comma-separated
-    // args before `use:` — the label keeps only the string parts. `use:`
-    // discriminates a real route from Environment.get("X")/req.parameters.get("X").
-    const routeRegex = /\b(\w+)\.(get|post|put|patch|delete|head|options)\s*\(\s*((?:[^,()]+,\s*)*)use:\s*([A-Za-z_][\w.]*)/g;
-    let match: RegExpExecArray | null;
-    while ((match = routeRegex.exec(safe)) !== null) {
-      const [, receiver, method, segsStr, handlerExpr] = match;
-      const line = safe.slice(0, match.index).split('\n').length;
-      const upper = method!.toUpperCase();
-      const routePath = (groupPrefix.get(receiver!) ?? '') + segJoin('', segsStr!) || '/';
+    for (const route of findVaporRouteCalls(safe)) {
+      const line = safe.slice(0, route.index).split('\n').length;
+      const upper = route.method.toUpperCase();
+      const routePath = (groupPrefix.get(route.receiver) ?? '') + segJoin('', route.pathArgs) || '/';
 
       const routeNode: Node = {
         id: `route:${filePath}:${line}:${upper}:${routePath}`,
@@ -384,14 +376,14 @@ export const vaporResolver: FrameworkResolver = {
         startLine: line,
         endLine: line,
         startColumn: 0,
-        endColumn: match[0].length,
+        endColumn: route.length,
         language: 'swift',
         updatedAt: now,
       };
       nodes.push(routeNode);
 
       // Last segment of a dotted handler (self.list / UserController.list -> list)
-      const handlerName = handlerExpr!.split('.').pop();
+      const handlerName = route.handlerExpr.split('.').pop();
       if (handlerName) {
         references.push({
           fromNodeId: routeNode.id,
@@ -425,6 +417,163 @@ const CLASS_KINDS = new Set(['class']);
 const MODEL_KINDS = new Set(['struct', 'class']);
 const PROTOCOL_KINDS = new Set(['protocol']);
 const VAPOR_CONTROLLER_KINDS = new Set(['class', 'struct']);
+const VAPOR_ROUTE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
+
+interface VaporRouteCall {
+  index: number;
+  length: number;
+  receiver: string;
+  method: string;
+  pathArgs: string;
+  handlerExpr: string;
+}
+
+function findVaporRouteCalls(source: string): VaporRouteCall[] {
+  const routes: VaporRouteCall[] = [];
+  let search = 0;
+
+  while (search < source.length) {
+    const dot = source.indexOf('.', search);
+    if (dot === -1) break;
+
+    let receiverStart = dot - 1;
+    while (receiverStart >= 0 && isSwiftIdentifierChar(source[receiverStart]!)) receiverStart--;
+    receiverStart++;
+    if (receiverStart === dot || (receiverStart > 0 && isSwiftIdentifierChar(source[receiverStart - 1]!))) {
+      search = dot + 1;
+      continue;
+    }
+
+    let methodEnd = dot + 1;
+    while (methodEnd < source.length && isSwiftIdentifierChar(source[methodEnd]!)) methodEnd++;
+    const method = source.slice(dot + 1, methodEnd);
+    if (!VAPOR_ROUTE_METHODS.has(method)) {
+      search = methodEnd;
+      continue;
+    }
+
+    const open = skipSwiftWhitespace(source, methodEnd);
+    if (source[open] !== '(') {
+      search = methodEnd;
+      continue;
+    }
+
+    const close = findMatchingParen(source, open);
+    if (close === -1) {
+      search = open + 1;
+      continue;
+    }
+
+    const args = source.slice(open + 1, close);
+    const useIndex = findTopLevelUseLabel(args);
+    if (useIndex === -1) {
+      search = close + 1;
+      continue;
+    }
+
+    const handlerExpr = readSwiftExpressionName(args, useIndex + 'use:'.length);
+    if (!handlerExpr) {
+      search = close + 1;
+      continue;
+    }
+
+    routes.push({
+      index: receiverStart,
+      length: close - receiverStart + 1,
+      receiver: source.slice(receiverStart, dot),
+      method,
+      pathArgs: args.slice(0, useIndex),
+      handlerExpr,
+    });
+    search = close + 1;
+  }
+
+  return routes;
+}
+
+function isSwiftIdentifierChar(ch: string): boolean {
+  return /[A-Za-z0-9_]/.test(ch);
+}
+
+function skipSwiftWhitespace(source: string, from: number): number {
+  let pos = from;
+  while (pos < source.length && /\s/.test(source[pos]!)) pos++;
+  return pos;
+}
+
+function findMatchingParen(source: string, open: number): number {
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+
+  for (let i = open; i < source.length; i++) {
+    const ch = source[i]!;
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+
+  return -1;
+}
+
+function findTopLevelUseLabel(args: string): number {
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const ch = args[i]!;
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+    } else if (ch === ')' || ch === ']' || ch === '}') {
+      depth = Math.max(0, depth - 1);
+    } else if (depth === 0 && args.startsWith('use:', i)) {
+      const prev = i > 0 ? args[i - 1] : undefined;
+      if (!prev || !isSwiftIdentifierChar(prev)) return i;
+    }
+  }
+
+  return -1;
+}
+
+function readSwiftExpressionName(source: string, from: number): string | null {
+  let pos = skipSwiftWhitespace(source, from);
+  if (!/[A-Za-z_]/.test(source[pos] ?? '')) return null;
+
+  const start = pos;
+  pos++;
+  while (pos < source.length && /[A-Za-z0-9_.]/.test(source[pos]!)) pos++;
+  return source.slice(start, pos);
+}
 
 /**
  * Resolve a symbol by name using indexed queries instead of scanning all files.
