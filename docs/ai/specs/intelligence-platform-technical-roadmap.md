@@ -23,7 +23,7 @@ This document defines the **SPEC catalog** for the Intelligence Platform: an ord
 
 ## Roadmap Overview
 
-The platform is decomposed into **24 specifications** across **6 dependency tiers** (phases):
+The platform is decomposed into **26 specifications** across **7 dependency tiers** (phases):
 
 | Tier | Specs | Purpose | Parallelization |
 |------|-------|---------|-----------------|
@@ -33,8 +33,9 @@ The platform is decomposed into **24 specifications** across **6 dependency tier
 | **3** | SPEC-011, SPEC-012, SPEC-013 | Analysis breadth | All three parallelizable (012 prefers 011) |
 | **4** | SPEC-014, SPEC-015, SPEC-016, SPEC-017 | Dataflow depth (CFG→PDG→taint) | Strict chain |
 | **5** | SPEC-018 … SPEC-024 | Team, enterprise, and language parity closure | 018 first; 019/020 consume it; 021→022; 023 anytime; 024 after 008 baseline findings |
+| **6** | SPEC-025, SPEC-026 | Plugin-channel distribution (Claude Code + Codex) | 025 gates 026; 025 is parallel-safe anytime |
 
-**Execution Order:** SPEC-001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017 → 018 → 019 → 020 → 021 → 022 → 023 → 024
+**Execution Order:** SPEC-001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017 → 018 → 019 → 020 → 021 → 022 → 023 → 024 → 025 → 026
 
 **Dependency Constraints:**
 - SPEC-002/003 require SPEC-001 (provider interface + vector store).
@@ -43,8 +44,9 @@ The platform is decomposed into **24 specifications** across **6 dependency tier
 - SPEC-012 prefers SPEC-011 (flow impact enrichment) but can ship with symbol/caller impact only.
 - SPEC-015 → 014, SPEC-016 → 015, SPEC-017 → 016 (strict analysis chain).
 - SPEC-019 requires SPEC-011 + SPEC-018; SPEC-020 requires SPEC-012 (SPEC-018 optional); SPEC-022 requires SPEC-021.
-- SPEC-013, SPEC-023 have no dependencies and can fill parallel capacity at any point.
+- SPEC-013, SPEC-023, SPEC-025 have no dependencies and can fill parallel capacity at any point.
 - SPEC-024 is mandatory if SPEC-008 planning identifies any language, feature, or capability parity gap from the internal baseline that cannot be safely closed inside SPEC-008. It is not a backlog bucket; it is the no-waiver closure spec.
+- SPEC-026 requires SPEC-025 (plugin platform mechanics decision — launcher contract, coexistence rules, artifact tier plan).
 
 ## Reviewability Contract
 
@@ -88,6 +90,8 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
                                             SPEC-021 (contracts) ─► SPEC-022 (bridge/impact)
                                             SPEC-023 (OCaml) [independent]
                                             SPEC-024 (parity closure) ◄─ SPEC-008
+Tier 6
+SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
                                             ─── PLATFORM COMPLETE ───
 ```
 
@@ -121,6 +125,8 @@ SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | ✅ Complete | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Merged (#21); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-023.md` |
 | SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Dormant; SPEC-008 parity gate closed with 0 unowned rows |
+| SPEC-025 | Plugin Platform Mechanics Spike | ⏳ Pending | [SPEC-025-workflow.md](SPEC-025-workflow.md) | Specify (parallel-safe) |
+| SPEC-026 | Plugin-Channel Distribution | ⏳ Pending | [SPEC-026-workflow.md](SPEC-026-workflow.md) | Blocked by SPEC-025 |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked
 
@@ -824,6 +830,64 @@ Budget result: must decompose into numbered child specs before implementation if
 
 ---
 
+### SPEC-025: Plugin Platform Mechanics Spike (Claude Code + Codex)
+
+**Priority:** P1 | **Depends On:** None | **Enables:** SPEC-026
+
+**Goal:** A grounded, citation-backed decision document on packaging CodeGraph as first-class Claude Code and Codex plugins carrying the MCP server, the prompt front-load hook, user-invocable skills, and explicitly-dispatched agents — per the official Anthropic and OpenAI plugin documentation, before any shipped behavior changes.
+
+**Reviewability Budget:** Primary surface: docs/process |
+Projected reviewable LOC: 0 (spike — decision doc only) |
+Production files: 0 |
+Total files: ~2 |
+Budget result: within budget (spike)
+
+**Scope:**
+- Platform audit with citations: Claude Code plugin format (manifest and component pointers, plugin-scoped `mcpServers`/`hooks`/`skills`/`agents`/`commands`, `${CLAUDE_PLUGIN_ROOT}`, marketplace + trust model, plugin-agent tool inheritance and `disallowedTools`) and Codex plugin format (`.codex-plugin/plugin.json`, bundled skills, `codex-agents/*.toml`, `codex-hooks.json`, MCP registration, project- and hook-hash trust gating).
+- Skill-authoring grounding — both vendors implement the same agent-skills open standard (`SKILL.md` + optional `scripts/`/`references/`/`assets/`), so one skill source tree serves both hosts. Anthropic's official skill-building guide ("The Complete Guide to Building Skills for Claude" + the skills best-practices docs and `anthropics/skills` examples): progressive disclosure (frontmatter → body → linked references), the MCP-enhancement skill category (skills as the workflow layer over an MCP server — "MCP provides the kitchen, skills provide the recipes"), what/when trigger-phrase description discipline, kebab-case + exact-`SKILL.md` structural rules, no-XML/reserved-name security restrictions, optional `allowed-tools` and `metadata.mcp-server` fields, and published success criteria (trigger rate on relevant queries, workflow tool-call count, zero failed tool calls, with/without-skill comparison). OpenAI's Codex skills documentation (`developers.openai.com/codex/skills` + `openai/skills` examples): `.agents/skills` scan order, explicit (`$skill-name`) vs implicit description-match invocation, the `agents/openai.yaml` sidecar (`allow_implicit_invocation`, display metadata, MCP tool dependencies), and its authoring best practices (one focused job per skill, imperative steps with explicit inputs/outputs, front-loaded use cases, trigger testing, instructions-over-scripts unless determinism is needed).
+- MCP launcher contract (OQ-8): how the plugin-registered server resolves the user-installed CodeGraph binary — the plugin cannot bundle the per-platform runtime — and the absent-binary path (success-shaped setup guidance, never a hard error, per the errors-teach-abandonment doctrine).
+- npm-installer coexistence rules: detection and dedupe of MCP registration and the Claude `UserPromptSubmit` hook in both directions; uninstall interplay; who wins when both channels are present.
+- Shipped-artifact plan: enumerate the candidate skill and agent set with a per-artifact tier decision (fully open vs focus-constrained via built-in-only denials — the operator-owned tool-surface doctrine) and the validation bar each must pass (retrieval A/B per the CLAUDE.md agent-eval methodology on the Sonnet floor; no regression vs the MCP-only baseline; `server-instructions.ts` stays the single source of agent-facing tool guidance — plugin artifacts reference, never restate, per issue #529).
+
+**Out of Scope:**
+- Shipping anything (SPEC-026 implements the decisions); replacing or deprecating the npm installer; upstream marketplace listing decisions beyond the racecraft channel.
+
+**Key Files:**
+- `docs/design/plugin-channel-decision.md` — citations, launcher contract, coexistence rules, artifact tier plan + validation gates
+
+---
+
+### SPEC-026: Plugin-Channel Distribution (Claude Code + Codex Plugins)
+
+**Priority:** P1 | **Depends On:** SPEC-025 | **Enables:** marketplace install of the full agent-facing surface
+
+**Goal:** CodeGraph installs as a first-class plugin on both hosts — one plugin source tree building Claude Code and Codex payloads that carry the MCP server registration, the prompt front-load hook, user-invocable skills, and explicitly-dispatched agents — alongside (never replacing) the npm installer.
+
+**Reviewability Budget:** Primary surface: seed/config + harness/adapter |
+Projected reviewable LOC: ~380 (launcher + installer-coexistence code + payload build script; plugin manifests/skills/agents are md/json and don't count) |
+Production files: ~7 |
+Total files: ~22 |
+Budget result: within budget (mostly net-new; greenfield allowance applies)
+
+**Scope:**
+- Plugin source tree building both payloads per SPEC-025 decisions: Claude (`.claude-plugin/plugin.json`, `mcpServers` launcher entry, `hooks/hooks.json` carrying the `UserPromptSubmit` prompt-hook, `skills/`, `agents/`) and Codex (`.codex-plugin/plugin.json`, `codex-agents/*.toml`, skill mirrors, `codex-hooks.json`).
+- Launcher per the SPEC-025 contract: resolve the installed CodeGraph binary; absent-binary path returns success-shaped setup guidance.
+- Shipped agents follow the operator-owned tool-surface doctrine: no `tools:` allowlists (inherit the operator's full surface), built-in-only `disallowedTools` per each agent's tier decision; skills are workflow recipes over the MCP tools authored to both vendors' skill-authoring guidance (what/when trigger descriptions, progressive disclosure via `references/`, error-handling sections, should/should-NOT trigger test lists — one source tree per the shared agent-skills standard, with the Codex `agents/openai.yaml` sidecar where warranted); no artifact restates the MCP `initialize` guidance (issue #529).
+- Installer coexistence: plugin-managed state detected and deduped in both directions (no double MCP registration, no double hook injection); uninstall of either channel leaves the other functional; contract tests at the installer-targets bar.
+- Release workflow builds and publishes versioned plugin payloads; distribution via the racecraft plugin marketplace; Dogfooding Protocol rung: this repo installs its own plugin build.
+- Validation gates (binding, from SPEC-025): per-artifact retrieval A/B evidence before first release, recording the vendors' published skill success criteria (trigger rate on relevant queries, workflow tool-call count, zero failed tool calls, with/without comparison) alongside the repo's agent-eval methodology; retrieval-guardian review for any retrieval-affecting steering surface.
+
+**Out of Scope:**
+- Removing or deprecating the npm installer or any of its existing agent targets; steering artifacts whose value depends on the model spontaneously picking them (anything shipped must earn its place through the A/B gate); upstream marketplace decisions.
+
+**Key Files:**
+- `plugin/` — single source tree for both host payloads (final layout decided at scaffold per SPEC-025)
+- `.github/workflows/release.yml` — plugin payload publish step (modify)
+- `src/installer/` — coexistence detection/dedupe (minimal modify; contract tests in `__tests__/installer-targets.test.ts` conventions)
+- `docs/design/plugin-channel-decision.md` — the SPEC-025 contract this spec implements
+
+---
+
 ## Decomposition Principles
 
 When breaking a feature into specs:
@@ -867,6 +931,23 @@ builds on top of live, real-scale instances of everything before it.
    stays opt-in/dormant-by-default so an unconfigured clone behaves identically. A
    dogfooding outage (endpoint down, feature unconfigured) must degrade advisorily,
    never break indexing or retrieval.
+6. **Spec-session preflight:** a spec's worktree is bootstrapped BEFORE agent work
+   begins — `npm install && npm run build`, then `codegraph init` with the main
+   checkout's `.envrc.local` sourced
+   (`( . ../../.envrc.local 2>/dev/null; node dist/bin/codegraph.js init . )`), and
+   `codegraph status` confirming 100% embedding coverage with the LSP pass enabled
+   (the committed root `codegraph.json` turns it on for every index/sync). Both
+   hosts' MCP configs start the server through `scripts/mcp-dogfood.mjs` — a
+   cross-platform Node launcher that anchors to the checkout root and applies
+   `.envrc.local` to the daemon environment whether or not values are
+   `export`ed (worktrees fall back to the main checkout's copy) — so every
+   agent session serves the HEAD build with live embeddings, and query-time
+   semantic search activates automatically when SPEC-003 merges. Sessions in this repo treat `codegraph_explore` as the primary
+   retrieval tool (steering lives in CLAUDE.md § Dogfooding). Out-of-repo
+   enablement is owned in racecraft-plugins-public (PR #298): speckit-pro's
+   subagents inherit the operator's full tool surface — no per-vendor
+   allowlists to maintain — and speckit-scaffold-spec runs this bootstrap
+   step when scaffolding a spec worktree.
 
 ## Environment & Deployment Context
 

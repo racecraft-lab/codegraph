@@ -5960,7 +5960,11 @@ describe('Directory Exclusion', () => {
   });
 });
 
-describe('Git Submodules', () => {
+// This and the next two suites shell out to real git repeatedly
+// (init/submodule add/commits) and run 4-10s under full-suite parallel load —
+// the describe-level 20s headroom over the 5s default keeps them from flaking
+// (same treatment as telemetry's buffer-cap test).
+describe('Git Submodules', { timeout: 20_000 }, () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -6011,7 +6015,7 @@ describe('Git Submodules', () => {
   });
 });
 
-describe('Nested gitlink repos (#1031, #1033)', () => {
+describe('Nested gitlink repos (#1031, #1033)', { timeout: 20_000 }, () => {
   let tempDir: string;
   // Helper: make a self-contained git repo at `dir` with one committed TS file.
   const makeRepo = async (dir: string, base: string) => {
@@ -6187,7 +6191,7 @@ describe('Nested gitlink repos (#1031, #1033)', () => {
   });
 });
 
-describe('Nested non-submodule git repos', () => {
+describe('Nested non-submodule git repos', { timeout: 20_000 }, () => {
   let tempDir: string;
 
   beforeEach(() => {

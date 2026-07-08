@@ -550,10 +550,24 @@ export class CodeGraph {
       throw new Error(`CodeGraph not initialized in ${resolvedRoot}. Run init() first.`);
     }
 
+    // Take the SAME project lock indexAll()/sync() use BEFORE destroying
+    // anything. `codegraph index` used to recreate (wipe) the database first
+    // and only then fail indexAll's lock acquire — so a daemon mid-sync turned
+    // a healthy index into an empty one that quiet mode then reported silently.
+    // The lock file lives beside the db and survives removeDatabaseFiles;
+    // acquire() is same-process re-entrant, so the instance's own
+    // indexAll()/sync() re-acquires the file we take here and releases it in
+    // its normal finally path.
+    const recreateLock = new FileLock(
+      path.join(getCodeGraphDir(resolvedRoot), 'codegraph.lock')
+    );
+    recreateLock.acquire();
+
     const dbPath = getDatabasePath(resolvedRoot);
     try {
       removeDatabaseFiles(dbPath);
     } catch (err) {
+      recreateLock.release();
       // POSIX unlinks an open file fine; this fires mainly on Windows when a
       // live daemon/MCP server still holds the database. Turn the raw EBUSY into
       // an actionable instruction instead of a generic failure.
@@ -566,10 +580,20 @@ export class CodeGraph {
     }
 
     // Re-create an empty, freshly-schema'd database at the same path.
-    const db = DatabaseConnection.initialize(dbPath);
+    let db: DatabaseConnection;
+    try {
+      db = DatabaseConnection.initialize(dbPath);
+    } catch (err) {
+      recreateLock.release();
+      throw err;
+    }
     const queries = new QueryBuilder(db.getDb());
 
-    return new CodeGraph(db, queries, resolvedRoot);
+    const instance = new CodeGraph(db, queries, resolvedRoot);
+    // Adopt the held lock onto the instance (same-pid re-entrant acquire) so
+    // its indexAll()/destroy() manage the lock file's lifetime from here on.
+    instance.fileLock.acquire();
+    return instance;
   }
 
   /**

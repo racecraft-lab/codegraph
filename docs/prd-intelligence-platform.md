@@ -192,6 +192,21 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 - **AC-23.2**: Reference resolution handles module paths and open/include scoping heuristics, with dune project awareness for multi-package repos.
 - **AC-23.3**: A fixture repo and extraction tests meet the same coverage bar as existing language suites, and OCaml appears in docs and `codegraph status`.
 
+### 3.24 Plugin Platform Mechanics Spike *(→ SPEC-025)*
+
+- **AC-25.1**: A spike report, grounded with citations in the official Claude Code plugin documentation (plugin manifest and component pointers, plugin-scoped `mcpServers`, `hooks`, `skills`, `agents`, `${CLAUDE_PLUGIN_ROOT}`, marketplace and trust model), the official Codex plugin documentation (`.codex-plugin/plugin.json`, bundled skills/agents/hooks, MCP registration, project- and hook-level trust gating), and each vendor's official skill-authoring guidance (Anthropic's skill-building guide and skills best-practices documentation; OpenAI's Codex skills documentation and examples — both implementing the shared agent-skills open standard), records how each host loads every component the plugin will carry.
+- **AC-25.2**: The report decides the MCP launcher contract — how the plugin-registered server resolves the user-installed CodeGraph binary, and what happens when it is absent (success-shaped setup guidance, never a hard error) — and the coexistence rules with the npm installer: no double MCP registration, no double prompt-hook injection, and safe uninstall interplay in both directions.
+- **AC-25.3**: The report enumerates the shipped skill and agent set with a per-artifact tier decision (fully open vs focus-constrained via built-in-only denials) and the validation bar each artifact must pass before merge — retrieval A/B on the standard evaluation floor showing no regression against the MCP-only baseline, plus the vendors' published skill success criteria (trigger rate on relevant queries including should/should-NOT trigger tests, workflow tool-call count, zero failed tool calls, with/without-skill comparison) — while agent-facing tool guidance remains single-sourced in the MCP `initialize` instructions.
+- **AC-25.4**: The report states what the plugin channel does not change: the npm installer remains the primary path for all existing agent targets, and no plugin artifact restates or forks the MCP-served guidance.
+
+### 3.25 Plugin-Channel Distribution *(→ SPEC-026)*
+
+- **AC-26.1**: One plugin source tree builds installable Claude Code and Codex plugin payloads carrying the MCP server registration (per the SPEC-025 launcher contract), the prompt front-load hook, user-invocable skills, and explicitly-dispatched agents.
+- **AC-26.2**: Shipped agents inherit the operator's tool surface (no `tools:` allowlists) with built-in-only role denials per their tier decision; shipped skills and agents reference tool guidance rather than restating it.
+- **AC-26.3**: Installing the plugin alongside an existing npm install produces no duplicate MCP server and no duplicate hook injection, and uninstalling either channel leaves the other fully functional — covered by contract tests at the same bar as the installer target suite.
+- **AC-26.4**: Plugin payloads are versioned and published by the release workflow and installable from the racecraft plugin marketplace; this repository dogfoods its own plugin build per the Dogfooding Protocol.
+- **AC-26.5**: Every shipped skill and agent carries recorded validation evidence per AC-25.3 before its first release.
+
 ## 4. Migration Path (phased — one phase per tier)
 
 - **Phase 0 (SPEC-001…003) — Semantic retrieval**: embedding infra → local fallback → hybrid search. First because agents feel it immediately and later phases (wiki, flows) reuse vectors.
@@ -200,6 +215,7 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 - **Phase 3 (SPEC-011…013) — Analysis breadth**: flows/clusters, change detection, Cypher access. Independent of each other; all P1.
 - **Phase 4 (SPEC-014…017) — Dataflow depth**: CFG → dataflow → PDG → taint, a strict chain.
 - **Phase 5 (SPEC-018…023) — Team & enterprise capabilities**: LLM layer first (wiki/PR consume it), then wiki, PR Action, groups (contracts → bridge), OCaml (anytime).
+- **Phase 6 (SPEC-025…026) — Plugin-channel distribution**: platform-mechanics spike → dual-host plugins (Claude Code + Codex) carrying the MCP server, prompt hook, skills, and agents — alongside, never replacing, the npm installer. Spike gates shipping; parallel-safe with every other phase.
 
 ## 5. Constraints
 
@@ -220,6 +236,7 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 - **OQ-5 (SPEC-020)**: CI index cache strategy — recommendation: cache `.codegraph/` keyed on lockfile + merge-base; rebuild on miss.
 - **OQ-6 (SPEC-005)**: LAN self-host auth — recommendation: bearer token via env; TLS terminates at a reverse proxy (out of scope).
 - **OQ-7 (SPEC-011)**: Flow naming heuristics — recommendation: route method+path where available, else entry symbol qualified name.
+- **OQ-8 (SPEC-025)**: MCP launcher resolution for the plugin channel (PATH-resolved installed binary vs npx thin-installer vs install-on-first-use prompt) and npm-installer coexistence mechanics — recommendation: PATH-resolved binary with an npx fallback and success-shaped guidance when absent; decide in the spike.
 
 ## 7. SPEC Catalog Crosswalk
 
@@ -248,10 +265,12 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 | Repo Groups & Contract Extraction | AC-21.* | SPEC-021 | — | P2 |
 | Cross-Repo Bridge & Impact | AC-22.* | SPEC-022 | SPEC-021 | P2 |
 | OCaml Language Support | AC-23.* | SPEC-023 | — | P2 |
+| Plugin Platform Mechanics Spike | AC-25.* | SPEC-025 | — | P1 |
+| Plugin-Channel Distribution | AC-26.* | SPEC-026 | SPEC-025 | P1 |
 
 ## 8. Success Criteria
 
-1. All acceptance criteria (AC-1.1 … AC-23.3) pass with tests or documented evidence.
+1. All acceptance criteria (AC-1.1 … AC-26.5) pass with tests or documented evidence.
 2. Every SPEC merges within its reviewability budget or with a recorded advisory/exception.
 3. racecraft agents use hybrid search daily; the web app is self-hosted and in use; the PR Action runs green on this fork's own PRs.
 4. An upstream merge performed after Phase 2 completes without structural conflicts in the new modules — proof the additive-first constraint held.

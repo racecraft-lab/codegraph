@@ -2,7 +2,10 @@
   "mcpServers": {
     "codegraph": {
       "command": "node",
-      "args": ["dist/bin/codegraph.js", "serve", "--mcp"]
+      "args": [
+        "-e",
+        "let d=process.cwd();const p=require(`path`),f=require(`fs`);while(!f.existsSync(p.join(d,`scripts`,`mcp-dogfood.mjs`))&&d!==p.dirname(d))d=p.dirname(d);const s=p.join(d,`scripts`,`mcp-dogfood.mjs`);if(!f.existsSync(s)){console.error(`mcp-dogfood.mjs not found above `+process.cwd());process.exit(1)}import(require(`url`).pathToFileURL(s).href)"
+      ]
     }
   }
 }

@@ -54,7 +54,16 @@ describe('LSP disabled path', () => {
   });
 
   it('records bounded project-enabled LSP status during sync', async () => {
+    // Pin the typescript server to a command that exists on no machine (via
+    // the env override — committed project commands are ignored by design):
+    // this test asserts the STATUS bookkeeping of a project-enabled sync, not
+    // real verification (lsp-real-server-e2e covers that). With a live
+    // typescript-language-server on PATH the pass now genuinely verifies
+    // edges, so the zero-mutation expectation below is only deterministic
+    // against an unavailable server.
     const dir = createProject({ lsp: { enabled: true } });
+    const previousCommand = process.env.CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON;
+    process.env.CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON = JSON.stringify(['cg-test-no-such-lsp-server']);
     const cg = await CodeGraph.init(dir);
     try {
       await cg.indexAll({ lsp: 'disable' });
@@ -68,6 +77,11 @@ describe('LSP disabled path', () => {
       expect(countLspEdges(dir)).toBe(0);
     } finally {
       cg.close();
+      if (previousCommand === undefined) {
+        delete process.env.CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON;
+      } else {
+        process.env.CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON = previousCommand;
+      }
     }
   });
 

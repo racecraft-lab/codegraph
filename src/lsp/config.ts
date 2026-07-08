@@ -1,5 +1,6 @@
 import { loadLspProjectConfig } from '../project-config';
 import { LSP_SERVER_REGISTRY } from './servers';
+import { defaultLspPerformanceCaps } from './status';
 import {
   DEFAULT_LSP_TIMEOUT_MS,
   EffectiveLspConfig,
@@ -8,6 +9,7 @@ import {
   LspActivationSource,
   LspConfigWarning,
   LspLanguage,
+  LspPerformanceCaps,
   LspValueSource,
   isLspLanguage,
 } from './types';
@@ -30,6 +32,7 @@ interface ProjectLspConfig {
   defaultTimeoutMs?: unknown;
   watch?: { enabled?: unknown };
   servers?: Record<string, ProjectServerConfig>;
+  caps?: unknown;
 }
 
 interface CommandParseResult {
@@ -79,8 +82,42 @@ export function resolveLspConfig(options: ResolveLspConfigOptions): EffectiveLsp
     defaultTimeoutMs: defaultTimeout.timeoutMs,
     watchEnabled,
     servers,
+    performanceCaps: resolveProjectCaps(project?.caps, warnings),
     warnings,
   };
+}
+
+/**
+ * Upper bound for a committed cap override. Keeps every derived value
+ * (candidate discovery limit = work cap + file cap + 1) far inside the safe
+ * integer range for SQL LIMIT parameters while still letting a project make a
+ * cap effectively unlimited.
+ */
+const MAX_LSP_CAP_VALUE = 1_000_000_000;
+
+function resolveProjectCaps(raw: unknown, warnings: LspConfigWarning[]): LspPerformanceCaps {
+  const caps = defaultLspPerformanceCaps();
+  if (raw === undefined) return caps;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    warnings.push({ code: 'invalid-caps', source: 'project', detail: 'lsp.caps must be an object when provided' });
+    return caps;
+  }
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(key in caps)) {
+      warnings.push({ code: 'invalid-caps', source: 'project', detail: `Ignoring unknown lsp.caps.${key}` });
+      continue;
+    }
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > MAX_LSP_CAP_VALUE) {
+      warnings.push({
+        code: 'invalid-caps',
+        source: 'project',
+        detail: `lsp.caps.${key} must be a positive integer no greater than ${MAX_LSP_CAP_VALUE}`,
+      });
+      continue;
+    }
+    caps[key as keyof LspPerformanceCaps] = value;
+  }
+  return caps;
 }
 
 function collectUnknownEnvOverrides(env: Record<string, string | undefined>, warnings: LspConfigWarning[]): void {

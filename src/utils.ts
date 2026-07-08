@@ -341,6 +341,9 @@ export class FileLock {
 
   /**
    * Acquire the lock. Throws if the lock is held by another live process.
+   * Re-entrant within one process: a lock file carrying OUR pid is a success,
+   * not contention — CodeGraph.recreate() takes the lock before its destructive
+   * rebuild and the instance's indexAll()/sync() re-acquires the same file.
    */
   acquire(): void {
     try {
@@ -348,6 +351,12 @@ export class FileLock {
       return;
     } catch (err: any) {
       if (err.code !== 'EEXIST') throw err;
+    }
+
+    const existing = this.readLockInfo();
+    if (existing && existing.pid === process.pid) {
+      this.held = true;
+      return;
     }
 
     this.removeStaleLockIfPresent();

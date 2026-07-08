@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { QueryBuilder, LspEdgeCandidateRow } from '../db/queries';
@@ -26,7 +27,6 @@ import {
 import {
   createInitialLspStatus,
   createLspCoverageRecord,
-  defaultLspPerformanceCaps,
   evaluateLspWatchBatchScope,
   recordLspCapExceeded,
   recordLspChecked,
@@ -50,6 +50,12 @@ const DEFAULT_CLIENT_FACTORY: LspClientFactory = {
 export interface LspDefinitionClient {
   initialize(params: Record<string, unknown>): Promise<unknown>;
   request(method: string, params: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Fire-and-forget notification (textDocument/didOpen, didClose). Optional so
+   * existing fake clients keep working; real servers only answer position
+   * requests for documents they were handed via didOpen.
+   */
+  notify?(method: string, params: Record<string, unknown>): void;
   shutdown(): Promise<unknown>;
 }
 
@@ -101,7 +107,7 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
   if (!options.config.enabled) return status;
 
   const started = Date.now();
-  const caps = options.performanceCaps ?? defaultLspPerformanceCaps();
+  const caps = options.performanceCaps ?? options.config.performanceCaps;
   const clientFactory = options.clientFactory ?? DEFAULT_CLIENT_FACTORY;
   const watch = options.watch;
   const watchChangedFiles = Array.isArray(watch?.changedSourceFiles)
@@ -366,8 +372,19 @@ async function processCandidateRequests(
 ): Promise<ProcessCandidatesResult> {
   for (let batchStart = 0; batchStart < candidates.length; batchStart += run.caps.fullIndexBatchSize) {
     const batch = candidates.slice(batchStart, batchStart + run.caps.fullIndexBatchSize);
+    // Real servers (typescript-language-server, pyright, …) only answer
+    // position requests for documents handed to them via textDocument/didOpen —
+    // without it every definition request returns null and the whole pass
+    // degrades to "language-not-applicable" with 0 verified edges. Open each
+    // batch's documents before its first request and close them after the
+    // batch so server-side buffers stay bounded. Fake clients without notify()
+    // behave exactly as before.
+    const openedDocuments = new Map<string, string>();
     for (let chunkStart = 0; chunkStart < batch.length; chunkStart += run.caps.inFlightRequestsPerSession) {
       const chunk = batch.slice(chunkStart, chunkStart + run.caps.inFlightRequestsPerSession);
+      for (const candidate of chunk) {
+        openSourceDocument(client, run, candidate.sourceFilePath, openedDocuments);
+      }
       run.status.performance.inFlightRequestHighWatermark = Math.max(
         run.status.performance.inFlightRequestHighWatermark,
         chunk.length,
@@ -409,8 +426,54 @@ async function processCandidateRequests(
         }
       }
     }
+    // On the early failure return above the client is about to be shut down /
+    // restarted, so its open documents die with the server; the happy path
+    // closes them here to keep server-side buffers bounded to one batch.
+    closeSourceDocuments(client, openedDocuments);
   }
   return {};
+}
+
+// LSP languageId values for textDocument/didOpen where they differ from our
+// Language tokens (everything else matches 1:1 — 'typescript', 'python', …).
+const LSP_LANGUAGE_IDS: Partial<Record<LspLanguage, string>> = {
+  tsx: 'typescriptreact',
+  jsx: 'javascriptreact',
+};
+
+function openSourceDocument(
+  client: LspDefinitionClient,
+  run: RunLanguageOptions,
+  sourceFilePath: string,
+  opened: Map<string, string>,
+): void {
+  if (!client.notify || opened.has(sourceFilePath)) return;
+  const absolutePath = path.join(run.options.projectRoot, sourceFilePath);
+  let text: string;
+  try {
+    text = fs.readFileSync(absolutePath, 'utf8');
+  } catch {
+    // Deleted/unreadable since indexing — let the request behave as before.
+    return;
+  }
+  const uri = pathToFileURL(absolutePath).href;
+  client.notify('textDocument/didOpen', {
+    textDocument: {
+      uri,
+      languageId: LSP_LANGUAGE_IDS[run.language] ?? run.language,
+      version: 1,
+      text,
+    },
+  });
+  opened.set(sourceFilePath, uri);
+}
+
+function closeSourceDocuments(client: LspDefinitionClient, opened: Map<string, string>): void {
+  if (!client.notify) return;
+  for (const uri of opened.values()) {
+    client.notify('textDocument/didClose', { textDocument: { uri } });
+  }
+  opened.clear();
 }
 
 async function shutdownLanguageClient(
@@ -612,7 +675,37 @@ function applyDefinitionResult(
     return 'suppressed';
   }
 
-  const nodes = queries.findNodesAtLocation(target.filePath, target.line, undefined, target.character);
+  let nodes = queries.findNodesAtLocation(target.filePath, target.line, undefined, target.character);
+
+  // LSP anchors a definition at its declared NAME; several extractors anchor
+  // the node at the initializer instead (`const block = (…) => …`: identifier
+  // at column 6, arrow-function node at column 14). A column miss on the RIGHT
+  // line is representational noise, not evidence against the edge — retry
+  // across the whole line before drawing any conclusion.
+  const hasAliasAtColumn = nodes.some((node) => node.kind === 'import' || node.kind === 'export');
+  if (!hasAliasAtColumn && compatibleLspTargetNodes(candidate, nodes).length === 0) {
+    nodes = queries.findNodesAtLocation(target.filePath, target.line);
+  }
+
+  // A definition answer that lands on an import/export BINDING — e.g. tsserver
+  // resolves `helper()` to the `import { helper } from './a'` specifier in the
+  // caller's own file — is an alias, not a disproof of the structural edge.
+  // Follow the binding through the graph's own imports edge recorded at that
+  // location: agreement verifies the edge; anything unresolved is inconclusive
+  // and must never suppress (silent beats wrong).
+  const aliasNode = nodes.find((node) => node.kind === 'import' || node.kind === 'export');
+  if (aliasNode) {
+    const boundTargets = queries.getImportBindingTargetsAt(target.filePath, target.line, target.character);
+    if (boundTargets.includes(candidate.targetId)) {
+      queries.updateEdgeLspProvenance(
+        candidate.edgeId,
+        lspDecisionMetadata(candidate, 'verified', target),
+      );
+      return 'verified';
+    }
+    return null;
+  }
+
   const compatible = compatibleLspTargetNodes(candidate, nodes);
   if (compatible.length === 0) {
     queries.suppressEdgeWithLspAudit(

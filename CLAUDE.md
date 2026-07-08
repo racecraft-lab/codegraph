@@ -31,6 +31,46 @@ npx vitest run __tests__/extraction.test.ts -t "TypeScript"
 
 Node engines: `>=20.0.0 <25.0.0`. There is a hard exit on Node 25.x and below 20 (see `src/bin/node-version-check.ts`).
 
+## Dogfooding — develop CodeGraph with CodeGraph
+
+This repo runs on its own graph; roadmap **§ Dogfooding Protocol**
+(`docs/ai/specs/intelligence-platform-technical-roadmap.md`) is the normative text,
+binding for every spec. The wiring:
+
+- Both hosts (Claude Code `.mcp.json`, Codex `.codex/config.toml`) launch the MCP
+  server at HEAD through **`scripts/mcp-dogfood.mjs`** — a cross-platform Node
+  launcher (no POSIX `sh`, so Windows dogfood clones work), reached via a tiny
+  `node -e` walk-up locator that finds the checkout root from any cwd inside the
+  repo. It anchors to the checkout root, applies the untracked `.envrc.local` to
+  the daemon's environment whether or not values are `export`ed (private embedding
+  endpoint; a spec worktree falls back to the main checkout's copy, resolved via
+  `git rev-parse --git-common-dir`), and spawns
+  `node dist/bin/codegraph.js serve --mcp`.
+- **`codegraph.json`** opts this repo into the SPEC-008 LSP precision pass (any
+  index/sync runs it; degrades gracefully where no language server is installed).
+- **`.claude/settings.json`** pre-approves `mcp__codegraph__*` and front-loads the
+  `UserPromptSubmit` context hook (silently skipped until `dist/` is built).
+- Query-time semantic search arrives with SPEC-003 — until then vectors are
+  produce-only; the env plumbing above means it activates with zero extra wiring.
+
+**Retrieval policy for sessions in this repo:** `codegraph_explore` is the primary
+retrieval tool — call it BEFORE Read/Grep/file_search for structural questions and
+pre-edit surveys, treat returned source as already Read, and don't delegate
+exploration one explore call can answer. (Instructions-file steering is the lever
+that measurably works — see "Adapt the tool to the agent" below.)
+
+**Spec-worktree preflight (binding):** after scaffolding `.worktrees/<spec>/`,
+bootstrap BEFORE any agent work:
+
+```bash
+cd .worktrees/<spec> && npm install && npm run build
+( . ../../.envrc.local 2>/dev/null; node dist/bin/codegraph.js init . \
+    && node dist/bin/codegraph.js status )   # expect: embeddings 100%, LSP enabled
+```
+
+After every merge to `main`: `npm run build`, then `codegraph sync` (protocol
+step 1); the daemon file watcher keeps the index fresh between merges.
+
 ## Architecture
 
 ### Layered pipeline
@@ -315,5 +355,8 @@ Canonical completed-spec artifacts:
 SPEC-003 and SPEC-005 are ready to scaffold. SPEC-006 and SPEC-007 remain
 downstream of SPEC-005. SPEC-010 is ready because SPEC-008 shipped the LSP
 substrate. SPEC-024 is dormant unless future parity drift creates a concrete
-unowned language, feature, or capability row.
+unowned language, feature, or capability row. SPEC-025 (plugin platform
+mechanics spike) is ready to scaffold and parallel-safe; SPEC-026
+(plugin-channel distribution — Claude Code + Codex plugins carrying the MCP
+server, prompt hook, skills, and agents) is downstream of SPEC-025.
 <!-- SPECKIT END -->

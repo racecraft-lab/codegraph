@@ -724,7 +724,12 @@ program
         if (options.quiet) {
           // Quiet mode: no UI, just run against the freshly-recreated graph.
           const result = await cg.indexAll({ embeddingsProvider, lsp });
-          if (!result.success) process.exit(1);
+          if (!result.success) {
+            // Quiet suppresses progress, never failures — a bare silent exit 1
+            // reads as success under output piping.
+            error(`Indexing failed: ${result.errors[0]?.message ?? 'unknown error'}`);
+            process.exit(1);
+          }
           cg.destroy();
           return;
         }

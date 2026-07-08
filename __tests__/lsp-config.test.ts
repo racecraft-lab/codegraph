@@ -197,6 +197,76 @@ describe('LSP config resolution', () => {
     });
   });
 
+  it('resolves default performance caps when lsp.caps is absent', () => {
+    withProjectConfig({ lsp: { enabled: true } }, (dir) => {
+      const config = resolveLspConfig({ projectRoot: dir, env: {} });
+      expect(config.performanceCaps).toEqual({
+        activeSessionsPerProject: 2,
+        inFlightRequestsPerSession: 8,
+        fullIndexSourceFilesPerLanguage: 2000,
+        fullIndexWorkItemsPerLanguage: 10000,
+        fullIndexBatchSize: 250,
+        watchChangedSourceFilesPerBatch: 100,
+        watchWorkItemsPerLanguagePerBatch: 1000,
+      });
+      expect(config.warnings).toEqual([]);
+    });
+  });
+
+  it('honors committed lsp.caps overrides so a project can raise or effectively remove the work caps', () => {
+    withProjectConfig({
+      lsp: {
+        enabled: true,
+        caps: {
+          fullIndexWorkItemsPerLanguage: 1000000,
+          fullIndexSourceFilesPerLanguage: 20000,
+        },
+      },
+    }, (dir) => {
+      const config = resolveLspConfig({ projectRoot: dir, env: {} });
+      expect(config.performanceCaps).toMatchObject({
+        fullIndexWorkItemsPerLanguage: 1000000,
+        fullIndexSourceFilesPerLanguage: 20000,
+        fullIndexBatchSize: 250,
+        watchWorkItemsPerLanguagePerBatch: 1000,
+      });
+      expect(config.warnings).toEqual([]);
+    });
+  });
+
+  it('warns and keeps defaults for invalid or unknown lsp.caps entries', () => {
+    withProjectConfig({
+      lsp: {
+        caps: {
+          fullIndexWorkItemsPerLanguage: 0,
+          fullIndexSourceFilesPerLanguage: 1.5,
+          watchWorkItemsPerLanguagePerBatch: '5000',
+          activeSessionsPerProject: 1000000001,
+          notARealCap: 5,
+        },
+      },
+    }, (dir) => {
+      const config = resolveLspConfig({ projectRoot: dir, env: {} });
+      expect(config.performanceCaps).toMatchObject({
+        fullIndexWorkItemsPerLanguage: 10000,
+        fullIndexSourceFilesPerLanguage: 2000,
+        watchWorkItemsPerLanguagePerBatch: 1000,
+        activeSessionsPerProject: 2,
+      });
+      const capsWarnings = config.warnings.filter((warning) => warning.code === 'invalid-caps');
+      expect(capsWarnings).toHaveLength(5);
+      expect(capsWarnings.every((warning) => warning.source === 'project')).toBe(true);
+    });
+
+    withProjectConfig({ lsp: { caps: ['nope'] } }, (dir) => {
+      const config = resolveLspConfig({ projectRoot: dir, env: {} });
+      expect(config.performanceCaps).toMatchObject({ fullIndexWorkItemsPerLanguage: 10000 });
+      expect(config.warnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'invalid-caps', source: 'project' }),
+      ]));
+    });
+  });
+
   it('warns and ignores unknown languages and blank command argv parts', () => {
     withProjectConfig({
       lsp: {

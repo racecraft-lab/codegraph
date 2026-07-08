@@ -45,7 +45,11 @@ function write(file: string, content: string): void {
   fs.writeFileSync(file, content);
 }
 
-describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)', () => {
+// Every suite below builds real git repos (init/commits/submodules/worktrees)
+// and runs 4-10s under full-suite parallel load — the describe-level 20s
+// headroom over the 5s default keeps them from flaking (same treatment as
+// telemetry's buffer-cap test).
+describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)', { timeout: 20_000 }, () => {
   let ws: string;
 
   beforeEach(() => {
