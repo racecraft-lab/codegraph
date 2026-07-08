@@ -120,6 +120,9 @@ describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)
       expect(files).toContain('tools.ts'); // the parent's own tracked code still indexes
     });
 
+    // This and the other 20s-timeout tests below shell out to real git
+    // repeatedly and run 4-10s under full-suite parallel load — headroom over
+    // the 5s default keeps them from flaking (telemetry buffer-cap precedent).
     it('only re-includes the opted-in dir, not every gitignored dir', () => {
       // `packages/` is opted in; `scratch/` (also holding a repo) is NOT.
       write(path.join(ws, 'packages/proj-a/src/auth.ts'), 'export function login() {}\n');
@@ -133,7 +136,7 @@ describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)
       const files = scanDirectory(ws);
       expect(files).toContain('packages/proj-a/src/auth.ts');
       expect(files.some((f) => f.startsWith('scratch/'))).toBe(false);
-    });
+    }, 20_000);
 
     it('discovers the opted-in ignored root alongside untracked roots', () => {
       write(path.join(ws, 'packages/proj-a/src/auth.ts'), 'export function login() {}\n');
@@ -149,7 +152,7 @@ describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)
       const roots = discoverEmbeddedRepoRoots(ws);
       expect(roots).toContain('packages/proj-a/'); // opted-in ignored kind
       expect(roots).toContain('vendor-src/lib/');   // untracked kind (always on)
-    });
+    }, 20_000);
 
     it('ScopeIgnore: opted-in embedded files use the child rules; the watcher can descend', () => {
       write(path.join(ws, 'packages/proj-a/src/auth.ts'), 'export function login() {}\n');
@@ -194,7 +197,7 @@ describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)
       } finally {
         cg.destroy();
       }
-    });
+    }, 20_000);
   });
 
   describe('discovery/classifier machinery (exercised under opt-in)', () => {
@@ -229,7 +232,7 @@ describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)
       // node_modules is a built-in default exclude — never re-included, even though
       // `packages/` is opted in and node_modules is gitignored.
       expect(files.some((f) => f.includes('node_modules'))).toBe(false);
-    });
+    }, 20_000);
 
     it('still indexes UNTRACKED embedded repos by default (#193 regression)', () => {
       write(path.join(ws, 'vendor-src/lib/src/util.ts'), 'export function util() {}\n');
@@ -308,7 +311,7 @@ describe('multi-repo workspaces (#514) + .gitignore-respect default (#970, #976)
       } finally {
         fs.rmSync(upstream, { recursive: true, force: true });
       }
-    });
+    }, 20_000);
 
     it('non-git workspace: walks children and respects each child own .gitignore', () => {
       write(path.join(ws, 'proj-a/src/auth.ts'), 'export function login() {}\n');

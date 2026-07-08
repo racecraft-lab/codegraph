@@ -5960,6 +5960,10 @@ describe('Directory Exclusion', () => {
   });
 });
 
+// These suites shell out to real git repeatedly (init/submodule add/commits)
+// and run 4-10s under full-suite parallel load — 20s headroom over the 5s
+// default keeps them from flaking (same treatment as telemetry's buffer-cap
+// test).
 describe('Git Submodules', () => {
   let tempDir: string;
 
@@ -6008,7 +6012,7 @@ describe('Git Submodules', () => {
 
     expect(files).toContain('app.ts');
     expect(files).toContain('libs/lib/lib.ts');
-  });
+  }, 20_000);
 });
 
 describe('Nested gitlink repos (#1031, #1033)', () => {
@@ -6060,7 +6064,7 @@ describe('Nested gitlink repos (#1031, #1033)', () => {
     expect(files).toContain('app.ts');
     expect(files).toContain('embedded/inner.ts'); // the gitlink's own source
     expect(files).toContain('embedded/deep/deep.ts'); // recursion continues into its nested repo
-  });
+  }, 20_000);
 
   // The -c → -s switch must not regress active submodules (#147): a repo can hold
   // BOTH an active submodule (expanded by --recurse-submodules) and a bare gitlink
@@ -6089,7 +6093,7 @@ describe('Nested gitlink repos (#1031, #1033)', () => {
     expect(files).toContain('app.ts');
     expect(files).toContain('libs/lib/lib.ts'); // active submodule still expands (#147)
     expect(files).toContain('external/tool/tool.ts'); // bare gitlink now indexed
-  });
+  }, 20_000);
 
   // A gitlink under a built-in default-ignored directory (vendor/, node_modules/,
   // …) stays excluded — a committed dependency doesn't become project code just
@@ -6109,7 +6113,7 @@ describe('Nested gitlink repos (#1031, #1033)', () => {
 
     expect(files).toContain('app.ts');
     expect(files).not.toContain('vendor/pkg/dep.ts');
-  });
+  }, 20_000);
 
   // A gitlink with NO working tree on disk (the common "cloned without
   // --recurse-submodules" state) has nothing to index — we must leave it alone,
@@ -6135,7 +6139,7 @@ describe('Nested gitlink repos (#1031, #1033)', () => {
 
     expect(files).toContain('app.ts');
     expect(files).not.toContain('libs/lib/lib.ts'); // not on disk → correctly absent
-  });
+  }, 20_000);
 
   // #1065: a gitlink under a path the super-repo's OWN `.gitignore` covers is the
   // tracked-gitlink twin of the untracked-ignored embedded repo (#514, #970). The
@@ -6165,7 +6169,7 @@ describe('Nested gitlink repos (#1031, #1033)', () => {
     expect(discoverEmbeddedRepoRoots(root)).toEqual([]);
     expect(buildScopeIgnore(root).ignores('benchmark/repos/')).toBe(true);
     expect(buildScopeIgnore(root).ignores('benchmark/repos/ref/ref.ts')).toBe(true);
-  });
+  }, 20_000);
 
   it('re-includes a gitignored gitlink when codegraph.json includeIgnored opts in (#1065)', async () => {
     const { execFileSync } = await import('child_process');
@@ -6184,7 +6188,7 @@ describe('Nested gitlink repos (#1031, #1033)', () => {
     expect(files).toContain('app.ts');
     expect(files).toContain('benchmark/repos/ref/ref.ts'); // opted in → indexed
     expect(discoverEmbeddedRepoRoots(root)).toContain('benchmark/repos/ref/');
-  });
+  }, 20_000);
 });
 
 describe('Nested non-submodule git repos', () => {
