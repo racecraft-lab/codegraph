@@ -191,9 +191,12 @@ export interface RunEmbeddingPassOptions {
   transaction: <T>(fn: () => T) => T;
   /**
    * Fold the pass's WAL writes back into the main DB once it finishes (best-effort).
-   * Wire to `DatabaseConnection.runMaintenance` (FR-030).
+   * Wire to `DatabaseConnection.runMaintenance` (FR-030). Maintenance may run on a
+   * worker thread over its OWN connection, so the pass AWAITS it — a floating
+   * maintenance races the caller's next writes on the same database (SQLITE_BUSY
+   * "database is locked").
    */
-  runMaintenance: () => void;
+  runMaintenance: () => void | Promise<void>;
   /** Progress ping as each batch slice commits: `(embeddedSoFar, totalEligible)`. */
   onProgress?: (current: number, total: number) => void;
   /**
@@ -473,7 +476,7 @@ export async function runEmbeddingPass(opts: RunEmbeddingPassOptions): Promise<E
     // via the same maintenance the index runs; best-effort, never load-bearing (FR-030).
     if (wroteAnyBatch || reconciledAny) {
       try {
-        runMaintenance();
+        await runMaintenance();
       } catch {
         // ignore — a checkpoint failure never fails the pass
       }

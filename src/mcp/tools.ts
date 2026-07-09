@@ -1399,15 +1399,20 @@ export class ToolHandler {
       }
 
       // Read tools: off-load the CPU-heavy dispatch to the worker pool when one
-      // is attached and healthy (daemon mode), so the daemon's single event loop
-      // stays free for the MCP transport under concurrent load — otherwise N
-      // concurrent explores serialize AND starve the transport until the whole
-      // batch drains (clients then time out). With no pool (direct mode) or a
-      // degraded one, dispatch runs in-process exactly as before. Either way the
-      // result flows through the cross-cutting notices — worktree-index mismatch
-      // (#155) and per-file staleness (#403) — which need the watched MAIN
-      // instance and so are always applied here, never in the worker.
-      const result = (this.queryPool && this.queryPool.healthy)
+      // is attached, healthy, AND has finished its first cold start (daemon
+      // mode), so the daemon's single event loop stays free for the MCP
+      // transport under concurrent load — otherwise N concurrent explores
+      // serialize AND starve the transport until the whole batch drains
+      // (clients then time out). Before the first worker is warm, calls run
+      // in-process: a call queued behind a cold start sat invisible until the
+      // 45s busy backstop — the daemon's first tool call stalling for however
+      // long a worker spawn takes on a loaded machine (the #662 flake). With
+      // no pool (direct mode) or a degraded one, dispatch runs in-process
+      // exactly as before. Either way the result flows through the
+      // cross-cutting notices — worktree-index mismatch (#155) and per-file
+      // staleness (#403) — which need the watched MAIN instance and so are
+      // always applied here, never in the worker.
+      const result = (this.queryPool && this.queryPool.healthy && this.queryPool.ready)
         ? await this.queryPool.run(toolName, args)
         : await this.executeReadTool(toolName, args);
       const withWorktree = this.withWorktreeNotice(result, args.projectPath as string | undefined);
@@ -1944,11 +1949,18 @@ export class ToolHandler {
         }
         // Same token, non-callable synth endpoints (capped, precision-gated on an
         // actual heuristic edge so plain config constants never qualify).
+        // Per-token sub-cap so one token's many endpoints (10 nix option writes
+        // of `programs.git.enable` across test configs) can't fill the pool
+        // before later tokens (`home.file`) get a slot.
         if (dynNamed.size < 12) {
+          let tokenDyn = 0;
           for (const n of hits) {
             if (CALLABLE.has(n.kind) || !DYN_KINDS.has(n.kind) || dynNamed.has(n.id)) continue;
-            if (hasHeuristicEdge(n.id)) dynNamed.set(n.id, n);
-            if (dynNamed.size >= 12) break;
+            if (hasHeuristicEdge(n.id)) {
+              dynNamed.set(n.id, n);
+              tokenDyn++;
+            }
+            if (dynNamed.size >= 12 || tokenDyn >= 4) break;
           }
         }
         if (named.size > 40) break;
@@ -4031,6 +4043,19 @@ export class ToolHandler {
       );
     }
 
+    // Non-zero at rest means a resolution pass was interrupted mid-run, so
+    // some files' call/impact edges are missing until the next sync sweeps
+    // the leftovers (#1187). Surface it — an agent trusting an incomplete
+    // blast radius is worse than one that knows to re-sync.
+    const pendingRefs = cg.getPendingReferenceCount();
+    if (pendingRefs > 0) {
+      lines.push(
+        `**Pending resolution:** ⚠ ${pendingRefs} references from an interrupted ` +
+        `index run — some caller/impact edges are missing until the next sync ` +
+        `(any file change triggers it, or run \`codegraph sync\`)`
+      );
+    }
+
     lines.push('', '**Nodes by Kind:**');
 
     for (const [kind, count] of Object.entries(stats.nodesByKind)) {
@@ -4399,6 +4424,26 @@ export class ToolHandler {
    * results across all matching symbols (e.g., multiple classes with an `execute` method).
    */
   private findAllSymbols(cg: CodeGraph, symbol: string): { nodes: Node[]; note: string } {
+    // Nix option paths: the declaration is stored as `options.<path>` and
+    // config writes carry longer/quoted tails (`<path>."git/config".text`),
+    // so a dotted option token (`xdg.configFile`, `launchd.user.agents`) has
+    // no exact-name node and would degrade to bare-tail FTS soup — burying
+    // the declaration hub the nix-option-path edges hang off. Resolve the
+    // convention directly: declaration first, then the exact write, then a
+    // capped prefix scan of write sites. Three index hits; non-nix graphs
+    // fall straight through.
+    if (/^[a-z][\w'-]*(?:\.[\w'-]+)+$/.test(symbol)) {
+      const optionHits = [
+        ...cg.getNodesByName(`options.${symbol}`),
+        ...cg.getNodesByName(symbol),
+        ...cg.getNodesByNamePrefix(`${symbol}.`, 12),
+      ].filter((n) => n.language === 'nix');
+      if (optionHits.length > 0) {
+        const seen = new Set<string>();
+        const nodes = optionHits.filter((n) => !seen.has(n.id) && !!seen.add(n.id)).slice(0, 10);
+        return { nodes, note: '' };
+      }
+    }
     let results = cg.searchNodes(symbol, { limit: 50 });
 
     // Mirror the fallback in `findSymbol` for qualified queries — FTS

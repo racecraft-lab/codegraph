@@ -397,7 +397,7 @@ describe.skipIf(!HAS_SQLITE)('full-index embed pass — runEmbeddingPass (T016)'
     const opts: RunEmbeddingPassOptions = {
       queries: q, provider, config,
       transaction: <T>(fn: () => T): T => { counters.transaction++; return db.transaction(fn); },
-      runMaintenance: () => { counters.maintenance++; db.runMaintenance(); },
+      runMaintenance: () => { counters.maintenance++; return db.runMaintenance(); },
       onProgress: (c, t) => { progress.push([c, t]); },
       refreshLock: () => { counters.refresh++; },
       ...extra,
