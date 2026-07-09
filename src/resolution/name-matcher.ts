@@ -141,7 +141,9 @@ function pickClosestFileNode(candidates: Node[], ref: UnresolvedRef): Node {
 const LANGUAGE_FAMILY: Record<string, string> = {
   java: 'jvm', kotlin: 'jvm', scala: 'jvm',
   swift: 'apple', objc: 'apple',
-  typescript: 'web', tsx: 'web', javascript: 'web', jsx: 'web',
+  // ArkTS is a TS superset — every HarmonyOS project mixes `.ets` UI with
+  // `.ts` logic modules, so refs must cross freely between them.
+  typescript: 'web', tsx: 'web', javascript: 'web', jsx: 'web', arkts: 'web',
   c: 'c', cpp: 'c',
   // Razor/Blazor markup names C# types — same family so `@model Foo` /
   // `<MyComponent/>` resolve to their `.cs` class through the cross-family gate.
@@ -227,6 +229,7 @@ export function matchFunctionRef(
   const bareFnOnly =
     ref.language === 'typescript' || ref.language === 'tsx' ||
     ref.language === 'javascript' || ref.language === 'jsx' ||
+    ref.language === 'arkts' ||
     ref.language === 'cpp' || ref.language === 'python' ||
     ref.language === 'php';
 
@@ -410,7 +413,21 @@ export function matchByQualifiedName(
     return null;
   }
 
-  const candidates = context.getNodesByQualifiedName(ref.referenceName);
+  // A method call `receiver.method()` can share an exact qualified name with a
+  // config-file key: `service.process()` (a `calls` ref named `service.process`)
+  // vs the yaml key `service.process`. Config keys are bound to their code refs
+  // upstream by the framework resolvers (`@Value` → `references`); a `calls` ref
+  // must never resolve to a yaml/properties config node — that's a wrong edge
+  // AND it hides the real callee. Drop those from both the exact and the partial
+  // candidate sets so resolution falls through to method resolution below (#1180).
+  const keepForRef = (nodes: Node[]): Node[] =>
+    ref.referenceKind === 'calls'
+      ? nodes.filter(
+          (n) => !(n.kind === 'constant' && (n.language === 'yaml' || n.language === 'properties')),
+        )
+      : nodes;
+
+  const candidates = keepForRef(context.getNodesByQualifiedName(ref.referenceName));
 
   if (candidates.length === 1) {
     return {
@@ -442,8 +459,7 @@ export function matchByQualifiedName(
   const parts = ref.referenceName.split(/[:.]/);
   const lastName = parts[parts.length - 1];
   if (lastName) {
-    const partialCandidates = context
-      .getNodesByName(lastName)
+    const partialCandidates = keepForRef(context.getNodesByName(lastName))
       .filter((candidate) => candidate.qualifiedName.endsWith(ref.referenceName));
     const chosen = preferCallSiteFile(partialCandidates, ref.filePath)[0];
     if (chosen) {
@@ -1080,6 +1096,7 @@ function localReceiverTypePatterns(language: Language, r: string): RegExp[] {
     case 'javascript':
     case 'tsx':
     case 'jsx':
+    case 'arkts':
       return [
         new RegExp(`\\b${r}\\b\\s*=\\s*new\\s+([A-Za-z_$][\\w.$]*)`), // = new Logger()
         // No keyword requirement, so this matches BOTH a local annotation
@@ -1743,6 +1760,9 @@ export function matchFuzzy(
 /**
  * Match all strategies in order of confidence
  */
+/** ArkUI attribute-helper decorators a `.attr(...)` chain may resolve to. */
+const ARKUI_ATTRIBUTE_DECORATORS = new Set(['Extend', 'Styles', 'AnimatableExtend', 'Builder']);
+
 export function matchReference(
   ref: UnresolvedRef,
   context: ResolutionContext
@@ -1752,6 +1772,37 @@ export function matchReference(
   // worse than none).
   if (ref.referenceKind === 'function_ref') {
     return matchFunctionRef(ref, context);
+  }
+
+  // ArkTS chained UI attributes — emitted with a leading dot (`.titleStyle`,
+  // `.width`) by the extractor — resolve ONLY to decorator-marked attribute
+  // helpers: `@Extend`/`@Styles`/`@AnimatableExtend` functions (and global
+  // `@Builder`s used attribute-position). Framework attributes (`.width`,
+  // `.fontSize` — on nearly every UI line) match no such helper and stay
+  // unresolved, NEVER falling through to bare-name matching: on a samples
+  // monorepo that fallthrough manufactured 36k wrong edges, giving single
+  // same-named properties thousands of false callers. Ambiguity rule matches
+  // the rest of the file: several same-named helpers → prefer the call-site
+  // file, still ambiguous → drop the ref rather than guess.
+  if (ref.language === 'arkts' && ref.referenceName.startsWith('.')) {
+    const base = ref.referenceName.slice(1);
+    const candidates = context
+      .getNodesByName(base)
+      .filter(
+        (n) =>
+          n.language === 'arkts' &&
+          n.kind === 'function' &&
+          (n.decorators ?? []).some((d) => ARKUI_ATTRIBUTE_DECORATORS.has(d))
+      );
+    const chosen =
+      candidates.length > 1 ? preferCallSiteFile(candidates, ref.filePath) : candidates;
+    if (chosen.length !== 1) return null;
+    return {
+      original: ref,
+      targetNodeId: chosen[0]!.id,
+      confidence: 0.85,
+      resolvedBy: 'exact-match',
+    };
   }
 
   // Erlang `-behaviour(m)` refs target a MODULE. Letting them fall through to

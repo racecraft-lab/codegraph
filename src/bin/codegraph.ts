@@ -23,6 +23,11 @@
  *   codegraph upgrade [version]  Update CodeGraph to the latest release
  */
 
+// FIRST import, before anything else loads: capture process.ppid while our
+// launcher is (almost certainly) still alive. A launcher killed mid-startup
+// otherwise blinds the PPID watchdog forever (#1185) — see early-ppid.ts.
+import '../mcp/early-ppid';
+
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -408,6 +413,14 @@ function printIndexResult(clack: typeof import('@clack/prompts'), result: IndexR
       clack.log.success(`Indexed ${formatNumber(result.filesIndexed)} files`);
     }
     clack.log.info(`${formatNumber(result.nodesCreated)} nodes, ${formatNumber(result.edgesCreated)} edges in ${formatDuration(result.durationMs)}`);
+    // A PARTIAL index (files silently dropped mid-pipeline) must not pass
+    // as a clean run — it's the difference between "indexed the repo" and
+    // "indexed most of the repo, quietly". Only the completeness
+    // reconciliation warning; per-file extractor warnings stay in the
+    // error-code summary below.
+    for (const w of result.errors.filter((e) => e.code === 'index_partial')) {
+      clack.log.warn(w.message);
+    }
   } else if (hasErrors) {
     clack.log.error(`Indexing failed ${getGlyphs().dash} all ${formatNumber(result.filesErrored)} files had errors`);
   } else {
@@ -451,6 +464,82 @@ function printIndexResult(clack: typeof import('@clack/prompts'), result: IndexR
       fs.unlinkSync(logPath);
     }
   }
+}
+
+/**
+ * When an `init`/`index` produced an EMPTY graph and the reason is that the
+ * project's own `.gitignore` excludes nested git repositories — the "super-repo
+ * gitignores its child repos" layout (#1156), where `init` at the parent
+ * correctly indexes ~nothing while `init` inside each child works — name those
+ * repos and offer to index them. An interactive terminal gets a yes/no prompt
+ * that writes `includeIgnored` to codegraph.json and re-indexes; a
+ * non-interactive run just prints the one-line opt-in snippet. The caller gates
+ * this on `nodesCreated === 0`, so a project that DID index real content is
+ * never nagged about the gitignored reference clones it deliberately keeps out
+ * (#970, #1065). Best-effort throughout: detection never breaks the command.
+ */
+async function offerIndexIgnoredRepos(
+  clack: typeof import('@clack/prompts'),
+  projectPath: string,
+  reindex: () => Promise<IndexResult>,
+  opts: { interactive: boolean },
+): Promise<IndexResult | undefined> {
+  let repos: string[];
+  try {
+    const { findUnindexedIgnoredRepos } = await import('../extraction');
+    repos = findUnindexedIgnoredRepos(projectPath);
+  } catch {
+    return; // detection is advisory — never let it break the command
+  }
+  if (repos.length === 0) return;
+
+  const { PROJECT_CONFIG_FILENAME } = await import('../project-config');
+  const isOne = repos.length === 1;
+  const SHOWN = 6;
+  const names = repos.slice(0, SHOWN).map((r) => r.replace(/\/$/, ''));
+  const extra = repos.length > SHOWN ? ` (+${formatNumber(repos.length - SHOWN)} more)` : '';
+  const snippet = `{ "includeIgnored": [${repos.map((p) => JSON.stringify(p)).join(', ')}] }`;
+
+  clack.log.warn(
+    `Your .gitignore excludes ${isOne ? 'a nested git repository' : `${formatNumber(repos.length)} nested git repositories`} here, ` +
+    `so ${isOne ? 'it was' : 'they were'} not indexed: ${names.join(', ')}${extra}.`,
+  );
+
+  const manualHint = () => {
+    clack.log.info(
+      `If ${isOne ? "it's" : "they're"} your code, add ${isOne ? 'it' : 'them'} to ${PROJECT_CONFIG_FILENAME} and re-index:`,
+    );
+    clack.log.info(`  ${snippet}`);
+  };
+
+  if (!opts.interactive || !process.stdin.isTTY) {
+    manualHint();
+    return;
+  }
+
+  const yes = await clack.confirm({
+    message: `Index ${isOne ? 'it' : `these ${formatNumber(repos.length)}`} now? Adds ${isOne ? 'it' : 'them'} to ${PROJECT_CONFIG_FILENAME}.`,
+    initialValue: true,
+  });
+  if (clack.isCancel(yes) || !yes) {
+    manualHint();
+    return;
+  }
+
+  let added: number;
+  try {
+    const { addIncludeIgnoredPatterns } = await import('../project-config');
+    added = addIncludeIgnoredPatterns(projectPath, repos);
+  } catch (err) {
+    clack.log.error(`Could not update ${PROJECT_CONFIG_FILENAME}: ${err instanceof Error ? err.message : String(err)}`);
+    manualHint();
+    return;
+  }
+  clack.log.success(`Added ${formatNumber(added)} ${added === 1 ? 'entry' : 'entries'} to ${PROJECT_CONFIG_FILENAME} ${getGlyphs().dash} re-indexing…`);
+
+  const result = await reindex();
+  printIndexResult(clack, result, projectPath);
+  return result;
 }
 
 /**
@@ -572,29 +661,33 @@ program
       // accepted (so existing muscle memory and scripts don't break) but is a
       // no-op — initializing always builds the initial index.
       // Supervise the index: self-terminate if orphaned or wedged (#999).
-      const supervision = installCommandSupervision('init');
-      let result: IndexResult;
-      try {
-        if (options.verbose) {
-          result = await cg.indexAll({
-            onProgress: createVerboseProgress(),
-            verbose: true,
-            embeddingsProvider,
-          });
-        } else {
+      // A closure so we can re-run the exact same supervised, progress-rendered
+      // index if the user opts gitignored child repos in below (#1156).
+      const runIndex = async (): Promise<IndexResult> => {
+        const supervision = installCommandSupervision('init');
+        try {
+          if (options.verbose) {
+            return await cg.indexAll({ onProgress: createVerboseProgress(), verbose: true, embeddingsProvider });
+          }
           process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
           const progress = createShimmerProgress();
-          result = await cg.indexAll({
-            onProgress: progress.onProgress,
-            embeddingsProvider,
-          });
+          const r = await cg.indexAll({ onProgress: progress.onProgress, embeddingsProvider });
           await progress.stop();
+          return r;
+        } finally {
+          supervision.stop();
         }
-      } finally {
-        supervision.stop();
-      }
+      };
+      const result = await runIndex();
       printIndexResult(clack, result, projectPath);
       await recordIndexTelemetry(cg, result);
+
+      // An empty graph at a git super-repo usually means `.gitignore` excludes
+      // the child repos that hold the code — surface them and offer to opt in
+      // rather than leaving the user with a silent 0-node "Done". (#1156)
+      if (result.nodesCreated === 0) {
+        await offerIndexIgnoredRepos(clack, projectPath, runIndex, { interactive: true });
+      }
 
       try {
         const { offerWatchFallback } = await import('../installer');
@@ -737,30 +830,32 @@ program
         const clack = await importESM('@clack/prompts');
         clack.intro('Indexing project');
 
-        let result: IndexResult;
-
-        if (options.verbose) {
-          result = await cg.indexAll({
-            onProgress: createVerboseProgress(),
-            verbose: true,
-            embeddingsProvider,
-            lsp,
-          });
-        } else {
+        // A closure so a re-index (after opting gitignored child repos in, #1156)
+        // renders identically. Supervision already wraps the whole command.
+        const renderIndex = async (): Promise<IndexResult> => {
+          if (options.verbose) {
+            return await cg.indexAll({ onProgress: createVerboseProgress(), verbose: true, embeddingsProvider, lsp });
+          }
           process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
           const progress = createShimmerProgress();
-          result = await cg.indexAll({
-            onProgress: progress.onProgress,
-            embeddingsProvider,
-            lsp,
-          });
+          const r = await cg.indexAll({ onProgress: progress.onProgress, embeddingsProvider, lsp });
           await progress.stop();
-        }
+          return r;
+        };
+
+        const result = await renderIndex();
 
         printIndexResult(clack, result, projectPath);
         await recordIndexTelemetry(cg, result);
 
-        if (!result.success) {
+        // Empty graph at a git super-repo → likely `.gitignore`d child repos;
+        // name them and offer to opt in instead of a silent 0-node result (#1156).
+        let finalResult = result;
+        if (result.nodesCreated === 0) {
+          finalResult = (await offerIndexIgnoredRepos(clack, projectPath, renderIndex, { interactive: true })) ?? result;
+        }
+
+        if (!finalResult.success) {
           process.exit(1);
         }
 
@@ -885,6 +980,10 @@ program
 
       const buildInfo = cg.getIndexBuildInfo();
       const reindexRecommended = cg.isIndexStale();
+      const indexState = cg.getIndexState();
+      // Zero on a healthy index; non-zero at rest means a resolution pass was
+      // interrupted, so some files' call edges are missing (#1187).
+      const pendingRefs = cg.getPendingReferenceCount();
 
       // JSON output mode
       if (options.json) {
@@ -916,6 +1015,14 @@ program
             builtWithExtractionVersion: buildInfo.extractionVersion,
             currentExtractionVersion: EXTRACTION_VERSION,
             reindexRecommended,
+            // 'complete' | 'partial' (files silently dropped) | 'indexing'
+            // (a run was killed mid-index — the index is truncated) |
+            // 'failed' | null (predates the marker).
+            state: indexState,
+            // References awaiting resolution. Non-zero at rest means an
+            // interrupted resolution pass left edges missing; the next
+            // sync sweeps them (#1187).
+            pendingRefs,
           },
           // Embedding observability (SPEC-001 FR-022): parallel to the human
           // section below; automated probes read this machine shape.
@@ -932,6 +1039,16 @@ program
       console.log(chalk.cyan('Project:'), projectPath);
       if (worktreeMismatch) {
         warn(worktreeMismatchWarning(worktreeMismatch));
+      }
+      if (indexState === 'indexing') {
+        warn('The last index run never finished (killed mid-index?) — the index is truncated. Re-run "codegraph index".');
+      } else if (indexState === 'partial') {
+        warn('The last index run silently dropped files — the index is partial. Re-run "codegraph index".');
+      } else if (indexState === 'failed') {
+        warn('The last index run failed — results may be incomplete. Re-run "codegraph index".');
+      }
+      if (pendingRefs > 0) {
+        warn(`${formatNumber(pendingRefs)} references from an interrupted run are awaiting resolution — some callers/impact edges are missing. Run "codegraph sync" to resolve them.`);
       }
       console.log();
 
