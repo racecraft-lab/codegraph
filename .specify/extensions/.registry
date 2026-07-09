@@ -161,6 +161,99 @@
       },
       "registered_skills": [],
       "installed_at": "2026-07-03T19:25:45.346136+00:00"
+    },
+    "archive": {
+      "version": "1.1.0",
+      "source": "local",
+      "manifest_hash": "sha256:fb4b68b85d69d6ed546965acc6a2a7157e215d894093230574fffc11c20d7893",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.archive.run"
+        ],
+        "claude": [
+          "speckit.archive.run"
+        ],
+        "codex": [
+          "speckit.archive.run"
+        ],
+        "zed": [
+          "speckit.archive.run"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-09T20:32:44.586345+00:00"
+    },
+    "bug": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:1d0da5458f3c18ff08cf1602d88cecc33fad07068208951fb7128090cfa90c90",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.bug.assess",
+          "speckit.bug.fix",
+          "speckit.bug.test"
+        ],
+        "claude": [
+          "speckit.bug.assess",
+          "speckit.bug.fix",
+          "speckit.bug.test"
+        ],
+        "codex": [
+          "speckit.bug.assess",
+          "speckit.bug.fix",
+          "speckit.bug.test"
+        ],
+        "zed": [
+          "speckit.bug.assess",
+          "speckit.bug.fix",
+          "speckit.bug.test"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-09T21:03:38.921453+00:00"
+    },
+    "git": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:9731aa8143a72fbebfdb440f155038ab42642517c2b2bdbbf67c8fdbe076ed79",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ],
+        "claude": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ],
+        "codex": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ],
+        "zed": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-07-09T21:03:39.173243+00:00"
     }
   }
 }
