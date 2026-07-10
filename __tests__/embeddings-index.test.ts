@@ -110,11 +110,11 @@ describe.skipIf(!HAS_SQLITE)('node_vectors schema convergence (FR-012)', () => {
     }
   });
 
-  it('CURRENT_SCHEMA_VERSION is 8 (the node_vectors migration)', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(8);
+  it('CURRENT_SCHEMA_VERSION is 9 (the node_vectors migration, renumbered at the upstream v1.4.0 sync — upstream owns v8)', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(9);
   });
 
-  it('a fresh schema.sql DB and a v7→v8 upgraded DB yield an identical node_vectors shape', () => {
+  it('a fresh schema.sql DB and a v7→current upgraded DB yield an identical node_vectors shape', () => {
     // Path A — fresh install straight from schema.sql.
     const freshShape = nodeVectorsShape(freshDb('cg-nv-fresh-').getDb());
 
@@ -133,10 +133,10 @@ describe.skipIf(!HAS_SQLITE)('node_vectors schema convergence (FR-012)', () => {
     // FR-012 convergence: the two independent definitions produce an identical
     // table shape, row-for-row (name, type, notnull, pk).
     expect(upgradedShape).toEqual(freshShape);
-    expect(getCurrentVersion(raw)).toBe(8);
+    expect(getCurrentVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
   });
 
-  it('the v8 migration is DDL-only and idempotent — a re-open is a safe no-op', () => {
+  it('the node_vectors migration (v9 since the v1.4.0 sync) is DDL-only and idempotent — a re-open is a safe no-op', () => {
     const raw = freshDb('cg-nv-idem-').getDb();
     rewindToV7(raw);
     runMigrations(raw, getCurrentVersion(raw));
@@ -144,18 +144,20 @@ describe.skipIf(!HAS_SQLITE)('node_vectors schema convergence (FR-012)', () => {
     const shape = nodeVectorsShape(raw);
     expect(shape).toEqual(EXPECTED_SHAPE); // built on the first upgrade
 
-    // (a) A normal re-open re-runs the runner from the recorded version. At v8
-    // nothing is pending, so it is a version-gated no-op — no throw, no change.
+    // (a) A normal re-open re-runs the runner from the recorded version. At the
+    // latest version nothing is pending, so it is a version-gated no-op — no
+    // throw, no change.
     expect(() => runMigrations(raw, getCurrentVersion(raw))).not.toThrow();
-    expect(getCurrentVersion(raw)).toBe(8);
+    expect(getCurrentVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
     expect(nodeVectorsShape(raw)).toEqual(shape);
 
     // (b) Even forced to EXECUTE a second time over the now-existing table, the
-    // v8 DDL is `CREATE TABLE IF NOT EXISTS` — a no-op, never a throw.
+    // v8/v9 DDL is guarded (`IF NOT EXISTS` / PRAGMA column checks) — a no-op,
+    // never a throw.
     raw.prepare('DELETE FROM schema_versions WHERE version >= 8').run();
     expect(() => runMigrations(raw, 7)).not.toThrow();
     expect(nodeVectorsShape(raw)).toEqual(shape);
-    expect(getCurrentVersion(raw)).toBe(8);
+    expect(getCurrentVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
   });
 });
 
