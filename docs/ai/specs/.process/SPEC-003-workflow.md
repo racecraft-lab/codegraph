@@ -743,9 +743,9 @@ reads it and fuses; cache miss → keyword results in dormant shape (warming). K
 remains zero-touch (FR-003/003a). Boundary documented in a header comment in src/index.ts.
 Test impact: additive fixture pre-warm only (US1 scenario 1's "warmed provider" Given);
 zero assertion rewrites.
-| 2 - Library + surfaces (US1/US2) | | | |
-| 3 - Degradation paths (US3) | | | |
-| 4 - Dormancy + gates + polish (US4) | | | |
+| 2 - Library + surfaces (US1/US2) | T014–T017 (MCP `codegraph_search` mode param + provenance tags + timing footer; CLI `--mode` + footers; status availability line) | 4/4 ✅ | `hybrid-mcp-surface` 12/12, `hybrid-cli-surface` 30/30, status-json 5/5. Env-hermeticity fix applied twice (subprocess CHILD_ENV scrub commit 929f13f; in-process vitest-worker scrub commit 15bdf71) — direnv-loaded live HAL endpoint was activating semantic paths inside dormant-path tests. `codegraph_explore` + server-instructions.ts untouched (non-goal held). |
+| 3 - Degradation paths (US3) | T018–T024 (4 literal hint strings; no-provider/no-vectors/guard/warming precedence; memory guard; unknown-mode→auto) | 7/7 ✅ | Deliberately resequenced BEFORE US2 surface renderers needed them; all 4 `DEGRADATION_HINT_STRINGS` byte-pinned in tests; precedence order no-provider→no-vectors→guard/embed-failure→warming verified; suite re-run green after load-spike false failures (contention at load 72, quiet re-run 110/110). |
+| 4 - Dormancy + gates + polish (US4) | T025–T034 | 8/10 (T030, T033–T034 remaining; T029 ✅ 2026-07-10) | Dormancy byte-parity pinned (T025–T027). T028 eval cases + T031 memory-envelope docs + T032 CHANGELOG done. **T029 scoped A/B complete** — evidence: `specs/003-hybrid-semantic-search/.process/ab-evidence.md`: agent A/B null (Sonnet never picked codegraph in either arm — known salience wall, both arms 0 codegraph calls, overlapping ranges); **deterministic probe decisive** (paraphrase query: BASE keyword ground-truth MISS vs NEW semantic/hybrid/auto rank #1); dormant control zero-delta (auto degrades to exact keyword output, no tags, no crash). Model policy honored (sonnet+high both arms). |
 
 ---
 
@@ -756,7 +756,7 @@ zero assertion rewrites.
 - [ ] Tests pass: `npm test` (incl. new vitest gates: hybrid ≥ keyword, keyword byte-stable, p95 fixture)
 - [ ] Build succeeds: `npm run build`
 - [ ] `npm run eval` semantic cases recorded in the scored report
-- [ ] Scoped A/B evidence recorded (ab-new-vs-baseline.sh, ≥2 runs/arm, Sonnet floor, embedded repo + no-vectors control) — Q10
+- [x] Scoped A/B evidence recorded (≥2 runs/arm, Sonnet floor, embedded repo + no-vectors control; wrapper `ab-spec003.sh` over canonical script — canonical would zero vectors in both arms) — Q10 · `specs/003-hybrid-semantic-search/.process/ab-evidence.md`
 - [ ] Self-repo dogfood UAT recorded in the UAT runbook (paraphrase queries via codegraph_search on this repo against the configured endpoint; dormancy spot-check)
 - [ ] retrieval-guardian review run (diff touches src/mcp/ + search path — CLAUDE.md requires it before PR)
 - [ ] CHANGELOG entry under `## [Unreleased]` (user-facing)
