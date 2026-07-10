@@ -103,7 +103,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 |------|------|--------|---------------|------------|
 | SPEC-001 | Embedding Infrastructure & Endpoint Provider | ✅ Complete | [SPEC-001-workflow.md](.process/SPEC-001-workflow.md) | Merged (#16, #17) |
 | SPEC-002 | Bundled Local Embedding Fallback | ✅ Complete | [SPEC-002-workflow.md](.process/SPEC-002-workflow.md) | Merged (#22); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-002.md` |
-| SPEC-003 | Hybrid Semantic Search | ⏳ Pending | [SPEC-003-workflow.md](SPEC-003-workflow.md) | Ready (SPEC-001 complete) |
+| SPEC-003 | Hybrid Semantic Search | 🔄 In Progress | [SPEC-003-workflow.md](.process/SPEC-003-workflow.md) | Scaffolded 2026-07-09 on `003-hybrid-semantic-search`; autopilot pending |
 | SPEC-004 | Web Framework Research Spike | ✅ Complete | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Merged (#19); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-004.md` |
 | SPEC-005 | Local HTTP Server & REST API | ⏳ Pending | [SPEC-005-workflow.md](SPEC-005-workflow.md) | Ready (SPEC-004 complete; see `docs/design/web-framework-decision.md`) |
 | SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Blocked by SPEC-005 |
