@@ -386,6 +386,16 @@ export interface TraversalOptions {
 }
 
 /**
+ * Retrieval strategy for a search request (SPEC-003 FR-001).
+ * - `keyword`  — FTS5/BM25 lexical match only (today's behavior).
+ * - `semantic` — embedding vector similarity only.
+ * - `hybrid`   — run both and fuse the ranked lists into one `fusedScore`.
+ * - `auto`     — let the engine pick per query (defaults toward hybrid when
+ *   embeddings are available, keyword otherwise).
+ */
+export type SearchMode = 'keyword' | 'semantic' | 'hybrid' | 'auto';
+
+/**
  * Options for searching the graph
  */
 export interface SearchOptions {
@@ -409,6 +419,13 @@ export interface SearchOptions {
 
   /** Whether search is case-sensitive */
   caseSensitive?: boolean;
+
+  /**
+   * Retrieval strategy for this request (SPEC-003 FR-001). Absent — not
+   * `undefined` — on existing callers, which the engine treats as today's
+   * keyword behavior; set to opt into `semantic`, `hybrid`, or `auto`.
+   */
+  mode?: SearchMode;
 }
 
 /**
@@ -428,6 +445,24 @@ export interface SearchResult {
 
   /** Matched text snippets for highlighting */
   highlights?: string[];
+
+  /**
+   * Which retrieval signal produced this result (SPEC-003 FR-012):
+   * `keyword` (lexical/FTS only), `semantic` (embedding similarity only), or
+   * `both` (surfaced by both signals and fused). Absent — not `undefined` —
+   * on the legacy keyword path so an unset result stays byte-identical to the
+   * historical `{ node, score, highlights? }` shape; present only when a
+   * semantic or hybrid search populates it.
+   */
+  matchType?: 'keyword' | 'semantic' | 'both';
+
+  /**
+   * Combined relevance score from fusing the keyword and semantic ranked
+   * lists (SPEC-003 FR-012) — higher is more relevant, used for ordering
+   * only. Absent on the keyword-only path (rank by `score` instead); present
+   * only for hybrid/semantic results where signals are fused.
+   */
+  fusedScore?: number;
 }
 
 /**

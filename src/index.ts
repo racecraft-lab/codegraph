@@ -52,6 +52,20 @@ import { FileWatcher, WatchOptions, PendingFile, LockUnavailableError } from './
 import { EXTRACTION_VERSION } from './extraction/extraction-version';
 import { getCodeGraphDir } from './directory';
 import { deriveProjectNameTokens } from './search/query-utils';
+import {
+  resolveLibrarySearchMode,
+  acquireQueryVector,
+  buildVectorMatrix,
+  vectorMatrixSourceFromQueries,
+  probeVectorStaleness,
+  getVectorMatrixSync,
+  semanticTopK,
+  rrfMerge,
+  candidateDepth,
+  type QueryVectorAcquisition,
+  type RrfGateFields,
+} from './search/hybrid';
+import { parseQuery } from './search/query-parser';
 import { CodeGraphPackageVersion } from './mcp/version';
 import { segmentLookupVariants, splitIdentifierSegments } from './search/identifier-segments';
 import { createYielder } from './resolution/cooperative-yield';
@@ -59,6 +73,7 @@ import { logWarn } from './errors';
 import { loadEmbeddingConfig, isEmbeddingProviderOff, plaintextRemoteWarning, redactEndpoint, LOCAL_VECTOR_MODEL, displayEmbeddingModel, type EmbeddingProviderSelection } from './embeddings/config';
 import { EndpointProvider } from './embeddings/endpoint-provider';
 import { LocalProvider } from './embeddings/local-provider';
+import type { EmbeddingProvider } from './embeddings/provider';
 import type { LocalProviderOverrides } from './embeddings/local-provider';
 import { runEmbeddingPass } from './embeddings/indexer-hook';
 import { probeLocalModelCache } from './embeddings/model-fetch';
@@ -328,6 +343,50 @@ export function __setLocalModelCacheProbeOverridesForTests(overrides: ProbeLocal
 }
 
 /**
+ * Test-only seam (mirrors {@link __setLocalProviderOverridesForTests}'s discipline):
+ * inject the query-time {@link EmbeddingProvider} the SPEC-003 hybrid/semantic arm
+ * embeds the query with, so the fusion path can be driven deterministically without
+ * a live endpoint or the bundled model (research D11; the pre-existing provider
+ * seams cover the *indexing* side only — no query-side swap existed). Production
+ * NEVER sets this (stays `undefined`): {@link CodeGraph.acquireQueryVectorForSearch}
+ * constructs the production query provider from env config ALONE, so this seam is
+ * unreachable in production config resolution (`loadEmbeddingConfig`). Clear with
+ * `undefined`.
+ * @internal
+ */
+let queryEmbeddingProviderForTests: EmbeddingProvider | undefined;
+export function __setQueryEmbeddingProviderForTests(provider: EmbeddingProvider | undefined): void {
+  queryEmbeddingProviderForTests = provider;
+}
+
+/**
+ * ── Sync/async boundary for the SPEC-003 query vector (FR-005/011; research D11) ──
+ *
+ * `CodeGraph.searchNodes` is SYNCHRONOUS by contract (contracts/search-api.md; the
+ * MCP tool and CLI both invoke it synchronously). The semantic arm's ONLY async
+ * dependency is the query embed: `EmbeddingProvider.embed` is Promise-only
+ * (`LocalProvider` marshals to a worker; `EndpointProvider` does HTTP — there is no
+ * synchronous embed). A synchronous method cannot await it, and blocking the main
+ * thread on it deadlocks (a resolved Promise's value is not synchronously readable).
+ *
+ * So acquisition stays ASYNC ({@link CodeGraph.acquireQueryVectorForSearch}, awaited
+ * by the MCP/CLI surfaces BEFORE they call the sync `searchNodes`) and DEPOSITS its
+ * result into this small bounded per-project cache; `searchNodes` reads it
+ * synchronously and fuses. A cache MISS is exactly the FR-005 "keyword-while-warming"
+ * state — the query is served keyword and an async acquisition is kicked off so the
+ * SAME query fuses once warm (US1 acceptance scenario 1's Given is "a warmed
+ * provider"). This cache is the substrate the warming latch (T020) and degradation
+ * hints (T019) build on. It never holds corpus vectors (those live in the matrix
+ * cache, FR-009) — only query vectors, keyed by (filter-stripped text, model id).
+ */
+const QUERY_VECTOR_CACHE_MAX = 32;
+
+/** Cache key for a query vector. The NUL separator can't occur in text or a model id. */
+function queryVectorCacheKey(text: string, model: string): string {
+  return `${model} ${text}`;
+}
+
+/**
  * Main CodeGraph class
  *
  * Provides the primary interface for interacting with the code knowledge graph.
@@ -336,6 +395,14 @@ export class CodeGraph {
   private db: DatabaseConnection;
   private queries: QueryBuilder;
   private projectRoot: string;
+  /**
+   * Bounded per-project cache of query embedding vectors, keyed by
+   * {@link queryVectorCacheKey} `(filter-stripped text, model id)`. Populated by the
+   * async {@link CodeGraph.acquireQueryVectorForSearch} and read synchronously by
+   * `searchNodes`'s fusion path — see the module-level header above
+   * {@link QUERY_VECTOR_CACHE_MAX} for the sync/async boundary rationale.
+   */
+  private readonly queryVectorCache = new Map<string, Float32Array>();
   // Assigned via wireLayers() from the constructor (and again on reopen) — the
   // `!` tells TS these are definitely set even though the assignment is one
   // method call away from the constructor body.
@@ -1664,10 +1731,205 @@ export class CodeGraph {
   }
 
   /**
-   * Search nodes by text
+   * Search nodes by text (SPEC-003 mode dispatch).
+   *
+   * Synchronous by contract (contracts/search-api.md; every caller — MCP tool, CLI
+   * — invokes it synchronously). The library default is `keyword`; an unknown /
+   * out-of-enum `mode` (an untyped `as any` caller) coerces to `keyword` and never
+   * throws (FR-001/003). `keyword` (and, for now, `auto`) run the existing pipeline
+   * VERBATIM with ZERO provider / probe / cache / embed work (FR-003/003a) and no
+   * `matchType`/`fusedScore` fields — byte-identical to today (SC-004). `semantic`
+   * and `hybrid` fuse via {@link runFusedSearch}.
+   *
+   * TODO(T015): resolve library `auto` by the FR-002 predicate (hybrid iff
+   * matching-model vectors exist, else keyword). Until then `auto` coerces to the
+   * safe keyword default so an accidental caller spends no embed latency.
    */
   searchNodes(query: string, options?: SearchOptions): SearchResult[] {
-    return this.queries.searchNodes(query, options);
+    const mode = resolveLibrarySearchMode(options?.mode);
+    if (mode === 'keyword' || mode === 'auto') {
+      return this.queries.searchNodes(query, options);
+    }
+    return this.runFusedSearch(query, mode, options);
+  }
+
+  /**
+   * Run a resolved `semantic`/`hybrid` request and return fused, provenance-tagged
+   * results (FR-002a/004/012). Synchronous: the keyword arm, matrix build/scan, and
+   * RRF merge are all synchronous; the ONE async dependency — the query embed — is
+   * consumed from {@link queryVectorCache} (see its header for the sync/async
+   * boundary rationale). Any semantic-arm unavailability — no provider, no cached
+   * query vector (warming), a guarded matrix, or any throw on the semantic path —
+   * degrades to the keyword arm sliced to `limit` in DORMANT shape (no `matchType`/
+   * `fusedScore`) and NEVER throws (FR-006/015; SC-003).
+   */
+  private runFusedSearch(
+    query: string,
+    mode: 'semantic' | 'hybrid',
+    options?: SearchOptions,
+  ): SearchResult[] {
+    const limit = options?.limit ?? 100;
+    const offset = options?.offset ?? 0;
+    // Degradation fallback: existing keyword pipeline in its dormant shape (no
+    // provenance fields), honouring the caller's limit/offset. TODO(T019): the
+    // surface layer appends the degradation hint (strings 1–4).
+    const dormant = (): SearchResult[] => this.queries.searchNodes(query, options);
+
+    const provider = this.resolveQueryEmbeddingProvider();
+    if (provider === null) return dormant(); // no provider configured → dormant
+
+    const parsed = parseQuery(query);
+    // A filter-only query (empty free text) is healthy-empty: nothing to embed, so
+    // the semantic arm contributes nothing → keyword-only union (still dormant here).
+    const cached =
+      parsed.text.length === 0
+        ? undefined
+        : this.queryVectorCache.get(queryVectorCacheKey(parsed.text, provider.id));
+    if (cached === undefined) {
+      // Cache MISS = FR-005 keyword-while-warming: serve keyword now. The vector is
+      // deposited out-of-band by the async surfaces awaiting
+      // `acquireQueryVectorForSearch` (T016/T017) before they call this sync method,
+      // so the SAME query fuses once warm (US1 scenario 1's Given: "a warmed
+      // provider"). TODO(T020): drive the warm from here behind a single-owner latch
+      // so a library-only caller warms without a surface, without duplicate inits.
+      return dormant();
+    }
+
+    const model = provider.id;
+    let matrixResult;
+    try {
+      const probe = probeVectorStaleness(this.queries, model);
+      matrixResult = getVectorMatrixSync(this.projectRoot, probe, () =>
+        buildVectorMatrix(vectorMatrixSourceFromQueries(this.queries, model)),
+      );
+    } catch {
+      return dormant(); // decode/build/probe threw → degrade (FR-006 catch-all)
+    }
+    if (matrixResult.guarded) return dormant(); // matrix over the memory ceiling → dormant
+
+    // kind:/lang: (query filters ∪ options.kinds/languages) PRE-filter the scan.
+    const mergedKinds =
+      parsed.kinds.length > 0
+        ? Array.from(new Set([...(options?.kinds ?? []), ...parsed.kinds]))
+        : options?.kinds;
+    const mergedLanguages =
+      parsed.languages.length > 0
+        ? Array.from(new Set([...(options?.languages ?? []), ...parsed.languages]))
+        : options?.languages;
+
+    const depth = candidateDepth(limit);
+    const semantic = semanticTopK(matrixResult.matrix, cached, depth, {
+      kinds: mergedKinds,
+      languages: mergedLanguages,
+    });
+
+    // Keyword arm: hybrid fuses it at the same candidate depth (its post-rescore
+    // order is the RRF rank input, FR-004a); semantic mode is vector-only (FR-002a).
+    const keywordArm: SearchResult[] =
+      mode === 'hybrid'
+        ? this.queries.searchNodes(query, { ...options, limit: depth, offset: 0 })
+        : [];
+
+    // Semantic-only candidates have no keyword SearchResult — supply their gate
+    // fields (path:/name:) and node records from a batched lookup (keeps rrfMerge pure).
+    const semNodes = this.queries.getNodesByIds(semantic.map((c) => c.nodeId));
+    const gateFields = new Map<string, RrfGateFields>();
+    for (const [id, node] of semNodes) {
+      gateFields.set(id, { filePath: node.filePath, name: node.name });
+    }
+
+    const fused = rrfMerge(keywordArm, semantic, {
+      limit,
+      offset,
+      pathFilters: parsed.pathFilters,
+      nameFilters: parsed.nameFilters,
+      gateFields,
+    });
+
+    // Materialise SearchResult[]: node + highlights from the keyword arm when it
+    // surfaced the id, else the semantic node lookup; score := fusedScore (contract
+    // search-api §score-by-mode); highlights ONLY from the keyword arm.
+    const keywordById = new Map<string, SearchResult>();
+    for (const r of keywordArm) if (!keywordById.has(r.node.id)) keywordById.set(r.node.id, r);
+
+    const out: SearchResult[] = [];
+    for (const f of fused) {
+      const kw = keywordById.get(f.nodeId);
+      const node = kw?.node ?? semNodes.get(f.nodeId);
+      if (!node) continue; // node unresolvable (concurrent delete) → drop defensively
+      const result: SearchResult = {
+        node,
+        score: f.fusedScore,
+        fusedScore: f.fusedScore,
+        matchType: f.matchType,
+      };
+      if (kw?.highlights !== undefined) result.highlights = kw.highlights;
+      out.push(result);
+    }
+    return out;
+  }
+
+  /**
+   * Resolve the query-time embedding provider for a resolved semantic/hybrid
+   * request (FR-011, data-model E5). The test-only seam wins when set; otherwise
+   * the provider is constructed LAZILY from env config ALONE — the SAME
+   * `loadEmbeddingConfig` resolution the indexing pass uses — so this is the single
+   * construction site and it never runs on the keyword path. Returns `null` when no
+   * provider is configured (dormant/half-config/unknown), so the caller degrades to
+   * keyword. Warming/latch caching is T020; here the provider is constructed on
+   * demand and the seam guarantees production never sees a test double.
+   */
+  private resolveQueryEmbeddingProvider(): EmbeddingProvider | null {
+    if (queryEmbeddingProviderForTests !== undefined) return queryEmbeddingProviderForTests;
+    const config = loadEmbeddingConfig(process.env);
+    if (config === null || 'misconfigured' in config) return null;
+    if ('provider' in config) {
+      // Local (SPEC-002) provider — the query embed reuses the indexing seam's
+      // overrides so a test harness that swaps the local model also covers this path.
+      return new LocalProvider(config, localProviderOverridesForTests);
+    }
+    return new EndpointProvider(config);
+  }
+
+  /**
+   * Acquire the semantic arm's query vector for a resolved semantic/hybrid request
+   * (FR-011; the T012 fusion entry consumes this). Resolves the query provider
+   * lazily (test seam, else env config), then delegates to {@link acquireQueryVector}
+   * so the filter-stripped free-text portion — parsed with the SAME parser FTS uses
+   * — is embedded and the provider's stored model id threaded to the scan/cache key
+   * (research D6). With no provider, or an empty filter-stripped query, no embed call
+   * is made and `{ vector: null, model: null }` is returned (healthy-empty / dormant
+   * → the semantic arm contributes nothing, never an error). NEVER reached on the
+   * keyword path, so the provider is never constructed there (laziness).
+   * @internal
+   */
+  async acquireQueryVectorForSearch(query: string): Promise<QueryVectorAcquisition> {
+    const provider = this.resolveQueryEmbeddingProvider();
+    if (provider === null) return { vector: null, model: null };
+    const acquisition = await acquireQueryVector(query, provider);
+    // Deposit the resolved vector into the bounded sync cache so a later synchronous
+    // `searchNodes` for the SAME (filter-stripped text, model) fuses (FR-005). The
+    // key mirrors what `runFusedSearch` computes: parse with the SAME parser FTS uses.
+    if (acquisition.vector !== null && acquisition.model !== null) {
+      this.cacheQueryVector(parseQuery(query).text, acquisition.model, acquisition.vector);
+    }
+    return acquisition;
+  }
+
+  /**
+   * Insert a query vector into the bounded most-recent cache (LRU by insertion
+   * order), evicting the oldest entries past {@link QUERY_VECTOR_CACHE_MAX}. Keeps
+   * the resident cost fixed at an internal documented bound — no env var / knob
+   * (FR-007). Re-inserting an existing key refreshes its recency.
+   */
+  private cacheQueryVector(text: string, model: string, vector: Float32Array): void {
+    const key = queryVectorCacheKey(text, model);
+    if (this.queryVectorCache.has(key)) this.queryVectorCache.delete(key);
+    this.queryVectorCache.set(key, vector);
+    while (this.queryVectorCache.size > QUERY_VECTOR_CACHE_MAX) {
+      const oldest = this.queryVectorCache.keys().next().value as string;
+      this.queryVectorCache.delete(oldest);
+    }
   }
 
   /**

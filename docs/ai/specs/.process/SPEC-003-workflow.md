@@ -729,7 +729,20 @@ For each task: RED (failing test) → GREEN (minimum code) → REFACTOR → VERI
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| 1 - Fusion core (hybrid.ts + cache) | | | |
+| 1 - Fusion core (hybrid.ts + cache) | T001–T013 (Setup + Foundational + US1) | 13/13 ✅ | Gate file 43/43; full suite 2727 passed / 0 failed at T012; **observed fusion p95 = 19.9 ms vs 150 ms gate (~7.5× headroom; FR-014d 2× revisit NOT triggered)**; median 19.4 ms over N=200, warmup 10, 50k×384 seeded fixture. TDD evidence per task in transcripts; T006 gate went RED→GREEN at T012 with zero assertion rewrites. |
+
+**Design decision recorded mid-implement (T012, 2026-07-10, orchestrator-approved):**
+`searchNodes` is contract-bound synchronous (`SearchResult[]`, all callers), but providers
+embed async-only — no production-only bridge exists (a sync-over-async spin bridge was
+tried by a failed executor and deadlocked the main thread; reverted). Resolution mirrors
+FR-005's own keyword-while-warming semantics at the library layer: async
+`acquireQueryVectorForSearch` (the single async entry the MCP/CLI surfaces await) deposits
+into a bounded sync LRU query-vector cache (`QUERY_VECTOR_CACHE_MAX = 32`, internal
+constant, no knob — FR-007) keyed by (filter-stripped text, model id); sync `searchNodes`
+reads it and fuses; cache miss → keyword results in dormant shape (warming). Keyword path
+remains zero-touch (FR-003/003a). Boundary documented in a header comment in src/index.ts.
+Test impact: additive fixture pre-warm only (US1 scenario 1's "warmed provider" Given);
+zero assertion rewrites.
 | 2 - Library + surfaces (US1/US2) | | | |
 | 3 - Degradation paths (US3) | | | |
 | 4 - Dormancy + gates + polish (US4) | | | |

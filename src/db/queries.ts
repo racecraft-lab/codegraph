@@ -296,6 +296,7 @@ export class QueryBuilder {
     upsertNodeVector?: SqliteStatement;
     selectEmbeddableMissing?: SqliteStatement;
     selectEmbeddedWithHash?: SqliteStatement;
+    selectVectorRows?: SqliteStatement;
     deleteRemovedVectors?: SqliteStatement;
     embeddingCoverage?: SqliteStatement;
   } = {};
@@ -2529,6 +2530,45 @@ export class QueryBuilder {
       ...EMBEDDABLE_NODE_KINDS,
     ) as Array<NodeRow & { input_hash: string }>;
     return rows.map((row) => ({ node: rowToNode(row), inputHash: row.input_hash }));
+  }
+
+  /**
+   * Every current-model vector row joined to its live node, carrying the raw
+   * little-endian f32 BLOB plus the node's `kind`/`language` for the SPEC-003
+   * matrix-cache pre-filter arrays (data-model E4; research D6). Read-only — the
+   * hybrid matrix cache (`src/search/hybrid.ts`) decodes each BLOB via
+   * {@link decodeVector} into one contiguous `Float32Array`. The JOIN on
+   * `nodes` drops orphan vector rows (a `node_id` no longer present) exactly as
+   * {@link getEmbeddingCoverage}'s `embedded` count does, so the enumerated row
+   * count matches that count. `vector` is normalized to a `Buffer` (node:sqlite
+   * hands BLOBs back as a plain `Uint8Array`, which lacks `readFloatLE`).
+   */
+  selectVectorRowsForModel(
+    activeModel: string,
+  ): Array<{ nodeId: string; kind: NodeKind; language: Language; vector: Buffer }> {
+    if (!this.stmts.selectVectorRows) {
+      this.stmts.selectVectorRows = this.db.prepare(`
+        SELECT v.node_id AS nodeId, n.kind AS kind, n.language AS language, v.vector AS vector
+        FROM node_vectors v
+        JOIN nodes n ON n.id = v.node_id
+        WHERE v.model = ?
+          AND n.kind IN (${EMBEDDABLE_KINDS_PLACEHOLDERS})
+      `);
+    }
+    const rows = this.stmts.selectVectorRows.all(activeModel, ...EMBEDDABLE_NODE_KINDS) as Array<{
+      nodeId: string;
+      kind: string;
+      language: string;
+      vector: Uint8Array;
+    }>;
+    return rows.map((r) => ({
+      nodeId: r.nodeId,
+      kind: r.kind as NodeKind,
+      language: r.language as Language,
+      vector: Buffer.isBuffer(r.vector)
+        ? r.vector
+        : Buffer.from(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength),
+    }));
   }
 
   /**
