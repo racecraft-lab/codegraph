@@ -296,8 +296,10 @@ export class QueryBuilder {
     upsertNodeVector?: SqliteStatement;
     selectEmbeddableMissing?: SqliteStatement;
     selectEmbeddedWithHash?: SqliteStatement;
+    selectVectorRows?: SqliteStatement;
     deleteRemovedVectors?: SqliteStatement;
     embeddingCoverage?: SqliteStatement;
+    bumpVectorsWriteVersion?: SqliteStatement;
   } = {};
 
   // Names whose segments were already written this session — skips re-splitting
@@ -2452,6 +2454,33 @@ export class QueryBuilder {
       `);
     }
     this.stmts.upsertNodeVector.run({ nodeId, model, dims, vector, inputHash });
+    // Every node_vectors mutation bumps the monotonic write-version so the hybrid
+    // staleness probe (SPEC-003 review item 6) detects a same-count in-place re-embed
+    // (this ON CONFLICT DO UPDATE leaves the count unchanged) that count/model/dims miss.
+    this.bumpVectorsWriteVersion();
+  }
+
+  /**
+   * Bump the monotonic `vectors_write_version` metadata counter (SPEC-003 review
+   * item 6). Called on EVERY `node_vectors` mutation (upsert + orphan-delete) so the
+   * hybrid staleness probe invalidates the resident matrix even for changes that leave
+   * the matching-model count unchanged — an in-place re-embed or a 1-for-1 rename. A
+   * single atomic increment (SQL CAST arithmetic), monotonic and cheap; the token only
+   * needs to CHANGE, so batched call paths may bump more than once per logical change.
+   * Written ONLY on the vector-write path (embedding active), so a dormant project never
+   * creates the scalar and its byte-parity is untouched (SC-004).
+   */
+  private bumpVectorsWriteVersion(): void {
+    if (!this.stmts.bumpVectorsWriteVersion) {
+      this.stmts.bumpVectorsWriteVersion = this.db.prepare(`
+        INSERT INTO project_metadata (key, value, updated_at)
+        VALUES ('vectors_write_version', '1', @updatedAt)
+        ON CONFLICT(key) DO UPDATE SET
+          value = CAST(CAST(value AS INTEGER) + 1 AS TEXT),
+          updated_at = @updatedAt
+      `);
+    }
+    this.stmts.bumpVectorsWriteVersion.run({ updatedAt: Date.now() });
   }
 
   /**
@@ -2532,6 +2561,45 @@ export class QueryBuilder {
   }
 
   /**
+   * Every current-model vector row joined to its live node, carrying the raw
+   * little-endian f32 BLOB plus the node's `kind`/`language` for the SPEC-003
+   * matrix-cache pre-filter arrays (data-model E4; research D6). Read-only — the
+   * hybrid matrix cache (`src/search/hybrid.ts`) decodes each BLOB via
+   * {@link decodeVector} into one contiguous `Float32Array`. The JOIN on
+   * `nodes` drops orphan vector rows (a `node_id` no longer present) exactly as
+   * {@link getEmbeddingCoverage}'s `embedded` count does, so the enumerated row
+   * count matches that count. `vector` is normalized to a `Buffer` (node:sqlite
+   * hands BLOBs back as a plain `Uint8Array`, which lacks `readFloatLE`).
+   */
+  selectVectorRowsForModel(
+    activeModel: string,
+  ): Array<{ nodeId: string; kind: NodeKind; language: Language; vector: Buffer }> {
+    if (!this.stmts.selectVectorRows) {
+      this.stmts.selectVectorRows = this.db.prepare(`
+        SELECT v.node_id AS nodeId, n.kind AS kind, n.language AS language, v.vector AS vector
+        FROM node_vectors v
+        JOIN nodes n ON n.id = v.node_id
+        WHERE v.model = ?
+          AND n.kind IN (${EMBEDDABLE_KINDS_PLACEHOLDERS})
+      `);
+    }
+    const rows = this.stmts.selectVectorRows.all(activeModel, ...EMBEDDABLE_NODE_KINDS) as Array<{
+      nodeId: string;
+      kind: string;
+      language: string;
+      vector: Uint8Array;
+    }>;
+    return rows.map((r) => ({
+      nodeId: r.nodeId,
+      kind: r.kind as NodeKind,
+      language: r.language as Language,
+      vector: Buffer.isBuffer(r.vector)
+        ? r.vector
+        : Buffer.from(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength),
+    }));
+  }
+
+  /**
    * Reconcile the vector layer against the live node set: delete every
    * `node_vectors` row whose `node_id` is no longer present in `nodes` (FR-017).
    * `node_vectors` has no foreign key (D6/FR-016a), so a removed symbol — and the
@@ -2546,7 +2614,13 @@ export class QueryBuilder {
         'DELETE FROM node_vectors WHERE node_id NOT IN (SELECT id FROM nodes)',
       );
     }
-    return this.stmts.deleteRemovedVectors.run().changes;
+    const removed = this.stmts.deleteRemovedVectors.run().changes;
+    // A real vector removal (e.g. a symbol renamed/deleted) is a node_vectors mutation:
+    // bump the write-version so the staleness probe rebuilds even when a matching-model
+    // add elsewhere leaves the net count unchanged (SPEC-003 review item 6). No rows
+    // removed ⇒ no mutation ⇒ no bump (keeps the token from moving spuriously).
+    if (removed > 0) this.bumpVectorsWriteVersion();
+    return removed;
   }
 
   // ===========================================================================

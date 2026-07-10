@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "error_class": "none",
+  "exit_code": 0,
+  "stderr_line": "",
+  "packet_id": "pr-packet",
+  "mode": null,
+  "target": null,
+  "status": "passed",
+  "title_value": null,
+  "body_file": "specs/003-hybrid-semantic-search/.process/pr-body.md",
+  "rule_outcomes": [
+    {
+      "rule": "packet.validation",
+      "status": "passed",
+      "evidence": "no failures"
+    }
+  ],
+  "pr_blocked": false,
+  "failures": [],
+  "remediation_evidence": [],
+  "timestamp": "2026-07-10T18:32:03Z"
+}

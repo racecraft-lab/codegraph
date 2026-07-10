@@ -41,6 +41,9 @@ async function run() {
       const searchResults = cg.searchNodes(tc.query, {
         limit: 10,
         kinds: tc.kinds,
+        // SPEC-003 (FR-014): thread the case's retrieval mode. Absent → the
+        // library resolves it to keyword, so existing cases are byte-identical.
+        mode: tc.mode,
         ...(tc.options as Record<string, unknown>),
       });
       const latency = performance.now() - start;

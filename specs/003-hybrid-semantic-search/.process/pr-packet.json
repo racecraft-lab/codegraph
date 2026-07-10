@@ -1,0 +1,75 @@
+{
+  "spec_id": "SPEC-003",
+  "generated_title": {
+    "text": "feat(SPEC-003): hybrid semantic search \u2014 RRF fusion of keyword + vector search with graceful degradation"
+  },
+  "target": {
+    "remote": "origin",
+    "repo": "racecraft-lab/codegraph",
+    "base": "main",
+    "head": "003-hybrid-semantic-search"
+  },
+  "body_file": "specs/003-hybrid-semantic-search/.process/pr-body.md",
+  "validation_result_path": "specs/003-hybrid-semantic-search/.process/pr-packet-validation.json",
+  "scope_evidence": {
+    "changed_files": [
+      ".gitignore",
+      ".specify/feature.json",
+      "BUNDLING.md",
+      "CHANGELOG.md",
+      "CLAUDE.md",
+      "__tests__/evaluation/runner.ts",
+      "__tests__/evaluation/test-cases.ts",
+      "__tests__/evaluation/types.ts",
+      "__tests__/hybrid-cli-surface.test.ts",
+      "__tests__/hybrid-mcp-surface.test.ts",
+      "__tests__/hybrid-search.test.ts",
+      "__tests__/security.test.ts",
+      "docs/ai/specs/.process/SPEC-003-design-concept.md",
+      "docs/ai/specs/.process/SPEC-003-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "docs/ai/specs/intelligence-platform-technical-roadmap.md",
+      "specs/003-hybrid-semantic-search/.process/ab-evidence.md",
+      "specs/003-hybrid-semantic-search/.process/ab-spec003.sh",
+      "specs/003-hybrid-semantic-search/.process/dogfood-uat.md",
+      "specs/003-hybrid-semantic-search/.process/integration-suite.md",
+      "specs/003-hybrid-semantic-search/.process/pr-body.md",
+      "specs/003-hybrid-semantic-search/.process/pr-review-packet.md",
+      "specs/003-hybrid-semantic-search/.process/retrieval-guardian-report.md",
+      "specs/003-hybrid-semantic-search/.process/verify-tasks-report.md",
+      "specs/003-hybrid-semantic-search/SPEC-MOC.md",
+      "specs/003-hybrid-semantic-search/checklists/api-contracts.md",
+      "specs/003-hybrid-semantic-search/checklists/error-handling.md",
+      "specs/003-hybrid-semantic-search/checklists/performance.md",
+      "specs/003-hybrid-semantic-search/checklists/requirements.md",
+      "specs/003-hybrid-semantic-search/contracts/degradation-hints.md",
+      "specs/003-hybrid-semantic-search/contracts/mcp-cli-surface.md",
+      "specs/003-hybrid-semantic-search/contracts/search-api.md",
+      "specs/003-hybrid-semantic-search/data-model.md",
+      "specs/003-hybrid-semantic-search/plan.md",
+      "specs/003-hybrid-semantic-search/quickstart.md",
+      "specs/003-hybrid-semantic-search/research.md",
+      "specs/003-hybrid-semantic-search/spec.md",
+      "specs/003-hybrid-semantic-search/tasks.md",
+      "src/bin/codegraph.ts",
+      "src/db/queries.ts",
+      "src/index.ts",
+      "src/mcp/tools.ts",
+      "src/search/hybrid.ts",
+      "src/types.ts"
+    ]
+  },
+  "verification_evidence": {
+    "full_suite": "npm test: 2806 passed / 0 failed / 7 skipped (165 files)",
+    "typecheck": "tsc --noEmit clean",
+    "build": "npm run build clean",
+    "gates": "G0-G7 all PASS (G7 8/8 checks)",
+    "reviews": "verify ext PASS 0 findings; verify-tasks 0 phantoms; retrieval-guardian 6/6; code review approve-with-comments, all findings remediated",
+    "ab_evidence": "specs/003-hybrid-semantic-search/.process/ab-evidence.md",
+    "dogfood_uat": "specs/003-hybrid-semantic-search/.process/dogfood-uat.md",
+    "integration_suite": "specs/003-hybrid-semantic-search/.process/integration-suite.md"
+  },
+  "notes": {
+    "body_location_deviation": ".git/ convention not usable in a git worktree (.git is a gitdir pointer file; real git dir escapes runner trust boundary) \u2014 body + packet live under the spec .process/ directory instead"
+  }
+}

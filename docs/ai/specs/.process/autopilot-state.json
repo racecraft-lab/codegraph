@@ -1,60 +1,28 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-025-workflow.md",
-  "spec_id": "SPEC-025",
-  "feature_dir": "specs/025-plugin-platform-spike",
-  "updated_at": "2026-07-10T10:15:00Z",
-  "active_step": "All 7 phases complete (G0-G7 pass); post-implementation done; PR pending",
-  "status": "implement_complete_pr_pending",
-  "post_implementation": {
-    "g7": "pass (build clean; 25 load-contention test failures all pass in isolation — 823/823; zero src changes on branch)",
-    "verify_implementation": "PASS (8 load-bearing FRs deep-verified)",
-    "verify_tasks_phantom_check": "30/30 verified, 0 phantoms",
-    "independent_review": "SHIP (secrets sweep independently clean; 1 major process-state finding remediated, minors addressed or recorded)",
-    "confidence_gate": "0.98 advisory PASS"
-  },
-  "confidence_gate_mode": "advisory",
-  "agent_teams_available": false,
-  "reviewability_gate": {
-    "setup_mode": {
-      "status": "pass",
-      "recorded_at_scaffold": "2026-07-09",
-      "evidence": "0 LOC / 0 production files / 2 total files / 1 surface (docs/process)"
-    },
-    "tasks_mode": {
-      "status": "deferred",
-      "helper_id": "reviewability-gate",
-      "requested_mode": "tasks",
-      "deferral_reason": "tasks and pre-PR modes are registered deferred on the installed speckit_pro_runner (2.18.1); setup mode is the only active mode",
-      "fallback_evidence_chain": [
-        "setup-mode gate PASS at scaffold (0 LOC / 0 prod / 2 files / 1 surface)",
-        "plan-phase estimate-reviewable-loc: status=not_estimated (projected=null, 0 declared production files — correct for a 0-LOC research spike; advisory)",
-        "spec.md Reviewability Budget: within budget (spike), split decision: no split"
-      ],
-      "verdict": "marker-planning input = pass (fallback chain); no size block"
-    }
-  },
-  "atomicity_route": {
-    "route": "one-navigable-PR",
-    "releasable": true,
-    "signals": ["change-shape:modify-heavy"],
-    "warnings": [],
-    "recorded_at": "2026-07-10"
-  },
-  "layer_plan": {
-    "status": "skipped",
-    "reason": "route is one-navigable-PR (non-split); plan-layers-feature-dir not invoked"
-  },
-  "pr_marker_plan": {
-    "status": "not_required",
-    "reason": "reviewability fallback evidence is pass (no size-only block, no warn requiring markers); route is one-navigable-PR; single-PR path expected"
+  "workflow_file": "docs/ai/specs/.process/SPEC-003-workflow.md",
+  "spec_id": "SPEC-003",
+  "feature_dir": "specs/003-hybrid-semantic-search",
+  "updated_at": "2026-07-10T17:55:00Z",
+  "active_step": "Post-Implementation: Reviewability Diff Gate",
+  "status": "in_progress",
+  "archive_sweep": {
+    "cleanup_mode": "apply-eligibility (feature branch)",
+    "current_target_excluded": "specs/003-hybrid-semantic-search",
+    "eligible_previous_specs": [],
+    "actions_taken": [],
+    "safeToApplyCleanup": false,
+    "notes": "origin/main specs/ tree empty; SPEC-001/002/004/008/023 already archived"
   },
   "project_commands": {
     "BUILD": "npm run build",
-    "TYPECHECK": "N/A (tsc runs inside build)",
+    "TYPECHECK": "npm run typecheck",
     "LINT": "N/A",
+    "LINT_FIX": "N/A",
     "UNIT_TEST": "npm test",
     "INTEGRATION_TEST": "N/A",
-    "FULL_VERIFY": "npm run build && npm test"
+    "SINGLE_FILE_TEST": "npx vitest run __tests__/<file>.test.ts",
+    "SINGLE_FILE_INTEGRATION": "N/A",
+    "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
   },
   "preset_conventions": {
     "has_presets": true,
@@ -62,15 +30,70 @@
       "claude-ask-questions",
       "codegraph-project-overrides",
       "speckit-pro-reviewability"
-    ],
-    "template_resolution": {
-      "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
-      "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
-      "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
+    ]
+  },
+  "confidence_gate_mode": "advisory",
+  "agent_teams_available": true,
+  "reviewability": {
+    "setup_gate": {
+      "status": "pass",
+      "warnings": [],
+      "evidence": "SPEC-003-scoped scaffold run: 195 reviewable LOC, ~4 production files, ~10 total files, 1 primary surface (committed 7a4d398; recorded in SPEC-003-workflow.md)"
+    },
+    "plan_estimate": {
+      "status": "not_estimated",
+      "projected": null,
+      "note": "plan.md declares no machine-parseable production-file table; advisory, not treated as pass"
+    },
+    "tasks_gate": {
+      "status": "deferred",
+      "helper_id": "reviewability-gate",
+      "requested_mode": "tasks",
+      "deferral_reason": "tasks mode not supported on the installed runner (setup mode only)",
+      "fallback_evidence_chain": [
+        "setup gate pass (scaffold)",
+        "plan estimate not_estimated (advisory)",
+        "no operator split decision",
+        "tasks.md T005 reviewability checkpoint task carries the budget"
+      ],
+      "decision": "proceed"
+    },
+    "final_diff_gate": {
+      "status": "warn",
+      "helper_id": "final-reviewability-backstop",
+      "requested_mode": "dry_run",
+      "deferral_reason": "helper is a deferred mutation stub on the installed runner (promotion_status: deferred; dry_run returns a command plan, no gate evaluation)",
+      "measured": {
+        "raw_added_production_loc": 1830,
+        "code_only_added_production_loc": 743,
+        "production_files": 6,
+        "comment_doc_share": "~59% of added lines",
+        "budget_projection": "195 LOC / ~4 files (setup gate)"
+      },
+      "decision": "WARN - proceed as one navigable PR",
+      "justification": [
+        "atomicity_route already recorded as one-navigable-PR; feature is a single vertical slice (dormant-by-default, no partial merge point that stays releasable)",
+        "PR review packet (T033) provides review order + full FR/SC traceability to mitigate reviewer load",
+        "four independent post-impl review passes completed green (verify ext 0 findings; verify-tasks 0 phantoms; retrieval-guardian 6/6; opus code review approve-with-comments, all findings remediated)",
+        "re-slicing a completed gate-green implementation post-hoc would cost more review risk than it removes; overage recorded honestly in the T033 findings ledger (commit 2bca035) and the PR packet scope-budget section"
+      ],
+      "evidence": "T033 findings ledger item 4 in SPEC-003-workflow.md; pr-review-packet.md scope-budget section"
     }
   },
-  "notes": [
-    "Prior contents of this file were SPEC-008 completed_archived state; superseded by this SPEC-025 run.",
-    "generate-spec-index-write registered deferred on installed runner; spec-map regen recorded as deferred at all phase boundaries."
-  ]
+  "atomicity_route": {
+    "route": "one-navigable-PR",
+    "releasable": true,
+    "signals": [
+      "change-shape:modify-heavy"
+    ],
+    "warnings": []
+  },
+  "layer_plan": {
+    "status": "skipped",
+    "reason": "route is one-navigable-PR, not split-PR; layer planner runs only for split routes"
+  },
+  "pr_marker_plan": {
+    "status": "not_required",
+    "reason": "no size-only reviewability block exists; setup gate passed and tasks-mode gate deferred with proceed decision"
+  }
 }

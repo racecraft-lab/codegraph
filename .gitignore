@@ -76,3 +76,6 @@ assets/generate-waitlist.py
 
 # Local, untracked environment (direnv) — HAL embedding config etc.
 .envrc.local
+
+# Local scored-eval output (npm run eval) — never committed
+__tests__/evaluation/results/
