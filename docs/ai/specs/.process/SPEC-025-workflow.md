@@ -66,8 +66,8 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Sessions seeded from design-concept Open Questions |
+| Specify | `/speckit-specify` | ✅ Complete | 5 US / 20 FR / 14 AC / 8 SC; 0 markers; G1 PASS (runner + grep). spec.md + checklists/requirements.md; feature.json created |
+| Clarify | `/speckit-clarify` | 🔄 In Progress | Sessions seeded from design-concept Open Questions |
 | Plan | `/speckit-plan` | ⏳ Pending | Plan = validation protocol + doc structure (no production code) |
 | Checklist | `/speckit-checklist` | ⏳ Pending | security, integration, error-handling |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
@@ -108,6 +108,25 @@ Each phase requires **human review and approval** before proceeding:
 | VII. Local-First, Private | Plugin channel must not add phone-home behavior; npx fallback's network implications explicitly weighed in the launcher decision | Launcher-contract section of the decision doc |
 
 **Constitution Check:** ✅ (docs-only spike; gates above verified at G7)
+
+### Autopilot Pre-flight Record (Step -1/0, 2026-07-09)
+
+| Item | Value |
+|------|-------|
+| check-prerequisites | all_pass: true (specify 0.11.8; project init; constitution; all speckit commands; workflow file found). Runner anchors to main checkout — branch verified directly: `025-plugin-platform-spike`, ON_FEATURE_BRANCH=true, IS_WORKTREE=true |
+| PROJECT_COMMANDS | BUILD=`npm run build` · TYPECHECK=`npx tsc --noEmit` (tsc runs inside build) · UNIT_TEST=`npm test` (vitest) · LINT=N/A · INTEGRATION_TEST=N/A (vitest suite is the full suite) · package_manager=npm, stack=nodejs |
+| PRESET_CONVENTIONS | speckit-pro-reviewability v1.0.0 (spec/plan top layer), codegraph-project-overrides v1.0.0 (tasks top layer: constitution test-policy exceptions), claude-ask-questions v1.0.0 |
+| Settings | No `.claude/speckit-pro.local.md` — defaults: consensus-mode default, gate-failure=stop, auto-commit per extensions.yml (`auto_execute_hooks: true`, git commit hooks on all phase boundaries) |
+| CONFIDENCE_GATE_MODE | `advisory` (resolved at Step 0.6b via runner `resolve-confidence-mode`, argv had no flags; not re-run at G6.5) |
+| AGENT_TEAMS_AVAILABLE | false (no TeamCreate in session tool surface) — `[P]` runs use batched background subagents |
+| PROJECT_IMPLEMENTATION_AGENT | none detected (`.claude/agents/` has only retrieval-guardian, a reviewer) → fallback `speckit-pro:phase-executor`; research tasks route to `speckit-pro:domain-researcher` |
+| Extensions (registry) | agent-context, archive, bug, cleanup, git, retrospective, review, verify, verify-tasks installed; 18 hook events configured; no doctor/speckit-utils extension |
+| MCP availability | codegraph (dogfood daemon, explore active), context7, tavily, RepoPrompt, qmd, claude-in-chrome — research + docs coverage available |
+| Reviewability (setup mode) | PASS at scaffold (0 LOC / 0 prod files / 2 total / 1 surface). Tasks + pre-PR gate modes are deferred on installed runner — fallback evidence chain recorded at Phase 5/PR steps |
+| Tier-2 relocation | Suppressed — SPEC-025 is already-current (SPEC-MOC `structureVersion: 1`, PROCESS artifacts under `.process/`); no other eligible thawed legacy candidates surfaced |
+| Model/effort | Orchestrator Fable 5 (> Opus 4.6 bar); effort HIGH per explicit operator override in invocation args (in place of max); operator directive: orchestrator delegates only, custom agents at minimal viable model, never Haiku |
+| Archive Sweep (Step -1) | **No-op** — real sweep (`--sweep --current-target specs/025-plugin-platform-spike`, feature branch): `specs/` contains only the excluded current target; SPEC-001/002/004/008/023 already archived (provenance in `.specify/memory/archive-reports/`). No files modified. Extension nit surfaced: `check-prerequisites.sh` expects an active feature.json even in sweep mode (worker derived paths manually) |
+| G0 Constitution Validation | **PASS.** BUILD (`npm run build`: tsc + copy-assets) clean. UNIT_TEST: two full-suite runs under session load each showed a *different* set of 5000ms-timeout / `EMFILE too many open files` failures (10 then 6, disjoint files); all 3 flagged files (foundation, index-command, sync — 76 tests) pass in isolation in 17s. Verdict: load-induced fd/timeout flakes, not breakage; worktree has zero `src/**` changes. Baseline: 2679 passed / 7 skipped / 162 files |
 
 ---
 
@@ -223,13 +242,15 @@ how it coexists with the existing npm installer.
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | |
-| User Stories | |
-| Acceptance Criteria | |
+| Functional Requirements | 20 (FR-001–FR-020) |
+| User Stories | 5 (US1 P1 audit; US2/US3 P2 launcher/coexistence; US4/US5 P3 degraded-Codex/artifact-plan) |
+| Acceptance Criteria | 14 acceptance scenarios + 8 success criteria (SC-001–SC-008) + 6 edge cases |
+
+Hooks: `after_specify` agent-context.update **skipped** (repo CLAUDE.md is hand-curated; docs-only spike adds no tech stack — surgical-changes call, logged); git.commit honored via orchestrator checkpoint commit. Spec-index regen: **deferred** on installed runner (`generate-spec-index-write` registered deferred; check variant is a stub) — recorded once, applies to all phase boundaries.
 
 ### Files Generated
 
-- [ ] `specs/025-plugin-platform-spike/spec.md`
+- [x] `specs/025-plugin-platform-spike/spec.md` (+ `checklists/requirements.md`, `.specify/feature.json`)
 
 ### SpecKit Traceability Markers
 
