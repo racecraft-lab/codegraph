@@ -429,6 +429,12 @@ describe('MCP Input Validation', () => {
     }));
     const fakeCg = {
       searchNodes: () => many,
+      // SPEC-003 rewired handleSearch: default `auto` mode awaits the query-vector
+      // acquisition (returns a null vector here → keyword-shaped path) then calls
+      // searchNodesDetailed. Mirror the real return shapes so the oversized result
+      // still flows through truncation without erroring.
+      acquireQueryVectorForSearch: async () => ({ vector: null, model: null }),
+      searchNodesDetailed: () => ({ results: many, degradation: null }),
     };
     const fakeHandler = new ToolHandler(fakeCg as unknown as CodeGraph);
 

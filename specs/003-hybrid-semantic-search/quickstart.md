@@ -39,7 +39,8 @@ Expected: the report includes the new semantic/paraphrase cases (added to `__tes
 ## Surface smoke checks (US1–US4)
 
 ```bash
-# US4 — keyword unchanged (no provider needed): shape byte-identical, no [tag], no footer
+# US4 — dormant (no provider): keyword-shape results, no [tag]. Default (auto) appends
+# the FR-015 degradation footer; only explicit --mode keyword is footer-free / byte-identical.
 node dist/bin/codegraph.js query "TransportService" --limit 5
 
 # US2 — explicit modes at the CLI surface
@@ -57,7 +58,7 @@ MCP surface: `codegraph_search` accepts optional `mode`; semantic/hybrid hits ca
 
 ## Dormancy check (Constitution VII / SC-004)
 
-On a project with **no vectors and no provider**, every surface (`query`, `codegraph_search`, internal callers, `status`) is byte-identical to pre-feature — zero network calls, zero schema writes. Proven by the FR-014(b) gate and verified by running the smoke checks against an un-embedded project.
+On a project with **no vectors and no provider**, the dormant surfaces stay byte-identical to pre-feature under explicit `--mode keyword`, in the `--json` result shape, and on the produce side — zero network calls, zero schema writes. The default-`auto` TEXT surface additively gains the FR-015 degradation footer by design (US3/FR-015); it is not part of the byte-identity claim. Proven by the FR-014(b) gate and verified by running the smoke checks against an un-embedded project.
 
 ## Pre-merge agent A/B (Q10 / Constitution VI)
 

@@ -145,7 +145,7 @@ Single project — `src/` and `__tests__/` at repository root (worktree `.worktr
 - [X] T031 [P] Document the resident-memory envelope in the `src/search/hybrid.ts` header and BUNDLING/docs: `count × dims × 4` bytes; bundled 50k×384 ≈77 MB; documented corner 50k×3584 ≈717 MB; the 1 GiB `MAX_MATRIX_BYTES` guard above it; ANN/quantization named as the follow-up. **Acceptance**: memory math documented (FR-009).
 - [X] T032 [P] Add a CHANGELOG.md entry under `## [Unreleased]` in user-facing wording (hybrid semantic search for paraphrase/NL queries; graceful keyword fallback; new `mode` on search / `codegraph_search`; status availability line) — no internal paths/symbols/benchmark numbers. **Acceptance**: entry present under `[Unreleased]` (house rules).
 - [X] T033 Generate/update the PR review packet: what changed, why, non-goals (explore untouched, no ANN/re-ranker/env vars), review order, scope budget, traceability (each FR/SC → changed files + verification evidence), verification (npm test gates + scoped A/B), known gaps (explore-side fusion deferred to a named future roadmap entry), rollback/flags (dormant by default). **Acceptance**: packet complete per spec PR Review Packet Requirements.
-- [ ] T034 Run quickstart.md validation and FULL_VERIFY (`npm run build && npm run typecheck && npm test`) — all green. **Acceptance**: quickstart scenarios pass; full suite green (Constitution IV).
+- [X] T034 Run quickstart.md validation and FULL_VERIFY (`npm run build && npm run typecheck && npm test`) — all green. **Acceptance**: quickstart scenarios pass; full suite green (Constitution IV).
 
 ---
 
