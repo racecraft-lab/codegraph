@@ -1,0 +1,644 @@
+# SpecKit Workflow: SPEC-003 — Hybrid Semantic Search
+
+**Template Version**: 1.0.0
+**Created**: 2026-07-09
+**Purpose**: Prepare and execute SPEC-003 through the SpecKit workflow so CodeGraph search fuses FTS5 keyword hits with vector KNN via reciprocal-rank fusion — beating keyword-only on the eval harness, degrading gracefully when vectors are absent, and staying byte-identical for every unconfigured surface.
+
+---
+
+## Design Concept
+
+This workflow file was enriched from a Grill Me interview run during
+`/speckit-pro:speckit-scaffold-spec SPEC-003`. The full Q&A log, Goals, Non-goals, and
+Open Questions live at:
+
+```text
+docs/ai/specs/.process/SPEC-003-design-concept.md
+```
+
+Re-read it before each phase. The design concept is the source of truth for scoping
+decisions captured during setup. The load-bearing decisions (by Q-number):
+
+- **Q1** — `searchNodes({mode})` defaults `'keyword'`: today's behavior byte-identical.
+  Only the explicit surfaces (`codegraph_search` MCP tool, CLI search, opt-in library
+  callers) pass `mode:'auto'` (hybrid when matching-model vectors exist, else keyword).
+  Internal callers (explore, prompt hook, context builder) are untouched.
+- **Q2/Q3** — hybrid fusion inside `codegraph_explore` is an explicit NON-GOAL,
+  tracked as an Open Question proposing a future A/B-gated roadmap entry.
+- **Q4** — query-time provider: lazy init + keyword-while-warming; internal ~2s
+  per-query embed budget; on timeout/failure → keyword + success-shaped hint, never
+  `isError`.
+- **Q5** — the p95 ≤150 ms @ 50k nodes target gates fusion compute only (scan +
+  top-k + RRF); the query-embed leg is reported, not gated.
+- **Q6** — lazy in-memory Float32Array matrix cache over matching-model vectors,
+  invalidated per query by a cheap staleness probe (vector count + data_version).
+- **Q7** — `kind:`/`lang:`/`options.kinds` pre-filter the vector scan before top-k;
+  `path:`/`name:` stay post-fusion hard gates; embed input = parsed text portion
+  (filter tokens stripped).
+- **Q8** — optional `matchType: 'keyword'|'semantic'|'both'` (+ fused score) on
+  results in semantic/hybrid modes only; keyword-mode shapes byte-identical.
+- **Q9** — CI gates live in `npm test` (vitest) with injected deterministic fixture
+  vectors; `npm run eval` gains the same semantic cases for the scored report.
+- **Q10** — scoped agent A/B per Constitution VI before merge
+  (`scripts/agent-eval/ab-new-vs-baseline.sh`, ≥2 runs/arm, Sonnet floor, plus a
+  no-vectors control repo expecting zero delta).
+
+> **Note:** Grill Me is human-in-the-loop only. It is not part of the autopilot
+> loop. Once this workflow begins, clarifications happen via `/speckit-clarify`
+> and the consensus protocol.
+
+---
+
+## Workflow Overview
+
+| Phase | Command | Status | Notes |
+|-------|---------|--------|-------|
+| Specify | `/speckit-specify` | ⏳ Pending | |
+| Clarify | `/speckit-clarify` | ⏳ Pending | Sessions seeded from design-concept open areas |
+| Plan | `/speckit-plan` | ⏳ Pending | |
+| Checklist | `/speckit-checklist` | ⏳ Pending | performance, api-contracts, error-handling |
+| Tasks | `/speckit-tasks` | ⏳ Pending | |
+| Analyze | `/speckit-analyze` | ⏳ Pending | Includes design-concept drift check |
+| Implement | `/speckit-implement` | ⏳ Pending | |
+
+**Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
+
+### Phase Gates
+
+| Gate | Checkpoint | Approval Criteria |
+|------|------------|-------------------|
+| G1 | After Specify | Clear user stories, no `[NEEDS CLARIFICATION]` markers |
+| G2 | After Clarify | Fusion mechanics, degradation wording, and fixture design resolved |
+| G3 | After Plan | Constitution gates pass; dormancy (byte-identical keyword default) explicit; cache + budget constants documented |
+| G4 | After Checklist | All `[Gap]` markers addressed |
+| G5 | After Tasks | Task coverage verified; TDD ordering; A/B + dogfood UAT tasks present |
+| G6 | After Analyze | No CRITICAL/HIGH unresolved findings; no drift vs design concept |
+| G7 | During Implement | Tests pass; p95 gate green; scoped A/B recorded; self-repo UAT evidence |
+
+---
+
+## Prerequisites
+
+### Constitution Validation
+
+| Principle | Requirement | Verification |
+|-----------|-------------|--------------|
+| I. Think Before Coding | Fusion candidate depths, degradation wording, and fixture design clarified before coding. | G1/G2 marker checks; design-concept references in spec and plan |
+| II. Simplicity First | Brute-force scan + RRF only (SPEC-001 blessed); no ANN, no re-rankers, no new env vars — internal constants documented. | Plan non-goals and Complexity Tracking |
+| III. Surgical Changes | New logic in `src/search/hybrid.ts`; diffs to `src/db/queries.ts`, `src/index.ts`, `src/mcp/tools.ts`, `src/bin/codegraph.ts` stay minimal. | Diff review against declared file operations |
+| IV. Goal-Driven Execution | Tests first: fusion determinism, filter parity, degradation paths, provenance shapes, p95 fixture gate. | Red/green evidence in implementation |
+| V. Deterministic Extraction | Search is a query-time layer — graph structure untouched; fused ranking deterministic for identical input (stable tie-breaks). | Determinism tests; node/edge counts stable |
+| VI. Retrieval Performance | `searchNodes` default unchanged (explore untouched); `codegraph_search` output never says "use Read"; expected conditions success-shaped, never `isError`. Scoped A/B before merge. | Q1/Q4 decisions; A/B evidence per Q10; retrieval-guardian review |
+| VII. Local-First, Zero Native Deps | Pure-JS scan over `node:sqlite` BLOBs; no new runtime deps; no network beyond the user-configured embedding endpoint; dormant = byte-identical. | `npm test` incl. dormancy cases; dependency diff |
+
+**Constitution Check:** ⏳ Pending — G0 baseline: `npm run build`, `npm run typecheck`,
+`npm test` green in the worktree before Specify. (Worktree bootstrap already verified:
+build clean, `codegraph init` at 100% embedding coverage, LSP pass enabled.)
+
+---
+
+## Specification Context
+
+### Basic Information
+
+| Field | Value |
+|-------|-------|
+| **Spec ID** | SPEC-003 |
+| **Name** | Hybrid Semantic Search |
+| **Branch** | `003-hybrid-semantic-search` |
+| **Dependencies** | SPEC-001 (✅ complete — vectors + endpoint provider); SPEC-002 (✅ complete — bundled local ONNX provider) |
+| **Enables** | Better retrieval everywhere (MCP search, web UI, wiki); proposed follow-up: A/B-gated explore-fusion spec (design concept Open Questions) |
+| **Priority** | P0 |
+
+### Success Criteria Summary
+
+- [ ] Hybrid hit-rate ≥ keyword on the paraphrase eval set (vitest gate in `npm test`, deterministic fixture vectors)
+- [ ] Zero keyword regressions: existing search cases byte-stable; `searchNodes` default behavior unchanged (Q1 dormancy)
+- [ ] p95 fusion compute ≤150 ms on the generated 50k-node × 384-dim fixture (gated); 3584-dim number reported, not gated (Q5/Q9)
+- [ ] Graceful degradation, all success-shaped: no vectors → keyword + hint; no provider at query time → keyword; warming → keyword + note; embed timeout/failure → keyword + hint; never `isError` (Q4)
+- [ ] `mode: keyword|semantic|hybrid` on `searchNodes` options, `codegraph_search` schema, and CLI search; `auto` resolution at the explicit surfaces (Q1)
+- [ ] Optional `matchType` provenance (+ fused score) present in semantic/hybrid results, absent in keyword mode (Q8)
+- [ ] Scoped A/B per Constitution VI: `ab-new-vs-baseline.sh`, ≥2 runs/arm, Sonnet floor, embedded repo + no-vectors control (zero delta) — evidence recorded (Q10)
+- [ ] Self-repo dogfood UAT: paraphrase NL queries via `codegraph_search` on this repo's live index against the configured endpoint; dormancy check on an unconfigured project (constitution § Dogfooding)
+
+---
+
+## Phase 1: Specify
+
+**When to run:** At the start. Focus on **WHAT** and **WHY**, not implementation
+details. Output: `specs/003-hybrid-semantic-search/spec.md`
+
+### Specify Prompt
+
+```text
+/speckit-specify
+
+## Feature: Hybrid Semantic Search (SPEC-003)
+
+### Problem Statement
+CodeGraph search is keyword-only (FTS5 + LIKE + fuzzy fallbacks). Paraphrase and
+natural-language queries ("function that retries failed HTTP calls") miss symbols
+whose names share no tokens with the query, even though SPEC-001/002 already
+persist an embedding vector for every declaration symbol. Search should fuse
+keyword hits with vector KNN via reciprocal-rank fusion (RRF, k=60) so semantic
+matches surface — beating keyword-only on the eval harness — while degrading
+gracefully to keyword whenever vectors or a provider are absent.
+
+### Users
+- AI agents calling the `codegraph_search` MCP tool with natural-language queries
+- Developers using CLI search and the library `searchNodes` API
+- Downstream platform features (web UI search, wiki) that reuse `searchNodes`
+
+### User Stories
+- [US1] An agent's paraphrase query returns semantically relevant symbols fused
+  with keyword hits, each hit carrying matchType provenance (semantic/hybrid modes).
+- [US2] A developer selects mode keyword|semantic|hybrid on the CLI and MCP
+  surfaces; unspecified mode at those surfaces resolves to auto (hybrid when
+  matching-model vectors exist, else keyword).
+- [US3] A user with no vectors, no provider, a warming provider, or an embed
+  timeout still gets useful keyword results with a success-shaped hint — never an
+  error (errors teach abandonment).
+- [US4] Existing keyword behavior is untouched: library default mode is keyword,
+  internal callers (explore, prompt hook, context builder) see byte-identical
+  results, and all existing filters (kind:/lang:/path:/name:) work identically in
+  every mode.
+
+### Constraints (from the design concept — cite Q-numbers in FRs)
+- Library default mode 'keyword'; auto-resolution only at explicit surfaces (Q1).
+- Lazy provider init + keyword-while-warming; internal ~2s per-query embed budget;
+  no new env vars (Q4; Constitution II).
+- p95 ≤150 ms @ 50k nodes gates fusion compute only (scan + top-k + RRF); the
+  query-embed leg (endpoint HTTP or in-process ONNX) is reported, not gated (Q5).
+- Lazy in-memory Float32Array matrix cache over vectors whose model matches the
+  active provider; per-query staleness probe (vector count + data_version);
+  memory = count×dims×4B documented (Q6).
+- kind:/lang: pre-filter the scan before top-k; path:/name: post-fusion hard
+  gates; embed input is the parsed text with filter tokens stripped (Q7).
+- Optional matchType ('keyword'|'semantic'|'both') + fused score on results only
+  in semantic/hybrid modes (Q8).
+- Deterministic ranking for identical input: stable tie-breaks (Constitution V).
+- CI gates in npm test via injected deterministic fixture vectors (Q9).
+
+### Out of Scope
+- Hybrid fusion inside codegraph_explore (explicit non-goal — Q2/Q3; deferred to
+  a proposed future A/B-gated roadmap entry)
+- ANN indexes / quantization (roadmap: follow-up if scale demands)
+- Re-ranking models
+- New env vars or user-facing tuning knobs for budgets/cache
+- Any change to searchNodes default behavior for internal callers
+```
+
+### Specify Results
+
+<!-- Fill in after running the command -->
+
+| Metric | Value |
+|--------|-------|
+| Functional Requirements | |
+| User Stories | |
+| Acceptance Criteria | |
+
+### Files Generated
+
+- [ ] `specs/003-hybrid-semantic-search/spec.md`
+
+### SpecKit Traceability Markers
+
+| Marker | Purpose | Example |
+|--------|---------|---------|
+| `[US1]`, `[US2]` | User story reference | `[US1] Paraphrase query returns fused hits` |
+| `[FR-001]` | Functional requirement | `[FR-001] mode parameter accepted on searchNodes` |
+| `[NEEDS CLARIFICATION]` | Flag for Clarify phase | `Candidate depth per arm [NEEDS CLARIFICATION]` |
+| `[P]` | Parallel-safe task | `[P] Can run alongside other tasks` |
+| `[Gap]` | Missing coverage | `[Gap] No task covers model-mismatch degradation` |
+
+---
+
+## Phase 2: Clarify
+
+**When to run:** After Specify. Maximum 5 targeted questions per session. The
+grill-me interview already resolved the architecture-level decisions (Q1–Q10);
+these sessions target what it deliberately left to specification detail.
+
+### Clarify Prompts
+
+#### Session 1: Fusion mechanics
+
+```text
+/speckit-clarify Focus on fusion mechanics: candidate depth per arm (keyword arm
+already over-fetches 5×limit; semantic top-k depth), RRF k=60 application and the
+merged-score formula, deterministic tie-breaks for equal fused scores, semantic-arm
+eligibility (only nodes with matching-model vectors), and how pure 'semantic' mode
+behaves when FTS would have contributed exact-name matches. Do NOT reopen decisions
+Q1/Q4–Q8 from docs/ai/specs/.process/SPEC-003-design-concept.md — build on them.
+```
+
+#### Session 2: Degradation UX & observability
+
+```text
+/speckit-clarify Focus on degradation and observability: exact success-shaped hint
+wording for each fallback (no vectors / no provider / provider warming / embed
+timeout / model-dims mismatch), how codegraph_search and CLI annotate matchType,
+whether codegraph status should surface query-side semantic availability, and what
+the reported (not gated) embed-leg latency looks like in output. Hints must never
+instruct the agent to use Read (Constitution VI).
+```
+
+#### Session 3: Fixture & eval design
+
+```text
+/speckit-clarify Focus on test/eval design: how the deterministic fixture vectors
+are injected (fixture provider seam) without a live endpoint, generation of the
+50k-node × 384-dim latency fixture, the paraphrase case set shape in
+__tests__/evaluation/ plus the vitest gate suite, p95 measurement method (N runs,
+which percentile machinery), and the no-vectors dormancy assertions (byte-identical
+keyword behavior).
+```
+
+### Clarify Results
+
+| Session | Focus Area | Questions | Key Outcomes |
+|---------|------------|-----------|--------------|
+| 1 | Fusion mechanics | | |
+| 2 | Degradation UX | | |
+| 3 | Fixture & eval | | |
+
+---
+
+## Phase 3: Plan
+
+**When to run:** After spec is finalized. Output: `specs/003-hybrid-semantic-search/plan.md`
+
+### Plan Prompt
+
+```text
+/speckit-plan
+
+## Tech Stack
+- TypeScript strict (tsc), Node engines >=20 <25 (effective from-source floor
+  22.5+ for node:sqlite); no new runtime dependencies — pure JS/WASM only
+  (Constitution VII)
+- Storage: node:sqlite (DatabaseSync) — node_vectors BLOBs are little-endian f32,
+  decode helper already in src/embeddings/indexer-hook.ts
+- Providers: src/embeddings/ (endpoint-provider.ts HTTP /v1/embeddings;
+  local-provider.ts in-process ONNX worker, 384 dims; config.ts selection order
+  endpoint → local → off)
+- Keyword arm: QueryBuilder.searchNodes in src/db/queries.ts (FTS5 → LIKE →
+  fuzzy + exact-name supplement + multi-signal rescoring) — reuse verbatim as the
+  keyword arm, do not restructure
+- Surfaces: src/index.ts searchNodes plumbing; src/mcp/tools.ts codegraph_search
+  (handleSearch) schema + formatting; src/bin/codegraph.ts CLI search
+- Testing: vitest (__tests__/), evaluation harness (__tests__/evaluation/ via
+  npm run eval)
+
+## Required decisions from the Design Concept (source of truth; cite Q-numbers)
+- Q1 mode plumbing: searchNodes({mode}) default 'keyword'; 'auto' resolution
+  helper used ONLY by codegraph_search, CLI, and explicit callers
+- Q4 lazy provider init + keyword-while-warming; internal ~2s embed budget
+- Q5 latency gate = fusion compute only; embed leg reported
+- Q6 lazy in-memory matrix cache (matching-model vectors), staleness probe =
+  vector count + data_version; memory documented in code comments + BUNDLING/docs
+- Q7 pre-filter kind/lang in scan; path/name post-gates; embed parsed.text
+- Q8 optional matchType + fused score, set only in semantic/hybrid modes
+- Q9 vitest CI gates w/ fixture vectors; eval harness cases added
+- Q10 scoped A/B plan (ab-new-vs-baseline.sh) written into the UAT runbook
+
+## Architecture notes
+- New module src/search/hybrid.ts: query-vector acquisition (active provider,
+  budget-capped), matrix cache + staleness probe, cosine top-k heap, RRF merge
+  (k=60) with the keyword arm's results, matchType assignment
+- Model matching: scan only vectors whose model column equals the active
+  provider's model id; zero matching vectors → keyword + hint (follows
+  SPEC-001/002 re-embed-on-switch precedent)
+- Where the cache lives relative to the daemon query pool: pick ONE owner so the
+  matrix is not duplicated per worker; document the choice and its RSS impact
+- MCP schema: optional mode enum on codegraph_search (schema change in tools.ts
+  tool definition; keep description agent-friendly, single source of truth stays
+  server-instructions.ts if guidance changes — issue #529)
+- Deterministic ordering: stable sort keys (fused score, then node id) so
+  identical input yields identical output (Constitution V)
+
+## Constraints
+- Dormancy: with no vectors and no provider, every surface byte-identical to
+  today (Constitution VII + dogfooding law); prove with tests
+- Surgical diffs: hybrid logic isolated in src/search/hybrid.ts; existing files
+  gain plumbing only (Constitution III)
+- Reviewability budget: 195 projected reviewable LOC, ~4 production files,
+  ~10 total files, single primary surface (API/search path) — setup gate passed
+  with zero warnings; hold the implementation near this envelope
+```
+
+### Plan Results
+
+| Artifact | Status | Notes |
+|----------|--------|-------|
+| `plan.md` | ⏳ | Technical context, execution flow |
+| `research.md` | ⏳ | Decision rationales (if needed) |
+| `data-model.md` | ⏳ | Result-shape changes (SearchResult.matchType) |
+| `contracts/` | ⏳ | MCP tool schema delta |
+| `quickstart.md` | ⏳ | Developer onboarding |
+
+---
+
+## Phase 4: Domain Checklists
+
+**When to run:** After `/speckit-plan` — validates spec AND plan together.
+
+### Step 1: Recommended Domains (from spec analysis)
+
+| Signal in SPEC-003 | Domain |
+|---|---|
+| p95 fusion-compute gate, matrix cache memory, 50k fixture | **performance** |
+| searchNodes options, MCP schema mode enum, matchType result shape, CLI flag | **api-contracts** |
+| Five degradation paths, success-shaped hints, never-isError doctrine | **error-handling** |
+
+### Step 2: Enriched Checklist Prompts
+
+#### 1. performance Checklist
+
+<!-- Why: the spec carries a hard latency gate and a memory-bearing cache; the riskiest quantitative surface. -->
+
+```text
+/speckit-checklist performance
+
+Focus on Hybrid Semantic Search requirements:
+- p95 fusion compute ≤150 ms on the 50k×384 fixture: measurement method, run
+  count, and CI-stability headroom (Q5/Q9)
+- Matrix cache: build cost on first semantic query, staleness-probe cost per
+  query, memory = count×dims×4B documented incl. the 717 MB corner (Q6)
+- Keyword-arm latency unchanged in keyword mode (no cache build, no embed call)
+- Embed-leg budget (~2s) interaction with the keyword fallback — no query ever
+  blocks past the budget (Q4)
+- Pay special attention to: the p95 gate flaking on shared CI runners — headroom
+  and percentile method must make it deterministic in practice
+```
+
+#### 2. api-contracts Checklist
+
+<!-- Why: three public surfaces gain a mode parameter and an optional result field; shape stability is the compatibility contract. -->
+
+```text
+/speckit-checklist api-contracts
+
+Focus on Hybrid Semantic Search requirements:
+- searchNodes(options.mode) accepted values + default 'keyword'; auto-resolution
+  documented at the surfaces, not the library (Q1)
+- codegraph_search schema: optional mode enum, backward compatible; formatting of
+  matchType annotations (Q8)
+- CLI search mode flag semantics and help text
+- SearchResult shape: matchType + fused score OPTIONAL and absent in keyword mode
+  — existing consumers see byte-identical shapes (Q8)
+- Pay special attention to: accidental behavior change for internal searchNodes
+  callers (explore, prompt hook, context builder) — must be provably untouched
+```
+
+#### 3. error-handling Checklist
+
+<!-- Why: five distinct degradation paths, each of which must be success-shaped — the errors-teach-abandonment doctrine is a hard project law. -->
+
+```text
+/speckit-checklist error-handling
+
+Focus on Hybrid Semantic Search requirements:
+- Each fallback path has a defined, success-shaped response: no vectors; no
+  provider configured; provider warming (first query); embed timeout/failure;
+  model/dims mismatch (Q4, roadmap degradation scope)
+- No path returns isError: true; no hint ever instructs the agent to use Read
+  (Constitution VI)
+- Provider failure during warming latches cleanly — subsequent queries retry or
+  stay keyword without wedging the daemon
+- Pay special attention to: the ~2s budget expiring while the embed eventually
+  succeeds — the late vector must not corrupt cache/provenance state
+```
+
+### Checklist Results
+
+| Checklist | Items | Gaps | Spec References |
+|-----------|-------|------|-----------------|
+| performance | | | |
+| api-contracts | | | |
+| error-handling | | | |
+| **Total** | | | |
+
+### Addressing Gaps
+
+1. Review the gap — genuine missing requirement?
+2. Update `spec.md` or `plan.md` to address it
+3. Re-run the checklist to verify coverage
+4. If intentionally out of scope, document why (cite the design concept Q-number)
+
+---
+
+## Phase 5: Tasks
+
+**When to run:** After checklists complete. Output: `specs/003-hybrid-semantic-search/tasks.md`
+
+### Tasks Prompt
+
+```text
+/speckit-tasks
+
+## Task Structure
+- Small, testable chunks (1-2 hours each); acceptance criteria referencing FR-xxx
+- TDD ordering per Constitution IV: failing test precedes implementation
+- Dependency ordering: fusion core (hybrid.ts + cache) → library plumbing →
+  MCP/CLI surfaces → eval/vitest gates → A/B + dogfood UAT
+- Mark parallel-safe tasks [P]; organize by user story, not technical layer
+
+## Bounds (from the design concept — flag any task crossing them)
+- NO task may touch codegraph_explore's retrieval path (Q2 non-goal)
+- NO ANN/quantization, NO re-ranker, NO new env vars (non-goals)
+- searchNodes default stays 'keyword' — a task changing internal-caller behavior
+  is out of bounds (Q1)
+
+## Required coverage
+- Deterministic fixture-vector seam + paraphrase eval cases (Q9)
+- p95 fixture generation + gate test (Q5/Q9)
+- Dormancy proof tasks (byte-identical keyword behavior, zero network) —
+  constitution § Dogfooding
+- Scoped A/B execution + evidence recording task (Q10)
+- Self-repo dogfood UAT task (constitution: exercise on this repository's index)
+- CHANGELOG entry under ## [Unreleased] (user-facing wording)
+
+## Constraints
+- Tests in __tests__/ (vitest, real SQLite, no DB mocking; temp dirs via
+  fs.mkdtempSync); eval cases in __tests__/evaluation/
+- New production code in src/search/hybrid.ts; minimal plumbing diffs elsewhere
+```
+
+### Tasks Results
+
+| Metric | Value |
+|--------|-------|
+| **Total Tasks** | |
+| **Phases** | |
+| **Parallel Opportunities** | |
+| **User Stories Covered** | |
+
+---
+
+## Atomicity Route
+
+**When this is filled:** After the Tasks phase / gate G5, the autopilot SKILL runs
+the read-only atomicity classifier and records its decision here. This is a
+**placeholder** until then — leave the cells blank during scoping.
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
+| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change. |
+| **Signals** | | Decisive detector findings (may be empty when the classifier abstains). |
+| **Warnings** | | Release-safety warnings (empty when none). |
+
+To produce the decision:
+
+```text
+runner helper atomicity-route specs/003-hybrid-semantic-search
+```
+
+---
+
+## Phase 6: Analyze
+
+**When to run:** Always run after generating tasks.
+
+### Analyze Prompt
+
+```text
+/speckit-analyze
+
+Focus on:
+1. Constitution alignment — Principles I–VII; especially V (deterministic
+   ranking), VI (no isError for expected conditions; explore untouched;
+   scoped A/B planned), VII (dormancy byte-identical, zero new deps)
+2. Design-concept drift — spec.md/plan.md/tasks.md must not contradict
+   docs/ai/specs/.process/SPEC-003-design-concept.md (Q1–Q10). The design
+   concept wins unless a revision note says otherwise.
+3. Coverage — every FR and user story has tasks; the five degradation paths
+   each have a test task; the A/B and self-repo UAT tasks exist
+4. Consistency between task file paths and the actual module layout
+   (src/search/hybrid.ts, src/db/queries.ts, src/index.ts, src/mcp/tools.ts,
+   src/bin/codegraph.ts, __tests__/)
+```
+
+### Analyze Severity Levels
+
+| Severity | Meaning | Action Required |
+|----------|---------|-----------------|
+| `CRITICAL` | Blocks implementation, violates constitution | **Must fix before G6** |
+| `HIGH` | Significant gap, impacts quality | Should fix |
+| `MEDIUM` | Improvement opportunity | Review and decide |
+| `LOW` | Minor inconsistency | Note for future |
+
+### Analysis Results
+
+| ID | Severity | Issue | Resolution |
+|----|----------|-------|------------|
+| | | | |
+
+---
+
+## Phase 7: Implement
+
+**When to run:** After tasks.md is generated and analyzed (no coverage gaps).
+
+### Implement Prompt
+
+```text
+/speckit-implement
+
+## Approach: TDD-First (Constitution IV)
+
+For each task: RED (failing test) → GREEN (minimum code) → REFACTOR → VERIFY.
+
+### Project Commands
+- BUILD: npm run build
+- TYPECHECK: npm run typecheck
+- UNIT_TEST: npm test
+- SINGLE_FILE_TEST: npx vitest run __tests__/<file>.test.ts
+- FULL_VERIFY: npm run build && npm run typecheck && npm test
+
+### Pre-Implementation Setup
+- Worktree already bootstrapped (npm install, build, codegraph init at 100%
+  embedding coverage, LSP enabled); verify npm test green before the first task
+- The dogfood MCP daemon serves HEAD builds via scripts/mcp-dogfood.mjs — after
+  meaningful changes, npm run build refreshes what agents exercise
+
+### Implementation Notes
+- Match existing style in each touched file (Constitution III); comment density
+  in src/db/queries.ts and src/mcp/tools.ts is high and explanatory — follow it
+- src/search/hybrid.ts is the only new production module; keep plumbing diffs
+  in queries.ts/index.ts/tools.ts/bin minimal and mode-gated
+- matchType + fused score set ONLY in semantic/hybrid modes (Q8); keyword-mode
+  result objects byte-identical to today
+- Success-shaped hints for every degradation path; never isError; never tell
+  the agent to Read (Constitution VI)
+- Deterministic tie-breaks (fused score, then node id) so identical input →
+  identical output (Constitution V)
+- CHANGELOG.md entry under ## [Unreleased] → ### New Features, user-facing
+  wording, no internal paths/symbols
+```
+
+### Implementation Progress
+
+| Phase | Tasks | Completed | Notes |
+|-------|-------|-----------|-------|
+| 1 - Fusion core (hybrid.ts + cache) | | | |
+| 2 - Library + surfaces (US1/US2) | | | |
+| 3 - Degradation paths (US3) | | | |
+| 4 - Dormancy + gates + polish (US4) | | | |
+
+---
+
+## Post-Implementation Checklist
+
+- [ ] All tasks marked complete in tasks.md
+- [ ] Typecheck passes: `npm run typecheck`
+- [ ] Tests pass: `npm test` (incl. new vitest gates: hybrid ≥ keyword, keyword byte-stable, p95 fixture)
+- [ ] Build succeeds: `npm run build`
+- [ ] `npm run eval` semantic cases recorded in the scored report
+- [ ] Scoped A/B evidence recorded (ab-new-vs-baseline.sh, ≥2 runs/arm, Sonnet floor, embedded repo + no-vectors control) — Q10
+- [ ] Self-repo dogfood UAT recorded in the UAT runbook (paraphrase queries via codegraph_search on this repo against the configured endpoint; dormancy spot-check)
+- [ ] retrieval-guardian review run (diff touches src/mcp/ + search path — CLAUDE.md requires it before PR)
+- [ ] CHANGELOG entry under `## [Unreleased]` (user-facing)
+- [ ] PR created against origin (racecraft-lab/codegraph) with review packet body; no session URLs
+- [ ] Merged; dogfood loop run on main (`npm run build` + `codegraph sync`, verify `codegraph status` healthy)
+
+---
+
+## Lessons Learned
+
+### What Worked Well
+
+-
+
+### Challenges Encountered
+
+-
+
+### Patterns to Reuse
+
+-
+
+---
+
+## Project Structure Reference
+
+```
+codegraph/
+├── src/
+│   ├── search/            # query parser + helpers; NEW: hybrid.ts (KNN + RRF fusion)
+│   ├── db/                # DatabaseConnection, QueryBuilder (keyword arm), schema.sql
+│   ├── embeddings/        # SPEC-001/002: providers, config selection, encode/decode, indexer hook
+│   ├── mcp/               # tools.ts (codegraph_search handleSearch), server-instructions.ts, daemon
+│   ├── bin/codegraph.ts   # CLI (commander) — search/query surface
+│   └── index.ts           # CodeGraph public API — searchNodes plumbing
+├── __tests__/             # vitest suites (real SQLite, no mocking)
+│   └── evaluation/        # eval harness (npm run eval) — semantic paraphrase cases land here
+├── specs/003-hybrid-semantic-search/   # CONTRACT artifacts (spec.md, plan.md, tasks.md, SPEC-MOC.md)
+└── docs/ai/specs/.process/             # this workflow + SPEC-003-design-concept.md (EXHAUST)
+```
+
+---
+
+Template based on SpecKit best practices; populated from the technical roadmap § SPEC-003 and the grill-me design concept (Q1–Q10).
