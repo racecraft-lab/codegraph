@@ -21,10 +21,11 @@ OQ-8 hypothesis rather than re-opening a trade study (Q2): PATH-resolved install
 binary → `npx --offline` thin-installer fallback → success-shaped setup guidance when
 the binary is absent (never an `isError`, preserving the errors-teach-abandonment
 doctrine). It fixes coexistence as a per-component × per-host ownership matrix
-(Q3/Q6/Q7), records the degraded-Codex subset with the asymmetry documented (Q6), and
-enumerates the candidate skill/agent set with per-artifact tier decisions and A/B
-validation bars — drafting exactly one exemplar (the explore-flow workflow skill) in
-the appendix (Q4/Q5). The "implementation blueprint" for this spike is therefore a
+(Q3/Q6/Q7), records the degraded-Codex subset with the asymmetry documented (Q6), grounds the
+artifact plan in both vendors' public skill-authoring guidance (roadmap scope bullet 2,
+FR-022), and enumerates the candidate skill/agent set with per-artifact tier decisions
+and A/B validation bars — drafting exactly one exemplar (the explore-flow workflow skill)
+in the appendix (Q4/Q5). The "implementation blueprint" for this spike is therefore a
 **validation protocol + a decision-document structure**, not code. Any timebox miss is
 recorded as an explicit, attempt-first staged decision, never a silent gap (Q10 / SC-008).
 
@@ -47,8 +48,10 @@ version, exact repro command, quoted manifest snippet, observed behavior) is the
 primary verification method. The artifact-plan section additionally **defines** the
 FR-015 A/B validation bar (a third agent-eval comparison mode — artifact-off vs
 artifact-on, Sonnet floor `--model sonnet --effort high`, ≥2 runs/arm, wall-clock +
-tool-call + Read/Grep, plus a control repo); **execution** of each artifact's bar is
-SPEC-026's pre-ship gate, not this spike. Repo verification floor (`npm run build`,
+tool-call + Read/Grep, plus a control repo, plus the vendors' published skill success
+criteria — trigger rate, workflow tool-call count, zero failed tool calls, with/without
+comparison — recorded alongside per the roadmap's binding SPEC-025 gate); **execution**
+of each artifact's bar is SPEC-026's pre-ship gate, not this spike. Repo verification floor (`npm run build`,
 `npm test`) stays trivially green — the spike changes 0 code.
 
 **Target Platform**: macOS is the hands-on primary (the dev machine). Windows
@@ -73,8 +76,9 @@ reference — never restate — `server-instructions.ts` (#529).
 
 **Scale/Scope**: One decision document with a fixed section set (platform audit ×2
 hosts, launcher contract, an **8-cell** component × host ownership matrix, coexistence
-+ uninstall interplay, degraded-Codex subset, artifact plan, and exactly **1** drafted
-exemplar in the appendix); OQ-8 marked resolved in the PRD's terms.
++ uninstall interplay, degraded-Codex subset, skill-authoring grounding, artifact plan,
+and exactly **1** drafted exemplar in the appendix); OQ-8 marked resolved in the PRD's
+terms.
 
 **Reviewability Budget**: Primary surface: docs/process. Secondary surfaces: none.
 Projected reviewable LOC: 0 (prose/markdown, not production LOC). Projected production
@@ -255,12 +259,28 @@ section names the user story / FRs it closes, and the validation bar that makes 
    functionally equivalent; explicitly-absent = a decided silent-by-design or surfaced-note
    observable). *Bar:* subset named; each unsupported cell assigned to the installer per the
    matrix; each degraded/absent cell observable-complete, not merely ownership-complete.
-9. **Shipped-artifact plan** (US5 / FR-014, FR-015, FR-016) — the candidate skill/agent
-   enumeration with the three-leg inclusion criterion, per-artifact tier decisions,
-   trigger surfaces, the FR-015 A/B bar definition, and the reference-not-restate
-   (#529) line item per candidate; the agent class evaluated separately (retrieval-guardian
-   excluded). *Bar:* each candidate has a tier + a validation bar; excluded workflows
-   recorded with reasons.
+9. **Skill-authoring grounding + shipped-artifact plan** (US5 / FR-014, FR-015, FR-016,
+   FR-022) — **opens with the skill-authoring grounding** (roadmap SPEC-025 scope bullet 2,
+   FR-022): a dedicated, citation-backed block grounding the plan + exemplar in both
+   vendors' PUBLIC guidance — the shared agent-skills open standard (`SKILL.md` + optional
+   `scripts/`/`references/`/`assets/`; the per-host divergences the US1 audit enumerates),
+   Anthropic's progressive disclosure / MCP-enhancement "recipes over the kitchen" category
+   / what-when trigger discipline / kebab-case + exact-`SKILL.md` structural rules / no-XML
+   + reserved-name security restrictions / optional `allowed-tools` field (pre-approval,
+   not restriction) / the skill-to-MCP dependency mechanism as an audit output (qualified
+   `ServerName:tool_name` body references per Anthropic best-practices — correcting the
+   roadmap's `metadata.mcp-server` to the evidence, per FR-002), OpenAI's `.agents/skills`
+   scan order / explicit `$skill-name` vs implicit
+   invocation / `agents/openai.yaml` sidecar / authoring best practices, and the vendors'
+   published skill success criteria — **then** the candidate skill/agent enumeration with
+   the three-leg inclusion criterion, per-artifact tier decisions, trigger surfaces, the
+   FR-015 A/B bar definition (recording the published success criteria — trigger rate,
+   workflow tool-call count, zero failed tool calls, with/without comparison — **alongside**
+   wall-clock + tool-call + Read/Grep + control repo, per the roadmap's binding gate), and
+   the reference-not-restate (#529) line item per candidate; the agent class evaluated
+   separately (retrieval-guardian excluded). *Bar:* the skill-authoring grounding closes
+   roadmap scope bullet 2 with public citations and all named elements present (SC-001);
+   each candidate has a tier + a validation bar; excluded workflows recorded with reasons.
 10. **Appendix: explore-flow exemplar skill** (US5 / FR-017) — exactly one fully-drafted
     artifact body; no other candidate body drafted. *Bar:* exactly one exemplar (SC-005).
 11. **Staged decisions + close-out** (FR-020 / SC-008) — any timebox miss recorded as an
@@ -340,15 +360,28 @@ the repo** (FR-019). Steps are grouped into phases; the timebox mapping follows.
 - **V14** Write coexistence + uninstall interplay both directions, incorporating the V6
   Claude dedup-lever decision and the Codex levers; record the plugin-side
   self-suppression non-viability + empty-`tools/list` fallback; invocation-driven restore
-  (FR-011/012).
+  (FR-011/012). Grounds the evades-dedup diagnostic-ownership prose in the **4-step
+  near-duplicate evasion scenario** (install both channels with textually-different
+  launcher commands resolving to the same binary → both healthy → two distinct namespaced
+  tool sets on Claude / both live on Codex → nothing fires) recorded by tasks.md T018 before
+  the installer's next-invocation detection is credited as the reporter (FR-011).
 - **V15** Record the degraded-Codex subset from V7/V8/V10 evidence; reassign unsupported
   cells to the installer; document the asymmetry (FR-013, US4).
-- **V16** Enumerate the candidate artifacts; apply the three-leg inclusion criterion;
-  tier each (default FULLY OPEN for workflow/authoring skills; built-in-only
+- **V16** Write the **skill-authoring grounding** block (FR-022, roadmap scope bullet 2) —
+  ground the plan + exemplar in both vendors' public guidance with public citations
+  (shared agent-skills standard + per-host divergences; Anthropic progressive disclosure /
+  MCP-enhancement / trigger discipline / structural + security rules / `allowed-tools` +
+  the MCP-dependency mechanism as an audit output (correcting the roadmap's
+  `metadata.mcp-server` to the evidence); OpenAI `.agents/skills` scan order / explicit-vs-implicit
+  invocation / `agents/openai.yaml` sidecar / authoring best practices; the published skill
+  success criteria); then enumerate the candidate artifacts; apply the three-leg inclusion
+  criterion; tier each (default FULLY OPEN for workflow/authoring skills; built-in-only
   `disallowed-tools` denylists for read-only/review artifacts; never deny/re-expose the
   codegraph MCP tools; `context: fork` where a restriction must hold beyond the turn);
   evaluate the agent class separately (retrieval-guardian excluded); define the FR-015
-  A/B bar and the FR-016 reference-not-restate line item per candidate (FR-014/015/016).
+  A/B bar (recording the published success criteria — trigger rate, workflow tool-call
+  count, zero failed tool calls, with/without — alongside the agent-eval metrics) and the
+  FR-016 reference-not-restate line item per candidate (FR-014/015/016/022).
 - **V17** Draft the **one** explore-flow exemplar skill in the appendix; draft no other
   candidate body (FR-017, SC-005).
 - **V18** Mark **OQ-8 resolved in the PRD's terms** if V5/V9 (± V11/V12) confirm the

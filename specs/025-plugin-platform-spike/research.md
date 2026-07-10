@@ -59,7 +59,7 @@ detail, not a scoping decision — spec Assumptions).
 | C3 | Codex plugin format: `.codex-plugin/plugin.json` manifest + component pointers, bundled skills, hook surface (plugin `hooks/hooks.json`; standalone `.codex/hooks.json` / inline `config.toml` `[hooks]`), MCP registration, subagent support vs standalone `.codex/agents/*.toml`, project- + hook-hash trust gating | OpenAI Codex documentation (`developers.openai.com/codex/…`) | FR-002, US1 |
 | C4 | Codex plugin-local `UserPromptSubmit` hook execution history: documented-but-not-executed window (issue #16430, filed 2026-04-01 vs v0.118.0), fixed by PR #19705 (merged 2026-04-28, initially flag-gated, later unconditional gated only by `plugins_enabled` default-on + one-time hook trust review) | Public Codex issue #16430 + PR #19705 | FR-010 |
 | C5 | Codex named-agent invocation runtime-path dependence: reported to fail on `multi_agent_v2` (no `agent_type` parameter) while working on `multi_agent_v1` for some models | Public Codex issues #15250, #20077 | FR-013 |
-| C6 | Shared agent-skills open standard: `SKILL.md` + optional `scripts/`/`references/`/`assets/`; progressive disclosure; MCP-enhancement skill category; what/when trigger-description discipline; kebab-case + exact-`SKILL.md` structure; `allowed-tools` / `metadata.mcp-server`; published skill success criteria | Anthropic skills docs + best-practices + engineering blog + `anthropics/skills`; OpenAI `developers.openai.com/codex/skills` + `openai/skills`; `agentskills.io` | FR-014, FR-016, FR-017 |
+| C6 | Shared agent-skills open standard: `SKILL.md` + optional `scripts/`/`references/`/`assets/`; progressive disclosure; MCP-enhancement skill category ("MCP is the kitchen, skills are the recipes"); what/when trigger-description discipline; kebab-case + exact-`SKILL.md` structure; `allowed-tools` (pre-approval, not restriction; Codex ignores it in `SKILL.md`); the skill-to-MCP dependency mechanism (qualified `ServerName:tool_name` body references on Anthropic / `agents/openai.yaml` `dependencies.tools` on Codex — the roadmap's `metadata.mcp-server` is NOT a documented Anthropic frontmatter field and is an audit output to correct, per FR-002); published skill success criteria (recommended measurements, not target numbers); OpenAI `.agents/skills` scan order + explicit `$skill-name`/implicit invocation + `agents/openai.yaml` sidecar | Anthropic skills docs + best-practices + the public skill-building guide ("The Complete Guide to Building Skills for Claude") + engineering blog + `anthropics/skills`; OpenAI `developers.openai.com/codex/skills` + `openai/skills`; `agentskills.io` | FR-014, FR-015, FR-016, FR-017, FR-022 |
 | C7 | `npx --offline` semantics (zero network; warm-cache local serve; cache-miss catchable failure) vs `--prefer-offline` (still requests missing data) | npm CLI documentation | FR-005 |
 | C8 | Supply-chain pinning guidance for the npx specifier (pin ≥ major, avoid floating latest) | OWASP CICD-SEC-3; public reporting on 2025–2026 npm "Shai-Hulud"-family latest-tag compromises | FR-005 |
 | C9 | Windows `.cmd`-shim spawn refusal class (CVE-2024-27980) that already broke this binary once and was worked around by resolving an absolute `node.exe` in the npm shim | Public CVE-2024-27980 record + in-repo CHANGELOG #289 | FR-007 (Windows risk a) |
@@ -107,10 +107,16 @@ points. None is edited here (0 production LOC; the spike is additive-docs only).
   **reference-not-restate** `server-instructions.ts` (#529).
 - **Trigger efficacy is unproven, not assumed** (spec Assumptions): skills sit in a
   higher-salience channel than the server-instructions steering this repo already tried
-  and rejected, but no vendor publishes trigger-rate metrics and Anthropic's own guidance
-  acknowledges Claude undertriggers skills. The FR-015 A/B bar is therefore a **real
-  filter** — a candidate (including the exemplar) failing it is an acceptable, informative
-  spike outcome, not a spike failure.
+  and rejected, but no vendor publishes trigger-rate **benchmark numbers** (a target rate
+  a skill must hit) and Anthropic's own guidance acknowledges Claude undertriggers skills.
+  This is NOT a contradiction of the roadmap's "record the vendors' published skill success
+  criteria": both vendors publish the recommended success-criteria *set to measure*
+  (trigger rate on relevant queries, workflow tool-call count, zero failed tool calls,
+  with/without comparison), which FR-015/FR-022 accordingly require the A/B bar to RECORD —
+  what no vendor publishes is a *target number* to clear (see the spec.md Assumptions
+  revision note). The FR-015 A/B bar is therefore a **real filter** — a candidate
+  (including the exemplar) failing it is an acceptable, informative spike outcome, not a
+  spike failure.
 
 ---
 

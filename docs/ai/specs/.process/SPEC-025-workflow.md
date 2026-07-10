@@ -71,7 +71,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Plan | `/speckit-plan` | ✅ Complete | plan.md (408 lines: 12-section doc blueprint + 19-step validation protocol V1–V19, Phases A–F, 3-day timebox map) + research.md (C1–C9 citation inventory). G3 PASS after 1 auto-fix (meta-reference literal reworded). estimate-reviewable-loc: `not_estimated` (0 declared production files — correct for 0-LOC spike; advisory, continue). data-model/contracts/quickstart deliberately omitted (rationale in plan §Project Structure). CLAUDE.md SPECKIT block updated (in-flight status) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 105 items, 11 gaps → 0 (all 1-loop); 4 consensus items (1 security human-approved, 3 auto); G4 PASS |
 | Tasks | `/speckit-tasks` | ✅ Complete | 30 tasks, 21/21 FRs covered, 9 [P] Claude∥Codex pairs, 3 staged-decision valves; G5 PASS; verify-tasks 0 phantoms; route one-navigable-PR; layer plan skipped; tasks-mode reviewability deferred (fallback chain in autopilot-state.json) |
-| Analyze | `/speckit-analyze` | 🔄 In Progress | |
+| Analyze | `/speckit-analyze` | ✅ Complete | 13 findings (0C/2H/4M/7L) all resolved in ≤2 loops; FR-022 added (skill-authoring grounding); G6 PASS; 0 unresolved → consensus skipped; 📊 Confidence 0.98 |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement = run validation + write the decision doc |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -603,9 +603,28 @@ Focus on:
 
 ### Analysis Results
 
+13 findings across initial pass + 2 loops, ALL resolved (0 remaining; loop-2 re-run = PROCEED; count-markers 0/0/0). Zero unresolved-for-consensus → Analyze-Consensus task skipped per protocol. G6 PASS (0 CRITICAL/HIGH).
+
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| C1 | HIGH | Roadmap scope bullet "skill-authoring grounding" had no decision-doc section or task | Added FR-022 (all four element groups, cited); plan §9 retitled + V16 extended; T023 extended; US5 AS4 added |
+| C2 | HIGH | FR-015 A/B bar omitted the roadmap's binding published-success-criteria leg | FR-015 extended (trigger rate, workflow tool-call count, zero failed calls, with/without comparison — roadmap L878 quoted); propagated to plan/T023/US5 AS1 |
+| I1 | MEDIUM | Assumption "no vendor publishes trigger-rate metrics" read as roadmap contradiction | Reconciled: no published benchmark NUMBERS vs the recommended criteria SET vendors do publish; explicit revision note tying FR-015/FR-022 |
+| G1 | MEDIUM | `metadata.mcp-server` (from roadmap) is not a documented public frontmatter field | Reframed as audit output; real mechanisms: qualified `ServerName:tool_name` body refs (Claude) / `agents/openai.yaml` `dependencies.tools` (Codex) |
+| N1–N2 | MEDIUM | I1 residue in research.md §4; US4 scenarios missed FR-013 runtime observables | research.md reconciled; US4 AS3 added + Independent Test aligned |
+| N3–N6, L1–L3 | LOW | Traceability/wording nits (US5 AS1 criteria leg; C6 stale; V14 missing T018 scenario; FR-022 numbering note; T018 non-deferrable label; disallowed-tools per-type wording; openai.yaml naming) | All applied as mechanical fixes |
+
+**Pre-Implement Confidence Emit** (consensus-synthesizer, clean-pass path):
+
+📊 Confidence: 0.98
+
+- Task understanding: 0.97
+- Approach clarity: 0.96
+- Requirements alignment: 0.98
+- Risk assessment: 1.00
+- Completeness: 1.00
+
+Rationale highlights: 22 FRs / 8 SCs all task-traced; the one open design fork (Claude dedup lever (i)/(ii)) is named and assigned to V6/T016, not silent; residual risk lives in the three SC-008 staged-decision valves, not open findings; data-model/contracts deliberately not-planned with Principle II rationale.
 
 ---
 
