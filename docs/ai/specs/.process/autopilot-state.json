@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-003-workflow.md",
   "spec_id": "SPEC-003",
   "feature_dir": "specs/003-hybrid-semantic-search",
-  "updated_at": "2026-07-10T03:24:34Z",
-  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-10T17:55:00Z",
+  "active_step": "Post-Implementation: Reviewability Diff Gate",
   "status": "in_progress",
   "archive_sweep": {
     "cleanup_mode": "apply-eligibility (feature branch)",
@@ -26,19 +26,66 @@
   },
   "preset_conventions": {
     "has_presets": true,
-    "presets": ["claude-ask-questions", "codegraph-project-overrides", "speckit-pro-reviewability"]
+    "presets": [
+      "claude-ask-questions",
+      "codegraph-project-overrides",
+      "speckit-pro-reviewability"
+    ]
   },
   "confidence_gate_mode": "advisory",
   "agent_teams_available": true,
   "reviewability": {
-    "setup_gate": {"status": "pass", "warnings": [], "evidence": "SPEC-003-scoped scaffold run: 195 reviewable LOC, ~4 production files, ~10 total files, 1 primary surface (committed 7a4d398; recorded in SPEC-003-workflow.md)"},
-    "plan_estimate": {"status": "not_estimated", "projected": null, "note": "plan.md declares no machine-parseable production-file table; advisory, not treated as pass"},
-    "tasks_gate": {"status": "deferred", "helper_id": "reviewability-gate", "requested_mode": "tasks", "deferral_reason": "tasks mode not supported on the installed runner (setup mode only)", "fallback_evidence_chain": ["setup gate pass (scaffold)", "plan estimate not_estimated (advisory)", "no operator split decision", "tasks.md T005 reviewability checkpoint task carries the budget"], "decision": "proceed"}
+    "setup_gate": {
+      "status": "pass",
+      "warnings": [],
+      "evidence": "SPEC-003-scoped scaffold run: 195 reviewable LOC, ~4 production files, ~10 total files, 1 primary surface (committed 7a4d398; recorded in SPEC-003-workflow.md)"
+    },
+    "plan_estimate": {
+      "status": "not_estimated",
+      "projected": null,
+      "note": "plan.md declares no machine-parseable production-file table; advisory, not treated as pass"
+    },
+    "tasks_gate": {
+      "status": "deferred",
+      "helper_id": "reviewability-gate",
+      "requested_mode": "tasks",
+      "deferral_reason": "tasks mode not supported on the installed runner (setup mode only)",
+      "fallback_evidence_chain": [
+        "setup gate pass (scaffold)",
+        "plan estimate not_estimated (advisory)",
+        "no operator split decision",
+        "tasks.md T005 reviewability checkpoint task carries the budget"
+      ],
+      "decision": "proceed"
+    },
+    "final_diff_gate": {
+      "status": "warn",
+      "helper_id": "final-reviewability-backstop",
+      "requested_mode": "dry_run",
+      "deferral_reason": "helper is a deferred mutation stub on the installed runner (promotion_status: deferred; dry_run returns a command plan, no gate evaluation)",
+      "measured": {
+        "raw_added_production_loc": 1830,
+        "code_only_added_production_loc": 743,
+        "production_files": 6,
+        "comment_doc_share": "~59% of added lines",
+        "budget_projection": "195 LOC / ~4 files (setup gate)"
+      },
+      "decision": "WARN - proceed as one navigable PR",
+      "justification": [
+        "atomicity_route already recorded as one-navigable-PR; feature is a single vertical slice (dormant-by-default, no partial merge point that stays releasable)",
+        "PR review packet (T033) provides review order + full FR/SC traceability to mitigate reviewer load",
+        "four independent post-impl review passes completed green (verify ext 0 findings; verify-tasks 0 phantoms; retrieval-guardian 6/6; opus code review approve-with-comments, all findings remediated)",
+        "re-slicing a completed gate-green implementation post-hoc would cost more review risk than it removes; overage recorded honestly in the T033 findings ledger (commit 2bca035) and the PR packet scope-budget section"
+      ],
+      "evidence": "T033 findings ledger item 4 in SPEC-003-workflow.md; pr-review-packet.md scope-budget section"
+    }
   },
   "atomicity_route": {
     "route": "one-navigable-PR",
     "releasable": true,
-    "signals": ["change-shape:modify-heavy"],
+    "signals": [
+      "change-shape:modify-heavy"
+    ],
     "warnings": []
   },
   "layer_plan": {
