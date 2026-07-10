@@ -53,7 +53,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | |
+| Specify | `/speckit-specify` | ✅ Complete | 16 FRs · 4 user stories · 12 acceptance scenarios · 0 `[NEEDS CLARIFICATION]` markers |
 | Clarify | `/speckit-clarify` | ⏳ Pending | Sessions seeded from design-concept open areas |
 | Plan | `/speckit-plan` | ⏳ Pending | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | performance, api-contracts, error-handling |
@@ -91,9 +91,77 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | VI. Retrieval Performance | `searchNodes` default unchanged (explore untouched); `codegraph_search` output never says "use Read"; expected conditions success-shaped, never `isError`. Scoped A/B before merge. | Q1/Q4 decisions; A/B evidence per Q10; retrieval-guardian review |
 | VII. Local-First, Zero Native Deps | Pure-JS scan over `node:sqlite` BLOBs; no new runtime deps; no network beyond the user-configured embedding endpoint; dormant = byte-identical. | `npm test` incl. dormancy cases; dependency diff |
 
-**Constitution Check:** ⏳ Pending — G0 baseline: `npm run build`, `npm run typecheck`,
-`npm test` green in the worktree before Specify. (Worktree bootstrap already verified:
+**Constitution Check:** ✅ Verified — G0 baseline green (see Autopilot Pre-Flight Record
+below): `npm run build`, `npm run typecheck`, `npm test` all pass in the worktree. (Worktree bootstrap already verified:
 build clean, `codegraph init` at 100% embedding coverage, LSP pass enabled.)
+
+### Autopilot Pre-Flight Record (Step -1 / Step 0) — 2026-07-09
+
+- **Runner:** `speckit_pro_runner` 2.18.1 invoked as `python3 -m speckit_pro_runner` with
+  `PYTHONPATH` → plugin cache; vendored copy synced into this worktree's `speckit-pro/`
+  (kept out of git via the common `info/exclude`) so repo-anchored helpers target this
+  worktree, not the main checkout.
+- **check-prerequisites:** `all_pass=true` — SpecKit CLI 0.11.8, project init ✓,
+  constitution ✓, commands ✓, workflow file ✓, capability coverage advisory ✓.
+  `IS_WORKTREE=true`. Helper branch detection returns an empty string inside worktrees;
+  direct git shows `003-hybrid-semantic-search`, matching this file's Branch field →
+  `ON_FEATURE_BRANCH=true` (Specify skips branch creation).
+- **PROJECT_COMMANDS** (CLAUDE.md authoritative; detect-commands output was generic):
+  BUILD=`npm run build` · TYPECHECK=`npm run typecheck` (tsc --noEmit) · LINT=N/A ·
+  UNIT_TEST=`npm test` · SINGLE_FILE_TEST=`npx vitest run __tests__/<file>.test.ts` ·
+  INTEGRATION_TEST=N/A (eval harness `npm run eval` is separate, not a CI gate) ·
+  FULL_VERIFY=`npm run build && npm run typecheck && npm test`.
+- **PRESET_CONVENTIONS** (`has_presets=true`): layered — `claude-ask-questions` (top
+  layer for spec/plan/tasks templates), `codegraph-project-overrides` (constitution
+  test-policy exceptions: bug fixes start from a failing test; installer changes update
+  the installer-targets contract suite; reviewability augmentation),
+  `speckit-pro-reviewability` (generated base). Passed to every subagent prompt.
+- **Settings:** no `.claude/speckit-pro.local.md` → defaults: consensus-mode=moderate,
+  gate-failure=stop, auto-commit=per-phase, security-keywords=standard.
+- **CONFIDENCE_GATE_MODE=advisory** (resolved once at Step 0.6b; G6.5 reads this value).
+- **AGENT_TEAMS_AVAILABLE=true** (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, Claude Code
+  2.1.206 ≥ 2.1.32).
+- **PROJECT_IMPLEMENTATION_AGENT:** none detected (`.claude/agents/` holds only
+  `retrieval-guardian`, a review-only agent; CLAUDE.md names no implementation agent) →
+  Phase 7 routes: tests/default → `speckit-pro:implement-executor`, research →
+  `speckit-pro:domain-researcher`, verification → minimal-viable ad-hoc agent.
+- **Agent package completeness (Step 0.0b):** all 11 bundled speckit-pro agents present
+  in plugin cache 2.18.1 (incl. `uat-runbook-author.md`) — verified by inspection; the
+  `validate-agent-install` id is not registered on the installed read-only runner.
+- **Reviewability setup gate (G0 item 8):** SPEC-003-scoped scaffold run is the
+  authoritative evidence — **pass, no warnings** (195 reviewable LOC, ~4 production
+  files, ~10 total files, 1 primary surface; committed in 7a4d398). Fresh re-run against
+  the whole roadmap aggregates all pending specs (380 LOC / 7 files / 6 surfaces) →
+  `warn`, `pass=true`. Both outcomes permit proceeding.
+- **Tier-2 relocation:** suppressed — SPEC-003 is freshly scaffolded with PROCESS
+  artifacts already under `.process/` (already-normalized); no thawed legacy candidates
+  with relocatable root PROCESS artifacts remain (prior specs archived).
+- **Doctor health check:** doctor/speckit-utils extension not installed → skipped;
+  recommendation: `specify extension add speckit-utils`.
+- **Hooks (`.specify/extensions.yml`, auto_execute_hooks=true):** after_specify →
+  agent-context.update + git.commit; after_plan → agent-context.update + git.commit;
+  after_implement → review.run + verify.run (+ registry: verify-tasks, cleanup,
+  retrospective, archive, bug, git commands available). Autopilot accepts
+  non-destructive hooks and skips duplicates of its own gate checks, logged per phase.
+- **Archive Sweep (Step -1):** ✅ complete — archive extension installed; apply-eligibility
+  mode (feature branch); current target `specs/003-hybrid-semantic-search` excluded; specs
+  enumerated: only the current target (origin/main's `specs/` tree is empty — all previously
+  archived specs SPEC-001/002/004/008/023 already removed on main); eligible previous specs:
+  **none**; actions taken: **none**; `safeToApplyCleanup=false` (no candidates; active branch
+  is not a safe cleanup base). Worktree clean before/after. Noted for awareness only: no
+  `.specify/feature.json` (consistent with changelog), stale local branch litter from
+  squash-merged SPEC-008 PRs, and a `025-plugin-platform-spike` branch ancestor-of-main with
+  no `specs/025-*/` directory anywhere (CLAUDE.md still lists SPEC-025 as ready to scaffold) —
+  state-tracking ambiguity, no specs/** artifact to act on.
+- **G0 baselines:** ✅ GREEN — `npm run build` PASS (exit 0, 3.5s); `npm run typecheck`
+  PASS (exit 0, 2.4s); `npm test` PASS (exit 0, 52.6s, **2685 passed | 7 skipped, 162 test
+  files** — this is the G7 test-count baseline). No failures. Constitution automated checks
+  (Principles II/III/V/VI/VII structural checks are code-review items validated during
+  implementation per Step 0.9) → **Constitution Check: ✅ Verified**.
+- **Effort note (2026-07-09):** session effort dropped `max`→`high` mid-run after G0;
+  autopilot paused per the skill's effort prerequisite and the operator explicitly
+  instructed "continue" — proceeding under operator override (logged as a deliberate
+  override; bundled subagents still run at their own configured effort).
 
 ---
 
@@ -190,17 +258,30 @@ gracefully to keyword whenever vectors or a provider are absent.
 
 ### Specify Results
 
-<!-- Fill in after running the command -->
-
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | |
-| User Stories | |
-| Acceptance Criteria | |
+| Functional Requirements | 16 (FR-001…FR-016, each citing its design-concept Q-number or constitution principle) |
+| User Stories | 4 (US1 P1, US2 P2, US3 P1, US4 P1) — independently testable slices |
+| Acceptance Criteria | 12 Given/When/Then scenarios + 8 edge cases + 6 success criteria (SC-001…SC-006) |
+
+**G1 (2026-07-09):** 0 `[NEEDS CLARIFICATION]` markers — marker routing alone would skip
+Clarify, but the workflow-prescribed 3 sessions (seeded from design-concept open areas,
+deliberately left to specification detail) run anyway; G2's approval criteria require
+those areas resolved. Template requirements checklist
+(`specs/003-hybrid-semantic-search/checklists/requirements.md`): 0 gaps.
+`.specify/feature.json` created by /speckit-specify (feature_directory pointer) —
+committed with this phase. Spec-MOC index check: **current** (no regen needed; write-mode
+regen is not registered on the installed runner — check-only available).
+**after_specify hooks:** `speckit.git.commit` skipped (duplicates the autopilot's own
+phase commit); `speckit.agent-context.update` deferred to after_plan (the update script
+extracts tech stack from plan.md, which doesn't exist yet; CLAUDE.md is upstream-owned —
+fork discipline says minimal diffs, so run it only where it's designed to act).
 
 ### Files Generated
 
-- [ ] `specs/003-hybrid-semantic-search/spec.md`
+- [x] `specs/003-hybrid-semantic-search/spec.md`
+- [x] `specs/003-hybrid-semantic-search/checklists/requirements.md` (template quality checklist, 0 gaps)
+- [x] `.specify/feature.json`
 
 ### SpecKit Traceability Markers
 
