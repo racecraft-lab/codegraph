@@ -54,7 +54,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 16 FRs · 4 user stories · 12 acceptance scenarios · 0 `[NEEDS CLARIFICATION]` markers |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Sessions seeded from design-concept open areas |
+| Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions · 15 questions · 7 consensus items, all resolved Round 1 (0 escapes, 0 human-review) · spec gains FR-002a/FR-004a/FR-017 + SC-007, hint-wording table, p95 machinery, fixture non-tautology rules |
 | Plan | `/speckit-plan` | ⏳ Pending | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | performance, api-contracts, error-handling |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
@@ -340,9 +340,21 @@ keyword behavior).
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | Fusion mechanics | | |
-| 2 | Degradation UX | | |
-| 3 | Fixture & eval | | |
+| 1 | Fusion mechanics | 5 | Q1: both arms feed RRF at depth `max(5×limit,100)` (FR-004). Q2: rank-only RRF formula `Σ 1/(k+rank)`, no raw magnitudes (FR-004, Key Entities). Q3: ascending node-id tie-breaks at both levels (FR-013). Q4 (consensus): keyword rescoring stays intra-arm — FR-004a added. Q5 (consensus): pure `semantic` = vector-arm only — FR-002a + US2 scenario 4 added; FR-004 opening clause corrected to scope fusion to hybrid. |
+| 2 | Degradation UX | 5 | Q2: inline `[keyword]`/`[semantic]`/`[both]` per-hit tag, fused score `--json`-only (FR-012). Q5: footer placement, emitted every query while condition holds (FR-005). Consensus — Q1: four literal hint strings, model-mismatch folded, normative table under FR-015 (strings corrected to shipped `status` wording + FR-006's failure scope); Q3: FR-017 + SC-007 status availability line ruled IN-SCOPE (SPEC-001/002 same-block precedent); Q4: `semantic: embed Xms · fusion Yms` footer only when semantic arm ran + `--json` machine fields (FR-008). |
+| 3 | Fixture & eval | 5 | Q1: two-seam determinism injection — seed `node_vectors` via existing f32 codec + one named test-only query-provider seam (FR-014, Assumptions). Q2: 50k×384 latency fixture from a seeded pure-JS PRNG, in-memory, no committed asset (FR-014). Q5: byte-identical asserted via deep-equal + explicit field-absence + zero-embed-call spy (FR-014). Consensus — Q3: p95 machinery = N=200 iterations, fixed 10-iter warmup, nearest-rank `sorted[189]`, no retry (FR-014c, SC-002); Q4: non-tautological gate — SC-001 aggregate `≥` with strict semantic-only anchor case, FR-014 restructured (a)/(b)/(c), binding fixture rules added to Assumptions (4-column keyword-miss, decoys, unit-normalized vectors, model-id byte-match + direct semantic-arm assertion, new top-level test file). |
+
+### Consensus Resolution Log
+
+| # | Type | Question/Gap/Finding | Categories | Round | Outcome | Resolution | Analysts Used |
+|---|------|----------------------|------------|-------|---------|------------|---------------|
+| 1 | Clarify | S1-Q4: is keyword multi-signal rescoring re-applied post-fusion? | [codebase] | 1 | high-confidence | No — intra-arm only; FR-004a added | codebase-analyst |
+| 2 | Clarify | S1-Q5: pure `semantic` mode — vector-only or exact-name-supplemented? | [spec, domain] | 1 | both-agree | Vector-only; FR-002a + US2 scenario 4 added; FR-004 opening scoped to hybrid | spec-context-analyst, domain-researcher |
+| 3 | Clarify | S2-Q1: exact degradation hint strings; fold model-mismatch? | [spec] | 1 | high-confidence | 4 literal strings (fold confirmed); table added under FR-015; strings 1/4 corrected to shipped precedent (status dormant wording; FR-006 failure scope) | spec-context-analyst |
+| 4 | Clarify | S2-Q3: `codegraph status` query-side availability line — in scope? | [spec] | 1 | high-confidence | IN-SCOPE; FR-017 + SC-007 added (SPEC-001 FR-022 / SPEC-002 FR-021 same-block precedent) | spec-context-analyst |
+| 5 | Clarify | S2-Q4: embed-leg latency reporting surface | [spec] | 1 | high-confidence | Footer only when semantic arm ran + `--json` machine fields; FR-008 rendering clause added | spec-context-analyst |
+| 6 | Clarify | S3-Q3: p95 measurement machinery | [spec, domain] | 1 | both-agree | N=200, fixed 10-iter warmup, nearest-rank `sorted[189]`, no retry (headroom is the ratified anti-flake mechanism); FR-014(c) + SC-002 amended | spec-context-analyst, domain-researcher |
+| 7 | Clarify | S3-Q4: non-tautological hybrid≥keyword gate construction | [codebase, spec] | 1 | both-agree | SC-001 aggregate `≥` + strict semantic-only anchor; FR-014 (a)/(b)/(c) restructure; binding fixture rules in Assumptions | codebase-analyst, spec-context-analyst |
 
 ---
 
