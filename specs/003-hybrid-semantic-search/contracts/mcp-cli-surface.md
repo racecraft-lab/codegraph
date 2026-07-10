@@ -22,7 +22,8 @@ Add one optional property to the existing `inputSchema` (keep description agent-
 }
 ```
 
-- `mode` omitted → `auto` (FR-002). Unknown value → `auto` (never error).
+- `mode` omitted → `auto` (FR-002). Unknown / out-of-enum value → `auto` (never error) — the MCP surface coerces rather than rejecting, consistent with the success-shaped, never-`isError` posture (FR-015, Constitution VI).
+- The `mode` property's `description` stays terse and agent-facing (e.g. `"Retrieval mode: keyword | semantic | hybrid | auto (default: auto — hybrid when semantic vectors exist, else keyword)"`); the single source of truth for broader agent guidance remains `server-instructions.ts` (issue #529), updated only if the guidance narrative changes.
 - `handleSearch` maps `mode` through to `cg.searchNodes(query, { limit, kinds, mode: resolved })`.
 
 ### Output rendering
@@ -37,7 +38,15 @@ Add one optional property to the existing `inputSchema` (keep description agent-
 ### Options change (plumbing)
 
 Existing: `-p, --path`, `-l, --limit` (default `'10'`), `-k, --kind`, `-j, --json`.
-Add: `-m, --mode <mode>` (`keyword|semantic|hybrid|auto`; unspecified → `auto`).
+Add: `-m, --mode <mode>` — commander option, help/description string
+`'Search mode: keyword | semantic | hybrid | auto (default: auto)'` (mirrors the terse
+style of the existing `-k, --kind` / `-l, --limit` descriptions). Accepted values
+`keyword|semantic|hybrid|auto`; unspecified → `auto`. An unknown / out-of-enum value
+→ `auto` (never a CLI error) — the CLI coerces to its default rather than exiting,
+matching the MCP surface and the never-error posture (FR-015). The flag is NOT
+validated by a commander `choices()` constraint (which would exit non-zero on a typo);
+coercion is done in the action handler so a mistyped mode still returns keyword-eligible
+results.
 
 ### Output rendering
 

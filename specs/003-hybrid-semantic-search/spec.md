@@ -113,27 +113,27 @@ confirm results and shapes are byte-identical to the pre-feature baseline.
 - **Model mismatch**: Vectors whose model differs from the active provider's model are excluded from the KNN cache and scan (only matching-model vectors participate). This condition renders the same success-shaped hint as "no matching-model vectors" (Degradation Hint Wording table under FR-015, string 2) — there is no separate model-mismatch string (Clarify S2-Q1).
 - **Index staleness mid-session**: A cheap per-query staleness probe (vector count + data_version) invalidates and rebuilds the in-memory matrix cache when the index changed.
 - **Filter removes all semantic candidates**: `kind:`/`lang:` pre-filtering the scan before top-k must never starve top-k with filtered-out rows; a fully-filtered scan yields keyword-only fusion input.
-- **Query is only filter tokens**: With filter tokens stripped the embed input may be empty — the semantic arm contributes nothing and results fall back to keyword.
-- **Large-index memory corner**: A 50k×3584 vector matrix (~717 MB resident) is documented as the boundary where quantization/ANN (named follow-up) becomes necessary.
+- **Query is only filter tokens**: With filter tokens stripped the embed input may be empty — the semantic arm contributes nothing and results fall back to keyword. This is a normal empty-arm fusion outcome on a HEALTHY provider, NOT one of the four degraded conditions (FR-015), so NO degradation-hint footer is emitted; no query-embed is issued for an empty input, so the FR-008 timing footer is also omitted (the semantic arm did not actually run). Output is therefore byte-identical to keyword mode. Emitting a degraded hint here would falsely report a working provider as degraded and would contradict SC-007 truthfulness.
+- **Large-index memory corner**: A 50k×3584 vector matrix (~717 MB resident) is documented as the boundary where quantization/ANN (named follow-up) becomes necessary; it remains below the FR-009c memory guard's 1 GiB ceiling and still builds normally in v1 — the guard only degrades to keyword above that ceiling.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: The library `searchNodes` API MUST accept a search mode of `keyword`, `semantic`, `hybrid`, or `auto`, and the library default MUST be `keyword` — byte-identical to today's behavior when unspecified (Q1).
-- **FR-002**: The explicit surfaces — the `codegraph_search` MCP tool and CLI search — MUST resolve an unspecified mode to `auto`, which selects hybrid when matching-model vectors exist and keyword otherwise (Q1).
+- **FR-001**: The library `searchNodes` API MUST accept a search mode of `keyword`, `semantic`, `hybrid`, or `auto`, and the library default MUST be `keyword` — byte-identical to today's behavior when unspecified (Q1). An unrecognized / out-of-enum mode value reaching the library (only possible from an untyped/`as any` caller; the `SearchMode` union rejects it at compile time) MUST coerce to the library default `keyword` and MUST NOT throw or return an error — consistent with the never-error posture (FR-015).
+- **FR-002**: The explicit surfaces — the `codegraph_search` MCP tool and CLI search — MUST resolve an unspecified mode to `auto`, which selects hybrid when matching-model vectors exist and keyword otherwise (Q1). At these surfaces an unknown / out-of-enum mode value MUST also coerce to `auto` (their default) rather than erroring; the CLI `-m, --mode` flag MUST therefore NOT be enforced via a commander `choices()` constraint (which would exit non-zero on a typo) — coercion happens in the handler. The CLI option's help/description text MUST enumerate the four modes and state the `auto` default (e.g. `Search mode: keyword | semantic | hybrid | auto (default: auto)`).
 - **FR-002a**: In pure `semantic` mode the system MUST run the vector (KNN) arm only — it MUST NOT fold in FTS5 exact-name/keyword supplement hits. Exact-name recall is provided by `keyword` and `hybrid` modes, and thus by `auto` when matching-model vectors exist (FR-002). `semantic` mode MAY omit an exact-name symbol that is absent from the vector arm's top-k (Clarify S1-Q5).
 - **FR-003**: Internal callers (explore, prompt hook, context builder) MUST continue to receive keyword results with no query-embed latency and no result-shape change (Q1).
 - **FR-004**: In hybrid mode the system MUST fuse FTS5 keyword hits with vector nearest-neighbor (KNN) hits using reciprocal-rank fusion with `k=60` (roadmap; design Goals); `semantic` mode runs the vector arm only and is not subject to this fusion (FR-002a). Each arm contributes a candidate list of depth `max(5×limit, 100)` — the keyword arm's existing over-fetch depth — to the merge; both depths are internal documented constants. The fused score is rank-only RRF: `fused(d) = Σ, over each arm surfacing d, of 1/(k + rank_arm(d))`, where `rank_arm` is the 1-based rank within that arm's ordered candidate list (keyword arm: its existing post-rescore order; semantic arm: descending cosine similarity). Raw keyword scores and cosine magnitudes MUST NOT enter the fused score — only ranks do. The final list is ordered by fused score descending and truncated to `limit` (Clarify S1-Q1/Q2).
 - **FR-004a**: The keyword arm's existing multi-signal rescoring (kindBonus + pathRelevance + nameMatchBonus) MUST determine only that arm's internal rank prior to fusion. Hybrid/semantic ordering MUST use the fused RRF score (FR-004) with the FR-013 tie-break only — per-signal bonuses MUST NOT be re-applied to the fused union after RRF (Clarify S1-Q4).
-- **FR-005**: The query-time embedding provider MUST initialize lazily on the first hybrid-eligible query; that first query MUST be served keyword-only with a success-shaped "semantic warming" note, and later queries MUST fuse once the provider is ready (Q4). Degradation hints (warming included) are appended as a footer AFTER the results — results lead, note follows — and are emitted on every query while the condition holds, not one-shot (Clarify S2-Q5). The exact hint text is string 3 of the Degradation Hint Wording table under FR-015 (Clarify S2-Q1).
-- **FR-006**: The per-query embed wait MUST be capped at an internal budget of approximately 2 seconds; on timeout or provider failure the system MUST fall back to keyword results plus a hint and MUST NOT return an error response (Q4). The exact hint text is string 4 of the Degradation Hint Wording table under FR-015 (Clarify S2-Q1).
+- **FR-005**: The query-time embedding provider MUST initialize lazily on the first hybrid-eligible query; that first query MUST be served keyword-only with a success-shaped "semantic warming" note, and later queries MUST fuse once the provider is ready (Q4). Degradation hints (warming included) are appended as a footer AFTER the results — results lead, note follows — and are emitted on every query while the condition holds, not one-shot (Clarify S2-Q5). The exact hint text is string 3 of the Degradation Hint Wording table under FR-015 (Clarify S2-Q1). A lazy init that FAILS or times out (distinct from a per-query embed timeout on an already-ready provider) MUST NOT wedge the daemon or permanently latch the project into a broken state: the failing query is served keyword + string 4 (FR-006), the provider returns to its uninitialized state, and a later hybrid-eligible query MAY re-attempt lazy init. Each attempt is serialized behind the same single owner as the warming init (FR-009b's single-owner discipline, so concurrent queries never spawn duplicate inits) and is independently bounded by the FR-006 embed budget, so a persistently failing provider never blocks any single query longer than that budget and never converts an expected/recoverable failure into an `isError`. (This mirrors the existing provider posture — a malformed or timed-out init is surfaced as a recoverable init-error, never latched as a permanent `dims=0`: see `endpoint-provider.ts` and the `local-embed-worker.ts` init timeout.)
+- **FR-006**: The per-query embed wait MUST be capped at an internal budget of approximately 2 seconds; on timeout or provider failure the system MUST fall back to keyword results plus a hint and MUST NOT return an error response (Q4). The exact hint text is string 4 of the Degradation Hint Wording table under FR-015 (Clarify S2-Q1). A query-embed that COMPLETES AFTER its budget has elapsed MUST NOT mutate any shared state: the late-arriving query vector MUST be discarded — it MUST NOT be written to the matrix cache (which holds only stored corpus vectors, never query vectors — FR-009), MUST NOT alter the `matchType`/provenance or ordering of the already-returned keyword response, and MUST NOT retroactively convert that response to fused. The returned keyword result is final for that query; a subsequent query re-embeds under its own budget. More generally, ANY unexpected exception on the semantic/hybrid path — the staleness-probe read (FR-008b), matrix decode/build (FR-008a), the query-embed, or the fusion step throwing — MUST be caught and degrade that query to keyword results plus hint string 4, never surfacing as `isError` (Constitution VI; SC-003); string 4 is the catch-all for every non-happy-path semantic outcome that is not degraded condition 1, 2, or 3.
 - **FR-007**: The feature MUST NOT introduce any new environment variables or user-facing tuning knobs for the embed budget or cache size; these MUST be internal, documented constants (Q4, Q6; Constitution II).
 - **FR-008**: The fusion compute path — vector scan + top-k selection + RRF merge — MUST meet a p95 latency of ≤150 ms at 50k nodes; the query-embed leg (endpoint HTTP round trip or in-process inference) MUST be reported but MUST NOT be gated (Q5). Rendering: when the semantic arm actually ran (semantic/hybrid mode with an available, non-degraded provider), both the `codegraph_search` MCP tool and CLI search append a footer after the results — e.g. `semantic: embed 34ms · fusion 12ms` — in human-readable output; the same timing fields are additionally emitted as machine-readable properties in CLI `--json` output. The footer and machine fields MUST be omitted entirely in keyword mode and under every degraded condition (no vectors, no provider, warming, embed timeout) so keyword and degraded output remain byte-identical (SC-004; Clarify S2-Q4).
 - **FR-009**: The KNN scan MUST use a lazily built in-memory single-precision matrix cache covering all vectors whose model matches the active provider's model, invalidated per query by a cheap staleness probe (vector count + data_version); resident memory equals count×dims×4 bytes and MUST be documented (Q6).
 - **FR-010**: The `kind:`, `lang:`, and `options.kinds` filters MUST pre-filter the vector scan before top-k selection (so filtered-out rows never consume top-k slots), while `path:` and `name:` MUST remain post-fusion hard gates (Q7).
 - **FR-011**: The embedding input for the semantic arm MUST be the parsed query text with filter tokens stripped, mirroring how FTS receives it (Q7).
-- **FR-012**: Results in semantic and hybrid modes MUST carry an optional `matchType` of `keyword`, `semantic`, or `both` plus the fused score; these fields MUST be absent in keyword mode so existing result shapes stay byte-identical, and the `codegraph_search` / CLI surfaces MUST annotate hits with their provenance (Q8). Rendering: both surfaces append an inline bracket tag to each hit's primary line — `[keyword]`, `[semantic]`, or `[both]` — in semantic/hybrid modes only; the fused score appears only in CLI `--json` output, never in human-readable output (Clarify S2-Q2).
+- **FR-012**: Results in semantic and hybrid modes MUST carry an optional `matchType` of `keyword`, `semantic`, or `both` plus the fused score; these fields MUST be absent in keyword mode so existing result shapes stay byte-identical, and the `codegraph_search` / CLI surfaces MUST annotate hits with their provenance (Q8). Rendering: both surfaces append an inline bracket tag to each hit's primary line — `[keyword]`, `[semantic]`, or `[both]` — in semantic/hybrid modes only; the fused score appears only in CLI `--json` output, never in human-readable output (Clarify S2-Q2). The existing required `score` field MUST remain present and ordering-only in every mode; its VALUE stays byte-identical to today in keyword mode (the FTS/fuzzy magnitude — SC-004), and in semantic/hybrid modes `score` MUST carry the same value as the fused RRF score (`fusedScore`) so it stays monotonic with the returned order for existing `--json` consumers. Raw keyword magnitudes and cosine similarities MUST NOT populate `score` in semantic/hybrid modes (FR-004). `options.offset` pagination in semantic/hybrid modes MUST apply after fusion — the deterministic fused union sliced `[offset, offset+limit)`, matching keyword-mode pagination's slice shape and tie-break — but NOT its depth: unlike keyword mode's SQL `OFFSET` against the live, unbounded full ordering, the fused slice runs over the fixed per-arm candidate pool set by FR-004 (`max(5×limit,100)`, never scaled by `offset`), so pages beyond that pool return fewer than `limit` results — a normal bounded-slice outcome, not an error (FR-016; Checklist CHK015).
 - **FR-013**: Ranking MUST be deterministic for identical input — identical query and index MUST produce identical ordering via stable tie-breaks (Constitution V). Ties are broken by ascending node id (a stable content hash of file path + qualified name), applied at BOTH levels: within each arm's ranking on equal per-arm scores (before fusion), and on equal fused scores (after fusion) — so per-arm ranks and the fused order are fully deterministic (Clarify S1-Q3).
 - **FR-014**: CI gates MUST run inside `npm test` using injected deterministic fixture vectors (no live provider), asserting: (a) aggregate hybrid hit-rate ≥ aggregate keyword hit-rate over a ≥3-case paraphrase fixture that includes ≥1 semantic-only case (a case whose only relevant match is reachable solely via vector similarity, not matchable by FTS5 keyword tokens), with that semantic-only case's own aggregate contribution asserted strictly greater under hybrid than keyword — proving the check is not vacuously satisfied by keyword-identical output; (b) existing keyword cases byte-stable (SC-004), asserted independently of clause (a); and (c) p95 fusion compute over a generated 50k×384-dim fixture ≤150 ms — measured over N=200 timed iterations of the fusion leg only (vector scan + top-k + RRF merge) via `performance.now()`, preceded by a fixed 10-iteration warmup discard, nearest-rank p95 = `sorted[Math.ceil(0.95*200)-1]` = `sorted[189]`, single `expect(p95).toBeLessThanOrEqual(150)` assertion, no retry (Clarify S3-Q3). The scored `npm run eval` report MUST gain the same semantic cases (Q9). Fixture construction rules for clause (a)'s non-tautology guarantee are in Assumptions (Clarify S3-Q4). Fixture mechanics (Clarify S3-Q1/Q2/Q5): fixture vectors are injected by seeding `node_vectors` via the existing little-endian f32 codec plus a single named test-only query-provider seam (no live provider, no new production config, never reachable in production resolution); the 50k×384 latency fixture is generated in-memory from a seeded deterministic pure-JS PRNG with a documented seed constant (no committed binary asset, no `Math.random`); byte-identical keyword behavior is asserted by structural deep-equal on the same fixture graph PLUS explicit new-field-absence checks (`matchType`/fused score absent, not `undefined`), and internal callers are asserted to make zero query-embed calls (spy on the query-provider seam).
 - **FR-015**: A project with no vectors, no provider, a warming provider, or an embed timeout MUST still return useful keyword results with a success-shaped hint in auto, semantic, or hybrid mode (US3; Q4).
@@ -145,20 +145,122 @@ confirm results and shapes are byte-identical to the pre-feature baseline.
   vocabulary used for search-time degradation hints (no provider configured / no
   matching-model vectors — S2-Q1). This line MUST be derived solely from the existing
   `getEmbeddingStatus` snapshot — no new probe, and it MUST NOT report live per-daemon
-  provider warmth (transient and would be stale in a point-in-time snapshot).
+  provider warmth (transient and would be stale in a point-in-time snapshot). In
+  `codegraph status --json` the same derived availability MUST be emitted as two additive
+  fields — `hybridSearchAvailable` (boolean, the yes/no predicate) and
+  `hybridSearchReason` (string when `no`, drawn from the strings-1/2 vocabulary; `null`
+  when available) — leaving every existing `status --json` property byte-stable
+  (`status-embedding-json` contract shape unchanged). `hybridSearchReason` MUST be
+  `null` if and only if `hybridSearchAvailable` is `true` (Checklist CHK022).
 
 #### Degradation Hint Wording (FR-015)
 
 Exactly four degraded conditions exist (FR-015; SC-003); each renders one literal
 success-shaped footer string, appended after results per FR-005's placement rule.
-Model mismatch (Edge Cases) is not a fifth condition — it renders string 2.
+Model mismatch (Edge Cases) is not a fifth condition — it renders string 2. The
+FR-009c large-index memory guard is likewise not a fifth condition — it renders
+string 4.
+
+**No-abandonment invariant (Constitution VI)**: none of the four hint strings —
+nor any future degraded-path wording — MUST instruct the agent to fall back to
+Read/Grep or otherwise abandon the tool. Each hint states that keyword results are
+shown and, where actionable, the config or `codegraph sync` step that enables
+semantic ranking — it never tells the caller to stop using search. Because the four
+strings are pinned literals (asserted verbatim by the FR-014 tests), this invariant
+is mechanically enforced, and any wording change is a review gate that MUST preserve
+it.
 
 | # | Condition | Owning requirement | Hint string (literal) |
 |---|---|---|---|
 | 1 | No provider configured | FR-002 (auto→keyword), FR-015 | `\n\n> **Note:** semantic ranking is off — no embedding provider configured; showing keyword matches. Set CODEGRAPH_EMBEDDING_PROVIDER=local for the bundled model, or CODEGRAPH_EMBEDDING_URL and CODEGRAPH_EMBEDDING_MODEL for an endpoint, to enable.` |
 | 2 | No matching-model vectors (folds model mismatch) | FR-015, Edge Cases "Model mismatch" | `\n\n> **Note:** no semantic vectors for the active model yet; showing keyword matches. Run \`codegraph sync\` to embed.` |
 | 3 | Provider warming | FR-005 | `\n\n> **Note:** semantic ranking is warming up; showing keyword matches — later queries will fuse.` |
-| 4 | Embed timeout or provider failure | FR-006 | `\n\n> **Note:** semantic ranking failed or timed out this query; showing keyword matches.` |
+| 4 | Embed timeout or provider failure (also: FR-009c memory-guard skip) | FR-006, FR-009c | `\n\n> **Note:** semantic ranking failed or timed out this query; showing keyword matches.` |
+
+#### Performance Budgets & CI-Stability (FR-008/FR-009/FR-014c)
+
+The p95 gate (FR-008/SC-002) covers the **fusion-compute leg only** = vector scan
++ top-k + RRF merge (§D5). The costs below are the non-gated performance surfaces
+the gate deliberately excludes; each is documented so reviewers can reason about
+end-to-end latency without those costs silently entering (or evading) the gate.
+
+- **FR-008a (Matrix-cache build & rebuild cost)**: The first semantic query on a
+  cold cache MUST build the matrix by decoding every matching-model vector BLOB
+  (via the existing little-endian f32 codec, `upsertNodeVector` path) into one
+  `Float32Array` — a one-time cost that is **excluded from the FR-008 fusion-compute
+  gate** and is NOT bounded by the ~150 ms budget. A staleness-probe invalidation
+  mid-session triggers an identical rebuild on the next semantic query (same
+  excluded cost). Build/rebuild runs only on the semantic/hybrid path; it MUST NOT
+  occur in keyword mode (FR-003). This cold-build latency is reported via the
+  non-gated embed/fusion footer surface (FR-008) and is never rendered in keyword
+  or degraded output.
+- **FR-008b (Staleness-probe cost)**: The per-query staleness probe MUST be a cheap
+  bounded read — the matching-model vector count from `getEmbeddingCoverage` plus
+  the `embedding_model`/`embedding_dims` scalars from `project_metadata` (§D6a; no
+  new column, no full scan) — and it runs **outside** the gated fusion-compute leg.
+  The probe MUST run only on the semantic/hybrid path, never adding cost to the
+  keyword path (FR-003).
+- **FR-009a (Single-owner memory invariant)**: Exactly ONE resident matrix per
+  `(project root, active stored model id)` MUST exist, owned by the main daemon
+  process; it MUST NEVER be duplicated per query-pool worker (§D7). Resident memory
+  equals `count × dims × 4` bytes (FR-009), and the low-QPS single-owner design
+  accepts an occasional ≤150 ms main-loop fusion step; the `SharedArrayBuffer`
+  parallel-worker design is the named scale-up follow-up (§D7), not adopted in v1.
+- **FR-009b (Concurrent first-query build)**: When multiple semantic queries arrive
+  before the cache is warm, the lazy build MUST be serialized behind the single
+  owner (a shared in-flight build, memoized), so concurrent first queries do NOT
+  each trigger a redundant full matrix build (thundering-herd avoidance; §D7).
+- **FR-003a (Keyword-mode latency non-regression)**: Keyword mode (and every
+  internal caller — explore, prompt hook, context builder) MUST incur no matrix
+  build, no staleness probe, and no query-embed call, so keyword-path latency is
+  not regressed — a stronger guarantee than the byte-identical *output* assertion
+  of SC-004. FR-014's zero-embed-call assertion on the provider seam is the
+  measurable proxy for this latency invariant.
+- **FR-006a (Embed-budget cap & degraded-path latency ceiling)**: The ~2 s embed
+  budget (FR-006) is an internal constant enforced as a hard per-query wait cap:
+  no query MUST block past it before falling back to keyword + hint. Consequently,
+  worst-case user-perceived latency under the warming (FR-005) and embed-timeout
+  (FR-006) degraded conditions MUST be bounded by keyword latency plus at most the
+  embed budget. The cap MUST be verifiable as an elapsed-time bound, not only via
+  the keyword-fallback output it yields on timeout.
+- **FR-014d (p95 CI-stability & headroom)**: The 50k×384 fusion leg is pure
+  in-process compute (no I/O, no network, no provider) over a seeded deterministic
+  fixture (§D11), so its timing is stable within an order of magnitude across
+  hardware. The single no-retry nearest-rank assertion (FR-014c) is made
+  deterministic on shared, GitHub-hosted CI runners by an **order-of-magnitude
+  headroom** between the observed fusion p95 and the 150 ms gate — consistent with
+  the FR-008 footer illustration (`fusion 12ms`, ≈10× headroom) — NOT by a tight
+  margin. This headroom comfortably exceeds published cross-runner variance for
+  CPU-bound work on GitHub-hosted runners (single-digit-percent resolution on
+  `ubuntu-latest`, up to ~10% on the noisier `macos-latest`), so no per-run
+  calibration operation is used. Runner class is anchored to GitHub's published
+  hosted-runner hardware spec (`ubuntu-latest`/`windows-latest`: 4 vCPU/16GB;
+  `macos-latest`: 3 vCPU/14GB — see GitHub Docs, "GitHub-hosted runners
+  reference") rather than an in-repo calibration benchmark. The measurement MUST
+  run in a dedicated `*.test.ts` with the 200 timed iterations executed
+  synchronously with no concurrent in-process load, preceded by the fixed
+  10-iteration warmup discard (excludes JIT/allocation cold-start).
+  Implementation MUST re-measure and record the observed fusion p95; if it lands
+  within 2× of the 150 ms gate, the threshold, fixture size, or headroom assumption
+  MUST be revisited before merge (so a near-margin value cannot silently flake).
+- **FR-009c (Large-index memory corner — v1 behavior)**: v1 adds a cheap pre-build
+  memory guard rather than building the matrix fully unconditionally. Before
+  allocating the `Float32Array`, the system MUST compute `predictedBytes =
+  matchingCount × dims × 4` from the same staleness-probe scalars FR-008b/FR-009a
+  already fetch (`getEmbeddingCoverage` count + `project_metadata` dims) — a free
+  check requiring no extra I/O. If `predictedBytes` exceeds a hardcoded internal
+  constant, `MAX_MATRIX_BYTES` = 1 GiB (1,073,741,824 bytes; no env var or
+  user-facing knob — FR-007), the build MUST be skipped for that query and the
+  system MUST fall back to keyword results, rendering hint string 4 ("Embed
+  timeout or provider failure," Degradation Hint Wording table under FR-015)
+  verbatim — a fold into that existing condition, the same way "Model mismatch"
+  folds into string 2 (Edge Cases); this is NOT a fifth degraded condition. The
+  1 GiB ceiling sits ABOVE the documented 50k×3584 ≈717 MB corner (Edge Cases;
+  §D6) with ~1.4× headroom, so that blessed-as-sufficient corner still builds the
+  matrix normally in v1 — the guard exists only to stop unbounded growth beyond
+  it (larger repos and/or higher-dimensional endpoint models than the documented
+  corner assumes), not to gate the corner itself. Quantization/ANN remains the
+  named follow-up for scale beyond the guard (Edge Cases; §D6).
 
 ### Reviewability Budget *(mandatory)*
 

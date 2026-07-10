@@ -56,7 +56,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Specify | `/speckit-specify` | ✅ Complete | 16 FRs · 4 user stories · 12 acceptance scenarios · 0 `[NEEDS CLARIFICATION]` markers |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions · 15 questions · 7 consensus items, all resolved Round 1 (0 escapes, 0 human-review) · spec gains FR-002a/FR-004a/FR-017 + SC-007, hint-wording table, p95 machinery, fixture non-tautology rules |
 | Plan | `/speckit-plan` | ✅ Complete | plan.md + research.md (D1–D14) + data-model.md (E1–E7) + 3 contracts + quickstart; constitution gate PASS ×2 (initial + post-design); G3 pass (after rewording 2 benign prose mentions of the marker token) |
-| Checklist | `/speckit-checklist` | ⏳ Pending | performance, api-contracts, error-handling |
+| Checklist | `/speckit-checklist` | ✅ Complete | 3 domains · 85 items · 23 gaps → 0 · 5 consensus items (all Round 1) · error-handling consensus skipped (zero unresolved) · G4 pass |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Includes design-concept drift check |
 | Implement | `/speckit-implement` | ⏳ Pending | |
@@ -355,6 +355,11 @@ keyword behavior).
 | 5 | Clarify | S2-Q4: embed-leg latency reporting surface | [spec] | 1 | high-confidence | Footer only when semantic arm ran + `--json` machine fields; FR-008 rendering clause added | spec-context-analyst |
 | 6 | Clarify | S3-Q3: p95 measurement machinery | [spec, domain] | 1 | both-agree | N=200, fixed 10-iter warmup, nearest-rank `sorted[189]`, no retry (headroom is the ratified anti-flake mechanism); FR-014(c) + SC-002 amended | spec-context-analyst, domain-researcher |
 | 7 | Clarify | S3-Q4: non-tautological hybrid≥keyword gate construction | [codebase, spec] | 1 | both-agree | SC-001 aggregate `≥` + strict semantic-only anchor; FR-014 (a)/(b)/(c) restructure; binding fixture rules in Assumptions | codebase-analyst, spec-context-analyst |
+| 8 | Gap | CHK008: runner-class normalization for the absolute-ms p95 gate | [domain] | 1 | high-confidence | Absolute floor + 10× headroom confirmed as industry pattern (catastrophic-regression gate, not delta gate); FR-014d strengthened with empirical noise budget + GitHub runner-spec anchor | domain-researcher |
+| 9 | Gap | CHK017: runtime memory guard at the 50k×3584 ≈717 MB matrix corner | [codebase, domain] | 1 | both-agree | FR-009c revised document-only → cheap pre-build guard: `MAX_MATRIX_BYTES`=1 GiB hardcoded (repo pool-ceiling idiom), fires only ABOVE the documented corner, degrades to keyword rendering hint string 4 | codebase-analyst, domain-researcher |
+| 10 | Gap | CHK009: `.score` value in semantic/hybrid modes | [codebase, domain] | 1 | both-agree | `score` = fusedScore (primary score = actual sort key; cross-vendor invariant; types.ts contract + monotonicity); existing FR-012/contract text confirmed, no edit | codebase-analyst, domain-researcher |
+| 11 | Gap | CHK022: `--json` naming/placement for FR-017 availability fields | [codebase] | 1 | high-confidence | Flat top-level camelCase confirmed (flat-scalar vs nested-snapshot repo split; EmbeddingStatus contract frozen); added `null` iff `true` invariant to FR-017 + contract | codebase-analyst |
+| 12 | Gap | CHK015: `options.offset` semantics in fused modes | [codebase] | 1 | high-confidence | Post-fusion slice kept (zero first-party offset callers; unsupported-in-v1 costs more); FR-012 + contract reworded — bounded by fixed candidate depth, deep pages return < limit, not an error | codebase-analyst |
 
 ---
 
@@ -517,10 +522,10 @@ Focus on Hybrid Semantic Search requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| performance | | | |
-| api-contracts | | | |
-| error-handling | | | |
-| **Total** | | | |
+| performance | 30 (CHK001–030) | 13 found → 0 remaining (11 executor-fixed, 2 via consensus) | New spec subsection "Performance Budgets & CI-Stability": FR-003a, FR-006a, FR-008a/b, FR-009a/b/c, FR-014d. Consensus: CHK008 → FR-014d kept + noise-budget & GitHub runner-spec anchoring; CHK017 → FR-009c revised to a pre-build memory guard (`MAX_MATRIX_BYTES`=1 GiB, above the 717 MB corner, folds into hint string 4). |
+| api-contracts | 30 (CHK001–030) | 5 found → 0 remaining (all executor-fixed; 3 confirmed/refined via consensus) | CLI `-m/--mode` help text; `score`=`fusedScore` in fused modes (confirmed 2-analyst); unknown-mode coercion (library→keyword, surfaces→auto, never error); offset = bounded post-fusion slice with documented depth truncation; FR-017 `--json` flat fields + null-iff-available invariant. Files: spec.md FR-001/002/012/017 + all 3 contracts. |
+| error-handling | 25 (CHK001–025) | 5 found → 0 remaining (all executor-fixed; **0 unresolved → consensus round skipped**) | No-abandonment invariant (hints never steer to Read); FR-005 provider-init failure latch (re-attempt serialized, budget-bounded, never wedges); FR-006 late-vector discard (no cache/provenance mutation after budget expiry); string 4 = catch-all for unexpected semantic-path exceptions; healthy empty embed-input arm = NOT degraded (no hint, no footer). Files: spec.md FR-005/006 + Edge Cases + hint section; contracts/degradation-hints.md. |
+| **Total** | 85 items + template requirements checklist | 23 gaps found → 0 remaining | G4 validate-gate: pass (0 markers across all checklist files) |
 
 ### Addressing Gaps
 
