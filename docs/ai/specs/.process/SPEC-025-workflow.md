@@ -314,9 +314,20 @@ doctrine.
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | Component × host matrix | | |
-| 2 | Artifact set & tiering | | |
+| 1 | Component × host matrix | 5 (all recommendations accepted) | FR-002 reframed capability-first (real Codex artifact names; `codex-hooks.json`/`codex-agents/*.toml` confirmed non-existent; do-not-conflate note for plugin-root `agents/` branding YAML). FR-009/FR-011 now distinguish existing vs NEW SPEC-026 installer capability. FR-010: all-8-cells requirement + working assignment "front-load hook plugin-owned on BOTH hosts" with pinned-CLI-version concrete hook test (#16430/PR #19705 history). FR-013: degraded-Codex subset concretized — agents cell → npm installer via `.codex/agents/*.toml` (net-new SPEC-026 work), validation must pin multi-agent runtime path v1/v2 + model (#15250/#20077 open upstream) |
+| 2 | Artifact set & tiering | 5 (all recommendations accepted) | FR-014: three-leg inclusion criterion (rides codegraph_explore / adds delta beyond server-instructions.ts / expected to clear A/B bar; considered-and-excluded recorded); agent class evaluated separately (retrieval-guardian OUT — dev-only reviewer; skills-only v1 unless a user-facing agent qualifies); tier rule fixed. FR-015: third A/B mode defined (artifact-off vs artifact-on, Sonnet floor, ≥2 runs/arm, pass = no regression + control). FR-016: reference-not-restate now a per-candidate validation line item. Assumptions: skill-efficacy prior recorded (unproven — real filter, exemplar may fail acceptably); shared agent-skills standard corroborated with 4 load-bearing per-host divergences scoped to US1 audit. ⚠️ One security-tagged item ([U2] tier-mechanism hardening) escalated to HUMAN REVIEW per protocol — see CRL row 6 |
 | 3 | Validation protocol | | |
+
+### Consensus Resolution Log
+
+| # | Type | Question/Gap/Finding | Categories | Round | Outcome | Resolution | Analysts Used |
+|---|------|----------------------|------------|-------|---------|------------|---------------|
+| 1 | Clarify | S1: Codex front-load hook plugin-owned (matrix cell)? | [domain] | 1 | high-confidence | FR-010 sharpened: pin installed Codex CLI version; concrete UserPromptSubmit hooks/hooks.json test; docs+source corroborated | domain-researcher |
+| 2 | Clarify | S1: Codex agents cell → installer-written `.codex/agents/*.toml` as new SPEC-026 capability? | [domain, spec] | 1 | both-agree | FR-013 sharpened: pin multi_agent_v1/v2 runtime + model in validation; #15250 OPEN + #20077 corroborated; Q3→Q6→Q7 chain + net-new confirmed at codex.ts:92-109 | domain-researcher, spec-context-analyst |
+| 3 | Clarify | S1: exact Codex artifact filenames (no codex-hooks.json / codex-agents/*.toml)? | [domain] | 1 | high-confidence | FR-002 confirmed correct; added do-not-conflate note (plugin-root `agents/` = YAML branding metadata, not subagent bundling); verified vs live docs + openai/plugins + codex-plugin-cc real files | domain-researcher |
+| 4 | Clarify | S2: skill salience — "several clear" vs "unproven/real filter" framing? | [domain, codebase] | 1 | both-agree | Assumptions bullet added: efficacy unproven (vendor-admitted undertriggering, zero in-repo skill-A/B precedent); skills structurally higher-salience than failed server-instructions channel; FR-015 is a real filter, exemplar may fail acceptably | domain-researcher, codebase-analyst |
+| 5 | Clarify | S2: shared agent-skills standard "one tree serves both hosts"? | [domain] | 1 | high-confidence | Assumption rescoped: SKILL.md content transfers; discovery dirs, tool-permission frontmatter, auto-invoke opt-outs, invocation syntax are per-host divergences for the US1 audit (agentskills.io canonical; first-party corroboration both vendors) | domain-researcher |
+| 6 | Clarify | S2: tool-tier rule for shipped artifacts (fully-open default; never touch MCP surface; constrained-tier mechanism) | [security, spec, codebase] | 1 | [HUMAN REVIEW] | 3/3 substantive agreement (rule sound; doctrine provenance = roadmap:850/:875 + grill-me Q4); domain adds hardening (constrained skills need `disallowed-tools`, not `allowed-tools` alone; durable via context:fork; Codex ignores allowed-tools). Security-tag override → surfaced to maintainer; FR-014 tail unchanged pending decision | all 3 (security tag → mandatory) |
 
 ---
 
