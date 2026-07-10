@@ -342,6 +342,10 @@ SPEC-003 (Hybrid Semantic Search) is in flight on branch
 `specs/003-hybrid-semantic-search/plan.md` (research, data-model, contracts, and
 quickstart alongside it).
 
+SPEC-025 (plugin platform mechanics spike) is complete and merged (PR #35) —
+the decision document is `docs/design/plugin-channel-decision.md` (spec
+artifacts under `specs/025-plugin-platform-spike/`).
+
 SPEC-001, SPEC-002, SPEC-004, SPEC-008, and SPEC-023 are complete and archived;
 provenance and recovery commands live in `.specify/memory/archive-reports/`.
 
@@ -355,11 +359,11 @@ Canonical completed-spec artifacts:
 - SPEC-023: OCaml grammar, extractor, Dune-aware resolver, fixtures, tests, and
   grammar docs.
 
-SPEC-003 and SPEC-005 are ready to scaffold. SPEC-006 and SPEC-007 remain
+SPEC-005 is ready to scaffold. SPEC-006 and SPEC-007 remain
 downstream of SPEC-005. SPEC-010 is ready because SPEC-008 shipped the LSP
 substrate. SPEC-024 is dormant unless future parity drift creates a concrete
-unowned language, feature, or capability row. SPEC-025 (plugin platform
-mechanics spike) is ready to scaffold and parallel-safe; SPEC-026
-(plugin-channel distribution — Claude Code + Codex plugins carrying the MCP
-server, prompt hook, skills, and agents) is downstream of SPEC-025.
+unowned language, feature, or capability row. SPEC-026 (plugin-channel
+distribution — Claude Code + Codex plugins carrying the MCP server, prompt
+hook, skills, and agents) is ready to scaffold now that SPEC-025's decision
+document is merged.
 <!-- SPECKIT END -->
