@@ -189,109 +189,53 @@ plugin tree. Scratch plugins stay under a scratch path outside durable source.
 
 ## Decision Document Structure (the blueprint)
 
-`docs/design/plugin-channel-decision.md` is organized into the sections below. Each
-section names the user story / FRs it closes, and the validation bar that makes it
-"done." (Section order is the intended review order.)
+> **Revised during PR #35 review remediation (maintainer request):** the document was
+> restructured from the original 12 flat sections into a decision body + appendices so
+> the review surface is readable in one sitting. All originally-blueprinted content
+> survives; the mapping from the original section plan is noted per entry.
 
-1. **Executive decision + scope/non-goals** — the headline decisions (validate PRD
-   OQ-8 hypothesis; plugin-wins-config / npm-keeps-binary; degraded-Codex if needed;
-   skills-first artifact set). Closes: framing for SC-001. *Bar:* every roadmap SPEC-025
-   scope bullet appears with an explicit decision.
-2. **Validation Evidence Block schema** — the reusable evidence structure every
-   hands-on claim uses: `{ id, subject, host+pinned version, exact repro command,
-   quoted manifest snippet, observed behavior, supported claim, or explicit "could not
-   validate" note }`. Launcher-chain evidence = one block **per stage per host**, each
-   pinning the condition-forcing step (binary present / absent+warm cache /
-   absent+offline) and recording PATH scoping (login-shell vs GUI-inherited). Every block
-   is **secret-scrubbed** before it lands — no `.envrc.local` embedding endpoint/key value
-   the dogfood launcher injects (FR-019). Closes: US1 Independent Test, SC-002. *Bar:* schema
-   fields fixed before any evidence is recorded; no credential/endpoint value in committed text.
-3. **Claude Code platform audit** (US1 / FR-001, FR-003) — manifest + component
-   pointers, plugin-scoped `mcpServers`/`hooks`/`skills`/`agents`/`commands`,
-   `${CLAUDE_PLUGIN_ROOT}` resolution, marketplace + trust model, plugin-agent tool
-   inheritance + `disallowedTools`. *Bar:* every load-bearing claim → public citation +
-   ≥1 hands-on evidence block.
-4. **Codex platform audit** (US1 / FR-002, FR-003) — enumerated capability-first:
-   `.codex-plugin/plugin.json` manifest + component pointers, bundled skills, the hook
-   surface (plugin `hooks/hooks.json`; standalone `.codex/hooks.json` / inline
-   `config.toml` `[hooks]`), MCP registration, subagent support (plugin-bundled vs
-   standalone `.codex/agents/*.toml` vs plugin-root `agents/` branding metadata), and
-   project- + hook-hash trust gating. Exact artifact filenames are audit outputs,
-   corrected to the hands-on evidence where docs diverge. *Bar:* every load-bearing
-   claim → public citation + hands-on evidence, or an explicit "could not validate" note.
-5. **MCP launcher contract — OQ-8** (US2 / FR-005, FR-006, FR-007, FR-008, FR-021) — the ordered
-   fallback (PATH-resolved binary → `npx --offline` thin-installer → success-shaped
-   guidance), the stub-launcher delivery mechanism (always starts an MCP-speaking
-   process; serves a stub MCP server returning success-shaped guidance when the binary
-   is unresolved — never a failed-to-spawn surface), the runtime-self-sufficiency
-   condition, the `--offline`/major-pin/~50MB disclosure, the plugin-channel
-   network/telemetry **parity** affirmation (no phone-home/auto-install the npm channel
-   lacks; same telemetry opt-outs and Principle VII rule; the `npx --offline` stage reuses
-   the npm channel's own thin-installer, not a new vector — FR-021), and the
-   three-stage-per-host evidence. *Bar:* ordered fallback fully specified; absent-binary
-   path success-shaped (never `isError`); ANY npx-stage failure (not only the offline
-   cache-miss — corrupt/partial cache, npx/runtime unavailable, or a spawned-but-nonfunctional
-   package) falls through to the stub guidance; the guidance's install command framed as a
-   USER action (never an agent auto-install, FR-021); network/telemetry parity affirmed; OQ-8
-   marked resolved in PRD terms (SC-003) with recorded evidence.
-6. **Component × host ownership matrix** (US3/US4 / FR-009, FR-010, FR-013) — the 8-cell
-   table: component (MCP server, prompt front-load hook, skills, agents) × host (Claude
-   Code, Codex); each cell states can-carry? + one of three decided owners (plugin /
-   installer / explicitly-absent), the MCP-Claude owner reconciled with the FR-011 lever;
-   installer-gap cells flagged as new SPEC-026 capability. *Bar:* every cell carries one of
-   the three decided outcomes, none blank/undecided (SC-004).
-7. **Coexistence + uninstall interplay** (US3 / FR-011, FR-012) — detection/dedupe in
-   both directions (plugin-detects-installer, installer-detects-plugin), the
-   host-arbitrated Claude dedup lever decision (i vs ii), the Codex levers, the
-   non-viability of plugin-side self-suppression (JSON-RPC -32000) with the empty
-   `tools/list` fallback, and invocation-driven uninstall restore with no orphaned entries
-   (each channel's uninstall removes only its own; plugin-scoped removal is atomic; the
-   lever-(ii) zero-server window is stated); and the diagnostic ownership for a both-present
-   state that EVADES dedup (near-duplicate Claude entries the host does not collapse; Codex
-   with no native cross-channel dedup) — who detects/reports it and the residual-window
-   observable. *Bar:* both directions stated; surviving channel stays functional; no duplicate
-   registration / no double hook injection / no orphaned MCP entry or hook; and for the
-   evades-dedup both-present case, who-reports-what and the user/agent observable are specified
-   (provisional, flagged for consensus).
-8. **Degraded-Codex subset** (US4 / FR-013) — the matrix cells the Codex plugin format
-   cannot carry, each reassigned to the npm installer (a degraded cell with no installer
-   coverage today — e.g. the Codex prompt hook — resolves to new SPEC-026 capability or
-   explicitly-absent, not force-assigned), asymmetry vs Claude Code documented; gated on
-   hands-on confirmation with the pinned `multi_agent_v1`/`v2` runtime + model pairing; and
-   each degraded/absent cell's runtime USER-OBSERVABLE specified (installer-covered =
-   functionally equivalent; explicitly-absent = a decided silent-by-design or surfaced-note
-   observable). *Bar:* subset named; each unsupported cell assigned to the installer per the
-   matrix; each degraded/absent cell observable-complete, not merely ownership-complete.
-9. **Skill-authoring grounding + shipped-artifact plan** (US5 / FR-014, FR-015, FR-016,
-   FR-022) — **opens with the skill-authoring grounding** (roadmap SPEC-025 scope bullet 2,
-   FR-022): a dedicated, citation-backed block grounding the plan + exemplar in both
-   vendors' PUBLIC guidance — the shared agent-skills open standard (`SKILL.md` + optional
-   `scripts/`/`references/`/`assets/`; the per-host divergences the US1 audit enumerates),
-   Anthropic's progressive disclosure / MCP-enhancement "recipes over the kitchen" category
-   / what-when trigger discipline / kebab-case + exact-`SKILL.md` structural rules / no-XML
-   + reserved-name security restrictions / optional `allowed-tools` field (pre-approval,
-   not restriction) / the skill-to-MCP dependency mechanism as an audit output (qualified
-   `ServerName:tool_name` body references per Anthropic best-practices — correcting the
-   roadmap's `metadata.mcp-server` to the evidence, per FR-002), OpenAI's `.agents/skills`
-   scan order / explicit `$skill-name` vs implicit
-   invocation / `agents/openai.yaml` sidecar / authoring best practices, and the vendors'
-   published skill success criteria — **then** the candidate skill/agent enumeration with
-   the three-leg inclusion criterion, per-artifact tier decisions, trigger surfaces, the
-   FR-015 A/B bar definition (recording the published success criteria — trigger rate,
-   workflow tool-call count, zero failed tool calls, with/without comparison — **alongside**
-   wall-clock + tool-call + Read/Grep + control repo, per the roadmap's binding gate), and
-   the reference-not-restate (#529) line item per candidate; the agent class evaluated
-   separately (retrieval-guardian excluded). *Bar:* the skill-authoring grounding closes
-   roadmap scope bullet 2 with public citations and all named elements present (SC-001);
-   each candidate has a tier + a validation bar; excluded workflows recorded with reasons.
-10. **Appendix: explore-flow exemplar skill** (US5 / FR-017) — exactly one fully-drafted
-    artifact body; no other candidate body drafted. *Bar:* exactly one exemplar (SC-005).
-11. **Staged decisions + close-out** (FR-020 / SC-008) — any timebox miss recorded as an
-    explicit, attempt-first staged decision naming what was attempted and the evidenced
-    blocker; the done-bar checklist (SC-001…SC-008); the roadmap status edit. *Bar:* zero
-    silent gaps.
-12. **Traceability + PR review packet** — requirement/SC → section → evidence map, and
-    the PR packet fields.
+`docs/design/plugin-channel-decision.md` is organized as:
+
+**Decision body (the review surface, §§1–8)** — every hands-on claim cites an evidence
+block in Appendix B by bracketed ID:
+
+1. **The decision** — headline decisions + per-scope-bullet closure table + non-goals
+   (orig. §1). *Bar:* every roadmap SPEC-025 scope bullet appears with an explicit
+   decision.
+2. **What the plugin formats can carry** — Claude Code + Codex platform-audit findings +
+   the audit-corrections table (orig. §3–§4). *Bar:* every load-bearing claim → public
+   citation + ≥1 hands-on evidence block, or an explicit "could not validate" note.
+3. **The MCP launcher contract (OQ-8)** — the ordered fallback, the two refinements, the
+   contract properties, network/telemetry parity (orig. §5). *Bar:* fallback fully
+   specified; absent-binary path success-shaped (never `isError`); ANY npx-stage failure
+   falls through to stub guidance; install framed as a USER action; parity affirmed;
+   OQ-8 resolved in PRD terms.
+4. **Ownership & coexistence** — the 8-cell matrix, the lever-(i) decision and its
+   installer-detection realization, uninstall rules (orig. §6–§7). *Bar:* every cell
+   decided (none blank); both detection directions stated; no orphans; who-reports-what
+   specified for the evades-dedup both-present state.
+5. **The degraded-Codex subset** (orig. §8). *Bar:* subset named; each unsupported cell
+   assigned per the matrix; observable-complete, not merely ownership-complete.
+6. **Shipped artifacts: skills-first** — the skill-authoring grounding (roadmap scope
+   bullet 2), candidates + the three-leg inclusion criterion, the A/B validation bar,
+   the agent verdict (orig. §9). *Bar:* grounding closes scope bullet 2 with public
+   citations and all named elements; each candidate has a tier + a validation bar;
+   excluded workflows recorded with reasons.
+7. **Staged decisions** — SD-1…SD-4, attempt-first with evidenced blockers and SPEC-026
+   pre-ship gates (orig. §11.1). *Bar:* zero silent gaps.
+8. **Sources** — the P/S/C citation rosters inlined (public URLs only; the C roster
+   inlined so references never dangle if the research ledger is archived).
+
+**Appendices:**
+
+- **A. The explore-flow exemplar** — exactly one fully-drafted `SKILL.md` body
+  (orig. §10). *Bar:* exactly one exemplar.
+- **B. Validation evidence** — the frozen 7-field evidence schema + secret-scrub rule
+  (orig. §2) and all 31 Validation Evidence Blocks (orig. inline in §§3–7): one block per
+  launcher stage per host, PATH scoping recorded, scrubbed at drafting time.
+- **C. Compliance record** — the SC-001…SC-008 done-bar checklist, the reviewability
+  checkpoint + secret-scrub sweep result, the FR/SC → section → evidence traceability
+  map, and the PR review packet (orig. §11.2 + §12).
 
 ## Validation Protocol (19 steps)
 
