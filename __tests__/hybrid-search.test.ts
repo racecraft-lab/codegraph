@@ -2548,3 +2548,591 @@ describe.skipIf(!HAS_SQLITE)('hybrid search — US2 mode behavior (T014)', () =>
     expect(names(detailed.results)).toContain('fetchRemoteValue');
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// T025 — US4 FR-014(b) dormancy GATE: keyword byte-stability + zero-embed-call
+// (FR-003/003a, SC-004/SC-005; spec Assumptions "dormancy" rules).
+//
+// This is a GUARD gate over dormancy that ALREADY landed (T019 routes the keyword
+// mode through a zero-touch early return in `searchNodesDetailed`; the fused path
+// is unreachable for keyword / no-mode / internal callers). So MOST assertions
+// PASS on first run — each carries a "RED-not-applicable" note stating the task
+// that made it green, and every gate is proven NON-VACUOUS so a passing assertion
+// is a real measurement, not a tautology:
+//
+//   1. BYTE-STABILITY (FR-014b/003/SC-004): `searchNodes(q)`, `searchNodes(q, {})`,
+//      `searchNodes(q, {mode:'keyword'})`, and `searchNodesDetailed(q,{mode:
+//      'keyword'}).results` are all structurally equal on ONE fixture graph, and —
+//      the T025 value-add over T004/T018's `.toBeUndefined()` — every dormant row
+//      carries NO `matchType`/`fusedScore` KEY (`'matchType' in r === false`, i.e.
+//      absent, not present-but-undefined). Non-vacuity: a fused row DOES carry the
+//      key (`'matchType' in r === true`), so the `in` operator genuinely discriminates.
+//
+//   2. ZERO-EMBED / ZERO-CONSTRUCTION (FR-003a): with a counting FACTORY spy
+//      installed (`__setQueryEmbeddingProviderFactoryForTests` — counts provider
+//      constructions; its provider's `embed` counts embed calls), every keyword
+//      surface AND the internal-caller shapes (`searchNodes(q)` with no mode,
+//      `buildContext`) leave BOTH counters at 0. Non-vacuity: the SAME spy on the
+//      fused (hybrid) path counts ≥1 construction AND ≥1 embed — so the zeros above
+//      are a real measurement of a wired-and-observed seam, not a dead spy.
+//
+//   3. NO matrix build / staleness probe on the keyword path: there is no clean
+//      public observable for "matrix built" / "probe ran" without adding a NEW seam
+//      (documented coverage boundary). It is bounded by the construction proxy:
+//      `runFusedSearch` resolves the provider BEFORE it ever probes staleness or
+//      builds the matrix, so a construction count of 0 proves `runFusedSearch`
+//      (hence probe + build) was never entered — even with a live corpus present.
+//
+// The gate FAILS (surfacing a genuine dormancy regression) if a future change ever
+// routes a keyword/no-mode/internal call through the fused path: a leaked
+// `matchType`/`fusedScore` key, a non-zero embed, or a non-zero provider construction.
+// ───────────────────────────────────────────────────────────────────────────
+describe.skipIf(!HAS_SQLITE)('hybrid search — FR-014(b) dormancy gate (T025)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  /** Free-text query keyword-reachable in the fixture (`parse` prefixes `parseConfig`) → non-empty keyword hits. */
+  const QUERY = 'parse';
+  /** Free-text + basis-0 query (embeds to `parseConfig`'s seeded vector) — the fused-path driver. */
+  const FUSE_QUERY = 'parse raw config text';
+
+  /**
+   * Install the counting provider-FACTORY seam via an optional-property cast (the
+   * same pattern T020 uses — no hard import dependency). The seam landed in T020, so
+   * the presence assertion PASSES here; it stays as a guard that the seam still exists.
+   */
+  function setQueryProviderFactory(factory: (() => EmbeddingProvider) | undefined): void {
+    const mod = CodeGraphIndex as unknown as {
+      __setQueryEmbeddingProviderFactoryForTests?: (f: (() => EmbeddingProvider) | undefined) => void;
+    };
+    expect(typeof mod.__setQueryEmbeddingProviderFactoryForTests).toBe('function');
+    mod.__setQueryEmbeddingProviderFactoryForTests!(factory);
+  }
+
+  /**
+   * A counting spy behind the factory seam: the factory increments `constructions`
+   * on each provider construction, and the constructed provider's `embed` increments
+   * `embeds` per embed call. It embeds ANY text to basis 0 (cosine 1.0 with the
+   * `parseConfig` vector `seedFixtureVectors` seeds), so the fused path genuinely
+   * fuses when it runs — making the non-vacuity counts real, not incidental.
+   */
+  function countingSpy(): {
+    factory: () => EmbeddingProvider;
+    constructions: () => number;
+    embeds: () => number;
+  } {
+    let constructions = 0;
+    let embeds = 0;
+    const factory = (): EmbeddingProvider => {
+      constructions++;
+      return {
+        id: FIXTURE_MODEL,
+        dims: FIXTURE_DIMS,
+        async embed(texts: string[]): Promise<Float32Array[]> {
+          embeds++;
+          return texts.map(() => unitVector(0));
+        },
+      };
+    };
+    return { factory, constructions: () => constructions, embeds: () => embeds };
+  }
+
+  afterEach(() => {
+    // Clear the factory seam without asserting so cleanup never masks a failure or leaks.
+    (CodeGraphIndex as unknown as {
+      __setQueryEmbeddingProviderFactoryForTests?: (f: (() => EmbeddingProvider) | undefined) => void;
+    }).__setQueryEmbeddingProviderFactoryForTests?.(undefined);
+    __setQueryEmbeddingProviderForTests(undefined); // never leak the fixed-instance seam
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* may already be closed */ } }
+    while (dirs.length) {
+      const d = dirs.pop()!;
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  /** A real, structurally-indexed fixture graph; `seed` optionally hand-seeds vectors/metadata. */
+  async function indexed(seed?: (dir: string) => void): Promise<CodeGraph> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    if (seed) seed(dir);
+    return cg;
+  }
+
+  // ── (1) BYTE-STABILITY + new-field ABSENCE (RED-not-applicable — landed T004/T019) ──
+  it(
+    'byte-stability — every keyword call shape is structurally identical AND carries NO matchType/fusedScore key (FR-014b/003, SC-004)',
+    async () => {
+      // Structural-only fixture: no vectors, no provider seam. The keyword path is
+      // env-independent (it never resolves a provider), so ambient CODEGRAPH_EMBEDDING_*
+      // cannot perturb this — no scrub needed on the keyword surfaces.
+      const cg = await indexed();
+
+      const base: SearchResult[] = cg.searchNodes(QUERY);                       // call "without the option"
+      const withEmptyOpts: SearchResult[] = cg.searchNodes(QUERY, {});          // options present, mode omitted
+      const explicitKeyword: SearchResult[] = cg.searchNodes(QUERY, { mode: 'keyword' });
+      const detailed: SearchNodesDetailed = cg.searchNodesDetailed(QUERY, { mode: 'keyword' });
+
+      // The fixture genuinely matches ≥1 symbol (parseConfig) so the deep-equals bind
+      // to a real, non-empty array rather than passing vacuously on [].
+      expect(base.length).toBeGreaterThan(0);
+
+      // Structural deep-equal across every pre-feature-equivalent shape.
+      expect(withEmptyOpts).toEqual(base);
+      expect(explicitKeyword).toEqual(base);
+      expect(detailed.results).toEqual(base);
+      expect(detailed.degradation).toBeNull(); // keyword is never degraded
+
+      // The T025 value-add: ABSENCE of the new provenance keys — NOT merely undefined.
+      // A dormant keyword row has no such key at all; `!(k in r)` is the strict check.
+      for (const arr of [base, withEmptyOpts, explicitKeyword, detailed.results]) {
+        for (const r of arr) {
+          expect('matchType' in r).toBe(false);
+          expect('fusedScore' in r).toBe(false);
+        }
+      }
+    },
+    30_000,
+  );
+
+  it(
+    'non-vacuity of the absence check — a FUSED row DOES carry matchType/fusedScore keys, so `in` discriminates (FR-012/014b)',
+    async () => {
+      // Seed matching-model vectors so a hybrid query truly fuses. The SAME `'k' in r`
+      // operator that reads FALSE on every dormant row above must read TRUE here — else
+      // the absence assertions would be a vacuous check against a key nothing ever sets.
+      const cg = await indexed((dir) => seedFixtureVectors(dir));
+      __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+      await cg.acquireQueryVectorForSearch(FUSE_QUERY); // warm the query-vector cache
+
+      const detailed = cg.searchNodesDetailed(FUSE_QUERY, { mode: 'hybrid' });
+      expect(detailed.degradation).toBeNull(); // genuinely fused, not degraded
+      const target = detailed.results.find((r) => r.node.name === 'parseConfig');
+      expect(target).toBeDefined();
+      expect('matchType' in target!).toBe(true);   // fused rows carry the key…
+      expect('fusedScore' in target!).toBe(true);   // …both of them
+      expect(target!.matchType).toBe('both');
+      expect(typeof target!.fusedScore).toBe('number');
+    },
+    30_000,
+  );
+
+  // ── (2) ZERO-EMBED / ZERO-CONSTRUCTION on keyword + internal-caller paths ──
+  it(
+    'zero embed AND zero provider construction on every keyword surface incl. internal callers (FR-003a/014b, SC-005)',
+    async () => {
+      // Install ONLY the counting factory (fixed-instance seam left unset). The factory
+      // wins over env inside `constructQueryEmbeddingProvider`, so this is env-hermetic:
+      // if any keyword surface DID resolve a provider, the counter would catch it.
+      const cg = await indexed();
+      const spy = countingSpy();
+      setQueryProviderFactory(spy.factory);
+
+      // (a) Explicit keyword-mode surfaces.
+      cg.searchNodes(QUERY, { mode: 'keyword' });
+      cg.searchNodesDetailed(QUERY, { mode: 'keyword' });
+
+      // (b) Internal-caller simulation: pre-feature call shapes that default to keyword,
+      // plus `buildContext` (runs its own FTS + graph expansion — never the query embed).
+      cg.searchNodes(QUERY);        // no options → keyword default
+      cg.searchNodes(QUERY, {});    // options present, mode omitted → keyword default
+      await cg.buildContext('parse config');
+
+      expect(spy.embeds()).toBe(0);        // FR-003a: keyword pays zero embed latency
+      expect(spy.constructions()).toBe(0); // no provider is ever constructed on these paths
+    },
+    30_000,
+  );
+
+  // ── (2) NON-VACUITY: the SAME spy COUNTS on the fused path ──
+  it(
+    'non-vacuity — the SAME counting spy records ≥1 construction and ≥1 embed on the fused path (proves the keyword zeros are real measurements)',
+    async () => {
+      const cg = await indexed((dir) => seedFixtureVectors(dir)); // matching-model vectors present
+      const spy = countingSpy();
+      setQueryProviderFactory(spy.factory);
+
+      // The realistic fused flow the async surfaces (MCP/CLI) run: warm the query vector
+      // (the embed + the single-owner provider construction happen HERE), then search.
+      const acq = await cg.acquireQueryVectorForSearch(FUSE_QUERY);
+      expect(acq.vector).not.toBeNull();
+      expect(acq.model).toBe(FIXTURE_MODEL);
+
+      // The spy genuinely measures BOTH counters on the fused path — so the 0/0 on the
+      // keyword paths above is a live measurement of a wired seam, not a dead spy.
+      expect(spy.constructions()).toBeGreaterThanOrEqual(1);
+      expect(spy.embeds()).toBeGreaterThanOrEqual(1);
+
+      // And the hybrid search actually fuses using that vector (provenance present).
+      const detailed = cg.searchNodesDetailed(FUSE_QUERY, { mode: 'hybrid' });
+      expect(detailed.degradation).toBeNull();
+      expect(detailed.results.some((r) => r.matchType !== undefined)).toBe(true);
+    },
+    30_000,
+  );
+
+  // ── (3) Keyword builds no matrix / runs no staleness probe (construction proxy) ──
+  it(
+    'keyword does no matrix build / staleness probe — proven via the construction proxy even with a LIVE corpus (FR-003a; documented coverage boundary)',
+    async () => {
+      // Vectors ARE present: a hybrid query here WOULD probe staleness and build the
+      // matrix (proven by the non-vacuity test above). A keyword query must touch none
+      // of it. There is no clean public observable for "matrix built" / "probe ran"
+      // without adding a NEW seam (the documented coverage boundary), so both are
+      // bounded by the construction proxy: `runFusedSearch` resolves the provider
+      // BEFORE it probes or builds, so a construction count of 0 proves `runFusedSearch`
+      // — and therefore the probe + matrix build — was never entered.
+      const cg = await indexed((dir) => seedFixtureVectors(dir));
+      const spy = countingSpy();
+      setQueryProviderFactory(spy.factory);
+      __resetVectorMatrixCacheForTests(); // ensure no resident matrix leaks in from setup
+
+      cg.searchNodes(QUERY, { mode: 'keyword' });
+      cg.searchNodesDetailed(QUERY, { mode: 'keyword' });
+      cg.searchNodes(QUERY); // no-mode default keyword
+
+      expect(spy.constructions()).toBe(0); // provider never resolved ⟹ probe + matrix build never reached
+      expect(spy.embeds()).toBe(0);
+    },
+    30_000,
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T027 — US4 filter-parity gate: `kind:`, `lang:`, `path:`, `name:` produce
+// IDENTICAL FILTERING SEMANTICS across keyword, semantic, and hybrid modes
+// (FR-016 / FR-010 / US4 scenario 3; SC-004).
+//
+// This is a GUARD gate over filtering behavior that ALREADY landed, wired at three
+// distinct sites that must AGREE:
+//   • keyword: `queries.searchNodes` parses all four filters — kind:/lang: narrow the
+//     FTS candidate set; path:/name: are post-scoring HARD gates (T009/queries).
+//   • semantic/hybrid pre-filter: kind:/lang: (query filters ∪ options) PRE-filter the
+//     cosine scan inside `semanticTopK` BEFORE top-k (T010) — so a filtered row never
+//     even enters the vector arm's candidate pool.
+//   • semantic/hybrid post-gate: path:/name: are POST-fusion hard gates inside
+//     `rrfMerge`, dropping BOTH keyword-arm rows and semantic-only rows (via the
+//     caller-supplied gateFields) AFTER fusion, BEFORE the slice (T011).
+//
+// So most assertions PASS on first run (RED-not-applicable: T009–T011 landed the three
+// sites; this gate proves they agree). A FAILURE here is a genuine parity bug — the
+// three sites diverged — and must be reported, not patched around.
+//
+// NON-VACUITY is proven per filter, so parity is never satisfied by trivially-empty
+// sets: (b) each filter is shown to EXCLUDE at least one node the unfiltered variant
+// returns, in keyword AND a fused mode; (c) kind:/lang: exclude a semantic-ONLY target
+// from the FUSED result under the filter while it appears without it — proving the
+// pre-filter reaches the vector arm; (d) path:/name: drop a fused hit (keyword-arm AND
+// semantic-only) failing the gate in hybrid EXACTLY as in keyword. A fixture-sanity
+// test asserts the fused path is HEALTHY (degradation === null, the vector arm ran) so
+// the whole comparison is a real fusion, not a degraded keyword passthrough.
+//
+// Fused comparisons use the in-process query-provider seam (never ambient env), so no
+// env scrub is needed — with the seam SET, production env-config resolution is bypassed.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * A mixed-kind / mixed-language / mixed-path corpus for the four filter axes. Each
+ * filter's "stem" is keyword-reachable by MULTIPLE symbols spanning the two sides of
+ * the filter (so the filtered variant excludes something — non-vacuity), plus one
+ * semantic-ONLY reach-through target whose name shares NO FTS token with the stem and
+ * whose kind/lang/path/name lands on the EXCLUDED side of the filter.
+ */
+function makeParityFixture(dirs: string[]): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-hybrid-parity-'));
+  dirs.push(dir);
+  const apiDir = path.join(dir, 'src', 'api');
+  const dbDir = path.join(dir, 'src', 'db');
+  const workerDir = path.join(dir, 'src', 'worker');
+  fs.mkdirSync(apiDir, { recursive: true });
+  fs.mkdirSync(dbDir, { recursive: true });
+  fs.mkdirSync(workerDir, { recursive: true });
+
+  // src/api/router.ts — typescript, path contains "api". Mixed kinds behind the
+  // "kindle" stem (function + class), plus the typescript/api/name-satisfying arms of
+  // the other three stems, plus the kind: reach-through semantic target `MuffledBeacon`
+  // (a CLASS with no keyword tie to any stem).
+  fs.writeFileSync(
+    path.join(apiDir, 'router.ts'),
+    [
+      '/** Kindles a routing session (function, keyword-reachable via "kindle"). */',
+      'export function kindleRoute(p: string): string {\n  return p;\n}',
+      '/** A reader over the kindle table (class, keyword-reachable via "kindle"). */',
+      'export class KindleReader {\n  open(): void {}\n}',
+      '/** A muffled beacon (class) — neutral doc text, no free-text tie to any stem. */',
+      'export class MuffledBeacon {\n  ping(): void {}\n}',
+      '/** typescript arm of the lang: stem "harvest". */',
+      'export function harvestConfigTs(): void {}',
+      '/** api-path arm of the path: stem "vault". */',
+      'export function vaultReadApi(): void {}',
+      '/** name:emit-SATISFYING arm of the name: stem "signal". */',
+      'export function signalEmitLoud(): void {}',
+      '/** name:emit-FAILING arm of the name: stem "signal". */',
+      'export function signalMuteQuiet(): void {}',
+      '',
+    ].join('\n'),
+  );
+
+  // src/db/store.ts — typescript, path contains "db". The db-path arm of the path:
+  // stem, plus the path:/name: reach-through semantic targets (names with no "vault"
+  // and no "signal"/"emit").
+  fs.writeFileSync(
+    path.join(dbDir, 'store.ts'),
+    [
+      '/** db-path arm of the path: stem "vault". */',
+      'export function vaultReadDb(): void {}',
+      '/** A quiet ledger accessor in db/ — neutral doc text (path reach-through target). */',
+      'export function hushedLedgerDb(): void {}',
+      '/** A muffled gloom accessor — neutral doc text (name reach-through target). */',
+      'export function whisperGloom(): void {}',
+      '',
+    ].join('\n'),
+  );
+
+  // src/worker/pipeline.py — python. The python arm of the lang: stem, plus the lang:
+  // reach-through semantic target (a python function, excluded by lang:typescript).
+  fs.writeFileSync(
+    path.join(workerDir, 'pipeline.py'),
+    [
+      '# python arm of the lang: stem "harvest".',
+      'def harvest_config_py():',
+      '    return 1',
+      '',
+      '# A background reaper task in python — neutral doc text (lang reach-through target).',
+      'def quiet_reaper_py():',
+      '    return 2',
+      '',
+    ].join('\n'),
+  );
+
+  return dir;
+}
+
+/** Semantic-only reach-through targets → their one-hot basis (matches PARITY_BASIS below). */
+const PARITY_TARGET_BASIS = new Map<string, number>([
+  ['MuffledBeacon', 0],   // kind: stem "kindle" (a class → excluded by kind:function)
+  ['quiet_reaper_py', 1], // lang: stem "harvest" (python → excluded by lang:typescript)
+  ['hushedLedgerDb', 2],  // path: stem "vault"   (db/ path → excluded by path:api)
+  ['whisperGloom', 3],    // name: stem "signal"  (no "emit" → excluded by name:emit)
+]);
+
+/** Each parity stem's filter-stripped text → the basis its semantic-only target is seeded at. */
+const PARITY_BASIS: Record<string, number> = { kindle: 0, harvest: 1, vault: 2, signal: 3 };
+
+/**
+ * A query provider mapping each parity stem's filter-stripped text to its target's
+ * one-hot basis (cosine 1.0). Any other text → an orthogonal filler basis (cosine 0)
+ * so an unexpected embed can never fabricate a semantic hit.
+ */
+const parityQueryProvider: EmbeddingProvider = {
+  id: FIXTURE_MODEL,
+  dims: FIXTURE_DIMS,
+  async embed(texts: string[]): Promise<Float32Array[]> {
+    return texts.map((t) => {
+      const basis = PARITY_BASIS[t.trim()];
+      return unitVector(basis === undefined ? FILLER_BASIS_START : basis);
+    });
+  },
+};
+
+/**
+ * Seed one one-hot vector per embeddable node under FIXTURE_MODEL: a reach-through
+ * target gets its mapped basis (cosine 1.0 to its stem's query vector); every other
+ * node gets a distinct filler basis (orthogonal to all query vectors → never surfaces
+ * in the semantic arm). Mirrors the embed-pass metadata scalars.
+ */
+function seedParityVectors(dir: string): void {
+  const conn = DatabaseConnection.open(getDatabasePath(dir));
+  try {
+    const q = new QueryBuilder(conn.getDb());
+    let filler = FILLER_BASIS_START;
+    for (const node of q.selectEmbeddableNodesMissingVector(FIXTURE_MODEL)) {
+      const basis = PARITY_TARGET_BASIS.has(node.name)
+        ? PARITY_TARGET_BASIS.get(node.name)!
+        : filler++;
+      q.upsertNodeVector(node.id, FIXTURE_MODEL, FIXTURE_DIMS, encodeVector(unitVector(basis)), `parity-${node.id}`);
+    }
+    q.setMetadata('embedding_model', FIXTURE_MODEL);
+    q.setMetadata('embedding_dims', String(FIXTURE_DIMS));
+  } finally {
+    conn.close();
+  }
+}
+
+describe.skipIf(!HAS_SQLITE)('hybrid search — filter parity across modes (T027)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  // Fused comparisons run through the in-process seam (never ambient env): with the
+  // seam SET, production env-config resolution is bypassed, so no env scrub is needed.
+  beforeEach(() => __setQueryEmbeddingProviderForTests(parityQueryProvider));
+
+  afterEach(() => {
+    __setQueryEmbeddingProviderForTests(undefined);
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* may already be closed */ } }
+    while (dirs.length) {
+      const dir = dirs.pop()!;
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A real, structurally-indexed parity fixture with seeded vectors + a warm query cache. */
+  async function indexedParity(): Promise<CodeGraph> {
+    const dir = makeParityFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    seedParityVectors(dir);
+    // Warm each stem's query vector — the async surfaces await this before the sync
+    // fusion path reads the cached vector (mirrors US1 acceptance scenario 1's "warmed
+    // provider" precondition). Each filtered/unfiltered variant strips to the bare stem.
+    for (const stem of Object.keys(PARITY_BASIS)) await cg.acquireQueryVectorForSearch(stem);
+    return cg;
+  }
+
+  const ALL_MODES: SearchMode[] = ['keyword', 'semantic', 'hybrid'];
+  const FUSED_MODES: SearchMode[] = ['semantic', 'hybrid'];
+
+  /** Result node list for `query` under `mode`. */
+  const nodesFor = (cg: CodeGraph, query: string, mode: SearchMode): Node[] =>
+    cg.searchNodes(query, { mode }).map((r) => r.node);
+  const namesFor = (cg: CodeGraph, query: string, mode: SearchMode): string[] =>
+    nodesFor(cg, query, mode).map((n) => n.name);
+
+  // ── fixture sanity — the fused path is HEALTHY, so parity is non-vacuous ─────
+  it('fixture sanity — the fused path is HEALTHY (vector arm ran, not a degraded keyword passthrough)', async () => {
+    const cg = await indexedParity();
+
+    // A degraded passthrough would make every "parity" comparison trivially true
+    // (all modes == keyword). Assert the vector arm genuinely ran: no degradation AND
+    // the semantic-only target (unreachable by keyword) is present under hybrid.
+    const detailed = searchDetailed(cg, 'kindle', { mode: 'hybrid' });
+    expect(detailed.degradation).toBeNull();
+    expect(detailed.results.map((r) => r.node.name)).toContain('MuffledBeacon');
+
+    // And the semantic-only targets are keyword-INVISIBLE (proves they can only enter
+    // via the vector arm — the premise of the reach-through checks below).
+    for (const [name, basis] of PARITY_TARGET_BASIS) {
+      const stem = Object.keys(PARITY_BASIS).find((s) => PARITY_BASIS[s] === basis)!;
+      expect(namesFor(cg, stem, 'keyword')).not.toContain(name);
+    }
+  }, 30_000);
+
+  // ── kind: — pre-filters BOTH the keyword candidate set AND the vector scan ───
+  it('kind: filters identically in keyword, semantic, and hybrid — and pre-filters the vector arm (FR-016/FR-010)', async () => {
+    const cg = await indexedParity();
+    const FILTERED = 'kind:function kindle';
+    const UNFILTERED = 'kindle';
+    const satisfies = (n: Node): boolean => n.kind === 'function';
+
+    // (a) every returned node satisfies kind:function in EVERY mode.
+    for (const mode of ALL_MODES) {
+      expect(nodesFor(cg, FILTERED, mode).every(satisfies)).toBe(true);
+    }
+
+    // (b) non-vacuity — the unfiltered variant returns a non-function that the filter
+    // excludes, in keyword AND hybrid (a real narrowing, not an empty-set no-op).
+    expect(namesFor(cg, UNFILTERED, 'keyword')).toContain('KindleReader'); // class
+    expect(namesFor(cg, FILTERED, 'keyword')).not.toContain('KindleReader');
+    expect(namesFor(cg, UNFILTERED, 'hybrid')).toContain('KindleReader');
+    expect(namesFor(cg, FILTERED, 'hybrid')).not.toContain('KindleReader');
+
+    // (c) the kind: pre-filter REACHES the vector arm: the semantic-only target
+    // `MuffledBeacon` (a class) appears in the FUSED result unfiltered, and is EXCLUDED
+    // under kind:function — so it never even entered the cosine scan.
+    for (const mode of FUSED_MODES) {
+      expect(namesFor(cg, UNFILTERED, mode)).toContain('MuffledBeacon');
+      expect(namesFor(cg, FILTERED, mode)).not.toContain('MuffledBeacon');
+    }
+  }, 30_000);
+
+  // ── lang: — pre-filters BOTH arms; a cross-language vector target is excluded ─
+  it('lang: filters identically in keyword, semantic, and hybrid — and pre-filters the vector arm (FR-016/FR-010)', async () => {
+    const cg = await indexedParity();
+    const FILTERED = 'lang:typescript harvest';
+    const UNFILTERED = 'harvest';
+    const satisfies = (n: Node): boolean => n.language === 'typescript';
+
+    // (a) every returned node is typescript in EVERY mode.
+    for (const mode of ALL_MODES) {
+      expect(nodesFor(cg, FILTERED, mode).every(satisfies)).toBe(true);
+    }
+
+    // (b) non-vacuity — the python arm is returned unfiltered and excluded by the
+    // filter, in keyword AND hybrid.
+    expect(namesFor(cg, UNFILTERED, 'keyword')).toContain('harvest_config_py'); // python
+    expect(namesFor(cg, FILTERED, 'keyword')).not.toContain('harvest_config_py');
+    expect(namesFor(cg, UNFILTERED, 'hybrid')).toContain('harvest_config_py');
+    expect(namesFor(cg, FILTERED, 'hybrid')).not.toContain('harvest_config_py');
+
+    // (c) the lang: pre-filter reaches the vector arm: the semantic-only python target
+    // `quiet_reaper_py` appears in the FUSED result unfiltered, EXCLUDED under
+    // lang:typescript before it could consume a top-k slot.
+    for (const mode of FUSED_MODES) {
+      expect(namesFor(cg, UNFILTERED, mode)).toContain('quiet_reaper_py');
+      expect(namesFor(cg, FILTERED, mode)).not.toContain('quiet_reaper_py');
+    }
+  }, 30_000);
+
+  // ── path: — a POST-fusion hard gate; drops keyword-arm AND semantic-only rows ─
+  it('path: filters identically in keyword, semantic, and hybrid — post-gating both fused arms (FR-016/FR-010)', async () => {
+    const cg = await indexedParity();
+    const FILTERED = 'path:api vault';
+    const UNFILTERED = 'vault';
+    const satisfies = (n: Node): boolean => n.filePath.toLowerCase().includes('api');
+
+    // (a) every returned node's path contains "api" in EVERY mode.
+    for (const mode of ALL_MODES) {
+      expect(nodesFor(cg, FILTERED, mode).every(satisfies)).toBe(true);
+    }
+
+    // (b) non-vacuity — the db-path arm is returned unfiltered and gated out, in keyword
+    // AND hybrid.
+    expect(namesFor(cg, UNFILTERED, 'keyword')).toContain('vaultReadDb'); // src/db/…
+    expect(namesFor(cg, FILTERED, 'keyword')).not.toContain('vaultReadDb');
+    expect(namesFor(cg, UNFILTERED, 'hybrid')).toContain('vaultReadDb');
+    expect(namesFor(cg, FILTERED, 'hybrid')).not.toContain('vaultReadDb');
+
+    // (d) a FUSED hit failing the path gate is dropped in HYBRID exactly as in keyword:
+    //   • the SEMANTIC-ONLY db target `hushedLedgerDb` — present in hybrid unfiltered,
+    //     dropped under path:api (post-gates the vector-arm row via gateFields);
+    //   • the KEYWORD-arm db row `vaultReadDb` — dropped in BOTH keyword and hybrid.
+    expect(namesFor(cg, UNFILTERED, 'hybrid')).toContain('hushedLedgerDb');
+    expect(namesFor(cg, FILTERED, 'hybrid')).not.toContain('hushedLedgerDb');
+    // …while the surviving api-path node is kept identically in keyword and hybrid.
+    expect(namesFor(cg, FILTERED, 'keyword')).toContain('vaultReadApi');
+    expect(namesFor(cg, FILTERED, 'hybrid')).toContain('vaultReadApi');
+  }, 30_000);
+
+  // ── name: — a POST-fusion hard gate; drops keyword-arm AND semantic-only rows ─
+  it('name: filters identically in keyword, semantic, and hybrid — post-gating both fused arms (FR-016/FR-010)', async () => {
+    const cg = await indexedParity();
+    const FILTERED = 'name:emit signal';
+    const UNFILTERED = 'signal';
+    const satisfies = (n: Node): boolean => n.name.toLowerCase().includes('emit');
+
+    // (a) every returned node's name contains "emit" in EVERY mode.
+    for (const mode of ALL_MODES) {
+      expect(nodesFor(cg, FILTERED, mode).every(satisfies)).toBe(true);
+    }
+
+    // (b) non-vacuity — the emit-less keyword arm `signalMuteQuiet` is returned
+    // unfiltered and gated out, in keyword AND hybrid.
+    expect(namesFor(cg, UNFILTERED, 'keyword')).toContain('signalMuteQuiet');
+    expect(namesFor(cg, FILTERED, 'keyword')).not.toContain('signalMuteQuiet');
+    expect(namesFor(cg, UNFILTERED, 'hybrid')).toContain('signalMuteQuiet');
+    expect(namesFor(cg, FILTERED, 'hybrid')).not.toContain('signalMuteQuiet');
+
+    // (d) a FUSED hit failing the name gate is dropped in HYBRID exactly as in keyword:
+    //   • the SEMANTIC-ONLY target `whisperGloom` (no "emit") — present in hybrid
+    //     unfiltered, dropped under name:emit (post-gates the vector-arm row);
+    //   • the surviving `signalEmitLoud` is kept identically in keyword and hybrid.
+    expect(namesFor(cg, UNFILTERED, 'hybrid')).toContain('whisperGloom');
+    expect(namesFor(cg, FILTERED, 'hybrid')).not.toContain('whisperGloom');
+    expect(namesFor(cg, FILTERED, 'keyword')).toContain('signalEmitLoud');
+    expect(namesFor(cg, FILTERED, 'hybrid')).toContain('signalEmitLoud');
+  }, 30_000);
+});

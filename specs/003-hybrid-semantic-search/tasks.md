@@ -129,9 +129,9 @@ Single project — `src/` and `__tests__/` at repository root (worktree `.worktr
 
 ### Tests for User Story 4 (write FIRST, must FAIL/GUARD)
 
-- [ ] T025 [US4] Write the FR-014(b) byte-stability gate in `__tests__/hybrid-search.test.ts` (asserted independently of clause (a)): existing keyword cases structural deep-equal on the same fixture graph, PLUS explicit new-field-absence checks (`matchType`/`fusedScore` **absent, not `undefined`**); internal callers (explore, prompt hook, context builder) make **ZERO** query-embed calls (spy on the query-provider seam). **Acceptance**: gate present; passes once dormancy is correct (FR-014b/003/003a; SC-004/SC-005; research D11).
-- [ ] T026 [US4] Enforce/verify FR-003a keyword-path non-regression in `src/index.ts` / `src/search/hybrid.ts`: keyword mode and every internal caller incur NO matrix build, NO staleness probe, NO query-embed call (guard so the semantic path is never entered for keyword). **Acceptance**: T025 zero-embed spy passes; keyword latency not regressed (FR-003/003a).
-- [ ] T027 [US4] Add filter-parity assertions in `__tests__/hybrid-search.test.ts`: `kind:`, `lang:`, `path:`, `name:` produce identical filtering semantics in keyword, semantic, and hybrid modes. **Acceptance**: parity holds across all three modes (FR-016; SC-004).
+- [X] T025 [US4] Write the FR-014(b) byte-stability gate in `__tests__/hybrid-search.test.ts` (asserted independently of clause (a)): existing keyword cases structural deep-equal on the same fixture graph, PLUS explicit new-field-absence checks (`matchType`/`fusedScore` **absent, not `undefined`**); internal callers (explore, prompt hook, context builder) make **ZERO** query-embed calls (spy on the query-provider seam). **Acceptance**: gate present; passes once dormancy is correct (FR-014b/003/003a; SC-004/SC-005; research D11).
+- [X] T026 [US4] Enforce/verify FR-003a keyword-path non-regression in `src/index.ts` / `src/search/hybrid.ts`: keyword mode and every internal caller incur NO matrix build, NO staleness probe, NO query-embed call (guard so the semantic path is never entered for keyword). **Acceptance**: T025 zero-embed spy passes; keyword latency not regressed (FR-003/003a).
+- [X] T027 [US4] Add filter-parity assertions in `__tests__/hybrid-search.test.ts`: `kind:`, `lang:`, `path:`, `name:` produce identical filtering semantics in keyword, semantic, and hybrid modes. **Acceptance**: parity holds across all three modes (FR-016; SC-004).
 
 **Checkpoint**: All four user stories independently functional; dormancy proven.
 
