@@ -149,43 +149,6 @@ export function resolveAutoMode(input: AutoResolveInput): ResolvedSearchMode {
   return input.providerConfigured && input.matchingVectorCount >= 1 ? 'hybrid' : 'keyword';
 }
 
-/**
- * Context handed to the fusion entry point by `searchNodes` for a resolved
- * `semantic` or `hybrid` request (wired in T012). Carries the keyword arm's
- * already-computed, post-rescore-ordered results (the RRF rank input for the
- * keyword arm, FR-004a) plus the filter-stripped query text the semantic arm
- * embeds (research D8) and the effective result cap.
- */
-export interface HybridSearchContext {
-  /** Resolved arm for this request — never `auto` (FR-002). */
-  mode: 'semantic' | 'hybrid';
-  /** Filter-stripped free-text used as the semantic embed input (research D8). */
-  queryText: string;
-  /** Effective result cap after option defaults; bounds the truncated union. */
-  limit: number;
-  /**
-   * Keyword arm results in their existing post-rescore order — the keyword
-   * arm's RRF rank input (FR-004a). Also the degradation fallback: every
-   * degraded condition returns these verbatim (FR-006/015, SC-004).
-   */
-  keywordResults: SearchResult[];
-}
-
-/**
- * Fusion entry point: run the resolved semantic/hybrid arms and return the
- * fused, provenance-annotated results (FR-004/012). `searchNodes` delegates
- * here only for a resolved `semantic`/`hybrid` request; keyword requests never
- * reach this path and stay byte-identical to today (FR-001/003, SC-004).
- *
- * NOTE: stub — the arms (matrix cache T007, staleness probe T008, query-vector
- * acquisition T009, cosine top-k T010, RRF merge T011) and provenance wiring
- * (T012) land under US1. This placeholder is a keyword passthrough so the
- * feature is inert until then; it is NOT yet wired into `searchNodes`.
- */
-export function runHybridSearch(ctx: HybridSearchContext): SearchResult[] {
-  return ctx.keywordResults;
-}
-
 // ── Degradation signal + hint wording (T019; FR-005/006/009c/015, SC-003) ────
 //
 // The library exposes WHY a semantic/hybrid/auto request fell back to keyword as
@@ -530,20 +493,28 @@ export function __resetVectorMatrixCacheForTests(): void {
 //
 // A cheap BOUNDED read that decides, per semantic/hybrid query, whether the
 // resident matrix (T007) still reflects the index. There is NO `data_version`
-// column in `node_vectors` (research D6a); the token is instead the three
-// scalars that fully capture every matrix-affecting change — a matching-model
-// vector add/remove/re-embed, a model switch, or a dims change:
+// column in `node_vectors` (research D6a); the token is instead FOUR scalars that
+// together capture every matrix-affecting change:
 //
-//   • count — the matching-model vector count (`getEmbeddingCoverage(model)
-//             .embedded`, a JOINed COUNT — NOT a full `node_vectors` scan),
-//   • model — the persisted `embedding_model` scalar (`project_metadata`),
-//   • dims  — the persisted `embedding_dims` scalar (`project_metadata`).
+//   • count       — the matching-model vector count (`getEmbeddingCoverage(model)
+//                   .embedded`, a JOINed COUNT — NOT a full `node_vectors` scan);
+//                   catches a matching-model vector add/remove,
+//   • model       — the persisted `embedding_model` scalar; catches a model switch,
+//   • dims        — the persisted `embedding_dims` scalar; catches a dims change,
+//   • writeVersion — the monotonic `vectors_write_version` metadata counter, bumped
+//                   on EVERY `node_vectors` mutation (review item 6). This is what
+//                   catches the two changes count/model/dims are BLIND to: an
+//                   in-place re-embed (`upsertNodeVector` ON CONFLICT DO UPDATE —
+//                   count unchanged) and a 1-for-1 rename (delete A + insert B —
+//                   net count unchanged). Absent on a pre-existing corpus ⇒ 0,
+//                   degrading cleanly to the count/model/dims-only behavior.
 //
-// The three fold into the T007 cache key, so an unchanged token returns the
+// The four fold into the T007 cache key, so an unchanged token returns the
 // resident matrix by object identity (build-once) while ANY change yields a new
 // key — `getVectorMatrix` evicts the stale resident and rebuilds on the next
 // query, reusing the SAME build path and thundering-herd memoization. No schema
-// write, no new column (Constitution VII), no full scan (FR-008b).
+// write, no new column (Constitution VII), no full scan (FR-008b) — `writeVersion`
+// adds exactly one more single-row metadata read.
 //
 // This probe runs ONLY on the semantic/hybrid path. The keyword path never
 // calls `probeVectorStaleness`/`getVectorMatrixForProbe`, so it incurs zero
@@ -557,6 +528,14 @@ export interface StalenessProbe {
   model: string;
   /** Persisted `embedding_dims` scalar — the row width (research D6a). */
   dims: number;
+  /**
+   * Monotonic `vectors_write_version` metadata counter — bumped on EVERY
+   * `node_vectors` mutation (review item 6). Catches same-count re-embeds and
+   * 1-for-1 renames that leave `count`/`model`/`dims` unchanged. `0` when the
+   * scalar is absent (a pre-existing corpus) or malformed — degrading to the
+   * count/model/dims-only behavior with no migration.
+   */
+  writeVersion: number;
 }
 
 /**
@@ -574,7 +553,12 @@ export function probeVectorStaleness(queries: QueryBuilder, model: string): Stal
   const dims = Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
   const storedModel = queries.getMetadata('embedding_model') ?? model;
   const count = queries.getEmbeddingCoverage(model).embedded;
-  return { count, model: storedModel, dims };
+  // Monotonic write-version (review item 6): one extra single-row metadata read.
+  // Absent (pre-existing corpus) or malformed ⇒ 0 → count/model/dims-only behavior.
+  const storedWriteVersion = queries.getMetadata('vectors_write_version');
+  const parsedWv = storedWriteVersion === null ? NaN : Number(storedWriteVersion);
+  const writeVersion = Number.isInteger(parsedWv) && parsedWv >= 0 ? parsedWv : 0;
+  return { count, model: storedModel, dims, writeVersion };
 }
 
 // ── Query-vector acquisition (T009; FR-011, data-model E5, research D11) ──────
@@ -996,7 +980,7 @@ export function rrfMerge(
 
 /** Fold the probe token into the T007 cache key. NUL can't occur in a model id. */
 function stalenessKey(probe: StalenessProbe): string {
-  return `${probe.model}\u0000${probe.count}\u0000${probe.dims}`;
+  return `${probe.model}\u0000${probe.count}\u0000${probe.dims}\u0000${probe.writeVersion}`;
 }
 
 /**
@@ -1004,7 +988,8 @@ function stalenessKey(probe: StalenessProbe): string {
  * changed since the resident was built (FR-008b). The token folds into the T007
  * cache key: an UNCHANGED token hits the same `getVectorMatrix` key and returns
  * the resident matrix by object identity (build-once); ANY change (vector
- * add/remove/re-embed → `count`; model switch → `model`; dims change → `dims`)
+ * add/remove → `count`; model switch → `model`; dims change → `dims`; a same-count
+ * in-place re-embed or 1-for-1 rename → `writeVersion`, review item 6)
  * yields a new key, so `getVectorMatrix` evicts the stale resident and rebuilds
  * on the next query — reusing its build path and thundering-herd memoization.
  * Called ONLY on the semantic/hybrid path (FR-003a).

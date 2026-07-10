@@ -299,6 +299,7 @@ export class QueryBuilder {
     selectVectorRows?: SqliteStatement;
     deleteRemovedVectors?: SqliteStatement;
     embeddingCoverage?: SqliteStatement;
+    bumpVectorsWriteVersion?: SqliteStatement;
   } = {};
 
   // Names whose segments were already written this session — skips re-splitting
@@ -2453,6 +2454,33 @@ export class QueryBuilder {
       `);
     }
     this.stmts.upsertNodeVector.run({ nodeId, model, dims, vector, inputHash });
+    // Every node_vectors mutation bumps the monotonic write-version so the hybrid
+    // staleness probe (SPEC-003 review item 6) detects a same-count in-place re-embed
+    // (this ON CONFLICT DO UPDATE leaves the count unchanged) that count/model/dims miss.
+    this.bumpVectorsWriteVersion();
+  }
+
+  /**
+   * Bump the monotonic `vectors_write_version` metadata counter (SPEC-003 review
+   * item 6). Called on EVERY `node_vectors` mutation (upsert + orphan-delete) so the
+   * hybrid staleness probe invalidates the resident matrix even for changes that leave
+   * the matching-model count unchanged — an in-place re-embed or a 1-for-1 rename. A
+   * single atomic increment (SQL CAST arithmetic), monotonic and cheap; the token only
+   * needs to CHANGE, so batched call paths may bump more than once per logical change.
+   * Written ONLY on the vector-write path (embedding active), so a dormant project never
+   * creates the scalar and its byte-parity is untouched (SC-004).
+   */
+  private bumpVectorsWriteVersion(): void {
+    if (!this.stmts.bumpVectorsWriteVersion) {
+      this.stmts.bumpVectorsWriteVersion = this.db.prepare(`
+        INSERT INTO project_metadata (key, value, updated_at)
+        VALUES ('vectors_write_version', '1', @updatedAt)
+        ON CONFLICT(key) DO UPDATE SET
+          value = CAST(CAST(value AS INTEGER) + 1 AS TEXT),
+          updated_at = @updatedAt
+      `);
+    }
+    this.stmts.bumpVectorsWriteVersion.run({ updatedAt: Date.now() });
   }
 
   /**
@@ -2586,7 +2614,13 @@ export class QueryBuilder {
         'DELETE FROM node_vectors WHERE node_id NOT IN (SELECT id FROM nodes)',
       );
     }
-    return this.stmts.deleteRemovedVectors.run().changes;
+    const removed = this.stmts.deleteRemovedVectors.run().changes;
+    // A real vector removal (e.g. a symbol renamed/deleted) is a node_vectors mutation:
+    // bump the write-version so the staleness probe rebuilds even when a matching-model
+    // add elsewhere leaves the net count unchanged (SPEC-003 review item 6). No rows
+    // removed ⇒ no mutation ⇒ no bump (keeps the token from moving spuriously).
+    if (removed > 0) this.bumpVectorsWriteVersion();
+    return removed;
   }
 
   // ===========================================================================

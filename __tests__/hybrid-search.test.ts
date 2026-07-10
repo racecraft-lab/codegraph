@@ -158,7 +158,7 @@ describe.skipIf(!HAS_SQLITE)('hybrid search — mode plumbing (T004)', () => {
 // WHY IT FAILS TODAY (real assertion errors, not collection errors): fusion is
 // still a keyword passthrough — `searchNodes(q, { mode: 'hybrid' | 'semantic' })`
 // runs the byte-identical keyword pipeline (src/index.ts → queries.searchNodes
-// ignores `mode`; src/search/hybrid.ts `runHybridSearch` is an unwired stub). So
+// ignores `mode`). So
 //   (b) the semantic-only case's hybrid contribution EQUALS its keyword
 //       contribution (both 0 — the target is not FTS-matchable), failing the
 //       strictly-greater assertion; and
@@ -659,6 +659,7 @@ describe('hybrid search — staleness probe (T008)', () => {
     count: 10,
     model: 'active-model',
     dims: 384,
+    writeVersion: 0,
     ...over,
   });
 
@@ -670,7 +671,10 @@ describe('hybrid search — staleness probe (T008)', () => {
     expect(r2).toBe(r1);      // same resolved result object
   });
 
-  it('vector count change (add/remove/re-embed) → invalidate + rebuild on the next query', async () => {
+  // Count-driven change only (add/remove). Same-count re-embeds and 1-for-1 renames are
+  // NOT detectable by count alone — the write-version token covers those (review item 6,
+  // exercised in the 'write-version staleness' describe below).
+  it('vector count change (add/remove) → invalidate + rebuild on the next query', async () => {
     const { build, builds } = countingBuild();
     await getVectorMatrixForProbe('/proj', probe({ count: 10 }), build);
     await getVectorMatrixForProbe('/proj', probe({ count: 11 }), build); // one vector added
@@ -757,6 +761,178 @@ describe('hybrid search — staleness probe (T008)', () => {
       }
     },
   );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T008 extension (review item 6) — same-count re-embed / rename detection via a
+// monotonic `vectors_write_version` metadata counter (FR-008b).
+//
+// The (count, model, dims) token is BLIND to a mutation that leaves the count
+// unchanged: an in-place re-embed (`upsertNodeVector` ON CONFLICT DO UPDATE) or a
+// 1-for-1 rename (delete A + insert B). A long-lived daemon would then serve stale
+// rankings for exactly the symbols being edited. The write-version counter — bumped
+// on EVERY node_vectors mutation — folds into the staleness key so any such churn
+// invalidates the resident matrix. Dormant projects never write vectors, so the
+// scalar stays absent (writeVersion 0) and byte-parity is untouched.
+// ───────────────────────────────────────────────────────────────────────────
+describe.skipIf(!HAS_SQLITE)('hybrid search — write-version staleness (T008 extension; review item 6)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  afterEach(() => {
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* already closed */ } }
+    while (dirs.length) {
+      const d = dirs.pop()!;
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  /** Index a fixture, seed vectors, mirror the embed-pass metadata scalars. */
+  async function seededGraph(): Promise<string> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    seedFixtureVectors(dir);
+    return dir;
+  }
+
+  it('same-count in-place re-embed → write-version changes the staleness key → rebuild serves the NEW vector', async () => {
+    const dir = await seededGraph();
+    const conn = DatabaseConnection.open(getDatabasePath(dir));
+    try {
+      const q = new QueryBuilder(conn.getDb());
+
+      const probe1 = probeVectorStaleness(q, FIXTURE_MODEL);
+      let builds = 0;
+      const build = (): VectorMatrixResult => {
+        builds++;
+        return buildVectorMatrix(vectorMatrixSourceFromQueries(q, FIXTURE_MODEL));
+      };
+      const r1 = await getVectorMatrixForProbe(dir, probe1, build);
+      expect(builds).toBe(1);
+      expect(r1.guarded).toBe(false);
+
+      // Re-embed ONE existing symbol IN PLACE with a brand-new distinct vector.
+      // Same node_id ⇒ ON CONFLICT DO UPDATE ⇒ the matching-model COUNT is unchanged.
+      const victim = q.selectVectorRowsForModel(FIXTURE_MODEL)[0]!.nodeId;
+      const NEW_BASIS = 321;
+      q.upsertNodeVector(victim, FIXTURE_MODEL, FIXTURE_DIMS, encodeVector(unitVector(NEW_BASIS)), `reembed-${victim}`);
+
+      const probe2 = probeVectorStaleness(q, FIXTURE_MODEL);
+      // The OLD token is blind to this — count/model/dims are identical …
+      expect(probe2.count).toBe(probe1.count);
+      expect(probe2.model).toBe(probe1.model);
+      expect(probe2.dims).toBe(probe1.dims);
+      // … but the write-version moved, so the staleness key changes and the matrix rebuilds.
+      expect(probe2.writeVersion).toBeGreaterThan(probe1.writeVersion);
+
+      const r2 = await getVectorMatrixForProbe(dir, probe2, build);
+      expect(builds).toBe(2);            // rebuilt (the old token would have reused r1)
+      expect(r2).not.toBe(r1);
+      expect(r2.guarded).toBe(false);
+      if (!r2.guarded) {
+        // And it serves the NEW vector for that symbol.
+        const idx = r2.matrix.nodeIds.indexOf(victim);
+        expect(idx).toBeGreaterThanOrEqual(0);
+        const served = Array.from(
+          r2.matrix.matrix.subarray(idx * FIXTURE_DIMS, (idx + 1) * FIXTURE_DIMS),
+        );
+        expect(served).toEqual(Array.from(unitVector(NEW_BASIS)));
+      }
+    } finally {
+      conn.close();
+    }
+  });
+
+  it('1-for-1 churn with net-zero count (orphan upsert + sweep) still invalidates via write-version', async () => {
+    const dir = await seededGraph();
+    const conn = DatabaseConnection.open(getDatabasePath(dir));
+    try {
+      const q = new QueryBuilder(conn.getDb());
+
+      const probe1 = probeVectorStaleness(q, FIXTURE_MODEL);
+      let builds = 0;
+      const build = (): VectorMatrixResult => {
+        builds++;
+        return buildVectorMatrix(vectorMatrixSourceFromQueries(q, FIXTURE_MODEL));
+      };
+      await getVectorMatrixForProbe(dir, probe1, build);
+      expect(builds).toBe(1);
+
+      // Insert a vector for a node_id NOT in `nodes` (an orphan — coverage's JOIN never
+      // counts it), then reconcile it away. Both the upsert AND the delete bump the
+      // write-version; the matching-model count returns to its original value.
+      q.upsertNodeVector('renamed-orphan-id', FIXTURE_MODEL, FIXTURE_DIMS, encodeVector(unitVector(777)), 'rename-hash');
+      const swept = q.deleteRemovedVectors();
+      expect(swept).toBeGreaterThanOrEqual(1);
+
+      const probe2 = probeVectorStaleness(q, FIXTURE_MODEL);
+      expect(probe2.count).toBe(probe1.count);                          // net-zero count change
+      expect(probe2.writeVersion).toBeGreaterThan(probe1.writeVersion); // but the token moved
+
+      await getVectorMatrixForProbe(dir, probe2, build);
+      expect(builds).toBe(2); // rebuilt — the old (count,model,dims) token would have reused
+    } finally {
+      conn.close();
+    }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// SC-003 never-throw hardening (review item 7) — the post-embed fusion leg
+// (keyword-arm search, getNodesByIds, RRF merge, materialize) must also fall back
+// to keyword-shape + a degradation hint if it throws, never escape
+// searchNodesDetailed (the probe/build legs already do; this closes the last gap).
+// ───────────────────────────────────────────────────────────────────────────
+describe.skipIf(!HAS_SQLITE)('hybrid search — post-embed never-throw (SC-003; review item 7)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  afterEach(() => {
+    __setQueryEmbeddingProviderForTests(undefined);
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* already closed */ } }
+    while (dirs.length) {
+      const d = dirs.pop()!;
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('a throw from the post-embed leg (getNodesByIds) degrades to keyword + embed-failure, never escapes', async () => {
+    __setQueryEmbeddingProviderForTests(fixtureQueryProvider);
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    seedFixtureVectors(dir);
+    const q = CASES[0].query;
+    await cg.acquireQueryVectorForSearch(q); // warm the query-vector cache (healthy fused precondition)
+
+    // Force a throw INSIDE the post-embed leg (after the matrix build/scan): stub the
+    // batched node lookup to throw. A clean test-only seam — reaches into the private
+    // queries handle with no production change.
+    const queries = (cg as unknown as {
+      queries: { getNodesByIds: (ids: string[]) => Map<string, Node> };
+    }).queries;
+    const original = queries.getNodesByIds.bind(queries);
+    queries.getNodesByIds = () => {
+      throw new Error('forced post-embed failure');
+    };
+    try {
+      // Must NOT throw (SC-003) and must degrade to keyword shape with the catch-all hint.
+      const detailed = cg.searchNodesDetailed(q, { mode: 'hybrid' });
+      expect(detailed.degradation).toBe('embed-failure');
+      // Dormant keyword shape — no fused provenance fields, no timing.
+      for (const r of detailed.results) {
+        expect(r.matchType).toBeUndefined();
+        expect(r.fusedScore).toBeUndefined();
+      }
+      expect(detailed.timing).toBeUndefined();
+    } finally {
+      queries.getNodesByIds = original;
+    }
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────

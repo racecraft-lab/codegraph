@@ -275,4 +275,27 @@ describe.skipIf(!HAS_SQLITE)('SPEC-003 T016 — MCP codegraph_search mode surfac
     expect(text).not.toContain('semantic: embed');
     expect(text).not.toContain('> **Note:**');
   });
+
+  // ── Review item 1: FR-015 hint must survive the empty-result early return ──
+
+  const NO_HIT_QUERY = 'zznosuchsymbolxyz';
+
+  it('item 1: degraded AND zero results (hybrid, no provider) → "No results found" + verbatim no-provider hint', async () => {
+    const handler = await withDormantFixture();
+    const res = await handler.execute('codegraph_search', { query: NO_HIT_QUERY, mode: 'hybrid' });
+    expect(res.isError).toBeFalsy();
+    const text = textOf(res);
+    expect(text).toContain(`No results found for "${NO_HIT_QUERY}"`);
+    // The FR-015 no-provider hint (string 1) still appends, VERBATIM.
+    expect(text).toContain(DEGRADATION_HINT_STRINGS['no-provider']);
+    expect(text.trimEnd().endsWith('to enable.')).toBe(true);
+  });
+
+  it('item 1: explicit keyword mode with zero results stays byte-identical — no hint', async () => {
+    const handler = await withDormantFixture();
+    const res = await handler.execute('codegraph_search', { query: NO_HIT_QUERY, mode: 'keyword' });
+    expect(res.isError).toBeFalsy();
+    // Keyword mode carries a null degradation → the empty message is byte-identical to today.
+    expect(textOf(res)).toBe(`No results found for "${NO_HIT_QUERY}"`);
+  });
 });

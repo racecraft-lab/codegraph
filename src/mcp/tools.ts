@@ -1545,10 +1545,6 @@ export class ToolHandler {
       await cg.acquireQueryVectorForSearch(query);
     }
 
-    // TODO(T022): consume `detailed.degradation` to render the FR-015 hint footer
-    // (and FR-012 provenance tags / FR-008 timing). Until then the machine-readable
-    // reason is projected away and keyword-shape results format byte-identically to
-    // today (SC-004).
     const detailed = cg.searchNodesDetailed(query, {
       limit,
       kinds: kind ? [kind as NodeKind] : undefined,
@@ -1557,7 +1553,14 @@ export class ToolHandler {
     const results = detailed.results;
 
     if (results.length === 0) {
-      return this.textResult(`No results found for "${query}"`);
+      // FR-015 / review item 1: a degraded-AND-empty search still shows the hint — this
+      // early return sits ABOVE the footer machinery below, so without this it would drop
+      // the degradation note. Keyword/healthy-empty carry a null degradation → no footer,
+      // so keyword-mode empty output stays byte-identical to today (SC-004).
+      const emptyMsg = `No results found for "${query}"`;
+      return this.textResult(
+        detailed.degradation ? emptyMsg + DEGRADATION_HINT_STRINGS[detailed.degradation] : emptyMsg,
+      );
     }
 
     // Down-rank generated files within the FTS-returned set so a search

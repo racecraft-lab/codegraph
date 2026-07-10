@@ -39,7 +39,7 @@ import { getGlyphs } from '../ui/glyphs';
 import { ensureCodegraphIgnored } from '../utils';
 import type { EmbeddingStatus, LocalEmbeddingSkipReason } from '../index';
 import type { SearchMode } from '../types';
-import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine, withJsonTiming } from '../search/hybrid';
+import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine, withJsonTiming, resolveAutoMode } from '../search/hybrid';
 import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
@@ -949,13 +949,24 @@ program
 function deriveHybridSearchAvailability(
   embedding: EmbeddingStatus,
 ): { available: boolean; reason: string | null } {
-  if (embedding.active) {
-    return embedding.coverage.embedded > 0
-      ? { available: true, reason: null }
-      : { available: false, reason: 'no matching-model vectors — run `codegraph sync`' };
-  }
-  // Dormant or misconfigured — no usable embedding provider.
-  return { available: false, reason: 'no embedding provider configured' };
+  // The SAME FR-002 predicate the search path resolves `auto` with (T015): `hybrid`
+  // ⟺ an active provider AND ≥1 matching-model vector. Sharing `resolveAutoMode` makes
+  // the status availability line and the query-time decision literally one predicate.
+  const available =
+    resolveAutoMode({
+      providerConfigured: embedding.active,
+      // `coverage` exists only on the active variant; dormant contributes 0 vectors
+      // (and `resolveAutoMode` short-circuits to keyword on `providerConfigured: false`).
+      matchingVectorCount: embedding.active ? embedding.coverage.embedded : 0,
+    }) === 'hybrid';
+  if (available) return { available: true, reason: null };
+  // Two distinct `no` reasons reuse the search-time degradation-hint vocabulary.
+  return {
+    available: false,
+    reason: embedding.active
+      ? 'no matching-model vectors — run `codegraph sync`'
+      : 'no embedding provider configured',
+  };
 }
 
 /**
@@ -1303,6 +1314,14 @@ program
       } else {
         if (results.length === 0) {
           info(`No results found for "${search}"`);
+          // FR-015 / review item 1: a degraded-AND-empty search still shows the hint —
+          // the early return here used to drop it (the footer only rendered on the
+          // non-empty branch). Printed WITHOUT chalk so the pinned contract string stays
+          // byte-exact; keyword/healthy-empty carry a null degradation → no footer, so
+          // explicit `--mode keyword` empty output stays byte-identical to today (SC-004).
+          if (detailed.degradation) {
+            console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
+          }
         } else {
           console.log(chalk.bold(`\nSearch Results for "${search}":\n`));
 
@@ -1311,12 +1330,6 @@ program
           // (relative-ranking only), and the old `(score * 100)%` rendered it
           // as nonsensical percentages like "12042%" (#1045). The MCP search
           // tool likewise shows no score. Raw `score` stays in --json output.
-          //
-          // TODO(T022): render the `[keyword]`/`[semantic]`/`[both]` provenance tag
-          // per hit (semantic/hybrid modes), the non-degraded timing footer, and the
-          // FR-015 degradation-hint footer here — all sourced from the
-          // `searchNodesDetailed` `{ results, degradation }` return. Kept byte-identical
-          // to the keyword/dormant output for now so #1045's no-score policy holds.
           for (const result of results) {
             const node = result.node;
             const location = `${node.filePath}:${node.startLine}`;

@@ -780,7 +780,7 @@ zero assertion rewrites.
 - [ ] `npm run eval` semantic cases recorded in the scored report (runs at post-impl Integration Suite step)
 - [x] Scoped A/B evidence recorded (≥2 runs/arm, Sonnet floor, embedded repo + no-vectors control; wrapper `ab-spec003.sh` over canonical script — canonical would zero vectors in both arms) — Q10 · `specs/003-hybrid-semantic-search/.process/ab-evidence.md`
 - [x] Self-repo dogfood UAT evidence recorded (`specs/003-hybrid-semantic-search/.process/dogfood-uat.md`: 4/4 paraphrase recall via codegraph_search on the live index; dormancy spot-check clean) — folds into the UAT runbook at that post-impl step
-- [ ] retrieval-guardian review run (diff touches src/mcp/ + search path — CLAUDE.md requires it before PR)
+- [x] retrieval-guardian review run — PASS 6/6 checks, 0 blocking, 1 advisory (empty-degraded hint gap, FIXED in remediation). Post-impl review suite (2026-07-10): verify ext PASS 0 findings · verify-tasks 0 phantoms (33 verified / 1 partial → fixed) · independent code review approve-with-comments (1 MEDIUM staleness token misses same-count re-embeds → FIXED via `vectors_write_version` counter; 1 LOW separator/comment → fixed). Remediation: 7/7 items, +7 TDD tests, suite **2806 passed / 0 failed / 7 skipped**.
 - [ ] CHANGELOG entry under `## [Unreleased]` (user-facing)
 - [ ] PR created against origin (racecraft-lab/codegraph) with review packet body; no session URLs
 - [ ] Merged; dogfood loop run on main (`npm run build` + `codegraph sync`, verify `codegraph status` healthy)

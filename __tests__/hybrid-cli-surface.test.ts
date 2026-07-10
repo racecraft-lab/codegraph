@@ -177,6 +177,35 @@ describe('codegraph query — --mode surface (SPEC-003 T017)', () => {
     expect(parsed[0].embedMs).toBeUndefined();
     expect(parsed[0].fusionMs).toBeUndefined();
   });
+
+  // ── Review item 1: FR-015 hint must survive the empty-result early return ──
+
+  /** Run `codegraph query <term> ...` for an arbitrary search term against the binary. */
+  function queryTerm(cwd: string, term: string, extraArgs: string[]): string {
+    return execFileSync(process.execPath, [BIN, 'query', term, ...extraArgs, '-p', cwd], {
+      encoding: 'utf-8',
+      env: CHILD_ENV,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  }
+
+  const NO_HIT = 'zznosuchsymbolxyz';
+
+  it('item 1: no provider + auto + zero hits → "No results found" + verbatim no-provider hint (exit 0)', () => {
+    const out = queryTerm(tempDir, NO_HIT, ['-l', '5']); // no -m → auto (semantic-eligible)
+    expect(out).toContain(`No results found for "${NO_HIT}"`);
+    // The FR-015 no-provider hint (string 1) still appends after the empty message.
+    expect(out).toContain(DEGRADATION_HINT_STRINGS['no-provider']);
+    expect(out.trimEnd().endsWith('to enable.')).toBe(true);
+  });
+
+  it('item 1: explicit keyword mode + zero hits stays byte-identical — no hint footer', () => {
+    const out = queryTerm(tempDir, NO_HIT, ['-m', 'keyword', '-l', '5']);
+    expect(out).toContain(`No results found for "${NO_HIT}"`);
+    // Keyword mode carries a null degradation → no footer (byte-identical to today).
+    expect(out).not.toContain('semantic ranking is off');
+    expect(out).not.toContain('> **Note:**');
+  });
 });
 
 // Pure render helpers (FR-008/012). Unit-tested in-process because the fused-render

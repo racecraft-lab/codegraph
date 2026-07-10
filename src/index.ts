@@ -54,6 +54,7 @@ import { getCodeGraphDir } from './directory';
 import { deriveProjectNameTokens } from './search/query-utils';
 import {
   resolveLibrarySearchMode,
+  resolveAutoMode,
   acquireQueryVector,
   buildVectorMatrix,
   vectorMatrixSourceFromQueries,
@@ -443,7 +444,7 @@ const QUERY_VECTOR_CACHE_MAX = 32;
 
 /** Cache key for a query vector. The NUL separator can't occur in text or a model id. */
 function queryVectorCacheKey(text: string, model: string): string {
-  return `${model} ${text}`;
+  return `${model}\u0000${text}`;
 }
 
 /**
@@ -1920,7 +1921,13 @@ export class CodeGraph {
     } catch {
       return degraded('embed-failure');
     }
-    if (probe.count === 0) return degraded('no-vectors');
+    // Decide via the SHARED FR-002 predicate (T015) — the SAME `resolveAutoMode` call
+    // the `codegraph status` availability line uses. `no-provider` was already handled
+    // above, so `providerConfigured` is known true here and the decision turns purely on
+    // the matching-model vector count: `keyword` ⟺ zero vectors ⟹ `no-vectors`.
+    if (resolveAutoMode({ providerConfigured: true, matchingVectorCount: probe.count }) === 'keyword') {
+      return degraded('no-vectors');
+    }
 
     const parsed = parseQuery(query);
     // Healthy-empty (NOT degraded, FR-011 / Edge Cases): a filter-only query on a
@@ -1951,73 +1958,81 @@ export class CodeGraph {
     }
     if (matrixResult.guarded) return degraded('embed-failure'); // FR-009c memory guard
 
-    // kind:/lang: (query filters ∪ options.kinds/languages) PRE-filter the scan.
-    const mergedKinds =
-      parsed.kinds.length > 0
-        ? Array.from(new Set([...(options?.kinds ?? []), ...parsed.kinds]))
-        : options?.kinds;
-    const mergedLanguages =
-      parsed.languages.length > 0
-        ? Array.from(new Set([...(options?.languages ?? []), ...parsed.languages]))
-        : options?.languages;
+    // Post-embed fusion leg (keyword-arm search, node lookup, RRF merge, materialize).
+    // Wrapped in the SAME degraded(...) fallback as the probe/build legs so an unexpected
+    // throw here can NEVER escape `searchNodesDetailed` — SC-003 never-throw (review item 7).
+    // A stray failure degrades to keyword results carrying the catch-all hint (FR-006).
+    try {
+      // kind:/lang: (query filters ∪ options.kinds/languages) PRE-filter the scan.
+      const mergedKinds =
+        parsed.kinds.length > 0
+          ? Array.from(new Set([...(options?.kinds ?? []), ...parsed.kinds]))
+          : options?.kinds;
+      const mergedLanguages =
+        parsed.languages.length > 0
+          ? Array.from(new Set([...(options?.languages ?? []), ...parsed.languages]))
+          : options?.languages;
 
-    // Fusion leg timing (FR-008 `fusionMs`): the scan + top-k + RRF merge +
-    // materialization — the same legs the p95 fusion gate measures (matrix cold-build
-    // above is deliberately EXCLUDED, per its separability note). `embedMs` was recorded
-    // upstream at acquisition time and rides in on the cache entry.
-    const fusionStart = performance.now();
-    const depth = candidateDepth(limit);
-    const semantic = semanticTopK(matrixResult.matrix, cached.vector, depth, {
-      kinds: mergedKinds,
-      languages: mergedLanguages,
-    });
+      // Fusion leg timing (FR-008 `fusionMs`): the scan + top-k + RRF merge +
+      // materialization — the same legs the p95 fusion gate measures (matrix cold-build
+      // above is deliberately EXCLUDED, per its separability note). `embedMs` was recorded
+      // upstream at acquisition time and rides in on the cache entry.
+      const fusionStart = performance.now();
+      const depth = candidateDepth(limit);
+      const semantic = semanticTopK(matrixResult.matrix, cached.vector, depth, {
+        kinds: mergedKinds,
+        languages: mergedLanguages,
+      });
 
-    // Keyword arm: hybrid fuses it at the same candidate depth (its post-rescore
-    // order is the RRF rank input, FR-004a); semantic mode is vector-only (FR-002a).
-    const keywordArm: SearchResult[] =
-      mode === 'hybrid'
-        ? this.queries.searchNodes(query, { ...options, limit: depth, offset: 0 })
-        : [];
+      // Keyword arm: hybrid fuses it at the same candidate depth (its post-rescore
+      // order is the RRF rank input, FR-004a); semantic mode is vector-only (FR-002a).
+      const keywordArm: SearchResult[] =
+        mode === 'hybrid'
+          ? this.queries.searchNodes(query, { ...options, limit: depth, offset: 0 })
+          : [];
 
-    // Semantic-only candidates have no keyword SearchResult — supply their gate
-    // fields (path:/name:) and node records from a batched lookup (keeps rrfMerge pure).
-    const semNodes = this.queries.getNodesByIds(semantic.map((c) => c.nodeId));
-    const gateFields = new Map<string, RrfGateFields>();
-    for (const [id, node] of semNodes) {
-      gateFields.set(id, { filePath: node.filePath, name: node.name });
+      // Semantic-only candidates have no keyword SearchResult — supply their gate
+      // fields (path:/name:) and node records from a batched lookup (keeps rrfMerge pure).
+      const semNodes = this.queries.getNodesByIds(semantic.map((c) => c.nodeId));
+      const gateFields = new Map<string, RrfGateFields>();
+      for (const [id, node] of semNodes) {
+        gateFields.set(id, { filePath: node.filePath, name: node.name });
+      }
+
+      const fused = rrfMerge(keywordArm, semantic, {
+        limit,
+        offset,
+        pathFilters: parsed.pathFilters,
+        nameFilters: parsed.nameFilters,
+        gateFields,
+      });
+
+      // Materialise SearchResult[]: node + highlights from the keyword arm when it
+      // surfaced the id, else the semantic node lookup; score := fusedScore (contract
+      // search-api §score-by-mode); highlights ONLY from the keyword arm.
+      const keywordById = new Map<string, SearchResult>();
+      for (const r of keywordArm) if (!keywordById.has(r.node.id)) keywordById.set(r.node.id, r);
+
+      const out: SearchResult[] = [];
+      for (const f of fused) {
+        const kw = keywordById.get(f.nodeId);
+        const node = kw?.node ?? semNodes.get(f.nodeId);
+        if (!node) continue; // node unresolvable (concurrent delete) → drop defensively
+        const result: SearchResult = {
+          node,
+          score: f.fusedScore,
+          fusedScore: f.fusedScore,
+          matchType: f.matchType,
+        };
+        if (kw?.highlights !== undefined) result.highlights = kw.highlights;
+        out.push(result);
+      }
+      const fusionMs = Math.round(performance.now() - fusionStart);
+      // Healthy fused → the ONLY path that emits timing (FR-008): the semantic arm ran.
+      return { results: out, degradation: null, timing: { embedMs: cached.embedMs, fusionMs } };
+    } catch {
+      return degraded('embed-failure'); // post-embed leg threw → catch-all (SC-003/FR-006)
     }
-
-    const fused = rrfMerge(keywordArm, semantic, {
-      limit,
-      offset,
-      pathFilters: parsed.pathFilters,
-      nameFilters: parsed.nameFilters,
-      gateFields,
-    });
-
-    // Materialise SearchResult[]: node + highlights from the keyword arm when it
-    // surfaced the id, else the semantic node lookup; score := fusedScore (contract
-    // search-api §score-by-mode); highlights ONLY from the keyword arm.
-    const keywordById = new Map<string, SearchResult>();
-    for (const r of keywordArm) if (!keywordById.has(r.node.id)) keywordById.set(r.node.id, r);
-
-    const out: SearchResult[] = [];
-    for (const f of fused) {
-      const kw = keywordById.get(f.nodeId);
-      const node = kw?.node ?? semNodes.get(f.nodeId);
-      if (!node) continue; // node unresolvable (concurrent delete) → drop defensively
-      const result: SearchResult = {
-        node,
-        score: f.fusedScore,
-        fusedScore: f.fusedScore,
-        matchType: f.matchType,
-      };
-      if (kw?.highlights !== undefined) result.highlights = kw.highlights;
-      out.push(result);
-    }
-    const fusionMs = Math.round(performance.now() - fusionStart);
-    // Healthy fused → the ONLY path that emits timing (FR-008): the semantic arm ran.
-    return { results: out, degradation: null, timing: { embedMs: cached.embedMs, fusionMs } };
   }
 
   /**
