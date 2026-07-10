@@ -68,7 +68,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 5 US / 20 FR / 14 AC / 8 SC; 0 markers; G1 PASS (runner + grep). spec.md + checklists/requirements.md; feature.json created |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 15 questions, 10 consensus items (17 analyst runs, 10 syntheses); 2 security gates maintainer-approved; 1 parent edit reversed by consensus (Windows posture); G2 PASS (0 markers) |
-| Plan | `/speckit-plan` | 🔄 In Progress | Plan = validation protocol + doc structure (no production code) |
+| Plan | `/speckit-plan` | ✅ Complete | plan.md (408 lines: 12-section doc blueprint + 19-step validation protocol V1–V19, Phases A–F, 3-day timebox map) + research.md (C1–C9 citation inventory). G3 PASS after 1 auto-fix (meta-reference literal reworded). estimate-reviewable-loc: `not_estimated` (0 declared production files — correct for 0-LOC spike; advisory, continue). data-model/contracts/quickstart deliberately omitted (rationale in plan §Project Structure). CLAUDE.md SPECKIT block updated (in-flight status) |
 | Checklist | `/speckit-checklist` | ⏳ Pending | security, integration, error-handling |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
@@ -383,11 +383,11 @@ doctrine.
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Validation protocol, doc structure, evidence plan |
-| `research.md` | ⏳ | Citation inventory (both vendors' docs) |
-| `data-model.md` | ⏳ | Likely n/a (docs-only) — omit unless the matrix warrants it |
-| `contracts/` | ⏳ | Likely n/a (no API surface) |
-| `quickstart.md` | ⏳ | Likely n/a |
+| `plan.md` | ✅ | 12-section decision-doc blueprint (each mapped to US/FR/SC + per-section validation bar); 19-step validation protocol (A docs → B scratch plugins → C Claude → D Codex → E Windows/Linux attempts → F synthesis); timebox map with non-deferrable core (macOS launcher, dedup lever, matrix, exemplar) and attempt-first conditioned deferrals (V10/V11/V12); Constitution Check PASS I–VII pre+post design |
+| `research.md` | ✅ | 5 sections: OQ-8 decision record (+ --offline/pin/~50MB refinements); C1–C9 public citation inventory; in-repo reference surfaces; shared skills standard + unproven-trigger-efficacy note; unknowns disposition table |
+| `data-model.md` | ➖ omitted | Key Entities are documentary sections, not persisted data; Evidence Block schema captured inline (SPEC-004 precedent) |
+| `contracts/` | ➖ omitted | Launcher contract/matrix are prose deliverables consumed by SPEC-026, not code interfaces (0-LOC spike) |
+| `quickstart.md` | ➖ omitted | The 19-step Validation Protocol IS the runnable scenario set; separate quickstart would duplicate it |
 
 ---
 
