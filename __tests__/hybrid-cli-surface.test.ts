@@ -39,7 +39,18 @@ import { CodeGraph } from '../src';
 
 const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
 
-const CHILD_ENV = { ...process.env, CODEGRAPH_NO_DAEMON: '1', CODEGRAPH_WASM_RELAUNCHED: '1' };
+// The dormant-path assertions require NO ambient embedding provider: a developer
+// shell (or direnv loading .envrc.local) would otherwise leak a live endpoint into
+// the child process and turn the expected keyword-dormant run into a real fused run.
+// Same scrub list as embeddings-dormancy.test.ts.
+const EMBEDDING_ENV_VARS = [
+  'CODEGRAPH_EMBEDDING_URL', 'CODEGRAPH_EMBEDDING_MODEL', 'CODEGRAPH_EMBEDDING_API_KEY',
+  'CODEGRAPH_EMBEDDING_DIMS', 'CODEGRAPH_EMBEDDING_BATCH_SIZE', 'CODEGRAPH_EMBEDDING_CONCURRENCY',
+  'CODEGRAPH_EMBEDDING_TIMEOUT_MS', 'CODEGRAPH_EMBEDDING_PROVIDER', 'CODEGRAPH_MODEL_BASE_URL',
+  'CODEGRAPH_MODEL_CACHE_DIR',
+];
+const CHILD_ENV: NodeJS.ProcessEnv = { ...process.env, CODEGRAPH_NO_DAEMON: '1', CODEGRAPH_WASM_RELAUNCHED: '1' };
+for (const key of EMBEDDING_ENV_VARS) delete CHILD_ENV[key];
 
 /** Run `codegraph query parseToken <extraArgs> -p <cwd>` against the built binary. */
 function query(cwd: string, extraArgs: string[]): string {
