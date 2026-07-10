@@ -10,7 +10,7 @@ description: "Task list for Plugin Platform Mechanics Spike (SPEC-025)"
 
 **Tests**: This is a **research spike — 0 production LOC**. There are no code tests. The verification surface is the **hands-on validation protocol** (plan.md V1–V19): every load-bearing claim lands as a Validation Evidence Block (pinned host version, exact repro command, quoted manifest/config snippet, observed behavior) or an explicit "could not validate" note. Repo floor (`npm run build`, `npm test`) stays trivially green — the spike changes no code.
 
-**Reviewability**: The spike's budget is **0 production LOC / 0 production files / ~2 total files / 1 docs surface**. T006 is the reviewability checkpoint. If any task would create a file under `src/`, commit a scratch plugin/fixture, or draft a second artifact body, STOP — it crosses a design-concept Non-goal (Q4/Q5/Q9).
+**Reviewability**: The spike's budget is **0 production LOC / 0 production files / ~2 primary deliverable files / 1 docs surface** (the accompanying SpecKit process artifacts — spec/plan/tasks/research/checklists + workflow ledger — are standard workflow overhead, not deliverables). T006 is the reviewability checkpoint. If any task would create a file under `src/`, commit a scratch plugin/fixture, or draft a second artifact body, STOP — it crosses a design-concept Non-goal (Q4/Q5/Q9).
 
 **Organization**: Tasks are grouped by user story (US1 audit, US2 launcher/OQ-8, US3 coexistence, US4 degraded Codex, US5 artifact plan + exemplar). The **Claude-side** and **Codex-side** evidence tracks are independent and marked `[P]` until the synthesis tasks join them.
 

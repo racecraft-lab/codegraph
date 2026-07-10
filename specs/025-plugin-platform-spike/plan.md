@@ -82,8 +82,11 @@ terms.
 
 **Reviewability Budget**: Primary surface: docs/process. Secondary surfaces: none.
 Projected reviewable LOC: 0 (prose/markdown, not production LOC). Projected production
-files: 0. Projected total files: ~2 (`docs/design/plugin-channel-decision.md` created;
-`docs/ai/specs/intelligence-platform-technical-roadmap.md` status edited). Budget
+files: 0. Projected deliverable files: ~2 (`docs/design/plugin-channel-decision.md` created;
+`docs/ai/specs/intelligence-platform-technical-roadmap.md` status edited); the committed
+total additionally carries the standard SpecKit process artifacts
+(spec/plan/tasks/research/checklists + the `.process/` workflow ledger) — workflow
+overhead accompanying every spec, not counted against the deliverable budget. Budget
 result: within budget (spike). Split decision: no split — a single docs/process
 surface sized by a 2–3 day timebox.
 
