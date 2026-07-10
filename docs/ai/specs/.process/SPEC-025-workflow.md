@@ -70,7 +70,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 15 questions, 10 consensus items (17 analyst runs, 10 syntheses); 2 security gates maintainer-approved; 1 parent edit reversed by consensus (Windows posture); G2 PASS (0 markers) |
 | Plan | `/speckit-plan` | ✅ Complete | plan.md (408 lines: 12-section doc blueprint + 19-step validation protocol V1–V19, Phases A–F, 3-day timebox map) + research.md (C1–C9 citation inventory). G3 PASS after 1 auto-fix (meta-reference literal reworded). estimate-reviewable-loc: `not_estimated` (0 declared production files — correct for 0-LOC spike; advisory, continue). data-model/contracts/quickstart deliberately omitted (rationale in plan §Project Structure). CLAUDE.md SPECKIT block updated (in-flight status) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 105 items, 11 gaps → 0 (all 1-loop); 4 consensus items (1 security human-approved, 3 auto); G4 PASS |
-| Tasks | `/speckit-tasks` | ✅ Complete | 30 tasks, 21/21 FRs covered, 9 [P] Claude∥Codex pairs, 3 staged-decision valves; G5 PASS; verify-tasks 0 phantoms; route one-navigable-PR; layer plan skipped; tasks-mode reviewability deferred (fallback chain in autopilot-state.json) |
+| Tasks | `/speckit-tasks` | ✅ Complete | 30 tasks, all FRs covered (21 at generation; FR-022 added at Analyze, covered by T023 — 22/22 final), 9 [P] Claude∥Codex pairs, 3 staged-decision valves; G5 PASS; verify-tasks 0 phantoms; route one-navigable-PR; layer plan skipped; tasks-mode reviewability deferred (fallback chain in autopilot-state.json) |
 | Analyze | `/speckit-analyze` | ✅ Complete | 13 findings (0C/2H/4M/7L) all resolved in ≤2 loops; FR-022 added (skill-authoring grounding); G6 PASS; 0 unresolved → consensus skipped; 📊 Confidence 0.98 |
 | Implement | `/speckit-implement` | ✅ Complete | 30/30 tasks; decision doc `docs/design/plugin-channel-decision.md` (12 sections, ~2,400 lines, ~30 evidence blocks); OQ-8 RESOLVED (+2 refinements); 8/8 matrix cells decided; 4 staged decisions (attempt-first, evidenced); secret sweep CLEAN; commit surface docs-only |
 
@@ -147,15 +147,15 @@ Each phase requires **human review and approval** before proceeding:
 
 From the technical roadmap scope + design concept (Q10 done bar):
 
-- [ ] `docs/design/plugin-channel-decision.md` exists; every roadmap scope bullet closes with an explicit decision + public citation + hands-on evidence where load-bearing
-- [ ] Platform audit complete for BOTH hosts: Claude Code plugin format (manifest/component pointers, plugin-scoped mcpServers/hooks/skills/agents/commands, `${CLAUDE_PLUGIN_ROOT}`, marketplace + trust model, plugin-agent tool inheritance + disallowedTools) and Codex plugin format (`.codex-plugin/plugin.json`, bundled skills, `codex-agents/*.toml`, `codex-hooks.json`, MCP registration, project- and hook-hash trust gating)
-- [ ] OQ-8 resolved: PRD hypothesis (PATH → npx fallback → success-shaped guidance) validated or falsified-with-evidence from a plugin-scoped MCP entry on both hosts (Q2)
-- [ ] Coexistence contract recorded: plugin wins config / npm keeps binary (Q3), with a component × host ownership matrix and per-component installer gap coverage (Q6, Q7); detection + dedupe + uninstall interplay specified in both directions
-- [ ] Skill-authoring grounding section cites both vendors' public guidance (shared agent-skills standard)
-- [ ] Shipped-artifact plan enumerates the candidate skill/agent set with per-artifact tier decisions (operator-owned tool-surface doctrine) + validation bars (Sonnet-floor A/B, no regression vs MCP-only baseline)
-- [ ] Explore-flow workflow skill exemplar fully drafted in the decision doc's appendix (Q4, Q5)
-- [ ] No scratch plugins or fixtures committed — evidence quoted inline (Q9)
-- [ ] Spike completed within the 2–3 day timebox; any miss recorded as an explicit staged decision (Q8, Q10)
+- [x] `docs/design/plugin-channel-decision.md` exists; every roadmap scope bullet closes with an explicit decision + public citation + hands-on evidence where load-bearing
+- [x] Platform audit complete for BOTH hosts: Claude Code plugin format (manifest/component pointers, plugin-scoped mcpServers/hooks/skills/agents/commands, `${CLAUDE_PLUGIN_ROOT}`, marketplace + trust model, plugin-agent tool inheritance + disallowedTools) and Codex plugin format (`.codex-plugin/plugin.json`, bundled skills, `codex-agents/*.toml`, `codex-hooks.json`, MCP registration, project- and hook-hash trust gating)
+- [x] OQ-8 resolved: PRD hypothesis (PATH → npx fallback → success-shaped guidance) validated or falsified-with-evidence from a plugin-scoped MCP entry on both hosts (Q2)
+- [x] Coexistence contract recorded: plugin wins config / npm keeps binary (Q3), with a component × host ownership matrix and per-component installer gap coverage (Q6, Q7); detection + dedupe + uninstall interplay specified in both directions
+- [x] Skill-authoring grounding section cites both vendors' public guidance (shared agent-skills standard)
+- [x] Shipped-artifact plan enumerates the candidate skill/agent set with per-artifact tier decisions (operator-owned tool-surface doctrine) + validation bars (Sonnet-floor A/B, no regression vs MCP-only baseline)
+- [x] Explore-flow workflow skill exemplar fully drafted in the decision doc's appendix (Q4, Q5)
+- [x] No scratch plugins or fixtures committed — evidence quoted inline (Q9)
+- [x] Spike completed within the 2–3 day timebox; any miss recorded as an explicit staged decision (Q8, Q10)
 
 ---
 
@@ -685,16 +685,23 @@ Before starting any task:
 
 ---
 
+## Post-Implementation Record
+
+- **G7 (full verification):** PASS — `npm run build` clean; full vitest suite under parallel-subagent load showed 25 contention failures (timeouts/EMFILE, same signature as G0) across 5 files; all 823 tests in those 5 files pass in isolation (54s). Zero `src/**` changes on the branch — regression impossible by construction. Baseline preserved: 2,660+ passed / 7 skipped.
+- **Integration Suite:** same run/verdict as G7 (docs-only spike; no spec-specific code tests expected — rationale: the deliverable is a document; its verification surface is the hands-on evidence protocol).
+- **Verify-tasks phantom check (fresh context):** 30/30 VERIFIED, 0 phantoms; staged deferrals confirmed legitimate (named evidenced blockers, not fabricated passes).
+- **Doctor extension check:** skipped — doctor/speckit-utils not installed.
+
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in tasks.md
-- [ ] `docs/design/plugin-channel-decision.md` closes every scope bullet with decision + citation + evidence (Q10 done bar)
-- [ ] OQ-8 verdict recorded in the doc in the PRD's terms
-- [ ] Component × host ownership matrix present with per-component gap coverage
-- [ ] Explore-flow exemplar drafted in the appendix
-- [ ] `git diff --stat` shows no `src/**` changes and no committed fixtures (Q9)
-- [ ] CHANGELOG: no entry needed (docs/process only — no user-facing behavior change); add one only if the maintainer asks
-- [ ] Roadmap Progress Tracking row updated
+- [x] All tasks marked complete in tasks.md
+- [x] `docs/design/plugin-channel-decision.md` closes every scope bullet with decision + citation + evidence (Q10 done bar)
+- [x] OQ-8 verdict recorded in the doc in the PRD's terms
+- [x] Component × host ownership matrix present with per-component gap coverage
+- [x] Explore-flow exemplar drafted in the appendix
+- [x] `git diff --stat` shows no `src/**` changes and no committed fixtures (Q9)
+- [x] CHANGELOG: no entry needed (docs/process only — no user-facing behavior change); add one only if the maintainer asks
+- [x] Roadmap Progress Tracking row updated
 - [ ] PR created against origin (racecraft-lab) — never upstream; no session URLs in the PR body
 - [ ] Merged to main, then Dogfooding Protocol step: `npm run build` + `codegraph sync` on main
 

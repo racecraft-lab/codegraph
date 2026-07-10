@@ -2480,7 +2480,12 @@ mandate, filled from this document._
   subagent v2 config-fidelity (#15250/#20077), **SD-3** the Codex prompt-hook end-to-end model-reach
   leg (interactive `/hooks` trust), and **SD-4** the interactive-only Claude host-UI confirmations
   (marketplace trust prompt; `/plugin` dedup notice + near-duplicate badge). Each names what was
-  attempted, the evidenced blocker, and the SPEC-026 pre-ship-gate / human step. The two named
+  attempted, the evidenced blocker, and the SPEC-026 pre-ship-gate / human step. Citation
+  durability: the `C1–C9` reference IDs used in §§4–7 resolve via
+  `specs/025-plugin-platform-spike/research.md` §2a (the verified-URL ledger); the post-merge
+  archive sweep must preserve or relocate that ledger (or the C-roster be inlined here) so the
+  C-references never dangle — the `P1–P4` (§3) and `S1–S10` (§9.1) rosters are already inlined
+  with full URLs. The two named
   polish tasks are now complete: the final scrub verification sweep (T028, recorded CLEAN in §12.1)
   and the network/telemetry parity affirmation (T029, §5.H).
 - **Rollback / feature-flag notes.** **Docs-only — nothing to feature-gate.** No production code,

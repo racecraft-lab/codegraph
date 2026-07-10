@@ -337,10 +337,10 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-SPEC-025 (plugin platform mechanics spike) is in flight on worktree
-`025-plugin-platform-spike`; Plan phase complete — implementation plan at
-`specs/025-plugin-platform-spike/plan.md` (research at
-`specs/025-plugin-platform-spike/research.md`).
+SPEC-025 (plugin platform mechanics spike) is complete on worktree
+`025-plugin-platform-spike` and under review — the decision document is
+`docs/design/plugin-channel-decision.md` (spec artifacts under
+`specs/025-plugin-platform-spike/`); PR pending.
 
 SPEC-001, SPEC-002, SPEC-004, SPEC-008, and SPEC-023 are complete and archived;
 provenance and recovery commands live in `.specify/memory/archive-reports/`.
@@ -358,8 +358,8 @@ Canonical completed-spec artifacts:
 SPEC-003 and SPEC-005 are ready to scaffold. SPEC-006 and SPEC-007 remain
 downstream of SPEC-005. SPEC-010 is ready because SPEC-008 shipped the LSP
 substrate. SPEC-024 is dormant unless future parity drift creates a concrete
-unowned language, feature, or capability row. SPEC-025 (plugin platform
-mechanics spike) is ready to scaffold and parallel-safe; SPEC-026
-(plugin-channel distribution — Claude Code + Codex plugins carrying the MCP
-server, prompt hook, skills, and agents) is downstream of SPEC-025.
+unowned language, feature, or capability row. SPEC-026 (plugin-channel
+distribution — Claude Code + Codex plugins carrying the MCP server, prompt
+hook, skills, and agents) is downstream of SPEC-025's decision document and
+becomes ready to scaffold once the SPEC-025 PR merges.
 <!-- SPECKIT END -->
