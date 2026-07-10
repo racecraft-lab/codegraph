@@ -691,6 +691,14 @@ Before starting any task:
 - **Integration Suite:** same run/verdict as G7 (docs-only spike; no spec-specific code tests expected — rationale: the deliverable is a document; its verification surface is the hands-on evidence protocol).
 - **Verify-tasks phantom check (fresh context):** 30/30 VERIFIED, 0 phantoms; staged deferrals confirmed legitimate (named evidenced blockers, not fabricated passes).
 - **Doctor extension check:** skipped — doctor/speckit-utils not installed.
+- **Independent code review:** SHIP. Secrets sweep independently CLEAN (full branch diff; token/IP/path/endpoint patterns — zero hits). 1 major (stale autopilot-state.json) + 3 minors REMEDIATED in 41d6e60 (CLAUDE.md SPECKIT block refreshed, FR-count note, done-bar boxes checked, C-citation durability recorded as a known gap); nit (§5 lettering skips 5.B) accepted as-is; unchecked domain-checklist boxes accepted (reviewer-facing review questions by design).
+- **Final reviewability gate (deferred `final-reviewability-backstop`):** PROCEED on committed fallback evidence — setup-mode PASS (0 LOC/0 prod/2 files/1 surface) + plan estimator `not_estimated` (0 declared prod files) + tasks-mode deferral chain + route `one-navigable-PR` + actual branch diff verified 0 `src/**` lines (16 files, +5,069/−72, docs/process only). No `pr_marker_plan` required; single-PR path.
+- **Self-Review (mandatory 4-question audit, orchestrator):**
+  1. *Did the implementation do what the spec asked?* Yes — all 22 FRs and 8 SCs close in the decision doc with a complete traceability map; independently verified by the verify agent (8 FRs deep-checked) and the phantom check (30/30 real).
+  2. *What was skipped or deferred, and is each recorded?* Four staged decisions (SD-1 Windows VM unreachable + `.parallels` absent; SD-2 Codex v2 config fidelity; SD-3 Codex hook interactive-trust leg; SD-4 interactive Claude host-UI confirmations) — each attempt-first with a named evidenced blocker and the SPEC-026/human next step. Nothing silent.
+  3. *What would a skeptical reviewer flag?* (a) The maintainer should restore `.parallels` and run the SD-1 Windows steps before SPEC-026 ships; (b) two spike findings CORRECT prior assumptions and deserve explicit reviewer attention — `npx --offline` covers only the shim (bundle fetch is a second network hop) and bare-name PATH fails for GUI-launched hosts; (c) one worker briefly copied `auth.json` into an isolated scratch CODEX_HOME for two small authenticated `codex exec` probes, then deleted it (never echoed/committed) — disclosed for transparency; (d) the roadmap's pre-spike guesses (`codex-agents/*.toml`, `codex-hooks.json` filenames; `metadata.mcp-server` field; hook-cell-absent prediction) were all corrected by evidence — the roadmap text itself is NOT updated beyond the status row (deliberate: surgical scope; SPEC-026 scaffolding reads the decision doc, not the stale scope prose).
+  4. *Is the evidence real?* Yes — pinned host builds (Claude Code 2.1.206, Codex CLI 0.144.0, Node v24.11.1, Docker 29.5.3), live transcripts, reproduced upstream behaviors (#16430 fix window, v2 fidelity limitation, host dedup semantics), and honest could-not-validate notes where interaction was required.
+- **UAT runbook:** `generate-uat-skeleton` is registered DEFERRED on the installed runner; no committed source-derived runbook exists → recorded as skipped with deferred-helper evidence (fail-open, logged); `uat-runbook-author` not spawned (no skeleton). The de-facto acceptance path for a docs spike is the §11.2 SC-001–SC-008 done-bar checklist plus the SD human steps.
 
 ## Post-Implementation Checklist
 
@@ -702,7 +710,7 @@ Before starting any task:
 - [x] `git diff --stat` shows no `src/**` changes and no committed fixtures (Q9)
 - [x] CHANGELOG: no entry needed (docs/process only — no user-facing behavior change); add one only if the maintainer asks
 - [x] Roadmap Progress Tracking row updated
-- [ ] PR created against origin (racecraft-lab) — never upstream; no session URLs in the PR body
+- [x] PR created against origin (racecraft-lab) — never upstream; no session URLs in the PR body: **PR #35** https://github.com/racecraft-lab/codegraph/pull/35 (packet + contract validators passed fresh; body from the speckit packet)
 - [ ] Merged to main, then Dogfooding Protocol step: `npm run build` + `codegraph sync` on main
 
 ---
