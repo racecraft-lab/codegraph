@@ -134,15 +134,19 @@ export interface AutoResolveInput {
  * Resolve `mode: 'auto'` to a concrete arm (FR-002, research D1): `hybrid`
  * iff a provider is configured AND ≥1 stored vector matches the active model,
  * else `keyword`. This is the SAME predicate the FR-017 `codegraph status`
- * availability line reports, and it is used ONLY by the explicit surfaces
- * (`codegraph_search` MCP tool + CLI search) and explicit opt-in callers —
- * never by internal callers, which stay keyword (FR-003).
+ * availability line reports (T023 reuses it), and it is used ONLY by the explicit
+ * surfaces (`codegraph_search` MCP tool + CLI search) and explicit opt-in callers
+ * — never by internal callers, which stay keyword (FR-003).
  *
- * NOTE: stub — the real predicate lands in T015. Placeholder returns the safe
- * dormant default (`keyword`) so an accidental call cannot spend embed latency.
+ * Pure and total: both conditions must hold for `hybrid`; a missing provider OR a
+ * zero matching-model count resolves to the safe dormant default `keyword`, so an
+ * unavailable semantic arm never spends embed latency. Consistent with the inline
+ * healthy/degraded logic in `runFusedSearch` (index.ts, T019) — `provider === null`
+ * ↔ `!providerConfigured` and `probe.count === 0` ↔ `matchingVectorCount === 0`
+ * both degrade to keyword.
  */
-export function resolveAutoMode(_input: AutoResolveInput): ResolvedSearchMode {
-  return 'keyword';
+export function resolveAutoMode(input: AutoResolveInput): ResolvedSearchMode {
+  return input.providerConfigured && input.matchingVectorCount >= 1 ? 'hybrid' : 'keyword';
 }
 
 /**

@@ -21,7 +21,7 @@ import {
   type WorktreeIndexMismatch,
 } from '../sync/worktree';
 import type { PendingFile } from '../sync';
-import type { Node, Edge, SearchResult, Subgraph, NodeKind } from '../types';
+import type { Node, Edge, SearchResult, Subgraph, NodeKind, SearchMode } from '../types';
 import { isTestFile, normalizeNameToken } from '../search/query-utils';
 import {
   existsSync,
@@ -50,6 +50,28 @@ export class NotIndexedError extends Error {}
  */
 export class PathRefusalError extends Error {}
 import { resolve as resolvePath } from 'path';
+
+/**
+ * The four accepted `codegraph_search` retrieval modes. The MCP surface default
+ * is `auto` (FR-002) — distinct from the LIBRARY default of `keyword`
+ * (`resolveLibrarySearchMode`): an agent that omits `mode` gets hybrid-when-ready,
+ * keyword-otherwise, while an internal library caller stays byte-identical keyword.
+ */
+const SEARCH_SURFACE_MODES: ReadonlySet<string> = new Set<SearchMode>([
+  'keyword', 'semantic', 'hybrid', 'auto',
+]);
+
+/**
+ * Resolve the surface-level `mode` argument for `codegraph_search`. An omitted,
+ * non-string, or out-of-enum value coerces to `auto` (FR-002; the MCP surface
+ * default) — never rejected, never error-shaped, consistent with the success-shaped
+ * posture (Constitution VI). A recognized value passes through verbatim so an
+ * explicit `keyword` stays zero-touch (byte-identical to today) and an explicit
+ * `semantic`/`hybrid` opts into fusion.
+ */
+function resolveSearchSurfaceMode(raw: unknown): SearchMode {
+  return typeof raw === 'string' && SEARCH_SURFACE_MODES.has(raw) ? (raw as SearchMode) : 'auto';
+}
 
 /** Maximum output length to prevent context bloat (characters) */
 const MAX_OUTPUT_LENGTH = 15000;
@@ -552,6 +574,11 @@ export const tools: ToolDefinition[] = [
           type: 'number',
           description: 'Maximum results (default: 10)',
           default: 10,
+        },
+        mode: {
+          type: 'string',
+          description: 'Retrieval mode: keyword | semantic | hybrid | auto (default: auto — hybrid when semantic vectors exist, else keyword)',
+          enum: ['keyword', 'semantic', 'hybrid', 'auto'],
         },
         projectPath: projectPathProperty,
       },
@@ -1502,10 +1529,31 @@ export class ToolHandler {
     const rawLimit = Number(args.limit) || 10;
     const limit = clamp(rawLimit, 1, 100);
 
-    const results = cg.searchNodes(query, {
+    // Surface default is `auto` (FR-002); an omitted/unknown value coerces here,
+    // never errors (Constitution VI). `keyword` stays zero-touch below.
+    const mode = resolveSearchSurfaceMode(args.mode);
+
+    // Production async-acquisition boundary (T012): the semantic arm's query embed
+    // is the ONE async dependency of the otherwise-synchronous search. For any mode
+    // that can run the semantic arm (semantic/hybrid/auto), await acquisition FIRST
+    // so the vector is deposited in the per-project cache before the sync
+    // `searchNodesDetailed` reads it and fuses. `acquireQueryVectorForSearch` is
+    // budget-capped and NEVER rejects (dormant/degraded conditions resolve to a
+    // null vector), so no try/catch is needed and keyword mode skips it entirely.
+    if (mode !== 'keyword') {
+      await cg.acquireQueryVectorForSearch(query);
+    }
+
+    // TODO(T022): consume `detailed.degradation` to render the FR-015 hint footer
+    // (and FR-012 provenance tags / FR-008 timing). Until then the machine-readable
+    // reason is projected away and keyword-shape results format byte-identically to
+    // today (SC-004).
+    const detailed = cg.searchNodesDetailed(query, {
       limit,
       kinds: kind ? [kind as NodeKind] : undefined,
+      mode,
     });
+    const results = detailed.results;
 
     if (results.length === 0) {
       return this.textResult(`No results found for "${query}"`);

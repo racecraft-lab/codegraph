@@ -38,6 +38,7 @@ import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
 import { ensureCodegraphIgnored } from '../utils';
 import type { LocalEmbeddingSkipReason } from '../index';
+import type { SearchMode } from '../types';
 import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
@@ -1203,8 +1204,9 @@ program
   .option('-p, --path <path>', 'Project path')
   .option('-l, --limit <number>', 'Maximum results', '10')
   .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
+  .option('-m, --mode <mode>', 'Search mode: keyword | semantic | hybrid | auto (default: auto)')
   .option('-j, --json', 'Output as JSON')
-  .action(async (search: string, options: { path?: string; limit?: string; kind?: string; json?: boolean }) => {
+  .action(async (search: string, options: { path?: string; limit?: string; kind?: string; mode?: string; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
@@ -1217,10 +1219,33 @@ program
       const cg = await CodeGraph.open(projectPath);
 
       const limit = parseInt(options.limit || '10', 10);
-      const rawResults = cg.searchNodes(search, {
+
+      // Coerce mode in the action handler (SPEC-003 FR-002; contracts/mcp-cli-surface.md):
+      // the CLI surface defaults an unspecified OR unknown/out-of-enum value to `auto`
+      // — NEVER a commander `choices()` rejection, so a mistyped mode still returns
+      // keyword-eligible results and exits 0 (never-error posture, Constitution VI).
+      const mode: SearchMode =
+        options.mode === 'keyword' ||
+        options.mode === 'semantic' ||
+        options.mode === 'hybrid' ||
+        options.mode === 'auto'
+          ? options.mode
+          : 'auto';
+
+      // Production async-acquisition pattern: for any semantic-eligible mode warm the
+      // bounded, budget-capped query-vector cache BEFORE the synchronous search so the
+      // fused arm can consume it. `acquireQueryVectorForSearch` NEVER rejects (returns
+      // `{ vector: null, model: null }` with no provider), so this degrades cleanly to
+      // keyword when no embedding endpoint is configured.
+      if (mode !== 'keyword') {
+        await cg.acquireQueryVectorForSearch(search);
+      }
+
+      const rawResults = cg.searchNodesDetailed(search, {
         limit,
         kinds: options.kind ? [options.kind as any] : undefined,
-      });
+        mode,
+      }).results;
 
       // Mirror the MCP search down-rank so the CLI also surfaces the
       // hand-written implementation before protobuf/gRPC scaffolding
@@ -1245,6 +1270,12 @@ program
           // (relative-ranking only), and the old `(score * 100)%` rendered it
           // as nonsensical percentages like "12042%" (#1045). The MCP search
           // tool likewise shows no score. Raw `score` stays in --json output.
+          //
+          // TODO(T022): render the `[keyword]`/`[semantic]`/`[both]` provenance tag
+          // per hit (semantic/hybrid modes), the non-degraded timing footer, and the
+          // FR-015 degradation-hint footer here — all sourced from the
+          // `searchNodesDetailed` `{ results, degradation }` return. Kept byte-identical
+          // to the keyword/dormant output for now so #1045's no-score policy holds.
           for (const result of results) {
             const node = result.node;
             const location = `${node.filePath}:${node.startLine}`;
