@@ -57,7 +57,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions · 15 questions · 7 consensus items, all resolved Round 1 (0 escapes, 0 human-review) · spec gains FR-002a/FR-004a/FR-017 + SC-007, hint-wording table, p95 machinery, fixture non-tautology rules |
 | Plan | `/speckit-plan` | ✅ Complete | plan.md + research.md (D1–D14) + data-model.md (E1–E7) + 3 contracts + quickstart; constitution gate PASS ×2 (initial + post-design); G3 pass (after rewording 2 benign prose mentions of the marker token) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains · 85 items · 23 gaps → 0 · 5 consensus items (all Round 1) · error-handling consensus skipped (zero unresolved) · G4 pass |
-| Tasks | `/speckit-tasks` | ⏳ Pending | |
+| Tasks | `/speckit-tasks` | ✅ Complete | 34 tasks · 7 groups · 5 [P] · full FR/SC coverage · G5 pass (34 tasks, 0 markers) · phantom check clean (0 checked tasks) |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Includes design-concept drift check |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
@@ -577,10 +577,19 @@ Focus on Hybrid Semantic Search requirements:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 34 (T001–T034) |
+| **Phases** | 7 — Setup · Foundational · US1 MVP (T006–T013) · US2 (T014–T017) · US3 (T018–T024) · US4 (T025–T027) · Polish (T028–T034) |
+| **Parallel Opportunities** | 5 `[P]` tasks (T002; T016+T017 pair; T028, T031, T032) |
+| **User Stories Covered** | 4/4 (US1–US4); every FR-001…FR-017 + checklist sub-FR and SC-001…SC-007 mapped to ≥1 task |
+
+**Post-G5 boundary record (2026-07-10):** G5 validate-gate → pass (34 tasks, 0 markers).
+Verify-tasks phantom check → trivially clean (0 tasks marked `[X]` in a fresh tasks.md;
+recorded deterministically, no agent needed). Tasks-phase reviewability gate → **deferred**
+(installed runner supports setup mode only); fallback evidence chain: setup-gate pass
+(scaffold, 195 LOC budget) + plan-phase estimate `not_estimated` (advisory) + no operator
+split decision + T005 reviewability checkpoint task → **proceed**. PR marker plan:
+**not_required** (no size-only block exists). State persisted in
+`docs/ai/specs/.process/autopilot-state.json` (repointed from SPEC-008's archived state).
 
 ---
 
@@ -592,10 +601,15 @@ the read-only atomicity classifier and records its decision here. This is a
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change. |
-| **Signals** | | Decisive detector findings (may be empty when the classifier abstains). |
-| **Warnings** | | Release-safety warnings (empty when none). |
+| **Route** | `one-navigable-PR` | Default/modify-heavy route — one PR, navigable by review order. |
+| **Releasable** | `true` | No destructive-migration or concurrency-sensitive change detected. |
+| **Signals** | `change-shape:modify-heavy` | Existing-file plumbing dominates (queries/index/tools/bin), one new module. |
+| **Warnings** | none | |
+
+## Layer Plan
+
+`layer_plan.status = skipped` — route is `one-navigable-PR`, not `split-PR`; the layer
+planner runs only for split routes. Recorded in `autopilot-state.json` (2026-07-10).
 
 To produce the decision:
 

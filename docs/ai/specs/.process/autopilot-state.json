@@ -1,50 +1,17 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-008-workflow.md",
-  "spec_id": "SPEC-008",
-  "feature_dir": "specs/008-lsp-client-integration",
-  "updated_at": "2026-07-07T14:29:41Z",
-  "active_step": "Archived",
-  "status": "completed_archived",
+  "workflow_file": "docs/ai/specs/.process/SPEC-003-workflow.md",
+  "spec_id": "SPEC-003",
+  "feature_dir": "specs/003-hybrid-semantic-search",
+  "updated_at": "2026-07-10T03:24:34Z",
+  "active_step": "Phase 6: Analyze",
+  "status": "in_progress",
   "archive_sweep": {
-    "cleanup_mode": "applied",
-    "applied_at": "2026-07-07T14:24:52.732Z",
-    "cleanup_branch": "codex/archive-merged-specs-2026-07-07",
-    "archived_specs": [
-      {
-        "spec_id": "SPEC-023",
-        "feature_dir": "specs/023-ocaml-language-support",
-        "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/21",
-        "merge_commit": "100a6750046340ed42f066953455f5b41cbe10d8",
-        "archive_report": ".specify/memory/archive-reports/2026-07-07-SPEC-023.md"
-      },
-      {
-        "spec_id": "SPEC-002",
-        "feature_dir": "specs/002-local-embedding-fallback",
-        "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/22",
-        "merge_commit": "7c11f275d8305af71775fd0040cf034b4323d3ba",
-        "archive_report": ".specify/memory/archive-reports/2026-07-07-SPEC-002.md"
-      },
-      {
-        "spec_id": "SPEC-008",
-        "feature_dir": "specs/008-lsp-client-integration",
-        "merged_pr_stack": [
-          "https://github.com/racecraft-lab/codegraph/pull/23",
-          "https://github.com/racecraft-lab/codegraph/pull/24",
-          "https://github.com/racecraft-lab/codegraph/pull/25",
-          "https://github.com/racecraft-lab/codegraph/pull/26",
-          "https://github.com/racecraft-lab/codegraph/pull/27"
-        ],
-        "final_merge_commit": "8c53f53c9d4cfa51710626c1d838e6d8150d27b1",
-        "archive_report": ".specify/memory/archive-reports/2026-07-07-SPEC-008.md"
-      }
-    ],
-    "process_evidence_preserved": true,
-    "active_spec_directories_removed": [
-      "specs/023-ocaml-language-support",
-      "specs/002-local-embedding-fallback",
-      "specs/008-lsp-client-integration"
-    ],
-    "feature_json_removed": true
+    "cleanup_mode": "apply-eligibility (feature branch)",
+    "current_target_excluded": "specs/003-hybrid-semantic-search",
+    "eligible_previous_specs": [],
+    "actions_taken": [],
+    "safeToApplyCleanup": false,
+    "notes": "origin/main specs/ tree empty; SPEC-001/002/004/008/023 already archived"
   },
   "project_commands": {
     "BUILD": "npm run build",
@@ -53,36 +20,33 @@
     "LINT_FIX": "N/A",
     "UNIT_TEST": "npm test",
     "INTEGRATION_TEST": "N/A",
-    "SINGLE_FILE_TEST": "npm test --",
+    "SINGLE_FILE_TEST": "npx vitest run __tests__/<file>.test.ts",
     "SINGLE_FILE_INTEGRATION": "N/A",
     "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
   },
   "preset_conventions": {
     "has_presets": true,
-    "presets": [
-      "claude-ask-questions",
-      "codegraph-project-overrides",
-      "speckit-pro-reviewability"
-    ],
-    "template_resolution": {
-      "spec": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
-      "plan": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
-      "tasks": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
-    }
+    "presets": ["claude-ask-questions", "codegraph-project-overrides", "speckit-pro-reviewability"]
   },
-  "verification": {
-    "status": "pass",
-    "commands": [
-      "python3 -m json.tool docs/ai/specs/.process/autopilot-state.json (pass)",
-      "find specs -mindepth 1 -maxdepth 4 -print (only specs/.gitkeep)",
-      "rg archived spec path and active-state patterns (no archived spec path or active-state hits)",
-      "node scripts/spec-008-parity-gate.mjs --json (expected archived-state guidance)",
-      "git diff --check (pass)",
-      "npm run build on Node 24.11.1 (pass)",
-      "npx vitest run __tests__/embeddings-local-tokenizer.test.ts __tests__/embeddings-model-fetch.test.ts (pass: 91 passed, 3 skipped)"
-    ],
-    "notes": [
-      "generate-spec-index.sh was not present in the checkout, plugin cache, or PATH; the roadmap MOC generated block was updated manually to show no active spec directories."
-    ]
+  "confidence_gate_mode": "advisory",
+  "agent_teams_available": true,
+  "reviewability": {
+    "setup_gate": {"status": "pass", "warnings": [], "evidence": "SPEC-003-scoped scaffold run: 195 reviewable LOC, ~4 production files, ~10 total files, 1 primary surface (committed 7a4d398; recorded in SPEC-003-workflow.md)"},
+    "plan_estimate": {"status": "not_estimated", "projected": null, "note": "plan.md declares no machine-parseable production-file table; advisory, not treated as pass"},
+    "tasks_gate": {"status": "deferred", "helper_id": "reviewability-gate", "requested_mode": "tasks", "deferral_reason": "tasks mode not supported on the installed runner (setup mode only)", "fallback_evidence_chain": ["setup gate pass (scaffold)", "plan estimate not_estimated (advisory)", "no operator split decision", "tasks.md T005 reviewability checkpoint task carries the budget"], "decision": "proceed"}
+  },
+  "atomicity_route": {
+    "route": "one-navigable-PR",
+    "releasable": true,
+    "signals": ["change-shape:modify-heavy"],
+    "warnings": []
+  },
+  "layer_plan": {
+    "status": "skipped",
+    "reason": "route is one-navigable-PR, not split-PR; layer planner runs only for split routes"
+  },
+  "pr_marker_plan": {
+    "status": "not_required",
+    "reason": "no size-only reviewability block exists; setup gate passed and tasks-mode gate deferred with proceed decision"
   }
 }
