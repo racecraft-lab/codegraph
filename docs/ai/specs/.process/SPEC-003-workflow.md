@@ -771,6 +771,45 @@ zero assertion rewrites.
 
 ---
 
+### Self-Review (auto-generated, 2026-07-10)
+
+**Tests executed:** BUILD, TYPECHECK, and UNIT_TEST all ran in-session and exited zero — most
+recent: Integration Suite step at commit c9cb5ff (fresh `npm run build` + `npm test` →
+**2806 passed / 0 failed / 7 skipped**, 51.5s; typecheck re-run clean after the tidiness edits
+below). LINT and INTEGRATION_TEST are `N/A` in PROJECT_COMMANDS (no lint config; vitest suite
+IS the integration surface — the CLI suite drives the built binary via subprocess, the MCP
+suite drives real SQLite + indexAll). Nothing inferred from "no errors reported."
+
+**Edge cases:** full criterion→test map in the post-selfrev evidence (relayed 2026-07-10).
+3 `[edge-case-gap]` flags, none blocking (reproduced in PR body §Self-Review Findings):
+1. US1 scenario 1 / SC-001 — hit-rate gate proves fused>keyword via an inline decoy fixture
+   (`hybrid-search.test.ts:378`) but no standalone adversarial test of the scenario.
+2. US2 scenario 2 (auto + vectors present → hybrid) — proven at library level
+   (`hybrid-search.test.ts:2661`) but neither surface suite seeds vectors, so no MCP/CLI test
+   covers it. MITIGATION: T030 dogfood UAT exercised exactly this on the LIVE MCP surface
+   (auto/hybrid → `[both]` tags + timing footer on the real index) — live evidence, not test.
+3. SC-002 p95 — perf gate has no natural failure-mode branch; FR-009c guard tests
+   (`:495/:510/:1824`) protect the budget under oversized input.
+
+**Requirements matched:** verify ext cross-walk: 17/17 FRs with implementation evidence,
+34/34 tasks `[X]`; verify-tasks fresh-session check: 0 phantoms (1 partial → consolidated in
+remediation 3f6ec9e). No orphan FRs, no orphan tasks.
+
+**Follow-up & tidiness:** zero TODO/DEFERRED/OUT-OF-SCOPE/FIXME markers in spec/plan/tasks or
+commit messages. Tidiness scan findings, adjudicated:
+- `[tidiness]` FIXED — stale `TODO(T015)` doc-comment on `searchNodes` (src/index.ts) claimed
+  auto still coerces to keyword; contradicted the code below it. Reworded to actual behavior.
+- `[tidiness]` FIXED — two local `npm run eval` output files accidentally committed at c6f5bf4
+  (`__tests__/evaluation/results/*.json`, all-fail runs against the wrong corpus): removed;
+  `__tests__/evaluation/results/` now gitignored.
+- `[tidiness]` CALLED OUT (deliberate keep) — async matrix-cache pair
+  `getVectorMatrix`/`getVectorMatrixForProbe` (hybrid.ts) has test-only consumers after the
+  T012 sync pivot (production uses `getVectorMatrixSync`). The build-once/thundering-herd tests
+  exercise real memoization logic through them; removing = test rework for zero behavior gain.
+  Noted in PR body for the reviewer's judgment.
+
+---
+
 ## Post-Implementation Checklist
 
 - [x] All tasks marked complete in tasks.md (34/34; G7 check 1)

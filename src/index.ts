@@ -1832,14 +1832,12 @@ export class CodeGraph {
    * Synchronous by contract (contracts/search-api.md; every caller — MCP tool, CLI
    * — invokes it synchronously). The library default is `keyword`; an unknown /
    * out-of-enum `mode` (an untyped `as any` caller) coerces to `keyword` and never
-   * throws (FR-001/003). `keyword` (and, for now, `auto`) run the existing pipeline
-   * VERBATIM with ZERO provider / probe / cache / embed work (FR-003/003a) and no
+   * throws (FR-001/003). `keyword` runs the existing pipeline VERBATIM with ZERO
+   * provider / probe / cache / embed work (FR-003/003a) and no
    * `matchType`/`fusedScore` fields — byte-identical to today (SC-004). `semantic`
-   * and `hybrid` fuse via {@link runFusedSearch}.
-   *
-   * TODO(T015): resolve library `auto` by the FR-002 predicate (hybrid iff
-   * matching-model vectors exist, else keyword). Until then `auto` coerces to the
-   * safe keyword default so an accidental caller spends no embed latency.
+   * and `hybrid` fuse via {@link runFusedSearch}; `auto` resolves there by the
+   * FR-002 predicate ({@link resolveAutoMode}: hybrid iff matching-model vectors
+   * exist, else keyword-shape results).
    */
   searchNodes(query: string, options?: SearchOptions): SearchResult[] {
     // Thin delegation to {@link searchNodesDetailed} so the two can NEVER diverge:
