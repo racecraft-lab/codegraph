@@ -59,6 +59,10 @@ const EMBEDDING_ENV_VARS = [
 ];
 const CHILD_ENV: NodeJS.ProcessEnv = { ...process.env, CODEGRAPH_NO_DAEMON: '1', CODEGRAPH_WASM_RELAUNCHED: '1' };
 for (const key of EMBEDDING_ENV_VARS) delete CHILD_ENV[key];
+// ALSO scrub the in-process worker env: the T023 fixtures run `indexAll()` IN this
+// vitest worker, and an ambient config would run a real embedding pass (network I/O
+// + pre-populated node_vectors rows that collide with the manual seedVector insert).
+for (const key of EMBEDDING_ENV_VARS) delete process.env[key];
 
 /** Run `codegraph query parseToken <extraArgs> -p <cwd>` against the built binary. */
 function query(cwd: string, extraArgs: string[]): string {

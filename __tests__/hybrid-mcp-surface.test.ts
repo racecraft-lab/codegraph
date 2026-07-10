@@ -34,6 +34,20 @@ try {
   HAS_SQLITE = false;
 }
 
+// Hermetic in-process env: this suite's fixtures run `indexAll()` and the search
+// path IN this vitest worker, so an ambient embedding config (a developer shell /
+// direnv loading .envrc.local) would construct a REAL provider — the no-provider
+// degradation cases would fuse instead of degrade, and indexAll would embed over
+// the wire. Same scrub list as embeddings-dormancy.test.ts; worker-local process,
+// scrubbed once at module load.
+const EMBED_ENV_KEYS = [
+  'CODEGRAPH_EMBEDDING_URL', 'CODEGRAPH_EMBEDDING_MODEL', 'CODEGRAPH_EMBEDDING_API_KEY',
+  'CODEGRAPH_EMBEDDING_DIMS', 'CODEGRAPH_EMBEDDING_BATCH_SIZE', 'CODEGRAPH_EMBEDDING_CONCURRENCY',
+  'CODEGRAPH_EMBEDDING_TIMEOUT_MS', 'CODEGRAPH_EMBEDDING_PROVIDER', 'CODEGRAPH_MODEL_BASE_URL',
+  'CODEGRAPH_MODEL_CACHE_DIR',
+];
+for (const key of EMBED_ENV_KEYS) delete process.env[key];
+
 const FIXTURE_MODEL = 'fixture-model-384';
 const FIXTURE_DIMS = 384;
 /** Basis index of the semantic-only target (query embeds to the same one-hot → cosine 1.0). */
