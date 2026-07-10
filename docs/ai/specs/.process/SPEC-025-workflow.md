@@ -70,8 +70,8 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 15 questions, 10 consensus items (17 analyst runs, 10 syntheses); 2 security gates maintainer-approved; 1 parent edit reversed by consensus (Windows posture); G2 PASS (0 markers) |
 | Plan | `/speckit-plan` | ✅ Complete | plan.md (408 lines: 12-section doc blueprint + 19-step validation protocol V1–V19, Phases A–F, 3-day timebox map) + research.md (C1–C9 citation inventory). G3 PASS after 1 auto-fix (meta-reference literal reworded). estimate-reviewable-loc: `not_estimated` (0 declared production files — correct for 0-LOC spike; advisory, continue). data-model/contracts/quickstart deliberately omitted (rationale in plan §Project Structure). CLAUDE.md SPECKIT block updated (in-flight status) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 105 items, 11 gaps → 0 (all 1-loop); 4 consensus items (1 security human-approved, 3 auto); G4 PASS |
-| Tasks | `/speckit-tasks` | ⏳ Pending | |
-| Analyze | `/speckit-analyze` | ⏳ Pending | |
+| Tasks | `/speckit-tasks` | ✅ Complete | 30 tasks, 21/21 FRs covered, 9 [P] Claude∥Codex pairs, 3 staged-decision valves; G5 PASS; verify-tasks 0 phantoms; route one-navigable-PR; layer plan skipped; tasks-mode reviewability deferred (fallback chain in autopilot-state.json) |
+| Analyze | `/speckit-analyze` | 🔄 In Progress | |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement = run validation + write the decision doc |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -531,10 +531,12 @@ When checklist identifies `[Gap]` items:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 30 (T001–T030), 1–2h chunks, each acceptance criterion cites FR-xxx + names its evidence |
+| **Phases** | Setup 2 · Foundational 4 · US1 3 · US2 6 · US3 5 · US4 2 · US5 2 · Polish/Close-out 6 (backbone: plan V1–V19 + 12-section doc blueprint) |
+| **Parallel Opportunities** | 9 [P] tasks — Claude∥Codex pairs: T004/T005 (scratch plugins), T007/T008 (audits), T010/T011 (launcher macOS), T016/T017 (dedup lever / pinned hook test), + T002 |
+| **User Stories Covered** | All 5 (US1→T007–T009; US2→T010–T015; US3→T016–T020; US4→T021–T022; US5→T023–T024). All 21 FRs covered, none orphaned. 3 candidate staged-decision tasks (T012 Windows, T013 Linux, T021 v1/v2 pairing) — attempt-first per SC-008 |
+
+**G5:** PASS (30 tasks). **Verify-tasks:** phantom check run post-G5 (fresh tasks.md, 0 pre-checked expected). **Reviewability (tasks mode):** DEFERRED on installed runner — fallback evidence chain recorded in `autopilot-state.json` (setup-mode PASS + not_estimated advisory + within-budget spike); marker-planning input = pass, no `pr_marker_plan` required.
 
 ---
 
@@ -551,10 +553,12 @@ or branch splitting on its own.
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change. |
-| **Signals** | | The decisive detector findings behind the route and releasability reading. |
-| **Warnings** | | Any release-safety warning attached to the change. |
+| **Route** | `one-navigable-PR` | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
+| **Releasable** | `true` | `true`, or `false` for a destructive-migration or concurrency-sensitive change. |
+| **Signals** | `change-shape:modify-heavy` | The decisive detector findings behind the route and releasability reading. |
+| **Warnings** | none | Any release-safety warning attached to the change. |
+
+**Layer Plan:** `skipped` — non-split route; `plan-layers-feature-dir` not invoked (recorded in `autopilot-state.json`). Recorded 2026-07-10 by the autopilot SKILL from the runner classifier's read-only decision.
 
 To produce the decision, run the classifier against the feature directory:
 
