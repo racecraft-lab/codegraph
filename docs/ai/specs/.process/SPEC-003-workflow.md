@@ -58,7 +58,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Plan | `/speckit-plan` | ✅ Complete | plan.md + research.md (D1–D14) + data-model.md (E1–E7) + 3 contracts + quickstart; constitution gate PASS ×2 (initial + post-design); G3 pass (after rewording 2 benign prose mentions of the marker token) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains · 85 items · 23 gaps → 0 · 5 consensus items (all Round 1) · error-handling consensus skipped (zero unresolved) · G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 34 tasks · 7 groups · 5 [P] · full FR/SC coverage · G5 pass (34 tasks, 0 markers) · phantom check clean (0 checked tasks) |
-| Analyze | `/speckit-analyze` | ⏳ Pending | Includes design-concept drift check |
+| Analyze | `/speckit-analyze` | ✅ Complete | 5 findings (2H/1M/2L) → all resolved in 2 loops · G6 pass (0 CRITICAL/HIGH) · 0 unresolved → consensus skipped · residual `data_version` tokens verified as negations only |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -655,7 +655,15 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| C1 | HIGH | 4 spec.md sites (FR-009, Edge Cases staleness, Key Entities cache, Assumptions) still described the staleness probe as "vector count + data_version" — no `data_version` column exists (schema.sql:161-167; grep src/ = 0 hits) | All 4 rewritten to the authoritative FR-008b mechanism (matching-model count + `project_metadata` scalars), each noting the column doesn't exist |
+| C2 | HIGH | plan.md Storage line claimed a `data_version` column, self-contradicting its own Post-Phase-1 re-check | Rewritten to match the re-check (FR-008b mechanism) |
+| G1 | MEDIUM | SC-006 (identical query ⇒ identical ordering) had no dedicated run-twice assertion task | T006 extended: run one hybrid fixture query twice, deep-equal ordered hit lists (FR-013 both levels) |
+| X1 | LOW | No-abandonment note misattributed the verbatim hint-string assertion to FR-014 tests | Reattributed to the FR-015 / US3 degradation tests |
+| N1 | LOW | X1's reword left a bare task-ID (T018) in spec.md — stale-on-renumber upstream→downstream ref | Removed; attribution uses durable FR-015/US3 identifiers only. 0 bare task-IDs remain in spec.md |
+
+**Loops used:** 2 of 2 (re-run confirmed C1/C2/G1/X1 resolved; N1 introduced-then-fixed).
+**Unresolved for consensus:** none → consensus resolution round skipped; the Pre-Implement
+Confidence emit still runs (single consensus-synthesizer fan-out) as G6.5's data source.
 
 ---
 

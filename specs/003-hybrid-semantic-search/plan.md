@@ -18,7 +18,7 @@ Technical approach: a single new module `src/search/hybrid.ts` owns query-vector
 
 **Primary Dependencies**: None added. Pure JS/WASM only (Constitution VII). Reuses `src/embeddings/` providers (endpoint HTTP `/v1/embeddings`; in-process ONNX local, 384 dims) and the existing little-endian f32 codec.
 
-**Storage**: `node:sqlite` (`DatabaseSync`) — existing `node_vectors` table (model-tagged f32 BLOBs + `data_version`). No schema change; read-only consumption for the KNN arm. The staleness probe reads vector count + `data_version` only.
+**Storage**: `node:sqlite` (`DatabaseSync`) — existing `node_vectors` table (model-tagged f32 BLOBs; columns `node_id, model, dims, vector, input_hash` — **no `data_version` column**). No schema change; read-only consumption for the KNN arm. The staleness probe reads the matching-model vector count (`getEmbeddingCoverage`) + the `embedding_model`/`embedding_dims` scalars in `project_metadata` only (FR-008b; consistent with the Post-Phase-1 re-check below).
 
 **Testing**: vitest (`__tests__/*.test.ts`) for the CI gates (FR-014 clauses a/b/c), plus the scored `npm run eval` harness (`__tests__/evaluation/`) gaining the same semantic cases. Two test-only injection seams: seeded `node_vectors` (existing f32 codec) + a single named test-only query-provider seam — neither reachable in production resolution.
 
