@@ -55,7 +55,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 16 FRs · 4 user stories · 12 acceptance scenarios · 0 `[NEEDS CLARIFICATION]` markers |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions · 15 questions · 7 consensus items, all resolved Round 1 (0 escapes, 0 human-review) · spec gains FR-002a/FR-004a/FR-017 + SC-007, hint-wording table, p95 machinery, fixture non-tautology rules |
-| Plan | `/speckit-plan` | ⏳ Pending | |
+| Plan | `/speckit-plan` | ✅ Complete | plan.md + research.md (D1–D14) + data-model.md (E1–E7) + 3 contracts + quickstart; constitution gate PASS ×2 (initial + post-design); G3 pass (after rewording 2 benign prose mentions of the marker token) |
 | Checklist | `/speckit-checklist` | ⏳ Pending | performance, api-contracts, error-handling |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Includes design-concept drift check |
@@ -425,11 +425,20 @@ keyword behavior).
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, execution flow |
-| `research.md` | ⏳ | Decision rationales (if needed) |
-| `data-model.md` | ⏳ | Result-shape changes (SearchResult.matchType) |
-| `contracts/` | ⏳ | MCP tool schema delta |
-| `quickstart.md` | ⏳ | Developer onboarding |
+| `plan.md` | ✅ | Summary, Technical Context, Constitution Check (PASS ×2), Project Structure, empty Complexity Tracking |
+| `research.md` | ✅ | D1–D14 resolved decisions; two design discoveries: no `data_version` column → staleness = coverage-count + `project_metadata`, zero schema writes (strengthens VII); pool workers own separate DB isolates → matrix cache owner = single main-daemon process (strengthens III) |
+| `data-model.md` | ✅ | E1–E7 runtime shapes; optional result fields; no persistent schema change |
+| `contracts/` | ✅ | search-api.md (library signature) · mcp-cli-surface.md (schema + CLI flags/rendering) · degradation-hints.md (4 literal strings + FR-017 line) |
+| `quickstart.md` | ✅ | CI gates, eval, smoke checks, dormancy, A/B, full verify |
+
+**Post-plan boundary record (2026-07-09):** G3 validate-gate → pass (0 markers; first run
+counted 1 benign bracketed token in plan.md prose — reworded, auto-fix attempt 1 of 2).
+`estimate-reviewable-loc` → **not_estimated** (`projected: null` — plan.md declares no
+machine-parseable production-file table); recorded as *not estimated*, NOT treated as a
+within-budget pass (advisory, run continues per protocol). Spec-MOC index check: current.
+after_plan hooks: `agent-context.update` satisfied in-phase (plan skill updated the
+CLAUDE.md `<!-- SPECKIT START/END -->` block — rides this phase commit);
+`speckit.git.commit` skipped as duplicate of the autopilot's own phase commit.
 
 ---
 

@@ -337,7 +337,10 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-No spec is currently in flight.
+SPEC-003 (Hybrid Semantic Search) is in flight on branch
+`003-hybrid-semantic-search`. Active plan:
+`specs/003-hybrid-semantic-search/plan.md` (research, data-model, contracts, and
+quickstart alongside it).
 
 SPEC-001, SPEC-002, SPEC-004, SPEC-008, and SPEC-023 are complete and archived;
 provenance and recovery commands live in `.specify/memory/archive-reports/`.
