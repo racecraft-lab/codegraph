@@ -59,7 +59,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains · 85 items · 23 gaps → 0 · 5 consensus items (all Round 1) · error-handling consensus skipped (zero unresolved) · G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 34 tasks · 7 groups · 5 [P] · full FR/SC coverage · G5 pass (34 tasks, 0 markers) · phantom check clean (0 checked tasks) |
 | Analyze | `/speckit-analyze` | ✅ Complete | 5 findings (2H/1M/2L) → all resolved in 2 loops · G6 pass (0 CRITICAL/HIGH) · 0 unresolved → consensus skipped · residual `data_version` tokens verified as negations only |
-| Implement | `/speckit-implement` | ⏳ Pending | |
+| Implement | `/speckit-implement` | ✅ Complete | 34/34 tasks · full suite 2799 passed / 0 failed / 7 skipped (165 files) · p95 fusion 49.9ms vs 150ms gate · scoped A/B recorded (probe: paraphrase miss→rank 1; dormant control zero-delta) · dogfood UAT 4/4 semantic recall + dormancy byte-parity · **G7 PASS 8/8 checks** (2026-07-10; result: scratchpad g7-gate-result.md, evidence in Implementation Progress + T033 findings ledger) |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -773,13 +773,13 @@ zero assertion rewrites.
 
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in tasks.md
-- [ ] Typecheck passes: `npm run typecheck`
-- [ ] Tests pass: `npm test` (incl. new vitest gates: hybrid ≥ keyword, keyword byte-stable, p95 fixture)
-- [ ] Build succeeds: `npm run build`
-- [ ] `npm run eval` semantic cases recorded in the scored report
+- [x] All tasks marked complete in tasks.md (34/34; G7 check 1)
+- [x] Typecheck passes: `npm run typecheck` (G7 check 2)
+- [x] Tests pass: `npm test` — 2799 passed / 0 failed / 7 skipped, 165 files (G7 check 4; incl. hybrid ≥ keyword, keyword byte-stable, p95 fixture gates)
+- [x] Build succeeds: `npm run build` (G7 check 3)
+- [ ] `npm run eval` semantic cases recorded in the scored report (runs at post-impl Integration Suite step)
 - [x] Scoped A/B evidence recorded (≥2 runs/arm, Sonnet floor, embedded repo + no-vectors control; wrapper `ab-spec003.sh` over canonical script — canonical would zero vectors in both arms) — Q10 · `specs/003-hybrid-semantic-search/.process/ab-evidence.md`
-- [ ] Self-repo dogfood UAT recorded in the UAT runbook (paraphrase queries via codegraph_search on this repo against the configured endpoint; dormancy spot-check)
+- [x] Self-repo dogfood UAT evidence recorded (`specs/003-hybrid-semantic-search/.process/dogfood-uat.md`: 4/4 paraphrase recall via codegraph_search on the live index; dormancy spot-check clean) — folds into the UAT runbook at that post-impl step
 - [ ] retrieval-guardian review run (diff touches src/mcp/ + search path — CLAUDE.md requires it before PR)
 - [ ] CHANGELOG entry under `## [Unreleased]` (user-facing)
 - [ ] PR created against origin (racecraft-lab/codegraph) with review packet body; no session URLs
