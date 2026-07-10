@@ -69,7 +69,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Specify | `/speckit-specify` | ✅ Complete | 5 US / 20 FR / 14 AC / 8 SC; 0 markers; G1 PASS (runner + grep). spec.md + checklists/requirements.md; feature.json created |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 15 questions, 10 consensus items (17 analyst runs, 10 syntheses); 2 security gates maintainer-approved; 1 parent edit reversed by consensus (Windows posture); G2 PASS (0 markers) |
 | Plan | `/speckit-plan` | ✅ Complete | plan.md (408 lines: 12-section doc blueprint + 19-step validation protocol V1–V19, Phases A–F, 3-day timebox map) + research.md (C1–C9 citation inventory). G3 PASS after 1 auto-fix (meta-reference literal reworded). estimate-reviewable-loc: `not_estimated` (0 declared production files — correct for 0-LOC spike; advisory, continue). data-model/contracts/quickstart deliberately omitted (rationale in plan §Project Structure). CLAUDE.md SPECKIT block updated (in-flight status) |
-| Checklist | `/speckit-checklist` | ⏳ Pending | security, integration, error-handling |
+| Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 105 items, 11 gaps → 0 (all 1-loop); 4 consensus items (1 security human-approved, 3 auto); G4 PASS |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement = run validation + write the decision doc |
@@ -332,6 +332,10 @@ doctrine.
 | 8 | Clarify | S3: npx stage under Principle VII (flag mechanics, pinning, size) | [security, domain] | 1 | [HUMAN REVIEW] → approved | 3/3 unanimous; `--offline` correction + SHOULD-pin-major + ~50MB disclosure; Principle VII satisfied via spec-level reconciliation (SPEC-002 precedent); **maintainer APPROVED corrected FR-005 (2026-07-09)** — applied | all 3 (security tag → mandatory) |
 | 9 | Clarify | S3: absent-binary guidance delivery mechanism | [domain, codebase] | 1 | both-agree | Stub-launcher confirmed (failed spawns agent-invisible per Claude #72431; NotIndexedError/proxy.ts patterns established); runtime-self-sufficiency condition appended to FR-006 | domain-researcher, codebase-analyst |
 | 10 | Clarify | S3: detection/dedupe directions per host | [codebase, domain] | 1 | both-agree | FR-011 rewritten per-host (Claude host-arbitrated dedup with lever (i)/(ii) decision; Codex user-side toggle; no plugin self-suppression — handshake+empty-tools fallback); FR-012 restore made invocation-driven | codebase-analyst, domain-researcher |
+| 11 | Gap | Checklist security: FR-019 evidence secret hygiene completeness | [security] | 1 | [HUMAN REVIEW] → approved | 3/3 direction; consolidated scrub rule (4 artifact classes; #18692 + status + plaintext-warning exposure points; redacted-host:port also scrubbed; placeholder convention); **maintainer APPROVED (2026-07-09)** — applied + Key Entities one-word edit | all 3 (security tag → mandatory) |
+| 12 | Gap | Checklist security: FR-021 standalone vs redundant | [spec, domain] | 1 | both-agree | KEEP standalone (no overlap with FR-005; Principle VII + Q10 pattern); appended roster-currency trigger + launcher pre-exec parity clause | spec-context-analyst, domain-researcher |
+| 13 | Gap | Checklist integration: matrix owner semantics under FR-011 lever | [spec] | 1 | high-confidence | Executor's active-registration reading RATIFIED (plan §6 + roadmap "matrix is the contract" + CHK030 no-false-flag all corroborate; policy-default reading would recreate the FR-009/FR-011 contradiction). No edit — synthesizer step collapsed to no-op ratification, single high-confidence analyst | spec-context-analyst |
+| 14 | Gap | Checklist error-handling: evaded-dedup diagnostic ownership (FR-011) | [codebase, domain] | 1 | both-agree | Installer-next-invocation reporter FINALIZED (install action-log + upgrade self-heal precedents; status has no config-diagnostic role); Claude near-duplicates structurally cannot collide (plugin tool namespacing) — /plugin notice is exact-match-only backstop; Codex has no duplicate surface at all; 4-step hands-on scenario mandated. Stale types.ts `--check` doc comment flagged not-citable | codebase-analyst, domain-researcher |
 
 ---
 
@@ -467,10 +471,10 @@ Focus on SPEC-025 requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| security | | | |
-| integration | | | |
-| error-handling | | | |
-| **Total** | | | |
+| security | 38 (32 first-pass + 6 verify) | 3 found → 0 remaining (1 loop) | FR-019 extended (evidence secret-scrubbing — consolidated per consensus, maintainer-approved: 4 artifact classes, 4 named exposure points incl. #18692, redacted-host:port bar, placeholder convention); FR-021 added (channel network-parity affirmation + roster-currency trigger + launcher pre-exec parity clause) |
+| integration | 33 (28 domain + 5 verify) | 4 found → 0 remaining (1 loop); G4 pass | FR-010 three-outcome cells (plugin / installer-new-flagged / explicitly-absent); FR-009 reconciled with FR-011 lever (matrix owner = active-registration channel — consensus-ratified, CRL 13); FR-012 orphan-cleanliness + lever-(ii) window; FR-013 no-coverage fallback (Codex hook cell → new capability or explicitly-absent, never force-assigned); plan §6/§7/§8 synced |
+| error-handling | 34 (28 domain + 6 verify) | 4 found → 0 remaining (1 loop) | FR-005 catch generalized (ANY npx-stage failure → guidance); FR-006 terminal-fallback + user-action install-command framing (no agent auto-install, FR-021-consistent); FR-013 runtime observables per degraded cell; FR-011 evaded-dedup diagnostic ownership finalized per consensus (installer-next-invocation reporter; Claude tool-namespacing observable; /plugin exact-match backstop; Codex no surface; 4-step validation scenario) — CRL 14; plan §5/§7/§8 synced |
+| **Total** | 105 checklist items across 3 domains | 11 found → 0 remaining (all 1-loop) | 2 security items maintainer-approved; G4 PASS (0 [Gap] markers) |
 
 ### Addressing Gaps
 

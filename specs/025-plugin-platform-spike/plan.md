@@ -104,7 +104,7 @@ after Phase 1 (below).*
 | IV. Goal-Driven Execution | PASS | Success is defined as SC-001…SC-008 (every scope bullet decided + cited + evidenced; OQ-8 resolved; matrix fully owned; one exemplar). Every load-bearing claim carries evidence (pinned host version, repro command, observed behavior) or an explicit "could not validate" note — evidence over vibes. |
 | V. Deterministic, LLM-Free Extraction | PASS (N/A) | The spike adds no extraction and no graph structure. |
 | VI. Retrieval Performance Is a Regression Surface | PASS | The launcher's absent-binary path is specified as success-shaped guidance, **never `isError`** (FR-006), and tool output never tells the agent to Read. Candidate artifacts each carry an A/B bar on the Sonnet floor with a control repo and a no-regression-vs-MCP-only condition (FR-015). No retrieval-affecting code ships in this spike; the bars gate SPEC-026. |
-| VII. Local-First, Private, Zero Native Dependencies | PASS | The `npx --offline` stage performs **zero** network requests (warm cache served locally; cache-miss fails catchably → guidance), exists **only** inside a user-initiated plugin-install context, and is recorded as the Principle VII reconciliation (FR-005). No telemetry, no schema writes, no new runtime dependency. |
+| VII. Local-First, Private, Zero Native Dependencies | PASS | The `npx --offline` stage performs **zero** network requests (warm cache served locally; cache-miss fails catchably → guidance), exists **only** inside a user-initiated plugin-install context, and is recorded as the Principle VII reconciliation (FR-005). The document must additionally affirm plugin-channel network/telemetry **parity** — no component introduces phone-home, telemetry, or auto-install the npm channel lacks; the plugin launches the same `codegraph` binary, so its telemetry/opt-out posture is byte-identical (FR-021) — and evidence blocks must be scrubbed of the dogfood embedding endpoint/key `.envrc.local` values (FR-019). No telemetry, no schema writes, no new runtime dependency. |
 
 **Fork & Ecosystem Constraints**: PASS. Naming Claude Code and Codex as plugin **hosts**
 is integration-target documentation consistent with the existing multi-agent installer
@@ -195,8 +195,10 @@ section names the user story / FRs it closes, and the validation bar that makes 
    quoted manifest snippet, observed behavior, supported claim, or explicit "could not
    validate" note }`. Launcher-chain evidence = one block **per stage per host**, each
    pinning the condition-forcing step (binary present / absent+warm cache /
-   absent+offline) and recording PATH scoping (login-shell vs GUI-inherited). Closes:
-   US1 Independent Test, SC-002. *Bar:* schema fields fixed before any evidence is recorded.
+   absent+offline) and recording PATH scoping (login-shell vs GUI-inherited). Every block
+   is **secret-scrubbed** before it lands — no `.envrc.local` embedding endpoint/key value
+   the dogfood launcher injects (FR-019). Closes: US1 Independent Test, SC-002. *Bar:* schema
+   fields fixed before any evidence is recorded; no credential/endpoint value in committed text.
 3. **Claude Code platform audit** (US1 / FR-001, FR-003) — manifest + component
    pointers, plugin-scoped `mcpServers`/`hooks`/`skills`/`agents`/`commands`,
    `${CLAUDE_PLUGIN_ROOT}` resolution, marketplace + trust model, plugin-agent tool
@@ -210,30 +212,49 @@ section names the user story / FRs it closes, and the validation bar that makes 
    project- + hook-hash trust gating. Exact artifact filenames are audit outputs,
    corrected to the hands-on evidence where docs diverge. *Bar:* every load-bearing
    claim → public citation + hands-on evidence, or an explicit "could not validate" note.
-5. **MCP launcher contract — OQ-8** (US2 / FR-005, FR-006, FR-007, FR-008) — the ordered
+5. **MCP launcher contract — OQ-8** (US2 / FR-005, FR-006, FR-007, FR-008, FR-021) — the ordered
    fallback (PATH-resolved binary → `npx --offline` thin-installer → success-shaped
    guidance), the stub-launcher delivery mechanism (always starts an MCP-speaking
    process; serves a stub MCP server returning success-shaped guidance when the binary
    is unresolved — never a failed-to-spawn surface), the runtime-self-sufficiency
-   condition, the `--offline`/major-pin/~50MB disclosure, and the three-stage-per-host
-   evidence. *Bar:* ordered fallback fully specified; absent-binary path success-shaped
-   (never `isError`); OQ-8 marked resolved in PRD terms (SC-003) with recorded evidence.
+   condition, the `--offline`/major-pin/~50MB disclosure, the plugin-channel
+   network/telemetry **parity** affirmation (no phone-home/auto-install the npm channel
+   lacks; same telemetry opt-outs and Principle VII rule; the `npx --offline` stage reuses
+   the npm channel's own thin-installer, not a new vector — FR-021), and the
+   three-stage-per-host evidence. *Bar:* ordered fallback fully specified; absent-binary
+   path success-shaped (never `isError`); ANY npx-stage failure (not only the offline
+   cache-miss — corrupt/partial cache, npx/runtime unavailable, or a spawned-but-nonfunctional
+   package) falls through to the stub guidance; the guidance's install command framed as a
+   USER action (never an agent auto-install, FR-021); network/telemetry parity affirmed; OQ-8
+   marked resolved in PRD terms (SC-003) with recorded evidence.
 6. **Component × host ownership matrix** (US3/US4 / FR-009, FR-010, FR-013) — the 8-cell
    table: component (MCP server, prompt front-load hook, skills, agents) × host (Claude
-   Code, Codex); each cell states can-carry? + the single owning channel; installer-gap
-   cells flagged as new SPEC-026 capability. *Bar:* no blank/undecided cell (SC-004).
+   Code, Codex); each cell states can-carry? + one of three decided owners (plugin /
+   installer / explicitly-absent), the MCP-Claude owner reconciled with the FR-011 lever;
+   installer-gap cells flagged as new SPEC-026 capability. *Bar:* every cell carries one of
+   the three decided outcomes, none blank/undecided (SC-004).
 7. **Coexistence + uninstall interplay** (US3 / FR-011, FR-012) — detection/dedupe in
    both directions (plugin-detects-installer, installer-detects-plugin), the
    host-arbitrated Claude dedup lever decision (i vs ii), the Codex levers, the
    non-viability of plugin-side self-suppression (JSON-RPC -32000) with the empty
-   `tools/list` fallback, and invocation-driven uninstall restore. *Bar:* both
-   directions stated; surviving channel stays functional; no duplicate registration / no
-   double hook injection.
+   `tools/list` fallback, and invocation-driven uninstall restore with no orphaned entries
+   (each channel's uninstall removes only its own; plugin-scoped removal is atomic; the
+   lever-(ii) zero-server window is stated); and the diagnostic ownership for a both-present
+   state that EVADES dedup (near-duplicate Claude entries the host does not collapse; Codex
+   with no native cross-channel dedup) — who detects/reports it and the residual-window
+   observable. *Bar:* both directions stated; surviving channel stays functional; no duplicate
+   registration / no double hook injection / no orphaned MCP entry or hook; and for the
+   evades-dedup both-present case, who-reports-what and the user/agent observable are specified
+   (provisional, flagged for consensus).
 8. **Degraded-Codex subset** (US4 / FR-013) — the matrix cells the Codex plugin format
-   cannot carry, each reassigned to the npm installer, asymmetry vs Claude Code
-   documented; gated on hands-on confirmation with the pinned `multi_agent_v1`/`v2`
-   runtime + model pairing. *Bar:* subset named; each unsupported cell assigned to the
-   installer per the matrix.
+   cannot carry, each reassigned to the npm installer (a degraded cell with no installer
+   coverage today — e.g. the Codex prompt hook — resolves to new SPEC-026 capability or
+   explicitly-absent, not force-assigned), asymmetry vs Claude Code documented; gated on
+   hands-on confirmation with the pinned `multi_agent_v1`/`v2` runtime + model pairing; and
+   each degraded/absent cell's runtime USER-OBSERVABLE specified (installer-covered =
+   functionally equivalent; explicitly-absent = a decided silent-by-design or surfaced-note
+   observable). *Bar:* subset named; each unsupported cell assigned to the installer per the
+   matrix; each degraded/absent cell observable-complete, not merely ownership-complete.
 9. **Shipped-artifact plan** (US5 / FR-014, FR-015, FR-016) — the candidate skill/agent
    enumeration with the three-leg inclusion criterion, per-artifact tier decisions,
    trigger surfaces, the FR-015 A/B bar definition, and the reference-not-restate
