@@ -1,4 +1,4 @@
-# SPEC-003: Hybrid semantic search — RRF fusion of keyword + vector search with graceful degradation
+# feat(SPEC-003): hybrid semantic search — RRF fusion of keyword + vector search with graceful degradation
 
 ## ## What & why
 
