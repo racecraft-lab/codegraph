@@ -743,9 +743,31 @@ reads it and fuses; cache miss → keyword results in dormant shape (warming). K
 remains zero-touch (FR-003/003a). Boundary documented in a header comment in src/index.ts.
 Test impact: additive fixture pre-warm only (US1 scenario 1's "warmed provider" Given);
 zero assertion rewrites.
+
+**T033 findings ledger (2026-07-10, grounded by re-running the suites):**
+1. **Open regression (route to remediation before G7):** `__tests__/security.test.ts › should
+   truncate oversized tool output` fails — the pre-existing test's `fakeCg` mock implements only
+   `searchNodes`, while SPEC-003's `handleSearch` (src/mcp/tools.ts) now also calls
+   `acquireQueryVectorForSearch` + `searchNodesDetailed` (throw → isError:true). Fix = extend the
+   mock (or pass `mode:'keyword'`); production code is correct. Full suite at T033: 2798 passed /
+   1 failed / 7 skipped.
+2. **p95 correction:** grounded p95 fusion = **49.9 ms** (median 22.4 ms) — the earlier "19.9 ms"
+   recorded at US1-close was the distribution *min*, not p95. Gate ≤150 ms still passes with ~3×
+   headroom; FR-014d 2× revisit still NOT triggered.
+3. **Test-count correction:** per-file counts are 81 / **11** / **22** / 5 (hybrid-search /
+   mcp-surface / cli-surface / status-json), total 119 — not the 12/30 quoted in earlier notes.
+4. **Reviewability budget: OVER.** Raw added production LOC **1830** across **6** src files
+   (code-only, non-blank/non-comment: **743**) vs the setup-gate estimate of ~195 LOC / ~4 files
+   (~3.8× code-only). Cause: estimator modeled a thin slice; the fusion module (RRF + matrix
+   cache + staleness probe + 4 degradation conditions + embed-budget discipline) is inherently
+   larger. Recorded here as committed evidence for the post-impl Reviewability Diff Gate —
+   needs an explicit warn/exception decision there, not silent pass.
+5. Non-goals verified held: explore path + server-instructions.ts untouched; no ANN/re-ranker;
+   no new env vars (all 3 `CODEGRAPH_EMBEDDING_*` pre-exist from SPEC-002); schema.sql untouched
+   (no migration).
 | 2 - Library + surfaces (US1/US2) | T014–T017 (MCP `codegraph_search` mode param + provenance tags + timing footer; CLI `--mode` + footers; status availability line) | 4/4 ✅ | `hybrid-mcp-surface` 12/12, `hybrid-cli-surface` 30/30, status-json 5/5. Env-hermeticity fix applied twice (subprocess CHILD_ENV scrub commit 929f13f; in-process vitest-worker scrub commit 15bdf71) — direnv-loaded live HAL endpoint was activating semantic paths inside dormant-path tests. `codegraph_explore` + server-instructions.ts untouched (non-goal held). |
 | 3 - Degradation paths (US3) | T018–T024 (4 literal hint strings; no-provider/no-vectors/guard/warming precedence; memory guard; unknown-mode→auto) | 7/7 ✅ | Deliberately resequenced BEFORE US2 surface renderers needed them; all 4 `DEGRADATION_HINT_STRINGS` byte-pinned in tests; precedence order no-provider→no-vectors→guard/embed-failure→warming verified; suite re-run green after load-spike false failures (contention at load 72, quiet re-run 110/110). |
-| 4 - Dormancy + gates + polish (US4) | T025–T034 | 9/10 (T033–T034 remaining; T029+T030 ✅ 2026-07-10) — **T030 dogfood UAT**: live index 4,630/4,630 vectors (nomic-embed-code 3584d); 4/4 paraphrase queries semantic rank 1 (3) / top-4 (1), incl. pre-SPEC-003 code (`reapDeadClients`); keyword contrast: Q1 ground truth absent from keyword top-6; MCP `codegraph_search` surface matches CLI (tags + timing footer render); dormancy: env-scrubbed temp project → result rows byte-identical auto vs keyword, hint-only delta per T022 contract. Evidence: `specs/003-hybrid-semantic-search/.process/dogfood-uat.md` | Dormancy byte-parity pinned (T025–T027). T028 eval cases + T031 memory-envelope docs + T032 CHANGELOG done. **T029 scoped A/B complete** — evidence: `specs/003-hybrid-semantic-search/.process/ab-evidence.md`: agent A/B null (Sonnet never picked codegraph in either arm — known salience wall, both arms 0 codegraph calls, overlapping ranges); **deterministic probe decisive** (paraphrase query: BASE keyword ground-truth MISS vs NEW semantic/hybrid/auto rank #1); dormant control zero-delta (auto degrades to exact keyword output, no tags, no crash). Model policy honored (sonnet+high both arms). |
+| 4 - Dormancy + gates + polish (US4) | T025–T034 | 9.5/10 (T034 in flight; T029+T030+T033 ✅ 2026-07-10) — **T030 dogfood UAT**: live index 4,630/4,630 vectors (nomic-embed-code 3584d); 4/4 paraphrase queries semantic rank 1 (3) / top-4 (1), incl. pre-SPEC-003 code (`reapDeadClients`); keyword contrast: Q1 ground truth absent from keyword top-6; MCP `codegraph_search` surface matches CLI (tags + timing footer render); dormancy: env-scrubbed temp project → result rows byte-identical auto vs keyword, hint-only delta per T022 contract. Evidence: `specs/003-hybrid-semantic-search/.process/dogfood-uat.md` | Dormancy byte-parity pinned (T025–T027). T028 eval cases + T031 memory-envelope docs + T032 CHANGELOG done. **T029 scoped A/B complete** — evidence: `specs/003-hybrid-semantic-search/.process/ab-evidence.md`: agent A/B null (Sonnet never picked codegraph in either arm — known salience wall, both arms 0 codegraph calls, overlapping ranges); **deterministic probe decisive** (paraphrase query: BASE keyword ground-truth MISS vs NEW semantic/hybrid/auto rank #1); dormant control zero-delta (auto degrades to exact keyword output, no tags, no crash). Model policy honored (sonnet+high both arms). |
 
 ---
 
