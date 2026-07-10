@@ -72,7 +72,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 105 items, 11 gaps → 0 (all 1-loop); 4 consensus items (1 security human-approved, 3 auto); G4 PASS |
 | Tasks | `/speckit-tasks` | ✅ Complete | 30 tasks, 21/21 FRs covered, 9 [P] Claude∥Codex pairs, 3 staged-decision valves; G5 PASS; verify-tasks 0 phantoms; route one-navigable-PR; layer plan skipped; tasks-mode reviewability deferred (fallback chain in autopilot-state.json) |
 | Analyze | `/speckit-analyze` | ✅ Complete | 13 findings (0C/2H/4M/7L) all resolved in ≤2 loops; FR-022 added (skill-authoring grounding); G6 PASS; 0 unresolved → consensus skipped; 📊 Confidence 0.98 |
-| Implement | `/speckit-implement` | ⏳ Pending | Implement = run validation + write the decision doc |
+| Implement | `/speckit-implement` | ✅ Complete | 30/30 tasks; decision doc `docs/design/plugin-channel-decision.md` (12 sections, ~2,400 lines, ~30 evidence blocks); OQ-8 RESOLVED (+2 refinements); 8/8 matrix cells decided; 4 staged decisions (attempt-first, evidenced); secret sweep CLEAN; commit surface docs-only |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -677,11 +677,11 @@ Before starting any task:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| 1 - Citation audit | | | |
-| 2 - Hands-on validation (Claude ∥ Codex) | | | |
-| 3 - Decision synthesis | | | |
-| 4 - Artifact plan + exemplar | | | |
-| 5 - Doc assembly | | | |
+| 1 - Citation audit | T001–T002 | ✅ 2/2 | 30/30 public URLs verified live 2026-07-10; openai/skills→openai/plugins deprecation caught; public PDF replaces vault path; §2a ledger added |
+| 2 - Hands-on validation (Claude ∥ Codex) | T003–T013, T016–T018, T021 | ✅ 15/15 | Claude 2.1.206 + Codex 0.144.0 pinned; both scratch plugins loaded; launcher 3-stage validated macOS both hosts + Linux/Docker; Windows staged-deferred (VM unreachable, .parallels absent); Codex hook = plugin-owned ≥0.144.0; v2 config-fidelity limitation reproduced live; NEARDUP 4-step validated both hosts |
+| 3 - Decision synthesis | T009, T014–T015, T019–T020, T022 | ✅ 6/6 | OQ-8 RESOLVED as refined (GUI-PATH; two-hop offline); lever (i) via installer-side FR-012 detection; 8-cell matrix all decided, zero explicitly-absent; degraded-Codex = agents cell only |
+| 4 - Artifact plan + exemplar | T023–T024 | ✅ 2/2 | FR-022 grounding block (S1–S10); K1 explore-flow included (delta recorded honestly as thin), K2–K5 excluded with reasons; v1 skills-only; ONE exemplar `codegraph-explore-flow`, reference-not-restate PASS |
+| 5 - Doc assembly | T025–T030 | ✅ 6/6 | All 5 scope bullets closed; SD-1…SD-4 staged decisions; SC-001–008 all PASS; FR/SC traceability complete; secret sweep clean; §5.H parity affirmation (no net-new surface); roadmap row → Under Review |
 
 ---
 

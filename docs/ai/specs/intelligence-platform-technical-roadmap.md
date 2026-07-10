@@ -125,7 +125,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | ✅ Complete | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Merged (#21); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-023.md` |
 | SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Dormant; SPEC-008 parity gate closed with 0 unowned rows |
-| SPEC-025 | Plugin Platform Mechanics Spike | 🔄 In Progress | [SPEC-025-workflow.md](.process/SPEC-025-workflow.md) | Specify (scaffolded 2026-07-09; worktree `025-plugin-platform-spike`) |
+| SPEC-025 | Plugin Platform Mechanics Spike | 🔄 Under Review | [SPEC-025-workflow.md](.process/SPEC-025-workflow.md) | Implement complete 2026-07-10; decision doc landed at `docs/design/plugin-channel-decision.md`; PR pending |
 | SPEC-026 | Plugin-Channel Distribution | ⏳ Pending | [SPEC-026-workflow.md](SPEC-026-workflow.md) | Blocked by SPEC-025 |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked

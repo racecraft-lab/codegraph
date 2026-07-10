@@ -69,6 +69,54 @@ evidence. Every load-bearing claim carries a public citation **and** a hands-on 
 block (pinned host version + exact repro command + observed behavior), or an explicit
 "could not validate" note stating the reason.
 
+### 2a. Verified public-citation URL ledger (T002 — fetched & verified 2026-07-10)
+
+Every source below was fetched on 2026-07-10 and resolves to a **public** page (no login,
+no private/vault path). `✓ (308 → …)` = the canonical URL permanent-redirects to a target
+that was itself fetched and loads. This ledger records exact URLs; per-evidence host/version
+pinning still happens in the decision-doc evidence blocks at validation time.
+
+| Ref | Public URL | Resolves | Resolved target / note |
+|---|---|---|---|
+| C1 | `https://code.claude.com/docs/en/plugins` | ✓ | "Create plugins". **Claude Code docs moved host** → now `code.claude.com/docs/en/` (off `docs.anthropic.com` / `docs.claude.com/en/docs/claude-code/`); cite the new host. Confirms `.claude-plugin/plugin.json`, plugin-root `skills/`/`agents/`/`hooks/`/`.mcp.json`/`.lsp.json`, marketplaces, `${CLAUDE_PLUGIN_ROOT}`, namespaced skills `/<plugin>:<skill>`. |
+| C1 (namespacing) | `https://code.claude.com/docs/en/plugins-reference` | ✓ | "Plugins reference". **Grounds the consensus-added tool-namespacing claim**: scoped MCP tool name `mcp__plugin_<plugin>_<server>__<tool>` and hook `mcp_tool` server field `plugin:<plugin>:<server>`. |
+| C1 (skills doc) | `https://code.claude.com/docs/en/skills` | ✓ | "Extend Claude with skills"; follows the agentskills.io standard + Claude-Code extensions (invocation control, subagent execution, dynamic context injection). |
+| C1 (mcp doc) | `https://code.claude.com/docs/en/mcp` | ✓ | "Connect Claude Code to tools via MCP". |
+| C2 | `https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md` | ✓ (page 200) | Blob view fails to render under automated fetch (JS error); raw file (`raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md`, ~419 KB) is too large for a single-pass scan. Dedup entry confirmed by search: **v2.1.71** "Plugin-provided MCP server deduplication" — a plugin server duplicating a manually-configured server (same command/URL) is skipped; the manual entry always wins; among plugin servers the first-loaded wins; suppressed duplicates logged at debug. |
+| C2 (corrob.) | `https://github.com/anthropics/claude-code/issues/32549` | ✓ (closed/not-planned) | The v2.1.71 dedup **regression** (same command/args, differing `env` falsely deduped) — corroborates the dedup mechanism for V6/T016. |
+| C3 | `https://developers.openai.com/codex/plugins` | ✓ (308 → `learn.chatgpt.com/docs/plugins`) | Codex plugins doc; links to Build plugins. |
+| C3 (build) | `https://developers.openai.com/codex/plugins/build` | ✓ (308 → `learn.chatgpt.com/docs/build-plugins`) | `.codex-plugin/plugin.json` manifest, `skills/`, repo/personal `marketplace.json`. |
+| C3 (hooks) | `https://developers.openai.com/codex/hooks` | ✓ (308 → `learn.chatgpt.com/docs/hooks`) | Hook events incl. `UserPromptSubmit` + `hookSpecificOutput.additionalContext`; plugin `hooks/hooks.json` (overridable via `.codex-plugin/plugin.json` `hooks`) — also grounds C4 & T017. |
+| C3 (subagents) | `https://developers.openai.com/codex/subagents` | ✓ (308 → `learn.chatgpt.com/docs/agent-configuration/subagents`) | `.codex/agents/*.toml`, spawn-agent, multi-agent runtime. |
+| C4 | `https://github.com/openai/codex/issues/16430` | ✓ (open) | "Plugin docs/examples imply plugin-local hooks, but runtime only executes global hooks.json". |
+| C4 | `https://github.com/openai/codex/pull/19705` | ✓ (merged PR) | "Discover hooks bundled with plugins" (`plugin_hooks` flag; discovers `hooks/hooks.json`). |
+| C5 | `https://github.com/openai/codex/issues/15250` | ✓ (open) | "Custom subagents in .codex/agents are not accessible from tool-backed Codex sessions as docs imply". |
+| C5 | `https://github.com/openai/codex/issues/20077` | ✓ (open) | "MultiAgentV2 spawn_agent defaults to full-history fork, rejecting agent_type/model overrides" — pins the `multi_agent_v1` vs `v2` runtime dependence (T021). |
+| C6 | `https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview` | ✓ | Agent Skills overview: progressive disclosure; `name` ≤64 kebab-case, no XML, reserved "anthropic"/"claude"; `description` ≤1024. |
+| C6 | `https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices` | ✓ | Authoring best-practices. **Grounds the FR-002 correction**: the skill→MCP dependency mechanism is qualified **`ServerName:tool_name` body references** (§"MCP tool references"), NOT a `metadata.mcp-server` frontmatter field. |
+| C6 | `https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills` | ✓ | Engineering blog (pub. 2025-10-16). |
+| C6 | `https://resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf` | ✓ | **Public** copy of "The Complete Guide to Building Skills for Claude" (no login; ~548 KB PDF). **FR-004: cite this URL — never the maintainer's local/vault PDF path.** |
+| C6 | `https://github.com/anthropics/skills` | ✓ | Anthropic public skills repo (`./spec/`, `./template/`). |
+| C6 | `https://agentskills.io` | ✓ | Agent Skills open standard (originally developed by Anthropic; org repo `github.com/agentskills/agentskills`). |
+| C6 | `https://agentskills.io/specification` | ✓ | Format spec: frontmatter `name`/`description`/`license`/`compatibility`/`metadata`/`allowed-tools` (`allowed-tools` Experimental; `metadata` a generic string map) — confirms **no documented `mcp-server` frontmatter field**, seconding the C6/FR-002 correction. |
+| C6 | `https://developers.openai.com/codex/skills` | ✓ (308 → `learn.chatgpt.com/docs/build-skills`) | Codex "Build skills": SKILL.md, `.agents/skills` scan order, `$skill-name` vs implicit invocation, `agents/openai.yaml` sidecar. |
+| C6 | `https://github.com/openai/skills` | ✓ but **DEPRECATED** | Resolves but deprecated ("use the OpenAI Plugins repository"). **Fix → cite** `https://github.com/openai/plugins` (✓ live; curated Codex plugin/skill examples; `.codex-plugin/plugin.json`, `plugins/<name>/`, `.agents/plugins/marketplace.json`). |
+| C7 | `https://docs.npmjs.com/cli/v10/using-npm/config` | ✓ | `offline` ("no network requests; missing data NOT fetched") vs `prefer-offline` ("bypasses staleness checks but still requests missing data"). |
+| C8 | `https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-03-Dependency-Chain-Abuse` | ✓ | OWASP CICD-SEC-3: Dependency Chain Abuse. (The "Shai-Hulud"-family npm-compromise reporting in C8 stays a public-press source class, not a single pinned URL.) |
+| C9 | `https://nvd.nist.gov/vuln/detail/CVE-2024-27980` | ✓ | Node.js Windows `.bat`/`.cmd` `child_process` argument injection (CWE-77; patched 18.20.2 / 20.12.2 / 21.7.3). |
+| C9 (in-repo) | `CHANGELOG.md` #289 (line ~524) | ✓ (local, public via repo) | "Windows: … the launcher now invokes the bundled runtime directly instead of a `.cmd` file that modern Node refuses to spawn (#289)." No external URL. |
+| +FR-019 | `https://github.com/anthropics/claude-code/issues/18692` | ✓ (closed/not-planned) | "`claude mcp add` expands env-var placeholders and writes resolved values to `.mcp.json`" — the secret-writeback exposure (b) T028 sweeps. |
+| +FR-012 | `https://github.com/anthropics/claude-code/issues/72431` | ✓ (open) | "Claude cannot see failed/erroring MCP tools" — no visibility into configured-but-broken MCP; informs the plugin self-suppression → empty `tools/list` fallback (T020). |
+
+**Dead / redirected URLs (with the fix):**
+
+1. `github.com/openai/skills` is **deprecated** (still HTTP 200) → cite `github.com/openai/plugins` (current curated Codex plugin/skill examples).
+2. `developers.openai.com/codex/*` **308 Permanent Redirect** → `learn.chatgpt.com/docs/*` (skills→`/docs/build-skills`, hooks→`/docs/hooks`, subagents→`/docs/agent-configuration/subagents`, plugins→`/docs/plugins`, plugins/build→`/docs/build-plugins`). Both forms resolve; the `developers.openai.com/codex/*` canonical is what OpenAI + agentskills.io publish — cite it and note the target.
+3. Docs host moves (no dead links, cite current host): Claude Code docs → `code.claude.com/docs/en/`; Anthropic Agent Skills platform docs → `platform.claude.com/docs/en/`.
+4. `github.com/anthropics/claude-code/blob/main/CHANGELOG.md` renders with a JS error under automated fetch (page is 200) and the raw file is too large for a single-pass scan; anchor the dedup citation on **v2.1.71** (or issue #32549).
+
+**FR-004 private-path check:** research.md committed text contains **zero** private/vault paths. The maintainer's local guide PDF (Obsidian vault) is grounding-only; its **public** equivalent at `resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf` was verified publicly accessible and is the cited source in its place. Clean (SC-002).
+
 ---
 
 ## 3. In-repo reference surfaces (precedent; not modified by this spike)
