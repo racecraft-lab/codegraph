@@ -182,6 +182,68 @@ export function runHybridSearch(ctx: HybridSearchContext): SearchResult[] {
   return ctx.keywordResults;
 }
 
+// ── Degradation signal + hint wording (T019; FR-005/006/009c/015, SC-003) ────
+//
+// The library exposes WHY a semantic/hybrid/auto request fell back to keyword as
+// a machine-readable reason (`DegradationCondition`); the surfaces (MCP tool /
+// CLI, T022) map that reason to the ONE verbatim footer string below and append
+// it AFTER the results (FR-005 placement). Exactly four conditions exist — model
+// mismatch folds into `no-vectors` and the FR-009c memory-guard skip folds into
+// `embed-failure`; neither is a fifth condition (spec Degradation Hint Wording).
+
+/**
+ * The machine-readable reason a semantic/hybrid/auto request degraded to keyword
+ * (FR-015). One per degraded condition; `null` at the call site means "not
+ * degraded" (healthy fused, healthy-empty, or keyword mode). The surfaces map each
+ * to `DEGRADATION_HINT_STRINGS[condition]`.
+ *
+ *   • `no-provider`   — no embedding provider configured (FR-002/015 → string 1)
+ *   • `no-vectors`    — zero matching-model vectors; folds model mismatch (string 2)
+ *   • `warming`       — provider present, matching vectors present, query cache cold
+ *                       on the first hybrid-eligible query (FR-005 → string 3)
+ *   • `embed-failure` — embed timeout / provider failure / FR-009c memory-guard skip /
+ *                       any unexpected semantic-path throw — the catch-all (string 4)
+ */
+export type DegradationCondition = 'no-provider' | 'no-vectors' | 'warming' | 'embed-failure';
+
+/**
+ * The detailed search result the library exposes via `CodeGraph.searchNodesDetailed`
+ * (the substrate the surfaces render). `results` is ALWAYS in dormant keyword shape
+ * when `degradation !== null` (no `matchType`/`fusedScore`), byte-identical to the
+ * keyword pipeline (SC-003/SC-004). `degradation` is the machine-readable reason, or
+ * `null` when the request was healthy (fused, healthy-empty, or keyword mode).
+ */
+export interface SearchNodesDetailed {
+  /** Result list — dormant keyword shape under any degraded condition, fused when healthy. */
+  results: SearchResult[];
+  /** Machine-readable degradation reason, or `null` when not degraded. */
+  degradation: DegradationCondition | null;
+}
+
+/**
+ * The four VERBATIM degradation footer strings (FR-015 Degradation Hint Wording
+ * table). Transcribed literally from `spec.md`; the leading `\n\n` is the blank-line
+ * separator that places the note AFTER the results (FR-005). The surfaces (MCP tool /
+ * CLI, T022) append `DEGRADATION_HINT_STRINGS[condition]` whenever
+ * `searchNodesDetailed` reports a non-null degradation.
+ *
+ * No-abandonment invariant (Constitution VI): none of these strings — nor any future
+ * degraded-path wording — tells the caller to fall back to Read/Grep or otherwise stop
+ * using search; each states that keyword results are shown and, where actionable, the
+ * config / `codegraph sync` step that enables semantic ranking. The FR-015 / US3 tests
+ * assert these literals verbatim, mechanically enforcing the invariant.
+ */
+export const DEGRADATION_HINT_STRINGS: Record<DegradationCondition, string> = {
+  'no-provider':
+    '\n\n> **Note:** semantic ranking is off — no embedding provider configured; showing keyword matches. Set CODEGRAPH_EMBEDDING_PROVIDER=local for the bundled model, or CODEGRAPH_EMBEDDING_URL and CODEGRAPH_EMBEDDING_MODEL for an endpoint, to enable.',
+  'no-vectors':
+    '\n\n> **Note:** no semantic vectors for the active model yet; showing keyword matches. Run `codegraph sync` to embed.',
+  warming:
+    '\n\n> **Note:** semantic ranking is warming up; showing keyword matches — later queries will fuse.',
+  'embed-failure':
+    '\n\n> **Note:** semantic ranking failed or timed out this query; showing keyword matches.',
+};
+
 // ── Vector matrix cache (T007; data-model E4, research D6/D7) ────────────────
 //
 // The KNN scan (T010) runs against a lazily-built, single-precision in-memory

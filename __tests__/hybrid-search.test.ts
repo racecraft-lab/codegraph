@@ -15,6 +15,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { CodeGraph, __setQueryEmbeddingProviderForTests } from '../src';
+// Namespace import so the T020 factory seam can be reached via an optional-property
+// cast (like `searchDetailed` probes `searchNodesDetailed`) — a plain named import of
+// a not-yet-existing export is an ESM link-time COLLECTION error that would turn the
+// whole file red, not the single RED assertion the TDD gate requires.
+import * as CodeGraphIndex from '../src';
 import { DatabaseConnection, getDatabasePath } from '../src/db';
 import { QueryBuilder } from '../src/db/queries';
 import { encodeVector } from '../src/embeddings/indexer-hook';
@@ -29,6 +34,8 @@ import {
   candidateDepth,
   rrfMerge,
   RRF_K,
+  resolveAutoMode,
+  DEGRADATION_HINT_STRINGS,
   __resetVectorMatrixCacheForTests,
   MAX_MATRIX_BYTES,
   LATENCY_FIXTURE_SEED,
@@ -41,9 +48,10 @@ import {
   type SemanticCandidate,
   type FusedResult,
   type RrfGateFields,
+  type AutoResolveInput,
 } from '../src/search/hybrid';
 import type { EmbeddingProvider } from '../src/embeddings/provider';
-import type { Language, Node, NodeKind, SearchMode, SearchResult } from '../src/types';
+import type { Language, Node, NodeKind, SearchMode, SearchOptions, SearchResult } from '../src/types';
 
 let HAS_SQLITE = false;
 try {
@@ -1339,4 +1347,950 @@ describe('hybrid search — FR-014(c) p95 fusion-compute gate (T013)', () => {
     },
     120_000,
   );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T018 — US3 degradation SIGNAL at the LIBRARY layer (FR-005/006/009c/015,
+// SC-003; contract degradation-hints.md). RED-only.
+//
+// SCOPE (per the T018/T019 split): the four VERBATIM footer strings render at
+// the SURFACES (MCP tools.ts / CLI) — T019/T022 own that and assert the literal
+// strings against the surface renderer. At the LIBRARY layer this file exercises
+// (`cg.searchNodes`), the degradation REASON must be exposed MACHINE-READABLY so
+// the surfaces can map it to the correct string. So these tests assert a
+// library-visible degradation SIGNAL + keyword-dormant results, NOT markdown
+// strings.
+//
+// THE LIBRARY CONTRACT T019 MUST SATISFY (asserted below):
+//   • New method `CodeGraph.searchNodesDetailed(query, options?)` returning
+//         interface SearchNodesDetailed {
+//           results: SearchResult[];                 // ALWAYS dormant keyword
+//           degradation: DegradationCondition | null; // the machine-readable reason
+//         }
+//     where `DegradationCondition =
+//         'no-provider'    // condition 1 → FR-015 string 1
+//       | 'no-vectors'     // condition 2 → string 2 (folds model-mismatch)
+//       | 'warming'        // condition 3 → string 3
+//       | 'embed-failure'` // condition 4 → string 4 (folds embed timeout /
+//                          //   provider failure / FR-009c memory-guard skip /
+//                          //   any unexpected semantic-path exception — catch-all)
+//   • When `degradation !== null`, `results` is byte-identical to the keyword
+//     pipeline (dormant shape: NO `matchType`/`fusedScore` fields — SC-003).
+//   • `degradation === null` for: keyword mode, a healthy fused query, AND the
+//     healthy-empty case (filter-only query on a provider WITH matching vectors).
+//   • The whole path NEVER throws / never `isError` for any mode or provider,
+//     and `acquireQueryVectorForSearch` RESOLVES (never rejects) on a failing
+//     provider, recording the failure so a later `searchNodesDetailed` reports
+//     `embed-failure` rather than `warming`.
+//
+// WHY RED TODAY (real assertion failures, not collection errors): `searchNodes`
+// already degrades to dormant keyword for SOME conditions but exposes NO signal,
+// returns matchType-tagged results for the no-vectors condition, and
+// `searchNodesDetailed` does not exist. We probe for the method through an
+// OPTIONAL-typed cast (so the file still typechecks and imports cleanly) and the
+// presence assertion FAILS as a real assertion until T019 lands the method.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** The machine-readable degradation reason T019 must expose (one per FR-015 condition). */
+type DegradationCondition = 'no-provider' | 'no-vectors' | 'warming' | 'embed-failure';
+
+/** The detailed search result T019 must add; surfaces map `degradation` → the FR-015 footer string. */
+interface SearchNodesDetailed {
+  results: SearchResult[];
+  degradation: DegradationCondition | null;
+}
+
+/**
+ * Probe `CodeGraph` for the T019 `searchNodesDetailed` surface WITHOUT a
+ * compile-time dependency on a method that does not exist yet: the optional cast
+ * keeps the call type-safe today (typecheck clean) while the presence assertion
+ * FAILS as a real assertion (not a collection/import error) until T019 lands the
+ * method. Once present, the caller's downstream assertions run unchanged.
+ */
+function searchDetailed(cg: CodeGraph, query: string, options: SearchOptions): SearchNodesDetailed {
+  const obj = cg as unknown as {
+    searchNodesDetailed?: (q: string, o?: SearchOptions) => SearchNodesDetailed;
+  };
+  expect(typeof obj.searchNodesDetailed).toBe('function'); // RED today — T019 adds the method
+  return obj.searchNodesDetailed!(query, options);
+}
+
+/** Every degraded response is dormant keyword shape: NO provenance fields (SC-003; FR-014 absence check). */
+function expectDormantShape(results: SearchResult[]): void {
+  for (const r of results) {
+    expect(r.matchType).toBeUndefined();
+    expect(r.fusedScore).toBeUndefined();
+  }
+}
+
+/** A provider that embeds ANY text to a fixed one-hot unit vector (no live endpoint). */
+function constEmbedProvider(id: string, dims: number): EmbeddingProvider {
+  return {
+    id,
+    dims,
+    async embed(texts: string[]): Promise<Float32Array[]> {
+      return texts.map(() => {
+        const v = new Float32Array(dims);
+        v[0] = 1;
+        return v;
+      });
+    },
+  };
+}
+
+/** A provider whose embed() always REJECTS — the timeout/provider-failure stand-in (condition 4). */
+function rejectingEmbedProvider(id: string, dims: number): EmbeddingProvider {
+  return {
+    id,
+    dims,
+    async embed(): Promise<Float32Array[]> {
+      throw new Error('embed failed (fixture provider)');
+    },
+  };
+}
+
+/**
+ * A slow-but-HEALTHY provider (T021): its embed eventually resolves to a fixed one-hot
+ * unit vector, but only AFTER `delayMs`. It is the stand-in for the embed-budget race —
+ * a race with a test budget << `delayMs` times out (the vector arrives LATE), while a
+ * budget > `delayMs` lets the same embed win and deposit. `basis` picks the one-hot
+ * index (0 → cosine 1.0 with `parseConfig`'s seeded fixture vector). `embedCalls`
+ * exposes how many times embed actually ran (so a test can prove the LATE embed still
+ * resolved). The internal timer is `unref`'d so a hang far longer than the test budget
+ * never keeps the vitest process alive after the capped acquisition already returned.
+ */
+function slowEmbedProvider(
+  id: string,
+  dims: number,
+  delayMs: number,
+  basis = 0,
+): { provider: EmbeddingProvider; embedCalls: () => number } {
+  let calls = 0;
+  const provider: EmbeddingProvider = {
+    id,
+    dims,
+    async embed(texts: string[]): Promise<Float32Array[]> {
+      calls++;
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, delayMs);
+        (t as unknown as { unref?: () => void }).unref?.();
+      });
+      return texts.map(() => {
+        const v = new Float32Array(dims);
+        v[basis] = 1;
+        return v;
+      });
+    },
+  };
+  return { provider, embedCalls: () => calls };
+}
+
+/** Seed one one-hot fixture vector per embeddable node under an ARBITRARY model id (for the mismatch fold). */
+function seedVectorsUnderModel(dir: string, model: string): void {
+  const conn = DatabaseConnection.open(getDatabasePath(dir));
+  try {
+    const q = new QueryBuilder(conn.getDb());
+    let basis = 0;
+    for (const node of q.selectEmbeddableNodesMissingVector(model)) {
+      q.upsertNodeVector(node.id, model, FIXTURE_DIMS, encodeVector(unitVector(basis++)), `mm-${node.id}`);
+    }
+  } finally {
+    conn.close();
+  }
+}
+
+/** Write a single `project_metadata` scalar through a fresh connection (mirrors the embed pass). */
+function setFixtureMetadata(dir: string, key: string, value: string): void {
+  const conn = DatabaseConnection.open(getDatabasePath(dir));
+  try {
+    new QueryBuilder(conn.getDb()).setMetadata(key, value);
+  } finally {
+    conn.close();
+  }
+}
+
+/** Run `fn` with all three CODEGRAPH_EMBEDDING_* env vars forced OFF, restoring them after (dogfood shells export them). */
+function withEmbeddingEnvOff<T>(fn: () => T): T {
+  const saved = {
+    url: process.env.CODEGRAPH_EMBEDDING_URL,
+    model: process.env.CODEGRAPH_EMBEDDING_MODEL,
+    provider: process.env.CODEGRAPH_EMBEDDING_PROVIDER,
+  };
+  delete process.env.CODEGRAPH_EMBEDDING_URL;
+  delete process.env.CODEGRAPH_EMBEDDING_MODEL;
+  delete process.env.CODEGRAPH_EMBEDDING_PROVIDER;
+  try {
+    return fn();
+  } finally {
+    if (saved.url !== undefined) process.env.CODEGRAPH_EMBEDDING_URL = saved.url;
+    if (saved.model !== undefined) process.env.CODEGRAPH_EMBEDDING_MODEL = saved.model;
+    if (saved.provider !== undefined) process.env.CODEGRAPH_EMBEDDING_PROVIDER = saved.provider;
+  }
+}
+
+describe.skipIf(!HAS_SQLITE)('hybrid search — US3 degradation signal (T018)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  /** The three modes for which a degraded condition surfaces a hint (FR-015: auto, semantic, hybrid). */
+  const HINT_MODES: SearchMode[] = ['hybrid', 'semantic', 'auto'];
+
+  /** A free-text query keyword-reachable in the fixture (`parse` prefixes `parseConfig`) → non-empty keyword hits. */
+  const DEGRADE_QUERY = 'parse raw config text';
+
+  afterEach(() => {
+    __setQueryEmbeddingProviderForTests(undefined); // never leak the seam into another suite
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* may already be closed */ } }
+    while (dirs.length) {
+      const d = dirs.pop()!;
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  /** A real, structurally-indexed fixture graph; `seed` optionally hand-seeds vectors/metadata. */
+  async function indexed(seed?: (dir: string) => void): Promise<{ cg: CodeGraph; dir: string }> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    if (seed) seed(dir);
+    return { cg, dir };
+  }
+
+  // ── Condition 1: no provider configured (FR-002/015 → string 1) ────────────
+  it('condition 1 — no provider (env OFF, no seam): auto/semantic/hybrid degrade to keyword + `no-provider` (FR-015)', async () => {
+    const { cg } = await indexed(); // structural-only; no vectors, no seam
+    withEmbeddingEnvOff(() => {
+      for (const mode of HINT_MODES) {
+        const keyword = cg.searchNodes(DEGRADE_QUERY, { mode: 'keyword' });
+        expect(keyword.length).toBeGreaterThan(0); // fixture actually matches
+
+        const detailed = searchDetailed(cg, DEGRADE_QUERY, { mode });
+        expect(detailed.degradation).toBe('no-provider');
+        expect(detailed.results).toEqual(keyword); // dormant keyword, byte-identical
+        expectDormantShape(detailed.results);
+
+        // Zero throws from mode dispatch (SC-003) — plain searchNodes stays keyword too.
+        expect(() => cg.searchNodes(DEGRADE_QUERY, { mode })).not.toThrow();
+      }
+    });
+  });
+
+  // ── Condition 2: no matching-model vectors (FR-015 → string 2) ─────────────
+  it('condition 2 — provider present, ZERO matching-model vectors: degrades to keyword + `no-vectors` (FR-015)', async () => {
+    // Provider present + query cache WARM (so `warming` is ruled out) but no
+    // vectors seeded under the provider's model → the only reason is no-vectors.
+    const { cg } = await indexed(); // deliberately NOT seeded
+    __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+    await cg.acquireQueryVectorForSearch(DEGRADE_QUERY); // warm the query-vector cache
+
+    const keyword = cg.searchNodes(DEGRADE_QUERY, { mode: 'keyword' });
+    for (const mode of HINT_MODES) {
+      const detailed = searchDetailed(cg, DEGRADE_QUERY, { mode });
+      expect(detailed.degradation).toBe('no-vectors');
+      expect(detailed.results).toEqual(keyword);
+      expectDormantShape(detailed.results);
+    }
+  });
+
+  it('condition 2 — MODEL MISMATCH fold: vectors under a DIFFERENT model id still read as `no-vectors` (Edge Cases)', async () => {
+    // Vectors exist, but under `stale-model-384`; the provider reports FIXTURE_MODEL
+    // → zero matching-model vectors → same signal (string 2), not a fifth condition.
+    const { cg } = await indexed((dir) => seedVectorsUnderModel(dir, 'stale-model-384'));
+    __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+    await cg.acquireQueryVectorForSearch(DEGRADE_QUERY); // warm — rule out `warming`
+
+    const keyword = cg.searchNodes(DEGRADE_QUERY, { mode: 'keyword' });
+    const detailed = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+    expect(detailed.degradation).toBe('no-vectors');
+    expect(detailed.results).toEqual(keyword);
+    expectDormantShape(detailed.results);
+  });
+
+  // ── Condition 3: provider warming (FR-005 → string 3) ──────────────────────
+  it('condition 3 — provider present + matching vectors but cache COLD (first query): keyword + `warming` (FR-005)', async () => {
+    // Seed matching-model vectors so it is NOT condition 2; leave the query-vector
+    // cache cold (no acquireQueryVectorForSearch) so the first query is warming.
+    const { cg } = await indexed((dir) => seedFixtureVectors(dir));
+    __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+
+    const keyword = cg.searchNodes(DEGRADE_QUERY, { mode: 'keyword' });
+    for (const mode of HINT_MODES) {
+      const detailed = searchDetailed(cg, DEGRADE_QUERY, { mode });
+      expect(detailed.degradation).toBe('warming');
+      expect(detailed.results).toEqual(keyword);
+      expectDormantShape(detailed.results);
+    }
+  });
+
+  // ── Condition 4: embed timeout / provider failure (FR-006 → string 4) ──────
+  it('condition 4 — a REJECTING provider: acquisition resolves (never rejects) and the search degrades to keyword + `embed-failure` (FR-006/SC-003)', async () => {
+    const { cg } = await indexed((dir) => seedFixtureVectors(dir));
+    __setQueryEmbeddingProviderForTests(rejectingEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+
+    // Library no-throw invariant: a failing embed must RESOLVE to the empty
+    // acquisition (recording the failure), never reject/throw (SC-003; Constitution VI).
+    await expect(cg.acquireQueryVectorForSearch(DEGRADE_QUERY)).resolves.toEqual({
+      vector: null,
+      model: null,
+    });
+
+    const keyword = cg.searchNodes(DEGRADE_QUERY, { mode: 'keyword' });
+    const detailed = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+    expect(detailed.degradation).toBe('embed-failure'); // recorded failure ⇒ NOT `warming`
+    expect(detailed.results).toEqual(keyword);
+    expectDormantShape(detailed.results);
+  });
+
+  // ── Condition 4 fold: FR-009c memory-guard skip → string 4 ─────────────────
+  it('condition 4 — FR-009c memory-guard skip (predictedBytes > 1 GiB): keyword + `embed-failure`, not `isError` (FR-009c)', async () => {
+    // Seed one real matching-model vector, then poison `embedding_dims` so the
+    // matrix source predicts a > 1 GiB build → buildVectorMatrix guards it PRE-
+    // allocation and the semantic arm is skipped (catch-all string 4).
+    const HUGE_DIMS = MAX_MATRIX_BYTES / 4 + 1; // 1 row × this width × 4 bytes > ceiling
+    const { cg } = await indexed((dir) => {
+      seedFixtureVectors(dir);
+      setFixtureMetadata(dir, 'embedding_dims', String(HUGE_DIMS));
+    });
+    __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+    await cg.acquireQueryVectorForSearch(DEGRADE_QUERY); // warm — rule out `warming`
+
+    const keyword = cg.searchNodes(DEGRADE_QUERY, { mode: 'keyword' });
+    let detailed!: SearchNodesDetailed;
+    expect(() => { detailed = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' }); }).not.toThrow();
+    expect(detailed.degradation).toBe('embed-failure');
+    expect(detailed.results).toEqual(keyword);
+    expectDormantShape(detailed.results);
+  });
+
+  // ── NOT degraded: healthy-empty (filter-only query) — FR-011 / Edge Cases ──
+  it('healthy-empty — a filter-only query on a HEALTHY provider is NOT degraded: `degradation === null`, byte-identical to keyword', async () => {
+    // Provider present AND matching vectors exist → healthy. The query is only
+    // filter tokens → empty embed input → the semantic arm contributes nothing,
+    // but this is NOT one of the four conditions: no signal, byte-identical.
+    const { cg } = await indexed((dir) => seedFixtureVectors(dir));
+    __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+
+    const FILTER_ONLY = 'kind:function';
+    const keyword = cg.searchNodes(FILTER_ONLY, { mode: 'keyword' });
+    expect(keyword.length).toBeGreaterThan(0); // the fixture has functions to match
+
+    for (const mode of HINT_MODES) {
+      const detailed = searchDetailed(cg, FILTER_ONLY, { mode });
+      expect(detailed.degradation).toBeNull(); // healthy-empty ≠ degraded
+      expect(detailed.results).toEqual(keyword); // byte-identical to keyword
+      expectDormantShape(detailed.results);
+    }
+  });
+
+  // ── SC-003: zero isError / zero throws from library mode dispatch ──────────
+  it('SC-003 — the library never throws from mode dispatch under any degraded condition', async () => {
+    // No provider, no vectors: the harshest degraded state. Neither `searchNodes`
+    // nor the new `searchNodesDetailed` may throw for any mode (success-shaped).
+    const { cg } = await indexed();
+    withEmbeddingEnvOff(() => {
+      for (const mode of HINT_MODES) {
+        expect(() => cg.searchNodes(DEGRADE_QUERY, { mode })).not.toThrow(); // keyword — green today
+
+        const obj = cg as unknown as {
+          searchNodesDetailed?: (q: string, o?: SearchOptions) => SearchNodesDetailed;
+        };
+        expect(typeof obj.searchNodesDetailed).toBe('function'); // RED today — T019 adds it
+        expect(() => obj.searchNodesDetailed!(DEGRADE_QUERY, { mode })).not.toThrow();
+      }
+    });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T019 — the exported degradation hint-string map (FR-015 Degradation Hint
+// Wording table). The four VERBATIM footer literals the surfaces (MCP/CLI, T022)
+// append when `searchNodesDetailed` reports a non-null degradation. The literals
+// below are transcribed straight from spec.md's table — this test is the
+// cross-check that the exported constant matches the spec byte-for-byte (leading
+// `\n\n` separator included, per FR-005's after-results placement).
+// ───────────────────────────────────────────────────────────────────────────
+describe('hybrid search — degradation hint strings (T019)', () => {
+  it('maps every degraded condition to its verbatim FR-015 footer literal', () => {
+    expect(DEGRADATION_HINT_STRINGS['no-provider']).toBe(
+      '\n\n> **Note:** semantic ranking is off — no embedding provider configured; showing keyword matches. Set CODEGRAPH_EMBEDDING_PROVIDER=local for the bundled model, or CODEGRAPH_EMBEDDING_URL and CODEGRAPH_EMBEDDING_MODEL for an endpoint, to enable.',
+    );
+    expect(DEGRADATION_HINT_STRINGS['no-vectors']).toBe(
+      '\n\n> **Note:** no semantic vectors for the active model yet; showing keyword matches. Run `codegraph sync` to embed.',
+    );
+    expect(DEGRADATION_HINT_STRINGS['warming']).toBe(
+      '\n\n> **Note:** semantic ranking is warming up; showing keyword matches — later queries will fuse.',
+    );
+    expect(DEGRADATION_HINT_STRINGS['embed-failure']).toBe(
+      '\n\n> **Note:** semantic ranking failed or timed out this query; showing keyword matches.',
+    );
+  });
+
+  it('has exactly the four degraded conditions and every string leads with the blank-line footer separator', () => {
+    expect(Object.keys(DEGRADATION_HINT_STRINGS).sort()).toEqual([
+      'embed-failure',
+      'no-provider',
+      'no-vectors',
+      'warming',
+    ]);
+    for (const s of Object.values(DEGRADATION_HINT_STRINGS)) {
+      expect(s.startsWith('\n\n')).toBe(true);
+    }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T020 — lazy-init warming ownership + init-failure reset (FR-005/006).
+//
+// The query-time embedding provider is constructed LAZILY, exactly once, behind a
+// SINGLE warming owner: concurrent first-time acquisitions for the same
+// (text-independent) provider share ONE construction / warm-up — no duplicate
+// provider construction, no duplicate ONNX/HTTP warm-up. A failed or timed-out
+// init/embed returns the memoized slot to UNINITIALIZED (init-failure reset — NO
+// permanent latch), so a LATER acquisition re-attempts construction from scratch
+// and can succeed once the provider recovers. A persistently-failing provider
+// therefore never wedges: every acquisition resolves {vector:null,model:null} and
+// every search reports `embed-failure` without throwing, and acquisition happens
+// ONLY when called (no background retry timers, bounded failure recording).
+//
+// A NEW test-only seam — a provider FACTORY — makes construction observable and
+// repeatable so these invariants are testable: the factory count is the number of
+// provider constructions. RED until T020 memoizes construction behind the owner and
+// adds the factory seam (the pre-T019 code constructs a fresh provider per call and
+// exposes no factory, so `setQueryProviderFactory`'s presence assertion fails).
+// ───────────────────────────────────────────────────────────────────────────
+describe.skipIf(!HAS_SQLITE)('hybrid search — lazy-init warming + reset (T020)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  /** A free-text query keyword-reachable in the fixture AND embedded to parseConfig's basis (basis 0). */
+  const DEGRADE_QUERY = 'parse raw config text';
+
+  /**
+   * Install the T020 provider-FACTORY seam via an optional-property cast (no hard
+   * import dependency — see the namespace import note). The presence assertion is the
+   * RED carrier until T020 exports the seam; once present, callers run unchanged.
+   */
+  function setQueryProviderFactory(factory: (() => EmbeddingProvider) | undefined): void {
+    const mod = CodeGraphIndex as unknown as {
+      __setQueryEmbeddingProviderFactoryForTests?: (f: (() => EmbeddingProvider) | undefined) => void;
+    };
+    expect(typeof mod.__setQueryEmbeddingProviderFactoryForTests).toBe('function'); // RED until T020
+    mod.__setQueryEmbeddingProviderFactoryForTests!(factory);
+  }
+
+  afterEach(() => {
+    // Clear the factory seam without asserting (optional chaining) so cleanup never
+    // masks a test failure and never leaks the seam into another suite.
+    (CodeGraphIndex as unknown as {
+      __setQueryEmbeddingProviderFactoryForTests?: (f: (() => EmbeddingProvider) | undefined) => void;
+    }).__setQueryEmbeddingProviderFactoryForTests?.(undefined);
+    __setQueryEmbeddingProviderForTests(undefined);
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* may already be closed */ } }
+    while (dirs.length) {
+      const d = dirs.pop()!;
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  /** A real, structurally-indexed fixture graph with matching-model vectors seeded. */
+  async function indexedSeeded(): Promise<CodeGraph> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    seedFixtureVectors(dir);
+    return cg;
+  }
+
+  it('a. concurrent first-time acquisitions share ONE provider construction (single-owner warming)', async () => {
+    const cg = await indexedSeeded();
+    let constructions = 0;
+    setQueryProviderFactory(() => {
+      constructions++;
+      return constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS);
+    });
+
+    // Two concurrent FIRST acquisitions race BEFORE either warms — the single-owner
+    // memoization must serialise them onto ONE constructed provider (no duplicate
+    // construction, no duplicate warm-up).
+    const [a, b] = await Promise.all([
+      cg.acquireQueryVectorForSearch(DEGRADE_QUERY),
+      cg.acquireQueryVectorForSearch(DEGRADE_QUERY),
+    ]);
+
+    expect(constructions).toBe(1);        // one construction served both concurrent acquisitions
+    expect(a.vector).not.toBeNull();
+    expect(b.vector).not.toBeNull();
+    expect(a.model).toBe(FIXTURE_MODEL);
+    expect(b.model).toBe(FIXTURE_MODEL);
+  });
+
+  it('b. init-failure RESET — a fail-once-then-succeed provider re-acquires and fuses healthy (no permanent latch)', async () => {
+    const cg = await indexedSeeded();
+    let constructions = 0;
+    setQueryProviderFactory(() => {
+      constructions++;
+      // First init fails (rejects on embed); every later construction succeeds — the
+      // reset must let construction RE-ATTEMPT rather than latch the failed slot.
+      return constructions === 1
+        ? rejectingEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS)
+        : constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS);
+    });
+
+    // First acquisition hits the failing provider: RESOLVES (never rejects) and records
+    // the failure so the cache-cold query reports `embed-failure`, not `warming`.
+    await expect(cg.acquireQueryVectorForSearch(DEGRADE_QUERY)).resolves.toEqual({
+      vector: null,
+      model: null,
+    });
+    const first = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+    expect(first.degradation).toBe('embed-failure');
+
+    // Re-acquire: the init-failure reset returned the slot to UNINITIALIZED, so
+    // construction re-attempts (succeeds now) and the query vector caches.
+    const reacq = await cg.acquireQueryVectorForSearch(DEGRADE_QUERY);
+    expect(reacq.vector).not.toBeNull();
+    expect(reacq.model).toBe(FIXTURE_MODEL);
+
+    // The reset invariant: a recovered provider fuses healthy (degradation null) — the
+    // failed init is NOT latched permanently.
+    const healthy = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+    expect(healthy.degradation).toBeNull();
+    expect(healthy.results.some((r) => r.node.name === 'parseConfig')).toBe(true);
+    expect(constructions).toBeGreaterThanOrEqual(2); // reconstructed, not latched
+  });
+
+  it('c. a persistently-failing provider never wedges — every query resolves {null,null} + `embed-failure`, no throw', async () => {
+    const cg = await indexedSeeded();
+    let constructions = 0;
+    setQueryProviderFactory(() => {
+      constructions++;
+      return rejectingEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS);
+    });
+
+    for (let i = 0; i < 3; i++) {
+      await expect(cg.acquireQueryVectorForSearch(DEGRADE_QUERY)).resolves.toEqual({
+        vector: null,
+        model: null,
+      });
+      let detailed!: SearchNodesDetailed;
+      expect(() => {
+        detailed = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+      }).not.toThrow();
+      expect(detailed.degradation).toBe('embed-failure');
+    }
+
+    // Each failed attempt returned the slot to UNINITIALIZED, so later attempts
+    // RE-ATTEMPTED construction — proof there is no permanent single latch and no wedge.
+    expect(constructions).toBeGreaterThan(1);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T021 — embed-budget hard cap (~2s in production) + late-vector discard
+// (FR-006/006a; spec Degradation, contract degradation-hints).
+//
+// The per-query embed wait is capped at EMBED_BUDGET_MS. When the embed does not
+// resolve within the budget the acquisition RESOLVES to {vector:null,model:null}
+// (never rejects), records an embed-failure so the synchronous search reports
+// `embed-failure` (string 4), and — critically — a query-embed that completes AFTER
+// its budget is DISCARDED: never written to the query-vector cache, never mutating
+// matchType/provenance/order and never retroactively converting an already-returned
+// keyword response to fused. The worst-case degraded latency is therefore bounded by
+// keyword + budget, verifiable as an elapsed-time assertion (FR-006a).
+//
+// EMBED_BUDGET_MS stays the production constant (no env var, FR-007); a test-only
+// budget override seam (`__setQueryEmbedBudgetMsForTests`) lets these tests use a
+// ~30ms budget against a slow provider so they never literally wait 2s. The seam is
+// reached through an optional-property cast (like the T020 factory seam) so its
+// absence fails as a real ASSERTION — the RED carrier — rather than an ESM
+// link-time collection error that would redden the whole file.
+// ───────────────────────────────────────────────────────────────────────────
+describe.skipIf(!HAS_SQLITE)('hybrid search — embed-budget cap + late-vector discard (T021)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  /** A free-text query keyword-reachable in the fixture AND embedded to parseConfig's basis 0. */
+  const DEGRADE_QUERY = 'parse raw config text';
+
+  /** Install the T021 budget override seam via optional-property cast (RED until T021 exports it). */
+  function setQueryEmbedBudget(ms: number | undefined): void {
+    const mod = CodeGraphIndex as unknown as {
+      __setQueryEmbedBudgetMsForTests?: (ms: number | undefined) => void;
+    };
+    expect(typeof mod.__setQueryEmbedBudgetMsForTests).toBe('function'); // RED until T021
+    mod.__setQueryEmbedBudgetMsForTests!(ms);
+  }
+
+  afterEach(() => {
+    // Clear the budget seam without asserting so cleanup never masks a failure or leaks.
+    (CodeGraphIndex as unknown as {
+      __setQueryEmbedBudgetMsForTests?: (ms: number | undefined) => void;
+    }).__setQueryEmbedBudgetMsForTests?.(undefined);
+    __setQueryEmbeddingProviderForTests(undefined);
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* may already be closed */ } }
+    while (dirs.length) {
+      const d = dirs.pop()!;
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  /** A real, structurally-indexed fixture graph with matching-model vectors seeded. */
+  async function indexedSeeded(): Promise<CodeGraph> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    seedFixtureVectors(dir);
+    return cg;
+  }
+
+  it('a. elapsed bound (FR-006a) — a provider hanging >> budget resolves within budget + epsilon to {null,null}', async () => {
+    const cg = await indexedSeeded();
+    const BUDGET = 40;
+    setQueryEmbedBudget(BUDGET);
+    // Embed would take ~3s; the budget must cap the wait far below that.
+    const { provider } = slowEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS, 3000);
+    __setQueryEmbeddingProviderForTests(provider);
+
+    const start = performance.now();
+    const acq = await cg.acquireQueryVectorForSearch(DEGRADE_QUERY);
+    const elapsed = performance.now() - start;
+
+    expect(acq).toEqual({ vector: null, model: null }); // capped → empty, never rejects
+    // The FR-006a guarantee: degraded latency ≤ budget + small epsilon, NOT the ~3s embed.
+    expect(elapsed).toBeLessThan(BUDGET + 500);
+  });
+
+  it('b. timeout degrades to keyword + `embed-failure` without throwing (FR-006)', async () => {
+    const cg = await indexedSeeded();
+    setQueryEmbedBudget(30);
+    const { provider } = slowEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS, 2000);
+    __setQueryEmbeddingProviderForTests(provider);
+
+    // No-throw invariant: a budget timeout RESOLVES to the empty acquisition (SC-003).
+    await expect(cg.acquireQueryVectorForSearch(DEGRADE_QUERY)).resolves.toEqual({
+      vector: null,
+      model: null,
+    });
+
+    const keyword = cg.searchNodes(DEGRADE_QUERY, { mode: 'keyword' });
+    let detailed!: SearchNodesDetailed;
+    expect(() => { detailed = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' }); }).not.toThrow();
+    expect(detailed.degradation).toBe('embed-failure'); // timeout counts as failure (string 4)
+    expect(detailed.results).toEqual(keyword);
+    expectDormantShape(detailed.results);
+  });
+
+  it('c. LATE-VECTOR DISCARD — a vector arriving AFTER its budget is never cached; the query stays degraded until a fresh acquisition', async () => {
+    const cg = await indexedSeeded();
+    setQueryEmbedBudget(30);
+    // The embed resolves a VALID (cosine-1.0) vector at ~120ms — well after the 30ms budget.
+    const slow = slowEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS, 120, /* basis */ 0);
+    __setQueryEmbeddingProviderForTests(slow.provider);
+
+    // Budget expires before the embed → keyword + embed-failure.
+    await expect(cg.acquireQueryVectorForSearch(DEGRADE_QUERY)).resolves.toEqual({
+      vector: null,
+      model: null,
+    });
+    expect(searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' }).degradation).toBe('embed-failure');
+
+    // Let the LOSING embed resolve; its valid vector arrives late and MUST be discarded.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(slow.embedCalls()).toBe(1); // the embed genuinely ran and resolved
+
+    // WITHOUT a fresh acquisition the query is STILL degraded: the late vector never
+    // populated the cache — no retroactive keyword→fused conversion (FR-006).
+    const stillDegraded = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+    expect(stillDegraded.degradation).toBe('embed-failure');
+    expectDormantShape(stillDegraded.results);
+
+    // A fresh acquisition with a healthy provider (and the production budget) recovers:
+    // the vector caches, the recorded failure clears, and the SAME query now fuses.
+    setQueryEmbedBudget(undefined); // back to the ~2s production constant
+    __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+    const reacq = await cg.acquireQueryVectorForSearch(DEGRADE_QUERY);
+    expect(reacq.vector).not.toBeNull();
+    expect(reacq.model).toBe(FIXTURE_MODEL);
+
+    const healthy = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+    expect(healthy.degradation).toBeNull();
+    expect(healthy.results.some((r) => r.node.name === 'parseConfig')).toBe(true);
+  });
+
+  it('d. a generous budget does NOT cap a healthy slow-but-in-time embed — it deposits and fuses', async () => {
+    const cg = await indexedSeeded();
+    setQueryEmbedBudget(1000); // comfortably above the embed delay → embed wins the race
+    const slow = slowEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS, 60, 0);
+    __setQueryEmbeddingProviderForTests(slow.provider);
+
+    const acq = await cg.acquireQueryVectorForSearch(DEGRADE_QUERY);
+    expect(acq.vector).not.toBeNull(); // in-budget embed deposited normally
+    expect(acq.model).toBe(FIXTURE_MODEL);
+
+    const healthy = searchDetailed(cg, DEGRADE_QUERY, { mode: 'hybrid' });
+    expect(healthy.degradation).toBeNull();
+    expect(healthy.results.some((r) => r.node.name === 'parseConfig')).toBe(true);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T014 — US2 mode resolution (FR-002/002a; contract mcp-cli-surface, search-api;
+// US2 scenarios 1–4).
+//
+// The retrieval mode a request runs under, and how the surfaces' `auto` default
+// resolves. Two surfaces here:
+//
+//   • The PURE `auto`-resolution predicate `resolveAutoMode({providerConfigured,
+//     matchingVectorCount})` — `hybrid` iff a provider is configured AND ≥1 stored
+//     vector matches the active model, else `keyword`. This is the SAME availability
+//     predicate FR-017's `codegraph status` line reports (research D1). T003 landed
+//     it as a stub that ALWAYS returns `keyword`; T015 lands the real predicate — so
+//     the predicate contract test below is the genuine RED carrier of this task.
+//
+//   • End-to-end mode behavior through `CodeGraph.searchNodes` /
+//     `searchNodesDetailed`: explicit `keyword|semantic|hybrid` each run exactly
+//     their arm config, and the surfaces' `auto` default behaves as HYBRID when the
+//     corpus is healthy and as KEYWORD (with a `no-vectors` signal) when it is not.
+//
+// RED/GREEN ACCOUNTING (honest, per the T014 handoff): T019 already routed `auto`
+// through the fusion/degradation path (healthy → hybrid; degraded → keyword +
+// signal) and T012–T019 wired the semantic/hybrid arms, so the end-to-end scenario
+// tests below are REGRESSION GUARDS that pass immediately ("RED-not-applicable —
+// behavior landed in T019"). Each is written to be NON-VACUOUS: it asserts a
+// concrete, arm-specific outcome (a decoy that FTS would add is absent from pure
+// semantic; a both-arms node carries matchType 'both'; auto's fused output equals
+// hybrid's; auto-without-vectors is byte-identical to keyword + carries the signal)
+// that a keyword passthrough or a mis-wired arm would fail. Only the pure
+// `resolveAutoMode` predicate test is genuine RED against the T003 stub.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Scenario-4 fixture: an EXACT-name symbol left WITHOUT a seeded vector next to a
+ * semantic target that HAS one. `lookup`'s name exactly equals the query token
+ * `lookup` (a keyword hit); `fetchRemoteValue` is the semantic target. The seeder
+ * below deliberately skips `lookup`, so it is absent from the vector matrix and
+ * therefore from any semantic top-k (US2 scenario 4).
+ */
+function makeExactNameFixture(dirs: string[]): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-hybrid-us2-exact-'));
+  dirs.push(dir);
+  const srcDir = path.join(dir, 'src');
+  fs.mkdirSync(srcDir);
+  fs.writeFileSync(
+    path.join(srcDir, 'store.ts'),
+    // `lookup` — its name EXACTLY equals the query token "lookup"; left WITHOUT a
+    // seeded vector below so it can only surface via the keyword (FTS) arm.
+    'export function lookup(key: string): string {\n  return key;\n}\n' +
+      // `fetchRemoteValue` — the semantic target; seeded at basis 0 (the query vector).
+      'export function fetchRemoteValue(key: string): string {\n  return key;\n}\n',
+  );
+  return dir;
+}
+
+/**
+ * Seed one one-hot fixture vector per embeddable node under FIXTURE_MODEL, EXCEPT
+ * `skipName` (left with no vector). `targetName` gets basis 0 (cosine 1.0 to a
+ * `constEmbedProvider` query vector); every other node gets a distinct orthogonal
+ * filler basis. Mirrors the embed-pass scalars so the staleness probe reads a
+ * non-zero matching-model count.
+ */
+function seedExactNameVectors(dir: string, targetName: string, skipName: string): void {
+  const conn = DatabaseConnection.open(getDatabasePath(dir));
+  try {
+    const q = new QueryBuilder(conn.getDb());
+    let filler = FILLER_BASIS_START;
+    for (const node of q.selectEmbeddableNodesMissingVector(FIXTURE_MODEL)) {
+      if (node.name === skipName) continue; // exact-name symbol left WITHOUT a vector
+      const basis = node.name === targetName ? 0 : filler++;
+      q.upsertNodeVector(node.id, FIXTURE_MODEL, FIXTURE_DIMS, encodeVector(unitVector(basis)), `us2-${node.id}`);
+    }
+    q.setMetadata('embedding_model', FIXTURE_MODEL);
+    q.setMetadata('embedding_dims', String(FIXTURE_DIMS));
+  } finally {
+    conn.close();
+  }
+}
+
+describe('hybrid search — US2 auto-resolution predicate (T014)', () => {
+  // The pure FR-002 predicate contract — the ONE genuine RED carrier of T014. The
+  // T003 stub ALWAYS returns 'keyword', so the healthy-corpus rows below fail until
+  // T015 lands the real predicate. `auto` → `hybrid` iff (provider configured AND
+  // ≥1 matching-model vector), else `keyword` — the SAME predicate as the FR-017
+  // `codegraph status` availability line (research D1).
+  it('resolveAutoMode → `hybrid` iff provider configured AND ≥1 matching vector, else `keyword` (FR-002)', () => {
+    // hybrid ONLY when BOTH hold (RED against the stub, which returns 'keyword'):
+    const bothHold: AutoResolveInput = { providerConfigured: true, matchingVectorCount: 1 };
+    expect(resolveAutoMode(bothHold)).toBe('hybrid');
+    expect(resolveAutoMode({ providerConfigured: true, matchingVectorCount: 42 })).toBe('hybrid');
+
+    // keyword when EITHER condition is missing (these already hold against the stub):
+    expect(resolveAutoMode({ providerConfigured: true, matchingVectorCount: 0 })).toBe('keyword');
+    expect(resolveAutoMode({ providerConfigured: false, matchingVectorCount: 5 })).toBe('keyword');
+    expect(resolveAutoMode({ providerConfigured: false, matchingVectorCount: 0 })).toBe('keyword');
+  });
+});
+
+describe.skipIf(!HAS_SQLITE)('hybrid search — US2 mode behavior (T014)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  beforeEach(() => __setQueryEmbeddingProviderForTests(fixtureQueryProvider));
+
+  afterEach(() => {
+    __setQueryEmbeddingProviderForTests(undefined);
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* may already be closed */ } }
+    while (dirs.length) {
+      const dir = dirs.pop()!;
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A real, structurally-indexed fixture graph with hand-seeded vectors + a warm query cache. */
+  async function indexedFixture(): Promise<CodeGraph> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    seedFixtureVectors(dir);
+    for (const c of CASES) await cg.acquireQueryVectorForSearch(c.query); // warm each case's query vector
+    return cg;
+  }
+
+  /** A structurally-indexed fixture with vectors seeded but the query cache left COLD (no warming). */
+  async function indexedFixtureUnwarmed(seed?: (dir: string) => void): Promise<CodeGraph> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    if (seed) seed(dir);
+    return cg;
+  }
+
+  const names = (rs: SearchResult[]): string[] => rs.map((r) => r.node.name);
+
+  const semanticCase = CASES.find((c) => c.semanticOnly)!; // 'S': backoffLoop / endpointHealthCheck decoy
+  const bothArmsCase = CASES.find((c) => c.id === 'P1')!;  // parseConfig — keyword-reachable AND vector-affine
+
+  // ── Scenario 1: explicit modes each run exactly their arm config ───────────
+
+  it('explicit `keyword` runs the FTS arm ONLY, in dormant shape (no provenance) (FR-003, SC-004)', async () => {
+    const cg = await indexedFixture();
+
+    // The semantic-only case: FTS surfaces the DECOY (token-matches "endpoint") but
+    // NOT the vector-only target — proof this is the keyword arm alone.
+    const kw = cg.searchNodes(semanticCase.query, { mode: 'keyword' });
+    expect(names(kw)).toContain(semanticCase.decoyName!);
+    expect(names(kw)).not.toContain(semanticCase.targetName);
+    expectDormantShape(kw); // dormant keyword shape — no matchType/fusedScore
+
+    // Byte-identical to a call without the option (the FR-003 dormancy invariant).
+    expect(kw).toEqual(cg.searchNodes(semanticCase.query));
+  });
+
+  it('explicit `semantic` runs the vector arm ONLY — surfaces the semantic-only target and OMITS the keyword decoy (FR-002a)', async () => {
+    const cg = await indexedFixture();
+
+    const sem = cg.searchNodes(semanticCase.query, { mode: 'semantic' });
+
+    // The vector arm surfaces backoffLoop (cosine 1.0 to the query vector)…
+    expect(names(sem)).toContain(semanticCase.targetName);
+    // …and does NOT include the keyword-only decoy: its stored vector is orthogonal
+    // to the query (a filler basis), so the pure semantic arm never surfaces it — the
+    // non-vacuity anchor (a keyword passthrough WOULD return the decoy).
+    expect(names(sem)).not.toContain(semanticCase.decoyName!);
+
+    // Healthy fused (vector-only) result carries provenance; the sole hit is semantic-only.
+    const detailed = searchDetailed(cg, semanticCase.query, { mode: 'semantic' });
+    expect(detailed.degradation).toBeNull();
+    expect(detailed.results.find((r) => r.node.name === semanticCase.targetName)?.matchType).toBe('semantic');
+  });
+
+  it("explicit `hybrid` fuses BOTH arms — a both-arms node carries matchType 'both' (FR-004/012)", async () => {
+    const cg = await indexedFixture();
+
+    const detailed = searchDetailed(cg, bothArmsCase.query, { mode: 'hybrid' });
+    expect(detailed.degradation).toBeNull();
+
+    // parseConfig is keyword-reachable ("parse" prefix) AND vector-affine (cosine 1.0)
+    // → surfaced by BOTH arms → matchType 'both' with a rank-only fused score present.
+    const target = detailed.results.find((r) => r.node.name === bothArmsCase.targetName);
+    expect(target).toBeDefined();
+    expect(target!.matchType).toBe('both');
+    expect(typeof target!.fusedScore).toBe('number');
+  });
+
+  // ── Scenario 2: auto + matching vectors + warmed provider → behaves as HYBRID
+
+  it('`auto` with matching-model vectors + a warmed provider behaves as HYBRID (fused, provenance present) (FR-002)', async () => {
+    const cg = await indexedFixture();
+
+    const auto = searchDetailed(cg, bothArmsCase.query, { mode: 'auto' });
+    const hybrid = searchDetailed(cg, bothArmsCase.query, { mode: 'hybrid' });
+
+    // Healthy: auto resolved to the hybrid arm — fused, provenance-tagged, not degraded.
+    expect(auto.degradation).toBeNull();
+    expect(auto.results.every((r) => r.matchType !== undefined)).toBe(true);
+    const autoTarget = auto.results.find((r) => r.node.name === bothArmsCase.targetName);
+    expect(autoTarget?.matchType).toBe('both');
+
+    // auto behaves IDENTICALLY to explicit hybrid (same ordered names + provenance).
+    expect(names(auto.results)).toEqual(names(hybrid.results));
+    expect(auto.results.map((r) => r.matchType)).toEqual(hybrid.results.map((r) => r.matchType));
+  });
+
+  // ── Scenario 3: auto + no matching vectors → behaves as KEYWORD + signal ────
+
+  it('`auto` with NO matching-model vectors behaves as KEYWORD (dormant results) AND reports the `no-vectors` signal (FR-002/015)', async () => {
+    // Provider present (the beforeEach seam), but NO vectors seeded → the corpus is
+    // unavailable, so auto must resolve to keyword. searchNodesDetailed additionally
+    // reports the machine-readable reason (T019).
+    const cg = await indexedFixtureUnwarmed(); // deliberately NOT seeded
+
+    const keyword = cg.searchNodes(bothArmsCase.query, { mode: 'keyword' });
+    expect(keyword.length).toBeGreaterThan(0); // the fixture actually matches
+
+    // searchNodes → byte-identical keyword-shape results (dormant, no provenance).
+    const auto = cg.searchNodes(bothArmsCase.query, { mode: 'auto' });
+    expect(auto).toEqual(keyword);
+    expectDormantShape(auto);
+
+    // searchNodesDetailed → same dormant results PLUS the no-vectors signal.
+    const detailed = searchDetailed(cg, bothArmsCase.query, { mode: 'auto' });
+    expect(detailed.degradation).toBe('no-vectors');
+    expect(detailed.results).toEqual(keyword);
+    expectDormantShape(detailed.results);
+  });
+
+  // ── Scenario 4: semantic MAY omit an exact-name-only symbol not in the top-k
+
+  it('`semantic` MAY omit an exact-name symbol that has no vector — present in keyword, ABSENT in semantic (US2 scenario 4)', async () => {
+    const dir = makeExactNameFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+    // Seed a vector for `fetchRemoteValue` (basis 0) but NOT for `lookup`.
+    seedExactNameVectors(dir, 'fetchRemoteValue', 'lookup');
+    // A provider that embeds any query to basis 0 (cosine 1.0 with fetchRemoteValue).
+    __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+    await cg.acquireQueryVectorForSearch('lookup'); // warm the query-vector cache
+
+    // Keyword arm: `lookup` exactly matches the query token → present.
+    const kw = cg.searchNodes('lookup', { mode: 'keyword' });
+    expect(names(kw)).toContain('lookup');
+
+    // Semantic arm: `lookup` has NO seeded vector → not in the matrix → absent from
+    // the top-k, even though its NAME exactly matches the query. The vector target
+    // (fetchRemoteValue) is surfaced instead — a healthy, non-degraded semantic result.
+    const detailed = searchDetailed(cg, 'lookup', { mode: 'semantic' });
+    expect(detailed.degradation).toBeNull();
+    expect(names(detailed.results)).not.toContain('lookup');
+    expect(names(detailed.results)).toContain('fetchRemoteValue');
+  });
 });
