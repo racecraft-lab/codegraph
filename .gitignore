@@ -79,3 +79,5 @@ assets/generate-waitlist.py
 
 # Local scored-eval output (npm run eval) — never committed
 __tests__/evaluation/results/
+
+.kommandr/

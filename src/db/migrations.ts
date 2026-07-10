@@ -122,8 +122,51 @@ const migrations: Migration[] = [
   {
     version: 8,
     description:
-      'Add node_vectors — per-symbol embedding store (little-endian f32 BLOB) for semantic search (SPEC-001)',
+      'Track attempted-but-unresolvable refs as status=failed so sync can retry them when a changed file adds a matching symbol (#1240)',
     up: (db) => {
+      // DDL only — instant on any size database. No backfill needed: rows are
+      // only ever queried by name_tail once they carry status='failed', and
+      // both fields are written together by markReferencesFailed. Legacy rows
+      // (all 'pending' after this migration) are orphans from interrupted runs
+      // that the #1187 sweep grinds down on the next sync, marking survivors
+      // failed with their tails as it goes. The tail index is partial: on a
+      // healthy index the pending set is empty and the failed set is the only
+      // population worth indexing. Keep the definitions in lockstep with
+      // schema.sql. ALTER TABLE has no IF NOT EXISTS, so guard each column for
+      // idempotency — a database created from current schema.sql already has
+      // both (matters when migrations are re-run from an older recorded
+      // version, as the v6 regression test does).
+      const cols = db.prepare('PRAGMA table_info(unresolved_refs)').all() as Array<{ name: string }>;
+      const hasColumn = (name: string) => cols.some((c) => c.name === name);
+      if (!hasColumn('status')) {
+        db.exec("ALTER TABLE unresolved_refs ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'");
+      }
+      if (!hasColumn('name_tail')) {
+        db.exec("ALTER TABLE unresolved_refs ADD COLUMN name_tail TEXT NOT NULL DEFAULT ''");
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_unresolved_status ON unresolved_refs(status);
+        CREATE INDEX IF NOT EXISTS idx_unresolved_failed_tail ON unresolved_refs(name_tail) WHERE status = 'failed';
+      `);
+    },
+  },
+  {
+    version: 9,
+    description:
+      'Add node_vectors — per-symbol embedding store (little-endian f32 BLOB) for semantic search (SPEC-001); repeats the v8 unresolved_refs alters as idempotent catch-up',
+    up: (db) => {
+      // FORK MIGRATION (racecraft). This was the fork's version 8 until the
+      // upstream v1.4.0 sync, where upstream claimed version 8 for the
+      // unresolved_refs status/name_tail migration above — renumbered to 9 to
+      // adopt upstream's numbering. Fork databases indexed before the sync
+      // RECORDED version 8 for this node_vectors migration, so the runner will
+      // skip upstream's v8 on them; the guarded ALTERs are therefore REPEATED
+      // here (all parts idempotent) so those databases still gain the
+      // unresolved_refs columns. Every path is safe: fresh databases come from
+      // schema.sql (has everything), upstream-origin databases get node_vectors
+      // + no-op alters, pre-sync fork databases get no-op node_vectors + the
+      // alters.
+      //
       // DDL only — instant on any size database. The table starts EMPTY on
       // migrated databases; the embed pass populates it later (never this
       // migration), and a full re-index writes it from scratch. No foreign key
@@ -140,6 +183,18 @@ const migrations: Migration[] = [
           vector BLOB NOT NULL,
           input_hash TEXT NOT NULL
         );
+      `);
+      const cols = db.prepare('PRAGMA table_info(unresolved_refs)').all() as Array<{ name: string }>;
+      const hasColumn = (name: string) => cols.some((c) => c.name === name);
+      if (!hasColumn('status')) {
+        db.exec("ALTER TABLE unresolved_refs ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'");
+      }
+      if (!hasColumn('name_tail')) {
+        db.exec("ALTER TABLE unresolved_refs ADD COLUMN name_tail TEXT NOT NULL DEFAULT ''");
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_unresolved_status ON unresolved_refs(status);
+        CREATE INDEX IF NOT EXISTS idx_unresolved_failed_tail ON unresolved_refs(name_tail) WHERE status = 'failed';
       `);
     },
   },
