@@ -32,3 +32,16 @@
   zero unowned rows; `specs/008-lsp-client-integration/` removed with provenance
   in [archive-reports/2026-07-07-SPEC-008.md](archive-reports/2026-07-07-SPEC-008.md);
   `.specify/feature.json` cleared (no feature in flight).
+
+- **2026-07-10** - SPEC-025 archived. PR #35 (`62693fb`) merged; roadmap row
+  flipped to complete; SPEC-026 moved to ready because the plugin-channel
+  decision document now lives in `docs/design/plugin-channel-decision.md`;
+  `specs/025-plugin-platform-spike/` removed with provenance in
+  [archive-reports/2026-07-10-SPEC-025.md](archive-reports/2026-07-10-SPEC-025.md).
+
+- **2026-07-10** - SPEC-003 archived. PR #36 (`2c6c643`) merged; roadmap row
+  flipped to complete; hybrid semantic search is live on main (dogfood loop run:
+  build + sync + status healthy, `Hybrid search available: yes`);
+  `specs/003-hybrid-semantic-search/` removed with provenance in
+  [archive-reports/2026-07-10-SPEC-003.md](archive-reports/2026-07-10-SPEC-003.md);
+  `.specify/feature.json` cleared (no feature in flight).
