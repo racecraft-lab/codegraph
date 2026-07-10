@@ -48,3 +48,24 @@ vendored implementation/interface grammar WASMs, extraction support, Dune-scoped
 unique-only local resolution, fixture-backed tests, docs, and validation evidence.
 PPX expansion and external package graphing stayed out of scope. Full plan
 recoverable: `git show 100a675:specs/023-ocaml-language-support/plan.md`.
+
+## SPEC-025 - Plugin Platform Mechanics Spike (archived 2026-07-10)
+
+Plan shape that shipped: timeboxed spike producing a single decision document
+(`docs/design/plugin-channel-decision.md`) with hands-on validation evidence
+against pinned Claude Code 2.1.206 / Codex CLI 0.144.0, drafted plugin artifact,
+and FR/SC compliance record. All implementation deferred to SPEC-026. Full plan
+recoverable: `git show 62693fb:specs/025-plugin-platform-spike/plan.md`.
+
+## SPEC-003 - Hybrid Semantic Search (archived 2026-07-10)
+
+Plan shape that shipped: one new fusion module (`src/search/hybrid.ts`) with
+plumbing-only edits elsewhere (types, library dispatch, DB reads +
+write-version bump, MCP/CLI rendering); sync `searchNodes` bridged to async
+embedding via `acquireQueryVectorForSearch` + a bounded query-vector LRU cache
+(keyword-while-warming); TDD throughout (86+13+24 dedicated tests plus CI gates:
+hybrid ≥ keyword hit-rate, keyword byte-stability, p95 fusion ≤150ms, SC-007
+status truthfulness). Reviewability ran over the setup estimate (743 code-only
+LOC vs ~195; WARN-proceed recorded in autopilot-state). Explore-side fusion
+deliberately deferred to a future A/B-gated spec. Full plan recoverable:
+`git show 2c6c643:specs/003-hybrid-semantic-search/plan.md`.

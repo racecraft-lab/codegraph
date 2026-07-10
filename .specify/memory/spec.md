@@ -61,3 +61,31 @@ Detailed provenance + recovery:
 The active `specs/023-ocaml-language-support/` folder was removed because the
 grammar/extractor/resolver/test artifacts and preserved workflow files carry the
 durable record.
+
+## SPEC-025 - Plugin Platform Mechanics Spike (archived 2026-07-10)
+
+Research spike; no runtime code. Shipped the plugin-channel decision record
+`docs/design/plugin-channel-decision.md` in PR #35: Claude Code + Codex plugins
+carry the MCP server, prompt hook, and skills; the npm installer keeps binary
+distribution and the components the Codex format cannot carry;
+PATH → `npx --offline` → success-shaped-stub launcher resolution;
+skills-first v1. Detailed
+provenance + recovery:
+[archive-reports/2026-07-10-SPEC-025.md](archive-reports/2026-07-10-SPEC-025.md).
+The active `specs/025-plugin-platform-spike/` folder was removed because the
+decision document is the durable deliverable and process evidence is preserved
+under `docs/ai/specs/.process/`.
+
+## SPEC-003 - Hybrid Semantic Search (archived 2026-07-10)
+
+Query-time hybrid semantic search shipped in PR #36: rank-only RRF (k=60) fusing
+FTS5 keyword with brute-force cosine over SPEC-001/002 vectors; `mode` parameter
+(`keyword|semantic|hybrid|auto`) on library/MCP/CLI surfaces; provenance tags +
+embed/fusion timing footer; four success-shaped degradation hints (never
+`isError`); write-version staleness token; 1 GiB matrix guard; status
+availability line. Dormant by default — no embedding env means byte-identical
+keyword behavior and zero new env vars. Detailed provenance + recovery:
+[archive-reports/2026-07-10-SPEC-003.md](archive-reports/2026-07-10-SPEC-003.md).
+The active `specs/003-hybrid-semantic-search/` folder was removed because the
+shipped code, tests, CHANGELOG/BUNDLING docs, and preserved workflow/design
+evidence carry the durable record.

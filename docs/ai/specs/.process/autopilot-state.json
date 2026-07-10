@@ -2,9 +2,9 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-003-workflow.md",
   "spec_id": "SPEC-003",
   "feature_dir": "specs/003-hybrid-semantic-search",
-  "updated_at": "2026-07-10T17:55:00Z",
-  "active_step": "Post-Implementation: Reviewability Diff Gate",
-  "status": "in_progress",
+  "updated_at": "2026-07-10T22:30:00Z",
+  "active_step": "Archived",
+  "status": "archived",
   "archive_sweep": {
     "cleanup_mode": "apply-eligibility (feature branch)",
     "current_target_excluded": "specs/003-hybrid-semantic-search",
@@ -95,5 +95,15 @@
   "pr_marker_plan": {
     "status": "not_required",
     "reason": "no size-only reviewability block exists; setup gate passed and tasks-mode gate deferred with proceed decision"
+  },
+  "archive": {
+    "archived_at": "2026-07-10",
+    "merged_pr": 36,
+    "merge_commit": "2c6c6434068dbb9b076cabd1a0de9889dfe294fa",
+    "archive_report": ".specify/memory/archive-reports/2026-07-10-SPEC-003.md",
+    "spec_dir_removed": "specs/003-hybrid-semantic-search",
+    "post_merge_dogfood": "build + sync + status healthy on main (Hybrid search available: yes); semantic smoke green",
+    "cleanup_branch": "archive/spec-003-025-cleanup-2026-07-10",
+    "note": "SPEC-025 archived in the same cleanup (PR #35, 62693fb); see 2026-07-10-SPEC-025.md"
   }
 }
