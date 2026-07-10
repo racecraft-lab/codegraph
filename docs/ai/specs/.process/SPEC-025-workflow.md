@@ -713,6 +713,11 @@ Before starting any task:
 - [x] PR created against origin (racecraft-lab) — never upstream; no session URLs in the PR body: **PR #35** https://github.com/racecraft-lab/codegraph/pull/35 (packet + contract validators passed fresh; body from the speckit packet)
 - [ ] Merged to main, then Dogfooding Protocol step: `npm run build` + `codegraph sync` on main
 
+## Review Remediation (PR #35)
+
+- **Round 1 — Copilot (3 inline comments, one concern):** the "~2 total files" budget wording vs the committed SpecKit process artifacts. Reworded spec.md FR-018, plan.md Reviewability Budget, and the tasks.md header to distinguish "~2 primary deliverable files" from standard process-artifact overhead (`0c61f9d`); replied to and resolved all three threads.
+- **Round 2 — maintainer readability refactor:** the decision doc was rewritten in place to cut low-value prose (per-section "Status: drafted (Txxx)" narration removed; the Closes/Done-bar apparatus collapsed to one contract line per section; findings stated once in their home section with pointers elsewhere — the SD-1/SD-2 verbatim blocker text now lives only in §11.1; §12.1/§11.2/§12.3 budget wording aligned with the round-1 FR-018 deliverable-file framing). Volume 181.6 KB → 146.0 KB (−20%); **nothing substantive removed**: all 12 sections, all 31 evidence blocks (7 frozen fields each, IDs unchanged), P1–P4/S1–S10/C-references, SD-1…SD-4, the full §12.2 traceability map, and the §10 exemplar body (byte-identical) survive; secret sweep re-verified clean.
+
 ---
 
 ## Lessons Learned
