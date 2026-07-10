@@ -6,10 +6,11 @@
 
 import { SqliteDatabase } from './sqlite-adapter';
 
-/**
- * Current schema version
- */
-export const CURRENT_SCHEMA_VERSION = 8;
+// Current schema version: exported below the migrations array as
+// CURRENT_SCHEMA_VERSION — derived from the array's last entry so adding a
+// migration can never leave the version-gate constant stale (the fork's
+// upstream-v1.4.0 sync renumbered its node_vectors migration to v9 and a
+// hardcoded `= 8` here silently blocked it from ever running).
 
 /**
  * Migration definition
@@ -199,6 +200,12 @@ const migrations: Migration[] = [
     },
   },
 ];
+
+/**
+ * Current schema version — always the last migration's version (see the note
+ * above the migrations array).
+ */
+export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]!.version;
 
 /**
  * Get the current schema version from the database
