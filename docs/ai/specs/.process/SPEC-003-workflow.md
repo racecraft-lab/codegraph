@@ -771,6 +771,20 @@ zero assertion rewrites.
 
 ---
 
+### UAT Runbook step (2026-07-10): SKIPPED with evidence
+
+Runner helper `generate-uat-skeleton` is a deferred mutation stub on the installed runner
+(`promotion_status: deferred`; dry_run returns a command plan with no touched paths — same
+deferral class as `reviewability-gate` tasks-mode and `final-reviewability-backstop`). No
+committed skeleton or runbook exists under `specs/003-hybrid-semantic-search/.process/`, and
+`uat-runbook-author` only rewrites an EXISTING skeleton (fail-open by design), so no author
+agent was spawned. UAT acceptance evidence stands on the committed records instead:
+`.process/dogfood-uat.md` (T030 — live-index paraphrase recall 4/4 incl. the MCP
+`codegraph_search` surface; dormancy byte-parity) and `.process/ab-evidence.md` (T029 — probe
+paraphrase miss→rank-1; dormant control zero-delta).
+
+---
+
 ### Self-Review (auto-generated, 2026-07-10)
 
 **Tests executed:** BUILD, TYPECHECK, and UNIT_TEST all ran in-session and exited zero — most
