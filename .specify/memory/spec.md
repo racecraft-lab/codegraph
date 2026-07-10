@@ -67,8 +67,9 @@ durable record.
 Research spike; no runtime code. Shipped the plugin-channel decision record
 `docs/design/plugin-channel-decision.md` in PR #35: Claude Code + Codex plugins
 carry the MCP server, prompt hook, and skills; the npm installer keeps binary
-distribution and the components the Codex format cannot carry; PATH → `npx
---offline` → success-shaped-stub launcher resolution; skills-first v1. Detailed
+distribution and the components the Codex format cannot carry;
+PATH → `npx --offline` → success-shaped-stub launcher resolution;
+skills-first v1. Detailed
 provenance + recovery:
 [archive-reports/2026-07-10-SPEC-025.md](archive-reports/2026-07-10-SPEC-025.md).
 The active `specs/025-plugin-platform-spike/` folder was removed because the
