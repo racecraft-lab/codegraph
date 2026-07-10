@@ -29,6 +29,7 @@ import {
 } from 'fs';
 import { clamp, validatePathWithinRoot, validateProjectPath, isConfigLeafNode, CONFIG_LEAF_LANGUAGES } from '../utils';
 import { isGeneratedFile } from '../extraction/generated-detection';
+import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine } from '../search/hybrid';
 import { scanDynamicDispatch } from './dynamic-boundaries';
 
 /**
@@ -1568,8 +1569,19 @@ export class ToolHandler {
       return aGen - bGen;
     });
 
+    // Results LEAD (FR-005); the FR-008 timing footer (semantic arm ran, non-degraded)
+    // or the FR-015 degradation hint (degraded) FOLLOWS — appended AFTER truncation so a
+    // long result set never truncates the note away. The two are mutually exclusive:
+    // `timing` is present only when healthy-fused, `degradation` only when degraded;
+    // keyword mode + the healthy-empty case emit neither (byte-identical to today, SC-004).
     const formatted = this.formatSearchResults(ranked);
-    return this.textResult(this.truncateOutput(formatted));
+    let output = this.truncateOutput(formatted);
+    if (detailed.timing) {
+      output += `\n\n${timingFooterLine(detailed.timing)}`;
+    } else if (detailed.degradation) {
+      output += DEGRADATION_HINT_STRINGS[detailed.degradation];
+    }
+    return this.textResult(output);
   }
 
   /**
@@ -4550,8 +4562,11 @@ export class ToolHandler {
     for (const result of results) {
       const { node } = result;
       const location = node.startLine ? `:${node.startLine}` : '';
-      // Compact format: one line per result with key info
-      lines.push(`**${node.name}** (${node.kind})`);
+      // Compact format: one line per result with key info. FR-012: append the inline
+      // provenance tag (`[keyword]`/`[semantic]`/`[both]`) on the primary line in fused
+      // modes; `provenanceTag` returns '' for a keyword/degraded hit (no `matchType`), so
+      // keyword output stays byte-identical (SC-004).
+      lines.push(`**${node.name}** (${node.kind})${provenanceTag(result.matchType)}`);
       lines.push(`${node.filePath}${location}`);
       if (node.signature) lines.push(`\`${node.signature}\``);
       lines.push('');

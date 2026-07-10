@@ -36,6 +36,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CodeGraph } from '../src';
+import {
+  DEGRADATION_HINT_STRINGS,
+  provenanceTag,
+  timingFooterLine,
+  withJsonTiming,
+  type SearchTiming,
+} from '../src/search/hybrid';
+import type { SearchResult } from '../src/types';
 
 const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
 
@@ -143,5 +151,225 @@ describe('codegraph query — --mode surface (SPEC-003 T017)', () => {
     // JSON.stringify omits them entirely.
     expect(parsed[0].matchType).toBeUndefined();
     expect(parsed[0].fusedScore).toBeUndefined();
+  });
+
+  // ── T022: degradation hint footer renders on the subprocess-observable path ──
+
+  it('T022: no provider + hybrid → results lead, verbatim string 1 footer follows (exit 0)', () => {
+    const out = query(tempDir, ['-m', 'hybrid', '-l', '5']);
+    // Results lead …
+    expect(out).toContain('parseToken');
+    // … the FR-015 no-provider hint (string 1) follows, VERBATIM.
+    expect(out).toContain(DEGRADATION_HINT_STRINGS['no-provider']);
+    expect(out.trimEnd().endsWith('to enable.')).toBe(true);
+    // Degraded → no timing footer, no provenance tags, no score.
+    expect(out).not.toContain('semantic: embed');
+    expect(out).not.toContain('[keyword]');
+    expect(out).not.toContain('%');
+  });
+
+  it('T022: --json on the dormant path never carries embedMs/fusionMs', () => {
+    const parsed = JSON.parse(query(tempDir, ['-m', 'hybrid', '--json', '-l', '5']));
+    expect(parsed[0].embedMs).toBeUndefined();
+    expect(parsed[0].fusionMs).toBeUndefined();
+  });
+});
+
+// Pure render helpers (FR-008/012). Unit-tested in-process because the fused-render
+// path needs the query-embedding provider seam, which is unreachable across the
+// execFileSync subprocess boundary — the helpers are the isolable, deterministic core.
+describe('SPEC-003 T022 — pure render helpers', () => {
+  it('provenanceTag maps each matchType to a leading-space bracket tag', () => {
+    expect(provenanceTag('keyword')).toBe(' [keyword]');
+    expect(provenanceTag('semantic')).toBe(' [semantic]');
+    expect(provenanceTag('both')).toBe(' [both]');
+  });
+
+  it('provenanceTag returns EMPTY for a dormant/keyword hit (no matchType) — byte-identical', () => {
+    expect(provenanceTag(undefined)).toBe('');
+  });
+
+  it('timingFooterLine renders the FR-008 shape with integer ms + middot separator', () => {
+    const timing: SearchTiming = { embedMs: 34, fusionMs: 12 };
+    expect(timingFooterLine(timing)).toBe('semantic: embed 34ms · fusion 12ms');
+    expect(timingFooterLine(timing)).toMatch(/^semantic: embed \d+ms · fusion \d+ms$/);
+  });
+
+  it('withJsonTiming attaches embedMs/fusionMs to every result when the semantic arm ran', () => {
+    const results = [
+      { node: { id: 'a' }, score: 1, matchType: 'semantic', fusedScore: 0.5 },
+      { node: { id: 'b' }, score: 0.9, matchType: 'keyword', fusedScore: 0.4 },
+    ] as unknown as SearchResult[];
+    const out = withJsonTiming(results, { embedMs: 7, fusionMs: 3 }) as unknown as Array<Record<string, unknown>>;
+    expect(out).toHaveLength(2);
+    for (const r of out) {
+      expect(r.embedMs).toBe(7);
+      expect(r.fusionMs).toBe(3);
+    }
+    // matchType/fusedScore preserved.
+    expect(out[0].matchType).toBe('semantic');
+    expect(out[0].fusedScore).toBe(0.5);
+  });
+
+  it('withJsonTiming is a no-op (no embedMs/fusionMs) when timing is absent — keyword/degraded', () => {
+    const results = [{ node: { id: 'a' }, score: 1 }] as unknown as SearchResult[];
+    const out = withJsonTiming(results, undefined) as unknown as Array<Record<string, unknown>>;
+    expect(out).toBe(results); // identity — no wrapping allocation on the dormant path
+    expect(out[0].embedMs).toBeUndefined();
+    expect(out[0].fusionMs).toBeUndefined();
+  });
+});
+
+// ── T023: `codegraph status` hybrid-search availability line + --json fields ──
+//
+// FR-017 / SC-007 (contract: contracts/degradation-hints.md §Status availability line).
+// The line is derived SOLELY from the existing getEmbeddingStatus() snapshot — no new
+// probe, no live daemon warmth. Exercised end-to-end against the built binary across all
+// three reachable states:
+//   • yes                                  ⟺ active provider AND ≥1 matching-model vector;
+//   • no (no embedding provider configured) ⟺ dormant / misconfigured;
+//   • no (no matching-model vectors …)       ⟺ active provider but 0 matching-model vectors.
+// The active states need NO live endpoint: getEmbeddingStatus reads CONFIG (env) + coverage
+// (DB JOIN) only — never the endpoint — so a dummy URL/MODEL + a seeded node_vectors row
+// fully drive the yes/no-vectors branches across the subprocess boundary.
+describe('codegraph status — hybrid-search availability (SPEC-003 T023)', () => {
+  let tempDir: string;
+
+  // The exact reason literals (contract §Status availability line). The human line wraps
+  // the reason in `no (…)`; --json exposes the same reason text verbatim (or null when yes).
+  const REASON_NO_PROVIDER = 'no embedding provider configured';
+  const REASON_NO_VECTORS = 'no matching-model vectors — run `codegraph sync`';
+
+  beforeEach(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-status-hybrid-'));
+    fs.mkdirSync(path.join(tempDir, 'src'));
+    fs.writeFileSync(
+      path.join(tempDir, 'src/auth.ts'),
+      'export function parseToken(t: string){ return t.trim(); }\n',
+    );
+    const cg = CodeGraph.initSync(tempDir);
+    await cg.indexAll();
+    cg.close();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  /** Run `codegraph status` (human) against the built binary, embedding env scrubbed. */
+  function statusHuman(extraEnv: NodeJS.ProcessEnv = {}): string {
+    return execFileSync(process.execPath, [BIN, 'status'], {
+      cwd: tempDir,
+      encoding: 'utf-8',
+      env: { ...CHILD_ENV, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  }
+
+  /** Run `codegraph status --json`, parse the single JSON line. */
+  function statusJson(extraEnv: NodeJS.ProcessEnv = {}): Record<string, unknown> {
+    const out = execFileSync(process.execPath, [BIN, 'status', '--json'], {
+      cwd: tempDir,
+      encoding: 'utf-8',
+      env: { ...CHILD_ENV, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return JSON.parse(out.trim().split('\n').filter(Boolean).pop()!);
+  }
+
+  /** Seed exactly one matching-model vector so coverage.embedded > 0 (the `yes` predicate). */
+  function seedVector(model: string): void {
+    // require, not import: vite tries to bundle a dynamic import specifier (mirrors
+    // status-json.test.ts's index_state seeding).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(path.join(tempDir, '.codegraph', 'codegraph.db'));
+    const row = db
+      .prepare("SELECT id FROM nodes WHERE kind = 'function' LIMIT 1")
+      .get() as { id: string } | undefined;
+    if (!row) throw new Error('fixture has no embeddable function node to seed a vector for');
+    db.prepare(
+      'INSERT INTO node_vectors (node_id, model, dims, vector, input_hash) VALUES (?, ?, 1, ?, ?)',
+    ).run(row.id, model, Buffer.from([0, 0, 0, 0]), 'seed');
+    db.close();
+  }
+
+  // Active endpoint provider = both URL and MODEL set. getEmbeddingStatus never reaches
+  // the URL, so a dummy is sufficient. Layered over CHILD_ENV's scrub of the same vars.
+  const ACTIVE_ENV: NodeJS.ProcessEnv = {
+    CODEGRAPH_EMBEDDING_URL: 'http://localhost:9/embed',
+    CODEGRAPH_EMBEDDING_MODEL: 'test-model',
+  };
+
+  // ── State 1: no provider configured (dormant) ──
+  it('no provider → human line reads `no (no embedding provider configured)`', () => {
+    const out = statusHuman();
+    expect(out).toContain(`Hybrid search available: no (${REASON_NO_PROVIDER})`);
+  });
+
+  it('no provider → --json: hybridSearchAvailable=false, hybridSearchReason=<no-provider>', () => {
+    const out = statusJson();
+    expect(out.hybridSearchAvailable).toBe(false);
+    expect(out.hybridSearchReason).toBe(REASON_NO_PROVIDER);
+  });
+
+  // ── State 2: active provider but no matching-model vectors (coverage.embedded === 0) ──
+  it('active + 0 vectors → human line reads `no (no matching-model vectors — run `codegraph sync`)`', () => {
+    const out = statusHuman(ACTIVE_ENV);
+    expect(out).toContain(`Hybrid search available: no (${REASON_NO_VECTORS})`);
+  });
+
+  it('active + 0 vectors → --json: hybridSearchAvailable=false, hybridSearchReason=<no-vectors>', () => {
+    const out = statusJson(ACTIVE_ENV);
+    expect(out.hybridSearchAvailable).toBe(false);
+    expect(out.hybridSearchReason).toBe(REASON_NO_VECTORS);
+  });
+
+  // ── State 3: active provider AND ≥1 matching-model vector → yes ──
+  it('active + ≥1 matching vector → human line reads `yes`', () => {
+    seedVector('test-model');
+    const out = statusHuman(ACTIVE_ENV);
+    expect(out).toContain('Hybrid search available: yes');
+    // The negative branches must NOT also render.
+    expect(out).not.toContain('Hybrid search available: no');
+  });
+
+  it('active + ≥1 matching vector → --json: hybridSearchAvailable=true, hybridSearchReason=null', () => {
+    seedVector('test-model');
+    const out = statusJson(ACTIVE_ENV);
+    expect(out.hybridSearchAvailable).toBe(true);
+    expect(out.hybridSearchReason).toBeNull();
+  });
+
+  // ── null-iff-true invariant (contract): reason is null EXACTLY when available is true ──
+  it('hybridSearchReason is null if and only if hybridSearchAvailable is true (all 3 states)', () => {
+    const dormant = statusJson();
+    expect(dormant.hybridSearchAvailable).toBe(false);
+    expect(dormant.hybridSearchReason).not.toBeNull();
+
+    const noVectors = statusJson(ACTIVE_ENV);
+    expect(noVectors.hybridSearchAvailable).toBe(false);
+    expect(noVectors.hybridSearchReason).not.toBeNull();
+
+    seedVector('test-model');
+    const yes = statusJson(ACTIVE_ENV);
+    expect(yes.hybridSearchAvailable).toBe(true);
+    expect(yes.hybridSearchReason).toBeNull();
+  });
+
+  // ── Additive: every existing status --json property stays byte-stable ──
+  it('the two hybrid fields are ADDITIVE — existing status --json properties are untouched', () => {
+    const out = statusJson();
+    // Existing top-level fields (their presence + shape) are preserved.
+    expect(out.initialized).toBe(true);
+    expect(typeof out.version).toBe('string');
+    expect(out.indexPath as string).toContain('.codegraph');
+    // Nested snapshots the two fields must NOT be folded into.
+    expect(out.embedding).toBeTypeOf('object');
+    expect((out.embedding as Record<string, unknown>).hybridSearchAvailable).toBeUndefined();
+    expect(out.lsp).toBeTypeOf('object');
+    // The new fields are flat, top-level siblings.
+    expect(Object.prototype.hasOwnProperty.call(out, 'hybridSearchAvailable')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(out, 'hybridSearchReason')).toBe(true);
   });
 });

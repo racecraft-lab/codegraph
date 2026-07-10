@@ -37,8 +37,9 @@ import { detectWorktreeIndexMismatch, worktreeMismatchWarning } from '../sync/wo
 import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
 import { ensureCodegraphIgnored } from '../utils';
-import type { LocalEmbeddingSkipReason } from '../index';
+import type { EmbeddingStatus, LocalEmbeddingSkipReason } from '../index';
 import type { SearchMode } from '../types';
+import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine, withJsonTiming } from '../search/hybrid';
 import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
@@ -938,6 +939,26 @@ program
   });
 
 /**
+ * SPEC-003 FR-017 / SC-007: derive the query-side hybrid-search availability from the
+ * EXISTING getEmbeddingStatus() snapshot — no new probe, no live daemon warmth. `yes`
+ * ⟺ an active provider AND ≥1 matching-model vector (the FR-002 `auto`-mode predicate:
+ * `active === true && coverage.embedded > 0`). The two `no` reasons reuse the search-time
+ * degradation-hint vocabulary (strings 1/2). `reason` is `null` if and only if `available`
+ * is `true`. Contract: contracts/degradation-hints.md §Status availability line.
+ */
+function deriveHybridSearchAvailability(
+  embedding: EmbeddingStatus,
+): { available: boolean; reason: string | null } {
+  if (embedding.active) {
+    return embedding.coverage.embedded > 0
+      ? { available: true, reason: null }
+      : { available: false, reason: 'no matching-model vectors — run `codegraph sync`' };
+  }
+  // Dormant or misconfigured — no usable embedding provider.
+  return { available: false, reason: 'no embedding provider configured' };
+}
+
+/**
  * codegraph status [path]
  */
 program
@@ -989,6 +1010,10 @@ program
       // JSON output mode
       if (options.json) {
         const lastIndexedMs = cg.getLastIndexedAt();
+        // SPEC-003 FR-017: derive the flat availability fields from the SAME embedding
+        // snapshot the `embedding` block reports (no second probe).
+        const embeddingStatus = cg.getEmbeddingStatus();
+        const hybrid = deriveHybridSearchAvailability(embeddingStatus);
         console.log(JSON.stringify({
           initialized: true,
           version: packageJson.version,
@@ -1027,8 +1052,12 @@ program
           },
           // Embedding observability (SPEC-001 FR-022): parallel to the human
           // section below; automated probes read this machine shape.
-          embedding: cg.getEmbeddingStatus(),
+          embedding: embeddingStatus,
           lsp,
+          // SPEC-003 FR-017: additive, flat, top-level query-side availability —
+          // derived from `embedding` above; `hybridSearchReason` is null iff available.
+          hybridSearchAvailable: hybrid.available,
+          hybridSearchReason: hybrid.reason,
         }));
         cg.destroy();
         return;
@@ -1122,6 +1151,14 @@ program
           console.log('  ' + chalk.dim(`(from a previous run: model ${pr.model}, dims ${pr.dims ?? 'unknown'}, coverage ${formatNumber(pr.coverage.embedded)}/${formatNumber(pr.coverage.embeddable)} (${pr.coverage.percent}%))`));
         }
       }
+      // SPEC-003 FR-017: one derived query-side availability line under the block —
+      // the yes/no predicate a caller would see from an `auto`-mode search of this index.
+      // Emitted PLAIN (no color): contracts/degradation-hints.md treats this as a normative
+      // literal, so the exact `yes` / `no (reason)` text must appear verbatim regardless of
+      // the ambient color setting (ANSI codes would split the literal).
+      const hybrid = deriveHybridSearchAvailability(embedding);
+      const hybridValue = hybrid.available ? 'yes' : `no (${hybrid.reason})`;
+      console.log(`  Hybrid search available: ${hybridValue}`);
       console.log();
 
       // LSP precision. Reading status never starts language servers; this is
@@ -1241,11 +1278,12 @@ program
         await cg.acquireQueryVectorForSearch(search);
       }
 
-      const rawResults = cg.searchNodesDetailed(search, {
+      const detailed = cg.searchNodesDetailed(search, {
         limit,
         kinds: options.kind ? [options.kind as any] : undefined,
         mode,
-      }).results;
+      });
+      const rawResults = detailed.results;
 
       // Mirror the MCP search down-rank so the CLI also surfaces the
       // hand-written implementation before protobuf/gRPC scaffolding
@@ -1258,7 +1296,10 @@ program
       });
 
       if (options.json) {
-        console.log(JSON.stringify(results, null, 2));
+        // FR-008 machine fields: attach embedMs/fusionMs to each result when the semantic
+        // arm ran; a no-op (identity) on the keyword/degraded path so the dormant --json
+        // shape stays byte-stable (no added fields).
+        console.log(JSON.stringify(withJsonTiming(results, detailed.timing), null, 2));
       } else {
         if (results.length === 0) {
           info(`No results found for "${search}"`);
@@ -1280,15 +1321,30 @@ program
             const node = result.node;
             const location = `${node.filePath}:${node.startLine}`;
 
+            // FR-012: append the inline provenance tag on the primary line in fused modes.
+            // `provenanceTag` returns '' for a keyword/degraded hit (no `matchType`), so the
+            // #1045 no-score human layout stays byte-identical on the dormant path (SC-004).
             console.log(
               chalk.cyan(node.kind.padEnd(12)) +
-              chalk.white(node.name)
+              chalk.white(node.name) +
+              chalk.dim(provenanceTag(result.matchType))
             );
             console.log(chalk.dim(`  ${location}`));
             if (node.signature) {
               console.log(chalk.dim(`  ${node.signature}`));
             }
             console.log();
+          }
+
+          // Results LEAD (FR-005); the FR-008 timing footer (semantic arm ran) or the
+          // FR-015 degradation hint (degraded) FOLLOWS. Mutually exclusive; keyword mode
+          // and the healthy-empty case emit neither (byte-identical to today, SC-004).
+          // Printed WITHOUT chalk so the pinned contract strings stay byte-exact — no ANSI
+          // escapes wrapping the FR-015 literals a consumer may parse.
+          if (detailed.timing) {
+            console.log(timingFooterLine(detailed.timing));
+          } else if (detailed.degradation) {
+            console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
           }
         }
       }

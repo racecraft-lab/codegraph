@@ -222,6 +222,69 @@ export interface SearchNodesDetailed {
   results: SearchResult[];
   /** Machine-readable degradation reason, or `null` when not degraded. */
   degradation: DegradationCondition | null;
+  /**
+   * Query-level timing for the semantic arm (FR-008), present ONLY when the semantic
+   * arm actually RAN (a healthy, non-degraded `semantic`/`hybrid`/`auto` fusion).
+   * ABSENT (`undefined`) in keyword mode, every degraded condition, and the
+   * healthy-empty filter-only case — so keyword/degraded output stays byte-identical
+   * (SC-004). Additive: existing shape asserts on `{ results, degradation }` stay green.
+   */
+  timing?: SearchTiming;
+}
+
+/**
+ * The semantic arm's per-query timing (FR-008). `embedMs` is the query-embed duration
+ * recorded at ACQUISITION time (`acquireQueryVectorForSearch` deposits it in the query
+ * vector cache entry, since the embed happens there, not at search time); `fusionMs` is
+ * the fusion leg (matrix scan + top-k + RRF merge) measured inside `runFusedSearch`. Both
+ * are whole milliseconds. The MCP/CLI surfaces render `timingFooterLine(timing)` after the
+ * results, and the CLI `--json` surface attaches the two fields per result via
+ * {@link withJsonTiming}.
+ */
+export interface SearchTiming {
+  /** Query-embed duration (ms) recorded when the vector was acquired/cached. */
+  embedMs: number;
+  /** Fusion leg duration (ms): matrix scan + top-k + RRF merge inside `runFusedSearch`. */
+  fusionMs: number;
+}
+
+/**
+ * The FR-012 inline provenance tag for a fused hit's PRIMARY line — `[keyword]` /
+ * `[semantic]` / `[both]`, with a leading space so it appends cleanly to both the MCP
+ * markdown `**name** (kind)` line and the CLI human `kind name` line. Returns `''` when
+ * the hit carries no `matchType` (keyword mode, or a dormant/degraded result) so that
+ * output stays BYTE-IDENTICAL to today (SC-004). Pure/deterministic — unit-tested
+ * without a subprocess.
+ */
+export function provenanceTag(matchType?: 'keyword' | 'semantic' | 'both'): string {
+  return matchType ? ` [${matchType}]` : '';
+}
+
+/**
+ * The FR-008 timing footer LINE (no leading separator) — `semantic: embed <n>ms ·
+ * fusion <n>ms`. The surfaces add their own blank-line separator so the note follows
+ * the results (FR-005). Only rendered when {@link SearchNodesDetailed.timing} is present
+ * (the semantic arm ran). Pure/deterministic — unit-tested without a subprocess.
+ */
+export function timingFooterLine(timing: SearchTiming): string {
+  return `semantic: embed ${timing.embedMs}ms · fusion ${timing.fusionMs}ms`;
+}
+
+/**
+ * Attach the FR-008 machine-readable timing fields (`embedMs`, `fusionMs`) to every
+ * result for the CLI `--json` surface, present ONLY when the semantic arm ran. When
+ * `timing` is absent (keyword mode / any degraded condition) the input array is returned
+ * BY IDENTITY — no wrapping, no added fields — so `--json` stays byte-stable on the
+ * dormant path (existing `status-embedding-json`/CLI-shape contracts). Kept per-result
+ * (not top-level) so the JSON top-level type remains a stable array across all modes.
+ * Pure/deterministic — unit-tested without a subprocess.
+ */
+export function withJsonTiming(
+  results: SearchResult[],
+  timing?: SearchTiming,
+): SearchResult[] | Array<SearchResult & { embedMs: number; fusionMs: number }> {
+  if (timing === undefined) return results;
+  return results.map((r) => ({ ...r, embedMs: timing.embedMs, fusionMs: timing.fusionMs }));
 }
 
 /**

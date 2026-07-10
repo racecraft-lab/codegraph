@@ -447,6 +447,18 @@ function queryVectorCacheKey(text: string, model: string): string {
 }
 
 /**
+ * A cached query embedding plus the wall-clock ms its acquisition took (SPEC-003
+ * FR-008). The embed happens at ACQUISITION time (`acquireQueryVectorForSearch`), not
+ * at search time, so its duration is recorded when the vector is deposited and carried
+ * here — the synchronous `runFusedSearch` reads it back out to populate the timing
+ * footer's `embedMs` on a cache HIT (a warm query that actually fuses).
+ */
+interface CachedQueryVector {
+  vector: Float32Array;
+  embedMs: number;
+}
+
+/**
  * Main CodeGraph class
  *
  * Provides the primary interface for interacting with the code knowledge graph.
@@ -462,7 +474,7 @@ export class CodeGraph {
    * `searchNodes`'s fusion path — see the module-level header above
    * {@link QUERY_VECTOR_CACHE_MAX} for the sync/async boundary rationale.
    */
-  private readonly queryVectorCache = new Map<string, Float32Array>();
+  private readonly queryVectorCache = new Map<string, CachedQueryVector>();
   /**
    * Bounded per-project set of `(filter-stripped text, model id)` keys whose most
    * recent query-embed FAILED (the provider rejected / timed out). Recorded by
@@ -1949,8 +1961,13 @@ export class CodeGraph {
         ? Array.from(new Set([...(options?.languages ?? []), ...parsed.languages]))
         : options?.languages;
 
+    // Fusion leg timing (FR-008 `fusionMs`): the scan + top-k + RRF merge +
+    // materialization — the same legs the p95 fusion gate measures (matrix cold-build
+    // above is deliberately EXCLUDED, per its separability note). `embedMs` was recorded
+    // upstream at acquisition time and rides in on the cache entry.
+    const fusionStart = performance.now();
     const depth = candidateDepth(limit);
-    const semantic = semanticTopK(matrixResult.matrix, cached, depth, {
+    const semantic = semanticTopK(matrixResult.matrix, cached.vector, depth, {
       kinds: mergedKinds,
       languages: mergedLanguages,
     });
@@ -1998,7 +2015,9 @@ export class CodeGraph {
       if (kw?.highlights !== undefined) result.highlights = kw.highlights;
       out.push(result);
     }
-    return { results: out, degradation: null }; // healthy fused
+    const fusionMs = Math.round(performance.now() - fusionStart);
+    // Healthy fused → the ONLY path that emits timing (FR-008): the semantic arm ran.
+    return { results: out, degradation: null, timing: { embedMs: cached.embedMs, fusionMs } };
   }
 
   /**
@@ -2091,6 +2110,11 @@ export class CodeGraph {
       timerId = setTimeout(() => resolve(EMBED_BUDGET_TIMEOUT), resolveEmbedBudgetMs());
     });
 
+    // FR-008 `embedMs`: the embed happens HERE (acquisition), not at search time, so its
+    // wall-clock duration is measured around the provider call and deposited alongside the
+    // vector — `runFusedSearch` reads it back on the cache hit to populate the timing footer.
+    const embedStart = performance.now();
+
     // The embed, with its deposit/discard handler attached so it runs whenever the embed
     // SETTLES — win OR lose. This promise NEVER rejects (both handlers return a value),
     // so the race and this method never reject (SC-003; Constitution VI).
@@ -2109,8 +2133,9 @@ export class CodeGraph {
           // In-budget success: deposit into the bounded sync cache so a later synchronous
           // `searchNodes` for the SAME (filter-stripped text, model) fuses, and clear any
           // recorded failure for this key (recovery). Healthy-empty (both null) deposits
-          // nothing and is never a failure.
-          this.cacheQueryVector(text, acquisition.model, acquisition.vector);
+          // nothing and is never a failure. The recorded embedMs rides in on the entry.
+          const embedMs = Math.round(performance.now() - embedStart);
+          this.cacheQueryVector(text, acquisition.model, acquisition.vector, embedMs);
         }
         return acquisition;
       },
@@ -2178,13 +2203,15 @@ export class CodeGraph {
    * the resident cost fixed at an internal documented bound — no env var / knob
    * (FR-007). Re-inserting an existing key refreshes its recency.
    */
-  private cacheQueryVector(text: string, model: string, vector: Float32Array): void {
+  private cacheQueryVector(text: string, model: string, vector: Float32Array, embedMs: number): void {
     const key = queryVectorCacheKey(text, model);
     // A successful embed clears any recorded failure for this key so a recovered
     // provider stops reporting `embed-failure` (T019 precedence).
     this.queryEmbedFailures.delete(key);
     if (this.queryVectorCache.has(key)) this.queryVectorCache.delete(key);
-    this.queryVectorCache.set(key, vector);
+    // Store the vector plus its acquisition-time embed duration (FR-008) so the
+    // synchronous fusion path can surface `embedMs` in the timing footer.
+    this.queryVectorCache.set(key, { vector, embedMs });
     while (this.queryVectorCache.size > QUERY_VECTOR_CACHE_MAX) {
       const oldest = this.queryVectorCache.keys().next().value as string;
       this.queryVectorCache.delete(oldest);

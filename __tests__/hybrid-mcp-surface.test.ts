@@ -19,6 +19,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { ToolHandler, tools } from '../src/mcp/tools';
 import { CodeGraph, __setQueryEmbeddingProviderForTests } from '../src';
+import { DEGRADATION_HINT_STRINGS } from '../src/search/hybrid';
 import { DatabaseConnection, getDatabasePath } from '../src/db';
 import { QueryBuilder } from '../src/db/queries';
 import { encodeVector } from '../src/embeddings/indexer-hook';
@@ -203,5 +204,61 @@ describe.skipIf(!HAS_SQLITE)('SPEC-003 T016 — MCP codegraph_search mode surfac
     const res = await handler.execute('codegraph_search', { query: 'endpoint health', mode: 'kwd' });
     expect(res.isError).toBeFalsy();
     expect(textOf(res)).toContain(DECOY_NAME);
+  });
+
+  // ── T022: provenance tags + timing + degradation footers (FR-008/012/015) ──
+
+  it('T022: degraded (no provider, hybrid) → results lead, verbatim string 1 footer follows, success-shaped', async () => {
+    const handler = await withDormantFixture();
+    const res = await handler.execute('codegraph_search', { query: 'endpoint health', mode: 'hybrid' });
+    expect(res.isError).toBeFalsy();
+    const text = textOf(res);
+    // Results lead (keyword arm surfaced the FTS-reachable decoy) …
+    expect(text).toContain(DECOY_NAME);
+    // … the FR-015 no-provider hint (string 1) follows, VERBATIM.
+    expect(text).toContain(DEGRADATION_HINT_STRINGS['no-provider']);
+    expect(text.trimEnd().endsWith('to enable.')).toBe(true);
+    // Degraded → NO provenance tags and NO timing footer.
+    expect(text).not.toContain('[keyword]');
+    expect(text).not.toContain('[semantic]');
+    expect(text).not.toContain('[both]');
+    expect(text).not.toContain('semantic: embed');
+  });
+
+  it('T022: healthy hybrid → per-hit provenance tags + timing footer, no degradation note', async () => {
+    const handler = await withSemanticFixture();
+    const res = await handler.execute('codegraph_search', { query: SEMANTIC_QUERY, mode: 'hybrid' });
+    expect(res.isError).toBeFalsy();
+    const text = textOf(res);
+    expect(text).toContain(TARGET_NAME);
+    // FR-012 provenance tags on the primary line: the semantic-only target is
+    // `[semantic]`, the keyword-matched decoy is `[keyword]`.
+    expect(text).toMatch(/\*\*backoffLoop\*\* \(function\) \[semantic\]/);
+    expect(text).toMatch(/\*\*endpointHealthCheck\*\* \(function\) \[keyword\]/);
+    // FR-008 timing footer with the exact shape (integer ms, middot separator).
+    expect(text).toMatch(/semantic: embed \d+ms · fusion \d+ms/);
+    // Healthy → NO degradation note.
+    expect(text).not.toContain('> **Note:**');
+  });
+
+  it('T022: healthy semantic → provenance tag on the target, timing footer present', async () => {
+    const handler = await withSemanticFixture();
+    const res = await handler.execute('codegraph_search', { query: SEMANTIC_QUERY, mode: 'semantic' });
+    expect(res.isError).toBeFalsy();
+    const text = textOf(res);
+    expect(text).toMatch(/\*\*backoffLoop\*\* \(function\) \[semantic\]/);
+    expect(text).toMatch(/semantic: embed \d+ms · fusion \d+ms/);
+  });
+
+  it('T022: keyword mode stays byte-identical — no tags, no timing, no degradation note', async () => {
+    const handler = await withSemanticFixture();
+    const res = await handler.execute('codegraph_search', { query: SEMANTIC_QUERY, mode: 'keyword' });
+    expect(res.isError).toBeFalsy();
+    const text = textOf(res);
+    expect(text).not.toContain('[keyword]');
+    expect(text).not.toContain('[semantic]');
+    expect(text).not.toContain('[both]');
+    expect(text).not.toContain('semantic: embed');
+    expect(text).not.toContain('> **Note:**');
   });
 });

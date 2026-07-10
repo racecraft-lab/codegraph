@@ -11,6 +11,7 @@
  * keyword.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -1700,6 +1701,259 @@ describe.skipIf(!HAS_SQLITE)('hybrid search — US3 degradation signal (T018)', 
         expect(() => obj.searchNodesDetailed!(DEGRADE_QUERY, { mode })).not.toThrow();
       }
     });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// T024 — SC-007 cross-surface TRUTHFULNESS GATE (FR-017; CHK022).
+//
+// `codegraph status` must report query-side hybrid availability with ZERO
+// discrepancy against the ACTUAL `auto`-mode search outcome, for the SAME index
+// state, across all THREE reachable states:
+//
+//   (a) provider configured + matching-model vectors present
+//         status hybridSearchAvailable === true   ⟺  a warmed auto query FUSES
+//                                                     (searchNodesDetailed.degradation === null)
+//   (b) no embedding provider configured
+//         hybridSearchAvailable === false          ⟺  auto degrades → 'no-provider'
+//   (c) provider configured but ZERO matching-model vectors
+//         hybridSearchAvailable === false          ⟺  auto degrades → 'no-vectors'
+//
+// The invariant asserted per state: `hybridSearchAvailable === (degradation === null)`,
+// AND the status `hybridSearchReason` draws from the SAME condition-family vocabulary
+// the search-time degradation maps to (reason for (b) ⊂ the no-provider hint's
+// vocabulary; reason for (c) ⊂ the no-vectors hint's vocabulary).
+//
+// DESIGN (per the T024 contract). The status FIELD is read via the CLI SUBPROCESS
+// (execFileSync of the built binary — the surface a user actually sees); the auto
+// OUTCOME is read via the IN-PROCESS library (`searchNodesDetailed` + the query-
+// provider seam + a warmed cache), on the SAME on-disk fixture. The provider seam is
+// in-process only (unreachable across the subprocess boundary), and BOTH surfaces read
+// the SAME on-disk model + vectors, so we keep them aligned by making
+// `env CODEGRAPH_EMBEDDING_MODEL === provider.id === the model the vectors are seeded
+// under` (all `FIXTURE_MODEL`). getEmbeddingStatus reads CONFIG (env) + coverage (DB)
+// only — never the endpoint — so a dummy URL fully drives the subprocess `yes`/`no`.
+//
+// RED is NOT APPLICABLE. This is a truthfulness gate layered over three ALREADY-LANDED
+// surfaces (T015 auto resolution, T019 degradation signal, T023 status fields); it
+// passes on first run precisely because those surfaces are consistent — that
+// consistency IS the property under test. Non-vacuity is proven two independent ways:
+//   1. the three states yield three DISTINCT (available, reason, degradation) tuples —
+//      so the equalities bind to real, differing values, not a constant; and
+//   2. an explicit negative control shows the agreement operator REJECTS the
+//      disagreeing combinations (available=true while degraded, etc.) — guarding
+//      against a vacuous `x === x`.
+// If any surface later drifts (e.g. status says `yes` while auto still degrades), a
+// state's `available === (degradation === null)` assertion fails — the discrepancy the
+// gate exists to catch.
+// ───────────────────────────────────────────────────────────────────────────
+describe.skipIf(!HAS_SQLITE)('hybrid search — SC-007 status/search truthfulness gate (T024)', () => {
+  const dirs: string[] = [];
+  const graphs: CodeGraph[] = [];
+
+  /** The built binary the CLI status subprocess drives (matches hybrid-cli-surface.test.ts). */
+  const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
+
+  /** Free-text query keyword-reachable in the fixture AND embedded to parseConfig's basis (basis 0) → a real fuse in state (a). */
+  const DEGRADE_QUERY = 'parse raw config text';
+
+  /** The exact status reason literals (contract §Status availability line; mirrors T023). */
+  const REASON_NO_PROVIDER = 'no embedding provider configured';
+  const REASON_NO_VECTORS = 'no matching-model vectors — run `codegraph sync`';
+
+  /**
+   * Ambient embedding vars a dogfood shell / .envrc.local would leak into the child;
+   * scrubbed so the subprocess sees ONLY the per-state env we layer on (same list as
+   * hybrid-cli-surface.test.ts / embeddings-dormancy.test.ts).
+   */
+  const EMBEDDING_ENV_VARS = [
+    'CODEGRAPH_EMBEDDING_URL', 'CODEGRAPH_EMBEDDING_MODEL', 'CODEGRAPH_EMBEDDING_API_KEY',
+    'CODEGRAPH_EMBEDDING_DIMS', 'CODEGRAPH_EMBEDDING_BATCH_SIZE', 'CODEGRAPH_EMBEDDING_CONCURRENCY',
+    'CODEGRAPH_EMBEDDING_TIMEOUT_MS', 'CODEGRAPH_EMBEDDING_PROVIDER', 'CODEGRAPH_MODEL_BASE_URL',
+    'CODEGRAPH_MODEL_CACHE_DIR',
+  ];
+
+  /** Active endpoint provider config: BOTH URL and MODEL set; the model === FIXTURE_MODEL so coverage counts the seeded vectors. */
+  const ACTIVE_ENV: NodeJS.ProcessEnv = {
+    CODEGRAPH_EMBEDDING_URL: 'http://localhost:9/embed',
+    CODEGRAPH_EMBEDDING_MODEL: FIXTURE_MODEL,
+  };
+
+  /** Child env: inherit, force daemon off + skip the wasm relaunch, scrub ambient embedding vars, then layer per-state config. */
+  function childStatusEnv(extra: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env, CODEGRAPH_NO_DAEMON: '1', CODEGRAPH_WASM_RELAUNCHED: '1' };
+    for (const k of EMBEDDING_ENV_VARS) delete env[k];
+    return { ...env, ...extra };
+  }
+
+  /** Run `codegraph status --json` against the built binary in `dir`; parse the single JSON line. */
+  function statusJson(dir: string, extra: NodeJS.ProcessEnv = {}): Record<string, unknown> {
+    const out = execFileSync(process.execPath, [BIN, 'status', '--json'], {
+      cwd: dir,
+      encoding: 'utf-8',
+      env: childStatusEnv(extra),
+      stdio: ['ignore', 'pipe', 'ignore'], // drop stderr (SQLite experimental warning)
+    });
+    return JSON.parse(out.trim().split('\n').filter(Boolean).pop()!);
+  }
+
+  afterEach(() => {
+    __setQueryEmbeddingProviderForTests(undefined); // never leak the seam into another suite
+    __resetVectorMatrixCacheForTests();
+    while (graphs.length) { try { graphs.pop()!.close(); } catch { /* may already be closed */ } }
+    while (dirs.length) {
+      const d = dirs.pop()!;
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  /** The reachable index states SC-007 must report truthfully. */
+  type StateKind = 'provider-and-vectors' | 'no-provider' | 'no-matching-vectors';
+
+  /** The tuple SC-007 asserts agrees: the CLI status field pair + the in-process auto outcome, on ONE fixture. */
+  interface CrossSurface {
+    available: boolean;
+    reason: string | null;
+    degradation: DegradationCondition | null;
+    autoResults: SearchResult[];
+  }
+
+  /**
+   * Build a fixture in the given state, then read BOTH surfaces on the SAME dir: the
+   * in-process `auto` outcome (library, via the seam + warmed cache) and the CLI status
+   * `--json` fields (subprocess against the built binary). The in-process read happens
+   * first (needs the graph open); the graph is then CLOSED before the subprocess reads
+   * the DB, so the two surfaces never contend for the SQLite file.
+   */
+  async function crossSurface(kind: StateKind): Promise<CrossSurface> {
+    const dir = makeHybridFixture(dirs);
+    const cg = await CodeGraph.init(dir);
+    graphs.push(cg);
+    expect((await cg.indexAll()).success).toBe(true);
+
+    let statusEnv: NodeJS.ProcessEnv = {};
+    let detailed: SearchNodesDetailed;
+
+    if (kind === 'provider-and-vectors') {
+      // Matching-model vectors present → status active+covered = yes; seam + warmed
+      // cache → the auto query fuses (degradation null).
+      seedFixtureVectors(dir);
+      statusEnv = ACTIVE_ENV;
+      __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+      await cg.acquireQueryVectorForSearch(DEGRADE_QUERY); // warm the query-vector cache
+      detailed = searchDetailed(cg, DEGRADE_QUERY, { mode: 'auto' });
+    } else if (kind === 'no-provider') {
+      // No provider configured either surface: env OFF for the subprocess (statusEnv
+      // stays empty → scrubbed → dormant), seam UNSET in-process → auto → 'no-provider'.
+      detailed = withEmbeddingEnvOff(() => {
+        __setQueryEmbeddingProviderForTests(undefined);
+        return searchDetailed(cg, DEGRADE_QUERY, { mode: 'auto' });
+      });
+    } else {
+      // Provider configured but ZERO matching-model vectors (none seeded): status
+      // active but coverage 0 = no; seam present + cache warmed (rules out `warming`,
+      // though the zero-corpus probe takes precedence) → auto → 'no-vectors'.
+      statusEnv = ACTIVE_ENV;
+      __setQueryEmbeddingProviderForTests(constEmbedProvider(FIXTURE_MODEL, FIXTURE_DIMS));
+      await cg.acquireQueryVectorForSearch(DEGRADE_QUERY);
+      detailed = searchDetailed(cg, DEGRADE_QUERY, { mode: 'auto' });
+    }
+
+    // Release the graph's DB handle before the subprocess opens the same file — no
+    // cross-process SQLite contention (the in-process outcome is already captured).
+    cg.close();
+    const status = statusJson(dir, statusEnv);
+
+    return {
+      available: status.hybridSearchAvailable as boolean,
+      reason: status.hybridSearchReason as string | null,
+      degradation: detailed.degradation,
+      autoResults: detailed.results,
+    };
+  }
+
+  // ── State (a): provider + matching-model vectors → status `yes` ⟺ auto fuses ──
+  it('state (a) provider+vectors — status hybridSearchAvailable=true agrees with a FUSED auto query (degradation null)', async () => {
+    const s = await crossSurface('provider-and-vectors');
+
+    // CLI status field.
+    expect(s.available).toBe(true);
+    expect(s.reason).toBeNull(); // reason is null iff available (contract)
+
+    // Actual auto outcome: the warmed query genuinely FUSED (provenance-tagged), not a
+    // healthy-empty null — so `degradation === null` reflects a real fuse.
+    expect(s.degradation).toBeNull();
+    expect(s.autoResults.some((r) => r.matchType !== undefined)).toBe(true);
+
+    // Zero discrepancy: available ⟺ (auto fused).
+    expect(s.available).toBe(s.degradation === null);
+  });
+
+  // ── State (b): no provider → status `no (no-provider)` ⟺ auto degrades 'no-provider' ──
+  it("state (b) no-provider — status hybridSearchAvailable=false agrees with an auto query degrading to 'no-provider'", async () => {
+    const s = await crossSurface('no-provider');
+
+    expect(s.available).toBe(false);
+    expect(s.reason).toBe(REASON_NO_PROVIDER);
+    expect(s.degradation).toBe('no-provider');
+
+    // Zero discrepancy: available ⟺ (auto fused). Both say "not available".
+    expect(s.available).toBe(s.degradation === null);
+
+    // Reason FAMILY: the status reason draws from the no-provider hint's vocabulary
+    // ('provider') — a token the no-vectors hint does NOT carry, so the family binds.
+    expect(s.reason).toContain('provider');
+    expect(DEGRADATION_HINT_STRINGS['no-provider']).toContain('provider');
+    expect(DEGRADATION_HINT_STRINGS['no-vectors']).not.toContain('provider');
+  });
+
+  // ── State (c): provider but 0 vectors → status `no (no-vectors)` ⟺ auto degrades 'no-vectors' ──
+  it("state (c) provider+no-vectors — status hybridSearchAvailable=false agrees with an auto query degrading to 'no-vectors'", async () => {
+    const s = await crossSurface('no-matching-vectors');
+
+    expect(s.available).toBe(false);
+    expect(s.reason).toBe(REASON_NO_VECTORS);
+    expect(s.degradation).toBe('no-vectors');
+
+    // Zero discrepancy: available ⟺ (auto fused). Both say "not available".
+    expect(s.available).toBe(s.degradation === null);
+
+    // Reason FAMILY: the status reason draws from the no-vectors hint's vocabulary (the
+    // '`codegraph sync`' remediation) — a token the no-provider hint does NOT carry.
+    expect(s.reason).toContain('codegraph sync');
+    expect(DEGRADATION_HINT_STRINGS['no-vectors']).toContain('codegraph sync');
+    expect(DEGRADATION_HINT_STRINGS['no-provider']).not.toContain('codegraph sync');
+  });
+
+  // ── Non-vacuity: the three states are DISTINCT and the agreement operator BINDS ──
+  it('the agreement is non-vacuous: the three states yield distinct tuples and the operator rejects disagreement', async () => {
+    const a = await crossSurface('provider-and-vectors');
+    const b = await crossSurface('no-provider');
+    const c = await crossSurface('no-matching-vectors');
+
+    // Each state independently agrees (the SC-007 property, once per state).
+    for (const s of [a, b, c]) expect(s.available).toBe(s.degradation === null);
+
+    // (1) The three (available, reason, degradation) tuples are pairwise DISTINCT, so
+    // the per-state equalities bind to differing values — not a constant that would
+    // pass for any state. `available` alone is true/false/false, but reason and
+    // degradation separate (b) from (c).
+    const tuple = (s: CrossSurface) => JSON.stringify([s.available, s.reason, s.degradation]);
+    const tuples = new Set([tuple(a), tuple(b), tuple(c)]);
+    expect(tuples.size).toBe(3);
+    expect(a.degradation).toBeNull();
+    expect(b.degradation).toBe('no-provider');
+    expect(c.degradation).toBe('no-vectors');
+
+    // (2) Negative control — the agreement operator is not a vacuous `x === x`: it
+    // ACCEPTS the three observed shapes and REJECTS every disagreeing combination.
+    const agree = (available: boolean, degradation: DegradationCondition | null) => available === (degradation === null);
+    expect(agree(true, null)).toBe(true); // (a)
+    expect(agree(false, 'no-provider')).toBe(true); // (b)
+    expect(agree(false, 'no-vectors')).toBe(true); // (c)
+    expect(agree(true, 'no-provider')).toBe(false); // status lies "available" while search degraded
+    expect(agree(true, 'no-vectors')).toBe(false); // "
+    expect(agree(false, null)).toBe(false); // status lies "unavailable" while search fused
   });
 });
 
