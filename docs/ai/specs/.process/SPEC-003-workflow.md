@@ -835,8 +835,26 @@ commit messages. Tidiness scan findings, adjudicated:
 - [x] Self-repo dogfood UAT evidence recorded (`specs/003-hybrid-semantic-search/.process/dogfood-uat.md`: 4/4 paraphrase recall via codegraph_search on the live index; dormancy spot-check clean) — folds into the UAT runbook at that post-impl step
 - [x] retrieval-guardian review run — PASS 6/6 checks, 0 blocking, 1 advisory (empty-degraded hint gap, FIXED in remediation). Post-impl review suite (2026-07-10): verify ext PASS 0 findings · verify-tasks 0 phantoms (33 verified / 1 partial → fixed) · independent code review approve-with-comments (1 MEDIUM staleness token misses same-count re-embeds → FIXED via `vectors_write_version` counter; 1 LOW separator/comment → fixed). Remediation: 7/7 items, +7 TDD tests, suite **2806 passed / 0 failed / 7 skipped**.
 - [ ] CHANGELOG entry under `## [Unreleased]` (user-facing)
-- [ ] PR created against origin (racecraft-lab/codegraph) with review packet body; no session URLs
+- [x] PR created against origin (racecraft-lab/codegraph) with review packet body; no session URLs — **PR #36**, https://github.com/racecraft-lab/codegraph/pull/36 (2026-07-10; title Conventional-Commits-validated; packet validation passed / pr_blocked=false)
 - [ ] Merged; dogfood loop run on main (`npm run build` + `codegraph sync`, verify `codegraph status` healthy)
+
+### Post-PR record (2026-07-10)
+
+- **Review remediation loop**: cron job `72c32bb6` (every 5 min, 7-day expiry) watches PR #36.
+  Iteration 2 handled the Copilot review: its guardian-style check table was all PASS/N-A; its one
+  inline comment (don't await `acquireQueryVectorForSearch` in `handleSearch`) challenged the
+  DELIBERATE T012/FR-006 design — replied with the grounded rationale (bounded ≤2s await buys
+  first-call sufficiency; `warming` is the sync library API's state by design; explicit keyword
+  skips the await) and resolved the thread. No code change.
+- **Retrospective** (`.process/retrospective.md`): completion 100% (34/34), spec adherence 100%
+  (24/24), 0 constitution violations; 0 CRITICAL / 4 SIGNIFICANT / 4 MINOR / 3 POSITIVE findings.
+  Top recommendations: extend the FR-008b CI gate with a same-cardinality content-change case
+  (shipped in remediation +7 tests — recommendation is to keep it in the permanent gate);
+  calibrate the LOC estimator for algorithm-heavy specs; promote the env-hermeticity scrub to a
+  shared helper; formalize the deadlock abort/escalate rule; eval-harness ES-corpus dependency.
+- **Spec-doc alignment applied** (retrospective proposal, orchestrator-authorized — same fact as
+  the already-approved research.md D6a correction): FR-008b/FR-009/Edge Cases/Key Entities/
+  Assumptions in spec.md now document the `vectors_write_version` counter the shipped probe uses.
 
 ---
 
