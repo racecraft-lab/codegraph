@@ -1,0 +1,175 @@
+{
+  "timestamp": "2026-07-10T16:03:21.507Z",
+  "codebasePath": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/003-hybrid-semantic-search",
+  "codegraphSha": "8247afb",
+  "summary": {
+    "total": 12,
+    "passed": 0,
+    "failed": 12,
+    "meanRecall": 0,
+    "meanMRR": 0
+  },
+  "results": [
+    {
+      "caseId": "search-class-exact",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "TransportService"
+      ],
+      "latencyMs": 7.3931669999999485
+    },
+    {
+      "caseId": "search-method-qualified",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "sendRequest"
+      ],
+      "latencyMs": 5.936333000000104
+    },
+    {
+      "caseId": "search-interface",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "ActionListener"
+      ],
+      "latencyMs": 3.0699590000001535
+    },
+    {
+      "caseId": "search-enum",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "RestStatus"
+      ],
+      "latencyMs": 5.381458000000066
+    },
+    {
+      "caseId": "search-exception",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "SearchPhaseExecutionException"
+      ],
+      "latencyMs": 2.6604580000000624
+    },
+    {
+      "caseId": "search-nested-class",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "Index"
+      ],
+      "latencyMs": 4.751625000000104
+    },
+    {
+      "caseId": "explore-rest-layer",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "RestController",
+        "RestHandler",
+        "BaseRestHandler",
+        "RestRequest"
+      ],
+      "nodeCount": 40,
+      "edgeCount": 56,
+      "edgeDensity": 1.4,
+      "latencyMs": 268.008458
+    },
+    {
+      "caseId": "explore-search-execution",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "ShardSearchRequest",
+        "SearchShardsRequest",
+        "SearchShardsGroup"
+      ],
+      "nodeCount": 70,
+      "edgeCount": 94,
+      "edgeDensity": 1.3428571428571427,
+      "latencyMs": 125.7997499999999
+    },
+    {
+      "caseId": "explore-bulk-indexing",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "TransportBulkAction",
+        "BulkRequest",
+        "BulkResponse"
+      ],
+      "nodeCount": 52,
+      "edgeCount": 119,
+      "edgeDensity": 2.2884615384615383,
+      "latencyMs": 123.42533300000014
+    },
+    {
+      "caseId": "explore-shard-allocation",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "AllocationService",
+        "BalancedShardsAllocator"
+      ],
+      "nodeCount": 48,
+      "edgeCount": 79,
+      "edgeDensity": 1.6458333333333333,
+      "latencyMs": 184.22466600000007
+    },
+    {
+      "caseId": "explore-transport-search",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "TransportService",
+        "SearchTransportService"
+      ],
+      "nodeCount": 72,
+      "edgeCount": 151,
+      "edgeDensity": 2.0972222222222223,
+      "latencyMs": 135.2615420000002
+    },
+    {
+      "caseId": "explore-engine-implementations",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "InternalEngine",
+        "ReadOnlyEngine",
+        "Engine"
+      ],
+      "nodeCount": 55,
+      "edgeCount": 110,
+      "edgeDensity": 2,
+      "latencyMs": 131.8817909999998
+    }
+  ]
+}

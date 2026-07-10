@@ -61,6 +61,40 @@ like any other production dep. Notes:
   the bundle. The dependency stays dormant (never loaded) unless a project opts into
   `CODEGRAPH_EMBEDDING_PROVIDER=local`.
 
+## Query-time memory: the semantic search matrix
+
+When semantic search is active, CodeGraph keeps every stored vector for the
+active model in a single in-memory matrix so it can rank a query without
+re-reading the database. That matrix is built once per project inside the
+background daemon and shared across every query session — it is **not**
+duplicated per query. Its resident size is simply:
+
+```
+resident bytes ≈ vector count × dimensions × 4
+```
+
+(4 bytes per single-precision number.) Two reference points:
+
+- **Bundled local model** (`CODEGRAPH_EMBEDDING_PROVIDER=local`, 384
+  dimensions): a 50,000-symbol project holds about **77 MB** resident
+  (50,000 × 384 × 4). This is the zero-config default and stays comfortably
+  small.
+- **High-dimensional endpoint model** (via `CODEGRAPH_EMBEDDING_URL` +
+  `CODEGRAPH_EMBEDDING_MODEL`): dimensions dominate the cost, so a large model
+  is where memory grows. A 50,000-symbol project embedded with a 3584-dimension
+  model holds about **717 MB** resident (50,000 × 3584 × 4). If you point
+  CodeGraph at a big endpoint model, budget memory with the formula above before
+  indexing a large codebase.
+
+**Safety ceiling.** CodeGraph will not build a matrix larger than **1 GiB**
+(sits just above the 717 MB reference corner). If a project's predicted matrix
+would exceed that ceiling — a very large codebase, a very high-dimensional
+model, or both — the build is skipped for that query and search transparently
+falls back to keyword matches with a one-line note. It never crashes and never
+blocks indexing. Scaling semantic search beyond that ceiling (vector
+quantization and approximate-nearest-neighbor indexes) is the planned
+follow-up.
+
 ## Install channels (all deliver the same bundle)
 
 1. **`curl | sh`** ([`install.sh`](install.sh)) — no Node required; ideal for a
