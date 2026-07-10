@@ -717,17 +717,36 @@ Before starting any task:
 
 ## Lessons Learned
 
+_Retrospective run 2026-07-10 (speckit-retrospective-analyze, terminal worker). Completion 30/30 tasks (100%); spec adherence 100% — all 22 FRs + 8 SCs close in the decision doc with a complete §12.2 traceability map, 0 dropped, 0 unspecified; the 4 staged decisions (SD-1…SD-4) are SC-008-conformant attempt-first deferrals, not drift. Constitution I–VII: no violations (docs-only branch, 0 `src/**` lines). Spec/plan/tasks untouched by this retrospective per hook policy._
+
 ### What Worked Well
 
--
+- **Consensus caught the orchestrator being wrong, twice-over.** The parent's preemptive Windows-deferral edit was REVERSED by 2-of-3 consensus (CRL 7: design-concept Q2/Q8 budgeted Windows in-spike; the deferral rationale ignored the #289 `.cmd`-spawn and Antigravity GUI-PATH risks) — and the restored attempt-first posture is what produced SD-1's *evidenced* blocker instead of a silent guess. The consensus protocol functioned as a genuine check on the strongest agent in the room, not a rubber stamp.
+- **Security-tag → mandatory human gates caught real factual errors.** CRL 8 corrected the spec's npx stage from `--prefer-offline` to `--offline` (only the latter guarantees zero-network with a catchable miss); CRL 6 hardened FR-014 tiering after the domain analyst showed `allowed-tools` alone doesn't constrain (it pre-approves; Codex ignores it) — constrained artifacts need built-in-only `disallowed-tools` + `context: fork`. Both were maintainer-approved same-day (2026-07-09); neither would have been caught by a single-analyst pass.
+- **Evidence-first discipline (DEFINE→GATHER→WRITE→VERIFY) transferred TDD to a 0-LOC spike.** Freezing the Validation Evidence Block schema (T003) *before* any evidence existed forced per-stage-per-host launcher blocks and pinned versions from the first observation; the roadmap's pre-spike guesses (`codex-hooks.json`, `codex-agents/*.toml`, `metadata.mcp-server`, hook-cell-absent) were all corrected by evidence rather than propagated.
+- **Attempt-first staged decisions eliminated silent gaps.** All three candidate valves (T012 Windows, T013 Linux, T021 Codex v2) were actually attempted; T013 completed (no deferral), T012/T021 deferred with named, evidenced blockers plus the exact SPEC-026 gate step. Verify-tasks (fresh context) confirmed 30/30 real, 0 phantoms — the deferrals read as legitimate because each carries its attempt transcript.
+- **The two-operator `[P]` host-track split matched the work's real shape.** 9 `[P]` tasks in Claude∥Codex pairs (T004/T005, T007/T008, T010/T011, T016/T017) ran as independent evidence tracks converging only at synthesis joins (T009, T014, T019, T020) — no cross-track contention, because "parallel-safe" was defined by scratch tree + doc concern, not by code files.
+- **Two-phase secret hygiene (scrub-at-drafting + T028 final sweep) came back CLEAN** across all four artifact classes × four named exposure points, independently re-confirmed at code review; identity-preserving placeholders (never line deletion) kept the evidence readable.
 
 ### Challenges Encountered
 
--
+- **Load-induced vitest flakes under parallel-subagent load, at both G0 and G7.** Full-suite runs during orchestration showed 5000ms-timeout / `EMFILE` failures (G0: 10 then 6, *disjoint* files across two runs; G7: 25 across 5 files) — every flagged file passed in isolation (G0: 76 tests/17s; G7: 823 tests/54s). Verdict each time: fd/timeout contention, not breakage — but reaching that verdict cost isolated re-runs both times, and only the 0-`src/**` diff made "regression impossible by construction" a clean closer.
+- **Runner anchoring to the main checkout, not the worktree.** `check-prerequisites` resolved against the main checkout, so branch identity (`025-plugin-platform-spike`, ON_FEATURE_BRANCH, IS_WORKTREE) had to be verified directly; the Step -1 archive sweep helper likewise expected an active `feature.json` even in sweep mode and the worker derived paths manually. Worktree-based specs must expect runner path assumptions to leak.
+- **Deferred helpers on the installed runner forced manual fallback chains.** `generate-spec-index-write`, tasks-mode reviewability, `final-reviewability-backstop`, and `generate-uat-skeleton` were all registered DEFERRED — each closed via a recorded fallback evidence chain (setup-mode PASS + `not_estimated` advisory + route `one-navigable-PR` + verified 0-`src/**` branch diff in `autopilot-state.json`) rather than the helper's own output. Fail-open worked, but the evidence lives in prose, not machine checks.
+- **Interactive trust gating blocked headless end-to-end legs.** Codex's `/hooks` TUI trust review (SD-3) and three Claude host-UI confirmations (SD-4: marketplace trust prompt, `/plugin` dedup notice, near-dup badge) cannot be driven headlessly without safety-bypass flags that were deliberately not used — the trust gates proving real is itself evidence, but each leg now needs a recorded human step.
+- **Environment decay bit the Windows valve.** The Parallels VM was suspended with no IP *and* the documented `.parallels` credentials file was absent — SD-1 was un-attemptable beyond the probe itself. Cross-platform valves depend on infrastructure that must be verified *before* the risk-heavy day, not during it.
+- **Process-ledger staleness surfaced only at independent review.** The 1 major finding (stale `autopilot-state.json`) plus 3 minors were caught by the post-implementation review and remediated in 41d6e60 — the orchestrator kept artifacts consistent during phases but not the cross-phase state file.
 
 ### Patterns to Reuse
 
--
+- **Attempt-first staged-decision valve**: pre-name candidate deferral tasks at Tasks time (with the trigger condition), attempt each, and record {what was attempted, evidenced blocker, downstream gate step} — never decide a deferral in advance. This run's SD set is the template (and T013 shows valves can *close*).
+- **Security-tag override → all-3-analysts + human approval** for any consensus item touching trust models, network fetch, or tool surfaces — it caught two factual errors that were both in the "obvious, everyone knows this" class.
+- **Freeze the evidence schema before the first observation** (T003-style), including the scrub rule and the per-stage-per-host granularity — retrofitting structure onto collected evidence is where silent gaps breed.
+- **Consensus may reverse parent edits**: treat the orchestrator's own artifact edits as first-class consensus inputs, revertible on 2-of-3 evidence — don't privilege the parent.
+- **`[P]` by evidence track, not by file**: for two-host validation work, split parallel tracks per host with explicit sequential synthesis joins; give each track its own scratch tree.
+- **Flake-signature baselining**: record the full-suite failure signature at G0 (count, files, error class) so G7 can distinguish load contention from regression by comparison + isolated re-runs, instead of relitigating from scratch.
+- **Deferred-helper fallback chain**: when a runner helper is deferred, record the substitute evidence chain in `autopilot-state.json` at the moment of deferral (not at the final gate) so the backstop gate can PROCEED on committed evidence.
+- **Fresh-context phantom check + independent review before PR**: verify-tasks in a fresh context (0 phantoms) and an independent reviewer (secrets re-sweep, staleness catch) each found things the implementing context could not see about itself.
 
 ---
 
