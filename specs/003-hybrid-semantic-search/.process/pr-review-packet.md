@@ -1,5 +1,23 @@
 # SPEC-003 — Hybrid Semantic Search · PR Review Packet
 
+> **ADDENDUM (2026-07-10, post-review remediation — supersedes stale lines below):**
+> - §8(a) is **RESOLVED**: the security-test mock was extended in commit `8f4004f`; the full
+>   suite is green. §6's "2798 passed · 1 failed" is superseded — current full suite:
+>   **2806 passed / 0 failed / 7 skipped** (165 files), re-confirmed by a fresh
+>   Integration Suite pass (`.process/integration-suite.md`).
+> - Post-implementation review suite ran AFTER this packet was authored, all green: verify
+>   ext PASS (0 findings) · verify-tasks 0 phantoms (`.process/verify-tasks-report.md`) ·
+>   retrieval-guardian PASS 6/6 (`.process/retrieval-guardian-report.md`) · independent code
+>   review approve-with-comments. All findings remediated in commits `3f6ec9e`/`a2d5c77`
+>   (+7 TDD tests): staleness token now includes a monotonic `vectors_write_version` (same-count
+>   re-embeds/renames invalidate the matrix), FR-015 hint now also renders on degraded-and-empty
+>   results, `resolveAutoMode` consolidated into production, SC-003 never-throw hardening,
+>   dead stub + stale TODOs removed, stray eval artifacts removed (+ results/ gitignored).
+> - hybrid-search.test.ts is now **84** tests (81 + 3 remediation additions); SPEC-003 suite
+>   total 126 incl. surface additions.
+> - Reviewability diff gate decision: **WARN — proceed as one navigable PR** (recorded in
+>   `autopilot-state.json` `final_diff_gate` with justification; §4's overage stands).
+
 **Branch:** `003-hybrid-semantic-search` → `main` (origin: racecraft-lab/codegraph)
 **Task:** T033 (Phase 7 Polish). Generated from the live branch diff (`git diff main...HEAD`), the SPEC-003 spec/plan/tasks, the four SPEC-003 test suites, and the recorded T029 (scoped A/B) + T030 (dogfood UAT) evidence. Every number below is grounded in a command run or a file read; sources are cited inline.
 
