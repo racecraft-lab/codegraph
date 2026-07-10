@@ -253,9 +253,7 @@ describe('LSP precision provenance foundation', () => {
     const callLine = 'export const café = target();';
     fs.writeFileSync(path.join(dir, 'a.ts'), 'export function target(): number { return 1; }\n');
     fs.writeFileSync(path.join(dir, 'b.ts'), `import { target } from './a';\n${callLine}\n`);
-    const fakeServer = path.join(dir, 'typescript-language-server');
-    fs.writeFileSync(fakeServer, '#!/bin/sh\nexit 0\n');
-    fs.chmodSync(fakeServer, 0o755);
+    const fakeServer = makeExecutable(dir, 'typescript-language-server');
 
     const utf16Character = callLine.indexOf('target');
     const byteColumn = Buffer.byteLength(callLine.slice(0, utf16Character), 'utf8');
