@@ -178,6 +178,28 @@ export interface LspEdgeCandidateCounts {
 }
 
 /**
+ * SPEC-010 (graph-aware rename): one incoming `references` edge to a target,
+ * denormalized with the referencing (source) node's file so the plan path can
+ * build a graph `RenameEdit` without an extra getNodeById per edge. Positions
+ * are the occurrence START only (UTF-16 code units) — the end column is derived
+ * from the old name's length and span-verified (research Decision 8).
+ */
+export interface IncomingReferenceRow {
+  /** `edges.source` — id of the node the reference occurs in. */
+  sourceId: string;
+  /** `nodes.file_path` of the referencing node — the file the edit lands in. */
+  sourceFilePath: string;
+  /** `edges.line` — 1-indexed start line of the occurrence (nullable in schema). */
+  line: number | null;
+  /** `edges.col` — 0-indexed start column of the occurrence (nullable in schema). */
+  column: number | null;
+  /** Parsed `edges.metadata` JSON — carries resolvedBy / confidence / refName. */
+  metadata: Record<string, unknown> | undefined;
+  /** `edges.provenance` — NULL for base resolved edges, `'lsp'` after SPEC-008. */
+  provenance: Edge['provenance'];
+}
+
+/**
  * Convert database row to Node object
  */
 function rowToNode(row: NodeRow): Node {
@@ -314,6 +336,7 @@ export class QueryBuilder {
     deleteRemovedVectors?: SqliteStatement;
     embeddingCoverage?: SqliteStatement;
     bumpVectorsWriteVersion?: SqliteStatement;
+    getReferencesToNode?: SqliteStatement;
   } = {};
 
   // Names whose segments were already written this session — skips re-splitting
@@ -1954,6 +1977,46 @@ export class QueryBuilder {
     }
     const rows = this.stmts.getEdgesByTarget.all(targetId) as EdgeRow[];
     return rows.map(rowToEdge);
+  }
+
+  /**
+   * SPEC-010 (graph-aware rename): every incoming `references` edge to
+   * `targetId`, JOINed to the referencing (source) node so each row already
+   * carries the file to edit — the plan path builds a graph `RenameEdit` from
+   * this alone, avoiding an N+1 getNodeById per edge. Scoped to kind
+   * 'references' (the name-occurrence edges; a `calls`/`instantiates` edge is a
+   * dispatch site, out of scope here) and to LSP-active edges (SPEC-008 parity
+   * with {@link getIncomingEdges}). `line`/`col` are the occurrence START point;
+   * `metadata` carries resolvedBy / confidence / refName for the FR-004 tier and
+   * old-name recovery.
+   */
+  getReferencesToNode(targetId: string): IncomingReferenceRow[] {
+    if (!this.stmts.getReferencesToNode) {
+      this.stmts.getReferencesToNode = this.db.prepare(
+        `SELECT e.source AS source, e.line AS line, e.col AS col,
+                e.metadata AS metadata, e.provenance AS provenance,
+                n.file_path AS file_path
+         FROM edges e
+         JOIN nodes n ON n.id = e.source
+         WHERE e.target = ? AND e.kind = 'references' AND ${activeEdgePredicate('e')}`,
+      );
+    }
+    const rows = this.stmts.getReferencesToNode.all(targetId) as Array<{
+      source: string;
+      line: number | null;
+      col: number | null;
+      metadata: string | null;
+      provenance: string | null;
+      file_path: string;
+    }>;
+    return rows.map((r) => ({
+      sourceId: r.source,
+      sourceFilePath: r.file_path,
+      line: r.line ?? null,
+      column: r.col ?? null,
+      metadata: r.metadata ? safeJsonParse(r.metadata, undefined) : undefined,
+      provenance: r.provenance as Edge['provenance'],
+    }));
   }
 
   /**
