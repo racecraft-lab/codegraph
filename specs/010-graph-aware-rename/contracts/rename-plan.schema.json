@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://codegraph/spec-010/rename-plan.schema.json",
+  "title": "RenamePlan",
+  "description": "The stable, surface-neutral result of a codegraph rename. Emitted byte-identically by the CLI `-j, --json` flag (FR-027) and the codegraph_rename MCP tool result (SC-005). Field names are identical across both surfaces. All offsets are UTF-16 code units (SPEC-008 pin).",
+  "type": "object",
+  "required": ["target", "newName", "edits", "confidence", "applied"],
+  "additionalProperties": false,
+  "properties": {
+    "target": {
+      "description": "The resolved target symbol's identity (name + kind + declaration location). Not a bare string — it is the disambiguated node the plan renames.",
+      "type": "object",
+      "required": ["name", "kind", "file", "range"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "The symbol's current name (the old name)." },
+        "kind": { "type": "string", "description": "NodeKind of the target (e.g. function, method, class, interface, type_alias, enum, constant)." },
+        "file": { "type": "string", "description": "Workspace-relative path of the declaration." },
+        "range": { "$ref": "#/definitions/range" }
+      }
+    },
+    "newName": { "type": "string", "description": "The requested new name." },
+    "edits": {
+      "description": "Ordered set of edits the plan would make. An empty-references plan still contains the declaration edit (never an error).",
+      "type": "array",
+      "items": { "$ref": "#/definitions/edit" }
+    },
+    "confidence": {
+      "description": "Aggregate confidence over all edits. Drives the --apply gate (FR-015): contains-heuristic refuses apply unless --include-heuristic / includeHeuristic:true.",
+      "type": "string",
+      "enum": ["all-exact", "contains-heuristic"]
+    },
+    "source": {
+      "description": "Which derivation path produced the plan. Present when the whole plan came from one path; per-edit `source` is authoritative.",
+      "type": "string",
+      "enum": ["lsp", "graph"]
+    },
+    "leftoverMentions": {
+      "description": "Optional, non-gating FYI count of old-name occurrences NOT edited (comments, docstrings, strings, and dispatch sites of synthesized heuristic edges). FR-013. Omitted when not computed.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "applied": {
+      "description": "Whether side effects occurred. false for every dry-run (FR-001). true only on an --apply / apply:true call that wrote and passed the post-check.",
+      "type": "boolean"
+    },
+    "outcome": {
+      "description": "Apply outcome (Slice 2). Absent/ignored on a dry-run. `applied` = post-check green; `refused` = a recoverable gate refusal with zero writes; `rolled-back` = wrote then restored byte-identically; `rollback-failed` = the sole malfunction (FR-019a).",
+      "type": "string",
+      "enum": ["applied", "refused", "rolled-back", "rollback-failed"]
+    },
+    "refusal": { "$ref": "#/definitions/refusal" }
+  },
+  "definitions": {
+    "position": {
+      "type": "object",
+      "required": ["line", "character"],
+      "additionalProperties": false,
+      "properties": {
+        "line": { "type": "integer", "minimum": 0, "description": "0-based line." },
+        "character": { "type": "integer", "minimum": 0, "description": "0-based offset in UTF-16 code units on that line (SPEC-008)." }
+      }
+    },
+    "range": {
+      "type": "object",
+      "required": ["start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "start": { "$ref": "#/definitions/position" },
+        "end": { "$ref": "#/definitions/position" }
+      }
+    },
+    "edit": {
+      "type": "object",
+      "required": ["file", "range", "oldText", "newText", "confidence", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "description": "Workspace-relative path of the edited file." },
+        "range": { "$ref": "#/definitions/range" },
+        "oldText": { "type": "string", "description": "The exact span text being replaced (the old name occurrence). Verified against live bytes." },
+        "newText": { "type": "string", "description": "The replacement text (the new name occurrence)." },
+        "confidence": {
+          "type": "string",
+          "enum": ["exact", "heuristic"],
+          "description": "Per-edit tier from the FR-004 table. Every edit — regardless of tier — also passed span verification (FR-005/FR-016)."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["lsp", "graph"],
+          "description": "Derivation path for this edit."
+        }
+      }
+    },
+    "refusal": {
+      "description": "Present on a recoverable refusal (FR-007/FR-010/FR-011/FR-015/FR-016/FR-017/not-indexed). Success-shaped on both surfaces — never isError (FR-023). The one exception (rollback-failed, FR-019a) is error-shaped and carries `recovery` instead.",
+      "type": "object",
+      "required": ["reason", "message"],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "ambiguous-target",
+            "unsupported-kind-graph-local",
+            "excluded-kind",
+            "heuristic-gated",
+            "stale-span",
+            "out-of-root",
+            "scope-ignored",
+            "not-indexed",
+            "target-not-found"
+          ]
+        },
+        "message": { "type": "string", "description": "Human-actionable guidance that names the exact fix/retry." },
+        "candidates": {
+          "description": "For ambiguous-target: every matching symbol with the qualifier that uniquely selects it (FR-007).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "kind", "file", "line", "selector"],
+            "properties": {
+              "name": { "type": "string" },
+              "kind": { "type": "string" },
+              "file": { "type": "string" },
+              "line": { "type": "integer" },
+              "selector": { "type": "string", "description": "The exact qualifier (e.g. `Class.method`, `--file X`, `--kind K`) that selects this candidate." }
+            }
+          }
+        },
+        "files": {
+          "description": "For out-of-root / scope-ignored: the offending file path(s) that caused the whole-plan refusal (FR-017).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "gatedEdits": {
+          "description": "For heuristic-gated: the below-exact edits blocking apply (FR-015).",
+          "type": "array",
+          "items": { "$ref": "#/definitions/edit" }
+        }
+      }
+    }
+  }
+}

@@ -65,7 +65,7 @@ estimator's advisory `suggested_slices: 2` plus the WARN gate result.
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 2026-07-10 via phase-executor. spec.md: 4 US (mapped to 2 slices), 25 FR, 16 scenarios, 9 SC, 6 entities, 9 edge cases. 1 intentional `[NEEDS CLARIFICATION]` (FR-004 tiers → Clarify S1). G1: route to Clarify. |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions done (2026-07-10 → 2026-07-11). 15 questions resolved: 11 executor-direct, 4 via 3-analyst consensus (1 synthesis, 3 security-override → human-ratified). Spec grew FR-019a/FR-026/FR-027/FR-028 + `## Clarifications` section; FR-004/017/018/020/021/022/023/024/025 + SC-006 refined. G2: 0 markers. |
-| Plan | `/speckit-plan` | ⏳ Pending | Must plan the 2-slice split explicitly |
+| Plan | `/speckit-plan` | ✅ Complete | 2026-07-11 via phase-executor. 7 artifacts; Constitution PASS ×7, Complexity Tracking empty; 28 FR + 9 SC mapped; 8 research decisions (file:line-anchored); 2-slice layout: 8 Slice-1 + 4 Slice-2 files, `span-verify.ts` the shared seam. G3 clean (sole "NEEDS CLARIFICATION" hit is self-referential PASS prose). |
 | Checklist | `/speckit-checklist` | ⏳ Pending | api-contracts, error-handling, security, data-integrity |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
@@ -490,11 +490,15 @@ without an explicit revision note.
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, slice boundaries, execution flow |
-| `research.md` | ⏳ | Decision rationales (if needed) |
-| `data-model.md` | ⏳ | Plan/edit/confidence/refusal types |
-| `contracts/` | ⏳ | CLI + MCP contract (shared) |
-| `quickstart.md` | ⏳ | Developer onboarding |
+| `plan.md` | ✅ 16.1 KB | Constitution Check PASS ×7 (empty Complexity Tracking); tech context; slice-boundary file layout; execution flow |
+| `research.md` | ✅ 16.0 KB | 8 decisions incl.: FR-018 re-sync = `CodeGraph.sync()` (resolution-complete, never `indexFiles()`); no LSP rename types exist yet — SPEC-010 defines them in `src/refactor/types.ts`; positions are start-only points — range end derives from old-name UTF-16 length then span-verifies (no schema change) |
+| `data-model.md` | ✅ 12.1 KB | Carries the authoritative FR-004 tier decision table enriched with confirmed `resolvedBy` assignment sites + the `instance-method` two-branch split |
+| `contracts/` | ✅ 3 files | `cli-rename.md`, `mcp-codegraph_rename.md`, `rename-plan.schema.json` (valid JSON, verified) — one shared plan schema |
+| `quickstart.md` | ✅ 7.4 KB | Developer onboarding |
+
+**Plan-phase reviewability budget (advisory, step 7b):** `estimate-reviewable-loc` ran clean (exit 0) → `status: not_estimated, projected: null` — plan.md declares no parseable production-file-operations structure. Recorded as **not estimated (no declared production files)**, never treated as within-budget. Operative sizing evidence remains the scaffold setup gate (WARN 405 > 400, pass=true) + the human-ratified 2-slice split (~200 LOC/slice). Note: first estimator attempt hit the known worktree repo-root quirk ("plan file not readable"); succeeded with a main-checkout-relative path.
+
+**CLAUDE.md managed section:** the plan executor updated the `<!-- SPECKIT START -->` block (SPEC-010 in-flight + plan pointer) — surgical, accurate, folded into this phase's commit.
 
 ---
 
