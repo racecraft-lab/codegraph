@@ -311,7 +311,7 @@ must not leak daemons on exit (design concept Q1).
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
 | 1 | API contract edges | 5 (2 executor-resolved, 3 consensus) | FR-010 marker resolved: repo id = 16-hex sha256 of realpath'd root, `{id,root,name,default}`. FR-004/005 payload bounds (node detail = own fields; status = trimmed subset). FR-004a: node ids percent-encoded path segments, split-then-decode-once, DB-key-only, 404 on unknown/malformed. FR-015a: 6-code closed error vocabulary + leak guardrails (human-approved security item). FR-006a: supplied out-of-enum ?mode → 400 (R2 majority); degradation stays 200+fields. |
-| 2 | Jobs & SSE lifecycle | | |
+| 2 | Jobs & SSE lifecycle | 5 (4 executor-resolved, 1 consensus) | FR-023 marker resolved: per-repo SSE endpoint `GET /api/reindex/:repo/events` (EventSource is GET-only), named events snapshot/progress/done/error, POST returns 202+descriptor; shutdown aborts jobs via AbortSignal within bounded grace (`aborted` reason). Job id = randomUUID; lifecycle running→done|error (no queued); IndexProgress phases verbatim. Un-registered repo → 404, never init (dormancy). FR-021a: external lock contention = job error `lock_unavailable` (bounded ~2-3s retry, no queue, no new HTTP code); watcher-degrade hazard (>60s lock hold) surfaced as FR-021a clause + edge case. |
 | 3 | Bind/auth/lifecycle | | |
 
 ### Consensus Resolution Log
@@ -321,6 +321,7 @@ must not leak daemons on exit (design concept Q1).
 | S1-Q2 | node-id URL transport | codebase+domain | 2/2 agree (R1) | percent-encoded path segment, split-then-decode-once, single decode site, 404 on miss | applied |
 | S1-Q3 | error.code vocabulary | all 3 (security keywords) | 3/3 unanimous → mandatory human review (protocol security override) | 6-code closed set; single not_found+details.resource; 503 unavailable+Retry-After; whitelist/no-leak guardrails; generic 401 bodies | human approved, applied |
 | S1-Q4 | out-of-enum ?mode | codebase+domain R1 split → R2 spec-context tiebreak | 2/3 majority (B) | 400 invalid_request for supplied bad mode; auto only when omitted; degradation stays 200+degraded fields; divergence from MCP/CLI coercion documented | applied |
+| S2-Q3 | external index-lock contention | codebase+spec | 2/2 agree (R1); analysts supplied exact edit text, orchestrator-applied | (a) job-error mapping: 202 always, bounded ~2-3s lock retry, terminal `error` reason `lock_unavailable`; 409 stays registry-scoped, 503 untouched; NEW codebase-verified hazard folded in — watcher permanently degrades auto-sync after ~60s contention, job completion/abort must restore it | applied |
 
 *Ops note: three subagent stalls occurred during this session's consensus (600s stream-watchdog, coinciding with a transient upstream model outage that also briefly blocked Agent dispatch); recovered via SendMessage resume (1) and fresh respawn with no-tool-call length-capped prompts (2). No data lost.*
 
