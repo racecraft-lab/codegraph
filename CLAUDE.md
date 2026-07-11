@@ -337,6 +337,9 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+Active feature: SPEC-005 Local HTTP Server & REST API (`005-local-http-server`).
+For technologies, project structure, the two-slice split, and the resolved
+plan-time decisions (FR-012 loopback util, FR-021a watcher re-arm, FR-023/024
+result union), read the current plan: `specs/005-local-http-server/plan.md`
+(with `research.md`, `data-model.md`, `contracts/openapi.yaml`, `quickstart.md`).
 <!-- SPECKIT END -->

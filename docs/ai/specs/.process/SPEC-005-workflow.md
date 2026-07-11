@@ -65,7 +65,7 @@ reviewable-LOC ceiling:
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 26 FRs, 4 US (slice partition clean), 14 acceptance scenarios, 8 SC; 3 deliberate [NEEDS CLARIFICATION] markers → Clarify |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 15 questions; 7 consensus items (2 security panels human-approved); 0 markers remain — G2 pass |
-| Plan | `/speckit-plan` | ⏳ Pending | |
+| Plan | `/speckit-plan` | ✅ Complete | 5 artifacts; constitution PASS ×7 pre+post; 0 new deps; 3 delegated decisions resolved; G3 pass |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
@@ -389,11 +389,13 @@ must not leak daemons on exit (design concept Q1).
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, execution flow |
-| `research.md` | ⏳ | Decision rationales (if needed) |
-| `data-model.md` | ⏳ | Entities and types |
-| `contracts/` | ⏳ | API specifications |
-| `quickstart.md` | ⏳ | Developer onboarding |
+| `plan.md` | ✅ | Filled; constitution gate PASS ×7 pre+post-design; Complexity Tracking empty (0 new deps) |
+| `research.md` | ✅ | 3 delegated decisions grounded: isLoopbackHost → src/utils.ts (both gates import it); FR-021a watcher restore via narrow daemon CONTROL message → additive MCPEngine.rearmWatcher() (unwatch+watch only when degraded; watcher.ts untouched; control ≠ indexing RPC); job result = discriminated union on mode (sync→SyncResult / full→IndexResult, FR-015a whitelist applied) |
+| `data-model.md` | ✅ | Entities and types |
+| `contracts/openapi.yaml` | ✅ | 10 path items (8 read + 2 job), 6-code envelope, per-mode result union |
+| `quickstart.md` | ✅ | Developer onboarding |
+
+Plan-phase reviewability budget (step 7b, advisory): `estimate-reviewable-loc` → `status: not_estimated` (`projected: null` — plan.md carries no tool-parseable declared-file table). Recorded, NOT treated as within-budget; the governing evidence remains the scaffold-time setup gate (620 LOC warn, accepted 2-slice split, each <400). Slice layering verified in plan: slice 2 = isolated jobs.ts + sse.ts + one route registration on seams slice 1 exposes. `upgrade` attach point exposed, wired to nothing (SPEC-009). after_plan agent-context hook: executed in-command (CLAUDE.md SPECKIT block now points at the plan); git hook folded into this phase commit.
 
 ---
 
