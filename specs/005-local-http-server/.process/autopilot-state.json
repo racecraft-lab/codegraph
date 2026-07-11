@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "spec_id": "SPEC-005",
+  "branch": "005-local-http-server",
+  "layer_plan": {
+    "status": "skipped",
+    "reason": "atomicity-route returned one-navigable-PR (not split-PR); operator-ratified 2-PR marker plan governs emission instead"
+  },
+  "atomicity_route": {
+    "route": "one-navigable-PR",
+    "releasable": true,
+    "signals": ["change-shape:modify-heavy"],
+    "warnings": [],
+    "operator_override": "2 sequenced PRs per scaffold-ratified split decision (reviewability warn resolution), re-confirmed by operator at G5 2026-07-11"
+  },
+  "pr_marker_plan": {
+    "schema_version": "1.0",
+    "source_fingerprint": "sha256:6aaa8906d99c62c7c59076a9e67a9b33aca0c23f1b0a50baa5eca97ec1028d8d",
+    "source_file": "specs/005-local-http-server/tasks.md",
+    "markers": [
+      {
+        "id": "slice-1-read-api",
+        "review_order": 1,
+        "title": "feat(SPEC-005): local HTTP server — read API (slice 1)",
+        "tasks": "T001-T032 (Phases 1-5: foundation, US1 read API, US4 bind/auth, US2 multi-repo, contract test + PR close-out)",
+        "user_stories": ["US1", "US4", "US2"],
+        "checkpoint": null
+      },
+      {
+        "id": "slice-2-jobs-sse",
+        "review_order": 2,
+        "title": "feat(SPEC-005): local HTTP server — re-index jobs & SSE (slice 2)",
+        "tasks": "T033-T047 (Phases 6-8: US3 jobs/SSE, contract extension + PR close-out, polish + self-repo UAT)",
+        "user_stories": ["US3"],
+        "fold_target_for": "polish tasks T046-T047 (cross-cutting, validate whole feature)",
+        "checkpoint": null
+      }
+    ],
+    "review_order": ["slice-1-read-api", "slice-2-jobs-sse"],
+    "checkpoints": [],
+    "warnings": [],
+    "final_marker_split": null,
+    "packet_validation": null,
+    "pr_mappings": null,
+    "reviewability_evidence": {
+      "setup_gate": "warn (620 LOC / 7 prod files, greenfield warn line 600) — recorded at scaffold with accepted split",
+      "plan_estimator": "not_estimated (no parseable declared-file table)",
+      "tasks_mode_gate": "deferred on installed runner — fallback evidence chain per SKILL guidance",
+      "operator_ratification": "2-PR split confirmed at G5 2026-07-11"
+    }
+  }
+}

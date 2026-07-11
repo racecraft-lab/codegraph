@@ -67,7 +67,7 @@ reviewable-LOC ceiling:
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 15 questions; 7 consensus items (2 security panels human-approved); 0 markers remain — G2 pass |
 | Plan | `/speckit-plan` | ✅ Complete | 5 artifacts; constitution PASS ×7 pre+post; 0 new deps; 3 delegated decisions resolved; G3 pass |
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 88 items, 20 gaps all closed; 7 consensus items (2 human security gates); G4 pass |
-| Tasks | `/speckit-tasks` | ⏳ Pending | |
+| Tasks | `/speckit-tasks` | ✅ Complete | 47 tasks / 8 phases / 12 [P]; clean slice partition; G5 pass; 2-PR marker plan persisted (operator override of advisory one-PR route) |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
@@ -555,10 +555,12 @@ When checklist identifies `[Gap]` items:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 47 (T001–T047), all TDD-shaped with FR references |
+| **Phases** | 8 (foundation ×1, slice-1 ×4, slice-2 ×2, polish ×1) |
+| **Parallel Opportunities** | 12 [P] tasks |
+| **User Stories Covered** | US1 (10), US4 (5), US2 (3), US3 (8) + 21 non-story; slice partition clean, no straddlers |
+
+G5 (2026-07-11): PASS — runner validate-gate 47 tasks/0 markers; FR coverage verified incl. content-level checks for FR-006a (T015), FR-010a (repo-scoped reads section), FR-026 (T006). Verify-tasks phantom check: trivially clean (fresh tasks.md, 0 of 47 checked — deterministic grep evidence; no phantom completions possible). Tasks-mode reviewability gate: **deferred on installed runner** (helper `reviewability-gate`, requested mode `tasks`) — fallback evidence chain: setup-mode warn + accepted split (scaffold), plan estimator `not_estimated`, operator-ratified split at G5. after_tasks git hook folded into the phase commit.
 
 ---
 
@@ -579,10 +581,12 @@ silently following either.
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change. |
-| **Signals** | | The decisive detector findings behind the route and releasability reading. |
-| **Warnings** | | Any release-safety warning attached to the change. |
+| **Route** | `one-navigable-PR` | Classifier decision (advisory), recorded 2026-07-11 post-G5. |
+| **Releasable** | `true` | No destructive-migration or concurrency-sensitivity flags. |
+| **Signals** | `change-shape:modify-heavy` | Weighted the foundation phase's touches to existing files; the feature is mostly greenfield `src/server/`. |
+| **Warnings** | none | |
+
+**Conflict surfaced and resolved (per this section's own instruction):** the classifier disagreed with the scaffold-recorded 2-slice/2-PR split. Operator decision at G5 (2026-07-11): **the 2-PR split governs PR emission** (it is the ratified resolution of the setup reviewability warn; each slice stays under the ~400-LOC ceiling; slice 1 independently unblocks SPEC-006). Layer plan: `skipped` (route ≠ split-PR; the operator-ratified marker plan replaces it). `pr_marker_plan` persisted at `specs/005-local-http-server/.process/autopilot-state.json` (2 markers: `slice-1-read-api` T001–T032 → PR 1; `slice-2-jobs-sse` T033–T047 → PR 2; source fingerprint pinned to tasks.md sha256).
 
 To produce the decision, run the classifier against the feature directory:
 
