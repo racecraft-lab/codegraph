@@ -37,11 +37,11 @@ Technical approach: the plan is **recomputed on apply** from the live index (no 
 
 **Performance Goals**: no retrieval regression on a control repo when the MCP tool joins the default-served set (A/B, ≥2 runs/arm, Sonnet floor model — FR-024/SC-007). Plan derivation is a bounded set of prepared-statement reads plus one LSP round-trip (LSP path) or one span-verify pass over the touched files (graph path) — interactive latency, no stated throughput target.
 
-**Constraints**: no new runtime dependency; pure-JS; no network beyond locally spawned language servers (Principle VII). UTF-16 code units end-to-end (SPEC-008). Diffs to upstream-owned files (`src/mcp/tools.ts`, `src/mcp/server-instructions.ts`, `src/bin/codegraph.ts`, `src/index.ts`) stay minimal and additive; all new logic lives in `src/refactor/` (Principle III).
+**Constraints**: no new runtime dependency; pure-JS; no network beyond locally spawned language servers (Principle VII). UTF-16 code units end-to-end (SPEC-008). Diffs to upstream-owned files (`src/db/queries.ts`, `src/mcp/tools.ts`, `src/mcp/server-instructions.ts`, `src/bin/codegraph.ts`, `src/index.ts`) stay minimal and additive; all new logic lives in `src/refactor/` (Principle III).
 
-**Scale/Scope**: ~405 net-new reviewable LOC, ~200 per slice; ~5 production files; ~11 total files.
+**Scale/Scope**: ~405 net-new reviewable LOC, ~200 per slice; 12 new `src/refactor/` modules (8 Slice 1 + 4 Slice 2) as the single primary surface, plus 5 additive edits to upstream-owned files and 3 test files (~20 total).
 
-**Reviewability Budget**: **Primary surface** — harness/adapter (`src/refactor/` plan-and-apply engine). **Secondary surfaces** — CLI (`rename` subcommand), MCP tool, agent-guidance text. **Projected reviewable LOC** ~405 (~200/slice). **Production files** ~5. **Total files** ~11. **Budget result**: warn (405 > 400 LOC threshold) **resolved by the ratified 2-slice split** (Q11); each slice is within budget, single-primary-surface, and independently reviewable.
+**Reviewability Budget**: **Primary surface** — harness/adapter (`src/refactor/` plan-and-apply engine), 12 new modules (8 in Slice 1 + 4 in Slice 2). **Secondary surfaces** — CLI (`rename` subcommand), MCP tool, agent-guidance text (5 additive edits to upstream-owned files). **Projected reviewable LOC** ~405 (~200/slice). **Production files** — 12 new `src/refactor/` modules + 5 additive upstream edits. **Total files** ~20 (incl. 3 test files). **Budget result**: **warn** — reviewable LOC 405 > 400, and the 12-module primary surface exceeds the 8-file block threshold *as a single PR*; both are **resolved by the ratified 2-slice split exception** (Q11 — the preset waives the block "unless a ratified split exception exists"). Each slice ships independently at ~200 reviewable LOC (< 400), single primary surface: Slice 1's 8 new modules warn (> 6) but do not block (≤ 8), Slice 2's 4 pass.
 
 ## Constitution Check
 
@@ -57,7 +57,7 @@ Technical approach: the plan is **recomputed on apply** from the live index (no 
 | **VI. Retrieval Performance Is a Regression Surface** | Adding `codegraph_rename` grows the default-served set from 1 to 2 tools — gated by an A/B no-regression run on a control repo (FR-024/SC-007), in Slice 2 only. Every recoverable refusal is success-shaped (FR-023); `isError` is reserved for the single failed-rollback malfunction (FR-019a). Guidance keeps `codegraph_explore` PRIMARY and must not dilute explore-first steering (FR-025). The `retrieval-guardian` review is applicable (diff touches `src/mcp/`). | PASS |
 | **VII. Local-First, Private, Zero Native Dependencies** | No new runtime dependency; `node:sqlite` unchanged; pure-JS write path on Node `fs`. No network beyond locally spawned language servers. No new SQL/WASM/asset to wire into `copy-assets`. | PASS |
 
-**Reviewability gate**: single primary surface (`src/refactor/`); the 405-LOC warn is resolved by the ratified split (each slice ~200 LOC, ≤ warn thresholds). No blocker thresholds (800 LOC / 8 production files / 25 total / >1 primary surface) are approached. **PASS.**
+**Reviewability gate**: single primary surface (`src/refactor/`). *As a single PR* two thresholds are exceeded — reviewable LOC (405 > 400 warn) and the 12-module primary surface (> 8 production-file block); both are covered by the **ratified 2-slice split exception** (Q11), which the preset admits ("block above … 8 production files … unless a ratified split exception exists"). Per slice each ships independently at ~200 reviewable LOC (< 400) and one primary surface — Slice 1's 8 new modules warn (> 6) but stay ≤ the 8-file block, Slice 2's 4 pass; total files ~20 (< 25). **Result: WARN, resolved by the ratified split — not blocked.** (The seven-principle Constitution Check above is unaffected — this is gate evidence, not a Principle I–VII verdict.)
 
 **PR review packet source** (per slice): what changed, why, non-goals, review order (Slice 1 engine → CLI; Slice 2 apply ladder → MCP → guidance), scope budget, the FR→file→evidence traceability matrix, verification evidence (`npm test`, probes, and — Slice 2 — the A/B numbers + self-repo dogfood outcome), known gaps (Windows validation), and rollback/flag notes (Slice 2 is the write increment; `--include-heuristic` is the only behavior escape).
 
@@ -81,7 +81,7 @@ specs/010-graph-aware-rename/
 
 ### Source Code (repository root)
 
-New logic is confined to `src/refactor/`. The file layout makes the **slice boundary a clean PR boundary** — Slice 1 files never import Slice 2 files; Slice 2 imports Slice 1 (notably `span-verify.ts`, written for plan-time FR-005 and reused for apply-time FR-016).
+New logic is confined to `src/refactor/`. The file layout makes the **slice boundary a clean PR boundary** — **at the Slice-1 PR boundary no Slice-1 file imports a Slice-2 file** (Slice 1 ships self-contained and read-only); Slice 2 imports Slice 1 (notably `span-verify.ts`, written for plan-time FR-005 and reused for apply-time FR-016) and additively adds one plan-time cross-import (`plan-engine.ts` → `jail.ts`, T040) that lands inside the Slice-2 PR.
 
 ```text
 src/refactor/                     # NEW module — owns the plan/apply engine (Principle III)
@@ -110,7 +110,7 @@ src/refactor/                     # NEW module — owns the plan/apply engine (P
 └── apply-engine.ts               # the safety ladder: gate→span→jail→snapshot→write→
                                   #   re-sync→post-check→rollback / recovery (FR-014–FR-020, FR-026)
 
-src/db/query-builder.ts           # ADD prepared statements (additive):
+src/db/queries.ts                 # ADD prepared statements (additive):
                                   #   Slice 1: references-to-node, node-declaration-span,
                                   #     nodes-by-name (targeting + candidates)
                                   #   Slice 2: unresolved-refs-by-name-in-files,

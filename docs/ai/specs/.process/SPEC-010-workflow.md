@@ -68,7 +68,7 @@ estimator's advisory `suggested_slices: 2` plus the WARN gate result.
 | Plan | `/speckit-plan` | ✅ Complete | 2026-07-11 via phase-executor. 7 artifacts; Constitution PASS ×7, Complexity Tracking empty; 28 FR + 9 SC mapped; 8 research decisions (file:line-anchored); 2-slice layout: 8 Slice-1 + 4 Slice-2 files, `span-verify.ts` the shared seam. G3 clean (sole "NEEDS CLARIFICATION" hit is self-referential PASS prose). |
 | Checklist | `/speckit-checklist` | ✅ Complete | 2026-07-11. 4 domains sequential: 122 items, 22 gaps found → 22 fixed → 0 remaining. 5 consensus items resolved (rows 5–9), 0 human escalations. G4: 0 [Gap] across all checklist files. Spec grew FR-003a/FR-021a/SC-010; contracts schema hardened; drift in data-model/research corrected. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 2026-07-11. 53 tasks, slice boundary = PR seam at T027, 13 [P], full FR/SC traceability. G5 pass (runner + deterministic). Atomicity route recorded (one-navigable-PR advisory dissent; ratified 2-slice split governs); layer plan skipped; pr_marker_plan persisted (2 markers). |
-| Analyze | `/speckit-analyze` | ⏳ Pending | |
+| Analyze | `/speckit-analyze` | ✅ Complete | 2026-07-11 via analyze-executor. 8 findings (0C/1H/2M/5L) — ALL remediated in 2 loops; final re-run CLEAN (0 findings; 100% FR+SC coverage; Q1–Q11 traced 11/11; 10/10 refusal codes test-first; slice boundary intact). 0 unresolved → consensus skipped. G6 pass. |
 | Implement | `/speckit-implement` | ⏳ Pending | Slice 1 then Slice 2 |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -424,6 +424,18 @@ Maximum 5 targeted questions per session.
 | 7 | Gap | error-handling CHK010: runtime LSP failure routing — degrade-to-graph vs honest-refuse (FR-003a) | [codebase, domain, spec] | 1 | 3/3 | FR-003a ratified as applied — degrade at plan AND apply, no hybrid carve-out; safety carried by cause-blind uniform gates (FR-004 tiers key on resolvedBy; span checks + FR-015 gate identical either path); client contract never resolves partial data; per-edit `source` visibility (SPEC-003 provenance-tag precedent); industry structural test (cascade when a second engine exists — VS Code provider sequence, Sourcegraph fallback; refuse only when none exists — IntelliJ dumb mode, gopls); locals honest-refusal retained | codebase-analyst, spec-context-analyst, domain-researcher |
 | 8 | Gap | data-integrity CHK020: watcher-vs-apply re-sync serialization mechanism (FR-018) | [codebase, domain] | 1 | both-agree | Mechanism (c) — result-shape discrimination on the EXISTING structural serialization; mutex-hold rejected (Mutex non-reentrant, sync() re-acquires → guaranteed deadlock) and watcher-suspend rejected (no pause surface; unwatch/rewatch drops pending files). MCP-served apply shares ONE CodeGraph instance with the watcher (engine holds one cg) → indexMutex already totally orders them; cross-process = existing on-disk fileLock. Apply discriminates the lock-failure zero-shape (filesChecked:0 + durationMs:0 → rollback) from any filesChecked>0 result incl. watcher-raced real-empty → proceed to the post-check, which reads live graph state agnostic to who synced (shipped watch()-callback precedent). Domain's optional defer-signal recorded considered-and-not-needed (no in-process race remains; Principle II). 4 edits applied: FR-018 sub-bullet rewritten; drift corrected in data-model.md (diagram label + Concurrency invariant) and research.md Decision 3 (stale filesModified>0 gate) | codebase-analyst, domain-researcher |
 | 9 | Gap | data-integrity CHK011: overlapping LSP edits — degrade vs new refusal reason (FR-020) | [domain, spec] | 1 | both-agree | FR-020 ratified as applied — identical duplicates dedup; a genuine partial overlap (protocol-contract violation, only reachable from a misbehaving server; graph spans disjoint by FR-005) degrades via the FR-003a runtime-failure contract, same family as malformed-protocol-response; NO new refusal reason (extends CHK010's cause-blind precedent a fortiori; a new isError reason would contradict FR-019a's "sole malfunction"; no caller-actionable fix exists — LSP's own ApplyWorkspaceEditResult is boolean+free-text, VS Code applyEdit is a bare boolean, Neovim doesn't validate overlap at all). Overlap-specific cause-visibility considered and declined (would break cause-blind uniformity — none of the five sibling reasons gets per-cause visibility) | spec-context-analyst, domain-researcher |
+
+### Pre-Implement Confidence (Phase 6 synthesizer emit, 2026-07-11 — clean Analyze pass, artifacts independently re-verified by the synthesizer)
+
+📊 Confidence: 0.98
+
+- Task understanding: 0.98
+- Approach clarity: 0.97
+- Requirements alignment: 0.97
+- Risk assessment: 1.00
+- Completeness: 0.99
+
+Synthesizer verification highlights: spec.md carries FR-001…FR-028 (+003a/019a/021a), SC-001…SC-010, and a 3-session Clarifications log (15 resolved, 3 human-ratified); plan.md Constitution Check 7/7 PASS with an intentionally-empty Complexity Tracking table and zero live TBD/NEEDS-CLARIFICATION markers; research.md holds 8 file:line-anchored decisions; tasks.md T001–T053 TDD-paired with the T027 slice boundary; all 5 checklists gap-free with loop-2 verification passes; autopilot-state.json's pr_marker_plan populated with 2 ordered markers + source fingerprint; risk = 1.00 by rubric (0 open CRITICAL/HIGH after the clean re-run; 9 consensus resolutions logged).
 
 ---
 
@@ -784,7 +796,14 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| C1 | HIGH | Reviewability Budget stale ("~5 production files", gate "PASS") vs the real 12 new src/refactor/ modules + 5 additive upstream edits | Counts reconciled; gate reframed as WARN resolved by the ratified 2-slice split exception (preset's own split-exception rule) — spec/plan/tasks all synced |
+| I1 | MEDIUM | plan.md named nonexistent `src/db/query-builder.ts` | → `src/db/queries.ts` (holds `class QueryBuilder`); all other artifacts already correct |
+| I2 | MEDIUM | "Slice 1 never imports Slice 2" stated absolutely, contradicted by T040's accepted plan-engine→jail edit | Invariant scoped to the Slice-1 PR boundary; T040 acknowledged as an accepted Slice-2 addition |
+| I3 | LOW | FR-026 under a Slice-2 header though codes 0/1/2 are Slice-1 | Clarifying sentence added |
+| U1 | LOW | FR-027 prose omitted the 1-based→0-based line-index boundary flip (schema already had it) | Note added to FR-027 |
+| I4 | LOW | FR-019a over-claimed an "existing PID+random-hex convention" (two separate precedents, never combined) | Provenance claim corrected; ratified decision preserved verbatim |
+| G1 | LOW | Scope-ignored-file invisibility edge case had no documenting test | T025 extended (test-only, Slice 1) |
+| L1 | LOW | Minimal-diffs narrative listed 4 upstream files; budget commits to 5 (queries.ts missing) | Both enumerations fixed |
 
 ---
 
