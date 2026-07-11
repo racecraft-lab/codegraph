@@ -292,9 +292,16 @@ paths:
     get:
       tags: [read]
       summary: Impact radius of a symbol — a node+edge subgraph, NOT a paged list (FR-004; library getImpactRadius returns a Subgraph). Shares GraphResult's shape + node cap.
-      parameters: [ { $ref: '#/components/parameters/NodeId' }, { $ref: '#/components/parameters/RepoQuery' } ]
+      parameters:
+        - { $ref: '#/components/parameters/NodeId' }
+        - name: depth
+          in: query
+          schema: { type: integer, default: 3, minimum: 1, maximum: 3 }
+          description: Impact's own natural default 3 (library getImpactRadius maxDepth=3), NOT the neighborhood default of 1; over-max clamps, not errors (FR-004/015a).
+        - { $ref: '#/components/parameters/RepoQuery' }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/GraphResult' } } } }
+        '400': { description: Malformed/negative depth (FR-015a; over-max clamps, not errors), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
         '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
         '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/graph/{id}:

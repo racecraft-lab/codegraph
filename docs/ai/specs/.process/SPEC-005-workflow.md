@@ -68,7 +68,7 @@ reviewable-LOC ceiling:
 | Plan | `/speckit-plan` | ✅ Complete | 5 artifacts; constitution PASS ×7 pre+post; 0 new deps; 3 delegated decisions resolved; G3 pass |
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 88 items, 20 gaps all closed; 7 consensus items (2 human security gates); G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 47 tasks / 8 phases / 12 [P]; clean slice partition; G5 pass; 2-PR marker plan persisted (operator override of advisory one-PR route) |
-| Analyze | `/speckit-analyze` | ⏳ Pending | |
+| Analyze | `/speckit-analyze` | ✅ Complete | 8 findings (0C/0H/3M/5L) all remediated; terminal pass 0 findings; G6 pass; consensus skipped (0 unresolved) |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -635,7 +635,16 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| D1 | MEDIUM | `--web` "documented for humans" (Q3) vs hidden `serve` command in Commander | Reconciliation clause in FR-001 + plan: hidden = minimal fork-diff, stricter-than-required; "documented" satisfied by user doc (T046) + openapi.yaml |
+| N1 | MEDIUM | openapi missing impact `?depth` (default 3, max 3) + 400 that FR-004/T018 pin | openapi + data-model aligned to spec/tasks (library default 3 verified at src/index.ts:2659) |
+| N2 | MEDIUM | Stale checklist claim ("impact takes no params") that caused N1 | api-contracts CHK006 corrected; CHK012 scope misattribution fixed |
+| U1 | LOW | Extensionless non-root route unpinned while dist/web/ absent | FR-017: placeholder IS the shell stand-in; same byte-identical page, never 404 |
+| U2 | LOW | "Bounded grace period" unquantified | FR-026: target ~5s (daemon backstop pattern, sized for AbortSignal phase-boundary landing) |
+| C1 | LOW | No populated dist/web/ test fixture for shell-fallback assertions | T008/T012/T019: synthetic web-root fixture, both states exercised |
+| I1 | LOW | Polish phase PR assignment unstated | tasks.md: Phase 8 ships in PR 2 (matches marker plan fold target) |
+| I2 | LOW | Impact depth-3 vs graph depth-1 divergent defaults untested | T011 asserts both defaults + malformed depth → 400 |
+
+Also: plan.md's benign literal marker string (count-markers false positive) rephrased — deterministic gates now fully clean: `{gaps:0, clarifications:0, critical:0, high:0, medium:0, low:0}`.
 
 ---
 

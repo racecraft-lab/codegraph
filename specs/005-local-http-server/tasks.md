@@ -21,10 +21,13 @@ ratified **2-slice split** (plan Split Decision; each slice < ~400 LOC). The sli
 boundary is a hard partition — **two separate PRs**:
 
 - **Slice 1 (PR 1) — read API end-to-end**: Foundation + **US1** (P1) + **US4** (P2)
-  + **US2** (P3). Independently shippable; unblocks SPEC-006. Phases 1–5.
+  + **US2** (P3). Independently shippable; unblocks SPEC-006. Phases 1–5 (T001–T032).
 - **Slice 2 (PR 2) — job subsystem**: **US3** (P4), layered on Slice 1's exposed
-  seams. Phases 6–7.
-- **Polish** (Phase 8) closes out cross-cutting + the self-repo dogfood.
+  seams. Phases 6–8 (T033–T047) — **Polish (Phase 8) lands within PR 2**.
+- **Polish** (Phase 8) closes out cross-cutting + the self-repo dogfood; it **ships in
+  PR 2** — the ratified 2-PR marker plan (`.process/autopilot-state.json`) folds
+  T046–T047 into Slice 2, and T047's self-repo dogfood depends on both slices, so it
+  can only land with/after PR 2.
 
 **User-story → slice map**: US1/US2/US4 → Slice 1; US3 → Slice 2.
 
@@ -108,7 +111,10 @@ complete.**
   build a real fixture index in an `fs.mkdtempSync` temp dir (real files, real
   SQLite via `CodeGraph.init`+`indexAll`, no mocking), start `serve --web` on
   `--port 0`, and return the base URL + a teardown that stops the server and removes
-  the temp dir in `afterEach` (repo test convention). Depends on T006.
+  the temp dir in `afterEach` (repo test convention). MUST support an **optional
+  synthetic web root** (seed a temp `dist/web/` with `index.html` + a probe asset and
+  point the server's injectable web-root at it, per T019) so T012 case (b) can
+  exercise the `dist/web/`-present path. Depends on T006.
 - [ ] T009 [P] Create the shipped contract artifact `src/server/openapi.yaml` (the
   **read-API subset** copied from the design source
   `specs/005-local-http-server/contracts/openapi.yaml` — read-tagged paths only;
@@ -145,16 +151,25 @@ testable before US4 lands.)
   `__tests__/server-read-api.test.ts` — status body (FR-005 fields), symbol-search
   paging `{items,total,limit,offset}` (FR-006), node-detail own-fields-only
   (FR-004), callers/callees paged, impact + graph subgraph `{nodes,edges,truncated}`
-  with the 2000-node cap + `truncated` (FR-004/007), and a `file:`-shaped id with an
+  with the 2000-node cap + `truncated` (FR-004/007), the **divergent default depths**
+  (a no-`depth` `/api/impact/:id` traverses to depth **3**, a no-`depth`
+  `/api/graph/:id` to depth **1**; a malformed/negative `depth` on either → 400,
+  FR-004/007/015a), and a `file:`-shaped id with an
   encoded `%2F` round-tripping to the correct node + an unknown/malformed id → 404
   `not_found` (`details.resource: node`) (FR-004a). Uses the T008 harness.
 - [ ] T012 [P] [US1] Failing static/fallback tests in
-  `__tests__/server-static-fallback.test.ts` — `/` placeholder present +
-  data-free/byte-identical regardless of registered repos (FR-017/017a); unknown
-  `/api/*` → 404 envelope; missing `.js`/`.css` asset → 404 (no shell fallback);
-  extensionless route → app shell; **no CORS headers** on any response (FR-018/019);
-  and a traversal probe (`GET /..%2f..%2f..%2fetc%2fpasswd`) → 404 reading no
-  out-of-root file (FR-017b).
+  `__tests__/server-static-fallback.test.ts`, exercising **both** web-root states.
+  **(a) `dist/web/` absent** (SPEC-005's production reality): `/` placeholder present
+  + data-free/byte-identical regardless of registered repos (FR-017/017a); an
+  **extensionless non-root route** (`GET /graph`) → the **same** placeholder, not 404
+  (FR-017/018 app-shell stand-in); unknown `/api/*` → 404 envelope; missing
+  `.js`/`.css` asset → 404 (no shell fallback); **no CORS headers** on any response
+  (FR-018/019). **(b) synthetic `dist/web/` present** — seed a temp web root
+  (`index.html` + a probe `.js` asset) via the T008 harness's injectable web-root
+  (T019): the probe asset is served with the right content-type, and an extensionless
+  route → that `index.html` shell (FR-017 "serve when present"). The **traversal
+  probe** (`GET /..%2f..%2f..%2fetc%2fpasswd`) → 404 reading no out-of-root file in
+  **both** states (FR-017b).
 
 ### Implementation for User Story 1
 
@@ -190,10 +205,14 @@ testable before US4 lands.)
   default **3** / max 3 (its own natural default, NOT the neighborhood default).
   Depends on T013. (FR-004/007) — `src/server/routes.ts`.
 - [ ] T019 [P] [US1] Static mount + placeholder in `src/server/static.ts` — serve
-  `dist/web/` when present; while absent, `/` returns the minimal **data-free**
-  placeholder pointing at `/api/status` (byte-identical regardless of registered
-  repos); apply the strict fallback rules (FR-018) and emit **no CORS headers**
-  (FR-019). (FR-017/017a/018/019)
+  `dist/web/` when present; while absent, `/` **and every extensionless browser
+  route** return the minimal **data-free** placeholder pointing at `/api/status`
+  (byte-identical regardless of registered repos — the app-shell stand-in,
+  FR-017/018); apply the strict fallback rules (missing asset-extension + `/api/*`
+  still 404, FR-018) and emit **no CORS headers** (FR-019). The web-root path MUST be
+  **resolvable/injectable** (not hard-pinned to the process's own `dist/web/`) so the
+  T008 harness can point it at a synthetic temp web root for the T012 case-(b)
+  present-`dist/web/` assertions. (FR-017/017a/018/019)
 - [ ] T020 [US1] Path-traversal confinement in `src/server/static.ts` — decode the
   request path **once** (bounded against multiply-encoded input) and route every
   resolved path through `validatePathWithinRoot` (`src/utils.ts`), returning null →
@@ -463,7 +482,8 @@ shutdown-abort (SC-004).
   (T014–T020, T027–T028). **Ships as PR 1.**
 - **Slice 2 (Phases 6–7)** — depends on Slice 1 (the read API + router/shutdown
   seams). **Ships as PR 2.**
-- **Polish (Phase 8)** — after both slices.
+- **Polish (Phase 8)** — after both slices; **ships within PR 2** (folded into Slice 2
+  per the ratified 2-PR marker plan).
 
 ### Key intra-phase dependencies
 

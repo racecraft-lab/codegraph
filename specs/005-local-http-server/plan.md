@@ -85,7 +85,10 @@ rebuild itself and is abortable within a shutdown grace window.
 **Constraints**: Zero new runtime dependencies (Principle II/VII, load-bearing).
 Dormancy (Constitution VII, FR-001): bare `codegraph serve` and `serve --mcp` stay
 byte-identical to today — `--web` is the only activation path, and the `serve`
-command stays `hidden` in Commander so `--help` output is unchanged. Same-origin
+command stays `hidden` in Commander so `--help` output is unchanged (a *stricter*-than-
+required reading — Constitution VII's dormancy is runtime-only; Q3's "documented,
+humans" `--web` mode is documented via the user doc T046 + `openapi.yaml`, not `--help`,
+reconciled in spec FR-001). Same-origin
 only, no CORS (FR-019). Fail-closed auth (FR-013). No new **indexing** daemon RPC
 (FR-021) — the daemon keeps its no-indexing invariant; the FR-021a watcher re-arm
 is a control-plane message, not indexing (see research.md). Upstream-owned files
@@ -110,7 +113,7 @@ one oversized PR (Q13). See Split Decision below.
 
 | Principle | Verdict | Evidence |
 |-----------|---------|----------|
-| **I. Think Before Coding** | PASS | Spec carries 0 `[NEEDS CLARIFICATION]`; all 13 design-concept Q's resolved; the 3 delegated plan-time decisions (FR-012, FR-021a, FR-023/024) are resolved in research.md with competing options and rationale, not silently picked. |
+| **I. Think Before Coding** | PASS | Spec carries zero unresolved NEEDS-CLARIFICATION markers; all 13 design-concept Q's resolved; the 3 delegated plan-time decisions (FR-012, FR-021a, FR-023/024) are resolved in research.md with competing options and rationale, not silently picked. |
 | **II. Simplicity First** | PASS | Zero new runtime deps; hand-rolled router/SSE/static on `node:http`; offset paging (no cursors); no `/api/v1`; in-memory job state (no persistence). The FR-021a watcher re-arm is the *minimum* mechanism that satisfies a hard correctness FR (a control message reusing existing `CodeGraph.watch()`/`unwatch()`), and its heavier alternative (rewrite the watcher's degrade semantics) was rejected — see research.md. No speculative surface. |
 | **III. Surgical Changes / Fork Discipline** | PASS | All new capability in the new `src/server/` module. Upstream-owned diffs are minimal and enumerated: `src/bin/codegraph.ts` (+1 `--web` option, +1 action branch, +1 mutual-exclusion guard); `src/embeddings/config.ts` (delete private `isLoopbackHost`, import shared); `src/utils.ts` (+ shared `isLoopbackHost`); `src/mcp/engine.ts` + daemon request handler (+1 additive `rearmWatcher` control op); `package.json` copy-assets (+ copy `openapi.yaml`). No upstream file is rewritten. |
 | **IV. Goal-Driven Execution** | PASS | Success is verifiable: the FR-025 contract test fails on any undocumented route or mismatched shape (SC-005); SC-001–008 are measurable; implement phase is TDD (failing test first). |

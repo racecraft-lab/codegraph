@@ -75,7 +75,10 @@ daemon index).
 - **Impact radius** (`GET /api/impact/:id`): the **same** node+edge subgraph shape
   as graph neighborhood — `{ nodes: Node[], edges: Edge[], truncated }` — because
   the library's `getImpactRadius` returns a Subgraph, not a flat list; it is
-  therefore **not** an offset-paged list endpoint (FR-004/006).
+  therefore **not** an offset-paged list endpoint (FR-004/006). Its `depth` defaults
+  to **3** — the library's `getImpactRadius(nodeId, maxDepth=3)` natural default,
+  **not** the neighborhood default of 1 — with the same **max 3**; an over-max value
+  clamps, a malformed/negative one → **400** `invalid_request` (FR-004/015a).
 
 **Search mode** (`GET /api/search`, FR-006a): optional `mode ∈ {keyword, semantic,
 hybrid, auto}`, mapping 1:1 to SPEC-003 modes; **defaults to `auto` only when
