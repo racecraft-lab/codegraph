@@ -319,6 +319,8 @@ paths:
     post:
       tags: [jobs]
       summary: Start a re-index job — sync default, ?full=true rebuild (FR-020). Registry repos only; never inits.
+      # No requestBody: parameters are URL-only (:repo + ?full, FR-020). The server does not read/require a
+      # request body, so a malformed/oversized body cannot parse-error or stall the handler (spec Edge Cases).
       parameters:
         - { $ref: '#/components/parameters/RepoId' }
         - { name: full, in: query, schema: { type: boolean, default: false } }

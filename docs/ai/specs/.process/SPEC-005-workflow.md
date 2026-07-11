@@ -66,7 +66,7 @@ reviewable-LOC ceiling:
 | Specify | `/speckit-specify` | ✅ Complete | 26 FRs, 4 US (slice partition clean), 14 acceptance scenarios, 8 SC; 3 deliberate [NEEDS CLARIFICATION] markers → Clarify |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 15 questions; 7 consensus items (2 security panels human-approved); 0 markers remain — G2 pass |
 | Plan | `/speckit-plan` | ✅ Complete | 5 artifacts; constitution PASS ×7 pre+post; 0 new deps; 3 delegated decisions resolved; G3 pass |
-| Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
+| Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 88 items, 20 gaps all closed; 7 consensus items (2 human security gates); G4 pass |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Implement | `/speckit-implement` | ⏳ Pending | |
@@ -496,8 +496,8 @@ Focus on Local HTTP Server & REST API requirements:
 | api-contracts | 27 (19 pass, 8 gaps) | 8 fixed, 0 remain | FR-004/006a/010a(new)/011/018/024/025; openapi: RepoQuery, 503 on 7 reads, 400 on 3, impact→GraphResult |
 | security | 19 (17 pass, 2 gaps) | 2 fixed, 0 remain | +FR-017b (static traversal confinement via validatePathWithinRoot, 404 on escape) +FR-014a (token/Authorization never logged) — both human-ratified 2026-07-11 |
 | streaming-protocol | 19 (14 pass, 5 gaps) | 5 fixed, 0 remain; 0 consensus (skipped — zero unresolved) | FR-023 expanded: coalesce-to-latest backpressure, ~15s comment heartbeat, Cache-Control/keep-alive/X-Accel-Buffering headers, independent multi-subscriber fan-out; EventSource reconnect-vs-close verified consistent (not reopened) |
-| error-handling | | | |
-| **Total** | | | |
+| error-handling | 23 (18 pass, 5 gaps) | 5 fixed, 0 remain | Un-indexed startup = start-degraded (2/2 ratified, MCP #964 precedent); 500 catch-all appended to FR-015a (human-ratified); job-fault containment clause on FR-021; body-less POST pinned (FR-020); connection-DoS scoped out w/ Node-defaults rationale (2/2 ratified + strengthened) |
+| **Total** | 88 items | 20 gaps, 20 fixed, 0 remain | G4 PASS |
 
 ### Addressing Gaps
 

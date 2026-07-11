@@ -104,7 +104,12 @@ A unit of re-index work for one repo (in-memory, latest-per-repo, lost on restar
 second `POST` while one runs → **409** `conflict` (FR-022). `409` is reserved
 **only** for a duplicate active job in *this server's* registry — never for
 external lock contention (that is a job `error`/`lock_unavailable`, FR-021a) and
-never for daemon attach failure (that is 503 `unavailable`, FR-015a).
+never for daemon attach failure (that is 503 `unavailable`, FR-015a). Every in-job
+failure is **contained**: any error the job's `sync()`/`indexAll()` raises that is
+not lock contention (FR-021a) or a shutdown abort (FR-023) is caught and recorded
+as a terminal `error` with a whitelisted `reason`, delivered over SSE and readable
+via latest-job-state — it never crashes the serve process, surfaces as a 5xx on the
+already-returned `202`, or leaves the job stuck `running` (FR-021).
 
 **Terminal `result`, discriminated on `mode`** (FR-023/024; see research.md D3 —
 FR-015a whitelist applied, raw path arrays and `errors[]` dropped):
@@ -164,7 +169,7 @@ code, message, details? } }`.
 | `not_found` | 404 | One code for all not-found; `details.resource ∈ node \| repo \| route`. |
 | `conflict` | 409 | Duplicate active job for a repo (FR-022) — that case only. |
 | `unavailable` | 503 | Daemon attach/spawn failure. Transient; **carries `Retry-After`**. |
-| `internal` | 500 | Unexpected faults only. |
+| `internal` | 500 | Unexpected faults only; every handler is wrapped in a top-level catch so an unanticipated throw becomes this envelope — never a raw crash, leaked stack, or hung socket (FR-015a). |
 
 - `message`/`details` are **whitelisted, schema-defined fields only** — never raw
   exception text, absolute paths, stack traces, or cause chains (FR-015a).
