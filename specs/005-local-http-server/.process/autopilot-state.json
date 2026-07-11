@@ -9,7 +9,9 @@
   "atomicity_route": {
     "route": "one-navigable-PR",
     "releasable": true,
-    "signals": ["change-shape:modify-heavy"],
+    "signals": [
+      "change-shape:modify-heavy"
+    ],
     "warnings": [],
     "operator_override": "2 sequenced PRs per scaffold-ratified split decision (reviewability warn resolution), re-confirmed by operator at G5 2026-07-11"
   },
@@ -21,32 +23,55 @@
       {
         "id": "slice-1-read-api",
         "review_order": 1,
-        "title": "feat(SPEC-005): local HTTP server — read API (slice 1)",
+        "title": "feat(SPEC-005): local HTTP server \u2014 read API (slice 1)",
         "tasks": "T001-T032 (Phases 1-5: foundation, US1 read API, US4 bind/auth, US2 multi-repo, contract test + PR close-out)",
-        "user_stories": ["US1", "US4", "US2"],
-        "checkpoint": null
+        "user_stories": [
+          "US1",
+          "US4",
+          "US2"
+        ],
+        "checkpoint": {
+          "head_sha": "17cef94df35b66ede2346e9374e172a517cc30d0",
+          "date": "2026-07-11",
+          "tests": "full suite green (see workflow record); slice suites: read-api 90, auth 55, static 25, contract 35",
+          "warnings": [
+            "actual slice-1 size ~2080 insertions / ~1280 logic LOC \u2014 over the ~400 estimate; size-only finding, marker plan proceeds; recorded in slice1-pr-packet.md"
+          ]
+        }
       },
       {
         "id": "slice-2-jobs-sse",
         "review_order": 2,
-        "title": "feat(SPEC-005): local HTTP server — re-index jobs & SSE (slice 2)",
+        "title": "feat(SPEC-005): local HTTP server \u2014 re-index jobs & SSE (slice 2)",
         "tasks": "T033-T047 (Phases 6-8: US3 jobs/SSE, contract extension + PR close-out, polish + self-repo UAT)",
-        "user_stories": ["US3"],
+        "user_stories": [
+          "US3"
+        ],
         "fold_target_for": "polish tasks T046-T047 (cross-cutting, validate whole feature)",
         "checkpoint": null
       }
     ],
-    "review_order": ["slice-1-read-api", "slice-2-jobs-sse"],
-    "checkpoints": [],
+    "review_order": [
+      "slice-1-read-api",
+      "slice-2-jobs-sse"
+    ],
+    "checkpoints": [
+      {
+        "marker": "slice-1-read-api",
+        "head_sha": "17cef94df35b66ede2346e9374e172a517cc30d0",
+        "status": "complete"
+      }
+    ],
     "warnings": [],
     "final_marker_split": null,
     "packet_validation": null,
     "pr_mappings": null,
     "reviewability_evidence": {
-      "setup_gate": "warn (620 LOC / 7 prod files, greenfield warn line 600) — recorded at scaffold with accepted split",
+      "setup_gate": "warn (620 LOC / 7 prod files, greenfield warn line 600) \u2014 recorded at scaffold with accepted split",
       "plan_estimator": "not_estimated (no parseable declared-file table)",
-      "tasks_mode_gate": "deferred on installed runner — fallback evidence chain per SKILL guidance",
-      "operator_ratification": "2-PR split confirmed at G5 2026-07-11"
+      "tasks_mode_gate": "deferred on installed runner \u2014 fallback evidence chain per SKILL guidance",
+      "operator_ratification": "2-PR split confirmed at G5 2026-07-11",
+      "actual_slice1_size": "2356 ins/9 del/14 files in src/ (2080 excl openapi.yaml; ~1280 logic LOC) \u2014 over target, size-only, proceed per marker rules"
     }
   }
 }
