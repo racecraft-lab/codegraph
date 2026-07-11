@@ -622,6 +622,20 @@ Focus on:
 5. Consistency between task file paths and the actual project structure
 ```
 
+### Pre-Implement Confidence (Phase 6.5 input)
+
+📊 Confidence: 0.93
+
+| Criterion | Score | Rationale |
+|-----------|-------|-----------|
+| task_understanding | 0.97 | 26+9 FRs trace cleanly to 13 design-concept Q-numbers and 15 clarify questions; spec/data-model/openapi agree on non-obvious details (impact depth 3 vs graph depth 1, deliberately divergent, consistently stated). |
+| completeness | 0.96 | All artifacts fully populated; 47 tasks cite FR-xxx; 20/20 checklist gaps closed; 8/8 analyze findings remediated to terminal 0. Complexity Tracking empty by design. |
+| consistency | 0.97 | 6-code vocabulary, depth/cap defaults, slice split verified consistent across spec/data-model/openapi/tasks/marker-plan; the one real inconsistency (impact depth) was caught and fixed in Analyze. |
+| risk_assessment | 0.90 | Security items human-approved; watcher-degrade hazard codebase-verified with its own guardrail task. Docked: lock-contention retry and SSE backpressure specified without a prescribed deterministic test harness. |
+| verification_readiness | 0.90 | G0 green (2912 tests); every task TDD-shaped; contract test turns drift into CI failure. Docked: no prescribed harness for the two concurrency paths; no explicit cross-platform validation task for socket/shutdown paths. |
+
+**Soft spots (carried into Phase 7 dispatch context):** FR-021a watcher re-arm is a novel daemon control message touching shared src/mcp/ files (advisory retrieval-guardian check only); SSE per-subscriber backpressure has no in-repo precedent; T033/T036/T037 need deterministic harness design (hold an external file lock; simulate a slow consumer); impact-vs-graph default divergence is a regression trap; upstream-file minimal-diff discipline (4 shared files) rides on review, not mechanics.
+
 ### Analyze Severity Levels
 
 | Severity | Meaning | Action Required |
