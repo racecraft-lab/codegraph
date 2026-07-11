@@ -710,10 +710,10 @@ Before starting any task:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| 1 - Foundation | | | |
-| 2 - Slice 1: Read API | | | |
-| 3 - Slice 2: Jobs/SSE | | | |
-| 4 - Polish | | | |
+| 1 - Foundation | T001-T010 | ✅ 38d8410 | 66 new tests; full suite 2978 green; CLI diff 18/1; zero new deps verified (T010) |
+| 2 - Slice 1: Read API | T011-T028 | 🔄 US1 done (T011-T020) | codegraph/read daemon RPC (human-ratified amendment); 6 endpoints + static/traversal; 128 tests green across 6 suites. Accepted deviation (orchestrator-ratified): reads on daemon main thread, not query pool — pool is ToolResult-text-only; capped point queries; codegraph_status precedent; flag for PR review |
+| 3 - Slice 2: Jobs/SSE | T033-T045 | ⏳ | |
+| 4 - Polish | T046-T047 | ⏳ | |
 
 ---
 

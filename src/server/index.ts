@@ -28,7 +28,8 @@ import {
   type ReadApiDeps,
   type RepoInfo,
 } from './routes';
-import { internalError } from './errors';
+import { internalError, apiError } from './errors';
+import { resolveBindSecurity, isAllowedHostHeader } from './auth';
 import { serveStatic } from './static';
 import { attachDaemonClient, type DaemonReadClient } from './daemon-client';
 import { CodeGraphPackageVersion } from '../mcp/version';
@@ -57,6 +58,14 @@ export interface WebServerOptions {
    * inject a `dist/bin/codegraph.js` spawn (a runner's `argv[1]` is the runner).
    */
   spawnDaemon?: (root: string) => void;
+  /**
+   * Optional LOCAL request-log sink (FR-014a). When set, the dispatch seam emits
+   * a single redacted line per request — method + path + status ONLY, never the
+   * headers object, the `Authorization` header, or the token in any form. Left
+   * unset (silent) by default; injectable so tests can assert the no-leak
+   * property. The sink MUST stay local (no external egress, Constitution VII).
+   */
+  logger?: (message: string) => void;
 }
 
 /** A running web server: the actually-bound address and a clean shutdown. */
@@ -148,6 +157,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   const requestedPort = options.port ?? DEFAULT_PORT;
   const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
 
+  // FR-012/FR-013 fail-closed bind gate — resolved BEFORE any `listen`. A
+  // non-loopback host with no token throws here, so startup is refused and
+  // nothing binds. On loopback `requireToken` is false (Bearer no-op, SC-002).
+  const security = resolveBindSecurity(host, options.token ?? null);
+
   // Daemon clients attached while serving reads (lazily, FR-010) — closed on
   // shutdown to decrement each daemon's refcount, never killed (FR-026).
   const daemonClients = new Set<DaemonReadClient>();
@@ -219,11 +233,26 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   });
 
   async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const method = (req.method ?? 'GET').toUpperCase();
+    const rawUrl = req.url ?? '/';
+    const qIdx = rawUrl.indexOf('?');
+    const rawPath = qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx);
+    let status = 500;
     try {
-      const method = (req.method ?? 'GET').toUpperCase();
-      const rawUrl = req.url ?? '/';
-      const qIdx = rawUrl.indexOf('?');
-      const rawPath = qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx);
+      // FR-012 DNS-rebinding defense: validate the `Host` header on EVERY request
+      // — even on this loopback bind, and even for the static shell that sits
+      // outside the auth boundary. A non-allowlisted Host → 400 `invalid_request`
+      // naming the header (the closed vocabulary adds no 403).
+      if (!isAllowedHostHeader(firstHeader(req.headers.host), host, boundPort)) {
+        const denied = apiError('invalid_request', {
+          message: 'Invalid Host header',
+          details: { header: 'Host' },
+        });
+        status = denied.status;
+        writeResult(res, denied);
+        return;
+      }
+
       const query = new URLSearchParams(qIdx === -1 ? '' : rawUrl.slice(qIdx + 1));
       const ctx: RouteContext = {
         method,
@@ -233,8 +262,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
         headers: req.headers as Record<string, string | string[] | undefined>,
       };
 
-      const apiResult = await handleApiRequest(routes, ctx);
+      // FR-014 Bearer scope: on a token-bound bind, handleApiRequest 401s every
+      // `/api/*` request lacking a valid Bearer BEFORE routing; a no-op on loopback.
+      const apiResult = await handleApiRequest(routes, ctx, security);
       if (apiResult) {
+        status = apiResult.status;
         writeResult(res, apiResult);
         return;
       }
@@ -242,12 +274,19 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       // Non-`/api` → static mount (FR-017/018). serveStatic confines the resolved
       // path within `webRoot` and returns the placeholder/fallback (its own task).
       const staticResult = serveStatic(rawPath, webRoot);
+      status = staticResult.status;
       res.writeHead(staticResult.status, staticResult.headers ?? {});
       res.end(staticResult.body);
     } catch {
       // FR-015a top-level catch: any unanticipated throw becomes the generic 500
       // envelope, never a raw crash, leaked stack, or hung socket.
+      status = 500;
       writeResult(res, internalError());
+    } finally {
+      // FR-014a: a LOCAL, redacted request line — method + path + status ONLY.
+      // NEVER the headers object, the `Authorization` header, or the token in any
+      // form. Silent unless a logger sink was injected.
+      options.logger?.(`${method} ${rawPath} -> ${status}`);
     }
   }
 
@@ -315,6 +354,11 @@ function writeResult(res: http.ServerResponse, r: HandlerResult): void {
   res.end(JSON.stringify(r.body));
 }
 
+/** Collapse a possibly-multivalued header to its first value. */
+function firstHeader(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
 /** Options for the `serve --web` CLI runner. */
 export interface RunWebServerCliOptions {
   projectPath?: string;
@@ -342,7 +386,16 @@ export async function runWebServerCli(options: RunWebServerCliOptions): Promise<
     }
   }
 
-  const handle = await startWebServer({ projectPath: options.projectPath, host: options.host, port });
+  // FR-013/FR-014: the token is read from the environment here (keeping the
+  // upstream CLI diff a thin option + branch, fork discipline) and passed to the
+  // fail-closed bind gate. Unset → null → a loopback bind still serves, a
+  // non-loopback bind is refused.
+  const handle = await startWebServer({
+    projectPath: options.projectPath,
+    host: options.host,
+    port,
+    token: process.env.CODEGRAPH_SERVER_TOKEN ?? null,
+  });
   // Print the ACTUAL bound port (resolved when --port 0 was requested, FR-026);
   // stderr keeps stdout clean, mirroring the serve command's other output.
   console.error(`CodeGraph web server listening on http://${handle.host}:${handle.port}`);

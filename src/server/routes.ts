@@ -13,7 +13,8 @@
  * @module server/routes
  */
 
-import { notFound, internalError, apiError, type ApiError } from './errors';
+import { notFound, internalError, apiError, unauthorized, type ApiError } from './errors';
+import { isValidBearer, type BindSecurity } from './auth';
 import {
   daemonUnavailable,
   readStatusHealth,
@@ -126,10 +127,23 @@ export function matchRoute(routes: readonly Route[], method: string, rawPath: st
   return { matched: false };
 }
 
+/** Collapse a possibly-multivalued header to its first value. */
+function headerValue(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
 /**
  * Dispatch an `/api/*` request: match → run the handler inside a top-level
  * catch (FR-015a); miss → 404 `not_found` route (FR-018). Returns `null` for a
- * non-`/api` path so the caller can fall through to the static mount.
+ * non-`/api` path so the caller can fall through to the static mount — the
+ * public shell + `/` placeholder sit OUTSIDE the auth boundary (FR-014/FR-017a).
+ *
+ * On a token-bound (non-loopback) bind, `security.requireToken` is set and EVERY
+ * `/api/*` request — matched or not, including the future SSE endpoint — must
+ * carry a valid Bearer before routing (FR-014). Rejection is the generic,
+ * identical 401 (`unauthorized()`), so an unauthenticated probe can neither
+ * enumerate routes nor learn anything about the token. A loopback bind leaves
+ * `requireToken` false, so this is a no-op there (SC-002).
  *
  * The whole match-and-run body is wrapped so any unanticipated throw — sync or
  * an awaited async rejection — becomes the generic `internal` 500 envelope,
@@ -137,9 +151,15 @@ export function matchRoute(routes: readonly Route[], method: string, rawPath: st
  */
 export async function handleApiRequest(
   routes: readonly Route[],
-  ctx: RouteContext
+  ctx: RouteContext,
+  security?: BindSecurity
 ): Promise<HandlerResult | null> {
   if (!isApiPath(ctx.rawPath)) return null;
+
+  if (security?.requireToken &&
+      !isValidBearer(headerValue(ctx.headers.authorization), security.token ?? '')) {
+    return unauthorized();
+  }
 
   try {
     const match = matchRoute(routes, ctx.method, ctx.rawPath);
