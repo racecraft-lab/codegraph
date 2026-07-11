@@ -167,12 +167,15 @@ src/server/                     # NEW module — all feature code (Constitution 
 │                   #   Slice 2 registers reindex routes via the same seam.
 ├── auth.ts         # Slice 1: shared isLoopbackHost (from src/utils.ts) +
 │                   #   Host-header allowlist (FR-012) + fail-closed bind gate
-│                   #   (FR-013) + constant-time Bearer check (FR-014).
+│                   #   (FR-013) + constant-time Bearer check (FR-014); the
+│                   #   token is never logged or echoed (FR-014a).
 ├── daemon-client.ts# Slice 1: attach-or-spawn per repo via the MCP proxy
 │                   #   machinery; lazy multi-repo attach (Q2); /api/repos from
 │                   #   the daemon registry; read-query forwarding.
 ├── static.ts       # Slice 1: placeholder page (FR-017/017a) + strict
-│                   #   static/fallback rules (FR-018, binding SPEC-004).
+│                   #   static/fallback rules (FR-018, binding SPEC-004) +
+│                   #   path-traversal confinement via validatePathWithinRoot
+│                   #   (FR-017b — src/utils.ts #527 chokepoint).
 ├── errors.ts       # Slice 1: the 6-code error envelope (FR-015/015a).
 ├── jobs.ts         # Slice 2 (ISOLATED): in-memory latest-job-per-repo registry,
 │                   #   AbortSignal, sync()/indexAll() drive, lock-retry →
