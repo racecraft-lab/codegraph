@@ -1,0 +1,787 @@
+/**
+ * SPEC-005 Slice 1 read-API tests.
+ *
+ * Hosts the error-envelope suite (T003, FR-015/FR-015a) and the request-router
+ * suite (T004, FR-004a/FR-015a/FR-018) — pure unit tests, no HTTP listener, no
+ * daemon, no SQLite. From T005 on this file also hosts integration-style suites
+ * that stand up a real per-project daemon over a real fixture index (T005,
+ * FR-002/008/015a), the HTTP listener lifecycle (T006, FR-002/026), and the
+ * CLI `--web` activation/dormancy (T007, FR-001) — all keyed on `fs.mkdtempSync`
+ * fixture temp dirs, never this repo's own daemon.
+ */
+
+import { afterEach, describe, it, expect } from 'vitest';
+import { spawn, type ChildProcess } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as net from 'net';
+import {
+  apiError,
+  notFound,
+  unauthorized,
+  unavailable,
+  internalError,
+  ERROR_STATUS,
+  type ErrorCode,
+} from '../src/server/errors';
+import {
+  isApiPath,
+  matchRoute,
+  handleApiRequest,
+  type Route,
+  type RouteContext,
+  type HandlerResult,
+} from '../src/server/routes';
+import {
+  attachDaemonClient,
+  daemonUnavailable,
+  DaemonUnavailableError,
+  type DaemonReadClient,
+} from '../src/server/daemon-client';
+import {
+  startWebServer,
+  WebServerError,
+  type WebServerHandle,
+} from '../src/server/index';
+import { getDaemonPidPath } from '../src/mcp/daemon-paths';
+import {
+  buildFixtureIndex,
+  startServerFixture,
+  type ServerFixture,
+} from './helpers/server-fixture';
+
+// ---------------------------------------------------------------------------
+// Shared fixture helpers for the daemon-backed suites (T005+).
+// ---------------------------------------------------------------------------
+
+/** The built CLI a spawned daemon re-invokes (dist must be built for these). */
+const CLI_BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
+
+/** Loosen every wait on CI (cold caches, 4 vCPU) — mirrors mcp-daemon.test.ts. */
+const CI_ON = !['', '0', 'false'].includes((process.env.CI ?? '').trim().toLowerCase());
+const WAIT_SCALE = CI_ON ? 4 : 1;
+const T = (ms: number): number => ms * WAIT_SCALE;
+
+function readDaemonPid(root: string): number | null {
+  try {
+    const info = JSON.parse(fs.readFileSync(getDaemonPidPath(root), 'utf8'));
+    return typeof info.pid === 'number' ? info.pid : null;
+  } catch { return null; }
+}
+
+async function waitFor<V>(
+  predicate: () => V | undefined | null | false,
+  timeoutMs: number,
+  label = '',
+  pollMs = 25,
+): Promise<V> {
+  const budget = timeoutMs * WAIT_SCALE;
+  const started = Date.now();
+  for (;;) {
+    let v: V | undefined | null | false;
+    try { v = predicate(); } catch { v = undefined; }
+    if (v) return v as V;
+    if (Date.now() - started > budget) {
+      throw new Error(`Timed out after ${budget}ms${label ? ` waiting for: ${label}` : ''}`);
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
+/**
+ * Spawn the detached daemon directly (CODEGRAPH_DAEMON_INTERNAL=1) via the built
+ * CLI, keyed on `root`. Injected as `attachDaemonClient`'s `spawnDaemon` so the
+ * test drives the REAL attach-or-spawn path (the production default uses
+ * `process.argv[1]`, which is the test runner here). Returns the child so the
+ * caller can reap it; the recorded daemon.pid is the authoritative reap target.
+ */
+function spawnDaemonViaDistBin(root: string): ChildProcess {
+  const child = spawn(process.execPath, [CLI_BIN, 'serve', '--mcp', '--path', root], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, CODEGRAPH_DAEMON_INTERNAL: '1', CODEGRAPH_DAEMON_IDLE_TIMEOUT_MS: '30000' },
+  });
+  child.on('error', () => { /* ignore — reaped via pid */ });
+  child.unref();
+  return child;
+}
+
+// ---------------------------------------------------------------------------
+// T003 — error envelope (FR-015 / FR-015a)
+// ---------------------------------------------------------------------------
+
+describe('SPEC-005 error envelope (T003, FR-015/FR-015a)', () => {
+  const codeStatus: Array<[ErrorCode, number]> = [
+    ['invalid_request', 400],
+    ['unauthorized', 401],
+    ['not_found', 404],
+    ['conflict', 409],
+    ['unavailable', 503],
+    ['internal', 500],
+  ];
+
+  describe('code → HTTP status', () => {
+    it('ERROR_STATUS maps each of the six codes to its fixed status', () => {
+      for (const [code, status] of codeStatus) {
+        expect(ERROR_STATUS[code]).toBe(status);
+      }
+    });
+
+    it('the vocabulary is closed at exactly six codes', () => {
+      expect(Object.keys(ERROR_STATUS).sort()).toEqual([
+        'conflict',
+        'internal',
+        'invalid_request',
+        'not_found',
+        'unauthorized',
+        'unavailable',
+      ]);
+    });
+
+    it('apiError(code).status matches the map for every code', () => {
+      for (const [code, status] of codeStatus) {
+        expect(apiError(code).status).toBe(status);
+      }
+    });
+  });
+
+  describe('envelope shape', () => {
+    it('produces { error: { code, message } } with no stray top-level keys', () => {
+      const e = apiError('invalid_request');
+      expect(Object.keys(e.body)).toEqual(['error']);
+      expect(e.body.error.code).toBe('invalid_request');
+      expect(typeof e.body.error.message).toBe('string');
+      expect(e.body.error.message.length).toBeGreaterThan(0);
+    });
+
+    it('omits details entirely when none is supplied', () => {
+      const e = apiError('invalid_request');
+      expect('details' in e.body.error).toBe(false);
+    });
+
+    it('accepts a whitelisted, safe message + param override for invalid_request', () => {
+      const e = apiError('invalid_request', {
+        message: 'Missing required query parameter: q',
+        details: { param: 'q' },
+      });
+      expect(e.status).toBe(400);
+      expect(e.body.error.message).toBe('Missing required query parameter: q');
+      expect(e.body.error.details).toEqual({ param: 'q' });
+    });
+  });
+
+  describe('not_found resource discriminator (node | repo | route)', () => {
+    it.each(['node', 'repo', 'route'] as const)(
+      'notFound("%s") is 404 carrying details.resource',
+      (resource) => {
+        const e = notFound(resource);
+        expect(e.status).toBe(404);
+        expect(e.body.error.code).toBe('not_found');
+        expect(e.body.error.details).toEqual({ resource });
+      }
+    );
+  });
+
+  describe('unavailable 503 + Retry-After', () => {
+    it('sets a positive-integer Retry-After header by default', () => {
+      const e = unavailable();
+      expect(e.status).toBe(503);
+      expect(e.body.error.code).toBe('unavailable');
+      const ra = Number(e.headers['Retry-After']);
+      expect(Number.isInteger(ra)).toBe(true);
+      expect(ra).toBeGreaterThan(0);
+    });
+
+    it('honours an explicit retry-after value', () => {
+      const e = unavailable(5);
+      expect(e.headers['Retry-After']).toBe('5');
+    });
+  });
+
+  describe('401 generic, identical body (enumeration prevention)', () => {
+    it('unauthorized() is 401 with a generic body and no details', () => {
+      const e = unauthorized();
+      expect(e.status).toBe(401);
+      expect(e.body.error.code).toBe('unauthorized');
+      expect('details' in e.body.error).toBe(false);
+    });
+
+    it('ignores any supplied message/details so the reason cannot be enumerated', () => {
+      const a = apiError('unauthorized', {
+        message: 'token expired',
+        details: { param: 'Authorization' },
+      });
+      const b = apiError('unauthorized', { message: 'no token supplied' });
+      expect(a.body).toEqual(b.body);
+      expect(a.body.error.message).not.toContain('token expired');
+      expect('details' in a.body.error).toBe(false);
+    });
+  });
+
+  describe('whitelist enforcement — never leaks exception internals (FR-015a)', () => {
+    it('internalError() is a generic 500 with no fault detail', () => {
+      const e = internalError();
+      expect(e.status).toBe(500);
+      expect(e.body.error.code).toBe('internal');
+      expect('details' in e.body.error).toBe(false);
+      // Generic message — carries no path separator.
+      expect(e.body.error.message).not.toMatch(/\//);
+    });
+
+    it('the internal code drops any caller-supplied message/details (no exception text leaks)', () => {
+      const e = apiError('internal', {
+        message: 'ENOENT: /Users/secret/abs/path at Object.<anonymous> (/x.js:1:1)',
+        details: { param: 'stack' },
+      });
+      const serialized = JSON.stringify(e.body);
+      expect(serialized).not.toContain('/Users/secret');
+      expect(serialized).not.toContain('ENOENT');
+      expect(serialized).not.toContain('Object.<anonymous>');
+      expect('details' in e.body.error).toBe(false);
+    });
+
+    it('strips non-whitelisted detail keys, keeping only resource/param/header', () => {
+      const e = apiError('not_found', {
+        // Smuggle disallowed keys through `any` — they must not survive.
+        details: { resource: 'node', stack: 'boom', filePath: '/abs/secret', cause: 'x' } as never,
+      });
+      expect(e.body.error.details).toEqual({ resource: 'node' });
+      const serialized = JSON.stringify(e.body);
+      expect(serialized).not.toContain('/abs/secret');
+      expect(serialized).not.toContain('boom');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T004 — request router (FR-004a / FR-015a / FR-018)
+// ---------------------------------------------------------------------------
+
+/** Build a minimal request context for the dispatcher. */
+function ctx(method: string, rawPath: string, query = ''): RouteContext {
+  return { method, rawPath, params: {}, query: new URLSearchParams(query), headers: {} };
+}
+
+/** A trivial 200 handler. */
+const okHandler = () => ({ status: 200, body: { ok: true } });
+
+describe('SPEC-005 request router (T004, FR-004a/FR-015a/FR-018)', () => {
+  describe('isApiPath — the /api namespace boundary', () => {
+    it('recognizes /api and every /api/* path', () => {
+      expect(isApiPath('/api')).toBe(true);
+      expect(isApiPath('/api/status')).toBe(true);
+      expect(isApiPath('/api/node/x')).toBe(true);
+    });
+
+    it('rejects non-/api paths so they fall through to the static mount', () => {
+      expect(isApiPath('/')).toBe(false);
+      expect(isApiPath('/graph')).toBe(false);
+      expect(isApiPath('/static/app.js')).toBe(false);
+      // The prefix is exactly '/api/', not merely '/api'.
+      expect(isApiPath('/apixyz')).toBe(false);
+    });
+  });
+
+  describe('matchRoute — matching and param extraction', () => {
+    const routes: Route[] = [
+      { method: 'GET', pattern: '/api/status', handler: okHandler },
+      { method: 'GET', pattern: '/api/node/:id', handler: okHandler },
+      { method: 'GET', pattern: '/api/reindex/:repo/events', handler: okHandler },
+    ];
+
+    it('matches a static path with no params', () => {
+      const m = matchRoute(routes, 'GET', '/api/status');
+      expect(m.matched).toBe(true);
+      if (m.matched) {
+        expect(m.route.pattern).toBe('/api/status');
+        expect(m.params).toEqual({});
+      }
+    });
+
+    it('extracts a single :id param', () => {
+      const m = matchRoute(routes, 'GET', '/api/node/function:abcdef');
+      expect(m.matched).toBe(true);
+      if (m.matched) expect(m.params).toEqual({ id: 'function:abcdef' });
+    });
+
+    it('extracts a :repo param from a multi-segment pattern', () => {
+      const m = matchRoute(routes, 'GET', '/api/reindex/abcdef0123456789/events');
+      expect(m.matched).toBe(true);
+      if (m.matched) expect(m.params).toEqual({ repo: 'abcdef0123456789' });
+    });
+  });
+
+  describe('matchRoute — the single decode chokepoint (FR-004a)', () => {
+    const routes: Route[] = [{ method: 'GET', pattern: '/api/node/:id', handler: okHandler }];
+
+    it('decodes an encoded slash in a file: id (one segment round-trips)', () => {
+      const m = matchRoute(routes, 'GET', '/api/node/file:src%2Futil.ts');
+      expect(m.matched).toBe(true);
+      if (m.matched) expect(m.params.id).toBe('file:src/util.ts');
+    });
+
+    it('decodes multiple encoded slashes in one id segment', () => {
+      const m = matchRoute(routes, 'GET', '/api/node/file:a%2Fb%2Fc');
+      expect(m.matched).toBe(true);
+      if (m.matched) expect(m.params.id).toBe('file:a/b/c');
+    });
+
+    it('does NOT pre-decode the whole path: an unencoded slash fragments and misses', () => {
+      // A literal '/' in the id yields more segments than the pattern → miss,
+      // proving the raw path is split on '/' BEFORE any decode (FR-004a).
+      const m = matchRoute(routes, 'GET', '/api/node/file:src/util.ts');
+      expect(m.matched).toBe(false);
+    });
+
+    it('decodes exactly once — a double-encoded slash decodes to %2F, not /', () => {
+      // %252F --(single decodeURIComponent)--> %2F ; never a second decode.
+      const m = matchRoute(routes, 'GET', '/api/node/file:a%252Fb');
+      expect(m.matched).toBe(true);
+      if (m.matched) expect(m.params.id).toBe('file:a%2Fb');
+    });
+
+    it('keeps a traversal-shaped id as one opaque segment (a DB key, never a path)', () => {
+      const m = matchRoute(routes, 'GET', '/api/node/..%2F..%2Fetc%2Fpasswd');
+      expect(m.matched).toBe(true);
+      if (m.matched) expect(m.params.id).toBe('../../etc/passwd');
+    });
+
+    it('a malformed percent-encoding does not throw; the raw segment is kept for the handler to 404', () => {
+      const m = matchRoute(routes, 'GET', '/api/node/%ZZ');
+      expect(m.matched).toBe(true);
+      if (m.matched) expect(m.params.id).toBe('%ZZ');
+    });
+  });
+
+  describe('matchRoute — misses (FR-018: unknown or wrong-method → miss, no 405)', () => {
+    const routes: Route[] = [{ method: 'GET', pattern: '/api/status', handler: okHandler }];
+
+    it('misses an unknown /api path', () => {
+      expect(matchRoute(routes, 'GET', '/api/nope').matched).toBe(false);
+    });
+
+    it('misses an unsupported method on a known path (treated as a miss, not 405)', () => {
+      expect(matchRoute(routes, 'POST', '/api/status').matched).toBe(false);
+    });
+
+    it('misses a segment-count mismatch', () => {
+      expect(matchRoute(routes, 'GET', '/api/status/extra').matched).toBe(false);
+    });
+  });
+
+  describe('handleApiRequest — dispatch, fallthrough, and the top-level catch', () => {
+    const routes: Route[] = [
+      { method: 'GET', pattern: '/api/status', handler: () => ({ status: 200, body: { ok: true } }) },
+      {
+        method: 'GET',
+        pattern: '/api/node/:id',
+        handler: (c) => ({ status: 200, body: { id: c.params.id } }),
+      },
+      {
+        method: 'GET',
+        pattern: '/api/boom',
+        handler: () => {
+          throw new Error('secret /Users/abs/path\n    at stack (x.js:1:1)');
+        },
+      },
+      {
+        method: 'GET',
+        pattern: '/api/reject',
+        handler: async () => {
+          throw new Error('async boom');
+        },
+      },
+    ];
+
+    it('returns null for a non-/api path (caller falls through to static)', async () => {
+      expect(await handleApiRequest(routes, ctx('GET', '/graph'))).toBeNull();
+    });
+
+    it('runs a matched handler and returns its result', async () => {
+      const r = await handleApiRequest(routes, ctx('GET', '/api/status'));
+      expect(r).toEqual({ status: 200, body: { ok: true } });
+    });
+
+    it('passes decoded path params to the handler', async () => {
+      const r = await handleApiRequest(routes, ctx('GET', '/api/node/file:x%2Fy'));
+      expect(r).toMatchObject({ status: 200, body: { id: 'file:x/y' } });
+    });
+
+    it('an unknown /api path → 404 not_found route', async () => {
+      const r = await handleApiRequest(routes, ctx('GET', '/api/nope'));
+      expect(r).toMatchObject({
+        status: 404,
+        body: { error: { code: 'not_found', details: { resource: 'route' } } },
+      });
+    });
+
+    it('an unsupported method on a known path → 404 route, never 405', async () => {
+      const r = await handleApiRequest(routes, ctx('POST', '/api/status'));
+      expect(r).not.toBeNull();
+      expect(r!.status).toBe(404);
+      expect((r as HandlerResult).body).toMatchObject({
+        error: { code: 'not_found', details: { resource: 'route' } },
+      });
+    });
+
+    it('a throwing handler → 500 internal envelope that leaks no fault detail (FR-015a)', async () => {
+      const r = await handleApiRequest(routes, ctx('GET', '/api/boom'));
+      expect(r).not.toBeNull();
+      expect(r!.status).toBe(500);
+      expect((r as HandlerResult).body).toMatchObject({ error: { code: 'internal' } });
+      const serialized = JSON.stringify((r as HandlerResult).body);
+      expect(serialized).not.toContain('/Users/abs/path');
+      expect(serialized).not.toContain('secret');
+      expect(serialized).not.toContain('x.js');
+    });
+
+    it('a rejecting async handler → 500 (the throw is caught through await)', async () => {
+      const r = await handleApiRequest(routes, ctx('GET', '/api/reject'));
+      expect(r!.status).toBe(500);
+      expect((r as HandlerResult).body).toMatchObject({ error: { code: 'internal' } });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T005 — daemon client: attach-or-spawn + read round-trip + 503 (FR-002/008/015a)
+// ---------------------------------------------------------------------------
+
+describe('SPEC-005 daemon client (T005, FR-002/008/015a)', () => {
+  // Every spawned daemon (keyed on a fixture temp dir) is reaped by its recorded
+  // pid; every temp dir is removed. Never touches this repo's own daemon.
+  const cleanups: Array<() => void | Promise<void>> = [];
+
+  afterEach(async () => {
+    for (const fn of cleanups.splice(0).reverse()) {
+      try { await fn(); } catch { /* best-effort teardown */ }
+    }
+  });
+
+  /** A real fixture project with a real (node:sqlite) index and a beacon symbol. */
+  async function buildFixture(): Promise<string> {
+    // Reuse the shared harness (T008): builds the real index + reaps the daemon.
+    const fx = await buildFixtureIndex({
+      files: { 'fixture.ts': 'export function uniqueBeaconSymbol(): number {\n  return 42;\n}\n' },
+    });
+    cleanups.push(fx.cleanup);
+    return fx.root;
+  }
+
+  it('attaches (spawning the daemon) and a read query round-trips (FR-002/008)', async () => {
+    const root = await buildFixture();
+
+    const client: DaemonReadClient = await attachDaemonClient(root, {
+      spawnDaemon: spawnDaemonViaDistBin,
+    });
+    cleanups.push(() => client.close());
+
+    // A daemon actually bound its socket for this fixture (proof of attach-or-spawn).
+    await waitFor(() => (readDaemonPid(root) ?? 0) > 0, 12000, 'daemon pid recorded');
+
+    // Round-trip a real read over the socket. The default MCP tool surface is
+    // `codegraph_explore`; querying the beacon symbol returns its verbatim source,
+    // which proves the daemon served THIS fixture's real index (not an error).
+    const res = await client.request('codegraph_explore', {
+      query: 'uniqueBeaconSymbol',
+      projectPath: root,
+    });
+
+    expect(res.isError).not.toBe(true);
+    expect(Array.isArray(res.content)).toBe(true);
+    expect(res.content[0]?.type).toBe('text');
+    expect(res.content.map((c) => c.text).join('\n')).toContain('uniqueBeaconSymbol');
+  }, T(45000));
+
+  it('maps a never-indexed path to the 503 unavailable envelope (FR-015a)', async () => {
+    const bogus = path.join(os.tmpdir(), `cg-no-such-project-${Date.now()}`);
+    // No .codegraph/ anywhere at/above `bogus` → attach is impossible; must be a
+    // transient 503, never a crash. The spawn seam must NOT be reached (would be
+    // an infinite spawn of an un-indexable root), so a throwing spawn proves it.
+    const rejection = await attachDaemonClient(bogus, {
+      spawnDaemon: () => { throw new Error('spawn must not be attempted for a never-indexed path'); },
+    }).then(
+      () => { throw new Error('expected attachDaemonClient to reject for a bogus path'); },
+      (e) => e as unknown,
+    );
+
+    expect(rejection).toBeInstanceOf(DaemonUnavailableError);
+
+    const env = daemonUnavailable(rejection);
+    expect(env.status).toBe(503);
+    expect(env.body.error.code).toBe('unavailable');
+    const retryAfter = Number(env.headers['Retry-After']);
+    expect(Number.isInteger(retryAfter)).toBe(true);
+    expect(retryAfter).toBeGreaterThan(0);
+  }, T(15000));
+});
+
+// ---------------------------------------------------------------------------
+// T006 — HTTP server bootstrap + lifecycle (FR-002/026)
+// ---------------------------------------------------------------------------
+
+describe('SPEC-005 web server lifecycle (T006, FR-002/026)', () => {
+  const handles: WebServerHandle[] = [];
+
+  afterEach(async () => {
+    for (const h of handles.splice(0)) {
+      try { await h.close(); } catch { /* already closed */ }
+    }
+  });
+
+  async function start(opts: Parameters<typeof startWebServer>[0] = {}): Promise<WebServerHandle> {
+    const h = await startWebServer({ port: 0, ...opts });
+    handles.push(h);
+    return h;
+  }
+
+  it('binds an ephemeral port (--port 0) and reports the actual bound port', async () => {
+    const h = await start();
+    expect(Number.isInteger(h.port)).toBe(true);
+    expect(h.port).toBeGreaterThan(0);
+    expect(h.host).toBe('127.0.0.1');
+  });
+
+  it('serves the 404 not_found route envelope for any /api path (no routes yet)', async () => {
+    const h = await start();
+    const res = await fetch(`http://127.0.0.1:${h.port}/api/status`);
+    expect(res.status).toBe(404);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await res.json()).toMatchObject({
+      error: { code: 'not_found', details: { resource: 'route' } },
+    });
+  });
+
+  it('releases the port on close so a subsequent start can re-bind it', async () => {
+    const first = await startWebServer({ port: 0 });
+    const port = first.port;
+    await first.close();
+
+    // Re-bind the very same port — proves close() fully released it (FR-026).
+    const second = await startWebServer({ port });
+    handles.push(second);
+    expect(second.port).toBe(port);
+    const res = await fetch(`http://127.0.0.1:${port}/api/x`);
+    expect(res.status).toBe(404);
+  });
+
+  it('EADDRINUSE → a clear error naming the port, suggesting --port, and no half-open listener', async () => {
+    const h = await start();
+    const port = h.port;
+
+    const err = await startWebServer({ port }).then(
+      (leaked) => { handles.push(leaked); throw new Error('expected a bind failure'); },
+      (e) => e as unknown,
+    );
+
+    expect(err).toBeInstanceOf(WebServerError);
+    const we = err as WebServerError;
+    expect(we.code).toBe('EADDRINUSE');
+    expect(we.port).toBe(port);
+    expect(we.message).toContain(String(port));
+    expect(we.message).toContain('--port');
+
+    // The original server is untouched — the failed bind left no half-open listener.
+    const res = await fetch(`http://127.0.0.1:${port}/api/x`);
+    expect(res.status).toBe(404);
+  });
+
+  it('ordered shutdown closes tracked daemon clients and never kills a shared daemon (FR-026)', async () => {
+    const h = await startWebServer({ port: 0 });
+    let closed = 0;
+    const fakeClient: DaemonReadClient = {
+      request: async () => ({ content: [{ type: 'text', text: '' }] }),
+      close: () => { closed += 1; },
+    };
+    h.trackDaemonClient(fakeClient);
+
+    await h.close();
+    // close() (decrement refcount), exactly once — the only shutdown lever a
+    // client has; it must never signal/kill the shared daemon process.
+    expect(closed).toBe(1);
+  });
+
+  it('exposes the reserved upgrade attach point wired to nothing (SPEC-009)', async () => {
+    const h = await start();
+    // A raw WebSocket-style upgrade must not get 101 Switching Protocols; the
+    // reserved handler destroys the socket (nothing is wired yet).
+    const received = await new Promise<string>((resolve) => {
+      const sock = net.connect(h.port, '127.0.0.1', () => {
+        sock.write(
+          'GET /ws HTTP/1.1\r\n' +
+          `Host: 127.0.0.1:${h.port}\r\n` +
+          'Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n',
+        );
+      });
+      let buf = '';
+      sock.setEncoding('utf8');
+      sock.on('data', (d) => { buf += d; });
+      const done = () => resolve(buf);
+      sock.on('close', done);
+      sock.on('error', done);
+      setTimeout(() => { try { sock.destroy(); } catch { /* ignore */ } done(); }, 1000);
+    });
+    expect(received).not.toContain('101');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T007 — CLI `serve --web` activation + dormancy (FR-001, SC-006)
+// ---------------------------------------------------------------------------
+
+interface CliRun { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; }
+
+/** Run the built CLI to completion (killed if it overruns), capturing output. */
+function runCliToExit(args: string[], timeoutMs = T(15000)): Promise<CliRun> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [CLI_BIN, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (d) => { stdout += d; });
+    child.stderr?.on('data', (d) => { stderr += d; });
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, timeoutMs);
+    timer.unref?.();
+    child.on('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
+    child.on('error', () => { clearTimeout(timer); resolve({ code: null, signal: null, stdout, stderr }); });
+  });
+}
+
+describe('SPEC-005 CLI serve --web activation + dormancy (T007, FR-001/SC-006)', () => {
+  const children: ChildProcess[] = [];
+
+  /** Signal a spawned CLI's whole process group (the CLI re-execs once for the
+   *  `--liftoff-only` wasm flag, so the real server is a grandchild — a bare
+   *  `child.kill` hits only the launcher). Mirrors a terminal Ctrl+C. */
+  function signalGroup(child: ChildProcess, sig: NodeJS.Signals): void {
+    if (!child.pid) return;
+    try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* gone */ } }
+  }
+
+  afterEach(() => {
+    for (const c of children.splice(0)) {
+      if (c.pid && !c.killed) signalGroup(c, 'SIGKILL');
+    }
+  });
+
+  it('serve --web --mcp fails startup with a choose-one-mode error (FR-001)', async () => {
+    const r = await runCliToExit(['serve', '--web', '--mcp']);
+    expect(r.code).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toMatch(/one server mode/i);
+  }, T(20000));
+
+  it('serve --web --port 0 binds and prints the actual bound port; SIGTERM stops it (FR-026)', async () => {
+    // Own process group so the SIGTERM reaches the re-exec'd server grandchild.
+    const child = spawn(process.execPath, [CLI_BIN, 'serve', '--web', '--port', '0'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
+    children.push(child);
+    let stderr = '';
+
+    const port = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`no listening line within budget; stderr:\n${stderr}`)),
+        T(15000),
+      );
+      child.stderr?.on('data', (d) => {
+        stderr += d;
+        const m = stderr.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/i);
+        if (m) { clearTimeout(timer); resolve(Number(m[1])); }
+      });
+      child.on('error', reject);
+    });
+    expect(port).toBeGreaterThan(0);
+
+    const exited = new Promise<void>((resolve) => child.on('close', () => resolve()));
+    signalGroup(child, 'SIGTERM'); // like a terminal Ctrl+C → the server shuts down
+    await Promise.race([
+      exited,
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('did not exit on SIGTERM')), T(8000)),
+      ),
+    ]);
+  }, T(30000));
+
+  it('dormancy: top-level --help hides serve and never surfaces --web (FR-001/SC-006)', async () => {
+    const r = await runCliToExit(['--help']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toContain('--web');
+    // `serve` is a hidden command — it must not appear in the command listing.
+    expect(r.stdout).not.toMatch(/^\s*serve\b/m);
+  }, T(20000));
+
+  it('dormancy: bare serve prints the unchanged info block and does not bind (FR-001)', async () => {
+    const r = await runCliToExit(['serve']);
+    expect(r.code).toBe(0);
+    // The pre-existing info block — unchanged by the --web addition.
+    expect(r.stderr).toContain('Use --mcp flag to start the MCP server');
+    expect(`${r.stdout}${r.stderr}`).not.toMatch(/listening on http/i);
+  }, T(20000));
+});
+
+// ---------------------------------------------------------------------------
+// T008 — shared fixture harness (real index + running server + synthetic web root)
+// ---------------------------------------------------------------------------
+
+describe('SPEC-005 server fixture harness (T008)', () => {
+  const fixtures: ServerFixture[] = [];
+  const cleanups: Array<() => void> = [];
+
+  afterEach(async () => {
+    for (const fx of fixtures.splice(0)) {
+      try { await fx.teardown(); } catch { /* best-effort */ }
+    }
+    for (const fn of cleanups.splice(0)) {
+      try { fn(); } catch { /* best-effort */ }
+    }
+  });
+
+  it('buildFixtureIndex builds a real indexed project and cleans it up', async () => {
+    const fx = await buildFixtureIndex();
+    cleanups.push(fx.cleanup);
+    // A real .codegraph index exists at the canonical root.
+    expect(fs.existsSync(path.join(fx.root, '.codegraph'))).toBe(true);
+    expect(fs.existsSync(fx.dir)).toBe(true);
+
+    fx.cleanup();
+    expect(fs.existsSync(fx.dir)).toBe(false);
+  }, T(20000));
+
+  it('startServerFixture serves over a real index on port 0 (404 route envelope, reads not wired)', async () => {
+    const fx = await startServerFixture();
+    fixtures.push(fx);
+
+    expect(fx.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(fx.handle.port).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(fx.root, '.codegraph'))).toBe(true);
+
+    const res = await fetch(`${fx.baseURL}/api/status`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'not_found', details: { resource: 'route' } },
+    });
+  }, T(20000));
+
+  it('startServerFixture({ withWebRoot }) seeds + injects a synthetic dist/web/ (index.html + probe asset)', async () => {
+    const fx = await startServerFixture({ withWebRoot: true });
+    fixtures.push(fx);
+
+    expect(fx.webRoot).toBeTruthy();
+    const webRoot = fx.webRoot!;
+    // The synthetic build the later static tests exercise: a shell + a probe asset.
+    expect(fs.existsSync(path.join(webRoot, 'index.html'))).toBe(true);
+    expect(fs.readdirSync(webRoot).length).toBeGreaterThanOrEqual(2);
+    // The server is live over that web root (the /api boundary still 404s).
+    const res = await fetch(`${fx.baseURL}/api/x`);
+    expect(res.status).toBe(404);
+  }, T(20000));
+
+  it('teardown removes every temp dir it created', async () => {
+    const fx = await startServerFixture({ withWebRoot: true });
+    const { root, webRoot } = fx;
+    await fx.teardown();
+    expect(fs.existsSync(root)).toBe(false);
+    expect(fs.existsSync(webRoot!)).toBe(false);
+  }, T(20000));
+});

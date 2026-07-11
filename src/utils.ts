@@ -234,6 +234,14 @@ export function validateProjectPath(dirPath: string): string | null {
   return null;
 }
 
+/** Loopback host per FR: `localhost`, `127.0.0.0/8`, or IPv6 `::1`. */
+export function isLoopbackHost(hostname: string): boolean {
+  // URL.hostname keeps IPv6 brackets (`[::1]`); strip them before comparing.
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h === '::1') return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
 /**
  * Safely parse JSON with a fallback value.
  * Prevents crashes from corrupted database metadata.
