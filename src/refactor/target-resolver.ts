@@ -6,11 +6,14 @@
  * (the declaration's name/kind/file plus its span read verbatim from the node),
  * or a success-shaped {@link Refusal}.
  *
- * This is the BASIC contract (T017): an unmatched selector is `target-not-found`;
- * a surviving multi-match is a placeholder `ambiguous-target` whose candidate
- * list US2 (T026) fills in — along with the `unsupported-kind-graph-local` /
- * `excluded-kind` / `invalid-argument` refusals, which slot in ahead of the
- * narrowing filters here without reshaping this function's return type.
+ * The full FR-006/FR-007 contract: an unmatched selector is `target-not-found`;
+ * a surviving multi-match is an `ambiguous-target` refusal carrying every
+ * candidate with the exact qualifier that uniquely selects it (SC-003). Ahead of
+ * the narrowing filters, FR-021a validates the arguments (`invalid-argument` for
+ * an empty/invalid/no-op new name or an unrecognized `--kind`, with `validKinds`);
+ * after resolution, coverage limits apply — `excluded-kind` (file/route/import/
+ * export, every path, FR-011) and `unsupported-kind-graph-local` (a local/parameter
+ * on the graph path, FR-009/FR-010, keyed on the plan engine's LSP-path disposition).
  *
  * Qualified matching is separator-normalized: a method's stored `qualified_name`
  * uses the language's own scope separator (`Worker::handle` for TS), so a
@@ -19,14 +22,56 @@
  */
 
 import { QueryBuilder } from '../db/queries';
-import { Node } from '../types';
-import { Refusal, Target, TargetSelector } from './types';
+import { NODE_KINDS, Node } from '../types';
+import { Candidate, Refusal, Target, TargetSelector } from './types';
+
+/**
+ * FR-003a fork disposition for a resolved target's language, supplied by the plan
+ * engine (which owns the SPEC-008 availability probe). The resolver consults it
+ * ONLY for a local/parameter target — the one kind whose renameability differs by
+ * path (FR-009 vs FR-010) — so the probe is paid only when it changes the outcome:
+ * - `available`   — a server covers the language and is usable: the LSP path renames
+ *                   any kind (FR-009), so no local/parameter restriction.
+ * - `absent`      — LSP disabled or no server covers the language: the graph path
+ *                   applies; a local/parameter is refused (needs a language server).
+ * - `unavailable` — a CONFIGURED server is missing/unusable/failed: the graph path
+ *                   applies AND the refusal message stays honest that a WORKING
+ *                   server is required (FR-003a honesty clause).
+ */
+export type LspPathDisposition = 'available' | 'absent' | 'unavailable';
+
+/** Kinds excluded from rename on EVERY path (FR-011). */
+const EXCLUDED_KINDS: ReadonlySet<string> = new Set(['file', 'route', 'import', 'export']);
+/** Kinds the graph path cannot cover: locals/parameters carry no tracked
+ *  references, so only a language server can rename them (FR-010). */
+const GRAPH_LOCAL_KINDS: ReadonlySet<string> = new Set(['variable', 'parameter']);
+/** Recognized NodeKinds, for FR-021a `--kind` validation (mirrors the
+ *  `query-parser.ts` precedent — derived from the canonical `NODE_KINDS`). */
+const VALID_KINDS: ReadonlySet<string> = new Set<string>(NODE_KINDS);
+/** A syntactically valid identifier (FR-021a): a Unicode letter / `_` / `$` start,
+ *  then letters / digits / `_` / `$`. A conservative v1 shape covering the
+ *  identifier grammar of the languages CodeGraph indexes. */
+const IDENTIFIER = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
 
 export interface ResolveTargetOptions {
   /** The graph the resolver reads (same access pattern the plan path uses). */
   queries: QueryBuilder;
   /** The user's target identity (FR-006). */
   selector: TargetSelector;
+  /**
+   * FR-021a — the requested new name. When provided it is validated (non-empty ·
+   * a syntactically valid identifier · not a no-op equal to the current name)
+   * before the target is returned. Omitted by identity-only callers (the FR-006
+   * basic contract), which skip new-name validation.
+   */
+  newName?: string;
+  /**
+   * FR-003a fork — the LSP-path {@link LspPathDisposition} for the RESOLVED target,
+   * supplied by the plan engine. Consulted ONLY when the resolved target is a
+   * local/parameter (FR-009/FR-010). Omitted by identity-only callers; a
+   * local/parameter then resolves without the graph-path refusal.
+   */
+  lspPath?: (target: Target) => LspPathDisposition;
 }
 
 /** Split a (possibly scoped) name into its segments on `::` / `.` / `#`. */
@@ -66,13 +111,33 @@ function toTarget(node: Node): Target {
  * {@link Refusal}. Pure over the graph — no file I/O.
  */
 export function resolveTarget(options: ResolveTargetOptions): Target | Refusal {
-  const { queries, selector } = options;
+  const { queries, selector, newName, lspPath } = options;
 
+  // ── FR-021a input validation (target-independent) — BEFORE resolution.
+  // An empty / syntactically-invalid new name is a success-shaped refusal naming
+  // the offending argument (never a silent write).
+  if (newName !== undefined && !IDENTIFIER.test(newName)) {
+    return {
+      reason: 'invalid-argument',
+      message: `New name "${newName}" is not a valid identifier — provide a non-empty identifier for the target's language.`,
+    };
+  }
+  // An unrecognized `--kind` is `invalid-argument` carrying every recognized
+  // NodeKind (validKinds) — distinct from a well-formed but excluded kind
+  // (excluded-kind, below) and a valid kind that simply matches nothing
+  // (target-not-found, below), so a single corrected retry needs no file read.
+  if (selector.kind !== undefined && !VALID_KINDS.has(selector.kind)) {
+    return {
+      reason: 'invalid-argument',
+      message: `--kind "${selector.kind}" is not a recognized NodeKind. Valid kinds: ${NODE_KINDS.join(', ')}.`,
+      validKinds: [...NODE_KINDS],
+    };
+  }
+
+  // ── FR-006 resolution. Every symbol sharing the (last-segment) name is a
+  // candidate; the qualifier and narrowing flags below whittle it down.
   const segments = nameSegments(selector.name);
   const bareName = segments[segments.length - 1] ?? selector.name;
-
-  // Every symbol sharing the (last-segment) name is a candidate; the qualifier
-  // and narrowing flags below whittle it down.
   let candidates = queries.getNodesByName(bareName);
 
   // Qualified `Class.method`: keep candidates whose scoped name ends with the
@@ -85,9 +150,7 @@ export function resolveTarget(options: ResolveTargetOptions): Target | Refusal {
     const wantedFile = selector.file;
     candidates = candidates.filter((n) => fileMatches(n.filePath, wantedFile));
   }
-  // --kind: keep candidates of the named kind. Raw string compare — an
-  // unrecognized kind matches nothing here; T026 promotes that to an
-  // `invalid-argument` refusal carrying `validKinds`.
+  // --kind (already validated as a recognized kind): keep candidates of that kind.
   if (selector.kind !== undefined) {
     const wantedKind = selector.kind;
     candidates = candidates.filter((n) => n.kind === wantedKind);
@@ -100,12 +163,96 @@ export function resolveTarget(options: ResolveTargetOptions): Target | Refusal {
     };
   }
   if (candidates.length > 1) {
-    // Placeholder — US2 (T026) attaches the full candidate list with a
-    // uniquely-selecting qualifier per candidate (FR-007).
+    // FR-007: refuse (no writes, no guess) with every candidate + the exact
+    // qualifier that uniquely selects it, so a single qualified retry succeeds
+    // with zero files read (SC-003).
     return {
       reason: 'ambiguous-target',
-      message: `"${selector.name}" matches ${candidates.length} symbols. Qualify with Class.method, --file, or --kind.`,
+      message: `"${selector.name}" matches ${candidates.length} symbols. Retry with one of the listed selectors (or narrow with --file / --kind).`,
+      candidates: buildCandidates(candidates),
     };
   }
-  return toTarget(candidates[0]!);
+
+  const target = toTarget(candidates[0]!);
+
+  // ── FR-021a no-op (needs the resolved name): renaming to the current name.
+  if (newName !== undefined && newName === target.name) {
+    return {
+      reason: 'invalid-argument',
+      message: `New name "${newName}" is the same as the current name — nothing to rename.`,
+    };
+  }
+
+  // ── FR-011 excluded kinds — refused on EVERY path.
+  if (EXCLUDED_KINDS.has(target.kind)) {
+    return {
+      reason: 'excluded-kind',
+      message: `Cannot rename a "${target.kind}" symbol — file, route, import, and export kinds are excluded from rename on every path.`,
+    };
+  }
+
+  // ── FR-010 graph-path locals/parameters — refused when the graph path handles
+  // this rename; the LSP path (FR-009) renames any kind, so `available` lifts it.
+  if (GRAPH_LOCAL_KINDS.has(target.kind) && lspPath) {
+    const disposition = lspPath(target);
+    if (disposition !== 'available') {
+      return { reason: 'unsupported-kind-graph-local', message: graphLocalMessage(target, disposition) };
+    }
+  }
+
+  return target;
+}
+
+/**
+ * Build the FR-007 candidate list: each match with the exact qualifier that
+ * uniquely selects IT among the matches (SC-003). The preference order mirrors
+ * the user-facing qualifiers — a scoped `Class.method`, else `--file <path>`,
+ * else `--kind <kind>` — and every returned selector is checked (via the
+ * resolver's own matching rules) to actually resolve to a single match, so a
+ * retry lands on exactly this candidate.
+ */
+function buildCandidates(matches: Node[]): Candidate[] {
+  return matches.map((node) => ({
+    name: node.name,
+    kind: node.kind,
+    file: node.filePath,
+    line: node.startLine,
+    selector: uniqueSelector(node, matches),
+  }));
+}
+
+/** The most user-friendly qualifier that selects `node` and no other of
+ *  `matches`: a scoped `Class.method` suffix, else `--file <path>`, else
+ *  `--kind <kind>`; falls back to the fully-qualified dotted name. */
+function uniqueSelector(node: Node, matches: Node[]): string {
+  // 1. Qualified `Class.method` — the shortest scoped suffix (>=2 segments) that
+  //    is unique among the matches (matched by the resolver's segment-suffix rule).
+  const segs = nameSegments(node.qualifiedName);
+  for (let take = 2; take <= segs.length; take++) {
+    const suffix = segs.slice(segs.length - take);
+    if (matches.filter((m) => endsWithSegments(nameSegments(m.qualifiedName), suffix)).length === 1) {
+      return suffix.join('.');
+    }
+  }
+  // 2. --file <path> — a unique declaration file among the matches.
+  if (matches.filter((m) => fileMatches(m.filePath, node.filePath)).length === 1) {
+    return `--file ${node.filePath}`;
+  }
+  // 3. --kind <kind> — a unique kind among the matches.
+  if (matches.filter((m) => m.kind === node.kind).length === 1) {
+    return `--kind ${node.kind}`;
+  }
+  // 4. Best effort — the fully-qualified dotted name (still the most specific).
+  return segs.length >= 2 ? segs.join('.') : `--file ${node.filePath}`;
+}
+
+/** The FR-010 refusal message, honest per FR-003a about whether a WORKING server
+ *  is required (a configured-but-`unavailable` server that did not respond) or
+ *  one must be enabled for this language. */
+function graphLocalMessage(target: Target, disposition: LspPathDisposition): string {
+  const who = `the ${target.kind} "${target.name}"`;
+  if (disposition === 'unavailable') {
+    return `Cannot rename ${who}: renaming a local or parameter needs a working language server, but the configured one did not respond. Restore the server and retry.`;
+  }
+  return `Cannot rename ${who} on the graph path — no local usage tracking for locals/parameters, which needs a language server. Enable an LSP server for this language and retry.`;
 }

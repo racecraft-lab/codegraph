@@ -3,8 +3,10 @@
  * (SPEC-010). The fallback path used when no language server covers the target's
  * language (LSP path: {@link ../refactor/lsp-rename}).
  *
- * It reads the target's incoming `references` edges (the T007
- * {@link QueryBuilder.getReferencesToNode} statement), derives each occurrence's
+ * It reads the target's incoming name-occurrence edges — call sites, import
+ * specifiers, type references, and by-ref uses (the
+ * {@link QueryBuilder.getReferencesToNode} statement, widened past `references`
+ * for SPEC-010 D1), derives each occurrence's
  * span from the old name's UTF-16 length (research Decision 8), confirms it
  * against the live line (`verifySpan`, FR-005), and assigns a confidence tier
  * (`classifyEdgeConfidence`, FR-004) — emitting `source:'graph'` edits. The

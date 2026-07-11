@@ -40,12 +40,13 @@ export function composeAfterLine(lineText: string, edits: RenameEdit[]): string 
 
 /**
  * Render the default human-readable plan. A refusal renders its reason + the
- * actionable guidance message; a plan renders each file group with a per-edit
+ * actionable guidance message PLUS whichever machine-actionable payload it
+ * carries ({@link renderRefusal}); a plan renders each file group with a per-edit
  * row and a composed before/after preview, then an aggregate + leftover footer.
  */
 export function formatRenamePlanTable(plan: RenamePlan): string {
   if (plan.refusal) {
-    return `refused: ${plan.refusal.reason}\n${plan.refusal.message}\n`;
+    return renderRefusal(plan.refusal);
   }
 
   const lines: string[] = [];
@@ -68,6 +69,38 @@ export function formatRenamePlanTable(plan: RenamePlan): string {
   const footer = [`confidence: ${plan.confidence ?? 'n/a'}`];
   if (plan.leftoverMentions !== undefined) footer.push(`${plan.leftoverMentions} leftover mention(s)`);
   lines.push('', footer.join(' · '));
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * Render a success-shaped refusal for the human surface (FR-007): the reason +
+ * guidance message, then whichever machine-actionable payload the reason carries,
+ * each block emitted ONLY when present (so a bare refusal stays reason+message,
+ * with no stray headers). This closes the Slice-1 gap where the human table
+ * listed nothing while its message said "the listed selectors":
+ * - `candidates` (ambiguous-target) — one line each: `selector  kind  file:line`,
+ *   so a qualified retry needs no file read (SC-003, now on the human path too).
+ * - `validKinds` (invalid-argument on an unrecognized kind) — the recognized set.
+ * - `files` (stale-span / out-of-root / scope-ignored) — the offending files.
+ * - `gatedEdits` (heuristic-gated) — the below-`exact` edits, `file:line  tier`.
+ */
+function renderRefusal(refusal: Refusal): string {
+  const lines: string[] = [`refused: ${refusal.reason}`, refusal.message];
+  if (refusal.candidates?.length) {
+    lines.push('candidates:');
+    for (const c of refusal.candidates) lines.push(`  ${c.selector}  ${c.kind}  ${c.file}:${c.line}`);
+  }
+  if (refusal.validKinds?.length) {
+    lines.push(`valid kinds: ${refusal.validKinds.join(', ')}`);
+  }
+  if (refusal.files?.length) {
+    lines.push('files:');
+    for (const f of refusal.files) lines.push(`  ${f}`);
+  }
+  if (refusal.gatedEdits?.length) {
+    lines.push('gated edits:');
+    for (const e of refusal.gatedEdits) lines.push(`  ${e.file}:${e.range.start.line}  ${e.confidence}`);
+  }
   return lines.join('\n') + '\n';
 }
 

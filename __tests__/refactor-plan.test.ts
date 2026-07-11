@@ -25,6 +25,7 @@ import * as os from 'os';
 import { spawnSync } from 'child_process';
 import { pathToFileURL } from 'node:url';
 import { CodeGraph } from '../src';
+import { NODE_KINDS, type NodeKind } from '../src/types';
 import type { QueryBuilder } from '../src/db/queries';
 import { resolveLspConfig } from '../src/lsp';
 import { classifyEdgeConfidence } from '../src/refactor/confidence';
@@ -266,7 +267,13 @@ describe('T006 Slice-1 QueryBuilder statements (real SQLite)', () => {
     const rows = queries.getReferencesToNode(onMessageId);
     expect(rows.length).toBeGreaterThan(0);
 
-    const wireRow = rows.find((r) => r.sourceFilePath.endsWith('wiring.ts'));
+    // onMessage now has TWO wiring.ts occurrences (SPEC-010 D1 widened the kind
+    // set): the `import { onMessage }` specifier (source = the module) AND the
+    // `bus.on(onMessage)` function-as-value ref (source = `wire`). This test
+    // validates the by-ref row, so select it by its fnRef metadata marker.
+    const wireRow = rows.find(
+      (r) => r.sourceFilePath.endsWith('wiring.ts') && (r.metadata as { fnRef?: boolean } | undefined)?.fnRef,
+    );
     expect(wireRow).toBeDefined();
 
     // Source node info — the file to edit and the id of the referencing node.
@@ -293,11 +300,19 @@ describe('T006 Slice-1 QueryBuilder statements (real SQLite)', () => {
     expect(wireRow!.provenance ?? null).toBeNull();
   });
 
-  it('references-to-node: excludes `calls` edges — only kind=`references` occurrences are rename candidates', () => {
-    // `compute` is only ever CALLED, so its single incoming edge is `calls`;
-    // getReferencesToNode returns nothing for it, even though the call is in the
-    // graph — pinning that the statement filters to kind='references'.
-    expect(queries.getReferencesToNode(computeId)).toEqual([]);
+  it('references-to-node: INCLUDES `calls` and `imports` occurrences — SPEC-010 D1 widened the rename-relevant kind set past `references`', () => {
+    // `compute` is only ever CALLED (wiring.ts:4) and IMPORTED (wiring.ts:1),
+    // never used by-reference. Before D1 the `references`-only filter returned
+    // NOTHING for it — leaving the call site + import specifier un-renamed (broken
+    // code on a future apply); now BOTH occurrences are returned so the plan edits
+    // them (span verification stays the per-edge safety filter downstream).
+    const rows = queries.getReferencesToNode(computeId);
+    expect(rows.map((r) => r.line).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([1, 4]);
+    for (const r of rows) {
+      expect(r.sourceFilePath.endsWith('wiring.ts')).toBe(true);
+      expect((r.metadata as { refName?: string }).refName).toBe('compute');
+    }
+    // The `calls` edge is present in the graph and now surfaced by the statement.
     expect(cg.getIncomingEdges(computeId).some((e) => e.kind === 'calls')).toBe(true);
   });
 
@@ -697,8 +712,11 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
       newName: 'onSignal',
     });
 
-    // Declaration edit + the single graph `references` occurrence.
-    expect(result.edits).toHaveLength(2);
+    // Declaration + the import specifier + the function-as-value reference.
+    // SPEC-010 D1 now edits the `import { onEvent }` specifier too — before D1 the
+    // graph plan was only {declaration, by-ref} (the un-edited import specifier was
+    // exactly the leftover-broken-code class the fix closes).
+    expect(result.edits).toHaveLength(3);
     for (const e of result.edits) {
       expect(e.oldText).toBe('onEvent');
       expect(e.newText).toBe('onSignal');
@@ -711,8 +729,14 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
     expect(decl.range.start).toEqual({ line: 1, column: declLine.indexOf('onEvent') });
     expect(decl.lineText).toBe(declLine);
 
+    // The import specifier occurrence (wiring.ts:1) — now a span-verified edit.
+    const importLine = "import { onEvent } from './handlers';";
+    const imp = result.edits.find((e) => e.file === 'wiring.ts' && e.range.start.line === 1)!;
+    expect(imp.range.start.column).toBe(importLine.indexOf('onEvent'));
+    expect(importLine.slice(imp.range.start.column, imp.range.end.column)).toBe('onEvent');
+
     const refLine = '  bus.on(onEvent);';
-    const ref = result.edits.find((e) => e.file === 'wiring.ts')!;
+    const ref = result.edits.find((e) => e.file === 'wiring.ts' && e.range.start.line === 3)!;
     expect(ref.range).toEqual({
       start: { line: 3, column: refLine.indexOf('onEvent') },
       end: { line: 3, column: refLine.indexOf('onEvent') + 'onEvent'.length },
@@ -758,7 +782,7 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
       'svc.ts': 'export function notify(x) { return x; }\n',
       'app.ts':
         [
-          "import { notify } from './svc';", // 1 — import specifier: graph path can't edit it → leftover
+          "import { notify } from './svc';", // 1 — import specifier: NOW edited (D1); was a leftover
           'export function run(bus) {', //      2
           '  bus.on(notify);', //               3 — the real `references` edge (exact) → edited
           '  // notify the user later', //      4 — comment → leftover, never edited
@@ -786,9 +810,11 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
       newName: 'alert',
     });
 
-    // Only the declaration (svc.ts:1) and the real reference (app.ts:3) are edited.
-    expect(result.edits).toHaveLength(2);
+    // The declaration (svc.ts:1), the import specifier (app.ts:1 — now edited by
+    // D1), and the real by-ref reference (app.ts:3) are edited.
+    expect(result.edits).toHaveLength(3);
     expect(result.edits.map((e) => `${e.file}:${e.range.start.line}`).sort()).toEqual([
+      'app.ts:1',
       'app.ts:3',
       'svc.ts:1',
     ]);
@@ -797,8 +823,9 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
       false,
     );
     expect(result.edits.some((e) => e.file === 'app.ts' && e.range.start.column === 2)).toBe(false);
-    // FR-013: 3 textual leftovers (import specifier + comment + string) + 1 synthesized dispatch site.
-    expect(result.leftoverMentions).toBe(4);
+    // FR-013: 2 textual leftovers (comment + string) + 1 synthesized dispatch site.
+    // The import specifier (app.ts:1) is NO LONGER a leftover — D1 promotes it to an edit.
+    expect(result.leftoverMentions).toBe(3);
   });
 
   it('drops a graph edge whose live-byte slice no longer equals the old name (FR-005 false positive — shadow/alias/string-similar)', async () => {
@@ -1509,7 +1536,7 @@ describe('T014 CLI dry-run — codegraph rename (built binary, FR-001/FR-026/FR-
   it('a multi-file plan with the --kind qualifier still writes nothing, exits 0 (FR-006)', () => {
     const res = runRename(['oldFn', 'newFn', '--kind', 'function']);
     expect(res.status).toBe(0);
-    // Declaration (a.ts) + the cross-file references occurrence (b.ts).
+    // Declaration (a.ts) + import specifier + by-ref occurrence (b.ts) — D1 widened.
     expect(res.stdout).toContain('a.ts');
     expect(res.stdout).toContain('b.ts');
     expect(res.stdout).toContain('oldFn');
@@ -1612,5 +1639,677 @@ describe('T014 CLI dry-run — codegraph rename (built binary, FR-001/FR-026/FR-
     expect(refused).toBe(2); // recoverable refusal
     expect(usage).toBe(1); // commander's standard unknown-option usage error
     for (const code of [ok, refused, usage]) expect([0, 1, 2]).toContain(code);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T022 — Ambiguity refusal (resolveTarget, SPEC-010 FR-007/FR-008/SC-003). A bare
+// name matching several symbols refuses with `ambiguous-target` and a `candidates`
+// array — each candidate carrying name/kind/file/line PLUS the exact qualifier
+// (`Class.method`, `--file <path>`, or `--kind <kind>`) that uniquely selects it —
+// with NO single resolution (no guess, no writes). Retrying with any printed
+// selector then resolves to exactly that one Target, purely over the graph
+// (resolveTarget does no file I/O), proving the SC-003 "one qualified retry, zero
+// files read" guarantee. Reuses the T017 harness (initSync → indexAll → real
+// SQLite); the fixture mirrors T017's (probe-verified qualifiedName Worker::handle
+// / Helper::handle, bare `handle` at lines 2 / 5 / 7).
+// ---------------------------------------------------------------------------
+describe('T022 ambiguous-target refusal — resolveTarget (real SQLite, FR-007/FR-008/SC-003)', () => {
+  let dir: string;
+  let cg: CodeGraph;
+  let queries: QueryBuilder;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-ambig-'));
+    fs.writeFileSync(
+      path.join(dir, 'models.ts'),
+      [
+        'export class Worker {',
+        '  handle(x) { return x; }', //   2 — Worker::handle (method)
+        '}',
+        'export class Helper {',
+        '  handle(z) { return z; }', //   5 — Helper::handle (method)
+        '}',
+        'export function handle(w) { return w; }', // 7 — bare handle (function)
+        'export function soloUnique(a) { return a; }', // 8 — unique
+      ].join('\n') + '\n',
+    );
+    fs.writeFileSync(path.join(dir, 'dup-a.ts'), 'export function dup(a) { return a; }\n');
+    fs.writeFileSync(path.join(dir, 'dup-b.ts'), 'export function dup(b) { return b; }\n');
+    cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    queries = (cg as unknown as { queries: QueryBuilder }).queries;
+  });
+
+  afterAll(() => {
+    cg?.destroy();
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Turn a printed candidate selector back into a TargetSelector for the retry. */
+  function toSelector(name: string, selector: string): { name: string; file?: string; kind?: string } {
+    if (selector.startsWith('--file ')) return { name, file: selector.slice('--file '.length) };
+    if (selector.startsWith('--kind ')) return { name, kind: selector.slice('--kind '.length) };
+    return { name: selector };
+  }
+
+  it('a bare name matching several symbols → ambiguous-target with a candidate per match (name/kind/file/line/selector), NO single resolution (no guess)', () => {
+    const result = resolveTarget({ queries, selector: { name: 'handle' } });
+    if (!('reason' in result)) throw new Error('expected a refusal, not a resolved Target (no guess)');
+    expect(result.reason).toBe('ambiguous-target');
+    expect(result.candidates).toBeDefined();
+    expect(result.candidates).toHaveLength(3);
+
+    for (const c of result.candidates!) {
+      expect(typeof c.name).toBe('string');
+      expect(typeof c.kind).toBe('string');
+      expect(typeof c.file).toBe('string');
+      expect(typeof c.line).toBe('number');
+      expect(typeof c.selector).toBe('string');
+    }
+
+    // The uniquely-selecting qualifier per candidate: Class.method for the two
+    // methods, --kind for the lone function (all three share models.ts, so --file
+    // cannot disambiguate — the selector must ACTUALLY distinguish this candidate).
+    const bySelector = Object.fromEntries(result.candidates!.map((c) => [c.selector, c]));
+    expect(bySelector['Worker.handle']).toMatchObject({ name: 'handle', kind: 'method', file: 'models.ts', line: 2 });
+    expect(bySelector['Helper.handle']).toMatchObject({ name: 'handle', kind: 'method', file: 'models.ts', line: 5 });
+    expect(bySelector['--kind function']).toMatchObject({ name: 'handle', kind: 'function', file: 'models.ts', line: 7 });
+  });
+
+  it('a name shared across files → each candidate carries the --file qualifier that selects it', () => {
+    const result = resolveTarget({ queries, selector: { name: 'dup' } });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('ambiguous-target');
+    expect(result.candidates).toHaveLength(2);
+    expect(result.candidates!.map((c) => c.selector).sort()).toEqual(['--file dup-a.ts', '--file dup-b.ts']);
+  });
+
+  it('SC-003: retrying with each printed selector resolves to exactly that ONE Target — zero files read (resolveTarget is graph-only)', () => {
+    for (const name of ['handle', 'dup']) {
+      const ambiguous = resolveTarget({ queries, selector: { name } });
+      if (!('reason' in ambiguous)) throw new Error(`expected ${name} to be ambiguous`);
+      for (const c of ambiguous.candidates!) {
+        const retry = resolveTarget({ queries, selector: toSelector(c.name, c.selector) });
+        if ('reason' in retry) {
+          throw new Error(`selector "${c.selector}" did not uniquely resolve: ${retry.reason}`);
+        }
+        expect(retry.kind).toBe(c.kind);
+        expect(retry.file).toBe(c.file);
+        expect(retry.range.start.line).toBe(c.line);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T023 — Kind-coverage refusals (resolveTarget, SPEC-010 FR-009/FR-010/FR-011 +
+// FR-003a honesty). The graph path cannot cover locals/parameters (no tracked
+// references), so a `variable`/`parameter` target on the graph path is refused
+// `unsupported-kind-graph-local`; when the graph path was reached by DEGRADING a
+// configured-but-unavailable server, the message stays honest that a WORKING
+// server is required. The LSP path (FR-009) renames any kind — the resolver lifts
+// the restriction when the disposition is `available`, and the LSP-path derivation
+// itself never kind-filters. `file`/`route`/`import`/`export` are `excluded-kind`
+// on EVERY path (FR-011). Locals/parameters/excluded kinds are not produced by TS
+// extraction, so — like T011's synthetic edges — they are hand-inserted with the
+// real QueryBuilder.insertNode; real SQLite throughout.
+// ---------------------------------------------------------------------------
+describe('T023 kind-coverage refusals — resolveTarget (FR-009/FR-010/FR-011, FR-003a honesty)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  async function indexFixture(files: Record<string, string>): Promise<{ dir: string; cg: CodeGraph; queries: QueryBuilder }> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-kind-'));
+    for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), content);
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    return { dir, cg, queries };
+  }
+
+  /** Hand-insert a declaration node of an arbitrary kind (locals/params/excluded
+   *  kinds aren't produced by TS extraction — mirrors T011's insertEdge pattern). */
+  function insertKindNode(queries: QueryBuilder, opts: { name: string; kind: string; file: string; line: number }): void {
+    queries.insertNode({
+      id: `test:${opts.kind}:${opts.name}:${opts.line}`,
+      kind: opts.kind as NodeKind,
+      name: opts.name,
+      qualifiedName: opts.name,
+      filePath: opts.file,
+      language: 'typescript',
+      startLine: opts.line,
+      endLine: opts.line,
+      startColumn: 0,
+      endColumn: 0,
+      updatedAt: Date.now(),
+    });
+  }
+
+  it('a graph-path variable → unsupported-kind-graph-local ("no local usage tracking — needs a language server")', async () => {
+    const { queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
+    insertKindNode(queries, { name: 'localX', kind: 'variable', file: 'm.ts', line: 1 });
+    const result = resolveTarget({ queries, selector: { name: 'localX' }, newName: 'renamedX', lspPath: () => 'absent' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('unsupported-kind-graph-local');
+    expect(result.message).toMatch(/no local usage tracking/i);
+    expect(result.message).toMatch(/language server/i);
+  });
+
+  it('a graph-path parameter is likewise refused unsupported-kind-graph-local', async () => {
+    const { queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
+    insertKindNode(queries, { name: 'paramP', kind: 'parameter', file: 'm.ts', line: 1 });
+    const result = resolveTarget({ queries, selector: { name: 'paramP' }, newName: 'renamedP', lspPath: () => 'absent' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('unsupported-kind-graph-local');
+  });
+
+  it('FR-003a honesty: a graph path reached by DEGRADING a configured-but-unavailable server → message requires a WORKING server', async () => {
+    const { queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
+    insertKindNode(queries, { name: 'localX', kind: 'variable', file: 'm.ts', line: 1 });
+    const result = resolveTarget({ queries, selector: { name: 'localX' }, newName: 'renamedX', lspPath: () => 'unavailable' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('unsupported-kind-graph-local');
+    expect(result.message).toMatch(/working/i); // honesty clause: the configured server did not respond
+    expect(result.message).toMatch(/language server/i);
+  });
+
+  it('FR-009: on the LSP path (available) a local/parameter is NOT restricted — it resolves to a Target', async () => {
+    const { queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
+    insertKindNode(queries, { name: 'localX', kind: 'variable', file: 'm.ts', line: 1 });
+    const result = resolveTarget({ queries, selector: { name: 'localX' }, newName: 'renamedX', lspPath: () => 'available' });
+    if ('reason' in result) throw new Error(`expected a Target on the LSP path, got ${result.reason}`);
+    expect(result.name).toBe('localX');
+    expect(result.kind).toBe('variable');
+  });
+
+  it('FR-009: deriveLspRename renames a LOCAL identifier with no kind filter (the LSP path has no kind restriction)', async () => {
+    const dir = makeLspRenameDir();
+    const line = 'function outer() { let localX = 1; return localX; }';
+    fs.writeFileSync(path.join(dir, 'a.ts'), line + '\n');
+    const stub = writeRenameStub(dir);
+    const c1 = line.indexOf('localX');
+    const c2 = line.indexOf('localX', c1 + 1);
+    const uri = pathToFileURL(path.join(dir, 'a.ts')).href;
+    const renameResult = {
+      changes: {
+        [uri]: [
+          { range: { start: { line: 0, character: c1 }, end: { line: 0, character: c1 + 6 } }, newText: 'renamedX' },
+          { range: { start: { line: 0, character: c2 }, end: { line: 0, character: c2 + 6 } }, newText: 'renamedX' },
+        ],
+      },
+    };
+    const result = await deriveLspRename({
+      projectRoot: dir,
+      config: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      language: 'typescript',
+      file: 'a.ts',
+      position: { line: 1, column: c1 },
+      newName: 'renamedX',
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.edits.length).toBeGreaterThanOrEqual(1);
+    for (const e of result.edits) {
+      expect(e.source).toBe('lsp');
+      expect(e.confidence).toBe('exact');
+      expect(e.oldText).toBe('localX');
+    }
+  });
+
+  it('planRename wires the graph-local refusal end-to-end (LSP disabled → unsupported-kind-graph-local, success-shaped, no edits)', async () => {
+    const { dir, queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
+    insertKindNode(queries, { name: 'loose', kind: 'variable', file: 'm.ts', line: 1 });
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'loose' },
+      newName: 'tight',
+      lspConfig: resolveLspConfig({ projectRoot: dir, cliActivation: 'disable', env: {} }),
+      env: {},
+    });
+    expect(plan.applied).toBe(false);
+    expect(plan.refusal?.reason).toBe('unsupported-kind-graph-local');
+    expect(plan.edits).toBeUndefined();
+    expect(plan.target).toBeUndefined();
+  });
+
+  it.each([['file'], ['route'], ['import'], ['export']])(
+    'FR-011: kind=%s is excluded-kind on EVERY path (graph AND lsp)',
+    async (kind) => {
+      const { queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
+      insertKindNode(queries, { name: 'excludedThing', kind, file: 'm.ts', line: 1 });
+      const onGraph = resolveTarget({ queries, selector: { name: 'excludedThing' }, newName: 'renamed', lspPath: () => 'absent' });
+      if (!('reason' in onGraph)) throw new Error('expected a refusal on the graph path');
+      expect(onGraph.reason).toBe('excluded-kind');
+      const onLsp = resolveTarget({ queries, selector: { name: 'excludedThing' }, newName: 'renamed', lspPath: () => 'available' });
+      if (!('reason' in onLsp)) throw new Error('expected a refusal on the lsp path');
+      expect(onLsp.reason).toBe('excluded-kind');
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T024 — Invalid-argument validation (resolveTarget, SPEC-010 FR-021a). The two
+// identifying arguments are validated before a plan is derived: an empty or
+// syntactically-invalid new name, a no-op rename (new name equals the current
+// name), and an unrecognized `--kind` each refuse success-shaped with
+// `invalid-argument`, naming the offending argument; the unknown-kind refusal
+// carries `validKinds` (every recognized NodeKind) so a corrected retry needs no
+// file read. These stay DISTINCT from `excluded-kind` (a well-formed but excluded
+// kind — see T023) and `target-not-found` (a valid kind that matches nothing).
+// ---------------------------------------------------------------------------
+describe('T024 invalid-argument validation — resolveTarget (FR-021a)', () => {
+  let dir: string;
+  let cg: CodeGraph;
+  let queries: QueryBuilder;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-invalidarg-'));
+    fs.writeFileSync(path.join(dir, 'm.ts'), 'export function soloUnique(a) { return a; }\n');
+    cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    queries = (cg as unknown as { queries: QueryBuilder }).queries;
+  });
+
+  afterAll(() => {
+    cg?.destroy();
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('an empty new name → invalid-argument (names the offending argument), never a plan', () => {
+    const result = resolveTarget({ queries, selector: { name: 'soloUnique' }, newName: '' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('invalid-argument');
+    expect(result.message).toMatch(/name/i);
+  });
+
+  it('a syntactically-invalid new name → invalid-argument', () => {
+    const result = resolveTarget({ queries, selector: { name: 'soloUnique' }, newName: 'not a valid name!' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('invalid-argument');
+  });
+
+  it('a no-op rename (new name equals the current name) → invalid-argument', () => {
+    const result = resolveTarget({ queries, selector: { name: 'soloUnique' }, newName: 'soloUnique' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('invalid-argument');
+    expect(result.message).toMatch(/same|current|nothing/i);
+  });
+
+  it('an unrecognized --kind → invalid-argument carrying validKinds (every recognized NodeKind)', () => {
+    const result = resolveTarget({ queries, selector: { name: 'soloUnique', kind: 'notARealKind' }, newName: 'renamed' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('invalid-argument');
+    expect(result.validKinds).toEqual([...NODE_KINDS]);
+    expect(result.validKinds).toContain('function');
+  });
+
+  it('DISTINCTNESS: a valid kind that matches nothing is target-not-found (NOT invalid-argument)', () => {
+    // soloUnique is a function; --kind method matches no symbol.
+    const result = resolveTarget({ queries, selector: { name: 'soloUnique', kind: 'method' }, newName: 'renamed' });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('target-not-found');
+  });
+
+  it('DISTINCTNESS: a valid new name on a real symbol still resolves (validation does not over-refuse)', () => {
+    const result = resolveTarget({ queries, selector: { name: 'soloUnique' }, newName: 'soloRenamed' });
+    if ('reason' in result) throw new Error(`expected a Target, got ${result.reason}`);
+    expect(result.name).toBe('soloUnique');
+    expect(result.kind).toBe('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T024 (CLI surface) — invalid-argument through the BUILT binary (SPEC-010
+// FR-021a/FR-023/FR-026). An unrecognized --kind and a no-op rename each print a
+// success-shaped invalid-argument refusal and exit 2 (the recoverable-refusal
+// code, never the generic exit 1); -j/--json carries the refusal with validKinds.
+// T014-style: dist/bin/codegraph.js via spawnSync, LSP env scrubbed, real index.
+// ---------------------------------------------------------------------------
+describe('T024 invalid-argument CLI — codegraph rename (built binary, FR-021a/FR-026)', () => {
+  const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
+  let dir: string;
+  let childEnv: NodeJS.ProcessEnv;
+
+  beforeAll(async () => {
+    if (!fs.existsSync(BIN)) throw new Error(`Build the project first: ${BIN} is missing (run npm run build).`);
+    for (const k of Object.keys(process.env)) if (k.startsWith('CODEGRAPH_LSP')) delete process.env[k];
+    childEnv = { ...process.env, CODEGRAPH_NO_DAEMON: '1', CODEGRAPH_WASM_RELAUNCHED: '1' };
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-invalidarg-cli-'));
+    fs.writeFileSync(path.join(dir, 'a.ts'), 'export function soloRenameTarget(x) { return x; }\n');
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    cg.close();
+  });
+
+  afterAll(() => {
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function runRename(args: string[], projectPath = dir): { status: number | null; stdout: string; stderr: string } {
+    const res = spawnSync(process.execPath, [BIN, 'rename', ...args, '-p', projectPath], {
+      encoding: 'utf-8',
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { status: res.status, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
+  }
+
+  it('unrecognized --kind → success-shaped invalid-argument, exit 2, enumerates valid kinds', () => {
+    const res = runRename(['soloRenameTarget', 'renamedSolo', '--kind', 'notARealKind']);
+    expect(res.status).toBe(2);
+    expect(res.stdout).toContain('invalid-argument');
+    expect(res.stdout).toMatch(/function/); // validKinds enumerated in the guidance
+    expect(res.stderr).not.toMatch(/\n\s+at /); // success-shaped, not a stack trace
+  });
+
+  it('a no-op rename (new name equals current) → invalid-argument, exit 2', () => {
+    const res = runRename(['soloRenameTarget', 'soloRenameTarget']);
+    expect(res.status).toBe(2);
+    expect(res.stdout).toContain('invalid-argument');
+    expect(res.stderr).not.toMatch(/\n\s+at /);
+  });
+
+  it('-j/--json carries the invalid-argument refusal with validKinds for an unknown kind, exit 2', () => {
+    const res = runRename(['soloRenameTarget', 'renamedSolo', '--kind', 'notARealKind', '--json']);
+    expect(res.status).toBe(2);
+    const parsed = JSON.parse(res.stdout) as { applied: boolean; refusal: { reason: string; validKinds?: string[] } };
+    expect(parsed.applied).toBe(false);
+    expect(parsed.refusal.reason).toBe('invalid-argument');
+    expect(Array.isArray(parsed.refusal.validKinds)).toBe(true);
+    expect(parsed.refusal.validKinds).toContain('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T025 — Scope-ignored invisibility (deriveGraphRename, SPEC-010 FR-005/SC-008).
+// The shadow / import-alias / string-similar / comment / string false positives
+// are already dropped by verifySpan (the FR-005 span tests above) and the T011
+// derivation tests, so they are NOT re-asserted here. The GENUINELY NEW guarantee:
+// an old-name reference living in a scope-ignored file (excluded from indexing —
+// gitignored or codegraph.json `exclude`) is invisible to the graph (no edge
+// exists), so it is NEVER emitted as an edit AND never increments the
+// leftover-mention FYI (the leftover tally scans only touched files). Real SQLite;
+// the excluded file is confirmed un-indexed as a precondition.
+// ---------------------------------------------------------------------------
+describe('T025 scope-ignored invisibility — deriveGraphRename (FR-005/SC-008)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  it('an old-name reference in a scope-ignored file is neither edited NOR counted as a leftover (no edge exists)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-scopeignore-'));
+    // decl.ts declares the target; wire.ts has the real references (import
+    // specifier + by-ref, BOTH edited by D1); ignored.ts is EXCLUDED — its import
+    // specifier + reference + comment would all be visible if indexed, but must
+    // NOT be (no edge → no edit → not touched → not tallied).
+    fs.writeFileSync(path.join(dir, 'decl.ts'), 'export function scopedName(x) { return x; }\n');
+    fs.writeFileSync(
+      path.join(dir, 'wire.ts'),
+      "import { scopedName } from './decl';\nexport function w(bus) {\n  bus.on(scopedName);\n}\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, 'ignored.ts'),
+      "import { scopedName } from './decl';\nexport function ig(bus) {\n  bus.on(scopedName);\n}\n// scopedName mentioned in an ignored file\n",
+    );
+    // codegraph.json `exclude` (gitignore-style, root-relative) un-indexes the
+    // file, so no reference edge from it ever enters the graph (the SC-008 scope).
+    fs.writeFileSync(path.join(dir, 'codegraph.json'), JSON.stringify({ exclude: ['ignored.ts'] }));
+    const cg = CodeGraph.initSync(dir);
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    // Precondition: ignored.ts was NOT indexed (its `ig` function is absent).
+    expect(cg.getNodesByName('ig')).toHaveLength(0);
+
+    const targetId = cg.getNodesByName('scopedName').find((n) => n.kind === 'function')!.id;
+    const result = deriveGraphRename({ queries, projectRoot: dir, targetId, newName: 'renamedScope' });
+
+    // Edits: decl.ts declaration + wire.ts import specifier + wire.ts by-ref — and
+    // NOTHING in ignored.ts. (D1 now edits wire.ts's import specifier too, so
+    // wire.ts contributes two edits; the SC-008 guarantee under test is the
+    // no-ignored-file invariant.)
+    expect([...new Set(result.edits.map((e) => e.file))].sort()).toEqual(['decl.ts', 'wire.ts']);
+    expect(result.edits.some((e) => e.file === 'ignored.ts')).toBe(false);
+    expect(result.edits.map((e) => `${e.file}:${e.range.start.line}`).sort()).toEqual([
+      'decl.ts:1',
+      'wire.ts:1',
+      'wire.ts:3',
+    ]);
+
+    // Leftover FYI is 0: D1 promotes wire.ts's import specifier from a leftover to
+    // an edit, and ignored.ts is invisible (no edge). Were ignored.ts indexed, its
+    // comment `// scopedName mentioned…` would be tallied — its absence from the
+    // count is exactly the SC-008 scope-invisibility guarantee.
+    expect(result.leftoverMentions).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D1 — Name-occurrence edge coverage (Slice-1 UAT defect). The graph path must
+// derive edits from EVERY edge kind whose SOURCE POSITION textually names the
+// target, not just `references`. UAT evidence: a function with an import
+// specifier + direct call sites + a by-ref use produced a graph plan of only
+// {declaration, by-ref} (2 edits) while the LSP arm correctly produced 11
+// (imports + calls + refs); the un-edited call-site/import tokens would leave
+// broken code on a future apply that the touched-file post-check cannot see
+// (FR-018 premise). `getReferencesToNode` widens to the rename-relevant kind
+// set; span verification (FR-005) stays the per-edge filter, so an edge whose
+// recorded position does NOT carry the old name is still dropped (proven here
+// with `new X()`, whose `instantiates` position points at the `new` keyword).
+// Real files + real SQLite through the full pipeline (T011 harness pattern).
+// ---------------------------------------------------------------------------
+describe('D1 name-occurrence edge coverage — deriveGraphRename + getReferencesToNode', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  async function indexFixture(
+    files: Record<string, string>,
+  ): Promise<{ dir: string; cg: CodeGraph; queries: QueryBuilder }> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-d1-'));
+    for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), content);
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    return { dir, cg, queries };
+  }
+  const fnId = (cg: CodeGraph, name: string) => cg.getNodesByName(name).find((n) => n.kind === 'function')!.id;
+  const classId = (cg: CodeGraph, name: string) => cg.getNodesByName(name).find((n) => n.kind === 'class')!.id;
+  const ifaceId = (cg: CodeGraph, name: string) => cg.getNodesByName(name).find((n) => n.kind === 'interface')!.id;
+
+  it('a called + imported function includes the call-site AND import-specifier edits, not just the declaration (the UAT scenario)', async () => {
+    const importLine = "import { add } from './math';";
+    const call1 = '  const x = add(1, 2);';
+    const call2 = '  const y = add(3, 4);';
+    const { dir, cg, queries } = await indexFixture({
+      'math.ts': 'export function add(a, b) { return a + b; }\n',
+      'main.ts': [importLine, 'export function run() {', call1, call2, '  return x + y;', '}'].join('\n') + '\n',
+    });
+    const result = deriveGraphRename({ queries, projectRoot: dir, targetId: fnId(cg, 'add'), newName: 'sum' });
+
+    // Declaration + import specifier (main.ts:1) + BOTH call sites (main.ts:3, :4).
+    const keys = result.edits.map((e) => `${e.file}:${e.range.start.line}`).sort();
+    expect(keys).toEqual(['main.ts:1', 'main.ts:3', 'main.ts:4', 'math.ts:1']);
+    for (const e of result.edits) {
+      expect(e.oldText).toBe('add');
+      expect(e.newText).toBe('sum');
+      expect(e.source).toBe('graph');
+      expect(e.confidence).toBe('exact'); // resolvedBy='import' → exact
+    }
+    // The two D1 tokens that got NO edit before the fix — span-verified occurrences.
+    const importEdit = result.edits.find((e) => e.file === 'main.ts' && e.range.start.line === 1)!;
+    expect(importLine.slice(importEdit.range.start.column, importEdit.range.end.column)).toBe('add');
+    const callEdit = result.edits.find((e) => e.file === 'main.ts' && e.range.start.line === 3)!;
+    expect(call1.slice(callEdit.range.start.column, callEdit.range.end.column)).toBe('add');
+  });
+
+  it('getReferencesToNode returns call-site (`calls`) and import-specifier (`imports`) occurrences — the widened rename-relevant kind set', async () => {
+    const { cg, queries } = await indexFixture({
+      'math.ts': 'export function mul(a, b) { return a * b; }\n',
+      'main.ts': "import { mul } from './math';\nexport const z = mul(2, 3);\n",
+    });
+    const rows = queries.getReferencesToNode(fnId(cg, 'mul'));
+    // Both the import specifier (main.ts:1) and the call site (main.ts:2) are now
+    // returned; before D1 the `references`-only filter returned NEITHER (mul is
+    // only ever imported + called, never used by-reference).
+    const lines = rows.map((r) => r.line).sort((a, b) => (a ?? 0) - (b ?? 0));
+    expect(lines).toEqual([1, 2]);
+    for (const r of rows) {
+      expect(r.sourceFilePath.endsWith('main.ts')).toBe(true);
+      expect((r.metadata as { refName?: string }).refName).toBe('mul');
+    }
+  });
+
+  it('a class target includes its extends occurrence + import specifier; the `new X()` name-token is NOT edited (its `instantiates` edge points at the `new` keyword) but is tallied as a leftover', async () => {
+    const importLine = "import { Base } from './shapes';";
+    const extendsLine = 'export class Widget extends Base {}';
+    const newLine = 'export const w = new Base();';
+    const { dir, cg, queries } = await indexFixture({
+      'shapes.ts': 'export class Base { greet() { return 0; } }\n',
+      'app.ts': [importLine, extendsLine, newLine].join('\n') + '\n',
+    });
+    const result = deriveGraphRename({ queries, projectRoot: dir, targetId: classId(cg, 'Base'), newName: 'Shape' });
+
+    const keys = result.edits.map((e) => `${e.file}:${e.range.start.line}`).sort();
+    // Declaration (shapes.ts:1) + import specifier (app.ts:1) + extends occurrence (app.ts:2).
+    expect(keys).toEqual(['app.ts:1', 'app.ts:2', 'shapes.ts:1']);
+    for (const e of result.edits) expect(e.oldText).toBe('Base');
+    // The `extends Base` occurrence IS a real edit whose live slice equals the name.
+    const extendsEdit = result.edits.find((e) => e.file === 'app.ts' && e.range.start.line === 2)!;
+    expect(extendsLine.slice(extendsEdit.range.start.column, extendsEdit.range.end.column)).toBe('Base');
+    // The `new Base()` name-token (app.ts:3) is NOT edited — the only edge at that
+    // statement is `instantiates`, whose recorded position is the `new` keyword, so
+    // span verification drops it (broad kind inclusion never mis-edits a sigil
+    // position). It survives instead as a whole-word leftover-mention FYI.
+    expect(result.edits.some((e) => e.range.start.line === 3)).toBe(false);
+    expect(result.leftoverMentions).toBeGreaterThanOrEqual(1);
+  });
+
+  it('an interface target includes its `implements` occurrence (class-hierarchy coverage)', async () => {
+    const implLine = 'export class Circle implements Shape { area() { return 1; } }';
+    const { dir, cg, queries } = await indexFixture({
+      'shapes.ts': 'export interface Shape { area(): number; }\n',
+      'app.ts': "import { Shape } from './shapes';\n" + implLine + '\n',
+    });
+    const result = deriveGraphRename({ queries, projectRoot: dir, targetId: ifaceId(cg, 'Shape'), newName: 'Figure' });
+
+    // The `implements Shape` occurrence (app.ts:2) is now a span-verified edit.
+    const implEdit = result.edits.find((e) => e.file === 'app.ts' && e.range.start.line === 2);
+    expect(implEdit).toBeDefined();
+    expect(implLine.slice(implEdit!.range.start.column, implEdit!.range.end.column)).toBe('Shape');
+    expect(result.edits.some((e) => e.file === 'shapes.ts')).toBe(true); // declaration
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D2 — Refusal candidate list on the HUMAN surface (Slice-1 UAT defect). FR-007
+// requires the candidate list on the human table too — the machine (`-j`) path
+// already carries it (T013), but `formatRenamePlanTable` rendered only
+// `refused: <reason>\n<message>`, so the ambiguous message ("Retry with one of
+// the listed selectors") listed nothing. Each refusal payload field renders on
+// the human table only when present: candidates (selector · kind · file:line),
+// validKinds (comma list), files (one per line), gatedEdits (file:line · tier).
+// Pure over a RenamePlan value object (no DB), like T013.
+// ---------------------------------------------------------------------------
+describe('D2 refusal candidate surface — formatRenamePlanTable (FR-007)', () => {
+  it('an ambiguous-target refusal lists every candidate with its selector, kind, and file:line', () => {
+    const table = formatRenamePlanTable({
+      newName: 'renamed',
+      applied: false,
+      refusal: {
+        reason: 'ambiguous-target',
+        message: '"handle" matches 2 symbols. Retry with one of the listed selectors.',
+        candidates: [
+          { name: 'handle', kind: 'method', file: 'models.ts', line: 2, selector: 'Worker.handle' },
+          { name: 'handle', kind: 'method', file: 'models.ts', line: 5, selector: 'Helper.handle' },
+        ],
+      },
+    });
+    expect(table).toContain('ambiguous-target');
+    // Both candidates' uniquely-selecting qualifiers appear on the human surface.
+    expect(table).toContain('Worker.handle');
+    expect(table).toContain('Helper.handle');
+    // …each with its kind and file:line, so a retry needs no file read (SC-003).
+    expect(table).toContain('method');
+    expect(table).toContain('models.ts:2');
+    expect(table).toContain('models.ts:5');
+  });
+
+  it('an invalid-argument refusal renders the valid-kinds list', () => {
+    const table = formatRenamePlanTable({
+      newName: 'renamed',
+      applied: false,
+      refusal: {
+        reason: 'invalid-argument',
+        message: '--kind "clazz" is not a recognized NodeKind.',
+        validKinds: ['function', 'method', 'class'],
+      },
+    });
+    expect(table).toContain('invalid-argument');
+    expect(table).toContain('function');
+    expect(table).toContain('method');
+    expect(table).toContain('class');
+  });
+
+  it('renders files (stale-span) and gatedEdits (heuristic-gated) payloads when present, and omits every optional block otherwise', () => {
+    const withFiles = formatRenamePlanTable({
+      newName: 'renamed',
+      applied: false,
+      refusal: { reason: 'stale-span', message: 'Live bytes drifted.', files: ['src/a.ts', 'src/b.ts'] },
+    });
+    expect(withFiles).toContain('src/a.ts');
+    expect(withFiles).toContain('src/b.ts');
+
+    const withGated = formatRenamePlanTable({
+      newName: 'renamed',
+      applied: false,
+      refusal: {
+        reason: 'heuristic-gated',
+        message: 'Below-exact edits block apply.',
+        gatedEdits: [
+          {
+            file: 'src/c.ts',
+            range: { start: { line: 7, column: 4 }, end: { line: 7, column: 9 } },
+            oldText: 'oldFn',
+            newText: 'newFn',
+            lineText: '    oldFn();',
+            confidence: 'heuristic',
+            source: 'graph',
+          },
+        ],
+      },
+    });
+    expect(withGated).toContain('src/c.ts:7');
+    expect(withGated).toContain('heuristic');
+
+    // A bare refusal (no optional payloads) renders only reason + message — no
+    // stray "candidates:" / "files:" headers leak in.
+    const bare = formatRenamePlanTable({
+      newName: 'renamed',
+      applied: false,
+      refusal: { reason: 'target-not-found', message: 'No symbol matches "oldFn".' },
+    });
+    expect(bare).toContain('target-not-found');
+    expect(bare).toContain('No symbol matches "oldFn".');
+    expect(bare).not.toMatch(/candidates:|valid kinds:|files:|gated edits:/);
   });
 });

@@ -19,6 +19,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `codegraph init` now adds `.codegraph/` to your project's `.gitignore` automatically (git repos only, and only when it isn't already ignored) — the local index, which now includes embedding vectors when configured, is machine-generated and should never be committed.
 - `codegraph install` can now set up Codex CLI per project, not just user-wide: choosing the local install location writes a project-scoped `.codex/config.toml` (which Codex reads in trusted projects) and adds the CodeGraph block to the repo's root `AGENTS.md`, and uninstall reverses both. Previously Codex was skipped with a "global only" warning when installing for just one project.
 - The LSP precision pass's safety limits can now be raised per project: a committed `codegraph.json` may set `lsp.caps` (for example `lsp.caps.fullIndexWorkItemsPerLanguage`) so a large codebase verifies its full candidate set instead of stopping at the built-in per-language caps. Invalid entries are warned about and ignored, and projects that set nothing keep the existing defaults.
+- `codegraph rename <target> <new-name>` previews a symbol rename as a dry-run plan — listing every file it would touch, each edit's before/after preview and a confidence rating, powered by a language server where one is available and graph-derived everywhere else — without changing a single file on disk, with `--json` for a machine-readable plan.
 
 ### Fixes
 

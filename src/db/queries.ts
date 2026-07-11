@@ -178,11 +178,44 @@ export interface LspEdgeCandidateCounts {
 }
 
 /**
- * SPEC-010 (graph-aware rename): one incoming `references` edge to a target,
- * denormalized with the referencing (source) node's file so the plan path can
- * build a graph `RenameEdit` without an extra getNodeById per edge. Positions
- * are the occurrence START only (UTF-16 code units) — the end column is derived
- * from the old name's length and span-verified (research Decision 8).
+ * SPEC-010 (graph-aware rename): the edge kinds a rename must edit — every kind
+ * whose SOURCE POSITION (`edges.line/col`) is a textual occurrence of the
+ * referenced symbol's name, NOT just `references`. Empirically grounded (a dist
+ * probe over a real TypeScript index): a directly-exported symbol's incoming
+ * edges land on the name at a `calls` site (`oldFn(...)`), an `imports` /
+ * re-export specifier (`import { oldFn }`), a `references` by-ref / type
+ * annotation / return type, and an `extends` / `implements` clause.
+ *
+ * `type_of` / `returns` / `overrides` / `instantiates` / `decorates` are the
+ * remaining symbol-naming kinds other language extractors emit (TS folds type &
+ * return annotations into `references`); they are included because span
+ * verification (FR-005 — `verifySpan` in graph-rename) is the per-edge safety
+ * filter that drops any edge whose recorded position does not carry the old name
+ * — which is exactly what makes this broad inclusion safe. An `instantiates` /
+ * `decorates` position that points at the `new` / `@` sigil (as TS records it)
+ * can never equal an identifier, so it is dropped, never mis-edited.
+ *
+ * EXCLUDED — the two structural membership kinds that never record a name
+ * occurrence: `contains` (parent→child; its position is NULL) and `exports`
+ * (module→symbol; re-export & import specifiers are recorded as `imports`, so
+ * excluding it loses no occurrence). Tier classification (`classifyEdgeConfidence`)
+ * and the self-loop guard still apply per edge downstream in graph-rename.
+ */
+const RENAME_RELEVANT_EDGE_KINDS: readonly EdgeKind[] = [
+  'references', 'calls', 'imports', 'extends', 'implements',
+  'type_of', 'returns', 'instantiates', 'overrides', 'decorates',
+];
+
+/** Placeholder list (`?, ?, …`) binding {@link RENAME_RELEVANT_EDGE_KINDS} into an IN(). */
+const RENAME_RELEVANT_EDGE_KINDS_PLACEHOLDERS = RENAME_RELEVANT_EDGE_KINDS.map(() => '?').join(', ');
+
+/**
+ * SPEC-010 (graph-aware rename): one incoming name-occurrence edge to a target
+ * (any {@link RENAME_RELEVANT_EDGE_KINDS} kind), denormalized with the
+ * referencing (source) node's file so the plan path can build a graph
+ * `RenameEdit` without an extra getNodeById per edge. Positions are the
+ * occurrence START only (UTF-16 code units) — the end column is derived from the
+ * old name's length and span-verified (research Decision 8).
  */
 export interface IncomingReferenceRow {
   /** `edges.source` — id of the node the reference occurs in. */
@@ -1980,15 +2013,18 @@ export class QueryBuilder {
   }
 
   /**
-   * SPEC-010 (graph-aware rename): every incoming `references` edge to
-   * `targetId`, JOINed to the referencing (source) node so each row already
-   * carries the file to edit — the plan path builds a graph `RenameEdit` from
-   * this alone, avoiding an N+1 getNodeById per edge. Scoped to kind
-   * 'references' (the name-occurrence edges; a `calls`/`instantiates` edge is a
-   * dispatch site, out of scope here) and to LSP-active edges (SPEC-008 parity
-   * with {@link getIncomingEdges}). `line`/`col` are the occurrence START point;
-   * `metadata` carries resolvedBy / confidence / refName for the FR-004 tier and
-   * old-name recovery.
+   * SPEC-010 (graph-aware rename): every incoming name-occurrence edge to
+   * `targetId` — the full {@link RENAME_RELEVANT_EDGE_KINDS} set (`references`
+   * PLUS `calls` / `imports` / `extends` / `implements` / … ), JOINed to the
+   * referencing (source) node so each row already carries the file to edit — the
+   * plan path builds a graph `RenameEdit` from this alone, avoiding an N+1
+   * getNodeById per edge. A `calls` call site and an `imports` specifier ARE
+   * rename occurrences (their position names the target); span verification
+   * (FR-005, downstream in graph-rename) drops any edge whose recorded position
+   * does not carry the old name, so broad inclusion is safe. Scoped to LSP-active
+   * edges (SPEC-008 parity with {@link getIncomingEdges}). `line`/`col` are the
+   * occurrence START point; `metadata` carries resolvedBy / confidence / refName
+   * for the FR-004 tier and old-name recovery.
    */
   getReferencesToNode(targetId: string): IncomingReferenceRow[] {
     if (!this.stmts.getReferencesToNode) {
@@ -1998,10 +2034,10 @@ export class QueryBuilder {
                 n.file_path AS file_path
          FROM edges e
          JOIN nodes n ON n.id = e.source
-         WHERE e.target = ? AND e.kind = 'references' AND ${activeEdgePredicate('e')}`,
+         WHERE e.target = ? AND e.kind IN (${RENAME_RELEVANT_EDGE_KINDS_PLACEHOLDERS}) AND ${activeEdgePredicate('e')}`,
       );
     }
-    const rows = this.stmts.getReferencesToNode.all(targetId) as Array<{
+    const rows = this.stmts.getReferencesToNode.all(targetId, ...RENAME_RELEVANT_EDGE_KINDS) as Array<{
       source: string;
       line: number | null;
       col: number | null;

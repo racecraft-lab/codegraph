@@ -24,10 +24,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { QueryBuilder } from '../db/queries';
 import { detectLanguage } from '../extraction/grammars';
-import { EffectiveLspConfig, isLspLanguage } from '../lsp';
+import { EffectiveLspConfig, isLspLanguage, probeLspServerCommand } from '../lsp';
 import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
 import { deriveLspRename } from './lsp-rename';
-import { resolveTarget } from './target-resolver';
+import { LspPathDisposition, resolveTarget } from './target-resolver';
 import { EditSource, PlanConfidence, RenameEdit, RenamePlan, SourcePosition, Target, TargetSelector } from './types';
 
 export interface PlanRenameOptions {
@@ -54,7 +54,15 @@ export interface PlanRenameOptions {
 export async function planRename(options: PlanRenameOptions): Promise<RenamePlan> {
   const { queries, selector, newName } = options;
 
-  const target = resolveTarget({ queries, selector });
+  // FR-021a validation + FR-009/FR-010 kind coverage: pass the validated new name
+  // and a lazy LSP-path probe consulted only for a local/parameter target (the one
+  // kind whose coverage differs by path — see {@link lspPathDisposition}).
+  const target = resolveTarget({
+    queries,
+    selector,
+    newName,
+    lspPath: (resolved) => lspPathDisposition(options, resolved),
+  });
   if ('reason' in target) {
     return { newName, applied: false, refusal: target };
   }
@@ -120,6 +128,24 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
 
   const graph = deriveGraphRename({ queries, projectRoot, targetId, newName });
   return { edits: graph.edits, source: 'graph', leftoverMentions: graph.leftoverMentions };
+}
+
+/**
+ * The FR-003a fork disposition for a resolved target's language, for the resolver's
+ * FR-009/FR-010 kind check. Mirrors {@link deriveEdits}'s fork: the LSP path is
+ * `available` only when LSP is enabled, a server covers the language, AND the
+ * SPEC-008 probe resolves its command; a covered-but-unprobeable command is
+ * `unavailable` (a CONFIGURED server that did not respond — the FR-003a honesty
+ * case), and a disabled/uncovered language is `absent`. resolveTarget calls this
+ * lazily (only for a local/parameter target), so the probe is paid only when it
+ * decides the outcome — every function/method/class rename skips it entirely.
+ */
+function lspPathDisposition(options: PlanRenameOptions, target: Target): LspPathDisposition {
+  const { lspConfig, projectRoot, env } = options;
+  const language = detectLanguage(target.file);
+  if (!lspConfig.enabled || !isLspLanguage(language)) return 'absent';
+  const probe = probeLspServerCommand(lspConfig.servers[language], { cwd: projectRoot, env });
+  return probe.state === 'available' ? 'available' : 'unavailable';
 }
 
 /** Recover the resolved target's declaration node id (unique by construction). */
