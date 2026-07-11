@@ -337,33 +337,6 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-No spec is currently in flight.
-
-SPEC-001, SPEC-002, SPEC-003, SPEC-004, SPEC-008, SPEC-023, and SPEC-025 are
-complete and archived; provenance and recovery commands live in
-`.specify/memory/archive-reports/`.
-
-Canonical completed-spec artifacts:
-- SPEC-002: local embedding fallback in `src/embeddings/` plus model-fetch and
-  local-provider tests.
-- SPEC-003: query-time hybrid semantic search in `src/search/hybrid.ts` with
-  mode plumbing across library/MCP/CLI, degradation hints, staleness
-  write-version token, and the hybrid CI gates in `__tests__/hybrid-*.test.ts`.
-  Dormant without embedding env; active in this repo's dogfood setup.
-- SPEC-004: web-stack decision in `docs/design/web-framework-decision.md`.
-- SPEC-008: default-off LSP precision layer in `src/lsp/`, LSP provenance schema
-  and query updates, sync integration, validation gates, and zero-unowned-row
-  parity evidence.
-- SPEC-023: OCaml grammar, extractor, Dune-aware resolver, fixtures, tests, and
-  grammar docs.
-- SPEC-025: plugin-channel decision in `docs/design/plugin-channel-decision.md`
-  (the contract SPEC-026 implements).
-
-SPEC-005 is ready to scaffold. SPEC-006 and SPEC-007 remain
-downstream of SPEC-005. SPEC-010 is ready because SPEC-008 shipped the LSP
-substrate. SPEC-024 is dormant unless future parity drift creates a concrete
-unowned language, feature, or capability row. SPEC-026 (plugin-channel
-distribution — Claude Code + Codex plugins carrying the MCP server, prompt
-hook, skills, and agents) is ready to scaffold now that SPEC-025's decision
-document is merged.
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
 <!-- SPECKIT END -->

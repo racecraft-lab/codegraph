@@ -63,7 +63,7 @@ reviewable-LOC ceiling:
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | |
+| Specify | `/speckit-specify` | ✅ Complete | 26 FRs, 4 US (slice partition clean), 14 acceptance scenarios, 8 SC; 3 deliberate [NEEDS CLARIFICATION] markers → Clarify |
 | Clarify | `/speckit-clarify` | ⏳ Pending | Optional but recommended |
 | Plan | `/speckit-plan` | ⏳ Pending | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
@@ -105,6 +105,26 @@ Each phase requires **human review and approval** before proceeding:
 | VII. Dormancy discipline | No web server starts by default — `serve --web` is explicit opt-in; loopback default; fail-closed non-loopback | Integration test: bare `codegraph serve` / `serve --mcp` opens no HTTP port |
 
 **Constitution Check:** ✅ (validated at scaffold; re-verify at G3)
+
+### Autopilot Pre-Flight Record (Step -1 + Step 0, 2026-07-10)
+
+| Item | Value |
+|------|-------|
+| Archive Sweep | No-op: worktree `specs/` contains only the current target (excluded); main `specs/` empty |
+| check-prerequisites | all_pass=true (workflow file resolved via worktree-relative path from main root) |
+| Branch | `005-local-http-server` in `.worktrees/005-local-http-server/` — ON_FEATURE_BRANCH=true, IS_WORKTREE=true (direct git evidence; runner's branch probe anchors to the main checkout and reports `main` — recorded as a runner-anchoring quirk, direct evidence governs) |
+| PROJECT_COMMANDS | BUILD=`npm run build` · TYPECHECK=`npm run typecheck` · UNIT_TEST=`npm test` · LINT=N/A · INTEGRATION_TEST=N/A (vitest suite is the integration suite) · FULL_VERIFY=`npm run typecheck && npm run build && npm test` (runner's detect-commands emitted `npm build`/`npm typecheck`; corrected against package.json scripts) |
+| PRESET_CONVENTIONS | Top layer `claude-ask-questions` v1.0.0 (spec/plan/tasks templates); `codegraph-project-overrides` v1.0.0 (constitution test exceptions: bug fixes start from a failing test; installer changes update installer-targets contract suite); `speckit-pro-reviewability` v1.0.0 |
+| Settings | No `.claude/speckit-pro.local.md` → defaults: gate-failure=stop, auto-commit=on (per-phase), consensus default |
+| CONFIDENCE_GATE_MODE | `advisory` (resolved once at Step 0.6b; G6.5 reads this value) |
+| PROJECT_IMPLEMENTATION_AGENT | None detected (`.claude/agents/` has only `retrieval-guardian`, a reviewer) → implementation tasks route to `speckit-pro:implement-executor`; `retrieval-guardian` reserved for post-implement review if any retrieval file is touched (expected none) |
+| AGENT_TEAMS_AVAILABLE | true (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`); parallel runs use batched background subagents (equivalent wall-clock, no cross-task coordination needed) |
+| MCP availability | codegraph (dogfood, active), context7, tavily, RepoPromptCE, qmd — passed to subagents as research surface |
+| Tier-2 relocation | Suppressed: current spec is in-flight and already `.process/`-normalized with `structureVersion: 1` SPEC-MOC; no other candidates exist |
+| Hooks | `auto_execute_hooks: true`; all `speckit.git.commit` before/after hooks SKIPPED as duplicates of the autopilot's own per-phase commits; `before_specify` `speckit.git.feature` SKIPPED (branch already exists); `after_specify`/`after_plan` `speckit.agent-context.update` ACCEPTED; `after_implement` review/verify/verify-tasks/cleanup/retrospective ACCEPTED, executed as the canonical Post: tasks |
+| Constitution validation (G0) | ✅ PASS — `npm run typecheck` clean, `npm run build` clean, full suite **171/171 files, 2912 passed, 7 skipped, 0 failed (65s)**. ⚠️ Operational finding: the dev shell (direnv `.envrc.local`) injects `CODEGRAPH_EMBEDDING_*` env; a suite run WITH that env mass-fails (~390 tests) from remote-embedding contention. **Every test run in this autopilot uses** `env -u CODEGRAPH_EMBEDDING_URL -u CODEGRAPH_EMBEDDING_MODEL -u CODEGRAPH_EMBEDDING_DIMS -u CODEGRAPH_EMBEDDING_TIMEOUT_MS npm test` (CI conditions). |
+| Doctor health check | PASS (doctor skill not installed → manual read-only diagnostic): `.specify/` structure complete, constitution v1.1.0, git state exact, Node v24.11.1 |
+| Deferred runner ops | `reviewability-gate` tasks/pre-PR modes, `generate-uat-skeleton`, `final-reviewability-backstop` — deferred on installed runner; fallback evidence chains per SKILL guidance |
 
 ---
 
@@ -216,13 +236,17 @@ existing daemon/query-pool — local-first, dormant by default, no hosted servic
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | |
-| User Stories | |
-| Acceptance Criteria | |
+| Functional Requirements | 26 (FR-001…FR-026, contiguous; Q-numbers cited inline) |
+| User Stories | 4 — US1 P1 / US4 P2 / US2 P3 → Slice 1; US3 P4 → Slice 2 (matches recorded split) |
+| Acceptance Criteria | 14 scenarios + 8 success criteria (SC-008 = self-repo dogfood step) + 9 edge cases |
+
+G1 (2026-07-10): PASS as a routing decision — 3 deliberate `[NEEDS CLARIFICATION]` markers (FR-010 repo-id scheme; FR-012 port/`--mcp` combination/IPv6 loopback; FR-023 SSE subscription + shutdown-during-job), one per planned Clarify session. Direct `grep -c` = 3 governs; the runner `validate-gate` G1 probe reported 0 markers (main-root anchoring quirk — same as check-prerequisites branch probe). Template resolved from `speckit-pro-reviewability` v1.0.0 (CLI-authoritative top layer for spec-template; the `claude-ask-questions` preset only carries clarify/checklist templates). `generate-spec-index` is not registered on the installed runner → spec-MOC regen recorded as deferred (generated zones remain empty markers, per template v1). Hook `agent-context.update` executed via subagent; `git.commit` hooks folded into the phase commit.
 
 ### Files Generated
 
-- [ ] `specs/005-local-http-server/spec.md`
+- [x] `specs/005-local-http-server/spec.md`
+- [x] `specs/005-local-http-server/checklists/requirements.md`
+- [x] `.specify/feature.json` (feature_directory pointer)
 
 ### SpecKit Traceability Markers
 
