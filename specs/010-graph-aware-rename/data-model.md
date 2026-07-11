@@ -11,7 +11,7 @@ The computed result of a dry-run (and the recomputed basis of an apply — FR-01
 |---|---|---|
 | `target` | Target (resolved) | The disambiguated symbol: name, kind, declaration file + range. |
 | `newName` | string | Requested replacement identifier. |
-| `edits` | RenameEdit[] | Ordered; an empty-references plan still contains the declaration edit (FR-002, US1 scenario 3). |
+| `edits` | RenameEdit[] | Ordered deterministically by (file, range start line, start character) for byte-identical CLI≡MCP parity (SC-005/FR-027); non-empty — an empty-references plan still contains the declaration edit (FR-002, US1 scenario 3). |
 | `confidence` | `all-exact` \| `contains-heuristic` | Aggregate over `edits`; drives the apply gate (FR-015). |
 | `source` | `lsp` \| `graph` | Whole-plan derivation path when uniform; per-edit `source` is authoritative (FR-003). |
 | `leftoverMentions` | integer? | Optional, non-gating FYI count of un-edited old-name occurrences (FR-013). |
@@ -28,6 +28,7 @@ A single change within one file (FR-002; surfaced fields fixed by FR-027).
 | `range` | {start, end} | LSP: the `TextEdit.range` verbatim. Graph: `start = (line, col)` from the edge/unresolved-ref position; `end = (line, col + oldText UTF-16 length)` (research Decision 8). |
 | `oldText` | string | The old name occurrence; verified to equal the live-byte slice at `range` (FR-005/FR-016). |
 | `newText` | string | The new name occurrence. |
+| `lineText` | string | The edited span's full source line **before** the edit (no trailing newline). Carries before/after-preview context so a JSON/MCP consumer satisfies SC-001 without a Read; already held from the plan-time span read (FR-005). |
 | `confidence` | `exact` \| `heuristic` | The FR-004 table below — necessary but not sufficient; span verification is an independent additional gate. |
 | `source` | `lsp` \| `graph` | Derivation path for this edit. |
 
@@ -41,7 +42,7 @@ A symbol matching an ambiguous selector (FR-007). Fields: `name`, `kind`, `file`
 The two-valued rating `exact` | `heuristic` on each edit. Pure function of `(resolvedBy, provenance)` per the FR-004 table, computed in `src/refactor/confidence.ts`. **Always** paired with span verification — a live-byte mismatch drops the edit regardless of tier (FR-004 final clause).
 
 ### ApplyResult (Apply Result)
-The outcome of an apply (Slice 2). `outcome` ∈ ApplyOutcome; plus the touched-file set, the post-check status, and — on `rolled-back`/`rollback-failed` — the dangling references and the recovery report.
+The outcome of an apply (Slice 2). `outcome` ∈ ApplyOutcome; plus the touched-file set, the post-check status, and — on `rolled-back` — the machine-actionable `danglingReferences` list (file + range + old-name occurrence, FR-019), or — on `rollback-failed` — the `recovery` object (`restoredFiles`, `unrestoredFiles`, `recoveryDir`, FR-019a). Both are modeled in `rename-plan.schema.json` so the surface payload is complete without a Read.
 
 ## ApplyOutcome — state transitions (Slice 2)
 
@@ -67,7 +68,7 @@ write each file: temp-sibling → atomic rename (FR-020)
 re-sync via CodeGraph.sync() — resolution-complete (FR-018, research Decision 3)
    ├─ sync fails / reports no change (lock contention) ────▶ rollback ─┐
    │                                                                    │
-   ▼  re-sync confirmed (filesModified > 0)                            │
+   ▼  re-sync completed (NOT the lock-failure zero-shape; filesChecked > 0) │
 post-check: touched-file-scoped dual assertion (FR-018)                │
    ├─ dangling old-name ref OR node named old-name remains ─▶ rollback ─┤
    │                                                                    │
@@ -80,7 +81,11 @@ outcome: applied (exit 0) ◀─────────────────
 ```
 
 - **Invariant (SC-002)**: every apply ends in exactly one of `applied` (post-check green) or a byte-identical-restored state — a partially-renamed workspace never occurs, except the documented hard mid-write process-kill window (FR-020).
+- **Write integrity (FR-020)**: the `write each file` step edits only the span-verified old-name occurrences and preserves every other byte (line endings, trailing newline, BOM, encoding) verbatim; a file's edits are applied **descending / right-to-left** by `range` start so an applied edit never invalidates an unapplied offset; identical duplicate ranges are de-duplicated and a genuine partial overlap (only reachable from a misbehaving LSP workspace edit — the graph path's occurrences are disjoint by FR-005) degrades that rename to the graph path via FR-003a.
+- **Concurrency (FR-018)**: for an MCP-served apply, the watcher and apply act on one shared `CodeGraph` instance, so their `sync()` calls are the same method on the same instance and are already totally ordered by the existing non-reentrant index mutex — no additional mutex-holding across write→re-sync→post-check and no watcher suspension (neither exists nor is needed: holding the mutex across the window would deadlock since `sync()` unconditionally re-acquires it, and the watcher has no pause/suspend surface). Apply instead discriminates its own `sync()` result: the lock-failure zero-shape (`filesChecked: 0`, `durationMs: 0`) triggers rollback; any other result — including a watcher-already-synced empty one (`filesChecked > 0`, `filesModified = 0`) — proceeds to the post-check.
+- **No index explosion (SC-010)**: the re-sync is a name substitution over already-indexed files; total node/edge counts stay stable across rename + re-sync (old-named node replaced by new-named node, references re-resolve in place). A count increase is an index-integrity regression.
 - Snapshots are held **only until the post-check passes** (FR-020). `rollback-failed` is the **sole** error-shaped outcome (FR-019a); every other terminal is success-shaped (FR-023).
+- Every refusal/terminal payload is machine-actionable (schema `refusal` / result fields), each sufficient to act without a file read: `ambiguous-target` → `candidates` (with selectors); `heuristic-gated` → `gatedEdits`; `stale-span` → `files` (the drifted files, FR-016); `out-of-root`/`scope-ignored` → `files`; `rolled-back` → `danglingReferences` (FR-019); `rollback-failed` → `recovery` (FR-019a).
 
 ## Confidence Tier — FR-004 decision table (authoritative)
 

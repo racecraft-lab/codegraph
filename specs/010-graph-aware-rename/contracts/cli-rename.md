@@ -24,6 +24,23 @@ codegraph rename <target> <new-name> [options]
 
 Slice 1 ships **only** `--file`, `--kind`, `-j/--json`, `--path`. `--apply`/`--include-heuristic` arrive with the Slice-2 apply engine.
 
+## CLI ↔ MCP parameter mapping (FR-021)
+
+One contract, two surfaces. Every CLI flag/positional maps one-to-one to a `codegraph_rename` MCP camelCase parameter, with two deliberate asymmetries called out:
+
+| CLI (positional / flag) | MCP parameter | Required | Notes |
+|---|---|---|---|
+| `<target>` | `target` | yes | Identical semantics (name, optionally `Class.method`). |
+| `<new-name>` | `newName` | yes | camelCase rename of the same value. |
+| `--file <path>` | `file` | no | Targeting qualifier. |
+| `--kind <kind>` | `kind` | no | Targeting qualifier (a NodeKind). |
+| `--apply` | `apply` | no (default false) | The single side-effect trigger. |
+| `--include-heuristic` | `includeHeuristic` | no (default false) | Confidence-gate escape; no effect on a dry-run. |
+| `--path <dir>` | `projectPath` | no | Project root (shared convention). |
+| `-j, --json` | *(none)* | — | Output-encoding flag only. The MCP result is **always** the structured plan JSON, so there is no parameter to mirror. |
+
+Input validation (FR-021a) is identical on both surfaces: an empty/invalid `newName`, a `newName` equal to the target's current name, or an unknown `kind` value is a success-shaped `invalid-argument` refusal (CLI exit `2`), not a write and not an error.
+
 ## Default behavior (dry-run — FR-001)
 
 With no `--apply`, the command **always** produces a plan and writes nothing. Default output is a human-readable table grouped by file: each group lists the file path, and per edit the range, a before/after preview, and the per-edit confidence tier; the footer shows the aggregate confidence and (when computed) the leftover-mention FYI count (FR-002/FR-027). `-j/--json` emits the schema object instead.
@@ -34,7 +51,7 @@ With no `--apply`, the command **always** produces a plan and writes nothing. De
 |---|---|---|
 | `0` | A dry-run plan was produced, **or** an `--apply` completed post-check-green. The two success states deliberately share `0` (the caller knows whether it passed `--apply`; a non-zero for the common dry-run success would break shell chaining). | Slice 1 (dry-run) / Slice 2 (apply) |
 | `1` | Unexpected internal or usage error. | Slice 1 & 2 |
-| `2` | A recoverable refusal with zero writes — the CLI-native encoding of the MCP success-shaped refusals (FR-023's list: ambiguous target, unsupported/excluded kind, heuristic-gated, stale span, out-of-root, scope-ignored, not indexed, target not found). | Slice 1 (targeting/kind/not-indexed) / Slice 2 (adds gate/span/jail) |
+| `2` | A recoverable refusal with zero writes — the CLI-native encoding of the MCP success-shaped refusals (FR-023's list: ambiguous target, unsupported/excluded kind, invalid argument, heuristic-gated, stale span, out-of-root, scope-ignored, not indexed, target not found). Refusal detail (candidates / gated edits / drifted files / offending files) is carried in the same `refusal` object the MCP surface returns; with `-j/--json` the CLI prints that object and still exits `2`. | Slice 1 (targeting/kind/invalid-arg/not-indexed) / Slice 2 (adds gate/span/jail) |
 | `3` | An apply wrote then **rolled back** byte-identically (post-check found dangling refs — FR-019). | Slice 2 only |
 | `4` | A **failed rollback restore** — the sole malfunction code (FR-019a). Carries the recovery-directory report. | Slice 2 only |
 

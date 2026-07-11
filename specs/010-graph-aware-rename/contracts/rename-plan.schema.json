@@ -2,9 +2,9 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://codegraph/spec-010/rename-plan.schema.json",
   "title": "RenamePlan",
-  "description": "The stable, surface-neutral result of a codegraph rename. Emitted byte-identically by the CLI `-j, --json` flag (FR-027) and the codegraph_rename MCP tool result (SC-005). Field names are identical across both surfaces. All offsets are UTF-16 code units (SPEC-008 pin).",
+  "description": "The stable, surface-neutral result of a codegraph rename. Emitted byte-identically by the CLI `-j, --json` flag (FR-027) and the codegraph_rename MCP tool result (SC-005). Field names are identical across both surfaces. All offsets are UTF-16 code units (SPEC-008 pin). Byte-identical parity requires a canonical serialization: stable object-key order, UTF-8, no insignificant whitespace, and the deterministic array ordering noted on `edits`. The MCP tool returns this JSON as its text result content (matching the repo's textResult convention in src/mcp/tools.ts), not structuredContent. One envelope carries three result shapes; a consumer branches on `applied` and `refusal`: (1) a successful PLAN (dry-run, or an apply that reached post-check-green) carries `target`, `edits` (>=1, incl. the declaration edit), `confidence`, and per-edit `source`, with `applied` false (dry-run) or true (apply-green); (2) a recoverable REFUSAL carries `refusal` (success-shaped, `applied` false) and MAY omit `target`/`edits`/`confidence`, since a refused request (ambiguous-target, not-indexed, target-not-found, invalid-argument, ...) has no resolved target or edit set; (3) an APPLY terminal additionally carries `outcome`, with `danglingReferences` on `rolled-back` and `recovery` on `rollback-failed`. Only `newName` (the echoed request) and `applied` are present in every shape, so they are the sole always-required fields.",
   "type": "object",
-  "required": ["target", "newName", "edits", "confidence", "applied"],
+  "required": ["newName", "applied"],
   "additionalProperties": false,
   "properties": {
     "target": {
@@ -21,8 +21,9 @@
     },
     "newName": { "type": "string", "description": "The requested new name." },
     "edits": {
-      "description": "Ordered set of edits the plan would make. An empty-references plan still contains the declaration edit (never an error).",
+      "description": "Ordered set of edits the plan would make, sorted deterministically by (file path, then range start line, then start character) so the CLI --json and MCP results are byte-identical (SC-005/FR-027). An empty-references plan still contains the declaration edit (never an empty array).",
       "type": "array",
+      "minItems": 1,
       "items": { "$ref": "#/definitions/edit" }
     },
     "confidence": {
@@ -49,7 +50,22 @@
       "type": "string",
       "enum": ["applied", "refused", "rolled-back", "rollback-failed"]
     },
-    "refusal": { "$ref": "#/definitions/refusal" }
+    "refusal": { "$ref": "#/definitions/refusal" },
+    "danglingReferences": {
+      "description": "Present on outcome `rolled-back` (FR-019): the old-name references the post-check found still dangling after the write, which forced the unconditional rollback. Machine-actionable — the caller sees exactly what blocked the rename without reading a file.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "range", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "file": { "type": "string", "description": "Workspace-relative path of the file still carrying the old name." },
+          "range": { "$ref": "#/definitions/range" },
+          "name": { "type": "string", "description": "The old-name occurrence that dangled." }
+        }
+      }
+    },
+    "recovery": { "$ref": "#/definitions/recovery" }
   },
   "definitions": {
     "position": {
@@ -72,13 +88,14 @@
     },
     "edit": {
       "type": "object",
-      "required": ["file", "range", "oldText", "newText", "confidence", "source"],
+      "required": ["file", "range", "oldText", "newText", "lineText", "confidence", "source"],
       "additionalProperties": false,
       "properties": {
         "file": { "type": "string", "description": "Workspace-relative path of the edited file." },
         "range": { "$ref": "#/definitions/range" },
         "oldText": { "type": "string", "description": "The exact span text being replaced (the old name occurrence). Verified against live bytes." },
         "newText": { "type": "string", "description": "The replacement text (the new name occurrence)." },
+        "lineText": { "type": "string", "description": "The edited span's full source line BEFORE the edit (verbatim, no trailing newline). Lets a JSON/MCP consumer render the before/after preview without opening the file (SC-001); the engine already holds these bytes from the plan-time span read (FR-005). When multiple edits share a `file` and `range` start line, each carries an identical lineText; the after-line for that source line is composed by applying every such edit to a single copy, ordered right-to-left by `range` start character, rather than treating each edit's lineText as an independent before/after pair (FR-027)." },
         "confidence": {
           "type": "string",
           "enum": ["exact", "heuristic"],
@@ -102,6 +119,7 @@
             "ambiguous-target",
             "unsupported-kind-graph-local",
             "excluded-kind",
+            "invalid-argument",
             "heuristic-gated",
             "stale-span",
             "out-of-root",
@@ -127,7 +145,7 @@
           }
         },
         "files": {
-          "description": "For out-of-root / scope-ignored: the offending file path(s) that caused the whole-plan refusal (FR-017).",
+          "description": "For out-of-root / scope-ignored (FR-017): the offending file path(s) that caused the whole-plan refusal. Also carries the drifted file(s) for a `stale-span` refusal (FR-016), so the caller can act (re-sync) without a file read.",
           "type": "array",
           "items": { "type": "string" }
         },
@@ -135,7 +153,23 @@
           "description": "For heuristic-gated: the below-exact edits blocking apply (FR-015).",
           "type": "array",
           "items": { "$ref": "#/definitions/edit" }
+        },
+        "validKinds": {
+          "description": "For invalid-argument on an unrecognized `kind` value (FR-021a): every recognized NodeKind, so the caller can retry with a valid value without a file read.",
+          "type": "array",
+          "items": { "type": "string" }
         }
+      }
+    },
+    "recovery": {
+      "description": "Present ONLY on outcome `rollback-failed` (FR-019a) — the sole error-shaped malfunction (MCP isError:true / CLI exit 4). Reports the post-rollback restore state so a caller can retry the restore step alone (an idempotent write-back of known snapshot bytes), never the rename itself.",
+      "type": "object",
+      "required": ["restoredFiles", "unrestoredFiles", "recoveryDir"],
+      "additionalProperties": false,
+      "properties": {
+        "restoredFiles": { "type": "array", "items": { "type": "string" }, "description": "Touched files confirmed restored byte-identically from snapshot." },
+        "unrestoredFiles": { "type": "array", "items": { "type": "string" }, "description": "Touched files whose snapshot could NOT be written back (EACCES / ENOSPC / EPERM / ...)." },
+        "recoveryDir": { "type": "string", "description": "Per-incident directory holding the unrestored snapshots: .codegraph/rename-recovery-<pid>-<hex>/." }
       }
     }
   }

@@ -46,7 +46,7 @@ Added to the `tools` array in `src/mcp/tools.ts` (Slice 2, additive) and joined 
 
 ## Result (SC-005 — byte-identical to CLI `--json`)
 
-Success-shaped result whose `structuredContent` / text payload is the `RenamePlan` JSON (see `rename-plan.schema.json`). Field names identical to the CLI `--json` output. A dry-run returns `applied: false`; an `apply: true` call returns the apply `outcome`.
+Success-shaped result whose **text** payload (`textResult`, matching the repo's text-payload tool convention — `src/mcp/tools.ts` uses no `structuredContent`) is the `RenamePlan` JSON (see `rename-plan.schema.json`), canonically serialized (stable key order, UTF-8, no insignificant whitespace) so it is **byte-identical** to the CLI `-j/--json` stdout (SC-005/FR-027). Field names identical to the CLI `--json` output; `edits` (and the `candidates`/`gatedEdits`/`files` arrays) carry the deterministic ordering FR-027 pins. Each edit carries `lineText` (the source line before the edit) so the agent renders before/after without a Read (SC-001). A dry-run returns `applied: false`; an `apply: true` call returns the apply `outcome`, plus `danglingReferences` on `rolled-back` and the `recovery` object on `rollback-failed`.
 
 ## Error shaping (FR-023 — success-shaped except one malfunction)
 
@@ -54,7 +54,7 @@ Follows the existing `ToolHandler.execute` discipline (tools.ts:1449-1465):
 
 | Condition | Shape | Mechanism |
 |---|---|---|
-| ambiguous target, unsupported/excluded kind, heuristic-gated apply, stale span, out-of-root plan, scope-ignored plan, project not indexed, target not found | **success-shaped** guidance (`textResult`, no `isError`) carrying the `refusal` object that names the fix | like `NotIndexedError → textResult` |
+| ambiguous target, unsupported/excluded kind, invalid argument (empty/invalid new name, no-op rename, unknown kind — FR-021a), heuristic-gated apply, stale span, out-of-root plan, scope-ignored plan, project not indexed, target not found | **success-shaped** guidance (`textResult`, no `isError`) carrying the `refusal` object that names the fix | like `NotIndexedError → textResult` |
 | **failed rollback restore** (FR-019a) — side effects already landed, restore failed partway | **error-shaped** (`isError: true`, `errorResult`) carrying the restored/unrestored file lists and the `.codegraph/rename-recovery-<pid>-<hex>/` directory; MAY note that retrying the restore step alone is safe; MUST NOT invite re-running the rename | the sole malfunction on this surface |
 
 `isError: true` is otherwise reserved (security refusals / real malfunctions) — reserved so agents don't abandon the tool (Principle VI; `src/mcp/CLAUDE.md`).
