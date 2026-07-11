@@ -23,6 +23,7 @@ import * as crypto from 'crypto';
 import {
   handleApiRequest,
   buildReadRoutes,
+  buildJobRoutes,
   type RouteContext,
   type HandlerResult,
   type ReadApiDeps,
@@ -32,6 +33,7 @@ import { internalError, apiError } from './errors';
 import { resolveBindSecurity, isAllowedHostHeader } from './auth';
 import { serveStatic } from './static';
 import { attachDaemonClient, type DaemonReadClient } from './daemon-client';
+import { JobRegistry, defaultRearmWatcher, type JobDeps } from './jobs';
 import { CodeGraphPackageVersion } from '../mcp/version';
 import { listDaemons } from '../mcp/daemon-registry';
 import { findNearestCodeGraphRoot } from '../directory';
@@ -66,6 +68,14 @@ export interface WebServerOptions {
    * property. The sink MUST stay local (no external egress, Constitution VII).
    */
   logger?: (message: string) => void;
+  /**
+   * SPEC-005 Slice-2 test seam (FR-020..FR-023): override the reindex job
+   * subsystem's injectable dependencies (index runner, lock probe, watcher
+   * re-arm sender, retry-window timing). Production leaves this unset — the real
+   * defaults open a `CodeGraph`, probe the on-disk lock, and send the re-arm
+   * control message over the daemon socket. Mirrors the `spawnDaemon` seam.
+   */
+  jobDeps?: Partial<JobDeps>;
 }
 
 /** A running web server: the actually-bound address and a clean shutdown. */
@@ -215,7 +225,23 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
     getClient,
     isRepoIndexed: (root) => findNearestCodeGraphRoot(root) !== null,
   };
-  const routes = buildReadRoutes(readDeps);
+
+  // Slice-2 reindex jobs (FR-020..FR-024): an in-memory latest-job-per-repo
+  // registry. Jobs run IN this serve process (FR-021); the watcher re-arm
+  // (FR-021a) defaults to the socket control-message sender. Tests inject
+  // `options.jobDeps` (index runner / lock probe / re-arm spy / retry timing).
+  const jobRegistry = new JobRegistry({
+    rearmWatcher: defaultRearmWatcher,
+    ...(options.jobDeps ?? {}),
+  });
+
+  // Read routes and job routes are built by SEPARATE builders: the read-slice
+  // OpenAPI contract walk asserts a bijection over `buildReadRoutes` (and that
+  // the document omits the reindex surface), so the job routes must not join it.
+  const routes = [
+    ...buildReadRoutes(readDeps),
+    ...buildJobRoutes({ resolveRepo, registry: jobRegistry }),
+  ];
 
   const server = http.createServer((req, res) => {
     void handleHttp(req, res);
@@ -260,6 +286,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
         params: {},
         query,
         headers: req.headers as Record<string, string | string[] | undefined>,
+        // The raw req/res are handed through for the SSE endpoint (FR-023), which
+        // streams frames directly. Every other handler ignores them.
+        req,
+        res,
       };
 
       // FR-014 Bearer scope: on a token-bound bind, handleApiRequest 401s every
@@ -267,6 +297,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       const apiResult = await handleApiRequest(routes, ctx, security);
       if (apiResult) {
         status = apiResult.status;
+        // The SSE handler already took over the response (headers + frames
+        // written); serializing a JSON body here would `writeHead` twice.
+        if (apiResult.hijacked) return;
         writeResult(res, apiResult);
         return;
       }
@@ -312,22 +345,43 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   const close = (): Promise<void> => {
     if (closing) return closing;
     closing = (async () => {
-      // (1) stop accepting new connections + (3) release the bound port. Destroy
-      // lingering (idle keep-alive) sockets so the port frees within the grace
-      // window; the callback fires once the server has drained.
-      await new Promise<void>((resolve) => {
+      // FR-026 ordered shutdown. (1) stop accepting new connections; capture the
+      // drain completion (fires once existing connections finish, or the grace
+      // backstop trips).
+      const drained = new Promise<void>((resolve) => {
         let settled = false;
         const finish = (): void => {
           if (!settled) { settled = true; resolve(); }
         };
         server.close(() => finish());
-        for (const socket of connections) {
-          try { socket.destroy(); } catch { /* already gone */ }
-        }
-        connections.clear();
         const backstop = setTimeout(finish, SHUTDOWN_GRACE_MS);
         backstop.unref?.();
       });
+      // (2) abort any in-flight reindex job via its AbortSignal: the job records a
+      // terminal `aborted` outcome, emits the terminal SSE event to every
+      // subscriber, releases the index lock (indexAll's finally), and fires the
+      // watcher re-arm (FR-023/026). Bounded by the grace window so a job that
+      // will not settle can never defer shutdown past the deadline.
+      try {
+        await Promise.race([
+          jobRegistry.abortAll(),
+          new Promise<void>((r) => { const t = setTimeout(r, SHUTDOWN_GRACE_MS); t.unref?.(); }),
+        ]);
+      } catch { /* best-effort — shutdown proceeds regardless */ }
+      // (3) release the bound port. GRACEFULLY end each socket first (`end()`
+      // flushes the write buffer before FIN) so the terminal SSE frame written in
+      // step 2 is delivered rather than dropped by an abrupt `destroy()`; then
+      // await the server drain (bounded by the grace backstop). Any straggler
+      // that has not closed by the deadline is force-destroyed so an idle
+      // keep-alive socket can never hold the port past the grace window.
+      for (const socket of connections) {
+        try { socket.end(); } catch { /* already gone */ }
+      }
+      await drained;
+      for (const socket of connections) {
+        try { socket.destroy(); } catch { /* already gone */ }
+      }
+      connections.clear();
       // (4) close every daemon client socket — decrement the daemon's refcount,
       // NEVER kill it; a shared daemon may still serve other MCP sessions.
       for (const client of daemonClients) {

@@ -15,6 +15,8 @@
 
 import { notFound, internalError, apiError, unauthorized, type ApiError } from './errors';
 import { isValidBearer, type BindSecurity } from './auth';
+import { JobConflictError, type JobMode, type JobRegistry } from './jobs';
+import { streamJobToResponse, type SseResponse, type SseRequest } from './sse';
 import {
   daemonUnavailable,
   listRepos,
@@ -40,6 +42,13 @@ export interface HandlerResult {
   status: number;
   headers?: Record<string, string>;
   body: unknown;
+  /**
+   * SPEC-005 Slice-2 SSE (FR-023): the handler has taken over the raw response
+   * and is streaming it directly (headers + frames already written). When set,
+   * the dispatcher MUST NOT serialize `body` over the socket — doing so would
+   * `writeHead` twice. Only the SSE events handler sets this.
+   */
+  hijacked?: boolean;
 }
 
 /**
@@ -52,6 +61,14 @@ export interface RouteContext {
   params: RouteParams;
   query: URLSearchParams;
   headers: Record<string, string | string[] | undefined>;
+  /**
+   * The raw `node:http` response — present only for the SSE endpoint (FR-023),
+   * which streams frames directly rather than returning a JSON body. Every other
+   * handler ignores it and returns a normal {@link HandlerResult}.
+   */
+  res?: SseResponse;
+  /** The raw request — the SSE handler subscribes to its `close` (client disconnect). */
+  req?: SseRequest;
 }
 
 /** A registered route: an HTTP method, a path pattern, and its handler. */
@@ -385,5 +402,93 @@ export function buildReadRoutes(deps: ReadApiDeps): Route[] {
     { method: 'GET', pattern: '/api/callees/:id', handler: relationHandler(deps, 'callees') },
     { method: 'GET', pattern: '/api/impact/:id', handler: subgraphHandler(deps, 'impact') },
     { method: 'GET', pattern: '/api/graph/:id', handler: subgraphHandler(deps, 'graph') },
+  ];
+}
+
+// ===========================================================================
+// SPEC-005 Slice-2 job routes (T038) — POST/GET /api/reindex/:repo and the SSE
+// stream GET /api/reindex/:repo/events. Kept in a SEPARATE builder from
+// buildReadRoutes so the read-slice OpenAPI contract walk (which asserts a
+// bijection between buildReadRoutes and the 8 documented read paths, and that
+// the document OMITS the Slice-2 reindex surface) stays green. The reindex
+// paths are intentionally undocumented in the read-slice openapi.yaml.
+//
+// The `:repo` is a PATH param resolved against the daemon registry (FR-020);
+// an unregistered repo, or a registered repo with no job on record, → 404
+// `resource: repo` (FR-024, deliberately indistinguishable). A duplicate active
+// job → 409 `conflict` (FR-022). Lock contention is NOT here — it is a terminal
+// job `error`/`lock_unavailable` (FR-021a), and the POST still returns 202.
+// ===========================================================================
+
+/** Collaborators the job routes need, wired by `startWebServer` (index.ts). */
+export interface JobApiDeps {
+  /**
+   * Resolve the `:repo` PATH segment to a registered repo, or `null` when it is
+   * malformed / unregistered (→ 404 `resource: repo`, FR-020/011). Same resolver
+   * the read handlers use for `?repo`.
+   */
+  resolveRepo(repoId: string | undefined): RepoInfo | null;
+  /** The in-memory latest-job-per-repo registry (jobs.ts). */
+  registry: JobRegistry;
+}
+
+/** POST /api/reindex/:repo (T038, FR-020/021a/022) — URL-only; 202 + descriptor. */
+function reindexPostHandler(deps: JobApiDeps): RouteHandler {
+  return (ctx) => {
+    const repo = deps.resolveRepo(ctx.params.repo);
+    if (!repo) return notFound('repo');
+    // URL-only: mode from `?full=true`; NO request body is read (FR-020, Edge Cases).
+    const mode: JobMode = ctx.query.get('full') === 'true' ? 'full' : 'sync';
+    try {
+      const descriptor = deps.registry.start({ id: repo.id, root: repo.root }, mode);
+      return { status: 202, body: descriptor };
+    } catch (err) {
+      // A duplicate active job in THIS server's registry → 409 (FR-022). Every
+      // other throw propagates to the router's top-level catch → 500 (FR-015a).
+      if (err instanceof JobConflictError) return apiError('conflict');
+      throw err;
+    }
+  };
+}
+
+/** GET /api/reindex/:repo (T038, FR-024) — latest job state; no job → 404 repo. */
+function reindexGetHandler(deps: JobApiDeps): RouteHandler {
+  return (ctx) => {
+    const repo = deps.resolveRepo(ctx.params.repo);
+    if (!repo) return notFound('repo');
+    const latest = deps.registry.latest(repo.id);
+    // Registered-but-no-job is deliberately indistinguishable from unregistered
+    // (FR-024): both are 404 `resource: repo`, no separate "job" discriminator.
+    if (!latest) return notFound('repo');
+    return { status: 200, body: latest };
+  };
+}
+
+/** GET /api/reindex/:repo/events (T038, FR-023) — the SSE stream (hijacks `res`). */
+function reindexEventsHandler(deps: JobApiDeps): RouteHandler {
+  return (ctx) => {
+    const repo = deps.resolveRepo(ctx.params.repo);
+    if (!repo) return notFound('repo');
+    const job = deps.registry.get(repo.id);
+    if (!job) return notFound('repo'); // no job on record → 404 repo (FR-024)
+    if (!ctx.res) return internalError(); // defensive — SSE requires the raw response
+    // Hand the raw response to the SSE writer; it owns the socket from here
+    // (headers + snapshot + progress + terminal + heartbeat). `hijacked` tells
+    // the dispatcher NOT to serialize a JSON body over the same response.
+    streamJobToResponse(ctx.res as SseResponse, ctx.req as SseRequest | undefined, job);
+    return { status: 200, body: undefined, hijacked: true };
+  };
+}
+
+/**
+ * Build the Slice-2 job route table (T038). Registered by `startWebServer`
+ * alongside — but separate from — the read routes, so the read-slice contract
+ * walk's bijection over `buildReadRoutes` is unaffected.
+ */
+export function buildJobRoutes(deps: JobApiDeps): Route[] {
+  return [
+    { method: 'POST', pattern: '/api/reindex/:repo', handler: reindexPostHandler(deps) },
+    { method: 'GET', pattern: '/api/reindex/:repo', handler: reindexGetHandler(deps) },
+    { method: 'GET', pattern: '/api/reindex/:repo/events', handler: reindexEventsHandler(deps) },
   ];
 }

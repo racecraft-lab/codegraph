@@ -162,6 +162,13 @@ export class MCPSession {
         // it never opens a second in-process index copy; read-only, never indexes.
         if (isRequest) await this.handleRead(message as JsonRpcRequest);
         break;
+      case 'codegraph/rearm-watcher':
+        // SPEC-005 additive control-plane method (FR-021a). A reindex job in the
+        // serve process may have starved this daemon's watcher into a permanent
+        // degrade; re-arm it. Control only — never indexes; a no-op on a healthy
+        // watcher (the engine gates on isWatcherDegraded()).
+        if (isRequest) this.handleRearmWatcher(message as JsonRpcRequest);
+        break;
       case 'ping':
         if (isRequest) this.transport.sendResult((message as JsonRpcRequest).id, {});
         break;
@@ -328,6 +335,24 @@ export class MCPSession {
         request.id,
         ErrorCodes.InternalError,
         err instanceof Error ? err.message : 'read failed',
+      );
+    }
+  }
+
+  /**
+   * Handle `codegraph/rearm-watcher` (SPEC-005 FR-021a) — the additive
+   * control-plane method. Delegates to {@link MCPEngine.rearmWatcher}, which is
+   * gated on `isWatcherDegraded()` (a no-op on a healthy watcher). Never indexes;
+   * any failure → InternalError so a bad control call cannot wedge the session.
+   */
+  private handleRearmWatcher(request: JsonRpcRequest): void {
+    try {
+      this.transport.sendResult(request.id, this.engine.rearmWatcher());
+    } catch (err) {
+      this.transport.sendError(
+        request.id,
+        ErrorCodes.InternalError,
+        err instanceof Error ? err.message : 'rearm failed',
       );
     }
   }
