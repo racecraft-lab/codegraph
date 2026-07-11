@@ -348,8 +348,23 @@ paths:
           description: >
             text/event-stream. Named events: `snapshot` (every connect),
             `progress` ({ phase, current, total, currentFile? }), terminal
-            `done`/`error`. Heartbeat comments keep quiet jobs alive. No
-            Last-Event-ID replay. Disconnect never cancels the job.
+            `done`/`error`. A `:`-prefixed comment heartbeat (~15s, ignored by
+            EventSource) keeps quiet jobs alive; under a slow consumer `progress`
+            frames coalesce to the latest (bounded memory) while `snapshot` and
+            the terminal event are always delivered. Multiple concurrent
+            subscribers each snapshot independently, and one slow/disconnected
+            subscriber never stalls the job or the others. No Last-Event-ID
+            replay. Disconnect never cancels the job.
+          headers:
+            Cache-Control:
+              description: No caching of the live stream.
+              schema: { type: string, enum: ['no-cache'] }
+            Connection:
+              description: HTTP/1.1 keep-alive for the long-lived stream.
+              schema: { type: string, enum: ['keep-alive'] }
+            X-Accel-Buffering:
+              description: Disables reverse-proxy (e.g. nginx) response buffering so events are not batched or withheld.
+              schema: { type: string, enum: ['no'] }
           content:
             text/event-stream:
               schema: { type: string }

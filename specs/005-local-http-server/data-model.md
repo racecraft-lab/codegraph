@@ -131,11 +131,24 @@ A message on a job's per-repo stream `GET /api/reindex/:repo/events`
 | `progress` | `{ phase, current, total, currentFile? }` | Live, mirroring the library `IndexProgress` **verbatim**. `phase ∈ scanning \| parsing \| storing \| resolving \| embedding` (`embedding` only when embeddings configured). |
 | `done` / `error` | terminal job descriptor | **Single** terminal event; the stream ends after it. |
 
-- No `id:` field, no Last-Event-ID replay (Q8). Periodic comment heartbeats keep
-  quiet long jobs from timing out. A client disconnect stops writes to that
-  response but **MUST NOT** cancel the running job (FR-023). Browser note
+- No `id:` field, no Last-Event-ID replay (Q8). A client disconnect stops writes to
+  that response but **MUST NOT** cancel the running job (FR-023). Browser note
   (SPEC-006/009): `EventSource` cannot send `Authorization`, so a token-bound
   deployment's browser client must use `fetch` + `ReadableStream` (FR-014).
+- **Transport headers** (FR-023): `Content-Type: text/event-stream`,
+  `Cache-Control: no-cache`, `Connection: keep-alive`, and `X-Accel-Buffering: no`
+  (disables reverse-proxy response buffering that would otherwise batch/withhold
+  the stream). A heartbeat comment frame — a `:`-prefixed line, ignored by
+  `EventSource` — is sent about every 15 s (below the common 30–60 s proxy/browser
+  idle timeout) so a quiet long job is not timed out.
+- **Backpressure & fan-out** (FR-023): `IndexProgress` fires per file, so `progress`
+  frames are written per subscriber under backpressure — when a subscriber's socket
+  refuses a write (`res.write()` → `false`) the server coalesces to the latest
+  pending `progress` instead of buffering an unbounded backlog (a slow subscriber
+  may skip superseded intermediate frames; each frame carries the absolute
+  `current`/`total`), always delivering the `snapshot` and the terminal event.
+  Multiple subscribers may attach concurrently; each is snapshotted independently
+  and a slow/disconnected one never stalls the job or the others.
 
 ## Error envelope — *Slice 1*
 

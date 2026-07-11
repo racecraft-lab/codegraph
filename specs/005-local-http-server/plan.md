@@ -181,7 +181,9 @@ src/server/                     # NEW module — all feature code (Constitution 
 │                   #   AbortSignal, sync()/indexAll() drive, lock-retry →
 │                   #   lock_unavailable (FR-021a), watcher re-arm trigger.
 ├── sse.ts          # Slice 2 (ISOLATED): SSE writer (snapshot/progress/terminal
-│                   #   events, heartbeats) attaching to index.ts's response seam.
+│                   #   events; ~15s comment heartbeat; text/event-stream +
+│                   #   no-cache + X-Accel-Buffering:no headers; per-subscriber
+│                   #   backpressure coalescing, FR-023) on index.ts's response seam.
 └── openapi.yaml    # committed API contract; copied into dist/ by copy-assets.
 
 src/bin/codegraph.ts            # MODIFIED (minimal): +--web option, +action

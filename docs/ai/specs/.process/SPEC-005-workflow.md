@@ -495,7 +495,7 @@ Focus on Local HTTP Server & REST API requirements:
 |-----------|-------|------|-----------------|
 | api-contracts | 27 (19 pass, 8 gaps) | 8 fixed, 0 remain | FR-004/006a/010a(new)/011/018/024/025; openapi: RepoQuery, 503 on 7 reads, 400 on 3, impact→GraphResult |
 | security | 19 (17 pass, 2 gaps) | 2 fixed, 0 remain | +FR-017b (static traversal confinement via validatePathWithinRoot, 404 on escape) +FR-014a (token/Authorization never logged) — both human-ratified 2026-07-11 |
-| streaming-protocol | | | |
+| streaming-protocol | 19 (14 pass, 5 gaps) | 5 fixed, 0 remain; 0 consensus (skipped — zero unresolved) | FR-023 expanded: coalesce-to-latest backpressure, ~15s comment heartbeat, Cache-Control/keep-alive/X-Accel-Buffering headers, independent multi-subscriber fan-out; EventSource reconnect-vs-close verified consistent (not reopened) |
 | error-handling | | | |
 | **Total** | | | |
 
