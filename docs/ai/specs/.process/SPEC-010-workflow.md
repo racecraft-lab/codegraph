@@ -63,7 +63,7 @@ estimator's advisory `suggested_slices: 2` plus the WARN gate result.
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | |
+| Specify | `/speckit-specify` | ✅ Complete | 2026-07-10 via phase-executor. spec.md: 4 US (mapped to 2 slices), 25 FR, 16 scenarios, 9 SC, 6 entities, 9 edge cases. 1 intentional `[NEEDS CLARIFICATION]` (FR-004 tiers → Clarify S1). G1: route to Clarify. |
 | Clarify | `/speckit-clarify` | ⏳ Pending | 3 sessions seeded from design-concept Open Questions |
 | Plan | `/speckit-plan` | ⏳ Pending | Must plan the 2-slice split explicitly |
 | Checklist | `/speckit-checklist` | ⏳ Pending | api-contracts, error-handling, security, data-integrity |
@@ -105,7 +105,32 @@ Each phase requires **human review and approval** before proceeding:
 | VI. Retrieval Performance | Adding `codegraph_rename` to the always-exposed tool list must not regress retrieval; expected refusals (ambiguity, heuristic-gated, stale-span, not-indexed) return success-shaped guidance, never `isError`; tool output never says "use Read". | Control-repo A/B no-regression check (Sonnet floor model, ≥2 runs/arm); error-shape tests |
 | VII. Local-First | No new runtime dependencies (pure-JS only); no network calls beyond locally spawned language servers; behavior without invoking rename is byte-identical. | `npm test`; dependency diff; dormancy check |
 
-**Constitution Check:** ⏳ (mark before proceeding to G1 — run `npm run build` and `npm test` for the G0 baseline first)
+**Constitution Check:** ✅ Verified (G0 PASS, 2026-07-10) — `npm run build` clean; **`npm test` 171/171 test files passed (~2913 tests + 7 skipped), exit 0** under a hermetic environment.
+
+> **G0 environment caveat (binding for every test run in this autopilot):** direnv exports the dogfood embedding endpoint (`CODEGRAPH_EMBEDDING_URL=http://hal:1234/…`, `_MODEL`, `_DIMS`, `_TIMEOUT_MS=90000`) into every shell in this repo. With those set, each test's `indexAll` produces embeddings against the remote endpoint → 5s vitest timeouts on index-heavy suites and false providers in hybrid-search "no provider" states (observed: 15 → 8 → 4 shifting failures across three runs; all resolved hermetically). CI never sets these vars. **Every `npm test`/vitest invocation during this run MUST be prefixed with:** `env -u CODEGRAPH_EMBEDDING_URL -u CODEGRAPH_EMBEDDING_MODEL -u CODEGRAPH_EMBEDDING_DIMS -u CODEGRAPH_EMBEDDING_TIMEOUT_MS -u CODEGRAPH_EMBEDDING_API_KEY` (referred to below as `TEST_ENV_SCRUB`). Two benign `too many open files` watcher-degradation warnings remain in green runs (watcher disables itself gracefully; tests tolerate it).
+
+### Autopilot Pre-Flight Record (Step -1 / Step 0, run 2026-07-10)
+
+| Item | Result |
+|---|---|
+| Runner | `python3.11 -m speckit_pro_runner` (plugin 2.18.1); JSON stdin/stdout contract verified |
+| Agent package completeness (0.0b) | ✅ all 11 bundled agents present in plugin cache `agents/` |
+| SpecKit CLI | ✅ specify 0.11.8; project init ✅; constitution ✅; commands ✅ |
+| check-prerequisites quirk | Helper resolved repo-root to the **main checkout** (worktree `.git` is a file); its `branch: main` / `workflow file not found` lines are artifacts. Direct evidence recorded instead: branch `010-graph-aware-rename` (`git rev-parse`), workflow file present and parsed. |
+| ON_FEATURE_BRANCH / IS_WORKTREE | true / true (`git-dir` ≠ `git-common-dir`) → Specify runs branch-aware (no branch creation) |
+| Settings | `.claude/speckit-pro.local.md` absent → defaults: consensus-mode=moderate, gate-failure=stop, auto-commit=per-phase |
+| CONFIDENCE_GATE_MODE (0.6b) | `advisory` (no flags in argv, no local config) |
+| AGENT_TEAMS_AVAILABLE | **false** — env var unset. Using parallel-subagents dispatch for post-impl and `[P]` runs. To enable Agent Teams set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` on Claude Code ≥ 2.1.32 and re-run. |
+| PROJECT_COMMANDS (0.11; CLAUDE.md authoritative over detect-commands' `npm build`/`npm typecheck` guesses) | BUILD=`npm run build` · TYPECHECK=`npx tsc --noEmit` · LINT=N/A · UNIT_TEST=`npm test` · INTEGRATION_TEST=N/A (integration suites live inside `npm test`; `npm run eval` is a separate non-gate suite) · SINGLE_FILE_TEST=`npx vitest run <file>` · FULL_VERIFY=`npm run build && npm test` |
+| PRESET_CONVENTIONS (0.12) | 3 presets (top layer first): **claude-ask-questions** (spec/plan/tasks templates), **codegraph-project-overrides** (constitution test-policy exceptions: bug fixes start from a failing test; installer changes update installer-targets contract suite), **speckit-pro-reviewability** (reviewability-augmented tasks template). Presets present in the worktree `.specify/presets/`. |
+| PROJECT_IMPLEMENTATION_AGENT (0.10) | None detected — `.claude/agents/` has only `retrieval-guardian` (read-only reviewer; reserved for Post: Code Review since the diff touches `src/mcp/`). Implementation routes to `speckit-pro:implement-executor` (TDD specialist fallback). |
+| Extensions (registry) | agent-context, archive, bug, cleanup, git, retrospective, review, verify, verify-tasks — all enabled. speckit-utils/doctor NOT installed → doctor tasks recorded skipped. |
+| Hook decisions | All `git.commit` before/after hooks **skipped** (duplicate autopilot per-phase commits). `before_specify git.feature` **skipped** (already on feature branch in worktree). `agent-context.update` **skipped** (handcrafted CLAUDE.md in tracking fork; automated tech-stack injection violates Principle III surgical-changes/fork discipline; plan tech stack lives in plan.md + this file). `after_implement` review/verify/verify-tasks/cleanup/retrospective hooks **accepted** — executed as the canonical Post-Implementation tasks. |
+| Tier-2 relocation | Suppressed — `specs/010-graph-aware-rename/SPEC-MOC.md` carries `structureVersion: 1` (already-current); no other `specs/` candidates in worktree; `.specify/feature.json` absent (no frozen spec). |
+| Capability coverage (0.8) | Advisory pass. Codebase context: codegraph MCP (dogfood) + RepoPromptCE; library docs: context7 MCP; web/domain research: tavily MCP + WebSearch; source extraction: Read/Explore agents. |
+| Reviewability setup gate | WARN 405>400, pass=true — recorded at scaffold with the 2-slice split decision (§ Reviewability Budget & Split Decision above). Warn-proceed condition satisfied. |
+| estimate-spec-size / tasks-mode reviewability-gate / generate-uat-skeleton / final-reviewability-backstop | Deferred on installed runner — fallback evidence chains per skill guidance. |
+| Archive Sweep (Step -1) | ✅ Run via subagent per `speckit.archive.run` v1.1.0 in `--sweep --current-target specs/010-graph-aware-rename` mode. archive_extension_installed=true; eligible_previous_specs=[] (SPEC-001/002/003/004/008/023/025 already archived — 7 provenance records in `.specify/memory/archive-reports/`); actions_taken=none; current spec excluded/untouched; safeToApplyCleanup=N/A (empty candidate set). Warnings logged: check-prerequisites.sh has no sweep-only mode (paths derived directly); future sweeps that find eligible specs on a feature branch must resolve the command's main-branch cleanup gate explicitly. |
 
 ---
 
@@ -278,17 +303,26 @@ requirement needs rationale.
 
 ### Specify Results
 
-<!-- Fill in after running the command -->
-
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | |
-| User Stories | |
-| Acceptance Criteria | |
+| Functional Requirements | 25 (FR-001…FR-025) |
+| User Stories | 4 — US1 P1 dry-run plan · US2 P2 targeting/refusals · US3 P2 atomic apply · US4 P3 MCP parity (Slice 1 = US1+US2, Slice 2 = US3+US4) |
+| Acceptance Criteria | 16 Given/When/Then scenarios; 9 success criteria (SC-009 = self-repo dogfood UAT) |
+| Key Entities | 6 — Rename Plan, Rename Edit, Target Selector, Candidate, Confidence Tier, Apply Result |
+| Markers | 1 intentional `[NEEDS CLARIFICATION]` (FR-004 exact/heuristic tier per provenance class — deferred to Clarify S1 by design-concept Open Questions) |
+| Template | speckit-pro-reviewability spec-template (adds Reviewability Budget + PR Review Packet sections; budget recorded, warn-accepted via 2-slice split) |
+
+**G1 (routing):** 1 marker → Clarify proceeds. `validate-gate` runner helper hit the known worktree repo-root quirk ("spec.md not found" — resolved against the main checkout); direct evidence recorded instead (`grep -c "NEEDS CLARIFICATION" spec.md` → 1; file present in worktree git status).
+
+**Spec-MOC regen (phase-gate step):** `generate-spec-index-write` is a mutation-mode op and the installed runner rejects mutation envelopes (`invalid_envelope`) — **deferred on installed runner**, same class as generate-pr-body/generate-uat-skeleton/final-reviewability-backstop. Generated zones in SPEC-MOC.md remain template placeholders; no diff to fold at phase boundaries. Re-evaluate once at PR time; do not retry per-phase. (`generate-pr-body` at post-impl will need the deferred-helper fallback: hand-authored body per repo conventions + read-only packet validation where possible.)
+
+`.specify/feature.json` created by the executor (pins downstream phases to specs/010-graph-aware-rename) — committed as run state.
 
 ### Files Generated
 
-- [ ] `specs/010-graph-aware-rename/spec.md`
+- [x] `specs/010-graph-aware-rename/spec.md`
+- [x] `specs/010-graph-aware-rename/checklists/requirements.md`
+- [x] `.specify/feature.json`
 
 ### SpecKit Traceability Markers
 
