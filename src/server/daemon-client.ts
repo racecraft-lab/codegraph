@@ -19,9 +19,11 @@
 import { spawn, type StdioOptions } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import type { Socket } from 'net';
 import { connectWithHello } from '../mcp/proxy';
 import { getDaemonSocketCandidates } from '../mcp/daemon-paths';
+import { listDaemons } from '../mcp/daemon-registry';
 import { SocketTransport } from '../mcp/transport';
 import { findNearestCodeGraphRoot, getCodeGraphDir } from '../directory';
 import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
@@ -486,9 +488,37 @@ export function daemonUnavailable(err?: unknown): ApiError {
 }
 
 /**
- * List the indexed projects known to the daemon registry, with the startup
- * repo marked default (FR-009). Implemented in a later Slice-1 task.
+ * 16-hex repo id — the SHA-256 prefix of the resolved root, identical to the
+ * daemon registry's own record key (`recordPath`, src/mcp/daemon-registry.ts)
+ * and to `repoIdForRoot` in src/server/index.ts by construction, so an API id
+ * equals a registry key without a second hashing scheme (FR-010).
  */
-export async function listRepos(): Promise<Repo[]> {
-  throw new Error('not implemented: listRepos');
+function repoIdForRoot(root: string): string {
+  return crypto.createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 16);
+}
+
+/**
+ * List the indexed projects for `GET /api/repos` (FR-009/010): the startup
+ * (default) repo ALWAYS first and marked `default:true`, then every OTHER live,
+ * registered daemon from the global registry marked `default:false`. Deduped by
+ * id so the default repo is never listed twice (its own daemon is typically
+ * registered too), leaving exactly one `default:true` by construction.
+ *
+ * Only live daemons appear — `listDaemons` prunes dead-pid records, so a
+ * freshly-indexed project with no running daemon is invisible until it is served
+ * (the same liveness gate that decides whether a `?repo` id resolves, FR-010a).
+ * Synchronous: the registry is read off disk, with no daemon round-trip.
+ */
+export function listRepos(defaultRepo: { id: string; root: string; name: string }): Repo[] {
+  const repos: Repo[] = [
+    { id: defaultRepo.id, root: defaultRepo.root, name: defaultRepo.name, default: true },
+  ];
+  const seen = new Set<string>([defaultRepo.id]);
+  for (const rec of listDaemons({ prune: true })) {
+    const id = repoIdForRoot(rec.root);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    repos.push({ id, root: rec.root, name: path.basename(rec.root), default: false });
+  }
+  return repos;
 }

@@ -17,6 +17,7 @@ import { notFound, internalError, apiError, unauthorized, type ApiError } from '
 import { isValidBearer, type BindSecurity } from './auth';
 import {
   daemonUnavailable,
+  listRepos,
   readStatusHealth,
   readNode,
   readSearch,
@@ -296,6 +297,17 @@ function statusHandler(deps: ReadApiDeps): RouteHandler {
   };
 }
 
+/**
+ * GET /api/repos (T027, FR-009/010) — the indexed projects from the daemon
+ * registry, startup repo `default:true`. NOT repo-scoped: a stray `?repo` is
+ * ignored (returns the full list), never 400 — the shipped contract documents
+ * no `repo` param and no 400 here, and rejecting would emit an undocumented
+ * status (FR-010a/025).
+ */
+function reposHandler(deps: ReadApiDeps): RouteHandler {
+  return () => ({ status: 200, body: listRepos(deps.defaultRepo) });
+}
+
 /** GET /api/search (T015, FR-006/006a). */
 function searchHandler(deps: ReadApiDeps): RouteHandler {
   return (ctx) =>
@@ -366,6 +378,7 @@ function subgraphHandler(deps: ReadApiDeps, which: 'impact' | 'graph'): RouteHan
 export function buildReadRoutes(deps: ReadApiDeps): Route[] {
   return [
     { method: 'GET', pattern: '/api/status', handler: statusHandler(deps) },
+    { method: 'GET', pattern: '/api/repos', handler: reposHandler(deps) },
     { method: 'GET', pattern: '/api/search', handler: searchHandler(deps) },
     { method: 'GET', pattern: '/api/node/:id', handler: nodeHandler(deps) },
     { method: 'GET', pattern: '/api/callers/:id', handler: relationHandler(deps, 'callers') },

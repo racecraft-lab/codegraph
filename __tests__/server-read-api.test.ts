@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
+import * as crypto from 'crypto';
 import {
   apiError,
   notFound,
@@ -45,9 +46,11 @@ import {
   type WebServerHandle,
 } from '../src/server/index';
 import { getDaemonPidPath } from '../src/mcp/daemon-paths';
+import { listDaemons } from '../src/mcp/daemon-registry';
 import {
   buildFixtureIndex,
   startServerFixture,
+  type FixtureIndex,
   type ServerFixture,
 } from './helpers/server-fixture';
 
@@ -1121,4 +1124,223 @@ describe('SPEC-005 /api/status on an un-indexed startup repo (T014, FR-005/016)'
     expect(body.hybridSearch.available).toBe(false);
     expect(body.lsp.available).toBe(false);
   }, T(20000));
+});
+
+// ---------------------------------------------------------------------------
+// T026 — multi-repo discovery + addressing (US2, FR-009/010/010a/011).
+//
+// `/api/repos` lists the registered projects (startup repo `default:true`,
+// FR-009); a repo-scoped read with `?repo=<16hex>` against a SECOND registered
+// repo attaches that repo's daemon LAZILY on first access (not eagerly at
+// startup) and returns ITS data (FR-010/010a); an unregistered OR malformed
+// `?repo` → 404 `not_found` (`details.resource: repo`), NEVER 400 (FR-011).
+//
+// `/api/status` and `/api/repos` are deliberately NOT repo-scoped: they IGNORE a
+// stray `?repo` (→ 200), never 400. The shipped contract (openapi.yaml) lists no
+// `repo` parameter and no 400 response for either path, and FR-025's contract
+// test fails on any status an endpoint emits that the document omits — so a 400
+// here would be a contract violation. "Ignore unknown params consistently" is
+// the resolved reading of FR-010a's "do not accept `repo`" (matches how every
+// other endpoint already ignores unrecognized query params).
+//
+// TWO real fixture indexes, each with its own running (registered) daemon, keyed
+// on temp dirs — never this repo's own daemon (dogfood hazard). The global
+// daemon registry may also hold OTHER machine daemons, so every listing
+// assertion is `contains`, never `equals`.
+// ---------------------------------------------------------------------------
+
+/** Repo A (startup/default) beacon — present ONLY in repo A. */
+const ALPHA_FILES: Record<string, string> = {
+  'alpha.ts': 'export function alphaBeaconSymbol(): number {\n  return 11;\n}\n',
+};
+/** Repo B (second) beacon — present ONLY in repo B. */
+const BETA_FILES: Record<string, string> = {
+  'beta.ts': 'export function betaBeaconSymbol(): number {\n  return 22;\n}\n',
+};
+
+/**
+ * Canonical 16-hex repo id — the SHA-256 prefix of the realpath'd root. This is
+ * the daemon-registry record key AND the `/api/repos` id by construction
+ * (FR-010), so recomputing it here is the drift-proof source of truth the wire
+ * ids must equal.
+ */
+function repoIdOf(root: string): string {
+  return crypto.createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 16);
+}
+
+describe('SPEC-005 multi-repo /api/repos + ?repo (T026, FR-009/010/010a/011)', () => {
+  let fx: ServerFixture; // repo A = startup (default) repo + the web server over it
+  let baseURL: string;
+  let repoB: FixtureIndex; // repo B = a second registered repo (its own daemon)
+  let idA: string;
+  let idB: string;
+
+  beforeAll(async () => {
+    // Repo A: the startup repo, with the web server bound over it (port 0). Its
+    // daemon is spawned lazily by the first read (spawnDaemon injected by the
+    // harness so the built dist CLI is re-invoked, not the vitest runner).
+    fx = await startServerFixture({ files: ALPHA_FILES });
+    baseURL = fx.baseURL;
+    idA = repoIdOf(fx.root);
+
+    // Repo B: a second real index whose daemon we START so it REGISTERS in the
+    // global registry — the precondition for it to be listable/addressable
+    // (listDaemons reports only live, registered daemons; a freshly-indexed repo
+    // with no running daemon is invisible). Reaped via B's recorded pid.
+    repoB = await buildFixtureIndex({ files: BETA_FILES });
+    idB = repoIdOf(repoB.root);
+    spawnDaemonViaDistBin(repoB.root);
+
+    // Warm A (the first /api/status lazily spawns+attaches+registers A's daemon).
+    await waitFor(
+      async () => (await fetch(`${baseURL}/api/status`)).status === 200,
+      40000,
+      'A status 200',
+    );
+    // Then wait until BOTH daemons are live in the registry — the source
+    // `/api/repos` reads. Polled DIRECTLY (not via the under-test `/api/repos`)
+    // so the RED run observes per-test assertion failures, not a beforeAll
+    // timeout before the assertions run.
+    await waitFor(() => {
+      const roots = listDaemons({ prune: true }).map((r) => path.resolve(r.root));
+      return roots.includes(path.resolve(fx.root)) && roots.includes(path.resolve(repoB.root));
+    }, 40000, 'both daemons registered');
+  }, T(90000));
+
+  afterAll(async () => {
+    if (fx) await fx.teardown(); // stop server, reap A's daemon, rm A temp dir
+    if (repoB) repoB.cleanup(); // reap B's daemon, rm B temp dir
+  });
+
+  const getJson = async (p: string): Promise<{ status: number; body: any; ct: string | null }> => {
+    const res = await fetch(`${baseURL}${p}`);
+    const ct = res.headers.get('content-type');
+    const body = await res.json().catch(() => undefined);
+    return { status: res.status, body, ct };
+  };
+
+  // ---- /api/repos listing (FR-009/010) ----
+  describe('GET /api/repos', () => {
+    it('returns a JSON array of {id,root,name,default} repo descriptors', async () => {
+      const { status, body, ct } = await getJson('/api/repos');
+      expect(status).toBe(200);
+      expect(ct).toContain('application/json');
+      expect(Array.isArray(body)).toBe(true);
+      expect(body.length).toBeGreaterThanOrEqual(2);
+      for (const r of body as Array<any>) {
+        expect(r.id).toMatch(/^[0-9a-f]{16}$/);
+        expect(typeof r.root).toBe('string');
+        expect(typeof r.name).toBe('string');
+        expect(typeof r.default).toBe('boolean');
+      }
+    }, T(20000));
+
+    it('lists the startup repo with default:true (id/root/name match the startup repo)', async () => {
+      const { body } = await getJson('/api/repos');
+      const a = (body as Array<any>).find((r) => r.id === idA);
+      expect(a).toBeTruthy();
+      expect(a.default).toBe(true);
+      expect(path.resolve(a.root)).toBe(path.resolve(fx.root));
+      expect(a.name).toBe(path.basename(fx.root));
+    }, T(20000));
+
+    it('lists the second registered repo with default:false', async () => {
+      const { body } = await getJson('/api/repos');
+      const b = (body as Array<any>).find((r) => r.id === idB);
+      expect(b).toBeTruthy();
+      expect(b.default).toBe(false);
+      expect(path.resolve(b.root)).toBe(path.resolve(repoB.root));
+      expect(b.name).toBe(path.basename(repoB.root));
+    }, T(20000));
+
+    it('marks exactly one listed repo as the default (the startup repo)', async () => {
+      const { body } = await getJson('/api/repos');
+      const defaults = (body as Array<any>).filter((r) => r.default === true);
+      expect(defaults.length).toBe(1);
+      expect(defaults[0].id).toBe(idA);
+    }, T(20000));
+  });
+
+  // ---- ?repo resolution + lazy multi-repo attach (FR-010/010a) ----
+  describe('repo-scoped reads with ?repo', () => {
+    it('a ?repo=<second repo> read attaches that repo lazily and returns ITS data', async () => {
+      const { status, body } = await getJson(`/api/search?q=betaBeaconSymbol&repo=${idB}`);
+      expect(status).toBe(200);
+      const names = (body.items as Array<any>).map((n) => n.name);
+      expect(names).toContain('betaBeaconSymbol');
+    }, T(25000));
+
+    it('an omitted repo resolves against the default (startup) repo, not the second', async () => {
+      // Default routing hits A: A has alphaBeaconSymbol and NOT betaBeaconSymbol —
+      // proof the server routes an omitted ?repo to A and did not eagerly switch
+      // to (or attach) repo B.
+      const alpha = await getJson('/api/search?q=alphaBeaconSymbol');
+      expect(alpha.status).toBe(200);
+      expect((alpha.body.items as Array<any>).map((n) => n.name)).toContain('alphaBeaconSymbol');
+
+      const beta = await getJson('/api/search?q=betaBeaconSymbol');
+      expect(beta.status).toBe(200);
+      expect((beta.body.items as Array<any>).map((n) => n.name)).not.toContain('betaBeaconSymbol');
+    }, T(25000));
+
+    it('?repo=<startup id> resolves to the startup repo (explicit default addressing)', async () => {
+      const { status, body } = await getJson(`/api/search?q=alphaBeaconSymbol&repo=${idA}`);
+      expect(status).toBe(200);
+      expect((body.items as Array<any>).map((n) => n.name)).toContain('alphaBeaconSymbol');
+    }, T(20000));
+  });
+
+  // ---- malformed / unregistered ?repo → 404 resource:repo, never 400 (FR-011) ----
+  describe('invalid ?repo → 404 not_found (details.resource repo), never 400', () => {
+    it('a malformed repo id (fails ^[0-9a-f]{16}$) → 404 repo, never 400', async () => {
+      // uppercase-hex, too-short, too-long, and non-hex all fail the pattern.
+      for (const bad of ['nothexnothexnoth', 'ABCDEF0123456789', 'abc', 'abcdef012345678', 'abcdef01234567890']) {
+        const { status, body } = await getJson(`/api/search?q=alphaBeaconSymbol&repo=${bad}`);
+        expect(status).toBe(404);
+        expect(body.error.code).toBe('not_found');
+        expect(body.error.details.resource).toBe('repo');
+      }
+    }, T(20000));
+
+    it('a well-formed but unregistered repo id → 404 repo', async () => {
+      const { status, body } = await getJson('/api/node/file:alpha.ts?repo=0123456789abcdef');
+      expect(status).toBe(404);
+      expect(body.error.code).toBe('not_found');
+      expect(body.error.details.resource).toBe('repo');
+    }, T(20000));
+
+    it('applies on every repo-scoped read endpoint (repo resolved before node/paging)', async () => {
+      const bad = 'zzzzzzzzzzzzzzzz'; // malformed (not hex) — same treatment as unregistered
+      for (const p of [
+        `/api/search?q=x&repo=${bad}`,
+        `/api/node/file:alpha.ts?repo=${bad}`,
+        `/api/callers/file:alpha.ts?repo=${bad}`,
+        `/api/callees/file:alpha.ts?repo=${bad}`,
+        `/api/impact/file:alpha.ts?repo=${bad}`,
+        `/api/graph/file:alpha.ts?repo=${bad}`,
+      ]) {
+        const { status, body } = await getJson(p);
+        expect(status).toBe(404);
+        expect(body.error.details.resource).toBe('repo');
+      }
+    }, T(25000));
+  });
+
+  // ---- /api/status + /api/repos are NOT repo-scoped: ignore ?repo (no 400) ----
+  describe('/api/status and /api/repos ignore ?repo (not repo-scoped, FR-010a)', () => {
+    it('GET /api/status?repo=<second repo> → 200 reporting the DEFAULT repo (param ignored)', async () => {
+      const { status, body } = await getJson(`/api/status?repo=${idB}`);
+      expect(status).toBe(200);
+      // Reports the startup/default repo regardless of the stray ?repo (status is
+      // not repo-scoped); never 400 (the contract documents no 400 here).
+      expect(body.repo.id).toBe(idA);
+    }, T(20000));
+
+    it('GET /api/repos?repo=<second repo> → 200 still listing repos (param ignored)', async () => {
+      const { status, body } = await getJson(`/api/repos?repo=${idB}`);
+      expect(status).toBe(200);
+      expect(Array.isArray(body)).toBe(true);
+      expect((body as Array<any>).some((r) => r.id === idA && r.default === true)).toBe(true);
+    }, T(20000));
+  });
 });
