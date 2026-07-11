@@ -47,6 +47,20 @@ file-reading sub-task/agent, repeats work codegraph already did and costs more
 for the same answer. A direct codegraph answer is typically one to a few
 calls; a grep/read exploration is dozens.
 
+## codegraph_rename — the write tool (dry-run by default)
+
+\`codegraph_rename\` renames a symbol across every file that references it —
+reach for it instead of hand-editing each call site. DRY-RUN BY DEFAULT:
+called without \`apply\` it returns a plan (every affected file, a
+before/after preview, and a confidence tier per edit) and writes nothing;
+pass \`apply: true\` to execute it, with safety checks and a byte-identical
+rollback if anything would be left dangling. It's the one WRITE tool on this
+surface (\`readOnlyHint: false\`), so a read-only client mode (e.g. Cursor's
+Ask mode) will gate or hide it — even for a dry-run call. That's expected:
+switch to an agent / write-enabled mode to use it. \`codegraph_explore\`
+stays the PRIMARY tool for reading and understanding code; reach for
+\`codegraph_rename\` only to actually rename a symbol.
+
 ## How to query
 
 - **Almost any question — "how does X work", architecture, a bug, "what/where is X", or surveying an area** → \`codegraph_explore\` with a natural-language question or the relevant names. ONE capped call returns the verbatim source grouped by file; most often the ONLY call you need.

@@ -32,6 +32,10 @@ import { isGeneratedFile } from '../extraction/generated-detection';
 import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine } from '../search/hybrid';
 import { scanDynamicDispatch } from './dynamic-boundaries';
 import { getUpdateNotice } from '../upgrade/update-check';
+// SPEC-010 rename (Slice 2): the write tool serializes its RenamePlan / ApplyResult
+// with the SAME canonical serializers the CLI `--json` path uses, so the MCP text
+// payload is byte-identical to CLI stdout (SC-005 / FR-027).
+import { serializeRenamePlanJson, serializeApplyResultJson } from '../refactor/plan-format';
 
 /**
  * An expected, recoverable "codegraph can't serve this" condition — most
@@ -548,6 +552,27 @@ const READ_ONLY_ANNOTATIONS: ToolAnnotations = {
 };
 
 /**
+ * Write-tool annotations for `codegraph_rename` (SPEC-010 FR-028) — the mirror
+ * image of {@link READ_ONLY_ANNOTATIONS}, declared as its OWN object exactly as
+ * that comment anticipates ("a hypothetical mutating tool would simply not
+ * reference it"). `readOnlyHint: false` + `destructiveHint: true`: an `apply:true`
+ * call overwrites existing spans in place — rollback protects the OUTCOME, not the
+ * envelope a truthful annotation must describe. `idempotentHint: false`: repeated
+ * apply-retry safety was never designed, so it must not be asserted. `openWorldHint:
+ * false`: the domain is the closed local workspace (incl. locally-spawned language
+ * servers), never an open external world. A client that gates on `readOnlyHint`
+ * (e.g. Cursor Ask mode, #1018) will therefore refuse this tool in a read-only
+ * mode — correct for a write tool; FR-025's guidance makes the Agent-mode
+ * requirement legible.
+ */
+const RENAME_ANNOTATIONS: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+
+/**
  * All CodeGraph MCP tools
  *
  * Designed for minimal context usage - use codegraph_explore as the primary tool
@@ -771,6 +796,45 @@ export const tools: ToolDefinition[] = [
     },
     annotations: READ_ONLY_ANNOTATIONS,
   },
+  {
+    name: 'codegraph_rename',
+    description:
+      'Graph-aware rename of a symbol across the whole index. DRY-RUN BY DEFAULT: returns a RenamePlan (every file/span it would change, a before/after line preview, a per-edit confidence tier) and writes NOTHING. Pass apply:true to execute the safety-checked rename — it writes the files, re-syncs the index, and rolls back byte-identically if any old-name reference would be left dangling. codegraph_explore stays the PRIMARY tool for reading and understanding code; reach for codegraph_rename only to actually rename a symbol.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: {
+          type: 'string',
+          description: 'Symbol to rename — a bare name or a qualified Class.method.',
+        },
+        newName: {
+          type: 'string',
+          description: 'Replacement identifier (must be valid for the target\'s language).',
+        },
+        apply: {
+          type: 'boolean',
+          description: 'Execute the apply safety ladder (writes files). Default false — a dry-run plan.',
+          default: false,
+        },
+        includeHeuristic: {
+          type: 'boolean',
+          description: 'Permit apply when the plan contains heuristic-tier (below-exact) edits. Default false.',
+          default: false,
+        },
+        file: {
+          type: 'string',
+          description: 'Narrow the target to the declaration in this file (path or suffix) when several same-named symbols exist.',
+        },
+        kind: {
+          type: 'string',
+          description: 'Narrow the target to this NodeKind (function, method, class, …).',
+        },
+        projectPath: projectPathProperty,
+      },
+      required: ['target', 'newName'],
+    },
+    annotations: RENAME_ANNOTATIONS,
+  },
 ];
 
 /**
@@ -819,17 +883,18 @@ export function getStaticTools(): ToolDefinition[] {
 }
 
 /**
- * The MCP tools served by DEFAULT (short names). Pared to ONLY `codegraph_explore`
- * — the single tool that reliably earns its place: one capped call returns the
- * verbatim source of the relevant symbols grouped by file. Every other tool is a
- * narrower slice of what explore already does, and presence itself steers
- * mis-picks, so they are no longer LISTED to agents.
+ * The MCP tools served by DEFAULT (short names): `codegraph_explore` — the single
+ * retrieval tool that reliably earns its place (one capped call returns the
+ * verbatim source of the relevant symbols grouped by file) — plus `codegraph_rename`,
+ * the graph-aware write tool (SPEC-010 FR-022), the first non-read-only tool on the
+ * surface. Every other read tool is a narrower slice of what explore already does,
+ * and presence itself steers mis-picks, so they are no longer LISTED to agents.
  *
  * The other defined tools (`node`, `search`, `callers`, plus callees/impact/files/
  * status) remain fully functional — handlers stay, the library API and CLI are
  * untouched, and `CODEGRAPH_MCP_TOOLS=explore,node,...` re-enables any of them.
  */
-const DEFAULT_MCP_TOOLS = new Set(['explore']);
+const DEFAULT_MCP_TOOLS = new Set(['explore', 'rename']);
 
 /**
  * Tool handler that executes tools against a CodeGraph instance
@@ -1425,6 +1490,18 @@ export class ToolHandler {
       // auto-banner wrapper to avoid duplicating its own pending-files section.
       if (toolName === 'codegraph_status') {
         return await this.handleStatus(args);
+      }
+
+      // codegraph_rename is the ONE write tool (SPEC-010). An apply mutates the
+      // workspace and MUST re-sync the WATCHED main instance — its injected
+      // re-sync is `CodeGraph.sync` bound to that instance — so it runs on the
+      // MAIN thread against the default CodeGraph, NEVER off-loaded to a read-only
+      // query worker (whose connection has no watcher and would re-sync the wrong
+      // index). It also returns the canonical RenamePlan/ApplyResult JSON verbatim
+      // (SC-005 byte-parity with the CLI `--json`), so — like status — it skips
+      // the worktree/staleness banner wrappers that would prepend text.
+      if (toolName === 'codegraph_rename') {
+        return await this.handleRename(args);
       }
 
       // Read tools: off-load the CPU-heavy dispatch to the worker pool when one
@@ -4210,6 +4287,79 @@ export class ToolHandler {
     }
 
     return this.textResult(lines.join('\n'));
+  }
+
+  /**
+   * Handle codegraph_rename (SPEC-010) — the graph-aware rename WRITE tool.
+   *
+   * DRY-RUN BY DEFAULT (FR-001): with no `apply` it recomputes a RenamePlan and
+   * returns its canonical JSON — byte-identical to the CLI `--json` stdout for the
+   * same request (SC-005/FR-027) — and writes nothing. `apply:true` walks the
+   * apply safety ladder (FR-014…FR-020) on the WATCHED main instance so its
+   * re-sync updates the live index.
+   *
+   * Error shaping mirrors the CLI (FR-023): every recoverable condition — an
+   * ambiguous / excluded / unsupported-kind target, an invalid argument, a
+   * heuristic-gated apply, a not-indexed project — is delivered as a SUCCESS-shaped
+   * `refusal` object (textResult, no isError), so an early refusal never teaches the
+   * agent to abandon the toolset (Principle VI). The SOLE isError is a failed
+   * rollback restore (FR-019a), the one genuine malfunction on this surface.
+   */
+  private async handleRename(args: Record<string, unknown>): Promise<ToolResult> {
+    // The CLI takes target / new-name as positional strings; mirror that coercion
+    // so an omitted or blank value flows into the engine's own success-shaped
+    // invalid-argument refusal rather than a client-facing error.
+    const target = typeof args.target === 'string' ? args.target : '';
+    const newName = typeof args.newName === 'string' ? args.newName : '';
+    const file = typeof args.file === 'string' ? args.file : undefined;
+    const kind = typeof args.kind === 'string' ? args.kind : undefined;
+    const selector = { name: target, file, kind };
+
+    let cg: CodeGraph;
+    try {
+      cg = this.getCodeGraph(args.projectPath as string | undefined);
+      // Prefer the watched default instance when an explicit projectPath resolves
+      // to the same project (mirrors handleStatus): an apply's re-sync then updates
+      // the index the daemon actually serves, never a duplicate handle.
+      if (this.cg && cg !== this.cg) {
+        try {
+          if (resolvePath(this.cg.getProjectRoot()) === resolvePath(cg.getProjectRoot())) {
+            cg = this.cg;
+          }
+        } catch {
+          /* closed instance — leave as is */
+        }
+      }
+    } catch (err) {
+      // A not-indexed project is a recoverable refusal (FR-023), delivered as the
+      // same refusal object the CLI emits — NOT the generic NotIndexedError text —
+      // so a rename caller always gets a RenamePlan-shaped JSON. A PathRefusalError
+      // (sensitive system path) stays a security refusal: rethrow to execute()'s
+      // catch, which shapes it as isError.
+      if (err instanceof NotIndexedError) {
+        return this.textResult(
+          serializeRenamePlanJson({
+            newName,
+            applied: false,
+            refusal: { reason: 'not-indexed', message: err.message },
+          })
+        );
+      }
+      throw err;
+    }
+
+    if (args.apply === true) {
+      const result = await cg.applyRename(selector, newName, {
+        includeHeuristic: args.includeHeuristic === true,
+      });
+      const json = serializeApplyResultJson(result, newName);
+      // Every terminal is success-shaped EXCEPT a failed rollback restore (FR-019a),
+      // the sole malfunction — errorResult so a client that gates on isError knows
+      // the workspace was left partially modified and the recovery dir must be read.
+      return result.outcome === 'rollback-failed' ? this.errorResult(json) : this.textResult(json);
+    }
+
+    return this.textResult(serializeRenamePlanJson(await cg.planRename(selector, newName)));
   }
 
   /**

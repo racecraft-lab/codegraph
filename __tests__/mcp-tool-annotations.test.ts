@@ -1,10 +1,13 @@
 /**
- * Read-only MCP ToolAnnotations on every codegraph tool (issue #1018).
+ * Read-only MCP ToolAnnotations on the codegraph MCP tools (issue #1018).
  *
- * Every codegraph tool is query-only — it reads the pre-built index and never
+ * Every codegraph READ tool is query-only — it reads the pre-built index and never
  * mutates the workspace. Clients gate on this: Cursor's Ask mode refuses any MCP
  * tool that doesn't advertise `readOnlyHint: true`, so without annotations the
- * codegraph tools were blocked there even though they only read.
+ * codegraph tools were blocked there even though they only read. (SPEC-010 added
+ * the first WRITE tool, `codegraph_rename`, which correctly declares its own
+ * mutating annotations — pinned in `rename-mcp.test.ts` — and is excluded from the
+ * read-only sweeps here via WRITE_TOOLS.)
  *
  * These tests pin that the read-only contract is present on the master tool
  * array AND survives every transform that builds a `tools/list` response — the
@@ -22,6 +25,10 @@ import { CodeGraph } from '../src';
 
 const ENV = 'CODEGRAPH_MCP_TOOLS';
 const ALL_TOOLS = tools.map((t) => t.name).join(',');
+// Write tools (SPEC-010 codegraph_rename) advertise mutating annotations by
+// design, so they are excluded from the read-only sweeps below; their own
+// annotations are pinned in rename-mcp.test.ts (T045).
+const WRITE_TOOLS = new Set(['codegraph_rename']);
 
 /** Assert a single tool advertises the full read-only contract from #1018. */
 function expectReadOnly(tool: ToolDefinition): void {
@@ -41,17 +48,17 @@ describe('Read-only annotations on the codegraph MCP tools (#1018)', () => {
     else process.env[ENV] = original;
   });
 
-  it('every tool in the master array is annotated read-only', () => {
+  it('every read tool in the master array is annotated read-only', () => {
     expect(tools.length).toBeGreaterThan(0);
-    for (const tool of tools) expectReadOnly(tool);
+    for (const tool of tools) if (!WRITE_TOOLS.has(tool.name)) expectReadOnly(tool);
   });
 
-  it('the static proxy surface carries annotations on every exposed tool', () => {
+  it('the static proxy surface carries annotations on every exposed read tool', () => {
     // getStaticTools() answers tools/list before any project opens (proxy path).
     process.env[ENV] = ALL_TOOLS;
     const got = getStaticTools();
     expect(got.map((t) => t.name).sort()).toEqual(tools.map((t) => t.name).sort());
-    for (const tool of got) expectReadOnly(tool);
+    for (const tool of got) if (!WRITE_TOOLS.has(tool.name)) expectReadOnly(tool);
   });
 
   it('the no-default-project surface keeps annotations through the schema clone', () => {
@@ -61,7 +68,9 @@ describe('Read-only annotations on the codegraph MCP tools (#1018)', () => {
     const got = new ToolHandler(null).getTools();
     expect(got.length).toBe(tools.length);
     for (const tool of got) {
-      expectReadOnly(tool);
+      // Read tools keep the read-only contract; the write tool keeps its own
+      // (mutating) annotations — both must survive the clone.
+      if (!WRITE_TOOLS.has(tool.name)) expectReadOnly(tool);
       // Sanity: this IS the clone path (projectPath got marked required).
       expect(tool.inputSchema.required ?? []).toContain('projectPath');
     }
