@@ -67,7 +67,7 @@ estimator's advisory `suggested_slices: 2` plus the WARN gate result.
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions done (2026-07-10 → 2026-07-11). 15 questions resolved: 11 executor-direct, 4 via 3-analyst consensus (1 synthesis, 3 security-override → human-ratified). Spec grew FR-019a/FR-026/FR-027/FR-028 + `## Clarifications` section; FR-004/017/018/020/021/022/023/024/025 + SC-006 refined. G2: 0 markers. |
 | Plan | `/speckit-plan` | ✅ Complete | 2026-07-11 via phase-executor. 7 artifacts; Constitution PASS ×7, Complexity Tracking empty; 28 FR + 9 SC mapped; 8 research decisions (file:line-anchored); 2-slice layout: 8 Slice-1 + 4 Slice-2 files, `span-verify.ts` the shared seam. G3 clean (sole "NEEDS CLARIFICATION" hit is self-referential PASS prose). |
 | Checklist | `/speckit-checklist` | ✅ Complete | 2026-07-11. 4 domains sequential: 122 items, 22 gaps found → 22 fixed → 0 remaining. 5 consensus items resolved (rows 5–9), 0 human escalations. G4: 0 [Gap] across all checklist files. Spec grew FR-003a/FR-021a/SC-010; contracts schema hardened; drift in data-model/research corrected. |
-| Tasks | `/speckit-tasks` | ⏳ Pending | |
+| Tasks | `/speckit-tasks` | ✅ Complete | 2026-07-11. 53 tasks, slice boundary = PR seam at T027, 13 [P], full FR/SC traceability. G5 pass (runner + deterministic). Atomicity route recorded (one-navigable-PR advisory dissent; ratified 2-slice split governs); layer plan skipped; pr_marker_plan persisted (2 markers). |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Implement | `/speckit-implement` | ⏳ Pending | Slice 1 then Slice 2 |
 
@@ -679,10 +679,10 @@ interactive pickers, file/route/import/export renames) instead of generating it.
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 53 (T001–T053), all TDD-paired (failing test precedes every implementation task; real files + real SQLite) |
+| **Phases** | Setup 1 · Foundational 7 · US1 13 · US2 6 (Slice-1 wrap at T027 = PR seam) · US3 15 · US4 6 · Polish 5 |
+| **Parallel Opportunities** | 13 `[P]` (T004/T005; T015–T018; T036–T038; T049–T052) |
+| **User Stories Covered** | 4/4; all FR-001…FR-028 (+FR-003a/019a/021a) and SC-001…SC-010 mapped (G5 verified both deterministically and via runner: pass, 53 tasks, 0 markers). Phantom check: 0 `[x]` (vacuously clean; re-runs post-impl). Apply-ladder task order mirrors runtime order. Non-Goals guardrail section present — no task crosses the 5 forbidden scopes. |
 
 ---
 
@@ -703,10 +703,30 @@ classifier disagrees.
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
-| **Signals** | | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
-| **Warnings** | | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+| **Route** | `one-navigable-PR` (recorded 2026-07-11) | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
+| **Releasable** | `true` | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
+| **Signals** | `change-shape:modify-heavy` | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
+| **Warnings** | (none from classifier) | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+
+**Reconciliation (anticipated above, now recorded):** the classifier's `one-navigable-PR` is its modify-heavy DEFAULT reading, an advisory abstain-class outcome — not a safety finding against splitting (`releasable: true`, no warnings). The **human-ratified 2-slice split governs PR emission**: design concept Q11 (accepted), the setup reviewability gate's warn-proceed condition (405>400 — the split IS the recorded remediation), and Clarify Session 3's ratified slice boundary (Slice 1 ships no `--apply` surface; T027 is the PR seam). The dissent is preserved in `pr_marker_plan.warnings`.
+
+## Layer Plan
+
+`layer_plan.status = skipped` — the layer planner (`plan-layers-feature-dir`) runs only on `split-PR` routes; route is `one-navigable-PR`. PR structure derives from the ratified marker plan instead.
+
+## PR Marker Plan (mirror of `specs/010-graph-aware-rename/.process/autopilot-state.json`)
+
+| Field | Value |
+|---|---|
+| schema_version | 1.0 |
+| source_fingerprint | `sha256:470997bc25d574b8084a4a092d543644c5eb571e8a4e2081c9b118c34311be47` (spec.md + plan.md + tasks.md) |
+| markers (ordered) | `slice-1-plan-engine` (T001–T027: plan engine + targeting/refusals + CLI dry-run, read-only) → `slice-2-apply-mcp` (T028–T053: apply ladder + MCP tool + server-instructions + polish) |
+| review_order | slice-1-plan-engine, slice-2-apply-mcp |
+| checkpoints | (populated per marker during Phase 7) |
+| warnings | classifier one-navigable-PR dissent (advisory); tasks-mode reviewability gate deferred → fallback evidence chain (setup WARN pass=true + not_estimated + ratified split) |
+| final_marker_split / packet_validation / pr_mappings | null (populated at PR emission) |
+
+**Post-G5 reviewability capture (deferred-mode record):** runner `reviewability-gate` supports setup mode only on the installed runner — tasks mode NOT invoked (deferred; helper_id=reviewability-gate, requested mode=tasks, reason=installed-runner defers non-setup modes). Fallback evidence chain applied per the capture matrix: setup-mode gate **WARN 405>400, pass=true** (scaffold record above) + plan-phase `estimate-reviewable-loc` **not_estimated** + operator-ratified split decision → **proceed** (warn is a marker-planning input; `pr_marker_plan` persisted). Evidence path: `specs/010-graph-aware-rename/.process/autopilot-state.json` (repo-relative).
 
 To produce the decision, run the classifier against the feature directory:
 

@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "spec_id": "SPEC-010",
+  "generated": "2026-07-11",
+  "layer_plan": {
+    "status": "skipped",
+    "reason": "atomicity-route returned one-navigable-PR (not split-PR); layer planner runs only on split-PR routes. PR structure is governed by the human-ratified 2-slice split instead (design concept Q11 + setup gate warn-proceed + Clarify Session 3 boundary)."
+  },
+  "pr_marker_plan": {
+    "schema_version": "1.0",
+    "source_fingerprint": "sha256:470997bc25d574b8084a4a092d543644c5eb571e8a4e2081c9b118c34311be47",
+    "fingerprint_inputs": ["specs/010-graph-aware-rename/spec.md", "specs/010-graph-aware-rename/plan.md", "specs/010-graph-aware-rename/tasks.md"],
+    "markers": [
+      {"id": "slice-1-plan-engine", "tasks": "T001-T027", "scope": "plan engine + targeting/refusals + CLI dry-run (read-only; no --apply surface)", "pr_title": "feat(SPEC-010): graph-aware rename — plan engine + CLI dry-run (Slice 1)"},
+      {"id": "slice-2-apply-mcp", "tasks": "T028-T053", "scope": "apply safety ladder + MCP tool + server-instructions + polish/validation", "pr_title": "feat(SPEC-010): graph-aware rename — atomic apply + MCP tool (Slice 2)"}
+    ],
+    "review_order": ["slice-1-plan-engine", "slice-2-apply-mcp"],
+    "checkpoints": [],
+    "warnings": [
+      "atomicity-route classifier returned one-navigable-PR (signal: change-shape:modify-heavy, releasable:true) — advisory dissent from the ratified 2-slice split; ratified split governs PR emission",
+      "tasks-mode reviewability-gate deferred on installed runner — fallback evidence chain: setup-mode WARN 405>400 pass=true (scaffold 2026-07-10) + estimate-reviewable-loc not_estimated + human-ratified split (Q11, Clarify S3)"
+    ],
+    "final_marker_split": null,
+    "packet_validation": null,
+    "pr_mappings": null
+  }
+}
