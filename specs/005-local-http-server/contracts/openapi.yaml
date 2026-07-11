@@ -34,7 +34,10 @@ components:
       name: repo
       in: path
       required: true
-      description: 16-hex repo id (SHA-256 prefix of the realpath'd root, FR-010).
+      description: >
+        16-hex repo id (SHA-256 prefix of the realpath'd root, FR-010). A
+        malformed id (fails the pattern) => 404 not_found (details.resource:
+        repo), never 400 (FR-011).
       schema: { type: string, pattern: '^[0-9a-f]{16}$' }
     NodeId:
       name: id
@@ -54,6 +57,17 @@ components:
       name: offset
       in: query
       schema: { type: integer, default: 0, minimum: 0 }
+    RepoQuery:
+      name: repo
+      in: query
+      required: false
+      description: >
+        Optional 16-hex repo id (FR-010/010a) selecting the target repo on a
+        repo-scoped read; omitted => the default (startup) repo. Unregistered or
+        malformed => 404 not_found (details.resource: repo), never 400 (FR-011).
+        First access lazily attaches that repo's daemon (Q2). Not accepted by
+        /api/status or /api/repos.
+      schema: { type: string, pattern: '^[0-9a-f]{16}$' }
   schemas:
     ErrorEnvelope:
       type: object
@@ -148,7 +162,7 @@ components:
       properties:
         nodes: { type: array, items: { $ref: '#/components/schemas/Node' } }
         edges: { type: array, items: { $ref: '#/components/schemas/Edge' } }
-        truncated: { type: boolean, description: True when the 2000-node cap was hit (FR-007). }
+        truncated: { type: boolean, description: 'True when the node cap was hit — 2000 nodes for /api/graph (FR-007); /api/impact shares this subgraph shape and flags truncation of its own capped traversal (FR-004).' }
     Job:
       type: object
       required: [id, repo, mode, status, startedAt]
@@ -207,9 +221,10 @@ paths:
   /api/status:
     get:
       tags: [read]
-      summary: Server + index health (the version channel, FR-005/016).
+      summary: Server + index health (the version channel, FR-005/016). Not repo-scoped — reports the default repo.
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Status' } } } }
+        '503': { $ref: '#/components/responses/Unavailable' }      # default-repo daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/repos:
     get:
       tags: [read]
@@ -223,24 +238,28 @@ paths:
       tags: [read]
       summary: Symbol search (FR-004/006/006a).
       parameters:
-        - { name: q, in: query, required: true, schema: { type: string } }
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1 }, description: 'Required search text (FR-006a); absent or empty ⇒ 400.' }
         - name: mode
           in: query
           description: Defaults to `auto` only when omitted; an invalid value ⇒ 400 (FR-006a).
           schema: { type: string, enum: [keyword, semantic, hybrid, auto] }
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/RepoQuery'
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SearchResult' } } } }
-        '400': { description: Invalid mode/params (FR-006a/015a), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '400': { description: Absent/empty q, invalid mode, or malformed limit/offset (FR-006a/015a), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/node/{id}:
     get:
       tags: [read]
       summary: Node's own fields only; relationships via the paged endpoints (FR-004/004a).
-      parameters: [ { $ref: '#/components/parameters/NodeId' } ]
+      parameters: [ { $ref: '#/components/parameters/NodeId' }, { $ref: '#/components/parameters/RepoQuery' } ]
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Node' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/callers/{id}:
     get:
       tags: [read]
@@ -249,9 +268,12 @@ paths:
         - { $ref: '#/components/parameters/NodeId' }
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Offset' }
+        - { $ref: '#/components/parameters/RepoQuery' }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ListResult' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '400': { description: Malformed/negative limit or offset (FR-015a; over-cap clamps, not errors), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/callees/{id}:
     get:
       tags: [read]
@@ -260,17 +282,21 @@ paths:
         - { $ref: '#/components/parameters/NodeId' }
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Offset' }
+        - { $ref: '#/components/parameters/RepoQuery' }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ListResult' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '400': { description: Malformed/negative limit or offset (FR-015a; over-cap clamps, not errors), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/impact/{id}:
     get:
       tags: [read]
-      summary: Impact radius of a symbol (FR-004).
-      parameters: [ { $ref: '#/components/parameters/NodeId' } ]
+      summary: Impact radius of a symbol — a node+edge subgraph, NOT a paged list (FR-004; library getImpactRadius returns a Subgraph). Shares GraphResult's shape + node cap.
+      parameters: [ { $ref: '#/components/parameters/NodeId' }, { $ref: '#/components/parameters/RepoQuery' } ]
       responses:
-        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ListResult' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/GraphResult' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/graph/{id}:
     get:
       tags: [read]
@@ -281,9 +307,12 @@ paths:
           in: query
           schema: { type: integer, default: 1, minimum: 1, maximum: 3 }
           description: Over-cap clamps, not errors (FR-007/015a).
+        - $ref: '#/components/parameters/RepoQuery'
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/GraphResult' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '400': { description: Malformed/negative depth (FR-015a; over-max clamps, not errors), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
 
   # ---------- Slice 2: re-index jobs ----------
   /api/reindex/{repo}:
@@ -308,7 +337,7 @@ paths:
       parameters: [ { $ref: '#/components/parameters/RepoId' } ]
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }         # no job ever run for this repo / unknown repo
+        '404': { $ref: '#/components/responses/NotFound' }         # registered-repo-with-no-job OR unknown/malformed repo => not_found (details.resource: repo), deliberately indistinguishable (FR-024/011)
   /api/reindex/{repo}/events:
     get:
       tags: [jobs]
@@ -324,4 +353,4 @@ paths:
           content:
             text/event-stream:
               schema: { type: string }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/NotFound' }         # registered-repo-with-no-job OR unknown/malformed repo => not_found (details.resource: repo), deliberately indistinguishable (FR-024/011)

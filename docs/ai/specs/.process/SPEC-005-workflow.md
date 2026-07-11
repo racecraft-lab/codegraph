@@ -321,6 +321,8 @@ must not leak daemons on exit (design concept Q1).
 | S1-Q2 | node-id URL transport | codebase+domain | 2/2 agree (R1) | percent-encoded path segment, split-then-decode-once, single decode site, 404 on miss | applied |
 | S1-Q3 | error.code vocabulary | all 3 (security keywords) | 3/3 unanimous → mandatory human review (protocol security override) | 6-code closed set; single not_found+details.resource; 503 unavailable+Retry-After; whitelist/no-leak guardrails; generic 401 bodies | human approved, applied |
 | S1-Q4 | out-of-enum ?mode | codebase+domain R1 split → R2 spec-context tiebreak | 2/3 majority (B) | 400 invalid_request for supplied bad mode; auto only when omitted; degradation stays 200+degraded fields; divergence from MCP/CLI coercion documented | applied |
+| CHK002 | ?repo= read addressing (FR-010a) | spec+domain | 2/2 ratify | query-param reads + path-segment write is principled (optional-with-default vs required identity; Grafana orgId precedent); surgical vs FR-004a/006/007 route shapes; unknown repo stays 404 | ratified |
+| CHK012 | impact endpoint shape | codebase (1) | ratify, med-high | GraphResult + 2000 cap verbatim (traverser has NO internal cap; 2000 = codebase dense-subgraph budget); adjacent fix applied: impact ?depth defaults 3, not neighborhood's 1 | ratified + depth default pinned |
 | S3-Q1 | bind host + loopback definition | all 3 (security) | 3/3 confirm + domain addition | 127.0.0.1:11235 default; shared loopback predicate (::1 included); wildcards fail closed; Host-header allowlist added (DNS rebinding — Vite/webpack-dev-server CVE precedent); Host mismatch → 400 invalid_request (closed vocabulary preserved) | human approved, applied |
 | S3-Q2 | token compare + auth scope | all 3 (security) | 3/3 confirm + additions | digest-first timingSafeEqual, empty-token pre-reject, UTF-8; /api/* scope incl. SSE; static shell public + FR-017a leak guard; EventSource/fetch constraint recorded for SPEC-006 | human approved, applied |
 | S3-Q5 | default port integer | domain (1) | confirm w/ caveat | 11235 (registered to obscure inactive 'xcompute'; practical risk negligible) | human approved, applied |
@@ -490,7 +492,7 @@ Focus on Local HTTP Server & REST API requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| api-contracts | | | |
+| api-contracts | 27 (19 pass, 8 gaps) | 8 fixed, 0 remain | FR-004/006a/010a(new)/011/018/024/025; openapi: RepoQuery, 503 on 7 reads, 400 on 3, impact→GraphResult |
 | security | | | |
 | streaming-protocol | | | |
 | error-handling | | | |

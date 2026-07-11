@@ -66,12 +66,16 @@ daemon index).
   **effective** paging window (`limit` default 100 / **max 500**, clamped not
   errored; `offset`) (FR-006).
 - **Node detail** (`GET /api/node/:id`): the node's **own fields only** (identity,
-  kind, name, location, signature/doc metadata). Callers/callees/impact are the
-  separate paged endpoints — keeps the node payload bounded regardless of fan-in
-  (FR-004).
+  kind, name, location, signature/doc metadata). Callers and callees are the
+  separate offset-paged endpoints, and impact the separate subgraph endpoint —
+  keeps the node payload bounded regardless of fan-in (FR-004).
 - **Graph neighborhood** (`GET /api/graph/:id`): `{ nodes: Node[], edges: Edge[],
   truncated }` within `depth` (default 1 / **max 3**); `nodes` capped at **2000**;
   `truncated: true` when a cap is hit (FR-007).
+- **Impact radius** (`GET /api/impact/:id`): the **same** node+edge subgraph shape
+  as graph neighborhood — `{ nodes: Node[], edges: Edge[], truncated }` — because
+  the library's `getImpactRadius` returns a Subgraph, not a flat list; it is
+  therefore **not** an offset-paged list endpoint (FR-004/006).
 
 **Search mode** (`GET /api/search`, FR-006a): optional `mode ∈ {keyword, semantic,
 hybrid, auto}`, mapping 1:1 to SPEC-003 modes; **defaults to `auto` only when
