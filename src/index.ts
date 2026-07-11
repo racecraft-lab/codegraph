@@ -95,8 +95,9 @@ import {
   LspWatchRestartBudget,
   LspWatchPrecisionPassOptions,
 } from './lsp';
+import { applyRename as deriveApplyRename } from './refactor/apply-engine';
 import { planRename as derivePlanRename } from './refactor/plan-engine';
-import type { RenamePlan, TargetSelector } from './refactor/types';
+import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
 
 // Re-export types for consumers
 export * from './types';
@@ -2829,6 +2830,34 @@ export class CodeGraph {
       selector,
       newName,
       lspConfig: resolveLspConfig({ projectRoot: this.projectRoot }),
+    });
+  }
+
+  /**
+   * SPEC-010 FR-014…FR-020 / FR-019a — execute a rename for `selector` → `newName`
+   * through the Slice-2 apply safety ladder. A thin wrapper over the `src/refactor/`
+   * apply engine: it injects this instance's graph queries, project root, and
+   * resolved SPEC-008 LSP config (the recompute fork), plus this instance's own
+   * resolution-complete `sync` as the injected re-sync (FR-018). It recomputes the
+   * plan from the LIVE index (FR-014) — no dry-run artifact is trusted — and resolves
+   * to exactly one {@link ApplyResult} terminal: `applied` (post-check green),
+   * `refused` (a success-shaped pre-write gate refusal, zero writes — FR-023),
+   * `rolled-back` (wrote then restored byte-identically, FR-019), or `rollback-failed`
+   * (the sole error-shaped terminal — a failed restore, FR-019a).
+   */
+  async applyRename(
+    selector: TargetSelector,
+    newName: string,
+    options?: { includeHeuristic?: boolean }
+  ): Promise<ApplyResult> {
+    return deriveApplyRename({
+      queries: this.queries,
+      projectRoot: this.projectRoot,
+      selector,
+      newName,
+      lspConfig: resolveLspConfig({ projectRoot: this.projectRoot }),
+      includeHeuristic: options?.includeHeuristic,
+      sync: this.sync.bind(this),
     });
   }
 

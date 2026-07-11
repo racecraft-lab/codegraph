@@ -395,3 +395,24 @@ export const RENAME_EXIT_CODES = {
 
 /** One of the {@link RENAME_EXIT_CODES} values (`0 | 1 | 2 | 3 | 4`). */
 export type RenameExitCode = (typeof RENAME_EXIT_CODES)[keyof typeof RENAME_EXIT_CODES];
+
+/**
+ * Map an {@link ApplyOutcome} to its {@link RENAME_EXIT_CODES} process code (FR-026):
+ * `applied → 0`, `refused → 2`, `rolled-back → 3`, `rollback-failed → 4`. The one
+ * seam the CLI action uses to turn an apply terminal into an exit code, exported so
+ * the mapping is unit-testable directly (the `rolled-back`/`rollback-failed` codes
+ * are impractical to induce through a CLI subprocess). Exhaustive switch — a future
+ * outcome becomes a compile error, never a silent exit `0`.
+ */
+export function renameApplyExitCode(outcome: ApplyOutcome): RenameExitCode {
+  switch (outcome) {
+    case 'applied':
+      return RENAME_EXIT_CODES.ok;
+    case 'refused':
+      return RENAME_EXIT_CODES.refused;
+    case 'rolled-back':
+      return RENAME_EXIT_CODES.rolledBack;
+    case 'rollback-failed':
+      return RENAME_EXIT_CODES.rollbackFailed;
+  }
+}

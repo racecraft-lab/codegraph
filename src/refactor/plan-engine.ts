@@ -26,6 +26,7 @@ import { QueryBuilder } from '../db/queries';
 import { detectLanguage } from '../extraction/grammars';
 import { EffectiveLspConfig, isLspLanguage, probeLspServerCommand } from '../lsp';
 import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
+import { checkPlanJail } from './jail';
 import { deriveLspRename } from './lsp-rename';
 import { LspPathDisposition, resolveTarget } from './target-resolver';
 import { EditSource, PlanConfidence, RenameEdit, RenamePlan, SourcePosition, Target, TargetSelector } from './types';
@@ -81,6 +82,17 @@ export async function planRename(options: PlanRenameOptions): Promise<RenamePlan
 
   const { edits, source, leftoverMentions } = await deriveEdits(options, target, targetId);
   const ordered = sortEdits(edits);
+
+  // FR-017 plan-time path jail + index-scope guard — refuse the whole plan at plan
+  // time too ("at plan and apply time alike") when the derived edit set names a file
+  // outside the workspace root or excluded from index scope. Reachable in practice
+  // only via the LSP path (a language server may return a workspace edit naming a
+  // dependency's source or a monorepo sibling); graph-path occurrences are in the
+  // index, hence in-root and in-scope by construction. Success-shaped, names the
+  // offending file(s); the apply engine re-checks after its own recompute (FR-014).
+  const jail = checkPlanJail({ projectRoot: options.projectRoot, files: [...new Set(ordered.map((e) => e.file))] });
+  if (jail) return { newName, applied: false, refusal: jail };
+
   return {
     target,
     newName,

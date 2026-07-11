@@ -16,7 +16,7 @@
  * (`lineText` from the plan-time span read, FR-005/SC-001).
  */
 
-import { Candidate, Refusal, RenameEdit, RenamePlan, SourcePosition, SourceRange } from './types';
+import { ApplyResult, Candidate, Refusal, RenameEdit, RenamePlan, SourcePosition, SourceRange } from './types';
 
 // --- Same-line composition (FR-027) ----------------------------------------
 
@@ -184,4 +184,69 @@ function toSurfacePlan(plan: RenamePlan): Record<string, unknown> {
   out.applied = plan.applied;
   if (plan.refusal) out.refusal = toSurfaceRefusal(plan.refusal);
   return out;
+}
+
+// --- Apply result rendering (Slice 2) --------------------------------------
+
+/**
+ * Render an {@link ApplyResult} for the human surface, consistent with the dry-run
+ * table style. A `refused` terminal reuses the dry-run refusal renderer (so gated
+ * edits / offending files surface identically); the `applied` / `rolled-back` /
+ * `rollback-failed` terminals each render their own machine-actionable payload.
+ */
+export function formatApplyResultTable(result: ApplyResult, newName: string): string {
+  if (result.outcome === 'refused' && result.refusal) {
+    return formatRenamePlanTable({ newName, applied: false, refusal: result.refusal });
+  }
+  const lines: string[] = [];
+  if (result.outcome === 'applied') {
+    lines.push(`applied → ${newName}`);
+    lines.push(`${result.touchedFiles.length} file(s) rewritten · index re-synced · post-check green`);
+    for (const f of result.touchedFiles) lines.push(`  ${f}`);
+  } else if (result.outcome === 'rolled-back') {
+    lines.push('rolled-back → the apply was undone byte-identically');
+    lines.push('the post-check found dangling references to the old name; no file was left modified.');
+    if (result.danglingReferences?.length) {
+      lines.push('dangling references:');
+      for (const d of result.danglingReferences) lines.push(`  ${d.file}:${d.range.start.line}  ${d.name}`);
+    }
+  } else if (result.outcome === 'rollback-failed' && result.recovery) {
+    lines.push('rollback-failed → the rollback restore itself failed; the workspace is left partially modified');
+    if (result.recovery.restoredFiles.length) {
+      lines.push('restored:');
+      for (const f of result.recovery.restoredFiles) lines.push(`  ${f}`);
+    }
+    lines.push('NOT restored:');
+    for (const f of result.recovery.unrestoredFiles) lines.push(`  ${f}`);
+    lines.push(`recovery dir: ${result.recovery.recoveryDir}`);
+    lines.push('Retrying the restore step alone is safe; do NOT re-run the rename.');
+  }
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * Serialize an {@link ApplyResult} to the canonical apply JSON string (`--apply
+ * --json`): `newName`, `applied`, `outcome`, `touchedFiles`, `postCheckPassed`, and
+ * whichever terminal payload it carries (`danglingReferences` / `recovery` /
+ * `refusal`) — ranges converted once to the LSP-style 0-based surface, matching the
+ * dry-run serializer's conventions.
+ */
+export function serializeApplyResultJson(result: ApplyResult, newName: string): string {
+  const out: Record<string, unknown> = {
+    newName,
+    applied: result.outcome === 'applied',
+    outcome: result.outcome,
+    touchedFiles: result.touchedFiles,
+    postCheckPassed: result.postCheckPassed,
+  };
+  if (result.danglingReferences) {
+    out.danglingReferences = result.danglingReferences.map((d) => ({
+      file: d.file,
+      range: toSurfaceRange(d.range),
+      name: d.name,
+    }));
+  }
+  if (result.recovery) out.recovery = result.recovery;
+  if (result.refusal) out.refusal = toSurfaceRefusal(result.refusal);
+  return JSON.stringify(out);
 }

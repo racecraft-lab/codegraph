@@ -1225,6 +1225,61 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     expect(plan.edits).toBeUndefined();
     expect(plan.target).toBeUndefined();
   });
+
+  // T040 — FR-017 plan-time jail. The apply engine already refuses an out-of-root
+  // edit set at Rung 2 (T030), but a DRY-RUN must refuse it too ("at plan and apply
+  // time alike", FR-017 / spec Edge Cases). The realistic source is a misbehaving
+  // language server whose workspace edit names a file outside the workspace root (a
+  // dependency's source, a monorepo sibling) — graph-path occurrences are in-index,
+  // hence in-root by construction — so this drives the LSP path with the T009 stub
+  // and asserts planRename returns the success-shaped out-of-root refusal, naming
+  // only the escaping file, with zero edits.
+  it('T040 refuses at plan time (out-of-root) when an LSP workspace edit names a file outside the root — success-shaped, names the file, no edits', async () => {
+    const { dir, queries } = await setup({ 'a.ts': A_DECL + '\n' });
+    const stub = writeRenameStub(dir);
+
+    // A real file OUTSIDE the workspace root, named by the server's workspace edit.
+    // It must exist on disk because the LSP path reads each edited file to recover
+    // oldText/lineText and to tally leftovers — so the refusal is the assertion,
+    // not an incidental ENOENT.
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-outside-'));
+    cleanups.push(() => fs.rmSync(outsideDir, { recursive: true, force: true }));
+    const outsideLine = 'export const outsideRef = target;';
+    fs.writeFileSync(path.join(outsideDir, 'outside.ts'), outsideLine + '\n');
+
+    const aCol = A_DECL.indexOf('target');
+    const outCol = outsideLine.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'a.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: aCol }, end: { line: 0, character: aCol + 6 } }, newText: 'renamed' }],
+        },
+        {
+          textDocument: { uri: pathToFileURL(path.join(outsideDir, 'outside.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: outCol }, end: { line: 0, character: outCol + 6 } }, newText: 'renamed' }],
+        },
+      ],
+    };
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(plan.refusal?.reason).toBe('out-of-root');
+    // The refusal names ONLY the escaping file (workspace-relative), never in-root a.ts.
+    const relOutside = path.relative(dir, path.join(outsideDir, 'outside.ts'));
+    expect(plan.refusal?.files).toEqual([relOutside]);
+    // Whole-plan refusal: no partial edit set, no resolved target leaked, zero writes.
+    expect(plan.edits).toBeUndefined();
+    expect(plan.applied).toBe(false);
+    expect(plan.newName).toBe('renamed');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1463,8 +1518,8 @@ describe('T013 plan format + schema — plan-format (FR-027 / SC-001)', () => {
 // SC-005), writes NOTHING, and maps outcomes to a Slice-1 exit taxonomy of only
 // 0 (plan produced) / 2 (recoverable success-shaped refusal: target-not-found,
 // not-indexed) / 1 (unexpected) — never the read-only commands' generic
-// error→exit-1 mapping. `--apply` is NOT a Slice-1 option, so commander rejects
-// it with its standard unknown-option error (Assumptions). Exercised end-to-end
+// error→exit-1 mapping. The default (no-`--apply`) dry-run surface stays 0/1/2; the
+// `--apply` write path and its 0/2/3/4 terminals are covered in T042. Exercised end-to-end
 // through dist/bin/codegraph.js (matches index-command.test.ts /
 // hybrid-cli-surface.test.ts) against a real indexed fixture; the graph path is
 // forced (LSP env scrubbed) so the CLI plan equals the in-process library plan.
@@ -1624,21 +1679,27 @@ describe('T014 CLI dry-run — codegraph rename (built binary, FR-001/FR-026/FR-
     expect(parsed.edits).toBeUndefined();
   });
 
-  it('--apply is NOT a Slice-1 option: commander rejects it as an unknown option, non-zero exit', () => {
-    const res = runRename(['soloRenameTarget', 'renamedSolo', '--apply']);
-    expect(res.status).not.toBe(0);
-    expect(res.stderr).toMatch(/unknown option/i);
+  // `--apply` is now a recognized Slice-2 option (T042 covers its write behavior).
+  // Here we only pin that it is NO LONGER an unknown-option usage error and that a
+  // recoverable refusal maps to exit 2 — driven through target-not-found so this
+  // shared dry-run fixture is never mutated by a successful apply.
+  it('--apply is a recognized Slice-2 option: a target-not-found refuses (exit 2), never an unknown-option error, zero writes', () => {
+    const res = runRename(['noSuchSymbolAnywhere', 'whatever', '--apply']);
+    expect(res.status).toBe(2); // recoverable refusal, NOT commander's unknown-option exit 1
+    expect(res.stderr).not.toMatch(/unknown option/i);
+    expect(res.stdout).toContain('target-not-found');
     assertFixtureUnchanged();
   });
 
-  it('exit codes stay within the Slice-1 taxonomy {0,1,2} (FR-026)', () => {
-    const ok = runRename(['soloRenameTarget', 'renamedSolo']).status;
-    const refused = runRename(['noSuchSymbolAnywhere', 'whatever']).status;
-    const usage = runRename(['soloRenameTarget', 'renamedSolo', '--apply']).status;
+  it('the dry-run surface maps to the rename exit taxonomy {0,1,2,3,4} (FR-026)', () => {
+    const ok = runRename(['soloRenameTarget', 'renamedSolo']).status; // dry-run plan produced
+    const refused = runRename(['noSuchSymbolAnywhere', 'whatever']).status; // recoverable refusal
+    const usage = runRename(['soloRenameTarget', 'renamedSolo', '--no-such-flag']).status; // commander usage error
     expect(ok).toBe(0); // plan produced
     expect(refused).toBe(2); // recoverable refusal
     expect(usage).toBe(1); // commander's standard unknown-option usage error
-    for (const code of [ok, refused, usage]) expect([0, 1, 2]).toContain(code);
+    for (const code of [ok, refused, usage]) expect([0, 1, 2, 3, 4]).toContain(code);
+    assertFixtureUnchanged();
   });
 });
 

@@ -865,8 +865,8 @@ For each task:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| 1 - Foundation | | | |
-| 2 - Slice 1: plan engine + CLI dry-run | | | |
+| 1 - Foundation | T001–T008 | ✅ 2026-07-11 (`994e7f6`) | Baseline gate; types.ts (field-incompatible position families force the boundary conversion); confidence.ts + span-verify.ts (28 tests, verified RED→GREEN); QueryBuilder.getReferencesToNode +63/−0 additive; T008 within budget |
+| 2 - Slice 1: plan engine + CLI dry-run | T009–T027 | ✅ 2026-07-11 (`f911f95`, checkpoint `2bb5aa5`) | Sequential TDD units: lsp-rename (no-hang proven at client timeout bound), graph-rename (self-loop sentinel dropped pre-tier), target-resolver (`Class::method` storage discovered → segment-suffix matching; lazy 3-state LSP disposition seam), plan-format + plan-engine (in-test draft-07 validator, codepoint ordering), CLI rename dry-run (+27/+75 strictly additive to index.ts/codegraph.ts). US2: candidate-listing refusals, kind coverage, FR-021a validation with validKinds. **T027 gate: full hermetic suite 172/172 ×2; quickstart S1-A…S1-F all PASS; CHANGELOG entry added.** UAT surfaced 2 defects, both TDD-remediated pre-seal: **D1** references-only edge scoping (calls/imports/extends/implements sites got no edits — would have invalidated FR-018's touched-file premise at apply time; fixed via empirically-probed RENAME_RELEVANT_EDGE_KINDS with span-verify as the safety filter; data-model.md drift corrected) and **D2** human-surface refusals omitted candidates/validKinds/files/gatedEdits payloads (FR-007; fixed in plan-format). Final: 108/108 scoped, 172/172 full. |
 | 3 - Slice 2: apply + MCP | | | |
 | 4 - Polish & cross-cutting | | | |
 

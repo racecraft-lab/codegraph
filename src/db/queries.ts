@@ -1087,6 +1087,30 @@ export class QueryBuilder {
   }
 
   /**
+   * Nodes named `name` scoped to a set of file paths — the FR-018 post-check's
+   * "no node named the old name remains in the touched files" probe (SPEC-010).
+   * File-scoped counterpart of {@link getNodesByName}; chunked under SQLite's
+   * parameter limit exactly like {@link getUnresolvedReferencesByFiles} so a
+   * post-check over a large touched-file set never trips "too many SQL
+   * variables". The placeholder count varies per chunk, so the statement is
+   * prepared fresh (not cached) — matching every other dynamic IN-list here.
+   */
+  getNodesByNameInFiles(name: string, filePaths: string[]): Node[] {
+    if (filePaths.length === 0) return [];
+
+    const rows: NodeRow[] = [];
+    for (let i = 0; i < filePaths.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = filePaths.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const chunkRows = this.db
+        .prepare(`SELECT * FROM nodes WHERE name = ? AND file_path IN (${placeholders})`)
+        .all(name, ...chunk) as NodeRow[];
+      rows.push(...chunkRows);
+    }
+    return rows.map(rowToNode);
+  }
+
+  /**
    * Get nodes by exact qualified name match (uses idx_nodes_qualified_name index)
    */
   getNodesByQualifiedNameExact(qualifiedName: string): Node[] {
@@ -2435,6 +2459,42 @@ export class QueryBuilder {
       const chunkRows = this.db
         .prepare(`SELECT * FROM unresolved_refs WHERE status = 'pending' AND file_path IN (${placeholders})`)
         .all(...chunk) as UnresolvedRefRow[];
+      rows.push(...chunkRows);
+    }
+
+    return rows.map((row) => ({
+      fromNodeId: row.from_node_id,
+      referenceName: row.reference_name,
+      referenceKind: row.reference_kind as EdgeKind,
+      line: row.line,
+      column: row.col,
+      candidates: row.candidates ? safeJsonParse(row.candidates, undefined) : undefined,
+      filePath: row.file_path,
+      language: row.language as Language,
+    }));
+  }
+
+  /**
+   * Unresolved references named `name` scoped to a set of file paths — the
+   * FR-018 post-check's "no unresolved reference in the touched files still
+   * carries the old name" probe (SPEC-010). Deliberately status-AGNOSTIC,
+   * unlike {@link getUnresolvedReferencesByFiles}: a genuine dangling reference
+   * is parked status='failed' by the resolution-complete re-sync the post-check
+   * runs after, so inheriting that statement's status='pending' filter would
+   * miss exactly the dangling references this probe exists to catch. Chunked
+   * under SQLite's parameter limit like the sibling file-scoped lookups;
+   * prepared fresh per chunk since the placeholder count varies.
+   */
+  getUnresolvedRefsByNameInFiles(name: string, filePaths: string[]): UnresolvedReference[] {
+    if (filePaths.length === 0) return [];
+
+    const rows: UnresolvedRefRow[] = [];
+    for (let i = 0; i < filePaths.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = filePaths.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const chunkRows = this.db
+        .prepare(`SELECT * FROM unresolved_refs WHERE reference_name = ? AND file_path IN (${placeholders})`)
+        .all(name, ...chunk) as UnresolvedRefRow[];
       rows.push(...chunkRows);
     }
 
