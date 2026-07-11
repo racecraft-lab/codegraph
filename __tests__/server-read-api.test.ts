@@ -10,7 +10,7 @@
  * fixture temp dirs, never this repo's own daemon.
  */
 
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -543,9 +543,13 @@ describe('SPEC-005 web server lifecycle (T006, FR-002/026)', () => {
     expect(h.host).toBe('127.0.0.1');
   });
 
-  it('serves the 404 not_found route envelope for any /api path (no routes yet)', async () => {
+  it('serves the 404 not_found route envelope for an unknown /api path', async () => {
     const h = await start();
-    const res = await fetch(`http://127.0.0.1:${h.port}/api/status`);
+    // An UNMATCHED /api path is a route miss (404) before any daemon attach —
+    // distinct from the now-wired read routes (/api/status etc.), which the
+    // T011 suite covers. Kept unmatched so this lifecycle test never touches a
+    // daemon (this cwd's own, in particular — the dogfood hazard).
+    const res = await fetch(`http://127.0.0.1:${h.port}/api/nope`);
     expect(res.status).toBe(404);
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(await res.json()).toMatchObject({
@@ -592,6 +596,7 @@ describe('SPEC-005 web server lifecycle (T006, FR-002/026)', () => {
     let closed = 0;
     const fakeClient: DaemonReadClient = {
       request: async () => ({ content: [{ type: 'text', text: '' }] }),
+      read: async () => ({}),
       close: () => { closed += 1; },
     };
     h.trackDaemonClient(fakeClient);
@@ -748,7 +753,7 @@ describe('SPEC-005 server fixture harness (T008)', () => {
     expect(fs.existsSync(fx.dir)).toBe(false);
   }, T(20000));
 
-  it('startServerFixture serves over a real index on port 0 (404 route envelope, reads not wired)', async () => {
+  it('startServerFixture serves over a real index on port 0 (unknown /api path → 404 route)', async () => {
     const fx = await startServerFixture();
     fixtures.push(fx);
 
@@ -756,7 +761,10 @@ describe('SPEC-005 server fixture harness (T008)', () => {
     expect(fx.handle.port).toBeGreaterThan(0);
     expect(fs.existsSync(path.join(fx.root, '.codegraph'))).toBe(true);
 
-    const res = await fetch(`${fx.baseURL}/api/status`);
+    // An unmatched /api path still 404s as the route envelope (the wired read
+    // routes are covered by the T011 suite); this harness test stays a pure
+    // routing check that never spawns the fixture's daemon.
+    const res = await fetch(`${fx.baseURL}/api/nope`);
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({
       error: { code: 'not_found', details: { resource: 'route' } },
@@ -783,5 +791,334 @@ describe('SPEC-005 server fixture harness (T008)', () => {
     await fx.teardown();
     expect(fs.existsSync(root)).toBe(false);
     expect(fs.existsSync(webRoot!)).toBe(false);
+  }, T(20000));
+});
+
+// ---------------------------------------------------------------------------
+// T011 — read endpoints over a real fixture index, end-to-end through the
+// daemon `codegraph/read` transport (FR-004/004a/005/006/006a/007/016).
+//
+// One shared server + daemon over a rich fixture (amortizes the daemon spawn);
+// every read is a real HTTP round-trip that forwards to the daemon and maps the
+// library result to the wire shape. Node ids are looked up via /api/search so
+// no opaque hash is hard-coded (a realistic client flow).
+// ---------------------------------------------------------------------------
+
+/**
+ * A fixture whose call graph is known: `subHelper` (in a subdir, so its file
+ * node id `file:src/util.ts` carries a slash for the %2F round-trip) is called
+ * by `helper`, `useSub`, and imported by `a.ts`; `helper` calls `subHelper` and
+ * is called by `caller`.
+ */
+const READ_FIXTURE_FILES: Record<string, string> = {
+  'a.ts':
+    'import { subHelper } from "./src/util";\n' +
+    'export function helper(): number { return subHelper() + 1; }\n' +
+    'export function caller(): number { return helper(); }\n',
+  'src/util.ts':
+    'export function subHelper(): number { return 2; }\n' +
+    'export function useSub(): number { return subHelper(); }\n',
+};
+
+describe('SPEC-005 read endpoints (T011, FR-004/004a/005/006/006a/007/016)', () => {
+  let fx: ServerFixture;
+  let baseURL: string;
+
+  beforeAll(async () => {
+    fx = await startServerFixture({ files: READ_FIXTURE_FILES });
+    baseURL = fx.baseURL;
+    // Warm the daemon: the first read lazily spawns + attaches it (cold-start
+    // budget). Poll /api/status until it serves 200 so per-test reads are fast.
+    await waitFor(async () => (await fetch(`${baseURL}/api/status`)).status === 200, 40000, 'status 200');
+  }, T(60000));
+
+  afterAll(async () => {
+    if (fx) await fx.teardown();
+  });
+
+  const getJson = async (p: string): Promise<{ status: number; body: any; ct: string | null }> => {
+    const res = await fetch(`${baseURL}${p}`);
+    const ct = res.headers.get('content-type');
+    const body = await res.json().catch(() => undefined);
+    return { status: res.status, body, ct };
+  };
+
+  /** Look up a symbol's opaque node id via the search endpoint. */
+  const idOf = async (name: string): Promise<string> => {
+    const { body } = await getJson(`/api/search?q=${encodeURIComponent(name)}&limit=50`);
+    const hit = (body.items as Array<{ id: string; name: string; kind: string }>).find(
+      (n) => n.name === name && n.kind !== 'import',
+    );
+    if (!hit) throw new Error(`no search hit for ${name}: ${JSON.stringify(body.items)}`);
+    return hit.id;
+  };
+
+  // ---- GET /api/status (FR-005/016) ----
+  describe('GET /api/status', () => {
+    it('reports version, default repo, index health, hybrid + lsp availability', async () => {
+      const { status, body, ct } = await getJson('/api/status');
+      expect(status).toBe(200);
+      expect(ct).toContain('application/json');
+
+      expect(typeof body.version).toBe('string');
+      expect(body.version.length).toBeGreaterThan(0);
+
+      expect(body.repo.id).toMatch(/^[0-9a-f]{16}$/);
+      expect(typeof body.repo.root).toBe('string');
+      expect(typeof body.repo.name).toBe('string');
+
+      expect(body.index.state).toBe('indexed');
+      expect(body.index.fileCount).toBeGreaterThanOrEqual(2);
+      expect(body.index.nodeCount).toBeGreaterThan(0);
+      expect(typeof body.index.edgeCount).toBe('number');
+      expect('lastIndexed' in body.index).toBe(true);
+
+      expect(typeof body.hybridSearch.available).toBe('boolean');
+      expect(typeof body.lsp.available).toBe('boolean');
+      // Unit-test env strips embedding vars and installs no language server.
+      expect(body.hybridSearch.available).toBe(false);
+      expect(body.lsp.available).toBe(false);
+    }, T(20000));
+
+    it('is not repo-scoped: does not carry the full repo list', async () => {
+      const { body } = await getJson('/api/status');
+      expect(Array.isArray(body.repos)).toBe(false);
+    }, T(15000));
+  });
+
+  // ---- GET /api/search (FR-006/006a) ----
+  describe('GET /api/search', () => {
+    it('returns a paged { items, total, limit, offset } list of nodes', async () => {
+      const { status, body } = await getJson('/api/search?q=subHelper');
+      expect(status).toBe(200);
+      expect(Array.isArray(body.items)).toBe(true);
+      expect(typeof body.total).toBe('number');
+      expect(body.limit).toBe(100);
+      expect(body.offset).toBe(0);
+      const hit = (body.items as Array<any>).find((n) => n.name === 'subHelper');
+      expect(hit).toBeTruthy();
+      expect(typeof hit.id).toBe('string');
+      expect(typeof hit.kind).toBe('string');
+    }, T(20000));
+
+    it('rejects an absent q with 400 invalid_request (details.param q)', async () => {
+      const { status, body } = await getJson('/api/search');
+      expect(status).toBe(400);
+      expect(body.error.code).toBe('invalid_request');
+      expect(body.error.details.param).toBe('q');
+    }, T(15000));
+
+    it('rejects an empty q with 400', async () => {
+      const { status, body } = await getJson('/api/search?q=');
+      expect(status).toBe(400);
+      expect(body.error.code).toBe('invalid_request');
+    }, T(15000));
+
+    it('accepts an omitted mode (defaults to auto) → 200', async () => {
+      const { status } = await getJson('/api/search?q=subHelper');
+      expect(status).toBe(200);
+    }, T(15000));
+
+    it('accepts each valid mode → 200', async () => {
+      for (const mode of ['keyword', 'semantic', 'hybrid', 'auto']) {
+        const { status } = await getJson(`/api/search?q=subHelper&mode=${mode}`);
+        expect(status).toBe(200);
+      }
+    }, T(20000));
+
+    it('rejects an invalid mode with 400 (diverges from MCP/CLI coercion)', async () => {
+      const { status, body } = await getJson('/api/search?q=subHelper&mode=fuzzy');
+      expect(status).toBe(400);
+      expect(body.error.code).toBe('invalid_request');
+    }, T(15000));
+
+    it('clamps an over-cap limit to 500 (echoes the effective value, not an error)', async () => {
+      const { status, body } = await getJson('/api/search?q=subHelper&limit=9999');
+      expect(status).toBe(200);
+      expect(body.limit).toBe(500);
+    }, T(15000));
+
+    it('rejects a negative limit and a malformed offset with 400', async () => {
+      expect((await getJson('/api/search?q=subHelper&limit=-1')).status).toBe(400);
+      expect((await getJson('/api/search?q=subHelper&offset=abc')).status).toBe(400);
+    }, T(15000));
+
+    it('degradation (semantic w/o embeddings) → 200 with degraded:true + reason, never an error', async () => {
+      const { status, body } = await getJson('/api/search?q=subHelper&mode=semantic');
+      expect(status).toBe(200);
+      expect(body.degraded).toBe(true);
+      expect(typeof body.degradationReason).toBe('string');
+    }, T(15000));
+  });
+
+  // ---- GET /api/node/:id (FR-004/004a) ----
+  describe('GET /api/node/:id', () => {
+    it('returns the node OWN fields only (no relationships embedded)', async () => {
+      const id = await idOf('subHelper');
+      const { status, body } = await getJson(`/api/node/${encodeURIComponent(id)}`);
+      expect(status).toBe(200);
+      expect(body.id).toBe(id);
+      expect(body.kind).toBe('function');
+      expect(body.name).toBe('subHelper');
+      expect(body.file).toBe('src/util.ts');
+      expect(typeof body.line).toBe('number');
+      // Bounded: relationships are the separate endpoints, never inlined here.
+      expect('callers' in body).toBe(false);
+      expect('callees' in body).toBe(false);
+      expect('edges' in body).toBe(false);
+      expect('nodes' in body).toBe(false);
+    }, T(20000));
+
+    it('round-trips a file: id whose %2F-encoded slash resolves to the right node (FR-004a)', async () => {
+      const { status, body } = await getJson('/api/node/file:src%2Futil.ts');
+      expect(status).toBe(200);
+      expect(body.id).toBe('file:src/util.ts');
+      expect(body.kind).toBe('file');
+    }, T(20000));
+
+    it('an unknown node id → 404 not_found (details.resource node)', async () => {
+      const { status, body } = await getJson('/api/node/function:00000000000000000000000000000000');
+      expect(status).toBe(404);
+      expect(body.error.code).toBe('not_found');
+      expect(body.error.details.resource).toBe('node');
+    }, T(15000));
+
+    it('a malformed id → 404 not_found node (indistinguishable from unknown)', async () => {
+      const { status, body } = await getJson('/api/node/%ZZ');
+      expect(status).toBe(404);
+      expect(body.error.details.resource).toBe('node');
+    }, T(15000));
+  });
+
+  // ---- GET /api/callers|callees/:id (FR-004/006) ----
+  describe('GET /api/callers|callees/:id', () => {
+    it('callers returns a paged node list including the real callers', async () => {
+      const id = await idOf('subHelper');
+      const { status, body } = await getJson(`/api/callers/${encodeURIComponent(id)}`);
+      expect(status).toBe(200);
+      expect(Array.isArray(body.items)).toBe(true);
+      expect(body.limit).toBe(100);
+      expect(body.offset).toBe(0);
+      const names = (body.items as Array<any>).map((n) => n.name);
+      expect(names).toContain('helper');
+      expect(names).toContain('useSub');
+      expect(body.total).toBeGreaterThanOrEqual(2);
+    }, T(20000));
+
+    it('callees returns the symbols a function calls', async () => {
+      const id = await idOf('helper');
+      const { status, body } = await getJson(`/api/callees/${encodeURIComponent(id)}`);
+      expect(status).toBe(200);
+      const names = (body.items as Array<any>).map((n) => n.name);
+      expect(names).toContain('subHelper');
+    }, T(20000));
+
+    it('honours limit/offset paging (over-cap clamps, total is the full count)', async () => {
+      const id = await idOf('subHelper');
+      const page = await getJson(`/api/callers/${encodeURIComponent(id)}?limit=1`);
+      expect(page.status).toBe(200);
+      expect(page.body.items.length).toBe(1);
+      expect(page.body.limit).toBe(1);
+      expect(page.body.total).toBeGreaterThanOrEqual(2);
+
+      const clamped = await getJson(`/api/callers/${encodeURIComponent(id)}?limit=9999`);
+      expect(clamped.body.limit).toBe(500);
+    }, T(20000));
+
+    it('a negative limit → 400; an unknown id → 404 node', async () => {
+      const id = await idOf('subHelper');
+      expect((await getJson(`/api/callers/${encodeURIComponent(id)}?limit=-1`)).status).toBe(400);
+      const unknown = await getJson('/api/callers/function:00000000000000000000000000000000');
+      expect(unknown.status).toBe(404);
+      expect(unknown.body.error.details.resource).toBe('node');
+    }, T(20000));
+  });
+
+  // ---- GET /api/impact/:id + /api/graph/:id (FR-004/007) ----
+  describe('GET /api/impact|graph/:id', () => {
+    it('impact returns a { nodes, edges, truncated } subgraph, NOT a paged list', async () => {
+      const id = await idOf('subHelper');
+      const { status, body } = await getJson(`/api/impact/${encodeURIComponent(id)}`);
+      expect(status).toBe(200);
+      expect(Array.isArray(body.nodes)).toBe(true);
+      expect(Array.isArray(body.edges)).toBe(true);
+      expect(typeof body.truncated).toBe('boolean');
+      expect('items' in body).toBe(false);
+      expect(body.nodes.length).toBeGreaterThanOrEqual(1);
+      const nodeNames = (body.nodes as Array<any>).map((n) => n.name);
+      expect(nodeNames).toContain('subHelper');
+      if (body.edges.length > 0) {
+        expect(body.edges[0]).toMatchObject({
+          source: expect.any(String),
+          target: expect.any(String),
+          kind: expect.any(String),
+        });
+      }
+    }, T(20000));
+
+    it('graph returns the same subgraph shape and includes the focal node', async () => {
+      const id = await idOf('subHelper');
+      const { status, body } = await getJson(`/api/graph/${encodeURIComponent(id)}`);
+      expect(status).toBe(200);
+      expect(Array.isArray(body.nodes)).toBe(true);
+      expect(Array.isArray(body.edges)).toBe(true);
+      expect(typeof body.truncated).toBe('boolean');
+      expect((body.nodes as Array<any>).map((n) => n.id)).toContain(id);
+    }, T(20000));
+
+    it('impact defaults to depth 3 and graph to depth 1; both clamp an over-max depth (no error)', async () => {
+      const id = await idOf('subHelper');
+      // No-depth calls succeed (their own divergent defaults) …
+      expect((await getJson(`/api/impact/${encodeURIComponent(id)}`)).status).toBe(200);
+      expect((await getJson(`/api/graph/${encodeURIComponent(id)}`)).status).toBe(200);
+      // … an over-max depth clamps rather than 400.
+      expect((await getJson(`/api/impact/${encodeURIComponent(id)}?depth=99`)).status).toBe(200);
+      expect((await getJson(`/api/graph/${encodeURIComponent(id)}?depth=99`)).status).toBe(200);
+    }, T(20000));
+
+    it('a malformed/negative depth → 400 on both', async () => {
+      const id = await idOf('subHelper');
+      expect((await getJson(`/api/impact/${encodeURIComponent(id)}?depth=-1`)).status).toBe(400);
+      expect((await getJson(`/api/graph/${encodeURIComponent(id)}?depth=abc`)).status).toBe(400);
+    }, T(20000));
+
+    it('an unknown id → 404 node on both', async () => {
+      const unknownImpact = await getJson('/api/impact/function:00000000000000000000000000000000');
+      expect(unknownImpact.status).toBe(404);
+      expect(unknownImpact.body.error.details.resource).toBe('node');
+      const unknownGraph = await getJson('/api/graph/function:00000000000000000000000000000000');
+      expect(unknownGraph.status).toBe(404);
+    }, T(20000));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T014 — un-indexed startup repo: /api/status reports state via index.state and
+// MUST NOT refuse startup or 503 (FR-005/016 Edge Case). No daemon needed — the
+// attach fails fast for a root with no .codegraph/ and the handler synthesizes
+// an un-indexed status.
+// ---------------------------------------------------------------------------
+
+describe('SPEC-005 /api/status on an un-indexed startup repo (T014, FR-005/016)', () => {
+  const dirs: string[] = [];
+  const handles: WebServerHandle[] = [];
+
+  afterEach(async () => {
+    for (const h of handles.splice(0)) { try { await h.close(); } catch { /* closed */ } }
+    for (const d of dirs.splice(0)) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } }
+  });
+
+  it('binds and reports index.state for a repo with no .codegraph/ (never 503)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-unindexed-'));
+    dirs.push(dir);
+    const h = await startWebServer({ port: 0, projectPath: dir });
+    handles.push(h);
+    const res = await fetch(`http://${h.host}:${h.port}/api/status`);
+    expect(res.status).toBe(200);
+    const body: any = await res.json();
+    expect(body.index.state).toBe('unindexed');
+    expect(body.index.nodeCount).toBe(0);
+    expect(body.hybridSearch.available).toBe(false);
+    expect(body.lsp.available).toBe(false);
   }, T(20000));
 });

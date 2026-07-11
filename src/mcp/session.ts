@@ -16,6 +16,7 @@ import * as path from 'path';
 import { JsonRpcRequest, JsonRpcNotification, JsonRpcTransport, ErrorCodes } from './transport';
 import { MCPEngine } from './engine';
 import { tools } from './tools';
+import { UnknownReadOpError } from './read-ops';
 import { SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX } from './server-instructions';
 import { CodeGraphPackageVersion } from './version';
 import { findNearestCodeGraphRoot } from '../directory';
@@ -155,6 +156,12 @@ export class MCPSession {
       case 'tools/call':
         if (isRequest) await this.handleToolsCall(message as JsonRpcRequest);
         break;
+      case 'codegraph/read':
+        // SPEC-005 additive structured read-only method (FR-002/004/008). A
+        // daemon *client* (the web serve process) forwards graph reads here so
+        // it never opens a second in-process index copy; read-only, never indexes.
+        if (isRequest) await this.handleRead(message as JsonRpcRequest);
+        break;
       case 'ping':
         if (isRequest) this.transport.sendResult((message as JsonRpcRequest).id, {});
         break;
@@ -292,6 +299,37 @@ export class MCPSession {
     // After the reply is on the wire — telemetry must never delay a tool
     // response (in-memory increment only; see src/telemetry).
     getTelemetry().recordUsage('mcp_tool', toolName, !result.isError, this.clientInfo);
+  }
+
+  /**
+   * Handle `codegraph/read` (SPEC-005) — the additive structured read-only
+   * method. Ensures the default project is open (same lazy path as tools/call),
+   * then delegates to {@link MCPEngine.executeRead}. An unknown op → InvalidParams;
+   * any other failure → InternalError, so a bad read never wedges the session.
+   */
+  private async handleRead(request: JsonRpcRequest): Promise<void> {
+    const params = request.params as { op?: unknown; params?: unknown } | undefined;
+    const op = typeof params?.op === 'string' ? params.op : '';
+    if (!op) {
+      this.transport.sendError(request.id, ErrorCodes.InvalidParams, 'Missing read op');
+      return;
+    }
+    await this.retryInitIfNeeded();
+    try {
+      const readParams = (params?.params ?? {}) as Record<string, unknown>;
+      const result = await this.engine.executeRead(op, readParams);
+      this.transport.sendResult(request.id, result);
+    } catch (err) {
+      if (err instanceof UnknownReadOpError) {
+        this.transport.sendError(request.id, ErrorCodes.InvalidParams, err.message);
+        return;
+      }
+      this.transport.sendError(
+        request.id,
+        ErrorCodes.InternalError,
+        err instanceof Error ? err.message : 'read failed',
+      );
+    }
   }
 
   /**

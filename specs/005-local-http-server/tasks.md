@@ -173,6 +173,14 @@ testable before US4 lands.)
 
 ### Implementation for User Story 1
 
+> **Amendment (human-ratified 2026-07-11, plan Constitution III updated):** T013's
+> wrappers ride a new **additive structured read RPC** (`codegraph/read`) added to the
+> daemon session dispatch (`src/mcp/session.ts` + engine/query-pool wiring), because
+> the socket's `tools/call` surface returns id-less markdown unusable for the REST
+> wire shapes. Read-only; FR-002/Q1 upheld (daemon executes all reads, one warm
+> index); FR-021 untouched (bans indexing RPCs only). The retrieval-guardian check
+> (T042) now also verifies this addition changes no MCP tool output.
+
 - [ ] T013 [US1] Read-query forwarding wrappers in `src/server/daemon-client.ts` —
   typed methods over the daemon socket for `searchNodes` / `getNode` / `getCallers`
   / `getCallees` / `getImpactRadius` / graph-neighborhood + status/index-health,

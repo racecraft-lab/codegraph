@@ -16,6 +16,7 @@ import { findNearestCodeGraphRoot } from '../directory';
 import { watchDisabledReason } from '../sync';
 import { ToolHandler } from './tools';
 import { QueryPool, resolvePoolSize } from './query-pool';
+import { executeReadOp, readOnMissingIndex } from './read-ops';
 
 // Lazy-load the heavy CodeGraph chain (sqlite + query/graph/context layers) OFF
 // the MCP startup path. It's only needed once a tool actually opens a project —
@@ -114,6 +115,24 @@ export class MCPEngine {
   /** Shared ToolHandler — sessions delegate tool dispatch through this. */
   getToolHandler(): ToolHandler {
     return this.toolHandler;
+  }
+
+  /**
+   * Execute a structured read op (SPEC-005 `codegraph/read`, FR-002/004/008) —
+   * an additive, read-only path OFF the tool surface. Runs the existing library
+   * read methods against the shared warm {@link CodeGraph} (no second in-process
+   * index copy) and returns their structured results; it never indexes (FR-021).
+   * The session runs `retryInitIfNeeded()` first, so `this.cg` is normally open;
+   * a still-missing index yields an op-appropriate empty result rather than a
+   * throw. Unknown ops throw {@link import('./read-ops').UnknownReadOpError}.
+   */
+  async executeRead(op: string, params: Record<string, unknown>): Promise<unknown> {
+    const cg = this.cg;
+    if (!cg) return readOnMissingIndex(op);
+    // Pick up an index replaced on disk (#925) before serving, mirroring the
+    // ToolHandler read path's freshen; never fail the read over it.
+    try { cg.reopenIfReplaced(); } catch { /* keep the current handle */ }
+    return executeReadOp(cg, op, params);
   }
 
   /** Whether the default project's CodeGraph is open. */

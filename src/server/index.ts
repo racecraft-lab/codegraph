@@ -18,10 +18,22 @@
 import * as http from 'http';
 import * as net from 'net';
 import * as path from 'path';
-import { handleApiRequest, type Route, type RouteContext, type HandlerResult } from './routes';
+import * as fs from 'fs';
+import * as crypto from 'crypto';
+import {
+  handleApiRequest,
+  buildReadRoutes,
+  type RouteContext,
+  type HandlerResult,
+  type ReadApiDeps,
+  type RepoInfo,
+} from './routes';
 import { internalError } from './errors';
 import { serveStatic } from './static';
-import type { DaemonReadClient } from './daemon-client';
+import { attachDaemonClient, type DaemonReadClient } from './daemon-client';
+import { CodeGraphPackageVersion } from '../mcp/version';
+import { listDaemons } from '../mcp/daemon-registry';
+import { findNearestCodeGraphRoot } from '../directory';
 
 /** Options for starting the web server. */
 export interface WebServerOptions {
@@ -39,6 +51,12 @@ export interface WebServerOptions {
    * point it at a synthetic build.
    */
   webRoot?: string;
+  /**
+   * Spawn seam for the read-forwarding daemon attach (passed to
+   * {@link attachDaemonClient}). Production default spawns the bundled CLI; tests
+   * inject a `dist/bin/codegraph.js` spawn (a runner's `argv[1]` is the runner).
+   */
+  spawnDaemon?: (root: string) => void;
 }
 
 /** A running web server: the actually-bound address and a clean shutdown. */
@@ -85,6 +103,23 @@ const DEFAULT_WEB_ROOT = path.join(__dirname, '..', 'web');
 /** Bounded grace before shutdown force-releases the port (FR-026, ~5s). */
 const SHUTDOWN_GRACE_MS = 5_000;
 
+/** Realpath a root (matching the daemon socket key); fall back to `resolve`. */
+function safeRealpath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/**
+ * 16-hex repo id — the SHA-256 prefix of the resolved root, identical to the
+ * daemon registry's own record key by construction (FR-010).
+ */
+function repoIdForRoot(root: string): string {
+  return crypto.createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 16);
+}
+
 /** Map a `listen` error to a clear, actionable {@link WebServerError} (FR-026). */
 function mapListenError(err: NodeJS.ErrnoException, host: string, port: number): Error {
   if (err.code === 'EADDRINUSE') {
@@ -113,16 +148,60 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   const requestedPort = options.port ?? DEFAULT_PORT;
   const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
 
-  // Read routes register here in later Slice-1 tasks; empty for now so every
-  // `/api/*` path is a route miss → 404 not_found (FR-018).
-  const routes: Route[] = [];
-
   // Daemon clients attached while serving reads (lazily, FR-010) — closed on
   // shutdown to decrement each daemon's refcount, never killed (FR-026).
   const daemonClients = new Set<DaemonReadClient>();
   // Live connections, tracked so shutdown can release the port promptly instead
   // of waiting out idle keep-alive sockets.
   const connections = new Set<net.Socket>();
+
+  // Read-forwarding wiring (FR-002/010): the startup (default) repo, a per-repo
+  // daemon-client pool (attach lazily on first access, reuse for the server's
+  // lifetime, close on shutdown), and the `?repo` resolver. Ids hash the same
+  // canonical root the daemon registry keys on, so an API id equals a registry
+  // key by construction.
+  const startupRoot = safeRealpath(options.projectPath ?? process.cwd());
+  const defaultRepo: RepoInfo = {
+    id: repoIdForRoot(startupRoot),
+    root: startupRoot,
+    name: path.basename(startupRoot),
+  };
+  const clientPool = new Map<string, Promise<DaemonReadClient>>();
+  const getClient = (repo: RepoInfo): Promise<DaemonReadClient> => {
+    const cached = clientPool.get(repo.id);
+    if (cached) return cached;
+    const attach = attachDaemonClient(
+      repo.root,
+      options.spawnDaemon ? { spawnDaemon: options.spawnDaemon } : {},
+    ).then((client) => {
+      daemonClients.add(client);
+      return client;
+    });
+    // A failed attach must not pin a rejected promise in the pool — evict so a
+    // later request retries (the daemon may bind on a subsequent call, FR-015a).
+    attach.catch(() => clientPool.delete(repo.id));
+    clientPool.set(repo.id, attach);
+    return attach;
+  };
+  const resolveRepo = (repoId: string | undefined): RepoInfo | null => {
+    if (repoId === undefined || repoId === '') return defaultRepo;
+    if (!/^[0-9a-f]{16}$/.test(repoId)) return null; // malformed → 404 repo (FR-011)
+    if (repoId === defaultRepo.id) return defaultRepo;
+    for (const rec of listDaemons({ prune: true })) {
+      if (repoIdForRoot(rec.root) === repoId) {
+        return { id: repoId, root: rec.root, name: path.basename(rec.root) };
+      }
+    }
+    return null; // unregistered → 404 repo
+  };
+  const readDeps: ReadApiDeps = {
+    version: CodeGraphPackageVersion,
+    defaultRepo,
+    resolveRepo,
+    getClient,
+    isRepoIndexed: (root) => findNearestCodeGraphRoot(root) !== null,
+  };
+  const routes = buildReadRoutes(readDeps);
 
   const server = http.createServer((req, res) => {
     void handleHttp(req, res);

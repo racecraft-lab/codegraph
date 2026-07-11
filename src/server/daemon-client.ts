@@ -58,6 +58,14 @@ export interface DaemonToolResult {
 export interface DaemonReadClient {
   /** Forward one read `tools/call` and resolve its result (FR-002/008). */
   request(toolName: string, args?: Record<string, unknown>): Promise<DaemonToolResult>;
+  /**
+   * Forward one STRUCTURED read op over the additive `codegraph/read` method
+   * (SPEC-005 FR-002/004/008) and resolve its JSON result. The op discriminator
+   * and its params ride the same socket as `tools/call`; the daemon runs the
+   * library read against its warm index and returns structured data (no second
+   * in-process index copy). Rejects if the daemon reports an error (unknown op).
+   */
+  read(op: string, params?: Record<string, unknown>): Promise<unknown>;
   /** End the socket, decrementing the daemon's client refcount (FR-026). */
   close(): void;
 }
@@ -209,10 +217,215 @@ async function makeReadClient(socket: Socket, root: string): Promise<DaemonReadC
       );
       return result as DaemonToolResult;
     },
+    async read(op, params) {
+      return transport.request(
+        'codegraph/read',
+        { op, params: params ?? {} },
+        TOOL_CALL_TIMEOUT_MS,
+      );
+    },
     close() {
       transport.stop();
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-005 read-query wrappers (T013) — typed methods over `codegraph/read`
+// that map the daemon's structured library results to the wire `Node`/`Edge`
+// shapes (openapi.yaml / data-model "Read query result"). A `null`/`null`-node
+// return signals "node not found" for the caller to turn into 404 (FR-004a).
+// ---------------------------------------------------------------------------
+
+/** Wire `Node` (openapi) — the node's OWN fields only, trimmed from library Node. */
+export interface WireNode {
+  id: string;
+  kind: string;
+  name: string;
+  file?: string;
+  line?: number;
+  signature?: string;
+  doc?: string;
+}
+
+/** Wire `Edge` (openapi) — source/target/kind plus optional provenance. */
+export interface WireEdge {
+  source: string;
+  target: string;
+  kind: string;
+  provenance?: string;
+}
+
+/** Offset-paged list result (`search`/`callers`/`callees`), FR-006. */
+export interface WireListResult {
+  items: WireNode[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** `search` result — a list plus SPEC-003 degradation signalling (FR-006a). */
+export interface WireSearchResult extends WireListResult {
+  degraded: boolean;
+  degradationReason?: string;
+}
+
+/** Subgraph result (`impact`/`graph`), FR-007. */
+export interface WireGraphResult {
+  nodes: WireNode[];
+  edges: WireEdge[];
+  truncated: boolean;
+}
+
+/** Index-health portion of `GET /api/status` served by the daemon (FR-005). */
+export interface WireStatusHealth {
+  index: { state: string; fileCount: number; nodeCount: number; edgeCount: number; lastIndexed: string | null };
+  hybridSearch: { available: boolean; reason?: string | null };
+  lsp: { available: boolean };
+}
+
+/** Search parameters after server-side validation/clamping (FR-006/006a). */
+export interface SearchParams {
+  query: string;
+  limit: number;
+  offset: number;
+  mode: string;
+}
+
+/** The library node/edge fields the daemon forwards (a subset of src/types). */
+interface LibNode {
+  id: string;
+  kind: string;
+  name: string;
+  filePath?: string;
+  startLine?: number;
+  signature?: string;
+  docstring?: string;
+}
+interface LibEdge {
+  source: string;
+  target: string;
+  kind: string;
+  provenance?: string;
+}
+
+function mapNode(n: LibNode): WireNode {
+  const out: WireNode = { id: n.id, kind: n.kind, name: n.name };
+  if (n.filePath) out.file = n.filePath;
+  if (typeof n.startLine === 'number') out.line = n.startLine;
+  if (n.signature) out.signature = n.signature;
+  if (n.docstring) out.doc = n.docstring;
+  return out;
+}
+
+function mapEdge(e: LibEdge): WireEdge {
+  const out: WireEdge = { source: e.source, target: e.target, kind: e.kind };
+  if (e.provenance) out.provenance = e.provenance;
+  return out;
+}
+
+/** Index health for `GET /api/status` (the daemon-served portion, FR-005). */
+export async function readStatusHealth(client: DaemonReadClient): Promise<WireStatusHealth> {
+  return (await client.read('status', {})) as WireStatusHealth;
+}
+
+/** A node's own fields by opaque id, or `null` when unknown (→ 404, FR-004/004a). */
+export async function readNode(client: DaemonReadClient, id: string): Promise<WireNode | null> {
+  const r = (await client.read('node', { id })) as { node: LibNode | null };
+  return r.node ? mapNode(r.node) : null;
+}
+
+/** Paged symbol search with degradation signalling (FR-006/006a). */
+export async function readSearch(client: DaemonReadClient, p: SearchParams): Promise<WireSearchResult> {
+  const r = (await client.read('search', {
+    query: p.query,
+    limit: p.limit,
+    offset: p.offset,
+    mode: p.mode,
+  })) as { items: LibNode[]; total: number; degraded: boolean; degradationReason: string | null };
+  const out: WireSearchResult = {
+    items: r.items.map(mapNode),
+    total: r.total,
+    limit: p.limit,
+    offset: p.offset,
+    degraded: r.degraded === true,
+  };
+  if (r.degraded && r.degradationReason) out.degradationReason = r.degradationReason;
+  return out;
+}
+
+async function readRelation(
+  client: DaemonReadClient,
+  op: 'callers' | 'callees',
+  id: string,
+  limit: number,
+  offset: number,
+): Promise<WireListResult | null> {
+  const r = (await client.read(op, { id, limit, offset })) as {
+    found: boolean;
+    items?: LibNode[];
+    total?: number;
+  };
+  if (!r.found) return null;
+  return { items: (r.items ?? []).map(mapNode), total: r.total ?? 0, limit, offset };
+}
+
+/** Paged callers of a node, or `null` when the node is unknown (→ 404). */
+export function readCallers(
+  client: DaemonReadClient,
+  id: string,
+  limit: number,
+  offset: number,
+): Promise<WireListResult | null> {
+  return readRelation(client, 'callers', id, limit, offset);
+}
+
+/** Paged callees of a node, or `null` when the node is unknown (→ 404). */
+export function readCallees(
+  client: DaemonReadClient,
+  id: string,
+  limit: number,
+  offset: number,
+): Promise<WireListResult | null> {
+  return readRelation(client, 'callees', id, limit, offset);
+}
+
+async function readSubgraph(
+  client: DaemonReadClient,
+  op: 'impact' | 'neighborhood',
+  id: string,
+  depth: number,
+): Promise<WireGraphResult | null> {
+  const r = (await client.read(op, { id, depth })) as {
+    found: boolean;
+    nodes?: LibNode[];
+    edges?: LibEdge[];
+    truncated?: boolean;
+  };
+  if (!r.found) return null;
+  return {
+    nodes: (r.nodes ?? []).map(mapNode),
+    edges: (r.edges ?? []).map(mapEdge),
+    truncated: r.truncated === true,
+  };
+}
+
+/** Impact-radius subgraph of a node, or `null` when unknown (→ 404, FR-004/007). */
+export function readImpact(
+  client: DaemonReadClient,
+  id: string,
+  depth: number,
+): Promise<WireGraphResult | null> {
+  return readSubgraph(client, 'impact', id, depth);
+}
+
+/** Graph-neighborhood subgraph of a node, or `null` when unknown (→ 404, FR-007). */
+export function readNeighborhood(
+  client: DaemonReadClient,
+  id: string,
+  depth: number,
+): Promise<WireGraphResult | null> {
+  return readSubgraph(client, 'neighborhood', id, depth);
 }
 
 /**

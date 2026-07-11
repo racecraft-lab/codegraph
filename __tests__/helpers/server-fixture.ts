@@ -20,9 +20,30 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { CodeGraph } from '../../src';
 import { startWebServer, type WebServerHandle } from '../../src/server/index';
 import { getDaemonPidPath } from '../../src/mcp/daemon-paths';
+
+/** The built CLI a spawned read-forwarding daemon re-invokes (dist must be built). */
+const CLI_BIN = path.resolve(__dirname, '../../dist/bin/codegraph.js');
+
+/**
+ * Spawn the detached per-project daemon via the BUILT CLI, keyed on `root`.
+ * Injected as `startWebServer`'s `spawnDaemon` so the server's read handlers
+ * drive the real attach-or-spawn path — the production default uses
+ * `process.argv[1]`, which is the test runner here, not the CodeGraph CLI. The
+ * recorded `.codegraph/daemon.pid` is the authoritative reap target (cleanup()).
+ */
+function spawnDaemonViaDistBin(root: string): void {
+  const child = spawn(process.execPath, [CLI_BIN, 'serve', '--mcp', '--path', root], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, CODEGRAPH_DAEMON_INTERNAL: '1', CODEGRAPH_DAEMON_IDLE_TIMEOUT_MS: '30000' },
+  });
+  child.on('error', () => { /* ignore — reaped via the recorded pid */ });
+  child.unref();
+}
 
 /** A built fixture index and its teardown. */
 export interface FixtureIndex {
@@ -143,7 +164,12 @@ export async function startServerFixture(opts: ServerFixtureOptions = {}): Promi
     fs.writeFileSync(path.join(webRoot, 'probe.txt'), 'CODEGRAPH_PROBE_ASSET\n');
   }
 
-  const handle = await startWebServer({ port: 0, projectPath: fixture.root, webRoot });
+  const handle = await startWebServer({
+    port: 0,
+    projectPath: fixture.root,
+    webRoot,
+    spawnDaemon: spawnDaemonViaDistBin,
+  });
   const baseURL = `http://${handle.host}:${handle.port}`;
 
   const teardown = async (): Promise<void> => {

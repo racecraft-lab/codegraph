@@ -13,7 +13,18 @@
  * @module server/routes
  */
 
-import { notFound, internalError } from './errors';
+import { notFound, internalError, apiError, type ApiError } from './errors';
+import {
+  daemonUnavailable,
+  readStatusHealth,
+  readNode,
+  readSearch,
+  readCallers,
+  readCallees,
+  readImpact,
+  readNeighborhood,
+  type DaemonReadClient,
+} from './daemon-client';
 
 /** Decoded path params keyed by pattern name (`:id` → `params.id`). */
 export type RouteParams = Record<string, string>;
@@ -138,4 +149,208 @@ export async function handleApiRequest(
   } catch {
     return internalError();
   }
+}
+
+// ===========================================================================
+// SPEC-005 Slice-1 read handlers (T014–T018) — GET status/search/node/callers/
+// callees/impact/graph. Each forwards to the per-repo daemon via the typed
+// `codegraph/read` wrappers (daemon-client.ts) and maps the result to the wire
+// shape (openapi.yaml). Paging clamps over-cap `limit`/`depth` (never errors)
+// but 400s a malformed/negative value (FR-006/007/015a); an unknown node id →
+// 404 `resource: node`, an unknown/malformed `?repo` → 404 `resource: repo`
+// (FR-004a/010a/011); a daemon attach failure → 503 `unavailable` (FR-015a).
+// ===========================================================================
+
+/** A repo the read API can serve (data-model "Repo", minus the `default` flag). */
+export interface RepoInfo {
+  id: string;
+  root: string;
+  name: string;
+}
+
+/** Collaborators the read handlers need, wired by `startWebServer` (index.ts). */
+export interface ReadApiDeps {
+  /** Server/API version reported by `/api/status` (FR-016 — no URL prefix). */
+  version: string;
+  /** The startup (default) repo, used by `/api/status` and by an omitted `?repo`. */
+  defaultRepo: RepoInfo;
+  /**
+   * Resolve `?repo=` to a repo: `undefined`/absent → the default repo; a
+   * registered 16-hex id → that repo; malformed or unregistered → `null` (→ 404
+   * `resource: repo`, FR-010a/011).
+   */
+  resolveRepo(repoId: string | undefined): RepoInfo | null;
+  /** Lazily attach (cached) a daemon read client; throws → 503 (FR-002/015a). */
+  getClient(repo: RepoInfo): Promise<DaemonReadClient>;
+  /** Whether `root` has a reachable `.codegraph/` (un-indexed status, FR-005). */
+  isRepoIndexed(root: string): boolean;
+}
+
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 500;
+const MAX_DEPTH = 3;
+const SEARCH_MODES = new Set(['keyword', 'semantic', 'hybrid', 'auto']);
+
+function invalidParam(param: string): ApiError {
+  return apiError('invalid_request', { message: `Invalid ${param}`, details: { param } });
+}
+
+/**
+ * Parse a bounded integer query param. Absent/empty → `def`; a non-integer or a
+ * value below `min` (negative) → 400; a value above `max` **clamps** to `max`
+ * (over-cap clamps, not errors — FR-006/007/015a).
+ */
+function parseBoundedInt(
+  raw: string | null,
+  def: number,
+  min: number,
+  max: number,
+  param: string,
+): number | ApiError {
+  if (raw === null || raw === '') return def;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min) return invalidParam(param);
+  return n > max ? max : n;
+}
+
+/** `limit` (default 100 / clamp 500) + `offset` (≥ 0); malformed/negative → 400. */
+function parsePaging(q: URLSearchParams): { limit: number; offset: number } | ApiError {
+  const limit = parseBoundedInt(q.get('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT, 'limit');
+  if (typeof limit !== 'number') return limit;
+  const offset = parseBoundedInt(q.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER, 'offset');
+  if (typeof offset !== 'number') return offset;
+  return { limit, offset };
+}
+
+/** `depth` with a per-endpoint default, clamped to max 3; malformed/negative → 400. */
+function parseDepth(q: URLSearchParams, def: number): number | ApiError {
+  return parseBoundedInt(q.get('depth'), def, 1, MAX_DEPTH, 'depth');
+}
+
+/**
+ * Resolve `?repo` → attach its daemon client → run `fn`. A malformed/unregistered
+ * repo → 404 `resource: repo`; a daemon attach failure → 503 `unavailable`.
+ */
+async function withClient(
+  deps: ReadApiDeps,
+  ctx: RouteContext,
+  fn: (client: DaemonReadClient) => Promise<HandlerResult>,
+): Promise<HandlerResult> {
+  const repo = deps.resolveRepo(ctx.query.get('repo') ?? undefined);
+  if (!repo) return notFound('repo');
+  let client: DaemonReadClient;
+  try {
+    client = await deps.getClient(repo);
+  } catch (err) {
+    return daemonUnavailable(err);
+  }
+  return fn(client);
+}
+
+/** GET /api/status (T014, FR-005/016) — not repo-scoped; reports the default repo. */
+function statusHandler(deps: ReadApiDeps): RouteHandler {
+  return async (): Promise<HandlerResult> => {
+    const repo = deps.defaultRepo;
+    let client: DaemonReadClient;
+    try {
+      client = await deps.getClient(repo);
+    } catch (err) {
+      // A missing startup index MUST NOT refuse startup or 503 — report the
+      // un-indexed state through `index.state` so a client detects it (FR-005/016).
+      if (!deps.isRepoIndexed(repo.root)) {
+        return {
+          status: 200,
+          body: {
+            version: deps.version,
+            repo,
+            index: { state: 'unindexed', fileCount: 0, nodeCount: 0, edgeCount: 0, lastIndexed: null },
+            hybridSearch: { available: false, reason: 'not indexed' },
+            lsp: { available: false },
+          },
+        };
+      }
+      return daemonUnavailable(err);
+    }
+    const health = await readStatusHealth(client);
+    return { status: 200, body: { version: deps.version, repo, ...health } };
+  };
+}
+
+/** GET /api/search (T015, FR-006/006a). */
+function searchHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) =>
+    withClient(deps, ctx, async (client) => {
+      const q = ctx.query.get('q');
+      if (!q) {
+        return apiError('invalid_request', {
+          message: 'Missing required query parameter: q',
+          details: { param: 'q' },
+        });
+      }
+      // Supplied-but-invalid mode → 400 (diverges from MCP/CLI coercion, FR-006a).
+      const rawMode = ctx.query.get('mode');
+      if (rawMode !== null && !SEARCH_MODES.has(rawMode)) return invalidParam('mode');
+      const paging = parsePaging(ctx.query);
+      if ('status' in paging) return paging;
+      const result = await readSearch(client, {
+        query: q,
+        limit: paging.limit,
+        offset: paging.offset,
+        mode: rawMode ?? 'auto', // default to auto ONLY when omitted (FR-006a)
+      });
+      return { status: 200, body: result };
+    });
+}
+
+/** GET /api/node/:id (T017, FR-004/004a) — own fields only, bounded. */
+function nodeHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) =>
+    withClient(deps, ctx, async (client) => {
+      const node = await readNode(client, ctx.params.id ?? '');
+      if (!node) return notFound('node');
+      return { status: 200, body: node };
+    });
+}
+
+/** GET /api/callers|callees/:id (T016, FR-004/006). */
+function relationHandler(deps: ReadApiDeps, which: 'callers' | 'callees'): RouteHandler {
+  return (ctx) =>
+    withClient(deps, ctx, async (client) => {
+      const paging = parsePaging(ctx.query);
+      if ('status' in paging) return paging;
+      const fetch = which === 'callers' ? readCallers : readCallees;
+      const result = await fetch(client, ctx.params.id ?? '', paging.limit, paging.offset);
+      if (!result) return notFound('node');
+      return { status: 200, body: result };
+    });
+}
+
+/** GET /api/impact|graph/:id (T018, FR-004/007) — shared subgraph, divergent depth. */
+function subgraphHandler(deps: ReadApiDeps, which: 'impact' | 'graph'): RouteHandler {
+  return (ctx) =>
+    withClient(deps, ctx, async (client) => {
+      // Impact's own natural default is 3; graph-neighborhood's is 1 (FR-004/007).
+      const depth = parseDepth(ctx.query, which === 'impact' ? 3 : 1);
+      if (typeof depth !== 'number') return depth;
+      const fetch = which === 'impact' ? readImpact : readNeighborhood;
+      const result = await fetch(client, ctx.params.id ?? '', depth);
+      if (!result) return notFound('node');
+      return { status: 200, body: result };
+    });
+}
+
+/**
+ * Build the Slice-1 read route table (T014–T018). Registered by `startWebServer`
+ * so the handlers close over the daemon-client pool and repo resolver.
+ */
+export function buildReadRoutes(deps: ReadApiDeps): Route[] {
+  return [
+    { method: 'GET', pattern: '/api/status', handler: statusHandler(deps) },
+    { method: 'GET', pattern: '/api/search', handler: searchHandler(deps) },
+    { method: 'GET', pattern: '/api/node/:id', handler: nodeHandler(deps) },
+    { method: 'GET', pattern: '/api/callers/:id', handler: relationHandler(deps, 'callers') },
+    { method: 'GET', pattern: '/api/callees/:id', handler: relationHandler(deps, 'callees') },
+    { method: 'GET', pattern: '/api/impact/:id', handler: subgraphHandler(deps, 'impact') },
+    { method: 'GET', pattern: '/api/graph/:id', handler: subgraphHandler(deps, 'graph') },
+  ];
 }
