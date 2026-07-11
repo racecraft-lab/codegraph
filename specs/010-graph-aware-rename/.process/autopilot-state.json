@@ -9,16 +9,45 @@
   "pr_marker_plan": {
     "schema_version": "1.0",
     "source_fingerprint": "sha256:470997bc25d574b8084a4a092d543644c5eb571e8a4e2081c9b118c34311be47",
-    "fingerprint_inputs": ["specs/010-graph-aware-rename/spec.md", "specs/010-graph-aware-rename/plan.md", "specs/010-graph-aware-rename/tasks.md"],
-    "markers": [
-      {"id": "slice-1-plan-engine", "tasks": "T001-T027", "scope": "plan engine + targeting/refusals + CLI dry-run (read-only; no --apply surface)", "pr_title": "feat(SPEC-010): graph-aware rename — plan engine + CLI dry-run (Slice 1)"},
-      {"id": "slice-2-apply-mcp", "tasks": "T028-T053", "scope": "apply safety ladder + MCP tool + server-instructions + polish/validation", "pr_title": "feat(SPEC-010): graph-aware rename — atomic apply + MCP tool (Slice 2)"}
+    "fingerprint_inputs": [
+      "specs/010-graph-aware-rename/spec.md",
+      "specs/010-graph-aware-rename/plan.md",
+      "specs/010-graph-aware-rename/tasks.md"
     ],
-    "review_order": ["slice-1-plan-engine", "slice-2-apply-mcp"],
-    "checkpoints": [],
+    "markers": [
+      {
+        "id": "slice-1-plan-engine",
+        "tasks": "T001-T027",
+        "scope": "plan engine + targeting/refusals + CLI dry-run (read-only; no --apply surface)",
+        "pr_title": "feat(SPEC-010): graph-aware rename \u2014 plan engine + CLI dry-run (Slice 1)"
+      },
+      {
+        "id": "slice-2-apply-mcp",
+        "tasks": "T028-T053",
+        "scope": "apply safety ladder + MCP tool + server-instructions + polish/validation",
+        "pr_title": "feat(SPEC-010): graph-aware rename \u2014 atomic apply + MCP tool (Slice 2)"
+      }
+    ],
+    "review_order": [
+      "slice-1-plan-engine",
+      "slice-2-apply-mcp"
+    ],
+    "checkpoints": [
+      {
+        "marker_id": "slice-1-plan-engine",
+        "tasks": "T001-T027 (+ UAT remediation D1 edge-kind widening, D2 human refusal payloads)",
+        "commit_sha": "f911f95beb8c531fa39c4ae5843706dd07c29af7",
+        "verification": "full hermetic suite 172/172 (twice: pre- and post-remediation); refactor-plan.test.ts 108/108; tsc clean; quickstart S1-A..S1-F PASS; zero-write verified via shasum",
+        "fingerprint_status": "stale-superseded \u2014 spec/plan/tasks unchanged since fingerprint, but data-model.md corrected during implementation (D1); re-fingerprint at Slice-2 seal",
+        "warnings": [
+          "UAT surfaced D1 (references-only edge scoping \u2014 would have broken FR-018 premise at apply time) and D2 (human table omitted candidate lists); both remediated with TDD before seal"
+        ],
+        "date": "2026-07-11"
+      }
+    ],
     "warnings": [
-      "atomicity-route classifier returned one-navigable-PR (signal: change-shape:modify-heavy, releasable:true) — advisory dissent from the ratified 2-slice split; ratified split governs PR emission",
-      "tasks-mode reviewability-gate deferred on installed runner — fallback evidence chain: setup-mode WARN 405>400 pass=true (scaffold 2026-07-10) + estimate-reviewable-loc not_estimated + human-ratified split (Q11, Clarify S3)"
+      "atomicity-route classifier returned one-navigable-PR (signal: change-shape:modify-heavy, releasable:true) \u2014 advisory dissent from the ratified 2-slice split; ratified split governs PR emission",
+      "tasks-mode reviewability-gate deferred on installed runner \u2014 fallback evidence chain: setup-mode WARN 405>400 pass=true (scaffold 2026-07-10) + estimate-reviewable-loc not_estimated + human-ratified split (Q11, Clarify S3)"
     ],
     "final_marker_split": null,
     "packet_validation": null,
