@@ -135,7 +135,16 @@ function defaultSpawnDaemon(root: string): void {
   let logFd: number | null = null;
   let stdio: StdioOptions = 'ignore';
   try {
-    logFd = fs.openSync(path.join(getCodeGraphDir(root), 'daemon.log'), 'a');
+    // Owner-only mode + refuse-symlink open: `root` can point anywhere the
+    // registry knows (e.g. a repo under the OS temp dir), where a pre-planted
+    // daemon.log symlink or a group-readable log would leak daemon output
+    // (CodeQL js/insecure-temporary-file). O_NOFOLLOW is absent on Windows —
+    // there the owner-only mode alone applies.
+    logFd = fs.openSync(
+      path.join(getCodeGraphDir(root), 'daemon.log'),
+      fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW ?? 0),
+      0o600,
+    );
     stdio = ['ignore', logFd, logFd];
   } catch {
     stdio = 'ignore';
