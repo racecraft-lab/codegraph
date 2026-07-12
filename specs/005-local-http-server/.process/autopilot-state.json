@@ -84,7 +84,15 @@
       "plan_estimator": "not_estimated (no parseable declared-file table)",
       "tasks_mode_gate": "deferred on installed runner — fallback evidence chain per SKILL guidance",
       "operator_ratification": "2-PR split confirmed at G5 2026-07-11",
-      "actual_slice1_size": "2356 ins/9 del/14 files in src/ (2080 excl openapi.yaml; ~1280 logic LOC) — over target, size-only, proceed per marker rules"
+      "actual_slice1_size": "2356 ins/9 del/14 files in src/ (2080 excl openapi.yaml; ~1280 logic LOC) — over target, size-only, proceed per marker rules",
+      "pre_pr_gate": "deferred on installed runner — authoritative probe 2026-07-11: runner replied 'reviewability-gate read-only runner supports setup mode only' (exit 2, invalid_input). Fallback evidence chain applied: setup-gate warn (620 LOC est) + operator-ratified 2-PR split (G5) + measured actuals per marker.",
+      "measured_actuals": {
+        "full_branch": "49 files, 12012 ins / 40 del (incl. specs/docs/process artifacts)",
+        "production_src_total": "16 files, 3500 ins / 9 del",
+        "pr1_slice_src (main..17cef94)": "14 files, 2356 ins / 9 del (~1280 logic LOC)",
+        "pr2_slice_src (17cef94..e69f84e)": "9 files, 1195 ins / 51 del (~560 logic LOC + review remediation)",
+        "verdict": "both markers over the ~400 reviewable-LOC target — size-only findings, recorded in both PR packets; marker plan proceeds per rules (no undisclosed scope; PR packets carry review-order and traceability to compensate)"
+      }
     }
   }
 }
