@@ -515,6 +515,14 @@ export class CodeGraph {
   // Mutex for preventing concurrent indexing operations (in-process)
   private indexMutex = new Mutex();
 
+  // Mutex serializing SPEC-010 applyRename calls per instance (D5b review
+  // finding): the daemon can dispatch concurrent codegraph_rename calls
+  // against the SAME instance, and the write ladder interleaves at its await
+  // points without one. A SEPARATE instance from indexMutex — the ladder's
+  // injected `sync()` acquires indexMutex itself, so reusing it here would
+  // deadlock (Mutex is non-reentrant).
+  private applyMutex = new Mutex();
+
   // File lock for preventing concurrent writes across processes (CLI, MCP, git hooks)
   private fileLock: FileLock;
 
@@ -2850,15 +2858,20 @@ export class CodeGraph {
     newName: string,
     options?: { includeHeuristic?: boolean }
   ): Promise<ApplyResult> {
-    return deriveApplyRename({
-      queries: this.queries,
-      projectRoot: this.projectRoot,
-      selector,
-      newName,
-      lspConfig: resolveLspConfig({ projectRoot: this.projectRoot }),
-      includeHeuristic: options?.includeHeuristic,
-      sync: this.sync.bind(this),
-    });
+    // D5b review finding: serialize the WHOLE ladder per instance (acquire at
+    // entry, release in finally via Mutex.withLock) — never indexMutex, which
+    // the injected sync() below acquires itself (non-reentrant → deadlock).
+    return this.applyMutex.withLock(() =>
+      deriveApplyRename({
+        queries: this.queries,
+        projectRoot: this.projectRoot,
+        selector,
+        newName,
+        lspConfig: resolveLspConfig({ projectRoot: this.projectRoot }),
+        includeHeuristic: options?.includeHeuristic,
+        sync: this.sync.bind(this),
+      })
+    );
   }
 
   // ===========================================================================

@@ -149,6 +149,50 @@ zero writes → `codegraph sync` → the same rename applies cleanly (exit 0,
 post-check green). spec.md FR-005 and the Clarify Q&A were amended to encode
 the freshness discriminator; FR-016's apply-window guard is unchanged.
 
+## Post-gate code review (D5 batch)
+
+An independent full-branch code review after the gate found **1 BLOCKER + 2
+MAJOR + 1 MINOR + 1 NIT**; all four fixable findings were remediated
+same-session, TDD-first:
+
+- **D5 (BLOCKER)** — write-path malfunctions never reached the rollback ladder:
+  a mid-write I/O error (EACCES/ENOSPC/file lock; empirically reproduced by the
+  reviewer) unwound past `rollback()`, leaving earlier files renamed and the
+  snapshots silently discarded, exiting 1 with no recovery report (SC-002
+  violation). Fixed: `writeEdits` returns a `writeError` variant routed through
+  the SAME rollback the post-check branch uses → `rolled-back` (exit 3,
+  success-shaped) or `rollback-failed` (exit 4, isError, recovery dump); an
+  UNREADABLE file at the pre-write re-verify instead refuses `stale-span` with
+  zero writes (nothing written yet). New orthogonal cause field
+  `ApplyResult.writeFailure {file, message}`, schema-modeled and rendered on
+  both surfaces.
+- **D5-win (MAJOR)** — `lsp-rename.ts`'s URI→path conversion lacked separator
+  normalization, so the D3 completeness comparison would permanently
+  mis-degrade every subdirectory rename on Windows. Fixed via the shared
+  `normalizePath` (the `jail.ts`/`precision-pass.ts` precedent); POSIX
+  regression guard added; win32 execution rides the recorded Windows deferral.
+- **D5b (MAJOR)** — concurrent `applyRename` calls could interleave at await
+  points (RED test proved a real re-sync interleaving). Fixed: a dedicated
+  per-instance `applyMutex` serializes the whole ladder (`indexMutex` reuse
+  would deadlock — the ladder's own `sync()` acquires it). Cross-PROCESS
+  concurrency (CLI racing a daemon apply) remains a documented limitation —
+  see Known gaps.
+- **D5c (MINOR)** — the spec's overlapping-range clause is now applied at plan
+  derivation: a genuinely-overlapping LSP edit set degrades the whole rename to
+  graph with `lspDegradation: "overlapping-edits"` (shared overlap helper
+  extracted from `writeEdits`, which keeps its own check as defense-in-depth;
+  fully-coincident duplicates still de-duplicate).
+- **NIT** — predictable atomic-write temp filename: recorded, deliberately
+  unfixed (requires same-directory write access, at which point direct
+  tampering is simpler).
+
+Post-batch gates: targeted suites 204/204; **full suite 3117/0 (175 files)**;
+tsc + build clean. The reviewer's clean list independently re-verified the
+position-conversion boundaries, edit ordering, snapshot byte fidelity, the D4
+fast-path's byte-for-byte equivalence with the indexer's own sync semantics,
+watcher-race discrimination, chunked-IN query correctness, jail reuse, and the
+tracking-fork discipline on the five upstream-owned files.
+
 ## Review order
 
 1. **Apply ladder** — `src/refactor/jail.ts`, `src/refactor/snapshot.ts`,
@@ -261,6 +305,10 @@ report (not duplicated here); this table is the summary.
   until the post-check passes; a hard kill during the write window is a
   documented v1 durability limitation (best-effort atomicity through
   verification, not crash-durable) — this one IS a deliberate, accepted v1 scope cut.
+- **Cross-process apply concurrency**: in-process applies are serialized per
+  CodeGraph instance (D5b `applyMutex`, covering the daemon's multi-session
+  architecture); a CLI apply racing a daemon apply in the same project is not
+  serialized — documented v1 limitation, no file-level lock built.
 - **Found and closed this gate (D4)**: pre-existing index drift silently
   dropping edits — see the Gate Finding section above, including its
   remediation note. No longer a gap: any drifted candidate file now refuses

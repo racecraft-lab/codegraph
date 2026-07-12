@@ -601,6 +601,48 @@ describe('T009 LSP-path rename derivation — deriveLspRename (real stub server,
     expect(edit.source).toBe('lsp');
     expect(edit.confidence).toBe('exact');
   });
+
+  // D5-win review remediation (MAJOR): translateWorkspaceEdit derives each
+  // edit's `file` via `path.relative(projectRoot, absPath)`, which uses the
+  // CURRENT PLATFORM's separator — on win32 that is `\`, producing an edit
+  // path that does not match the graph's forward-slash-normalized convention
+  // (the same normalization precision-pass.ts's uriToProjectPath already
+  // applies). POSIX-safe assertion only: `path.relative` already returns `/`
+  // on this platform, so this cannot RED on a POSIX dev machine — it pins the
+  // invariant as a regression guard. Full win32 behavior rides the recorded
+  // Windows deferral (`.parallels` VM currently unavailable).
+  it('derives a forward-slash edit file path for a nested directory, matching the graph\'s path convention (POSIX regression guard; win32 rides the recorded deferral)', async () => {
+    const dir = makeLspRenameDir();
+    const nestedDir = path.join(dir, 'nested', 'deep');
+    fs.mkdirSync(nestedDir, { recursive: true });
+    const line = 'export function target(): number { return 1; }';
+    fs.writeFileSync(path.join(nestedDir, 'a.ts'), line + '\n');
+    const stub = writeRenameStub(dir);
+
+    const col = line.indexOf('target');
+    const uri = pathToFileURL(path.join(nestedDir, 'a.ts')).href;
+    const renameResult = {
+      changes: {
+        [uri]: [{ range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' }],
+      },
+    };
+
+    const result = await deriveLspRename({
+      projectRoot: dir,
+      config: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      language: 'typescript',
+      file: 'nested/deep/a.ts',
+      position: { line: 1, column: col },
+      newName: 'renamed',
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.edits).toHaveLength(1);
+    expect(result.edits[0]!.file).not.toMatch(/\\/); // no backslashes — the graph's forward-slash convention
+    expect(result.edits[0]!.file).toBe('nested/deep/a.ts');
+  });
 });
 
 describe('T010 FR-003a degradation parity — deriveLspRename (unavailable + runtime failures)', () => {
@@ -1216,6 +1258,85 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     // (CLI -j/--json ≡ MCP result) — the same object every consumer sees.
     const obj = JSON.parse(serializeRenamePlanJson(plan));
     expect(obj.lspDegradation).toBe('incomplete-coverage');
+  });
+
+  // -------------------------------------------------------------------------
+  // D5c review remediation (MINOR) — spec.md's overlapping-range clause: a
+  // genuinely-overlapping LSP edit set is an unusable rename result that
+  // degrades the WHOLE rename to the graph path AT DERIVATION (plan time),
+  // not only when writeEdits happens to catch it at Rung 4 (apply time).
+  // Mirrors D3's 'incomplete-coverage' precedent exactly — a second, distinct
+  // reason an `ok`-status LSP result can be rejected as unusable.
+  // -------------------------------------------------------------------------
+  it('D5c: genuinely-overlapping LSP edit ranges are an unusable result — degrades the WHOLE rename to graph, recording lspDegradation overlapping-edits (spec.md overlapping-range clause)', async () => {
+    const { dir, queries } = await setup({ 'solo.ts': 'export function target(x) { return x; }\n' });
+    const stub = writeRenameStub(dir);
+    // Two edits on solo.ts whose ranges genuinely overlap ([0,6) and [3,9)) —
+    // a malformed/misbehaving workspace edit; the coverage check alone would
+    // accept it (solo.ts is the ONLY file the graph derivation also touches).
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [
+            { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 6 } }, newText: 'AAAAAA' },
+            { range: { start: { line: 0, character: 3 }, end: { line: 0, character: 9 } }, newText: 'BBBBBB' },
+          ],
+        },
+      ],
+    };
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph'); // NOT lsp — a genuinely-overlapping edit set is unusable
+    expect(plan.lspDegradation).toBe('overlapping-edits');
+    for (const e of plan.edits!) expect(e.source).toBe('graph'); // whole-plan degrade, never a per-file merge
+
+    const obj = JSON.parse(serializeRenamePlanJson(plan));
+    expect(obj.lspDegradation).toBe('overlapping-edits');
+    validate(obj, schema); // schema-covers the new enum value too
+  });
+
+  it('D5c: a fully-coincident duplicate LSP edit is NOT an overlap — still de-duplicates at write time, stays source lsp, no lspDegradation', async () => {
+    const { dir, queries } = await setup({ 'solo.ts': 'export function target(x) { return x; }\n' });
+    const stub = writeRenameStub(dir);
+    const declLine = 'export function target(x) { return x; }';
+    const col = declLine.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' },
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' }, // exact duplicate
+          ],
+        },
+      ],
+    };
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('lsp');
+    expect(plan.lspDegradation).toBeUndefined();
+    // De-dup is writeEdits' (apply-time) job, not the plan renderer's — the
+    // dry-run plan still carries both occurrences of the duplicate verbatim.
+    expect(plan.edits).toHaveLength(2);
   });
 
   it('uses the graph path directly when LSP is disabled — never attempts a server', async () => {

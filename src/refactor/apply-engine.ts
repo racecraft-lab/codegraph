@@ -37,6 +37,7 @@ import { checkPlanJail } from './jail';
 import { planRename } from './plan-engine';
 import { discriminateSyncResult, runPostCheck } from './post-check';
 import { reverifySpans, restoreSnapshots, takeSnapshots, writeEdits } from './snapshot';
+import type { ReverifyResult } from './snapshot';
 import {
   ApplyResult,
   DanglingReference,
@@ -44,6 +45,7 @@ import {
   Refusal,
   RenameEdit,
   TargetSelector,
+  WriteFailure,
 } from './types';
 
 export interface ApplyRenameOptions {
@@ -129,11 +131,34 @@ async function runLadder(options: ApplyRenameOptions, reDerived: boolean): Promi
 
   // Rung 3b — apply-time span re-verify against the LIVE bytes (FR-016). A file
   // that drifted in the recompute→write window refuses `stale-span` with the
-  // drifted files named and ZERO writes.
-  const reverify = reverifySpans({
-    edits,
-    readFile: (file) => fs.readFileSync(path.resolve(projectRoot, file), 'utf8'),
-  });
+  // drifted files named and ZERO writes. Read-only, so a file that is
+  // UNREADABLE here (e.g. deleted between the recompute above and this point
+  // — D5 review finding, BLOCKER) is treated the SAME as a drifted span:
+  // nothing has been written yet, so the correct terminal is the identical
+  // zero-write refusal, never an uncaught throw — there is nothing to roll back.
+  let reverify: ReverifyResult;
+  let unreadableFile: string | undefined;
+  try {
+    reverify = reverifySpans({
+      edits,
+      readFile: (file) => {
+        try {
+          return fs.readFileSync(path.resolve(projectRoot, file), 'utf8');
+        } catch (error) {
+          unreadableFile = file;
+          throw error;
+        }
+      },
+    });
+  } catch {
+    return refused({
+      reason: 'stale-span',
+      message:
+        `Refusing to apply: the live bytes of ${unreadableFile} could not be read ` +
+        `(it may have been deleted since the plan was made). Run \`codegraph sync\` and retry.`,
+      files: unreadableFile ? [unreadableFile] : [],
+    });
+  }
   if (!reverify.ok) {
     return refused({
       reason: 'stale-span',
@@ -148,7 +173,10 @@ async function runLadder(options: ApplyRenameOptions, reDerived: boolean): Promi
   // from a misbehaving LSP workspace edit: re-derive via the graph path and
   // restart the ladder ONCE (FR-003a). A graph-set overlap is impossible by FR-005
   // (span-verified occurrences are disjoint) — a malfunction, surfaced as an
-  // internal error rather than a silent double-write.
+  // internal error rather than a silent double-write. A mid-loop write/rename
+  // malfunction (EACCES/ENOSPC/…, D5 review finding, BLOCKER) may have already
+  // mutated earlier files in the plan — route the WHOLE plan through the SAME
+  // rollback the post-check-failure branch uses, carrying the cause.
   const write = writeEdits({ projectRoot, editsByFile: groupByFile(edits) });
   if ('overlap' in write) {
     if (plan.source === 'lsp' && !reDerived) return runLadder(options, true);
@@ -156,6 +184,9 @@ async function runLadder(options: ApplyRenameOptions, reDerived: boolean): Promi
       `codegraph rename: overlapping edit ranges in the graph-derived plan for ${write.file} — ` +
         `graph-path occurrences are disjoint by construction (FR-005); this is an internal error.`,
     );
+  }
+  if ('writeError' in write) {
+    return rollback(options, snapshots, files, [], { file: write.file, message: write.message });
   }
   const touchedFiles = write.writtenFiles;
 
@@ -189,13 +220,17 @@ function refused(refusal: Refusal): ApplyResult {
  * returns `rolled-back` with the dangles that forced it, while a restore that
  * itself failed returns the sole error-shaped terminal `rollback-failed` carrying
  * the {@link RecoveryInfo} dump — never re-syncing a workspace left in an unknown
- * state.
+ * state. `writeFailure` is orthogonal to which of those two outcomes this
+ * resolves to — it names a Rung-4 write malfunction as the CAUSE of the
+ * rollback (D5 review finding), present on EITHER outcome depending on
+ * whether the restore that follows it also succeeds.
  */
 async function rollback(
   options: ApplyRenameOptions,
   snapshots: Map<string, Buffer>,
   touchedFiles: string[],
   danglingReferences: DanglingReference[],
+  writeFailure?: WriteFailure,
 ): Promise<ApplyResult> {
   const restore = restoreSnapshots({ projectRoot: options.projectRoot, snapshots });
   if (restore.unrestoredFiles.length > 0) {
@@ -204,11 +239,11 @@ async function rollback(
       unrestoredFiles: restore.unrestoredFiles,
       recoveryDir: restore.recoveryDir!,
     };
-    return { outcome: 'rollback-failed', touchedFiles, postCheckPassed: false, recovery };
+    return { outcome: 'rollback-failed', touchedFiles, postCheckPassed: false, recovery, ...(writeFailure && { writeFailure }) };
   }
   // FR-019: re-sync the restored workspace so the graph matches the pre-apply bytes.
   await options.sync();
-  return { outcome: 'rolled-back', touchedFiles, postCheckPassed: false, danglingReferences };
+  return { outcome: 'rolled-back', touchedFiles, postCheckPassed: false, danglingReferences, ...(writeFailure && { writeFailure }) };
 }
 
 /** Group a plan's edits by their file, preserving the deterministic plan order. */

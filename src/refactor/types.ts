@@ -135,17 +135,22 @@ export type EditSource = 'lsp' | 'graph';
  * Why an `ok`-status LSP result was rejected as unusable and the WHOLE rename
  * degraded to the graph derivation instead — never a per-file merge of the two
  * sources (FR-003a's unusable-result contract; spec.md's overlapping-range
- * clause is the precedent this extends — SPEC-010 D3). Currently the sole
- * value: `incomplete-coverage` — the LSP edit set was missing at least one file
- * the graph already knows carries a span-verified occurrence of the target
- * (observed cause: an ephemeral LSP client issuing `textDocument/rename`
- * before the language server finishes project load, so it answers from the
- * single open file only). Distinct from the FR-003a `unavailable`/`failed`
- * degradation routes (a probe failure or a runtime crash/timeout) — those
- * carry no reason here; this field is populated ONLY for the ok-but-incomplete
- * case.
+ * clause is the precedent this extends — SPEC-010 D3 / D5c). Two values:
+ * - `incomplete-coverage` — the LSP edit set was missing at least one file
+ *   the graph already knows carries a span-verified occurrence of the target
+ *   (observed cause: an ephemeral LSP client issuing `textDocument/rename`
+ *   before the language server finishes project load, so it answers from the
+ *   single open file only).
+ * - `overlapping-edits` — two of the LSP result's own edits genuinely overlap
+ *   within a file (spec.md's overlapping-range clause, applied at PLAN time —
+ *   `writeEdits` keeps its own apply-time check as defense-in-depth). A
+ *   fully-coincident duplicate is NOT an overlap; it still de-duplicates as
+ *   usual at write time.
+ * Distinct from the FR-003a `unavailable`/`failed` degradation routes (a
+ * probe failure or a runtime crash/timeout) — those carry no reason here;
+ * this field is populated ONLY for an ok-but-unusable result.
  */
-export type LspDegradationReason = 'incomplete-coverage';
+export type LspDegradationReason = 'incomplete-coverage' | 'overlapping-edits';
 
 /**
  * Aggregate confidence over a plan's edits, driving the `--apply` gate
@@ -279,6 +284,9 @@ export interface RenamePlan {
   danglingReferences?: DanglingReference[];
   /** Present on outcome `rollback-failed` (FR-019a) — the sole error-shaped terminal. */
   recovery?: RecoveryInfo;
+  /** Present when a Rung-4 write/rename malfunction forced the rollback
+   *  (`rolled-back` or `rollback-failed`) — D5 review finding. */
+  writeFailure?: WriteFailure;
 }
 
 // =============================================================================
@@ -368,6 +376,23 @@ export interface RecoveryInfo {
 }
 
 /**
+ * The Rung-4 write-path malfunction that forced a rollback (D5 review finding;
+ * schema `writeFailure`) — the write/rename cause, mirroring how a post-check
+ * dangle carries {@link DanglingReference}s. Orthogonal to `outcome`: it can
+ * accompany EITHER `rolled-back` (the restore itself then succeeded) or
+ * `rollback-failed` (the restore ALSO failed) — whichever the rollback of the
+ * write failure lands on. Absent when the rollback was instead forced by a
+ * post-check dangle or a sync lock-failure (those causes are self-evident from
+ * `danglingReferences`).
+ */
+export interface WriteFailure {
+  /** Workspace-relative path of the file whose write/rename threw. */
+  file: string;
+  /** The underlying error's message (EACCES/ENOSPC/…). */
+  message: string;
+}
+
+/**
  * The full internal result of an apply (data-model ApplyResult). Richer than the
  * serialized {@link RenamePlan} envelope: `touchedFiles` and `postCheckPassed`
  * are internal-only (never surfaced). The serializer folds the rest onto the
@@ -386,6 +411,9 @@ export interface ApplyResult {
   recovery?: RecoveryInfo;
   /** Present when `outcome === 'refused'` — the pre-write gate refusal. */
   refusal?: Refusal;
+  /** Present when a Rung-4 write/rename malfunction forced the rollback that
+   *  led to `outcome` `rolled-back` or `rollback-failed` (D5 review finding). */
+  writeFailure?: WriteFailure;
 }
 
 // =============================================================================

@@ -59,6 +59,7 @@ import { EffectiveLspConfig, isLspLanguage, probeLspServerCommand } from '../lsp
 import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
 import { checkPlanJail } from './jail';
 import { deriveLspRename } from './lsp-rename';
+import { hasOverlappingSpans } from './snapshot';
 import { LspPathDisposition, resolveTarget } from './target-resolver';
 import {
   EditSource,
@@ -210,7 +211,13 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
       env,
     });
     if (result.status === 'ok') {
-      if (lspCoversGraphFiles(graph.edits, result.edits)) {
+      // D5c: a genuinely-overlapping LSP edit set is ALSO unusable (spec.md's
+      // overlapping-range clause, applied here at PLAN time — writeEdits keeps
+      // its own apply-time check as defense-in-depth). Checked only when
+      // coverage already passed — an incomplete result degrades for THAT
+      // reason regardless.
+      const covers = lspCoversGraphFiles(graph.edits, result.edits);
+      if (covers && !hasOverlappingLspEdits(result.edits)) {
         // LSP edit set is authoritative (it already includes the declaration
         // edit); the leftover count still comes from the graph-side whole-word
         // logic, run over the LSP-touched files.
@@ -233,7 +240,7 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
         edits: graph.edits,
         source: 'graph',
         leftoverMentions: graph.leftoverMentions,
-        lspDegradation: 'incomplete-coverage',
+        lspDegradation: covers ? 'overlapping-edits' : 'incomplete-coverage',
         candidateFiles: graph.candidateFiles,
       };
     }
@@ -254,6 +261,44 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
 function lspCoversGraphFiles(graphEdits: RenameEdit[], lspEdits: RenameEdit[]): boolean {
   const lspFiles = new Set(lspEdits.map((e) => e.file));
   return graphEdits.every((e) => lspFiles.has(e.file));
+}
+
+/** A safe per-line multiplier for encoding an edit's (line, column) as one
+ *  comparable number — real source lines never approach 1,000,000 UTF-16
+ *  code units, so ordering is preserved exactly. */
+const LSP_OVERLAP_LINE_BASE = 1_000_000;
+
+/**
+ * D5c — true when, per file, two of `edits`' own ranges genuinely overlap
+ * (spec.md's overlapping-range clause, checked at PLAN time). Fully-coincident
+ * duplicates (identical start+end) are de-duplicated first — they are NOT an
+ * overlap; `writeEdits` still de-duplicates them again at write time. Reuses
+ * {@link hasOverlappingSpans} (shared with `writeEdits`' own byte-offset
+ * check) over a (line, column)-derived numeric encoding — no file read
+ * needed, since overlap is a pure property of the edit ranges themselves.
+ */
+function hasOverlappingLspEdits(edits: RenameEdit[]): boolean {
+  const byFile = new Map<string, RenameEdit[]>();
+  for (const e of edits) {
+    const list = byFile.get(e.file);
+    if (list) list.push(e);
+    else byFile.set(e.file, [e]);
+  }
+  for (const fileEdits of byFile.values()) {
+    const spans = fileEdits.map((e) => ({
+      start: e.range.start.line * LSP_OVERLAP_LINE_BASE + e.range.start.column,
+      end: e.range.end.line * LSP_OVERLAP_LINE_BASE + e.range.end.column,
+    }));
+    const seen = new Set<string>();
+    const unique = spans.filter((s) => {
+      const key = `${s.start}:${s.end}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (hasOverlappingSpans(unique)) return true;
+  }
+  return false;
 }
 
 /**

@@ -40,10 +40,17 @@ export const RENAME_TEMP_SUFFIX = '.codegraph-tmp';
 /** {@link reverifySpans} result: all spans matched, or the drifted files. */
 export type ReverifyResult = { ok: true } | { ok: false; driftedFiles: string[] };
 
-/** {@link writeEdits} result: the written files, or a refused overlap. */
+/**
+ * {@link writeEdits} result: the written files, a refused overlap, or a
+ * mid-loop write/rename malfunction (D5 review finding) — some earlier files
+ * in `editsByFile`'s order may already be written when this fires; the caller
+ * (the apply engine) is the one holding the pre-write snapshots, so it is the
+ * one that routes this through rollback (FR-019/FR-019a).
+ */
 export type WriteEditsResult =
   | { ok: true; writtenFiles: string[] }
-  | { overlap: true; file: string };
+  | { overlap: true; file: string }
+  | { writeError: true; file: string; message: string };
 
 /**
  * {@link restoreSnapshots} result (RecoveryInfo-shaped). `recoveryDir` is set
@@ -154,10 +161,9 @@ export function writeEdits(input: {
     // Overlap (half-open ranges): after de-dup, a range starting before the prior
     // range's end is a genuine collision — never valid (only a misbehaving LSP
     // edit reaches here). Refuse the whole plan; the engine degrades (FR-003a).
-    const ascending = [...unique].sort((a, b) => a.start - b.start);
-    for (let i = 1; i < ascending.length; i++) {
-      if (ascending[i]!.start < ascending[i - 1]!.end) return { overlap: true, file };
-    }
+    // (Shared with the D5c plan-time LSP-edit overlap guard — same algorithm,
+    // a different offset space; see {@link hasOverlappingSpans}.)
+    if (hasOverlappingSpans(unique)) return { overlap: true, file };
 
     // Apply descending / right-to-left so an applied edit never invalidates an
     // unapplied offset. Whole-string splice — never a line-split/rejoin.
@@ -172,11 +178,36 @@ export function writeEdits(input: {
   const writtenFiles: string[] = [];
   for (const p of planned) {
     const tmp = path.join(path.dirname(p.abs), '.' + path.basename(p.abs) + RENAME_TEMP_SUFFIX);
-    fs.writeFileSync(tmp, p.bytes);
-    fs.renameSync(tmp, p.abs); // atomic within the directory (same filesystem)
+    try {
+      fs.writeFileSync(tmp, p.bytes);
+      fs.renameSync(tmp, p.abs); // atomic within the directory (same filesystem)
+    } catch (error) {
+      // D5 review finding (BLOCKER): a mid-loop write/rename malfunction
+      // (EACCES/ENOSPC/…) — files earlier in `planned`'s order may already be
+      // written. Report the cause instead of throwing uncaught, so the caller
+      // (which holds the pre-write snapshots) can route the WHOLE plan
+      // through rollback rather than leaving a half-renamed workspace.
+      return { writeError: true, file: p.file, message: error instanceof Error ? error.message : String(error) };
+    }
     writtenFiles.push(p.file);
   }
   return { ok: true, writtenFiles };
+}
+
+/**
+ * True when any two `[start, end)` spans genuinely overlap (one starts before
+ * another ends) — spans are assumed already de-duplicated by the caller;
+ * merely-adjacent spans (`next.start === prev.end`) are NOT an overlap.
+ * Shared by {@link writeEdits}' byte-offset write-time check (FR-020) and the
+ * D5c plan-time LSP-edit overlap guard (`src/refactor/plan-engine.ts`,
+ * line/column-derived offsets) — same algorithm, two different offset spaces.
+ */
+export function hasOverlappingSpans(spans: Array<{ start: number; end: number }>): boolean {
+  const ascending = [...spans].sort((a, b) => a.start - b.start);
+  for (let i = 1; i < ascending.length; i++) {
+    if (ascending[i]!.start < ascending[i - 1]!.end) return true;
+  }
+  return false;
 }
 
 /**

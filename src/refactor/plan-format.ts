@@ -207,13 +207,23 @@ export function formatApplyResultTable(result: ApplyResult, newName: string): st
     for (const f of result.touchedFiles) lines.push(`  ${f}`);
   } else if (result.outcome === 'rolled-back') {
     lines.push('rolled-back → the apply was undone byte-identically');
-    lines.push('the post-check found dangling references to the old name; no file was left modified.');
+    // D5 review finding: the write ladder can now roll back for a Rung-4
+    // write malfunction, not only a post-check dangle — the message must
+    // name the actual cause rather than always blaming the post-check.
+    if (result.writeFailure) {
+      lines.push(`a write to ${result.writeFailure.file} failed (${result.writeFailure.message}); no file was left modified.`);
+    } else {
+      lines.push('the post-check found dangling references to the old name; no file was left modified.');
+    }
     if (result.danglingReferences?.length) {
       lines.push('dangling references:');
       for (const d of result.danglingReferences) lines.push(`  ${d.file}:${d.range.start.line}  ${d.name}`);
     }
   } else if (result.outcome === 'rollback-failed' && result.recovery) {
     lines.push('rollback-failed → the rollback restore itself failed; the workspace is left partially modified');
+    if (result.writeFailure) {
+      lines.push(`caused by a failed write to ${result.writeFailure.file} (${result.writeFailure.message})`);
+    }
     if (result.recovery.restoredFiles.length) {
       lines.push('restored:');
       for (const f of result.recovery.restoredFiles) lines.push(`  ${f}`);
@@ -250,5 +260,6 @@ export function serializeApplyResultJson(result: ApplyResult, newName: string): 
   }
   if (result.recovery) out.recovery = result.recovery;
   if (result.refusal) out.refusal = toSurfaceRefusal(result.refusal);
+  if (result.writeFailure) out.writeFailure = result.writeFailure;
   return JSON.stringify(out);
 }

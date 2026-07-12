@@ -28,6 +28,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { LspClientError, LspJsonRpcClient } from '../lsp/client';
 import { probeLspServerCommand } from '../lsp/prereqs';
 import { EffectiveLspConfig, LspLanguage, LspReasonCode } from '../lsp/types';
+import { normalizePath } from '../utils';
 import { RenameEdit, SourcePosition, TextEdit, WorkspaceEdit } from './types';
 
 /** LSP `languageId` values that differ from our Language tokens (didOpen). */
@@ -138,7 +139,11 @@ function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdi
   for (const { uri, edits } of perFile) {
     const absPath = fileURLToPath(uri);
     const lines = fs.readFileSync(absPath, 'utf8').split('\n');
-    const relFile = path.relative(projectRoot, absPath);
+    // Normalize to the graph's forward-slash path convention: `path.relative`
+    // uses the CURRENT PLATFORM's separator, which is `\` on win32 — the same
+    // normalization precision-pass.ts's uriToProjectPath already applies
+    // (D5-win review finding).
+    const relFile = normalizePath(path.relative(projectRoot, absPath));
     for (const textEdit of edits) {
       const { start, end } = textEdit.range;
       const lineText = (lines[start.line] ?? '').replace(/\r$/, '');

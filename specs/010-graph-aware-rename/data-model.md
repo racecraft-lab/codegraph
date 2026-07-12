@@ -14,7 +14,7 @@ The computed result of a dry-run (and the recomputed basis of an apply — FR-01
 | `edits` | RenameEdit[] | Ordered deterministically by (file, range start line, start character) for byte-identical CLI≡MCP parity (SC-005/FR-027); non-empty — an empty-references plan still contains the declaration edit (FR-002, US1 scenario 3). |
 | `confidence` | `all-exact` \| `contains-heuristic` | Aggregate over `edits`; drives the apply gate (FR-015). |
 | `source` | `lsp` \| `graph` | Whole-plan derivation path when uniform; per-edit `source` is authoritative (FR-003). An `ok` LSP result is used only after FR-003a completeness verification: its file set must cover every file carrying ≥1 span-verified graph edit, else the whole rename degrades to the graph derivation (D3). |
-| `lspDegradation` | `incomplete-coverage`? | Optional; present only when an `ok` LSP result failed the FR-003a completeness verification and the rename degraded to the graph path (D3, self-repo dogfood finding). |
+| `lspDegradation` | `incomplete-coverage` \| `overlapping-edits`? | Optional; present only when an `ok` LSP result was unusable and the rename degraded to the graph path: coverage missing a span-verified graph file (D3) or genuinely-overlapping edit ranges detected at plan derivation (D5c, spec's overlapping-range clause). |
 | `leftoverMentions` | integer? | Optional, non-gating FYI count of un-edited old-name occurrences (FR-013). |
 | `applied` | boolean | `false` for every dry-run; `true` only on a post-check-green apply. |
 | `outcome` | ApplyOutcome? | Apply-only (Slice 2); absent on dry-run. |
@@ -43,7 +43,7 @@ A symbol matching an ambiguous selector (FR-007). Fields: `name`, `kind`, `file`
 The two-valued rating `exact` | `heuristic` on each edit. Pure function of `(resolvedBy, provenance)` per the FR-004 table, computed in `src/refactor/confidence.ts`. **Always** paired with span verification — a live-byte mismatch drops the edit regardless of tier (FR-004 final clause).
 
 ### ApplyResult (Apply Result)
-The outcome of an apply (Slice 2). `outcome` ∈ ApplyOutcome; plus the touched-file set, the post-check status, and — on `rolled-back` — the machine-actionable `danglingReferences` list (file + range + old-name occurrence, FR-019), or — on `rollback-failed` — the `recovery` object (`restoredFiles`, `unrestoredFiles`, `recoveryDir`, FR-019a). Both are modeled in `rename-plan.schema.json` so the surface payload is complete without a Read.
+The outcome of an apply (Slice 2). `outcome` ∈ ApplyOutcome; plus the touched-file set, the post-check status, and — on `rolled-back` — the machine-actionable `danglingReferences` list (file + range + old-name occurrence, FR-019), or — on `rollback-failed` — the `recovery` object (`restoredFiles`, `unrestoredFiles`, `recoveryDir`, FR-019a). A write-time I/O malfunction (D5 review finding) additionally carries `writeFailure` (`file`, `message`) — orthogonal to outcome, present on either `rolled-back` (restore succeeded) or `rollback-failed` (restore also failed) when a mid-write error, not a post-check dangling reference, triggered the rollback. All are modeled in `rename-plan.schema.json` so the surface payload is complete without a Read.
 
 ## ApplyOutcome — state transitions (Slice 2)
 

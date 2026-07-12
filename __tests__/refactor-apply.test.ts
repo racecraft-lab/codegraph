@@ -25,7 +25,7 @@
  * every genuine dangling reference the post-check exists to catch.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -49,6 +49,18 @@ import { applyRename } from '../src/refactor/apply-engine';
 import { renameApplyExitCode } from '../src/refactor/types';
 import { resolveLspConfig } from '../src/lsp';
 import type { SyncResult } from '../src';
+
+// D5 review remediation (Rung 3b, BLOCKER): `fs`'s ESM module namespace is not
+// configurable (`vi.spyOn(fs, 'readFileSync')` throws "Cannot redefine
+// property"), so — mirroring the established embeddings-model-fetch.test.ts
+// workaround — `readFileSync` is wrapped via `importOriginal`: every OTHER fs
+// function, and `readFileSync`'s DEFAULT behavior, are the untouched real
+// implementation; only the one Rung-3b test below installs a temporary custom
+// implementation (reset back to a plain passthrough in its own `finally`).
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+});
 
 const OLD_NAME_REF = 'ghostRef'; //   name of the unresolved (dangling) reference
 const OLD_NAME_NODE = 'keepDecl'; //  name of the leftover declaration node
@@ -856,6 +868,7 @@ async function makeIndexedFixture(
 ): Promise<{ dir: string; cg: CodeGraph; queries: QueryBuilder; cleanup: () => void }> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-rename-apply-'));
   for (const [name, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true }); // supports nested fixture paths (e.g. 'sub/caller.ts')
     fs.writeFileSync(path.join(dir, name), content);
   }
   const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
@@ -1122,6 +1135,263 @@ describe('T034 Rung 6 — rollback + recovery (FR-019/FR-019a): apply-engine.ts 
       expect(shasum(declAbs)).toBe(preApplyDeclSum);
     },
   );
+});
+
+/**
+ * D5 review remediation (BLOCKER) — a write-path malfunction must reach the
+ * SAME rollback ladder a post-check dangle does, never escape as an uncaught
+ * exception (SC-002 / FR-019 / FR-019a). Two read-only rungs run before any
+ * write; Rung 4 itself writes:
+ *   - Rung 3b (reverifySpans' file reads): a read error (e.g. the file is
+ *     deleted between the snapshot and the reverify) previously threw
+ *     uncaught. Nothing has been written yet, so the correct terminal is the
+ *     SAME zero-write stale-span refusal a reverify MISMATCH already
+ *     produces (treat unreadable as drifted) — never a rollback (there is
+ *     nothing to roll back).
+ *   - Rung 4 (writeEdits): a mid-loop write/rename error (EACCES/ENOSPC)
+ *     previously unwound past rollback, leaving earlier files mutated and the
+ *     snapshots discarded. It now routes through the SAME rollback(...) path
+ *     the post-check-failure branch uses, carrying the cause as
+ *     `ApplyResult.writeFailure` (mirrors how a dangle carries
+ *     `danglingReferences`) so the caller learns WHY without a Read.
+ */
+describe('D5 write-path malfunctions reach the rollback ladder (FR-019/FR-019a): apply-engine.ts (real fs)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  // decl.ts sorts before sub/caller.ts (FR-027 deterministic edit order), so
+  // the Rung-4 write loop always touches decl.ts FIRST (succeeds) and
+  // sub/caller.ts SECOND — whose directory can be made read-only to force
+  // ONLY the second file's write to fail, leaving the first genuinely mutated.
+  const twoFileFixture = {
+    'decl.ts': 'export function widget(): void {}\n',
+    'sub/caller.ts': [
+      "import { widget } from '../decl';",
+      'export function useWidget(): void { widget(); }',
+      '',
+    ].join('\n'),
+  };
+
+  it.runIf(process.platform !== 'win32')(
+    'Rung 4: a mid-loop write failure (second touched file\'s directory made read-only) → outcome rolled-back, the FIRST file restored byte-identically, the cause surfaced as writeFailure',
+    async () => {
+      const { dir, cg, queries } = await makeIndexedFixture(twoFileFixture).then((f) => {
+        cleanups.push(f.cleanup);
+        return f;
+      });
+      const declAbs = path.join(dir, 'decl.ts');
+      const callerAbs = path.join(dir, 'sub', 'caller.ts');
+      const subDir = path.join(dir, 'sub');
+      const beforeDecl = shasum(declAbs);
+      const beforeCaller = shasum(callerAbs);
+
+      fs.chmodSync(subDir, 0o555); // no write — blocks the temp-sibling CREATE for caller.ts
+      let result: ApplyResult | undefined;
+      try {
+        result = await applyRename({
+          queries,
+          projectRoot: dir,
+          selector: { name: 'widget', kind: 'function' },
+          newName: 'gadget',
+          lspConfig: graphOnlyLsp(dir),
+          env: {},
+          sync: () => cg.sync(),
+        });
+      } finally {
+        fs.chmodSync(subDir, 0o755); // let afterEach clean up
+      }
+
+      assertExactlyOneTerminal(result!);
+      expect(result!.outcome).toBe('rolled-back');
+      // Byte-identical restore of BOTH touched files: decl.ts really was
+      // written and renamed-over before the failure; sub/caller.ts's write
+      // never got that far, and its restore is a harmless identical rewrite.
+      expect(shasum(declAbs)).toBe(beforeDecl);
+      expect(shasum(callerAbs)).toBe(beforeCaller);
+      expect(result!.danglingReferences).toEqual([]); // no post-check ran — the cause is the write failure, not a dangle
+      expect(result!.recovery).toBeUndefined();
+      expect(result!.writeFailure).toBeDefined();
+      expect(result!.writeFailure!.file).toContain('caller.ts');
+      expect(result!.writeFailure!.message.length).toBeGreaterThan(0);
+      // No leftover temp sibling from the aborted write, in either directory.
+      expect(fs.readdirSync(dir).filter((n) => n.endsWith(RENAME_TEMP_SUFFIX))).toEqual([]);
+      expect(fs.readdirSync(subDir).filter((n) => n.endsWith(RENAME_TEMP_SUFFIX))).toEqual([]);
+    },
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'Rung 4: a mid-loop write failure whose restore ALSO fails → outcome rollback-failed, a recovery dump, the writeFailure cause still surfaced (reuses T034\'s unwritable-restore machinery)',
+    async () => {
+      const { dir, cg, queries } = await makeIndexedFixture(twoFileFixture).then((f) => {
+        cleanups.push(f.cleanup);
+        return f;
+      });
+      const callerAbs = path.join(dir, 'sub', 'caller.ts');
+      const subDir = path.join(dir, 'sub');
+      const preApplyCaller = fs.readFileSync(callerAbs); // the snapshot oracle
+
+      // Block the SAME write (subDir read-only) AND make sub/caller.ts itself
+      // unwritable. Unlike decl.ts (which DOES succeed and gets a fresh,
+      // writable inode from the temp-rename), sub/caller.ts's write never
+      // gets far enough to replace it — so this chmod survives untouched
+      // into the restore attempt (chmod the FILE, not the dir — T034/FR-019a).
+      fs.chmodSync(subDir, 0o555);
+      fs.chmodSync(callerAbs, 0o444);
+
+      let result: ApplyResult | undefined;
+      try {
+        result = await applyRename({
+          queries,
+          projectRoot: dir,
+          selector: { name: 'widget', kind: 'function' },
+          newName: 'gadget',
+          lspConfig: graphOnlyLsp(dir),
+          env: {},
+          sync: () => cg.sync(),
+        });
+      } finally {
+        fs.chmodSync(subDir, 0o755);
+        fs.chmodSync(callerAbs, 0o644);
+      }
+
+      assertExactlyOneTerminal(result!);
+      expect(result!.outcome).toBe('rollback-failed');
+      const rec = result!.recovery!;
+      expect(rec.restoredFiles.some((f) => f.endsWith('decl.ts'))).toBe(true);
+      expect(rec.unrestoredFiles.some((f) => f.endsWith('caller.ts'))).toBe(true);
+      const dumped = path.join(rec.recoveryDir, rec.unrestoredFiles.find((f) => f.endsWith('caller.ts'))!);
+      expect(fs.existsSync(dumped)).toBe(true);
+      expect(fs.readFileSync(dumped).equals(preApplyCaller)).toBe(true);
+      // The write-failure cause survives even though the OUTCOME is now
+      // rollback-failed — the restore failure is a SEPARATE malfunction from
+      // the original write-failure cause that triggered the rollback.
+      expect(result!.writeFailure).toBeDefined();
+      expect(result!.writeFailure!.file).toContain('caller.ts');
+      expect(result!.refusal).toBeUndefined();
+      expect(result!.danglingReferences).toBeUndefined();
+    },
+  );
+
+  it('Rung 3b: a touched file deleted AFTER takeSnapshots captures it but BEFORE reverifySpans reads it → zero writes, stale-span-shaped refusal, no throw', async () => {
+    const { dir, cg, queries } = await makeIndexedFixture({
+      'decl.ts': 'export function widget(): void {}\n',
+    }).then((f) => {
+      cleanups.push(f.cleanup);
+      return f;
+    });
+    const declAbs = path.resolve(dir, 'decl.ts');
+
+    const realFs = await vi.importActual<typeof import('fs')>('fs');
+    let deleted = false;
+    const mocked = vi.mocked(fs.readFileSync);
+    mocked.mockImplementation(((...args: Parameters<typeof fs.readFileSync>) => {
+      const out = (realFs.readFileSync as (...a: Parameters<typeof fs.readFileSync>) => ReturnType<typeof fs.readFileSync>)(...args);
+      // takeSnapshots' Buffer-mode read (no encoding argument) is the ONLY
+      // no-encoding read of a touched file anywhere in the apply path — every
+      // other read site (plan-time derivation, D4, reverify) passes 'utf8' —
+      // so this fires exactly once, right after takeSnapshots captures
+      // decl.ts, deleting it for real before reverify's OWN read of the same
+      // path (a genuine, real ENOENT — no fake error is fabricated).
+      if (!deleted && args[0] === declAbs && args[1] === undefined) {
+        deleted = true;
+        realFs.unlinkSync(declAbs);
+      }
+      return out;
+    }) as typeof fs.readFileSync);
+
+    let result: ApplyResult | undefined;
+    try {
+      result = await applyRename({
+        queries,
+        projectRoot: dir,
+        selector: { name: 'widget', kind: 'function' },
+        newName: 'gadget',
+        lspConfig: graphOnlyLsp(dir),
+        env: {},
+        sync: () => cg.sync(),
+      });
+    } finally {
+      // Reset to a plain passthrough so no later test in this file inherits
+      // this test's custom (file-deleting) implementation.
+      mocked.mockImplementation(realFs.readFileSync as typeof fs.readFileSync);
+    }
+
+    assertExactlyOneTerminal(result!);
+    expect(result!.outcome).toBe('refused');
+    expect(result!.refusal?.reason).toBe('stale-span');
+    expect(result!.touchedFiles).toEqual([]);
+    expect(result!.refusal?.files).toContain('decl.ts');
+  });
+});
+
+/**
+ * D5b review remediation (MAJOR) — concurrent `CodeGraph.applyRename` calls on
+ * the SAME instance must serialize (the daemon serves multiple sessions; MCP
+ * renames dispatch on the main instance, and the ladder interleaves at its
+ * await points without a dedicated lock). A SEPARATE `Mutex` instance from
+ * `indexMutex` — the ladder's injected `sync()` acquires `indexMutex` itself,
+ * so reusing it would deadlock (Mutex is non-reentrant, `src/utils.ts`).
+ *
+ * The fixture uses two fully INDEPENDENT rename targets (no shared file, no
+ * shared symbol) so BOTH calls succeed regardless of ordering — isolating the
+ * assertion to PURE serialization (never overlapping in time), not correctness
+ * of the outcome. `cg.sync` is instrumented with a real timer delay + an
+ * order-tracking array: without a mutex the two ladders' Rung-5 re-syncs would
+ * overlap (both start before either resolves); with the mutex, the second
+ * ladder cannot even BEGIN its Rung-0 recompute until the first's whole
+ * `applyRename` call has resolved, so the two sync calls can never interleave.
+ */
+describe('D5b apply mutex — concurrent applyRename calls serialize per CodeGraph instance (FR-018/FR-020)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  it("two concurrent applyRename calls on independent targets never overlap in time — the second ladder's re-sync never starts before the first fully resolves", async () => {
+    const { dir, cg, cleanup } = await makeIndexedFixture({
+      'a.ts': 'export function alpha(): void {}\n',
+      'b.ts': 'export function beta(): void {}\n',
+    });
+    cleanups.push(cleanup);
+
+    const events: string[] = [];
+    const originalSync = cg.sync.bind(cg);
+    let callCount = 0;
+    // Own-property monkey-patch (established MCP-rename-tool pattern): a real
+    // timer delay makes an UNSERIALIZED overlap observable — the second
+    // ladder's sync call would fire WHILE the first's is still pending.
+    (cg as unknown as { sync: typeof cg.sync }).sync = (async (...args: Parameters<typeof cg.sync>) => {
+      const id = ++callCount;
+      events.push(`start-${id}`);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const result = await originalSync(...args);
+      events.push(`end-${id}`);
+      return result;
+    }) as typeof cg.sync;
+
+    const [r1, r2] = await Promise.all([
+      cg.applyRename({ name: 'alpha', kind: 'function' }, 'alphaRenamed'),
+      cg.applyRename({ name: 'beta', kind: 'function' }, 'betaRenamed'),
+    ]);
+
+    assertExactlyOneTerminal(r1);
+    assertExactlyOneTerminal(r2);
+    expect(r1.outcome).toBe('applied');
+    expect(r2.outcome).toBe('applied');
+
+    // Serialized: whichever ladder's sync call fires first (id 1) always
+    // fully resolves (end-1) before the OTHER ladder's sync call starts
+    // (start-2) — never interleaved. This is only possible if the mutex holds
+    // the WHOLE ladder (Rung 0 recompute through post-check), not merely the
+    // sync sub-step.
+    expect(events).toEqual(['start-1', 'end-1', 'start-2', 'end-2']);
+
+    // The workspace reflects BOTH renames, applied cleanly (no interleaved write).
+    expect(fs.readFileSync(path.join(dir, 'a.ts'), 'utf8')).toContain('alphaRenamed');
+    expect(fs.readFileSync(path.join(dir, 'b.ts'), 'utf8')).toContain('betaRenamed');
+  });
 });
 
 /**
