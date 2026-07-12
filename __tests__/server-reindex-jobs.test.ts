@@ -809,13 +809,14 @@ describe('F3 — an SSE stream throw is contained at the writer or the handler (
     settle();                          // let the running job settle
   });
 
-  // A throw that ESCAPES the writer (here writeHead itself) is still contained by
-  // the handler catch: no re-throw, hijacked is returned, the stream is ended, and
-  // it IS logged (via the R2-P1f safeDiagnostic).
-  it('a writeHead throw escapes the writer and is contained by the handler catch (logged, hijacked)', () => {
+  // A writeHead throw BEFORE headers go out leaves the response pristine: the
+  // handler returns the normal JSON 500 envelope (NOT a hijacked/empty response),
+  // so the dispatcher serializes it without a second writeHead. It is still logged
+  // (via the R2-P1f safeDiagnostic). Only a POST-header throw hijacks (case above).
+  it('a pre-header writeHead throw returns the JSON 500 envelope, never a hijacked/empty response', () => {
     let ended = false;
     const res = {
-      headersSent: false,
+      headersSent: false,                                     // stays false — writeHead throws before sending
       writeHead(): void { throw new Error('writeHead failed'); },
       write(): boolean { return true; },
       end(): void { ended = true; },
@@ -823,10 +824,11 @@ describe('F3 — an SSE stream throw is contained at the writer or the handler (
     };
     const diag: string[] = [];
     const { result, settle } = callEvents(res, diag);
-    expect(result).toMatchObject({ status: 200, hijacked: true });
-    expect(ended).toBe(true);                        // the handler catch ended the hijacked response
+    expect(result).toMatchObject({ status: 500, body: { error: { code: 'internal' } } });
+    expect((result as { hijacked?: boolean }).hijacked).toBeUndefined(); // NOT hijacked — headers never sent
+    expect(ended).toBe(false);                               // pristine → dispatcher writes the 500 itself
     expect(diag.join('\n')).toContain('SSE stream failed');
-    settle();                                        // let the running job settle
+    settle();                                                // let the running job settle
   });
 });
 

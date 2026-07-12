@@ -284,7 +284,12 @@ async function runWithLockRetry(
       continue;
     }
     const result = await runIndex(root, mode, onProgress, signal);
-    if (isContentionSentinel(mode, result) && isLockHeld(root)) {
+    // Full mode's sentinel is UNAMBIGUOUS (the library result carries a lock error),
+    // so trust it alone — a re-probe that raced the writer's release would wrongly
+    // report the empty `success:false` result as `done`. Sync mode's all-zero
+    // sentinel IS ambiguous with a genuinely-empty sync, so it still needs the
+    // confirming lock re-probe.
+    if (isContentionSentinel(mode, result) && (mode === 'full' || isLockHeld(root))) {
       // Race: a foreign writer took the lock between the probe and the acquire.
       if (Date.now() >= deadline) return { contended: true };
       await abortableSleep(intervalMs, signal);
@@ -535,7 +540,11 @@ export class JobRegistry {
  * — this is a distinct control method. Kept minimal and fully wrapped.
  */
 export async function defaultRearmWatcher(root: string, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return; // shutdown already in progress → nothing to re-arm
+  // Re-arm MUST run even when the indexing signal is already aborted (a shutdown
+  // abort): FR-021a requires the abort path — not just normal completion — to
+  // restore the shared daemon watcher. The signal only makes an IN-FLIGHT re-arm
+  // droppable (the abort listener below); it never SKIPS the re-arm. Bounded by
+  // index.ts close()'s grace race so it can't defer shutdown indefinitely.
   let indexedRoot: string;
   try {
     const real = fs.realpathSync(root);

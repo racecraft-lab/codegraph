@@ -521,12 +521,14 @@ function reindexEventsHandler(deps: JobApiDeps): RouteHandler {
     try {
       streamJobToResponse(ctx.res as SseResponse, ctx.req as SseRequest | undefined, job);
     } catch (err) {
-      // The stream writes headers as its FIRST action, so a throw here is almost
-      // always POST-writeHead. Returning a normal error result would let the
-      // dispatcher writeHead a SECOND time (ERR_HTTP_HEADERS_SENT → an uncaught
-      // rejection, F3). Instead end the hijacked response and log locally.
       safeDiagnostic(ctx.logDiagnostic, diagnosticLine('SSE stream failed', err));
+      // If headers never went out (e.g. `writeHead` ITSELF threw), the response is
+      // still pristine — return the normal JSON 500 envelope. Only once ownership
+      // actually transferred (headers sent) must we end + hijack instead, because a
+      // second writeHead would throw ERR_HTTP_HEADERS_SENT → uncaught rejection (F3).
+      if (!(ctx.res as { headersSent?: boolean }).headersSent) return internalError();
       try { (ctx.res as SseResponse).end(); } catch { /* already ended / gone */ }
+      return { status: 200, body: undefined, hijacked: true };
     }
     return { status: 200, body: undefined, hijacked: true };
   };

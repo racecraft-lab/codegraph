@@ -291,3 +291,60 @@ describe('SPEC-005 slice-2 round-2 remediation', () => {
     expect(result?.status).toBe(503);
   });
 });
+
+describe('SPEC-005 slice-2 round-3 remediation', () => {
+  // R3-#4 (FR-021a): the watcher re-arm MUST run even when the job was aborted
+  // (shutdown) — the abort path, not just normal completion, restores the shared
+  // daemon watcher. (A prior fix wrongly early-returned on an aborted signal.)
+  it('R3-#4: an aborted job still fires the watcher re-arm (FR-021a)', async () => {
+    let rearmCalled = false;
+    let rearmSawAbortedSignal: boolean | undefined;
+    const job = new ReindexJob({ id: 'r', root: os.tmpdir() }, 'sync', {
+      runIndex: async () => ({
+        filesChecked: 0,
+        filesAdded: 0,
+        filesModified: 0,
+        filesRemoved: 0,
+        nodesUpdated: 0,
+        durationMs: 1,
+      }),
+      isLockHeld: () => false,
+      rearmWatcher: (_root, signal) => {
+        rearmCalled = true;
+        rearmSawAbortedSignal = signal?.aborted;
+      },
+    });
+    job.abort(); // shutdown abort BEFORE run
+    await job.run();
+    expect(job.descriptor().status).toBe('error');
+    expect(job.descriptor().reason).toBe('aborted');
+    expect(rearmCalled).toBe(true); // re-arm ran despite the abort
+    expect(rearmSawAbortedSignal).toBe(true); // and received the aborted signal
+  });
+
+  // R3-#2 (FR-021a): a FULL-mode lock sentinel is unambiguous (the library result
+  // carries a lock error), so it must be treated as contention even if the lock
+  // file reads free on the re-probe (the writer released in between) — never
+  // reported as a `done` empty index.
+  it('R3-#2: a full-mode lock sentinel is contention even when the re-probe reads free', async () => {
+    const job = new ReindexJob({ id: 'r', root: os.tmpdir() }, 'full', {
+      runIndex: async () => ({
+        success: false,
+        durationMs: 0,
+        errors: [{ message: 'index lock is held by another process' }],
+        filesIndexed: 0,
+        filesSkipped: 0,
+        filesErrored: 0,
+        nodesCreated: 0,
+        edgesCreated: 0,
+      }),
+      isLockHeld: () => false, // writer released between acquire-fail and re-probe
+      rearmWatcher: () => undefined,
+      lockRetryWindowMs: 0, // past the window immediately → terminal lock_unavailable
+      lockRetryIntervalMs: 1,
+    });
+    await job.run();
+    expect(job.descriptor().status).toBe('error');
+    expect(job.descriptor().reason).toBe('lock_unavailable'); // NOT 'done'
+  });
+});
