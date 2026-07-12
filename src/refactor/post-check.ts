@@ -2,9 +2,10 @@
  * SPEC-010 Slice-2 apply safety ladder — Rung 5: re-sync discrimination + the
  * FR-018 touched-file-scoped post-check (FR-018 / FR-019).
  *
- * STUB — behavioral bodies land in T038 (GREEN). Type-correct neutral returns so
- * the shared `refactor-apply.test.ts` still collects and the prior suite stays
- * green while the T033 behavioral assertions drive the real implementation.
+ * `discriminateSyncResult` separates a genuinely-ran re-sync from the zero-shape
+ * no-op (`filesChecked === 0 && durationMs === 0`); `runPostCheck` then asserts
+ * zero dangling old-name references across the touched files (dual assertion,
+ * never repo-wide). Behavior pinned by the T033 real-SQLite tests.
  */
 
 import type { QueryBuilder } from '../db/queries';
