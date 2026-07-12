@@ -338,9 +338,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
     } finally {
       // FR-014a: a LOCAL, redacted request line — method + path + status ONLY.
       // NEVER the headers object, the `Authorization` header, or the token in any
-      // form. Silent unless a logger sink was injected.
+      // form — including the rare case where a client puts the configured token
+      // in the request PATH (e.g. `/api/<token>`): redact it before logging.
       try {
-        options.logger?.(`${method} ${rawPath} -> ${status}`);
+        const safePath = security.token ? rawPath.split(security.token).join('<redacted>') : rawPath;
+        options.logger?.(`${method} ${safePath} -> ${status}`);
       } catch { /* a log sink must never take down the server */ }
     }
   }
