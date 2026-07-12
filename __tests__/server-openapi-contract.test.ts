@@ -94,6 +94,17 @@ describe('openapi ship check', () => {
     expect(keys).toHaveLength(READ_PATHS.length + JOB_PATHS.length);
   });
 
+  it('constrains Job.reason to the whitelisted enum (R4-REASON-ENUM)', () => {
+    expect(fs.existsSync(DIST_SPEC)).toBe(true);
+    // The terminal `reason` must be a CLOSED enum of exactly the three documented,
+    // whitelisted reasons — never an unconstrained string (FR-015a/021/021a/023).
+    const yaml = fs.readFileSync(DIST_SPEC, 'utf8');
+    const m = yaml.match(/reason:\s*\n\s*type: string\s*\n\s*enum:\s*\[([^\]]*)\]/);
+    expect(m, 'Job.reason enum not found in the shipped contract').toBeTruthy();
+    const values = m![1].split(',').map((s) => s.trim()).sort();
+    expect(values).toEqual(['aborted', 'index_failed', 'lock_unavailable']);
+  });
+
   it('documents the Slice-2 /api/reindex jobs paths (T041)', () => {
     expect(fs.existsSync(DIST_SPEC)).toBe(true);
     // Assert on parsed path keys (not raw substrings) — the same no-parser

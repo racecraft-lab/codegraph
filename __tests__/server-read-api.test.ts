@@ -677,6 +677,41 @@ describe('SPEC-005 web server lifecycle (T006, FR-002/026)', () => {
     expect(res.status).toBe(404);
   });
 
+  // R4-CLOSE-AWAIT (FR-026): close() must await the REAL server.close() callback,
+  // not merely a grace timer — otherwise it can resolve while the listening socket
+  // is still open (a rebind race). With a live keep-alive connection still open,
+  // close() ends the socket, awaits the real listener close (backstop destroys any
+  // straggler), and only then resolves — so the very same port re-binds.
+  it('R4-CLOSE-AWAIT: close() with a live keep-alive connection frees the port to re-bind', async () => {
+    const first = await startWebServer({ port: 0 });
+    const port = first.port;
+
+    // A real, idle keep-alive connection the client does NOT close — so close()
+    // cannot resolve until it awaits the actual listener close.
+    const sock = net.connect(port, '127.0.0.1');
+    await new Promise<void>((resolve, reject) => {
+      sock.once('error', reject);
+      sock.on('data', () => resolve()); // first response bytes → connection established
+      sock.on('connect', () => {
+        sock.write(
+          'GET /api/x HTTP/1.1\r\n' +
+          `Host: 127.0.0.1:${port}\r\n` +
+          'Connection: keep-alive\r\n\r\n',
+        );
+      });
+    });
+
+    await first.close();                 // must resolve despite the live connection
+    try { sock.destroy(); } catch { /* already gone */ }
+
+    // The listening socket is fully closed → the same port re-binds (no race).
+    const second = await startWebServer({ port });
+    handles.push(second);
+    expect(second.port).toBe(port);
+    const res = await fetch(`http://127.0.0.1:${port}/api/x`);
+    expect(res.status).toBe(404);
+  }, 20000);
+
   it('EADDRINUSE → a clear error naming the port, suggesting --port, and no half-open listener', async () => {
     const h = await start();
     const port = h.port;
