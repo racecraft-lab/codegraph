@@ -58,16 +58,16 @@ daemon-client core, the bootstrap/lifecycle, CLI activation, the fixture harness
 and the shipped `openapi.yaml`. **No user-story work begins until this phase is
 complete.**
 
-- [ ] T001 Create the `src/server/` module skeleton — exported stubs + shared wire
+- [x] T001 Create the `src/server/` module skeleton — exported stubs + shared wire
   types for `src/server/index.ts`, `routes.ts`, `auth.ts`, `daemon-client.ts`,
   `static.ts`, `errors.ts` so cross-imports resolve and `npm run typecheck` passes
   (plan Project Structure).
-- [ ] T002 [P] Extract the loopback predicate (FR-012, research D1): move
+- [x] T002 [P] Extract the loopback predicate (FR-012, research D1): move
   `isLoopbackHost` out of `src/embeddings/config.ts` into `src/utils.ts` as an
   exported function, delete the private copy, and import the shared one in
   `src/embeddings/config.ts`. Guard: existing embeddings-config tests + `npm run
   typecheck` stay green (no behavior change; upstream diff minimal).
-- [ ] T003 Implement the error-envelope module in `src/server/errors.ts` — the
+- [x] T003 Implement the error-envelope module in `src/server/errors.ts` — the
   closed six-code vocabulary (`invalid_request` 400, `unauthorized` 401,
   `not_found` 404 with `details.resource ∈ node|repo|route`, `conflict` 409,
   `unavailable` 503 + `Retry-After`, `internal` 500), the `{ error: { code,
@@ -75,7 +75,7 @@ complete.**
   raw exception text / absolute paths / stacks). **Failing test first** in
   `__tests__/server-read-api.test.ts` (code→status map + envelope shape). Depends
   on T001. (FR-015/015a)
-- [ ] T004 Implement the request router matcher in `src/server/routes.ts` —
+- [x] T004 Implement the request router matcher in `src/server/routes.ts` —
   method+path matching with `:id`/`:repo` params; the **single-site decode
   chokepoint** (split the raw path on literal `/` **first**, then exactly one
   `decodeURIComponent` on the matched id segment — the whole path is never decoded,
@@ -83,12 +83,12 @@ complete.**
   known path → 404 `not_found`, `details.resource: route`, no 405, FR-018); and a
   **top-level per-handler catch** turning any unanticipated throw into the
   `internal` 500 envelope (FR-015a). Depends on T003. (FR-004a/015a/018)
-- [ ] T005 [P] Implement the daemon-client core in `src/server/daemon-client.ts` —
+- [x] T005 [P] Implement the daemon-client core in `src/server/daemon-client.ts` —
   attach-or-spawn the startup repo's daemon via the MCP proxy machinery
   (`src/mcp/proxy.ts`), forward a read query over its socket, and map an
   attach/spawn failure to a 503 `unavailable` envelope carrying `Retry-After`
   (transient, never a crash — Edge Cases). Depends on T003. (FR-002/008/015a)
-- [ ] T006 Implement the bootstrap + lifecycle in `src/server/index.ts` — `node:http`
+- [x] T006 Implement the bootstrap + lifecycle in `src/server/index.ts` — `node:http`
   `createServer`; bind `--host`/`--port` (default `127.0.0.1:11235`) with `--port 0`
   ephemeral (print the actual bound port) and `EADDRINUSE` → clear error naming the
   port + suggest `--port <n>`/`--port 0` + non-zero exit with **no half-open
@@ -100,14 +100,14 @@ complete.**
   `__tests__/server-read-api.test.ts` (bind on `--port 0`, 404 envelope for any
   path, clean stop, subsequent re-bind, `EADDRINUSE` shape). Depends on T004, T005.
   (FR-002/026)
-- [ ] T007 Wire CLI activation in `src/bin/codegraph.ts` (**minimal upstream diff**)
+- [x] T007 Wire CLI activation in `src/bin/codegraph.ts` (**minimal upstream diff**)
   — add the `--web` option + action branch calling `src/server/index.ts`'s start,
   and the `--web`/`--mcp` mutual-exclusion guard failing startup with a "choose one
   mode" error; keep the `serve` command `hidden` so `--help` is byte-identical.
   **Failing dormancy test first** in `__tests__/server-read-api.test.ts` (bare
   `serve` / `serve --mcp` byte-identical; no bind without `--web`; `serve --web
   --mcp` fails). Depends on T006. (FR-001, SC-006)
-- [ ] T008 Create the shared fixture harness `__tests__/helpers/server-fixture.ts` —
+- [x] T008 Create the shared fixture harness `__tests__/helpers/server-fixture.ts` —
   build a real fixture index in an `fs.mkdtempSync` temp dir (real files, real
   SQLite via `CodeGraph.init`+`indexAll`, no mocking), start `serve --web` on
   `--port 0`, and return the base URL + a teardown that stops the server and removes
@@ -115,14 +115,14 @@ complete.**
   synthetic web root** (seed a temp `dist/web/` with `index.html` + a probe asset and
   point the server's injectable web-root at it, per T019) so T012 case (b) can
   exercise the `dist/web/`-present path. Depends on T006.
-- [ ] T009 [P] Create the shipped contract artifact `src/server/openapi.yaml` (the
+- [x] T009 [P] Create the shipped contract artifact `src/server/openapi.yaml` (the
   **read-API subset** copied from the design source
   `specs/005-local-http-server/contracts/openapi.yaml` — read-tagged paths only;
   jobs paths land in Slice 2 via T041) **and** wire `copy-assets` in `package.json`
   to copy it into `dist/server/`. **Failing ship-check test first** in
   `__tests__/server-read-api.test.ts` asserting `dist/server/openapi.yaml` exists
   after build. (Constitution VII, FR-025)
-- [ ] T010 Reviewability checkpoint — confirm the planned task/file scope keeps
+- [x] T010 Reviewability checkpoint — confirm the planned task/file scope keeps
   **each slice under ~400 reviewable LOC** (Slice 1 read API; Slice 2 jobs), that
   **zero new runtime dependencies** are introduced (FR-003), and that the ratified
   2-slice split still holds; record the check before implementation (tasks-template
@@ -147,7 +147,7 @@ testable before US4 lands.)
 
 ### Tests for User Story 1 (write FIRST — must FAIL)
 
-- [ ] T011 [P] [US1] Failing read-endpoint tests in
+- [x] T011 [P] [US1] Failing read-endpoint tests in
   `__tests__/server-read-api.test.ts` — status body (FR-005 fields), symbol-search
   paging `{items,total,limit,offset}` (FR-006), node-detail own-fields-only
   (FR-004), callers/callees paged, impact + graph subgraph `{nodes,edges,truncated}`
@@ -157,7 +157,7 @@ testable before US4 lands.)
   FR-004/007/015a), and a `file:`-shaped id with an
   encoded `%2F` round-tripping to the correct node + an unknown/malformed id → 404
   `not_found` (`details.resource: node`) (FR-004a). Uses the T008 harness.
-- [ ] T012 [P] [US1] Failing static/fallback tests in
+- [x] T012 [P] [US1] Failing static/fallback tests in
   `__tests__/server-static-fallback.test.ts`, exercising **both** web-root states.
   **(a) `dist/web/` absent** (SPEC-005's production reality): `/` placeholder present
   + data-free/byte-identical regardless of registered repos (FR-017/017a); an
@@ -181,38 +181,38 @@ testable before US4 lands.)
 > index); FR-021 untouched (bans indexing RPCs only). The retrieval-guardian check
 > (T042) now also verifies this addition changes no MCP tool output.
 
-- [ ] T013 [US1] Read-query forwarding wrappers in `src/server/daemon-client.ts` —
+- [x] T013 [US1] Read-query forwarding wrappers in `src/server/daemon-client.ts` —
   typed methods over the daemon socket for `searchNodes` / `getNode` / `getCallers`
   / `getCallees` / `getImpactRadius` / graph-neighborhood + status/index-health,
   mapping library results to the wire `Node`/`Edge` shapes (data-model Read query
   result). Depends on T005. (FR-004/008)
-- [ ] T014 [US1] `GET /api/status` handler on the T004 router — `version` + default
+- [x] T014 [US1] `GET /api/status` handler on the T004 router — `version` + default
   repo `{id,root,name}` + `index {state,fileCount,nodeCount,edgeCount,lastIndexed}`
   + `hybridSearch {available,reason}` + `lsp {available}`; reports an
   un-indexed/absent startup index via `index.state` **without refusing startup**
   (Edge Cases); version is carried here, **not** a URL prefix. Depends on T013.
   (FR-005/016) — `src/server/routes.ts`.
-- [ ] T015 [US1] `GET /api/search` handler — **required** `q` (absent/empty → 400
+- [x] T015 [US1] `GET /api/search` handler — **required** `q` (absent/empty → 400
   `invalid_request`); optional `mode ∈ {keyword,semantic,hybrid,auto}` defaulting to
   `auto` **only when omitted** (invalid value → 400, deliberately diverging from
   MCP/CLI coercion); offset paging (`limit` 100/500 **clamp**, `offset`, `total`);
   degradation → **200** with `degraded:true`+`degradationReason` (never an HTTP
   error). Depends on T013. (FR-004/006/006a) — `src/server/routes.ts`.
-- [ ] T016 [US1] Shared offset-paging helper + `GET /api/callers/:id` and
+- [x] T016 [US1] Shared offset-paging helper + `GET /api/callers/:id` and
   `GET /api/callees/:id` handlers — `limit` default 100 / max 500 (clamped, not
   errored), `offset`, `total`, over the decoded node id; unknown id → 404
   `not_found` (`details.resource: node`). Depends on T013. (FR-004/006) —
   `src/server/routes.ts`.
-- [ ] T017 [US1] `GET /api/node/:id` handler — the node's **own fields only**
+- [x] T017 [US1] `GET /api/node/:id` handler — the node's **own fields only**
   (identity/kind/name/location/signature/doc), bounded regardless of fan-in
   (relationships come from the paged/subgraph endpoints). Depends on T013.
   (FR-004/004a) — `src/server/routes.ts`.
-- [ ] T018 [US1] `GET /api/impact/:id` and `GET /api/graph/:id` handlers — the shared
+- [x] T018 [US1] `GET /api/impact/:id` and `GET /api/graph/:id` handlers — the shared
   `{nodes,edges,truncated}` subgraph shape with the **2000-node cap** + `truncated`
   flag; `graph` depth default **1** / max 3 (over-max clamps); `impact` depth
   default **3** / max 3 (its own natural default, NOT the neighborhood default).
   Depends on T013. (FR-004/007) — `src/server/routes.ts`.
-- [ ] T019 [P] [US1] Static mount + placeholder in `src/server/static.ts` — serve
+- [x] T019 [P] [US1] Static mount + placeholder in `src/server/static.ts` — serve
   `dist/web/` when present; while absent, `/` **and every extensionless browser
   route** return the minimal **data-free** placeholder pointing at `/api/status`
   (byte-identical regardless of registered repos — the app-shell stand-in,
@@ -221,7 +221,7 @@ testable before US4 lands.)
   **resolvable/injectable** (not hard-pinned to the process's own `dist/web/`) so the
   T008 harness can point it at a synthetic temp web root for the T012 case-(b)
   present-`dist/web/` assertions. (FR-017/017a/018/019)
-- [ ] T020 [US1] Path-traversal confinement in `src/server/static.ts` — decode the
+- [x] T020 [US1] Path-traversal confinement in `src/server/static.ts` — decode the
   request path **once** (bounded against multiply-encoded input) and route every
   resolved path through `validatePathWithinRoot` (`src/utils.ts`), returning null →
   404 `not_found` (`details.resource: route`) on any `..`/absolute/encoded-separator
@@ -249,7 +249,7 @@ is additive and US1/US2 tests use an allowlisted `Host`.
 
 ### Tests for User Story 4 (write FIRST — must FAIL)
 
-- [ ] T021 [P] [US4] Failing auth/binding tests in
+- [x] T021 [P] [US4] Failing auth/binding tests in
   `__tests__/server-auth-binding.test.ts` — the shared `isLoopbackHost` set
   (`localhost`/`::1`/`127.0.0.0/8` → true; `0.0.0.0`/`::`/remote → false, FR-012);
   loopback default serves `/api/*` with no credentials (SC-002); non-loopback + no
@@ -260,16 +260,16 @@ is additive and US1/US2 tests use an allowlisted `Host`.
 
 ### Implementation for User Story 4
 
-- [ ] T022 [US4] Fail-closed bind gate in `src/server/auth.ts` — using the shared
+- [x] T022 [US4] Fail-closed bind gate in `src/server/auth.ts` — using the shared
   `isLoopbackHost` (T002), refuse startup when the bind host is non-loopback and
   `CODEGRAPH_SERVER_TOKEN` is unset (nothing binds); `0.0.0.0`/`::` are
   non-loopback. Wire into the T006 bootstrap **before** `listen`. Depends on T002,
   T006. (FR-012/013) — `src/server/auth.ts`, `src/server/index.ts`.
-- [ ] T023 [US4] Host-header allowlist in `src/server/auth.ts` — validate every
+- [x] T023 [US4] Host-header allowlist in `src/server/auth.ts` — validate every
   request's `Host` against `{localhost, 127.0.0.1, [::1], bound host}` × bound port
   **even on loopback**; non-allowlisted → 400 `invalid_request` naming the offending
   header in `details` (no 403; vocabulary stays closed). Depends on T004. (FR-012)
-- [ ] T024 [US4] Constant-time Bearer check in `src/server/auth.ts` — scope **every
+- [x] T024 [US4] Constant-time Bearer check in `src/server/auth.ts` — scope **every
   `/api/*` route** (incl. the future SSE endpoint) to the token on a token-bound
   bind; reject empty/missing **before** comparison, then compare **SHA-256 digests**
   of presented vs configured (UTF-8) with `crypto.timingSafeEqual` (digest-first →
@@ -277,7 +277,7 @@ is additive and US1/US2 tests use an allowlisted `Host`.
   regardless of reason (enumeration prevention); the static mount + `/` placeholder
   sit **outside** the auth boundary. Depends on T004. (FR-014) — `src/server/auth.ts`,
   `src/server/routes.ts`.
-- [ ] T025 [US4] Request-log redaction at the dispatch seam in `src/server/index.ts`
+- [x] T025 [US4] Request-log redaction at the dispatch seam in `src/server/index.ts`
   — the request/diagnostic logger stays local (no egress) and MUST NOT serialize the
   `Authorization` header, the presented Bearer, or `CODEGRAPH_SERVER_TOKEN` in any
   reversible form; assert no token substring in captured logs. Depends on T006.
@@ -300,7 +300,7 @@ demand and returns its data; an unregistered/malformed id → 404 `not_found`
 
 ### Tests for User Story 2 (write FIRST — must FAIL)
 
-- [ ] T026 [P] [US2] Failing multi-repo tests in the repos section of
+- [x] T026 [P] [US2] Failing multi-repo tests in the repos section of
   `__tests__/server-read-api.test.ts` — `/api/repos` lists registered projects with
   the startup repo `default:true` (FR-009); a repo-scoped read with `?repo=<16hex>`
   against a second repo attaches its daemon **lazily on first access** (not at
@@ -310,13 +310,13 @@ demand and returns its data; an unregistered/malformed id → 404 `not_found`
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] `GET /api/repos` handler + registry listing in
+- [x] T027 [US2] `GET /api/repos` handler + registry listing in
   `src/server/daemon-client.ts` — from `listDaemons()`
   (`src/mcp/daemon-registry.ts`) return each repo `{id,root,name,default}` with
   exactly one `default:true` (the startup repo); the 16-hex id is the registry's
   realpath key **by construction**. Depends on T013. (FR-009/010) —
   `src/server/daemon-client.ts`, `src/server/routes.ts`.
-- [ ] T028 [US2] Optional `repo` query-param resolution + lazy multi-repo attach in
+- [x] T028 [US2] Optional `repo` query-param resolution + lazy multi-repo attach in
   `src/server/daemon-client.ts` — the six repo-scoped read endpoints accept an
   optional 16-hex `repo` selecting the target (omitted → default/startup repo);
   first access **lazily attaches** that repo's daemon (never eager); malformed or
@@ -333,7 +333,7 @@ demand and returns its data; an unregistered/malformed id → 404 `not_found`
 **Purpose**: Prove contract honesty across the whole read surface and package Slice
 1 as PR 1. (Cross-story tasks — no `[USx]` label, like Polish.)
 
-- [ ] T029 [Slice 1] OpenAPI contract test in
+- [x] T029 [Slice 1] OpenAPI contract test in
   `__tests__/server-openapi-contract.test.ts` — start a fixture server on `--port 0`
   and walk **every read-tagged path/method/status** in `src/server/openapi.yaml`,
   including the **503 `unavailable`** (+ `Retry-After`) on every daemon-forwarding
@@ -341,15 +341,15 @@ demand and returns its data; an unregistered/malformed id → 404 `not_found`
   `file:`+`%2F` round-trip case, and the FR-017b traversal probe; fail on any
   undocumented route or mismatched shape (CI tolerates zero). Depends on
   T014–T020, T027–T028. (FR-025, SC-005)
-- [ ] T030 [Slice 1] Add the Slice-1 CHANGELOG entry under `## [Unreleased]` —
+- [x] T030 [Slice 1] Add the Slice-1 CHANGELOG entry under `## [Unreleased]` —
   user-facing (`codegraph serve --web` local REST API over the warm index; loopback
   default; token-guarded network bind); no internal paths/symbols/benchmarks.
   `CHANGELOG.md`. (Constitution "Writing changelog entries")
-- [ ] T031 [Slice 1] Run the Slice-1 quickstart validation — `npm run build` (assert
+- [x] T031 [Slice 1] Run the Slice-1 quickstart validation — `npm run build` (assert
   `dist/server/openapi.yaml` present) + `npm run typecheck` + the embedding-stripped
   `npm test`, then quickstart Scenarios 1–7 against the built binary; record
   evidence. (quickstart.md; SC-001/002/003/005/006)
-- [ ] T032 [Slice 1] Generate the Slice-1 PR review packet — what changed, why,
+- [x] T032 [Slice 1] Generate the Slice-1 PR review packet — what changed, why,
   non-goals, review order, scope budget (< ~400 LOC), traceability (each major FR/SC
   → changed files + verification evidence, incl. dormancy SC-006), known gaps, and
   the rollback lever (the `--web` flag). Name deferred follow-up: SPEC-006.
@@ -373,7 +373,7 @@ repo mid-run (→ 409), then read the finished job's terminal outcome.
 
 ### Tests for User Story 3 (write FIRST — must FAIL)
 
-- [ ] T033 [P] [US3] Failing job tests in `__tests__/server-reindex-jobs.test.ts` —
+- [x] T033 [P] [US3] Failing job tests in `__tests__/server-reindex-jobs.test.ts` —
   POST → **202** `{id,repo,mode,status:"running",startedAt}` (sync default;
   `?full=true` → `mode:"full"`); SSE `snapshot`→`progress`→ single terminal
   `done`/`error` then close, `progress` `{phase,current,total,currentFile?}`
@@ -387,23 +387,23 @@ repo mid-run (→ 409), then read the finished job's terminal outcome.
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] In-memory job registry in `src/server/jobs.ts` — latest-job-per-repo
+- [x] T034 [US3] In-memory job registry in `src/server/jobs.ts` — latest-job-per-repo
   map, `crypto.randomUUID()` id, lifecycle `running` → terminal `done`/`error` (no
   `queued` state), single-active-job guard backing the 409, and the **per-mode
   terminal `result` union** (`sync` vs `full`, FR-015a whitelist — drop
   `changedFilePaths` and `errors[]`; a partial full → `success:false` /
   `filesDiscovered` shortfall). (FR-022/024, research D3)
-- [ ] T035 [US3] Job driver in `src/server/jobs.ts` — run the re-index in the serve
+- [x] T035 [US3] Job driver in `src/server/jobs.ts` — run the re-index in the serve
   process via the library `sync()` (default) / `indexAll()` (`?full=true`) under the
   existing cross-process file lock, wiring an `AbortSignal`; **contain** every
   non-lock, non-abort failure as a terminal `error` with a whitelisted `reason`
   (never crash the process, never a 5xx on the returned 202, never stuck `running`).
   Depends on T034. (FR-020/021)
-- [ ] T036 [US3] Lock-contention handling in `src/server/jobs.ts` — when
+- [x] T036 [US3] Lock-contention handling in `src/server/jobs.ts` — when
   `sync()`/`indexAll()` cannot acquire the file lock, retry for a bounded ~2–3s
   window (**no queue**) then terminate as `error` `reason:"lock_unavailable"` (the
   POST still returned 202 — **not 409, not 503**). Depends on T035. (FR-021a)
-- [ ] T037 [P] [US3] SSE writer in `src/server/sse.ts` — `text/event-stream` +
+- [x] T037 [P] [US3] SSE writer in `src/server/sse.ts` — `text/event-stream` +
   `Cache-Control:no-cache` + `Connection:keep-alive` + `X-Accel-Buffering:no`; emit
   `snapshot` on **every** connect (terminal-and-close if the job already finished),
   live `progress`, one terminal `done`/`error`; a `~15s` `:`-comment heartbeat;
@@ -412,13 +412,13 @@ repo mid-run (→ 409), then read the finished job's terminal outcome.
   multiple concurrent subscribers each snapshot independently; a slow/disconnected
   subscriber never stalls the job or the others; **no** `id:`/Last-Event-ID. Final
   wiring to the response seam is T038. (FR-023)
-- [ ] T038 [US3] **[seam→Slice1]** Job routes on the T004 router seam
+- [x] T038 [US3] **[seam→Slice1]** Job routes on the T004 router seam
   (`src/server/routes.ts`) — `POST /api/reindex/:repo` (**URL-only params, reads no
   body**; registry repos only → 404 if unregistered; 202 + descriptor; 409 if
   active), `GET /api/reindex/:repo` (latest job state; registered-no-job → 404
   `resource:repo`), `GET /api/reindex/:repo/events` (SSE, token-scoped like other
   `/api/*`). Depends on T034–T037. (FR-020/022/023/024)
-- [ ] T039 [US3] Watcher re-arm (research D2) — add the additive
+- [x] T039 [US3] Watcher re-arm (research D2) — add the additive
   `MCPEngine.rearmWatcher()` (only when `cg.isDegraded()`: `unwatch()`+`watch()` to
   clear the one-way degrade latch) + a one-line daemon request-handler case in
   `src/mcp/`, and fire a **narrow daemon CONTROL message** from the job's
@@ -426,7 +426,7 @@ repo mid-run (→ 409), then read the finished job's terminal outcome.
   it is a cheap no-op on a healthy watcher. Control-plane only — **no indexing RPC**
   (FR-021 invariant holds). Depends on T035. (FR-021a) — `src/mcp/engine.ts`,
   `src/mcp/daemon.ts`, `src/server/jobs.ts`.
-- [ ] T040 [US3] **[seam→Slice1]** Shutdown-abort integration into the T006 ordered
+- [x] T040 [US3] **[seam→Slice1]** Shutdown-abort integration into the T006 ordered
   shutdown (`src/server/index.ts`, step 2) — abort the in-flight job via its
   `AbortSignal` → record terminal `error` `reason:"aborted"` → emit the terminal SSE
   event → release the lock in cleanup → exit within the grace period (an aborted
@@ -440,24 +440,24 @@ shutdown-abort (SC-004).
 
 ## Phase 7: [Slice 2] Contract extension & PR close-out
 
-- [ ] T041 [Slice 2] **[seam→Slice1]** Extend `src/server/openapi.yaml` with the
+- [x] T041 [Slice 2] **[seam→Slice1]** Extend `src/server/openapi.yaml` with the
   jobs-tagged paths (`POST`/`GET /api/reindex/{repo}`, `GET
   /api/reindex/{repo}/events`) from the design source, and extend
   `__tests__/server-openapi-contract.test.ts` to walk the jobs surface (202
   descriptor, 409 shape, 404 `resource:repo`, SSE headers). Depends on T038.
   (FR-025)
-- [ ] T042 [P] [Slice 2] Run the retrieval-guardian check — Slice 2 touches
+- [x] T042 [P] [Slice 2] Run the retrieval-guardian check — Slice 2 touches
   `src/mcp/` (the additive `rearmWatcher` control op, T039); confirm **no change** to
   MCP tool output, `getExploreBudget`/`getExploreOutputBudget`, error shaping, or
   edge synthesis (plan Constitution VI guardrail). Advisory evidence only.
-- [ ] T043 [Slice 2] Add the Slice-2 CHANGELOG entry under `## [Unreleased]` —
+- [x] T043 [Slice 2] Add the Slice-2 CHANGELOG entry under `## [Unreleased]` —
   user-facing (on-demand re-index with live progress over `serve --web`); no
   internals. `CHANGELOG.md`.
-- [ ] T044 [Slice 2] Run the Slice-2 quickstart validation — quickstart Scenarios
+- [x] T044 [Slice 2] Run the Slice-2 quickstart validation — quickstart Scenarios
   8–11 (trigger + progress + terminal, 409, `lock_unavailable` + watcher restore
   incl. the `isDegraded()` true→false grounding check, shutdown-abort) against the
   built binary; record evidence. (quickstart.md; SC-004)
-- [ ] T045 [Slice 2] Generate the Slice-2 PR review packet — what changed, why,
+- [x] T045 [Slice 2] Generate the Slice-2 PR review packet — what changed, why,
   non-goals, review order, scope budget (< ~400 LOC), traceability (SC-004,
   FR-020–024/026 → files + evidence), known gaps, rollback; name deferred
   follow-ups: SPEC-006 (web UI), SPEC-009 (LSP-over-WebSocket). (SC-007)

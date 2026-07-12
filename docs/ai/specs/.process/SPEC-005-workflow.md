@@ -711,9 +711,9 @@ Before starting any task:
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
 | 1 - Foundation | T001-T010 | ✅ 38d8410 | 66 new tests; full suite 2978 green; CLI diff 18/1; zero new deps verified (T010) |
-| 2 - Slice 1: Read API | T011-T028 | 🔄 US1 done (T011-T020) | codegraph/read daemon RPC (human-ratified amendment); 6 endpoints + static/traversal; 128 tests green across 6 suites. Accepted deviation (orchestrator-ratified): reads on daemon main thread, not query pool — pool is ToolResult-text-only; capped point queries; codegraph_status precedent; flag for PR review |
-| 3 - Slice 2: Jobs/SSE | T033-T045 | ⏳ | |
-| 4 - Polish | T046-T047 | ⏳ | |
+| 2 - Slice 1: Read API | T011-T032 | ✅ 17cef94 | US1 90ef852 / US4 1167d60 / US2 7dd4360 / close-out 17cef94; codegraph/read daemon RPC (human-ratified amendment); full suite 3117 green; quickstart S1-7 PASS; slice1-pr-packet.md; marker checkpoint 2276910. Accepted deviation (orchestrator-ratified): reads on daemon main thread, not query pool — pool is ToolResult-text-only; capped point queries; flagged in PR packet. Size overrun ~2080 ins vs ~400 est — size-only finding |
+| 3 - Slice 2: Jobs/SSE | T033-T045 | ✅ 0f92e03 | US3 b532bdb (27 tests, RED 24-fail verified: JobRegistry/driver/lock-contention/SSE writer+backpressure/rearmWatcher/shutdown-abort); close-out 0f92e03 (openapi jobs contract 43/43, CHANGELOG, quickstart S8-11 — S8/S9/S10 live, watcher-restore + abort-reason unit-grounded honestly, slice2-pr-packet.md). T042 retrieval-guardian: OVERALL PASS 7/7 checks, zero blocking. Regression trio 160 green |
+| 4 - Polish | T046-T047 | ⏳ | slice-2 marker checkpoint recorded after polish (T046-T047 fold into PR 2 per pr_marker_plan.fold_target_for) |
 
 ---
 
