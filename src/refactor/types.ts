@@ -297,7 +297,7 @@ export type RefusalReason =
   | 'excluded-kind' // FR-011: file/route/import/export kinds.
   | 'invalid-argument' // FR-021a: empty/invalid newName, no-op, or unrecognized kind.
   | 'heuristic-gated' // FR-015: below-exact edits block apply; see `gatedEdits`.
-  | 'stale-span' // FR-016: live bytes drifted from the planned span; see `files`.
+  | 'stale-span' // FR-005 plan-time (candidate file drifted from the index, D4) or FR-016 apply-window (live bytes drifted from the planned span); see `files`.
   | 'out-of-root' // FR-017: an edit targets a path outside the workspace root.
   | 'scope-ignored' // FR-017: an edit targets an in-root but scope-ignored file.
   | 'not-indexed' // Project has no `.codegraph/` index.

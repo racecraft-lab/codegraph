@@ -1396,6 +1396,201 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
 });
 
 // ---------------------------------------------------------------------------
+// D4 — plan-time index-freshness guard (Slice-2 gate S2-C finding). Index a
+// fixture, then mutate a CANDIDATE file on disk WITHOUT re-syncing, and rename.
+// Before this fix, per-edge span verification (deriveGraphRename's verifySpan)
+// found the live slice ≠ oldName at the drifted position and SILENTLY DROPPED
+// just that edit — the identical code path as the deliberate shadow/alias/
+// string-similar false-positive exclusion (FR-005/SC-008) — so the remaining
+// edits still applied: a partially-renamed workspace with zero user-facing
+// signal (the dry-run even reported "all-exact · 0 leftover mention(s)"). The
+// fix discriminates on INDEX FRESHNESS OF THE FILE (content_hash/size/
+// modified_at vs. live disk state), never the span: a drifted candidate file
+// refuses the WHOLE plan `stale-span`; an index-fresh false positive (SC-008)
+// still drops silently, unchanged. Real files + real SQLite (T012 harness).
+// ---------------------------------------------------------------------------
+describe('D4 plan-time index-freshness guard — planRename (stale-span; gate S2-C finding)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  async function setup(
+    files: Record<string, string>,
+  ): Promise<{ dir: string; cg: CodeGraph; queries: QueryBuilder }> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-d4-'));
+    for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), content);
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    return { dir, cg, queries };
+  }
+
+  const disabledLsp = (dir: string) =>
+    resolveLspConfig({ projectRoot: dir, cliActivation: 'disable', env: {} });
+
+  // Declaration in a.ts, cross-file import + by-ref occurrence in b.ts — the
+  // same shape as T012's forkFixture, so drift can land on either file.
+  const A_DECL = 'export function driftTarget(x) { return x; }';
+  const B_LINES = [
+    "import { driftTarget } from './a';",
+    'export function wire(bus) {',
+    '  bus.on(driftTarget);',
+    '}',
+  ];
+  const fixture = () => ({ 'a.ts': A_DECL + '\n', 'b.ts': B_LINES.join('\n') + '\n' });
+
+  it('(a) a candidate reference file mutated on disk WITHOUT a re-sync (a line inserted above the reference, shifting its span) refuses the WHOLE plan stale-span, naming the drifted file', async () => {
+    const { dir, queries } = await setup(fixture());
+    // Drift b.ts: insert an unrelated line above everything, shifting every
+    // line number the index recorded for its import specifier + by-ref use.
+    fs.writeFileSync(path.join(dir, 'b.ts'), '// unrelated drift\n' + B_LINES.join('\n') + '\n');
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'driftTarget', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal?.reason).toBe('stale-span');
+    expect(plan.refusal?.files).toEqual(['b.ts']);
+    expect(plan.refusal?.message).toMatch(/codegraph sync/);
+    // Whole-plan refusal: no partial edit set is ever leaked.
+    expect(plan.edits).toBeUndefined();
+    expect(plan.applied).toBe(false);
+  });
+
+  it('(b) drift on the DECLARATION file itself refuses the WHOLE plan stale-span, naming the declaration file', async () => {
+    const { dir, queries } = await setup(fixture());
+    fs.writeFileSync(path.join(dir, 'a.ts'), '// unrelated drift\n' + A_DECL + '\n');
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'driftTarget', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal?.reason).toBe('stale-span');
+    expect(plan.refusal?.files).toEqual(['a.ts']);
+    expect(plan.edits).toBeUndefined();
+  });
+
+  it('(c) a CRLF line-ending flip on a candidate file (identifier text unchanged) still refuses stale-span — spec.md names CRLF/encoding drift explicitly', async () => {
+    const { dir, queries } = await setup(fixture());
+    // verifySpan (via lineAt's `.replace(/\r$/, '')`) is \r-tolerant by design —
+    // a per-edit check alone would NEVER catch this. Only a file-level compare
+    // (content_hash over the raw read string) catches a pure CRLF flip.
+    fs.writeFileSync(path.join(dir, 'b.ts'), B_LINES.join('\r\n') + '\r\n');
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'driftTarget', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal?.reason).toBe('stale-span');
+    expect(plan.refusal?.files).toEqual(['b.ts']);
+  });
+
+  it('(d) a candidate reference file DELETED post-index refuses stale-span (never an uncaught crash)', async () => {
+    const { dir, queries } = await setup(fixture());
+    fs.rmSync(path.join(dir, 'b.ts'));
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'driftTarget', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal?.reason).toBe('stale-span');
+    expect(plan.refusal?.files).toEqual(['b.ts']);
+  });
+
+  it('(e) SC-008 coupling pin: an index-FRESH file with a genuine false positive (string-similar decoy) still drops silently — the plan succeeds, no stale-span refusal', async () => {
+    // Mirrors T011's false-positive fixture (mod.ts: target + decoy), but driven
+    // through planRename (not deriveGraphRename directly) so the NEW plan-level
+    // guard is what is under test. The file is NEVER touched after indexAll, so
+    // it must stay fresh and the bad edge must still silently drop.
+    const { dir, cg, queries } = await setup({
+      'mod.ts': 'export function decoyTarget(x) { return x; }\nexport function decoyDecoy() { return 0; }\n',
+    });
+    const targetId = cg.getNodesByName('decoyTarget').find((n) => n.kind === 'function')!.id;
+    const decoyId = cg.getNodesByName('decoyDecoy').find((n) => n.kind === 'function')!.id;
+    const line2 = 'export function decoyDecoy() { return 0; }';
+    // A references edge pointing where the live line reads `decoyDecoy`, not
+    // `decoyTarget`: the slice ≠ oldName, so span verification drops it — and
+    // since mod.ts was never touched after indexing, it must stay a silent drop.
+    queries.insertEdge({
+      source: decoyId,
+      target: targetId,
+      kind: 'references',
+      line: 2,
+      column: line2.indexOf('decoyDecoy'),
+      metadata: { resolvedBy: 'import', refName: 'decoyTarget' },
+    });
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'decoyTarget', kind: 'function' },
+      newName: 'renamedGoal',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.edits).toHaveLength(1); // declaration only — the false positive stays dropped
+    expect(plan.edits![0]!.range.start.line).toBe(1);
+  });
+
+  it('(f) the remedy loop: after codegraph sync, the identical rename derives a complete plan (no refusal)', async () => {
+    const { dir, cg, queries } = await setup(fixture());
+    fs.writeFileSync(path.join(dir, 'b.ts'), '// unrelated drift\n' + B_LINES.join('\n') + '\n');
+
+    // Sanity: still drifted before the sync.
+    const dryBeforeSync = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'driftTarget', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+    expect(dryBeforeSync.refusal?.reason).toBe('stale-span');
+
+    await cg.sync();
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'driftTarget', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.edits!.some((e) => e.file === 'a.ts')).toBe(true);
+    expect(plan.edits!.some((e) => e.file === 'b.ts')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T013 — Plan format + schema (plan-format.ts) — PURE over a RenamePlan value
 // object (no DB). Pins: the human table grouped by file (path, per-edit
 // range/before-after/tier, aggregate+leftover footer); the `-j/--json`

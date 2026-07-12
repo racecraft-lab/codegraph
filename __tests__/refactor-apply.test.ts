@@ -1297,6 +1297,40 @@ describe('T042 CLI --apply — codegraph rename (built binary, FR-014/FR-015/FR-
     expect(lib).toContain('gadget');
     expect(lib).not.toMatch(/\bwidget\b/); // the declaration AND the intra-call are rewritten
   });
+
+  // D4 / S2-C — the quickstart repro: index a fixture, mutate a candidate
+  // reference file on disk WITHOUT re-syncing (spans drift), then `--apply`.
+  // Before the fix, the recomputed plan (FR-014) silently dropped the drifted
+  // edit and applied the rest — a partially-renamed workspace, exit 0. The fix
+  // refuses the WHOLE apply at the plan-recompute step (Rung 0), writing nothing.
+  it('D4/S2-C: a candidate reference file that drifted since the last index refuses the WHOLE apply (stale-span), exits 2, writes NOTHING (shasum + mtime verified)', async () => {
+    const dir = await makeCliFixture(EXACT_FIXTURE);
+    const declPath = path.join(dir, 'decl.ts');
+    const callerPath = path.join(dir, 'caller.ts');
+    const declShaBefore = shasum(declPath);
+    const declMtimeBefore = fs.statSync(declPath).mtimeMs;
+
+    // Drift caller.ts WITHOUT a re-sync: a line inserted above shifts every span
+    // the index recorded for its import specifier + call site (S2-C repro).
+    const callerBeforeDrift = fs.readFileSync(callerPath, 'utf8');
+    fs.writeFileSync(callerPath, '// unrelated drift\n' + callerBeforeDrift);
+    const callerShaAfterDrift = shasum(callerPath);
+    const callerMtimeAfterDrift = fs.statSync(callerPath).mtimeMs;
+
+    const res = runRename(['widget', 'gadget', '--kind', 'function', '--apply'], dir);
+    expect(res.status).toBe(2); // recoverable refusal, NOT the generic exit 1, NOT exit 0
+    expect(res.stdout).toContain('stale-span');
+    expect(res.stdout).toMatch(/codegraph sync/);
+    expect(res.stdout).toContain('caller.ts');
+    expect(res.stderr).not.toMatch(/\n\s+at /); // success-shaped, never a stack trace
+
+    // ZERO writes: decl.ts untouched (shasum + mtime unchanged); caller.ts left
+    // EXACTLY as drifted — not reverted, not further mutated by the refused apply.
+    expect(shasum(declPath)).toBe(declShaBefore);
+    expect(fs.statSync(declPath).mtimeMs).toBe(declMtimeBefore);
+    expect(shasum(callerPath)).toBe(callerShaAfterDrift);
+    expect(fs.statSync(callerPath).mtimeMs).toBe(callerMtimeAfterDrift);
+  });
 });
 
 // =============================================================================

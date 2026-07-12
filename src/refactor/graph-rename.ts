@@ -44,6 +44,19 @@ export interface GraphRenameDerivation {
   edits: RenameEdit[];
   /** Non-gating FYI count of un-edited old-name mentions + synthesized dispatch sites (FR-013). */
   leftoverMentions: number;
+  /**
+   * Every file bearing ≥1 graph-nominated candidate occurrence of the target — a
+   * reference edge with a non-null confidence tier and a recorded (line, col) —
+   * collected BEFORE the per-edge {@link verifySpan} check. A candidate whose span
+   * verification then fails because the FILE ITSELF drifted since indexing
+   * (rather than a genuine shadow/alias/string-similar false positive) still
+   * appears here even though its edit is dropped from {@link edits} — the plan
+   * engine cross-checks this set against each file's indexed vs. live state to
+   * tell the two cases apart and refuse the whole plan on drift (SPEC-010 D4).
+   * Does NOT include the declaration file — the caller (the plan engine already
+   * has `target.file`) adds that separately.
+   */
+  candidateFiles: string[];
 }
 
 /** Identifier-character test for the whole-word leftover tally (ASCII identifiers). */
@@ -57,7 +70,7 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   const { queries, projectRoot, targetId, newName } = options;
 
   const decl = queries.getNodeById(targetId);
-  if (!decl) return { edits: [], leftoverMentions: 0 };
+  if (!decl) return { edits: [], leftoverMentions: 0, candidateFiles: [] };
   const oldName = decl.name;
 
   // One read per touched file; its `.split('\n')` lines back both the `lineText`
@@ -66,7 +79,17 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   const readLines = (relFile: string): string[] => {
     let lines = lineCache.get(relFile);
     if (!lines) {
-      lines = fs.readFileSync(path.join(projectRoot, relFile), 'utf8').split('\n');
+      try {
+        lines = fs.readFileSync(path.join(projectRoot, relFile), 'utf8').split('\n');
+      } catch {
+        // A candidate/declaration file missing since indexing (SPEC-010 D4: index
+        // drift) — no live line to verify against, so every span here drops
+        // exactly like a byte mismatch (FR-005). The plan engine's own
+        // index-freshness check (comparing this file's live state to its `files`
+        // row) is what turns a MISSING file into a whole-plan `stale-span`
+        // refusal instead of a silent drop.
+        lines = [];
+      }
       lineCache.set(relFile, lines);
     }
     return lines;
@@ -76,6 +99,7 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
 
   const edits: RenameEdit[] = [];
   const emitted = new Set<string>(); // `${file}:${line}:${column}` of every emitted edit
+  const candidateFiles = new Set<string>(); // D4: files with ≥1 candidate BEFORE verifySpan
   const push = (file: string, range: SourceRange, lineText: string, confidence: ConfidenceTier): void => {
     edits.push({ file, range, oldText: oldName, newText: newName, lineText, confidence, source: 'graph' });
     emitted.add(`${file}:${range.start.line}:${range.start.column}`);
@@ -110,6 +134,10 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
       continue;
     }
     if (ref.line == null || ref.column == null) continue;
+    // D4: nominate the file as a candidate BEFORE the live-byte check, so a drop
+    // caused by INDEX DRIFT (not a genuine false positive) is still visible to
+    // the plan engine's index-freshness guard even though the edit itself drops.
+    candidateFiles.add(ref.sourceFilePath);
     const lineText = lineAt(ref.sourceFilePath, ref.line);
     const range = verifySpan({ lineText, start: { line: ref.line, column: ref.column }, oldName });
     if (!range) continue; // FR-005: shadow / alias / string-similar / drift → drop
@@ -122,7 +150,7 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   const touched = [...new Set(edits.map((e) => e.file))].map((file) => ({ file, lines: readLines(file) }));
   const textual = countTextualLeftovers(touched, oldName, emitted);
 
-  return { edits, leftoverMentions: textual + synthesized };
+  return { edits, leftoverMentions: textual + synthesized, candidateFiles: [...candidateFiles] };
 }
 
 /**

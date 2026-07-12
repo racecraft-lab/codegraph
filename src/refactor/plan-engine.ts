@@ -30,6 +30,22 @@
  * derivation (never a per-file merge of the two sources), and the plan
  * records why via `lspDegradation`.
  *
+ * ## D4 — the plan-time index-freshness guard (gate S2-C finding)
+ * Per-edge span verification ({@link verifySpan}, inside {@link deriveGraphRename})
+ * already silently drops any candidate whose live bytes mismatch — necessary to
+ * keep discarding genuine shadow/alias/string-similar false positives (SC-008) on
+ * a file unchanged since indexing. But when the FILE ITSELF has drifted (mutated
+ * on disk without a `codegraph sync`), that same drop silently swallows a REAL
+ * edit instead of a false positive, leaving a partially-renamed workspace with no
+ * signal. The discriminator is index freshness of the FILE, not the span: every
+ * file the graph derivation nominated as a candidate (win or lose against
+ * `verifySpan`), the declaration file, and every file the accepted edit set
+ * touches (covers the LSP path's own files when that path is used) are checked
+ * against their indexed `files` row ({@link findDriftedFiles}) — ANY drift refuses
+ * the WHOLE plan `stale-span`, at plan time, so both a dry-run and `--apply`
+ * (which recomputes via this same function, FR-014) refuse identically, and a
+ * misleading "all-exact · 0 leftovers" plan can never render over stale bytes.
+ *
  * Injected dependencies (a `QueryBuilder`, the project root, and a resolved LSP
  * config) keep the `CodeGraph.planRename` wrapper (a later task) thin. No writes.
  */
@@ -37,6 +53,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { QueryBuilder } from '../db/queries';
+import { hashContent } from '../extraction';
 import { detectLanguage } from '../extraction/grammars';
 import { EffectiveLspConfig, isLspLanguage, probeLspServerCommand } from '../lsp';
 import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
@@ -73,7 +90,9 @@ export interface PlanRenameOptions {
  * Produce the dry-run {@link RenamePlan} for `selector` → `newName`. A resolution
  * refusal returns success-shaped (`newName` + `applied:false` + `refusal`, no
  * edits); a resolved target returns the ordered edit set with aggregate
- * confidence, plan-level `source`, and the leftover-mention FYI.
+ * confidence, plan-level `source`, and the leftover-mention FYI — unless a
+ * candidate file has drifted from the index since the last sync, which refuses
+ * the WHOLE plan `stale-span` instead (D4; see {@link findDriftedFiles}).
  */
 export async function planRename(options: PlanRenameOptions): Promise<RenamePlan> {
   const { queries, selector, newName } = options;
@@ -103,7 +122,7 @@ export async function planRename(options: PlanRenameOptions): Promise<RenamePlan
     };
   }
 
-  const { edits, source, leftoverMentions, lspDegradation } = await deriveEdits(options, target, targetId);
+  const { edits, source, leftoverMentions, lspDegradation, candidateFiles } = await deriveEdits(options, target, targetId);
   const ordered = sortEdits(edits);
 
   // FR-017 plan-time path jail + index-scope guard — refuse the whole plan at plan
@@ -113,8 +132,34 @@ export async function planRename(options: PlanRenameOptions): Promise<RenamePlan
   // dependency's source or a monorepo sibling); graph-path occurrences are in the
   // index, hence in-root and in-scope by construction. Success-shaped, names the
   // offending file(s); the apply engine re-checks after its own recompute (FR-014).
+  // Runs BEFORE the D4 drift guard below so an out-of-root LSP-set file is refused
+  // here first — the drift guard never stats/reads a path outside the root.
   const jail = checkPlanJail({ projectRoot: options.projectRoot, files: [...new Set(ordered.map((e) => e.file))] });
   if (jail) return { newName, applied: false, refusal: jail };
+
+  // D4 — plan-time index-freshness guard (gate S2-C finding; spec.md "Index stale
+  // vs. working tree" edge case / SC-004). Every file the graph derivation
+  // nominated as a candidate (whether or not its edit survived verifySpan), the
+  // declaration file, and every file the accepted edit set touches (the LSP
+  // path's own files, when that path is used — already confirmed in-root by the
+  // jail check above) must match their indexed `files` row. ANY drift refuses the
+  // WHOLE plan — dry-run included, so a misleading "all-exact · 0 leftovers" plan
+  // can never render over stale bytes — never a partial, silent drop.
+  const driftCandidates = new Set<string>([...candidateFiles, target.file, ...ordered.map((e) => e.file)]);
+  const drifted = findDriftedFiles({ queries, projectRoot: options.projectRoot, files: driftCandidates });
+  if (drifted.length > 0) {
+    return {
+      newName,
+      applied: false,
+      refusal: {
+        reason: 'stale-span',
+        message:
+          `Refusing the rename: the live bytes of ${drifted.join(', ')} no longer match ` +
+          `the index (the index is stale). Run \`codegraph sync\` and retry.`,
+        files: drifted,
+      },
+    };
+  }
 
   return {
     target,
@@ -135,6 +180,10 @@ interface Derivation {
   /** Set only when an `ok` LSP result was rejected as unusable-incomplete and
    *  this derivation is the graph fallback for the WHOLE rename (D3). */
   lspDegradation?: LspDegradationReason;
+  /** The graph derivation's pre-verifySpan candidate files (D4) — carried through
+   *  regardless of which path's edits are ultimately used, since the graph
+   *  derivation always runs unconditionally (D3). */
+  candidateFiles: string[];
 }
 
 /**
@@ -169,6 +218,7 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
           edits: result.edits,
           source: 'lsp',
           leftoverMentions: countLspLeftovers(projectRoot, target.name, result.edits),
+          candidateFiles: graph.candidateFiles,
         };
       }
       // D3 (dogfood UAT finding): the LSP edit set is missing at least one
@@ -179,12 +229,18 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
       // spec's overlapping-range clause is the existing precedent), this is
       // UNUSABLE, not merely smaller: degrade the WHOLE rename to the graph
       // derivation (never a per-file merge of the two sources), recording why.
-      return { edits: graph.edits, source: 'graph', leftoverMentions: graph.leftoverMentions, lspDegradation: 'incomplete-coverage' };
+      return {
+        edits: graph.edits,
+        source: 'graph',
+        leftoverMentions: graph.leftoverMentions,
+        lspDegradation: 'incomplete-coverage',
+        candidateFiles: graph.candidateFiles,
+      };
     }
     // FR-003a: unavailable / runtime-failed → degrade THAT rename to the graph.
   }
 
-  return { edits: graph.edits, source: 'graph', leftoverMentions: graph.leftoverMentions };
+  return { edits: graph.edits, source: 'graph', leftoverMentions: graph.leftoverMentions, candidateFiles: graph.candidateFiles };
 }
 
 /**
@@ -272,6 +328,52 @@ function sortEdits(edits: RenameEdit[]): RenameEdit[] {
 /** Locale-independent string comparison (byte-identical parity needs no locale). */
 function byCodepoint(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * D4 — every file in `files` whose live disk state no longer matches its indexed
+ * `files` row (`content_hash` / `size` / `modified_at`). Fast path: identical
+ * size + modified_at skips a hash, mirroring the indexer's own `sync()` fast path
+ * (`src/extraction/index.ts`); otherwise the live bytes are re-hashed with the
+ * IDENTICAL {@link hashContent} the indexer writes, so "fresh" here means exactly
+ * what a `codegraph sync` would also treat as unchanged — including a CRLF/BOM/
+ * encoding-only edit, which changes the read string and therefore the hash even
+ * when a byte count coincidence defeats the fast path. A file missing from disk,
+ * or missing its `files` row despite being a rename candidate, counts as drifted
+ * too (the refuse-rather-than-crash counterpart of {@link deriveGraphRename}'s own
+ * defensive read). `files` is already deduped by the caller (a `Set`); the result
+ * is sorted for deterministic surface parity (mirrors {@link checkPlanJail}'s
+ * `files` convention).
+ */
+function findDriftedFiles(input: { queries: QueryBuilder; projectRoot: string; files: Iterable<string> }): string[] {
+  const { queries, projectRoot, files } = input;
+  const drifted: string[] = [];
+  for (const file of files) {
+    const tracked = queries.getFileByPath(file);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(path.join(projectRoot, file));
+    } catch {
+      drifted.push(file); // deleted (or never materialized) since indexing
+      continue;
+    }
+    if (!tracked) {
+      drifted.push(file); // a rename candidate with no files-table row at all
+      continue;
+    }
+    if (stat.size === tracked.size && Math.floor(stat.mtimeMs) === Math.floor(tracked.modifiedAt)) {
+      continue; // fast path: unchanged since indexing (mirrors sync())
+    }
+    let content: string;
+    try {
+      content = fs.readFileSync(path.join(projectRoot, file), 'utf8');
+    } catch {
+      drifted.push(file);
+      continue;
+    }
+    if (hashContent(content) !== tracked.contentHash) drifted.push(file);
+  }
+  return drifted.sort(byCodepoint);
 }
 
 function aggregateConfidence(edits: RenameEdit[]): PlanConfidence {
