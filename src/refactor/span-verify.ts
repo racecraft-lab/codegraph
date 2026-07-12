@@ -41,26 +41,46 @@ const SIGNATURE_DELIMITER = /[(={:;<]/;
  * whose keyword/name collision this locator untangles (JS/TS, C/C++, C#, Java,
  * Swift, Kotlin). `#` (Python/Ruby/shell) and `--` (SQL/Lua/Haskell) are deliberately
  * NOT masked: they are ambiguous outside those languages (`#define foo`, an `a--b`
- * decrement) and would false-positive here. No string-literal awareness — a comment
- * opener inside a string is still masked; that can only make
- * {@link findDeclarationNameColumn} drop an occurrence, and {@link verifySpan}
- * re-checks the chosen column against the live bytes, so an over-eager mask drops an
- * edit but never corrupts one.
+ * decrement) and would false-positive here. R26 (rp-review round-5, P1) — the masker is
+ * STRING-AWARE: it tracks single-quote, double-quote, and backtick string state (a
+ * quote after an odd number of backslashes does not close; a string still open at end
+ * of line just ends — its content is code, never masked) and opens a comment only
+ * OUTSIDE a string, so a `//` — or a block-comment opener — inside a quoted literal
+ * (`@dec("http://example")`) stays code. Before R26 the unconditional scan masked it as
+ * a comment, blanking the declaration name after it ({@link findDeclarationNameColumn}
+ * then returned -1) and forcing a spurious stale-span refusal on an index-fresh file.
+ * Inside a block comment quotes have no meaning (a comment containing an apostrophe must
+ * not open a string). {@link verifySpan} still re-checks the chosen column against the
+ * live bytes, so an over-eager mask drops an edit but never corrupts one.
  */
 function maskLineComments(lineText: string): string {
   const out = lineText.split('');
+  let quote = ''; // '' outside any string; else the open delimiter (' " or `)
   for (let i = 0; i < lineText.length; ) {
-    if (lineText[i] === '/' && lineText[i + 1] === '/') {
+    const ch = lineText[i]!;
+    if (quote) {
+      // R26: inside a string literal, comment openers are just characters (a `//` in
+      // a URL, a block-comment opener in a pattern). A backslash escapes the next
+      // char, so a quote after an ODD number of backslashes does not close; a string
+      // still open at end of line simply ends — its content is code, never masked.
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === quote) quote = '';
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && lineText[i + 1] === '/') {
       for (let k = i; k < lineText.length; k += 1) out[k] = ' ';
       break; // everything after `//` is the line comment
     }
-    if (lineText[i] === '/' && lineText[i + 1] === '*') {
+    if (ch === '/' && lineText[i + 1] === '*') {
       const close = lineText.indexOf('*/', i + 2);
       const stop = close === -1 ? lineText.length : close + 2; // unterminated → EOL
       for (let k = i; k < stop; k += 1) out[k] = ' ';
       i = stop;
-      continue;
+      continue; // a block comment's interior is jumped whole, so a quote inside it
+                // never opens a string (a comment containing a quote stays a comment)
     }
+    if (ch === "'" || ch === '"' || ch === '`') quote = ch; // enter string state
     i += 1;
   }
   return out.join('');

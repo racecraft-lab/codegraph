@@ -358,6 +358,29 @@ describe('R18 findDeclarationNameColumn — whole-word declaration-name locator'
     // keeps a comment-internal token from ever being collected as the name).
     expect(findDeclarationNameColumn('foo // sets: x', 0, 'foo')).toBe(0);
   });
+
+  // R26 (rp-review round-5, P1) — maskLineComments scanned for `//` and a block-comment
+  // opener WITHOUT string awareness, so a comment opener INSIDE a quoted string was
+  // masked as a real comment. `@dec("http://example") class Widget {}` blanked
+  // everything from the `//` in the URL onward — including `Widget` — so the locator
+  // returned -1, the declaration edit was dropped, and an index-FRESH file drew a
+  // spurious stale-span refusal (fail-closed, but a regression: the pre-mask scan
+  // could find Widget). The masker now tracks single/double/backtick string state
+  // (backslash-escape aware) and opens a comment only OUTSIDE a string.
+  it('R26: a comment opener inside a quoted string is code, not a comment — the name after it is still found', () => {
+    expect(findDeclarationNameColumn('@dec("http://example") class Widget {}', 0, 'Widget')).toBe(29);
+    expect(findDeclarationNameColumn('@dec("/*") class Widget {}', 0, 'Widget')).toBe(17);
+  });
+
+  it('R26: a REAL comment outside a string still masks — a `//` after a closed string truncates, a block comment containing a quote masks fully', () => {
+    // `foo = "x"` closes its string, so the following `//` is a genuine line comment
+    // that truncates the scan (its `:` never becomes the delimiter); the name is col 0.
+    expect(findDeclarationNameColumn('foo = "x" // note: y', 0, 'foo')).toBe(0);
+    // The apostrophe in `it's` sits INSIDE the block comment, so it must not open a
+    // string that would swallow the matching close — the comment masks fully and the
+    // real name (the second `get`, col 22) wins over the accessor keyword at col 0.
+    expect(findDeclarationNameColumn("get /* it's cached */ get()", 0, 'get')).toBe(22);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1212,6 +1235,15 @@ describe('R18 declaration edit targets the NAME, not a same-name keyword/decorat
   // which span-verifies against the live bytes and would corrupt the file on --apply).
   it('R24: a signature delimiter inside a block comment (`get /* returns: cached value */ get()`) → the second get', async () => {
     expect(await declEditColumn({ line: 'get /* returns: cached value */ get() {}', name: 'get', startColumn: 0 })).toBe(32);
+  });
+
+  // R26 (rp-review round-5) — a comment opener inside a quoted string (a `//` in a URL)
+  // is no longer masked as a comment, so the declaration name after it survives the
+  // scan: end-to-end, the edit lands on `Widget` (col 29) instead of the locator
+  // returning -1 and the declaration edit being dropped (which surfaces one layer up as
+  // a spurious stale-span refusal on an index-fresh file).
+  it('R26: a `//` inside a decorator-argument string (`@dec("http://example") class Widget {}`) → the edit targets Widget', async () => {
+    expect(await declEditColumn({ line: '@dec("http://example") class Widget {}', name: 'Widget', startColumn: 0, kind: 'class' })).toBe(29);
   });
 });
 
