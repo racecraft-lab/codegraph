@@ -134,9 +134,14 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
  * The FR-003a fork disposition for a resolved target's language, for the resolver's
  * FR-009/FR-010 kind check. Mirrors {@link deriveEdits}'s fork: the LSP path is
  * `available` only when LSP is enabled, a server covers the language, AND the
- * SPEC-008 probe resolves its command; a covered-but-unprobeable command is
- * `unavailable` (a CONFIGURED server that did not respond — the FR-003a honesty
- * case), and a disabled/uncovered language is `absent`. resolveTarget calls this
+ * SPEC-008 probe resolves its command; a disabled/uncovered language is `absent`.
+ * A covered language whose probe does NOT resolve a command carries the probe's
+ * own `reasonCode` forward rather than a generic "unavailable" — this is a
+ * command-availability probe, so no server process is ever spawned here, and the
+ * disposition (and the resolver's refusal message built from it) must not imply
+ * one was: `unavailable-missing-command` when nothing is configured/found for the
+ * language, `unavailable-command-not-executable` when a command IS configured but
+ * isn't on PATH / executable (the FR-003a honesty case). resolveTarget calls this
  * lazily (only for a local/parameter target), so the probe is paid only when it
  * decides the outcome — every function/method/class rename skips it entirely.
  */
@@ -145,7 +150,10 @@ function lspPathDisposition(options: PlanRenameOptions, target: Target): LspPath
   const language = detectLanguage(target.file);
   if (!lspConfig.enabled || !isLspLanguage(language)) return 'absent';
   const probe = probeLspServerCommand(lspConfig.servers[language], { cwd: projectRoot, env });
-  return probe.state === 'available' ? 'available' : 'unavailable';
+  if (probe.state === 'available') return 'available';
+  return probe.reasonCode === 'configured-command-unavailable'
+    ? 'unavailable-command-not-executable'
+    : 'unavailable-missing-command';
 }
 
 /** Recover the resolved target's declaration node id (unique by construction). */
