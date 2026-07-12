@@ -19,55 +19,74 @@ import { SourcePosition, SourceRange } from './types';
 /** Identifier-character test (ASCII identifiers) — the same class the graph-path
  *  leftover tally uses, so whole-word matching stays consistent across the module. */
 const IDENT_CHAR = /[A-Za-z0-9_$]/;
-/** A gap made up entirely of whitespace (the keyword-prefix advance condition). */
-const WHITESPACE_ONLY = /^\s+$/;
+/**
+ * The first signature delimiter after a declaration name — an opening paren, an
+ * assignment `=`, a type-annotation `:`, a body `{`, a statement terminator `;`,
+ * or a generic `<`. The declaration name is the LAST whole-word occurrence BEFORE
+ * the first of these on the line; anything at/after is a parameter, type, value,
+ * or body, never the name.
+ */
+const SIGNATURE_DELIMITER = /[(={:;<]/;
 
 /**
- * R18 (rp-review, P0) — locate the DECLARATION NAME occurrence of `name` on
+ * R18/R22 (rp-review, P0) — locate the DECLARATION NAME occurrence of `name` on
  * `lineText`, scanning WHOLE-WORD occurrences at/after `fromColumn`. Returns the
  * 0-indexed UTF-16 start column, or `-1` when `name` never occurs as a whole word
  * at/after `fromColumn`.
  *
  * The recorded node start column is often a KEYWORD, not the name (`function`,
  * `class`, an accessor `get`/`set`, `async`), so a raw `indexOf(name, fromColumn)`
- * lands on the wrong token when a keyword prefix or a decorator EQUALS the name:
+ * lands on the wrong token when a keyword prefix or a decorator EQUALS the name.
+ * Two rules pick the real name:
  *  - an occurrence immediately preceded by `@` is a DECORATOR reference
- *    (`@foo … foo`), never the declaration name — skip it;
- *  - a keyword prefix equal to the name (`get get`, `set set`, `async async`) sits
- *    immediately left of the real name with only whitespace between, so while the
- *    gap to the NEXT whole-word occurrence is pure whitespace, advance to it.
- * Whole-word = identifier boundary on both sides, so `foo` inside `foobar` is never
- * matched and a same-line parameter of the same name (`function foo(foo: number)`)
- * is reached only if it is the FIRST whole-word occurrence — which the declaration
- * name always precedes (the `(` between them is not whitespace, so no advance).
- * Shared by the graph declaration edit ({@link ../refactor/graph-rename}) and the
- * LSP cursor position ({@link ../refactor/plan-engine}) so both land identically.
+ *    (`@foo … foo`), never the declaration name — drop it from the candidates;
+ *  - among the remaining whole-word occurrences, take the LAST one BEFORE the first
+ *    {@link SIGNATURE_DELIMITER} on the line. The name always sits just left of its
+ *    own `(`/`=`/`:`/`{`/`;`/`<`, while a keyword prefix that equals the name
+ *    (`get get`, `async function async`) sits even further left — so the
+ *    last-before-delimiter occurrence is the name regardless of what fills the gap
+ *    (whitespace, a block comment, or an intervening keyword). R22: the earlier
+ *    whitespace-only advance broke on a comment/keyword gap, keeping the keyword —
+ *    which then span-verified and got rewritten on --apply (round-3 finding).
+ * If NO candidate precedes the first delimiter — a receiver/parenthesized prefix
+ * opens the line before the name (Go `func (s *Server) foo(`) — fall back to the
+ * FIRST whole-word occurrence at/after `fromColumn`. Whole-word = identifier
+ * boundary on both sides (`foo` inside `foobar` never matches). No string-literal
+ * awareness is needed at this altitude: {@link verifySpan} re-checks the chosen
+ * column against the live bytes and drops a mismatch. Shared by the graph
+ * declaration edit ({@link ../refactor/graph-rename}) and the LSP cursor position
+ * ({@link ../refactor/plan-engine}) so both land identically.
  */
 export function findDeclarationNameColumn(lineText: string, fromColumn: number, name: string): number {
   if (name.length === 0) return -1;
   const from = Math.max(0, fromColumn);
+  // Whole-word occurrences of `name` at/after `fromColumn` (ascending), dropping a
+  // decorator reference (`@name`) — never the declaration name.
   const occurrences: number[] = [];
   for (let idx = lineText.indexOf(name, from); idx >= 0; idx = lineText.indexOf(name, idx + 1)) {
     const before = lineText[idx - 1] ?? ''; // out-of-range (incl. idx 0) → '' (a boundary)
     const after = lineText[idx + name.length] ?? '';
-    if (!IDENT_CHAR.test(before) && !IDENT_CHAR.test(after)) occurrences.push(idx);
+    if (IDENT_CHAR.test(before) || IDENT_CHAR.test(after)) continue; // not whole-word
+    if (before === '@') continue; // decorator reference
+    occurrences.push(idx);
   }
-  // Skip a leading decorator reference (`@name`) — never the declaration name.
-  let i = 0;
-  while (i < occurrences.length && lineText[occurrences[i]! - 1] === '@') i += 1;
-  if (i >= occurrences.length) return -1;
-  // Advance past a keyword prefix equal to the name while the gap is pure whitespace.
-  let col = occurrences[i]!;
-  while (i + 1 < occurrences.length) {
-    const gap = lineText.slice(col + name.length, occurrences[i + 1]!);
-    if (gap.length > 0 && WHITESPACE_ONLY.test(gap)) {
-      i += 1;
-      col = occurrences[i]!;
-    } else {
+  if (occurrences.length === 0) return -1;
+  // The first signature delimiter at/after `fromColumn` (line end when none).
+  let delimiter = lineText.length;
+  for (let idx = from; idx < lineText.length; idx += 1) {
+    if (SIGNATURE_DELIMITER.test(lineText[idx]!)) {
+      delimiter = idx;
       break;
     }
   }
-  return col;
+  // The LAST occurrence before the delimiter is the name; if none precedes it (a
+  // receiver/parenthesized prefix opened the line), fall back to the first.
+  let chosen = -1;
+  for (const idx of occurrences) {
+    if (idx < delimiter) chosen = idx;
+    else break;
+  }
+  return chosen >= 0 ? chosen : occurrences[0]!;
 }
 
 /** Inputs to {@link verifySpan}. */

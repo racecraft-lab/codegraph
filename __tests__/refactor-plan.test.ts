@@ -318,6 +318,26 @@ describe('R18 findDeclarationNameColumn — whole-word declaration-name locator'
   it('returns -1 when the name does not occur as a whole word at/after fromColumn', () => {
     expect(findDeclarationNameColumn('class Widget {', 0, 'Gadget')).toBe(-1);
   });
+
+  // R22 (rp-review round-3, P0) — the R18 keyword-prefix advance only crossed pure
+  // WHITESPACE, so a COMMENT or an intervening KEYWORD between the keyword prefix
+  // and the name defeated it: selection stayed on the keyword, span verification
+  // then PASSED (the bytes match), and an --apply rewrote the keyword. The
+  // delimiter rule (LAST whole-word occurrence before the first signature
+  // delimiter) is gap-agnostic.
+  it('R22: a COMMENT gap between the keyword prefix and the name (`get /* comment */ get()`) → the name', () => {
+    expect(findDeclarationNameColumn('  get /* comment */ get() {', 2, 'get')).toBe(20);
+  });
+
+  it('R22: an intervening KEYWORD between the two same-name tokens (`async function async()`) → the second async', () => {
+    expect(findDeclarationNameColumn('async function async() {', 0, 'async')).toBe(15);
+  });
+
+  it('R22: a receiver/parenthesized prefix before the name (Go `func (s *Server) handle(`) → the first occurrence (delimiter fallback)', () => {
+    // The first delimiter is the receiver `(` (col 5), BEFORE `handle` (col 17), so
+    // no occurrence precedes it — fall back to the first whole-word occurrence.
+    expect(findDeclarationNameColumn('func (s *Server) handle(cfg Config) {', 0, 'handle')).toBe(17);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1097,6 +1117,18 @@ describe('R18 declaration edit targets the NAME, not a same-name keyword/decorat
   it('a plain declaration (`class Widget {`) → unchanged: the edit targets the name at/after the keyword', async () => {
     expect(await declEditColumn({ line: 'class Widget {', name: 'Widget', startColumn: 0, kind: 'class' })).toBe(6);
   });
+
+  // R22 (rp-review round-3) — the same keyword-prefix bug when the gap between the
+  // keyword and the name is a COMMENT or an intervening keyword (not pure
+  // whitespace): the edit must still land on the NAME, never the keyword (which
+  // would span-verify and corrupt on --apply). End-to-end through the derivation.
+  it('R22: a COMMENT between the accessor keyword and the name (`get /* comment */ get()`) → the SECOND get', async () => {
+    expect(await declEditColumn({ line: '  get /* comment */ get() {', name: 'get', startColumn: 2 })).toBe(20);
+  });
+
+  it('R22: an intervening keyword (`async function async()`) → the second async, never the keyword', async () => {
+    expect(await declEditColumn({ line: 'async function async() {', name: 'async', startColumn: 0, kind: 'function' })).toBe(15);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1507,14 +1539,17 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     // Both edits address the IDENTICAL range [col, col+6) but substitute
     // DIFFERENT text — the pre-fix `${start}:${end}` dedup key collapsed them
     // into ONE span (no overlap detected → wrongly accepted as source lsp with
-    // both edits). Their live-derived `oldText` is `target` for both.
+    // both edits). Their live-derived `oldText` is `target` for both (R20's WHERE
+    // guard passes), and each `newText` carries the new name `renamed` as a whole
+    // word (R23's WHAT guard passes) — so neither unusable guard preempts, and the
+    // genuine coincident-but-different-newText overlap is what degrades the plan.
     const renameResult = {
       documentChanges: [
         {
           textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
           edits: [
-            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'alpha' },
-            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'beta' },
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' },
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed as alias' },
           ],
         },
       ],
@@ -3428,6 +3463,51 @@ describe('R2 unusable LSP edit shapes degrade to graph — planRename (FR-003a)'
     expect(plan.refusal?.reason).toBe('out-of-root');
     expect(plan.lspDegradation).toBeUndefined();
     expect(plan.edits).toBeUndefined();
+  });
+
+  it('(e, R23) an in-root edit correctly positioned on the target but whose newText OMITS the requested new name → source graph, lspDegradation unsupported-edits', async () => {
+    // A buggy server whose range IS over `target` (so the live oldText matches — the
+    // R20 old-name guard passes), single-line + non-empty (slips past the (b)/(c)
+    // shape guards), but whose replacement is an UNRELATED identifier: the requested
+    // `renamed` is absent, so applying it verbatim would rename to the wrong text.
+    // Only the R23 replacement guard catches it.
+    const { dir, queries } = await setup();
+    const col = DECL.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'somethingElse' }],
+        },
+      ],
+    };
+    const plan = await planWith(dir, queries, renameResult);
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph'); // NOT lsp — the wrong-replacement edit is unusable
+    expect(plan.lspDegradation).toBe('unsupported-edits');
+    for (const e of plan.edits!) expect(e.source).toBe('graph');
+    const obj = JSON.parse(serializeRenamePlanJson(plan));
+    expect(obj.lspDegradation).toBe('unsupported-edits');
+  });
+
+  it('(f, R23) an in-root edit whose newText CONTAINS the new name as a whole word (server-expanded `old as new`) stays accepted — source lsp, no degradation', async () => {
+    // Containment, NOT equality: a legitimate server may expand the replacement
+    // (`target as renamed`). `renamed` is present as a whole word, so R23 accepts it
+    // — a strict-equality guard would wrongly degrade this, so this pins containment.
+    const { dir, queries } = await setup();
+    const col = DECL.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'target as renamed' }],
+        },
+      ],
+    };
+    const plan = await planWith(dir, queries, renameResult);
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('lsp');
+    expect(plan.lspDegradation).toBeUndefined();
   });
 });
 

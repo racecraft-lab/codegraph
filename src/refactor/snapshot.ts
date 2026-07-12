@@ -150,7 +150,16 @@ export function writeEdits(input: {
     // the file could change between (CodeQL js/file-system-race, alert #46). The
     // fd-based fstat/read see one consistent inode even if the path is swapped
     // concurrently; the fd is always closed in the `finally`.
-    const fd = fs.openSync(abs, 'r');
+    // F3 (round-3 review, CodeQL js/insecure-temporary-file, alert #47): `openSync`
+    // is a modeled file-open sink; with no mode argument the InsecureFileOpen sink
+    // fires (`not exists(getMode())`) — which is exactly what R17's swap from
+    // `readFileSync` (NOT a modeled method) to `openSync` newly tripped. The
+    // owner-only `0o600` (the query reads open/openSync's 3rd positional arg as
+    // `getMode()`, and `0o600` is `isSecureMode`) closes the sink and is a semantic
+    // NO-OP: the mode applies only when the open CREATES the file, which the
+    // read-only `'r'` flag never does. R17's single-fd fstat+read (alert #46) and
+    // B3's mode preservation are unchanged.
+    const fd = fs.openSync(abs, 'r', 0o600);
     let mode: number;
     let raw: Buffer;
     try {

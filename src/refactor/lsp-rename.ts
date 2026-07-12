@@ -37,6 +37,27 @@ const LSP_LANGUAGE_IDS: Partial<Record<LspLanguage, string>> = {
   jsx: 'javascriptreact',
 };
 
+/** Identifier-character class (mirrors span-verify.ts's IDENT_CHAR) for the R23
+ *  whole-word containment check on an in-root LSP edit's replacement text. */
+const IDENT_CHAR = /[A-Za-z0-9_$]/;
+
+/**
+ * True when `needle` occurs in `haystack` as a whole identifier word (identifier
+ * boundary on both sides). R23 (rp-review): confirms an LSP edit's `newText`
+ * actually carries the requested new name, tolerating a server that expands the
+ * replacement around it (`foo: newName`, `foo as newName`) — only a `newText` with
+ * the name entirely absent is bogus.
+ */
+function containsWholeWord(haystack: string, needle: string): boolean {
+  if (needle.length === 0) return false;
+  for (let idx = haystack.indexOf(needle); idx >= 0; idx = haystack.indexOf(needle, idx + 1)) {
+    const before = haystack[idx - 1] ?? '';
+    const after = haystack[idx + needle.length] ?? '';
+    if (!IDENT_CHAR.test(before) && !IDENT_CHAR.test(after)) return true;
+  }
+  return false;
+}
+
 export interface DeriveLspRenameOptions {
   /** Absolute workspace root. */
   projectRoot: string;
@@ -49,7 +70,9 @@ export interface DeriveLspRenameOptions {
   /** The rename cursor position — 1-indexed line, 0-indexed UTF-16 column; the
    *  caller supplies a position that lands on the target identifier. */
   position: SourcePosition;
-  /** The new name handed to the server. */
+  /** The new name handed to the server. Also the R23 replacement-guard reference:
+   *  an in-root edit whose `newText` does not contain it as a whole word is a buggy
+   *  server edit and marks the WHOLE result unusable (see {@link translateWorkspaceEdit}). */
   newName: string;
   /** The target's CURRENT (old) name (R20, rp-review). When provided, an in-root
    *  edit whose live-derived `oldText` differs from it marks the WHOLE result
@@ -111,7 +134,7 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
     });
     client.notify('textDocument/didClose', { textDocument: { uri } });
     await client.shutdown();
-    const translated = translateWorkspaceEdit(projectRoot, workspaceEdit, oldName);
+    const translated = translateWorkspaceEdit(projectRoot, workspaceEdit, oldName, newName);
     return { status: 'ok', edits: translated.edits, unusable: translated.unusable };
   } catch (error) {
     await client.dispose().catch(() => undefined);
@@ -141,19 +164,23 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
 function translateWorkspaceEdit(
   projectRoot: string,
   result: unknown,
-  oldName?: string,
+  oldName: string | undefined,
+  newName: string,
 ): { edits: RenameEdit[]; unusable: boolean } {
   const edit = result as WorkspaceEdit | null | undefined;
   const perFile: Array<{ uri: string; edits: TextEdit[] }> = [];
   // A2 (rp-review): the WHOLE result is unusable if it carries an edit shape the
   // symbol writer cannot honor — a documentChanges resource operation (below),
   // or an in-root text edit with a multiline range / empty live-derived oldText
-  // (in the in-root branch). R20 (rp-review) extends this: an in-root edit whose
-  // live-derived oldText is NOT the rename target's old name (a buggy server range
-  // over an unrelated token) is likewise unusable. Resource-op detection is
-  // INDEPENDENT of containment; the content checks are in-root ONLY, so the
-  // out-of-root refuse-before-read placeholder (deliberately empty oldText) never
-  // trips any of them — its whole-plan out-of-root refusal keeps winning.
+  // (in the in-root branch). R20 (rp-review) extends this to WHERE an in-root edit
+  // lands: a live-derived oldText that is NOT the rename target's old name (a buggy
+  // server range over an unrelated token) is unusable. R23 (rp-review round-3)
+  // extends it to WHAT an in-root edit writes: a `newText` that does not contain
+  // the requested new name as a whole word (a correctly-positioned edit replacing
+  // with unrelated text) is likewise unusable. Resource-op detection is INDEPENDENT
+  // of containment; the content checks are in-root ONLY, so the out-of-root
+  // refuse-before-read placeholder (deliberately empty oldText) never trips any of
+  // them — its whole-plan out-of-root refusal keeps winning.
   let unusable = false;
   if (edit && Array.isArray(edit.documentChanges)) {
     for (const change of edit.documentChanges) {
@@ -217,6 +244,14 @@ function translateWorkspaceEdit(
       // path). Only when the caller threaded the target's old name (the plan engine
       // always does); translation-only callers skip this comparison.
       if (oldName !== undefined && oldText !== oldName) unusable = true;
+      // R23 (rp-review round-3): the R20 guard checks only WHERE the edit lands;
+      // this checks WHAT it writes. A correctly-positioned edit whose `newText` does
+      // not carry the requested new name as a whole word is a buggy server edit that
+      // would rename the symbol to unrelated text — mark the whole result unusable so
+      // it degrades to the graph path. Containment (not equality) tolerates a server
+      // that expands the replacement (`old as newName`); in-root ONLY, like the
+      // oldName guard, so the out-of-root placeholder stays exempt.
+      if (!containsWholeWord(textEdit.newText, newName)) unusable = true;
       out.push({
         file: relFile,
         range: {
