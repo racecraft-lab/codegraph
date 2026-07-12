@@ -461,6 +461,11 @@ function randomId(): string {
  */
 export class JobRegistry {
   private readonly jobs = new Map<string, ReindexJob>();
+  // Every job whose run() has not FULLY settled (terminal emitted AND cleanup —
+  // incl. the watcher re-arm — done). Tracked independently of `jobs` so ordered
+  // shutdown (abortAll) still awaits a job that finished but whose re-arm is in
+  // flight, or one already replaced in the latest-per-repo map by a newer job.
+  private readonly inFlight = new Set<ReindexJob>();
   private readonly deps: JobDeps;
 
   constructor(deps: JobDeps = {}) {
@@ -473,7 +478,10 @@ export class JobRegistry {
     if (existing && !existing.isTerminal()) throw new JobConflictError();
     const job = new ReindexJob(repo, mode, this.deps);
     this.jobs.set(repo.id, job); // latest-per-repo: replaces any prior terminal job
-    void job.run(); // fire-and-forget — run() contains every failure internally
+    this.inFlight.add(job);
+    // fire-and-forget — run() contains every failure internally; drop from the
+    // in-flight set only once run() has FULLY settled (cleanup complete).
+    void job.run().finally(() => this.inFlight.delete(job));
     return job.descriptor();
   }
 
@@ -487,11 +495,16 @@ export class JobRegistry {
     return this.jobs.get(repoId) ?? null;
   }
 
-  /** Abort every in-flight job and resolve once all have reached a terminal state (FR-026). */
+  /**
+   * Abort every running job and resolve once ALL in-flight jobs have FULLY
+   * settled — including one that already emitted terminal but whose cleanup (the
+   * watcher re-arm) is still running, and one already replaced in the map by a
+   * newer job (FR-026). Bounded by index.ts close()'s grace race.
+   */
   async abortAll(): Promise<void> {
-    const active = [...this.jobs.values()].filter((j) => !j.isTerminal());
-    for (const j of active) j.abort();
-    await Promise.all(active.map((j) => j.whenSettled()));
+    const jobs = [...this.inFlight];
+    for (const j of jobs) if (!j.isTerminal()) j.abort();
+    await Promise.all(jobs.map((j) => j.whenSettled()));
   }
 }
 

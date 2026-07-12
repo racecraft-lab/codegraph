@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { defaultIsLockHeld, ReindexJob } from '../src/server/jobs';
+import { defaultIsLockHeld, JobRegistry, ReindexJob } from '../src/server/jobs';
 import { SseWriter } from '../src/server/sse';
 import { getCodeGraphDir } from '../src/directory';
 
@@ -111,6 +111,42 @@ describe('SPEC-005 slice-2 review remediation', () => {
     await runP;
     await job.whenSettled();
     expect(settled).toBe(true);
+  });
+
+  // 42-7/registry (FR-026): ordered shutdown (abortAll) must await a job that has
+  // already emitted terminal but whose cleanup (watcher re-arm) is still running —
+  // abortAll tracks in-flight (unsettled) jobs, not just non-terminal ones.
+  it('abortAll waits for a terminal-but-still-cleaning-up job', async () => {
+    let releaseRearm!: () => void;
+    const rearmGate = new Promise<void>((r) => {
+      releaseRearm = r;
+    });
+    const registry = new JobRegistry({
+      runIndex: async () => ({
+        filesChecked: 1,
+        filesAdded: 0,
+        filesModified: 0,
+        filesRemoved: 0,
+        nodesUpdated: 0,
+        durationMs: 1,
+      }),
+      isLockHeld: () => false,
+      rearmWatcher: () => rearmGate,
+    });
+    registry.start({ id: 'r', root: os.tmpdir() }, 'sync');
+    // Let the job reach terminal (re-arm now pending in its run() finally).
+    await new Promise((r) => setImmediate(r));
+
+    let abortDone = false;
+    const abortP = registry.abortAll().then(() => {
+      abortDone = true;
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(abortDone).toBe(false); // still awaiting the terminal job's re-arm
+
+    releaseRearm();
+    await abortP;
+    expect(abortDone).toBe(true);
   });
 
   // 42-5 (FR-023): heartbeats must respect backpressure — a slow client that
