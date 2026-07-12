@@ -152,6 +152,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ListResult'
         - type: object
+          required: [degraded]   # the server ALWAYS returns degraded (FR-006a)
           properties:
             degraded: { type: boolean, description: True when a semantic/hybrid/auto search fell back to keyword (FR-006a). }
             degradationReason: { type: string }

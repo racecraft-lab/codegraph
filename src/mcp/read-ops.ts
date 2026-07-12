@@ -141,7 +141,13 @@ function statusOp(cg: CodeGraph): unknown {
     // hybrid search is available (contract models it as a string, not null).
     hybridSearch: hybridAvailable
       ? { available: true }
-      : { available: false, reason: 'embeddings not configured' },
+      : {
+          available: false,
+          // Distinguish a provider that isn't configured from one that is but has
+          // no matching-model vectors yet (auto still degrades to keyword) — the
+          // remediation differs.
+          reason: emb.active ? 'no matching-model vectors indexed' : 'embeddings not configured',
+        },
     lsp: { available: lspEnabled },
   };
 }

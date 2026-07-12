@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { serveStatic, placeholderPage } from '../src/server/static';
+import { startWebServer } from '../src/server/index';
 import { executeReadOp } from '../src/mcp/read-ops';
 import type CodeGraph from '../src/index';
 
@@ -149,5 +150,38 @@ describe('SPEC-005 R2-DEPTH: read-ops defensively clamp over-cap depth/limit', (
     };
     expect(res.items.length).toBe(500);
     expect(res.total).toBe(600);
+  });
+});
+
+// R3-LOG (FR-014a): the redacted request-log line must never contain the
+// configured token — including the rare case where a client puts the token in
+// the request PATH (`/api/<token>`). The configured token is carried even on a
+// loopback bind (requireToken=false), so the redaction applies there too.
+describe('SPEC-005 R3: request logger redacts the configured token in the path (FR-014a)', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  it('a token appearing in the request path is redacted, never logged verbatim', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rp-tok-'));
+    dirs.push(dir);
+    const TOKEN = 'super-secret-token-abc123';
+    const logs: string[] = [];
+    const handle = await startWebServer({
+      port: 0,
+      projectPath: dir,
+      token: TOKEN, // loopback bind: gate off, but the token is carried → redaction active
+      logger: (line) => logs.push(line),
+    });
+    try {
+      // A 404 route whose PATH embeds the token verbatim (no daemon needed).
+      await fetch(`http://${handle.host}:${handle.port}/api/${TOKEN}/x`).catch(() => undefined);
+      expect(logs.length).toBeGreaterThan(0);
+      expect(logs.join('\n')).not.toContain(TOKEN); // never the secret
+      expect(logs.some((l) => l.includes('<redacted>'))).toBe(true);
+    } finally {
+      await handle.close();
+    }
   });
 });
