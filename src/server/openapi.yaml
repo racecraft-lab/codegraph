@@ -334,7 +334,13 @@ paths:
       # request body, so a malformed/oversized body cannot parse-error or stall the handler (spec Edge Cases).
       parameters:
         - { $ref: '#/components/parameters/RepoId' }
-        - { name: full, in: query, schema: { type: boolean, default: false } }
+        - name: full
+          in: query
+          description: >-
+            Only the literal `?full=true` escalates to a full rebuild; any other
+            value (or omitted) is an incremental sync (FR-020). Coerced, not
+            strictly validated — no 400, unlike the search `mode` enum (FR-006a).
+          schema: { type: boolean, default: false }
       responses:
         '202':
           description: Job started; descriptor for correlating to the SSE stream (FR-023).

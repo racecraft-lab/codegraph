@@ -209,8 +209,12 @@ export function defaultIsLockHeld(root: string): boolean {
   try {
     process.kill(pid, 0);
     return true; // a live foreign holder → contention
-  } catch {
-    return false; // stale (dead pid) → not held
+  } catch (err) {
+    // ESRCH → the pid is dead → the lock is stale/free. EPERM (or any other
+    // error) means the process EXISTS but we cannot signal it — treat as HELD,
+    // consistent with the read-failure branch above (never race an indexer we
+    // simply failed to observe).
+    return (err as NodeJS.ErrnoException)?.code !== 'ESRCH';
   }
 }
 
@@ -350,7 +354,7 @@ export class ReindexJob {
     this.controller.abort();
   }
 
-  /** Resolves once the job has reached a terminal state (used by ordered shutdown). */
+  /** Resolves once run() is fully complete — terminal event emitted AND cleanup (the watcher re-arm) done; ordered shutdown (abortAll) waits on this. */
   whenSettled(): Promise<void> {
     return this.settled.promise;
   }
@@ -378,7 +382,11 @@ export class ReindexJob {
       // underlying cause server-side so the operator can still diagnose it (F1);
       // an abort is expected shutdown, not a fault, so it is not logged.
       if (!this.controller.signal.aborted) {
-        this.deps.logDiagnostic?.(diagnosticLine('reindex job failed', err));
+        try {
+          this.deps.logDiagnostic?.(diagnosticLine('reindex job failed', err));
+        } catch {
+          /* a diagnostic sink must never block the terminal settlement below */
+        }
       }
       this.finish('error', { reason: this.controller.signal.aborted ? 'aborted' : classifyReason(err) });
     } finally {
@@ -390,10 +398,19 @@ export class ReindexJob {
       } catch {
         /* best-effort watcher restore */
       }
+      // Only NOW is the run fully complete (terminal emitted + lock released +
+      // re-arm attempted): resolve `settled` so ordered shutdown (abortAll) waits
+      // for the re-arm to land, still bounded by index.ts close()'s grace race.
+      this.settled.resolve();
     }
   }
 
-  /** Single, idempotent terminal transition: sets state, emits terminal, settles. */
+  /**
+   * Single, idempotent terminal transition: sets state and emits the terminal SSE
+   * event. Does NOT resolve `settled` — that fires only after run()'s finally
+   * completes (incl. the watcher re-arm), so ordered shutdown (abortAll) waits for
+   * full cleanup, not merely the terminal emit; subscriber delivery is unchanged.
+   */
   private finish(status: 'done' | 'error', opts: { reason?: string; result?: JobResult }): void {
     if (this.status !== 'running') return; // exactly one terminal event
     this.status = status;
@@ -401,7 +418,6 @@ export class ReindexJob {
     if (opts.reason) this.reason = opts.reason;
     if (opts.result) this.result = opts.result;
     this.emit({ type: 'terminal', descriptor: this.descriptor() });
-    this.settled.resolve();
   }
 
   private emit(evt: JobEvent): void {

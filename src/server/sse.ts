@@ -125,8 +125,11 @@ export class SseWriter {
 
   /** A `:`-prefixed comment heartbeat (ignored by `EventSource`, keeps the stream warm). */
   writeHeartbeat(): void {
-    if (this.closed) return;
-    this.sink.write(': heartbeat\n\n');
+    // Skip while backpressured so a slow client never accumulates heartbeat frames
+    // (bounded memory, FR-023); if the heartbeat is itself the write that fills the
+    // socket buffer, arm draining so the next progress coalesces.
+    if (this.closed || this.draining) return;
+    if (!this.sink.write(': heartbeat\n\n')) this.draining = true;
   }
 
   /** Stop writing and end the response. Idempotent. */
@@ -165,6 +168,12 @@ export function streamJobToResponse(res: SseResponse, req: SseRequest | undefine
     writer.close();
     return;
   }
+
+  // A subscriber connecting mid-run gets the CURRENT progress immediately (right
+  // after the snapshot, before live frames) so a quiet final phase never leaves it
+  // with no progress until terminal (FR-023 snapshot-then-progress).
+  const initialProgress = job.latestProgress();
+  if (initialProgress) writer.writeProgress(initialProgress);
 
   let done = false;
   let unsubscribe: () => void = () => undefined;
