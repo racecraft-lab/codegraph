@@ -192,27 +192,44 @@ async function runLadder(options: ApplyRenameOptions, reDerived: boolean): Promi
     );
   }
   if ('writeError' in write) {
-    return rollback(options, snapshots, files, [], { file: write.file, message: write.message });
+    // B4 (rp-review): roll back ONLY the files actually written before the
+    // failure — restoring the full snapshot map would clobber any concurrent
+    // external modification to a not-yet-written file. `touchedFiles` is likewise
+    // just the written set.
+    const writtenSnapshots = new Map(write.writtenFiles.map((f) => [f, snapshots.get(f)!]));
+    return rollback(options, writtenSnapshots, write.writtenFiles, [], { file: write.file, message: write.message });
   }
   const touchedFiles = write.writtenFiles;
 
-  // Rung 5 — resolution-complete re-sync (FR-018). The lock-failure zero-shape
-  // (`filesChecked:0`, `durationMs:0`) is an apply failure → unconditional
-  // rollback; any other result proceeds to the post-check.
-  const syncResult = await sync();
-  if (discriminateSyncResult(syncResult) === 'lock-failure') {
-    return rollback(options, snapshots, touchedFiles, []);
-  }
+  // Rungs 5/5b run AFTER the write, so a THROW from either (the injected re-sync
+  // or the post-check probes) must not escape with renamed files left on disk —
+  // the taxonomy's worst un-modeled state (B1 review finding, BLOCKER). Restore
+  // every touched file byte-identically first: if the restore fully succeeds,
+  // RETHROW the original error (the workspace is clean, so the CLI's exit-1
+  // internal-error path is honest); if the restore itself fails, return the
+  // `rollback-failed` recovery terminal instead (never leave the workspace in an
+  // unknown partial state, nor claim `applied`).
+  try {
+    // Rung 5 — resolution-complete re-sync (FR-018). The lock-failure zero-shape
+    // (`filesChecked:0`, `durationMs:0`) is an apply failure → unconditional
+    // rollback; any other result proceeds to the post-check.
+    const syncResult = await sync();
+    if (discriminateSyncResult(syncResult) === 'lock-failure') {
+      return await rollback(options, snapshots, touchedFiles, []);
+    }
 
-  // Rung 5b — touched-file-scoped post-check (FR-018). A dangling old-name ref or a
-  // leftover old-name node → unconditional rollback (FR-019).
-  const postCheck = runPostCheck({ queries, oldName, touchedFiles });
-  if (!postCheck.ok) {
-    return rollback(options, snapshots, touchedFiles, postCheck.danglingReferences);
-  }
+    // Rung 5b — touched-file-scoped post-check (FR-018). A dangling old-name ref or
+    // a leftover old-name node → unconditional rollback (FR-019).
+    const postCheck = runPostCheck({ queries, oldName, touchedFiles });
+    if (!postCheck.ok) {
+      return await rollback(options, snapshots, touchedFiles, postCheck.danglingReferences);
+    }
 
-  // Terminal — post-check green (FR-018). Snapshots are dropped (held only to here).
-  return { outcome: 'applied', touchedFiles, postCheckPassed: true };
+    // Terminal — post-check green (FR-018). Snapshots are dropped (held only to here).
+    return { outcome: 'applied', touchedFiles, postCheckPassed: true };
+  } catch (error) {
+    return restoreOrRethrow(options, snapshots, touchedFiles, error);
+  }
 }
 
 /** A pre-write, success-shaped refusal terminal — zero writes (FR-023). */
@@ -272,16 +289,63 @@ async function rollback(
 ): Promise<ApplyResult> {
   const restore = restoreSnapshots({ projectRoot: options.projectRoot, snapshots });
   if (restore.unrestoredFiles.length > 0) {
+    // B5 (rp-review): `recoveryDir` is absent when the dump itself also failed.
     const recovery: RecoveryInfo = {
       restoredFiles: restore.restoredFiles,
       unrestoredFiles: restore.unrestoredFiles,
-      recoveryDir: restore.recoveryDir!,
+      ...(restore.recoveryDir !== undefined && { recoveryDir: restore.recoveryDir }),
     };
     return { outcome: 'rollback-failed', touchedFiles, postCheckPassed: false, recovery, ...(writeFailure && { writeFailure }) };
   }
-  // FR-019: re-sync the restored workspace so the graph matches the pre-apply bytes.
-  await options.sync();
-  return { outcome: 'rolled-back', touchedFiles, postCheckPassed: false, danglingReferences, ...(writeFailure && { writeFailure }) };
+  // FR-019: re-sync the restored workspace so the graph matches the pre-apply
+  // bytes. B2 (rp-review): this re-sync can ITSELF fail (throw, or return the
+  // lock-failure zero-shape) AFTER the bytes were already restored — the
+  // rollback still succeeded (`rolled-back`), but the index no longer matches, so
+  // flag `resyncFailed` (the human table then instructs `codegraph sync`). Never
+  // let this post-restore failure escape as an uncaught throw.
+  let resyncFailed = false;
+  try {
+    if (discriminateSyncResult(await options.sync()) === 'lock-failure') resyncFailed = true;
+  } catch {
+    resyncFailed = true;
+  }
+  return {
+    outcome: 'rolled-back',
+    touchedFiles,
+    postCheckPassed: false,
+    danglingReferences,
+    ...(writeFailure && { writeFailure }),
+    ...(resyncFailed && { resyncFailed }),
+  };
+}
+
+/**
+ * B1 (rp-review) — a post-write THROW (from the injected re-sync or the
+ * post-check) landed here. Restore every touched file byte-identically from its
+ * snapshot; if the restore fully succeeds, RETHROW the original error so the
+ * caller sees an honest exit-1 internal error over a clean workspace; if the
+ * restore ITSELF fails, return the `rollback-failed` recovery terminal instead —
+ * never re-sync a workspace left in an unknown partial state, nor leak the throw
+ * over renamed-but-not-restored files. Distinct from {@link rollback}: a throw is
+ * not a modeled `rolled-back` dangle outcome, so there is no dangle list and no
+ * post-restore re-sync (the re-sync may be exactly what threw).
+ */
+function restoreOrRethrow(
+  options: ApplyRenameOptions,
+  snapshots: Map<string, Buffer>,
+  touchedFiles: string[],
+  error: unknown,
+): ApplyResult {
+  const restore = restoreSnapshots({ projectRoot: options.projectRoot, snapshots });
+  if (restore.unrestoredFiles.length > 0) {
+    const recovery: RecoveryInfo = {
+      restoredFiles: restore.restoredFiles,
+      unrestoredFiles: restore.unrestoredFiles,
+      ...(restore.recoveryDir !== undefined && { recoveryDir: restore.recoveryDir }),
+    };
+    return { outcome: 'rollback-failed', touchedFiles, postCheckPassed: false, recovery };
+  }
+  throw error; // workspace restored byte-identically — the exit-1 path is honest
 }
 
 /** Group a plan's edits by their file, preserving the deterministic plan order. */

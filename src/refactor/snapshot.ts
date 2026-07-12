@@ -50,7 +50,10 @@ export type ReverifyResult = { ok: true } | { ok: false; driftedFiles: string[] 
 export type WriteEditsResult =
   | { ok: true; writtenFiles: string[] }
   | { overlap: true; file: string }
-  | { writeError: true; file: string; message: string };
+  // B4 (rp-review): `writtenFiles` are the files FULLY renamed before the failure
+  // — the engine rolls back ONLY those, never the not-yet-written files (whose
+  // snapshots would otherwise clobber a concurrent external edit).
+  | { writeError: true; file: string; message: string; writtenFiles: string[] };
 
 /**
  * {@link restoreSnapshots} result (RecoveryInfo-shaped). `recoveryDir` is set
@@ -131,10 +134,17 @@ export function writeEdits(input: {
   projectRoot: string;
   editsByFile: Map<string, RenameEdit[]>;
 }): WriteEditsResult {
-  const planned: Array<{ file: string; abs: string; bytes: Buffer }> = [];
+  const planned: Array<{ file: string; abs: string; bytes: Buffer; mode: number }> = [];
 
   for (const [file, edits] of input.editsByFile) {
     const abs = path.resolve(input.projectRoot, file);
+    // B3 (rp-review): capture the target's permission bits BEFORE the write so
+    // the atomic temp-rename (temp created 0o600, below) does not silently strip
+    // exec bits (0o755 scripts) / group-world read (0o644) — the renamed file
+    // otherwise inherits the temp's 0o600. Re-applied to the temp just before
+    // renameSync, so the CodeQL js/insecure-temporary-file sink stays closed
+    // (the temp is 0o600 for the whole window it could be pre-empted).
+    const mode = fs.statSync(abs).mode & 0o7777;
     const raw = fs.readFileSync(abs);
     const bom = hasUtf8Bom(raw);
     const text = (bom ? raw.subarray(3) : raw).toString('utf8');
@@ -172,7 +182,7 @@ export function writeEdits(input: {
       out = out.slice(0, s.start) + s.newText + out.slice(s.end);
     }
     const body = Buffer.from(out, 'utf8');
-    planned.push({ file, abs, bytes: bom ? Buffer.concat([UTF8_BOM, body]) : body });
+    planned.push({ file, abs, bytes: bom ? Buffer.concat([UTF8_BOM, body]) : body, mode });
   }
 
   const writtenFiles: string[] = [];
@@ -190,6 +200,10 @@ export function writeEdits(input: {
     );
     try {
       fs.writeFileSync(tmp, p.bytes, { mode: 0o600 });
+      // B3 (rp-review): restore the target's ORIGINAL mode onto the temp just
+      // before the rename, so the renamed-over file keeps its permission bits
+      // (exec / group-world read) instead of inheriting the temp's 0o600.
+      fs.chmodSync(tmp, p.mode);
       fs.renameSync(tmp, p.abs); // atomic within the directory (same filesystem)
     } catch (error) {
       // D5 review finding (BLOCKER): a mid-loop write/rename malfunction
@@ -207,7 +221,12 @@ export function writeEdits(input: {
       } catch {
         // best-effort — nothing to report if this itself fails
       }
-      return { writeError: true, file: p.file, message: error instanceof Error ? error.message : String(error) };
+      return {
+        writeError: true,
+        file: p.file,
+        message: error instanceof Error ? error.message : String(error),
+        writtenFiles: [...writtenFiles], // B4: only the files fully renamed before this failure
+      };
     }
     writtenFiles.push(p.file);
   }
@@ -265,17 +284,28 @@ export function restoreSnapshots(input: {
     '.codegraph',
     `rename-recovery-${process.pid}-${randomBytes(4).toString('hex')}`,
   );
-  // CodeQL js/insecure-temporary-file (alert #45 covers the per-file write
-  // below; this hardens the DIRECTORY the same way): created up front at
-  // 0o700 so the incident dump — potentially-sensitive unrestored source —
-  // is owner-only from its first file, regardless of how many/which files
-  // land inside it (a per-file nested mkdirSync below only ever adds
-  // subdirectories INSIDE this already-locked-down directory).
-  fs.mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
-  for (const file of unrestoredFiles) {
-    const dest = path.join(recoveryDir, file);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, input.snapshots.get(file)!, { mode: 0o600 });
+  // B5 (rp-review): the recovery dump is best-effort — the SAME ENOSPC/EPERM that
+  // broke the restore can break the dump's mkdir/write. Guard it so a dump
+  // failure does not throw out of rollback() with no modeled outcome: on failure
+  // return `recoveryDir` ABSENT (the unrestored files still need manual
+  // attention, and the human table says the dump also failed) rather than
+  // escaping. Full crash-durable snapshots (persist before mutation) are a
+  // ratified v1 scope cut — this only makes the failure path structured.
+  try {
+    // CodeQL js/insecure-temporary-file (alert #45 covers the per-file write
+    // below; this hardens the DIRECTORY the same way): created up front at
+    // 0o700 so the incident dump — potentially-sensitive unrestored source —
+    // is owner-only from its first file, regardless of how many/which files
+    // land inside it (a per-file nested mkdirSync below only ever adds
+    // subdirectories INSIDE this already-locked-down directory).
+    fs.mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
+    for (const file of unrestoredFiles) {
+      const dest = path.join(recoveryDir, file);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, input.snapshots.get(file)!, { mode: 0o600 });
+    }
+    return { restoredFiles, unrestoredFiles, recoveryDir };
+  } catch {
+    return { restoredFiles, unrestoredFiles }; // dump failed — recoveryDir absent
   }
-  return { restoredFiles, unrestoredFiles, recoveryDir };
 }

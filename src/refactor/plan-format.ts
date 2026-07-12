@@ -226,6 +226,12 @@ export function formatApplyResultTable(result: ApplyResult, newName: string): st
       lines.push('dangling references:');
       for (const d of result.danglingReferences) lines.push(`  ${d.file}:${d.range.start.line}  ${d.name}`);
     }
+    // B2 review finding: the rollback restored the bytes but its own re-sync
+    // failed, so the index no longer matches the restored workspace — tell the
+    // user to re-sync it.
+    if (result.resyncFailed) {
+      lines.push('the index re-sync after the rollback failed; the files are restored but the index is stale — run `codegraph sync`.');
+    }
   } else if (result.outcome === 'rollback-failed' && result.recovery) {
     lines.push('rollback-failed → the rollback restore itself failed; the workspace is left partially modified');
     if (result.writeFailure) {
@@ -237,8 +243,24 @@ export function formatApplyResultTable(result: ApplyResult, newName: string): st
     }
     lines.push('NOT restored:');
     for (const f of result.recovery.unrestoredFiles) lines.push(`  ${f}`);
-    lines.push(`recovery dir: ${result.recovery.recoveryDir}`);
-    lines.push('Retrying the restore step alone is safe; do NOT re-run the rename.');
+    // C6 review finding: give ACTIONABLE recovery. The old line "Retrying the
+    // restore step alone is safe" instructed the impossible — no CLI command
+    // performs a standalone restore. When the snapshot dump succeeded, its dir
+    // holds the pre-apply bytes of the NOT-restored files mirroring their
+    // relative paths, so the user can copy them back and re-sync.
+    // B5 review finding: the dump can itself fail, leaving no dir — say so and
+    // flag the files for manual attention instead of a bogus "recovery dir: undefined".
+    if (result.recovery.recoveryDir !== undefined) {
+      lines.push(`recovery dir: ${result.recovery.recoveryDir}`);
+      lines.push(
+        'To recover: copy each NOT-restored file back from that directory (it mirrors their relative paths) over the file listed above, then run `codegraph sync`.',
+      );
+    } else {
+      lines.push(
+        'the snapshot dump also failed (no recovery dir); the NOT-restored files above need manual attention — restore their pre-apply contents, then run `codegraph sync`.',
+      );
+    }
+    lines.push('Do NOT re-run the rename.');
   }
   return lines.join('\n') + '\n';
 }
@@ -268,5 +290,6 @@ export function serializeApplyResultJson(result: ApplyResult, newName: string): 
   if (result.recovery) out.recovery = result.recovery;
   if (result.refusal) out.refusal = toSurfaceRefusal(result.refusal);
   if (result.writeFailure) out.writeFailure = result.writeFailure;
+  if (result.resyncFailed) out.resyncFailed = result.resyncFailed;
   return JSON.stringify(out);
 }

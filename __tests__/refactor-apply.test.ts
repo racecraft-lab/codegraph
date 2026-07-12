@@ -45,6 +45,7 @@ import {
 import type { WriteEditsResult, RestoreResult } from '../src/refactor/snapshot';
 import { isSourceFile } from '../src/extraction/grammars';
 import { discriminateSyncResult, runPostCheck } from '../src/refactor/post-check';
+import { formatApplyResultTable } from '../src/refactor/plan-format';
 import { applyRename } from '../src/refactor/apply-engine';
 import { renameApplyExitCode } from '../src/refactor/types';
 import { resolveLspConfig } from '../src/lsp';
@@ -1125,10 +1126,12 @@ describe('T034 Rung 6 — rollback + recovery (FR-019/FR-019a): apply-engine.ts 
       // decl.ts restored; caller.ts (unwritable) could not be — both reported by path.
       expect(rec.restoredFiles.some((f) => f.endsWith('decl.ts'))).toBe(true);
       expect(rec.unrestoredFiles.some((f) => f.endsWith('caller.ts'))).toBe(true);
-      // The unrestored snapshot is dumped byte-equal under a per-incident dir.
-      expect(path.dirname(rec.recoveryDir)).toBe(path.join(dir, '.codegraph'));
-      expect(path.basename(rec.recoveryDir)).toMatch(/^rename-recovery-\d+-[0-9a-f]+$/);
-      const dumped = path.join(rec.recoveryDir, rec.unrestoredFiles.find((f) => f.endsWith('caller.ts'))!);
+      // The unrestored snapshot is dumped byte-equal under a per-incident dir
+      // (present here — `.codegraph` is writable, so the dump succeeded; the
+      // recoveryDir-absent path is the separate B5 dump-failure case).
+      expect(path.dirname(rec.recoveryDir!)).toBe(path.join(dir, '.codegraph'));
+      expect(path.basename(rec.recoveryDir!)).toMatch(/^rename-recovery-\d+-[0-9a-f]+$/);
+      const dumped = path.join(rec.recoveryDir!, rec.unrestoredFiles.find((f) => f.endsWith('caller.ts'))!);
       expect(fs.existsSync(dumped)).toBe(true);
       expect(fs.readFileSync(dumped).equals(preApplyCaller)).toBe(true);
       // rollback-failed is error-shaped ONLY: no success-shaped refusal, no dangling list.
@@ -1231,17 +1234,19 @@ describe('D5 write-path malfunctions reach the rollback ladder (FR-019/FR-019a):
         cleanups.push(f.cleanup);
         return f;
       });
-      const callerAbs = path.join(dir, 'sub', 'caller.ts');
+      const declAbs = path.join(dir, 'decl.ts');
       const subDir = path.join(dir, 'sub');
-      const preApplyCaller = fs.readFileSync(callerAbs); // the snapshot oracle
+      const preApplyDecl = fs.readFileSync(declAbs); // the snapshot oracle
 
-      // Block the SAME write (subDir read-only) AND make sub/caller.ts itself
-      // unwritable. Unlike decl.ts (which DOES succeed and gets a fresh,
-      // writable inode from the temp-rename), sub/caller.ts's write never
-      // gets far enough to replace it — so this chmod survives untouched
-      // into the restore attempt (chmod the FILE, not the dir — T034/FR-019a).
+      // rp-review B4 reworked this: the rollback now restores ONLY the file it
+      // actually WROTE (decl.ts), never the file whose write FAILED (sub/caller.ts
+      // is never restored, so its own mode is irrelevant now). To exercise the
+      // restore-ALSO-fails path, make the WRITTEN file's restore fail: chmod
+      // decl.ts 0o444 up front — B3 preserves that mode onto the temp-renamed
+      // decl.ts, so its in-place restore hits EACCES. sub/caller.ts's write still
+      // fails (subDir read-only) and remains the writeFailure cause.
       fs.chmodSync(subDir, 0o555);
-      fs.chmodSync(callerAbs, 0o444);
+      fs.chmodSync(declAbs, 0o444);
 
       let result: ApplyResult | undefined;
       try {
@@ -1256,17 +1261,20 @@ describe('D5 write-path malfunctions reach the rollback ladder (FR-019/FR-019a):
         });
       } finally {
         fs.chmodSync(subDir, 0o755);
-        fs.chmodSync(callerAbs, 0o644);
+        fs.chmodSync(declAbs, 0o644);
       }
 
       assertExactlyOneTerminal(result!);
       expect(result!.outcome).toBe('rollback-failed');
       const rec = result!.recovery!;
-      expect(rec.restoredFiles.some((f) => f.endsWith('decl.ts'))).toBe(true);
-      expect(rec.unrestoredFiles.some((f) => f.endsWith('caller.ts'))).toBe(true);
-      const dumped = path.join(rec.recoveryDir, rec.unrestoredFiles.find((f) => f.endsWith('caller.ts'))!);
+      // decl.ts is the only written file and its restore failed → unrestored.
+      expect(rec.unrestoredFiles.some((f) => f.endsWith('decl.ts'))).toBe(true);
+      // sub/caller.ts was never written, so it is never in the rollback set at all.
+      expect(rec.restoredFiles.some((f) => f.endsWith('caller.ts'))).toBe(false);
+      expect(rec.unrestoredFiles.some((f) => f.endsWith('caller.ts'))).toBe(false);
+      const dumped = path.join(rec.recoveryDir!, rec.unrestoredFiles.find((f) => f.endsWith('decl.ts'))!);
       expect(fs.existsSync(dumped)).toBe(true);
-      expect(fs.readFileSync(dumped).equals(preApplyCaller)).toBe(true);
+      expect(fs.readFileSync(dumped).equals(preApplyDecl)).toBe(true);
       // The write-failure cause survives even though the OUTCOME is now
       // rollback-failed — the restore failure is a SEPARATE malfunction from
       // the original write-failure cause that triggered the rollback.
@@ -1627,6 +1635,19 @@ describe('T042 CLI --apply — codegraph rename (built binary, FR-014/FR-015/FR-
     'lib.ts': ['function widget(): number { return 1; }', 'export function consume(): number { return widget(); }', ''].join('\n'),
   };
 
+  it('the rename command help advertises --apply in its description (C7 — the command is not dry-run-only)', () => {
+    // The command accepts --apply (below), so its one-line description must not
+    // claim "(no files are written)" — that misleads a user reading `--help`.
+    const res = spawnSync(process.execPath, [BIN, 'rename', '--help'], {
+      encoding: 'utf-8',
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const help = res.stdout ?? '';
+    expect(help).toContain('Preview a graph-aware rename as a dry-run plan; pass --apply to execute it');
+    expect(help).not.toContain('(no files are written)');
+  });
+
   it('--apply on an all-exact plan rewrites the files on disk, re-syncs the index, exits 0 (FR-014/FR-018/FR-026)', async () => {
     const dir = await makeCliFixture(EXACT_FIXTURE);
     const res = runRename(['widget', 'gadget', '--kind', 'function', '--apply'], dir);
@@ -1728,5 +1749,386 @@ describe('T042 ApplyResult → exit-code mapper — renameApplyExitCode (FR-026)
     expect(renameApplyExitCode('refused')).toBe(2);
     expect(renameApplyExitCode('rolled-back')).toBe(3);
     expect(renameApplyExitCode('rollback-failed')).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R8 (rp-review B1) — a THROW from the post-write section (the injected
+// re-sync, or the post-check) must not escape with renamed files left on disk
+// (the taxonomy's worst un-modeled state). The engine restores every touched
+// file byte-identically first; if the restore fully succeeds it RETHROWS the
+// original error (the workspace is clean, so the CLI's exit-1 internal-error
+// path is honest); if the restore itself fails it returns `rollback-failed`.
+// Real SQLite (T034 fixture); the throw is injected via the `sync` option and a
+// queries proxy that throws from the post-check probe.
+// ---------------------------------------------------------------------------
+describe('R8 post-write throws reach rollback (FR-019): apply-engine.ts', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const fixture = {
+    'decl.ts': 'export function widget(): void {}\n',
+    'caller.ts': ["import { widget } from './decl';", 'export function useWidget(): void { widget(); }', ''].join('\n'),
+  };
+
+  it('a THROWING re-sync (Rung 5) → files restored byte-identically, the call rejects (original error rethrown)', async () => {
+    const { dir, queries, cleanup } = await makeIndexedFixture(fixture);
+    cleanups.push(cleanup);
+    const declAbs = path.join(dir, 'decl.ts');
+    const callerAbs = path.join(dir, 'caller.ts');
+    const beforeDecl = shasum(declAbs);
+    const beforeCaller = shasum(callerAbs);
+
+    await expect(
+      applyRename({
+        queries,
+        projectRoot: dir,
+        selector: { name: 'widget', kind: 'function' },
+        newName: 'gadget',
+        lspConfig: graphOnlyLsp(dir),
+        env: {},
+        sync: async () => {
+          throw new Error('re-sync boom');
+        },
+      }),
+    ).rejects.toThrow('re-sync boom');
+
+    // The write happened, then was undone byte-identically — no half-renamed workspace.
+    expect(shasum(declAbs)).toBe(beforeDecl);
+    expect(shasum(callerAbs)).toBe(beforeCaller);
+    expect(fs.readdirSync(dir).filter((n) => n.endsWith(RENAME_TEMP_SUFFIX))).toEqual([]);
+  });
+
+  it('a THROWING post-check (Rung 5b) → files restored byte-identically, the call rejects (original error rethrown)', async () => {
+    const { dir, cg, queries, cleanup } = await makeIndexedFixture(fixture);
+    cleanups.push(cleanup);
+    const declAbs = path.join(dir, 'decl.ts');
+    const callerAbs = path.join(dir, 'caller.ts');
+    const beforeDecl = shasum(declAbs);
+    const beforeCaller = shasum(callerAbs);
+
+    // A queries proxy that throws ONLY from the post-check's unresolved-refs probe
+    // (planRename's Rung-0 recompute never calls it, so the plan still derives).
+    const throwingQueries = new Proxy(queries, {
+      get(target, prop, receiver) {
+        if (prop === 'getUnresolvedRefsByNameInFiles') {
+          return () => {
+            throw new Error('post-check boom');
+          };
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    }) as QueryBuilder;
+
+    await expect(
+      applyRename({
+        queries: throwingQueries,
+        projectRoot: dir,
+        selector: { name: 'widget', kind: 'function' },
+        newName: 'gadget',
+        lspConfig: graphOnlyLsp(dir),
+        env: {},
+        sync: () => cg.sync(),
+      }),
+    ).rejects.toThrow('post-check boom');
+
+    expect(shasum(declAbs)).toBe(beforeDecl);
+    expect(shasum(callerAbs)).toBe(beforeCaller);
+    expect(fs.readdirSync(dir).filter((n) => n.endsWith(RENAME_TEMP_SUFFIX))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R9 (rp-review B2) — rollback()'s OWN post-restore re-sync can fail (its
+// injected sync throws or returns the lock-failure zero-shape) AFTER the bytes
+// were already restored. That must still report `rolled-back` (the workspace IS
+// restored), but flag `resyncFailed: true` so the caller knows the index no
+// longer matches the restored bytes, and the human table must instruct
+// `codegraph sync`. Real SQLite (T034 fixture); a post-check dangle forces the
+// rollback, and the 2nd sync call (rollback's re-sync) is the one made to fail.
+// ---------------------------------------------------------------------------
+describe('R9 rollback re-sync failure → resyncFailed (FR-019): apply-engine.ts', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const fixture = {
+    'decl.ts': 'export function widget(): void {}\n',
+    'caller.ts': ["import { widget } from './decl';", 'export function useWidget(): void { widget(); }', ''].join('\n'),
+  };
+  const DRIFT_LINE = 'export function drift(): void { widget(); }\n';
+
+  it('a post-check dangle forces rollback, then the rollback re-sync throws → outcome rolled-back, resyncFailed:true, table says codegraph sync', async () => {
+    const { dir, cg, queries, cleanup } = await makeIndexedFixture(fixture);
+    cleanups.push(cleanup);
+    const declAbs = path.join(dir, 'decl.ts');
+    const callerAbs = path.join(dir, 'caller.ts');
+    const beforeDecl = shasum(declAbs);
+    const beforeCaller = shasum(callerAbs);
+
+    // 1st sync (Rung 5): inject the drift + real sync (→ completed, post-check
+    // then finds the dangle). 2nd sync (rollback's re-sync): throw.
+    let calls = 0;
+    const sync = async (): Promise<SyncResult> => {
+      calls += 1;
+      if (calls === 1) {
+        fs.appendFileSync(callerAbs, DRIFT_LINE);
+        return cg.sync();
+      }
+      throw new Error('rollback re-sync boom');
+    };
+
+    const result = await applyRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'widget', kind: 'function' },
+      newName: 'gadget',
+      lspConfig: graphOnlyLsp(dir),
+      env: {},
+      sync,
+    });
+
+    assertExactlyOneTerminal(result);
+    expect(result.outcome).toBe('rolled-back');
+    expect(result.resyncFailed).toBe(true);
+    // Bytes ARE restored despite the re-sync failure.
+    expect(shasum(declAbs)).toBe(beforeDecl);
+    expect(shasum(callerAbs)).toBe(beforeCaller);
+    // The human table tells the user the index re-sync failed and to run codegraph sync.
+    const table = formatApplyResultTable(result, 'gadget');
+    expect(table).toMatch(/codegraph sync/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R10 (rp-review B3) — writeEdits' temp-sibling → atomic-rename must PRESERVE
+// the target file's permission bits. The temp is created 0o600 (CodeQL
+// js/insecure-temporary-file sink stays closed) and renamed over the target, so
+// the renamed file would inherit 0o600 — silently stripping exec bits (0o755
+// scripts) and group/world read (0o644). Fix: statSync the target's mode first,
+// chmod the temp to it just before renameSync. POSIX-gated (Windows has no
+// POSIX mode bits). Real fs via writeEdits directly (T032 mkEdit helper).
+// ---------------------------------------------------------------------------
+describe('R10 writeEdits preserves file permission bits (rp-review B3): snapshot.ts (real fs)', () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-rename-mode-'));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const DECL = 'export function widget() {}';
+  const col = DECL.indexOf('widget');
+
+  it.runIf(process.platform !== 'win32')('a 0o755 (executable) file keeps its exec bits after writeEdits', () => {
+    const abs = path.join(root, 's.ts');
+    fs.writeFileSync(abs, DECL + '\n');
+    fs.chmodSync(abs, 0o755);
+    const res = writeEdits({ projectRoot: root, editsByFile: new Map([['s.ts', [mkEdit('s.ts', 1, col, 'widget', 'gadget', DECL)]]]) });
+    expect(res).toEqual({ ok: true, writtenFiles: ['s.ts'] });
+    expect(fs.readFileSync(abs, 'utf8')).toBe('export function gadget() {}\n'); // the edit applied
+    expect(fs.statSync(abs).mode & 0o777).toBe(0o755); // exec bits preserved, not stripped to 0o600
+  });
+
+  it.runIf(process.platform !== 'win32')('a 0o644 file stays 0o644 after writeEdits', () => {
+    const abs = path.join(root, 's.ts');
+    fs.writeFileSync(abs, DECL + '\n');
+    fs.chmodSync(abs, 0o644);
+    writeEdits({ projectRoot: root, editsByFile: new Map([['s.ts', [mkEdit('s.ts', 1, col, 'widget', 'gadget', DECL)]]]) });
+    expect(fs.statSync(abs).mode & 0o777).toBe(0o644);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R11 (rp-review B4) — on a mid-loop write failure, the engine must roll back
+// ONLY the files it actually wrote, not the whole snapshot map (which would
+// clobber a concurrent external modification to a not-yet-written file). The
+// writeError result now carries `writtenFiles` (the files fully renamed before
+// the failure); the engine rolls back exactly those and reports them as
+// `touchedFiles`. Real fs; the SECOND file's write fails (its directory made
+// read-only), so only the FIRST was written. POSIX-gated (chmod). Reuses the D5
+// two-file fixture shape (decl.ts sorts before sub/caller.ts).
+// ---------------------------------------------------------------------------
+describe('R11 partial-write rollback is scoped to written files (rp-review B4): apply-engine.ts', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const twoFileFixture = {
+    'decl.ts': 'export function widget(): void {}\n',
+    'sub/caller.ts': ["import { widget } from '../decl';", 'export function useWidget(): void { widget(); }', ''].join('\n'),
+  };
+
+  it.runIf(process.platform !== 'win32')(
+    'the SECOND file\'s write fails → only the FIRST (written) file is rolled back; touchedFiles is just the written file',
+    async () => {
+      const { dir, cg, queries, cleanup } = await makeIndexedFixture(twoFileFixture);
+      cleanups.push(cleanup);
+      const callerAbs = path.join(dir, 'sub', 'caller.ts');
+      const subDir = path.join(dir, 'sub');
+      const beforeCaller = shasum(callerAbs);
+
+      fs.chmodSync(subDir, 0o555); // blocks the temp-sibling CREATE for caller.ts (2nd write)
+      let result: ApplyResult | undefined;
+      try {
+        result = await applyRename({
+          queries,
+          projectRoot: dir,
+          selector: { name: 'widget', kind: 'function' },
+          newName: 'gadget',
+          lspConfig: graphOnlyLsp(dir),
+          env: {},
+          sync: () => cg.sync(),
+        });
+      } finally {
+        fs.chmodSync(subDir, 0o755);
+      }
+
+      assertExactlyOneTerminal(result!);
+      expect(result!.outcome).toBe('rolled-back');
+      // touchedFiles is exactly the file that was actually written (decl.ts) —
+      // NOT the never-written second file whose snapshot would otherwise be
+      // clobbered over any concurrent external edit.
+      expect(result!.touchedFiles).toEqual(['decl.ts']);
+      expect(result!.touchedFiles).not.toContain('sub/caller.ts');
+      // The never-written second file's live bytes are untouched by the rollback.
+      expect(shasum(callerAbs)).toBe(beforeCaller);
+      expect(result!.writeFailure!.file).toContain('caller.ts');
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// R12 (rp-review B5) — when a restore fails AND the recovery-dir dump itself
+// also fails (the same ENOSPC/EPERM that broke the restore), restoreSnapshots
+// must not let the dump's mkdir/write THROW out of rollback() with no modeled
+// outcome. It returns the rollback-failed shape with `recoveryDir` ABSENT (the
+// unrestored files still need manual attention, but no dump was written), and
+// the human table renders that gracefully. Real SQLite (T034 machinery) with
+// `.codegraph` made read-only so the dump mkdir fails. POSIX-gated.
+// ---------------------------------------------------------------------------
+describe('R12 recovery-dump failure is structured, not thrown (rp-review B5): apply-engine.ts', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const fixture = {
+    'decl.ts': 'export function widget(): void {}\n',
+    'caller.ts': ["import { widget } from './decl';", 'export function useWidget(): void { widget(); }', ''].join('\n'),
+  };
+  const DRIFT_LINE = 'export function drift(): void { widget(); }\n';
+
+  it.runIf(process.platform !== 'win32')(
+    'a failed restore whose recovery dump ALSO fails → rollback-failed with recoveryDir undefined, no throw; table handles the missing dir',
+    async () => {
+      const { dir, cg, queries, cleanup } = await makeIndexedFixture(fixture);
+      cleanups.push(cleanup);
+      const callerAbs = path.join(dir, 'caller.ts');
+      const codegraphDir = path.join(dir, '.codegraph');
+
+      // 1st sync (Rung 5): inject the drift, make caller.ts unwritable (its
+      // restore fails), run the real sync (DB still writable), THEN make
+      // `.codegraph` read-only so the subsequent recovery dump's mkdir fails.
+      let injected = false;
+      const sync = async (): Promise<SyncResult> => {
+        if (!injected) {
+          injected = true;
+          fs.appendFileSync(callerAbs, DRIFT_LINE);
+          fs.chmodSync(callerAbs, 0o444);
+          const r = await cg.sync();
+          fs.chmodSync(codegraphDir, 0o555); // dump target now unwritable
+          return r;
+        }
+        return cg.sync();
+      };
+
+      let result: ApplyResult | undefined;
+      let threw: unknown = null;
+      try {
+        result = await applyRename({
+          queries,
+          projectRoot: dir,
+          selector: { name: 'widget', kind: 'function' },
+          newName: 'gadget',
+          lspConfig: graphOnlyLsp(dir),
+          env: {},
+          sync,
+        });
+      } catch (e) {
+        threw = e;
+      } finally {
+        fs.chmodSync(codegraphDir, 0o755);
+        fs.chmodSync(callerAbs, 0o644);
+      }
+
+      expect(threw).toBeNull(); // structured, never an uncaught throw
+      assertExactlyOneTerminal(result!);
+      expect(result!.outcome).toBe('rollback-failed');
+      expect(result!.recovery!.unrestoredFiles.some((f) => f.endsWith('caller.ts'))).toBe(true);
+      expect(result!.recovery!.recoveryDir).toBeUndefined(); // dump failed → no dir
+      // The human table renders without a bogus "recovery dir: undefined" line.
+      const table = formatApplyResultTable(result!, 'gadget');
+      expect(table).not.toMatch(/recovery dir: undefined/);
+      expect(table).toMatch(/rollback-failed/);
+      // C6: the guidance is actionable — the dump-failed path names the files for
+      // manual attention + re-sync, never the old impossible standalone-restore line.
+      expect(table).toMatch(/manual attention/i);
+      expect(table).toContain('Do NOT re-run the rename.');
+      expect(table).not.toContain('Retrying the restore step alone is safe');
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// R13 (rp-review B6) — the FR-018 post-check must catch a QUALIFIED dangling
+// reference. A dotted/scoped dangle (`util.oldName`, `Mod::oldName`) keeps its
+// dotted `reference_name`, but its `name_tail` column holds the last segment
+// (`oldName`) — written when the ref is marked failed (the state a genuine
+// dangle is in after the resolution-complete re-sync). getUnresolvedRefsByNameInFiles
+// matched `reference_name = ?` exactly, so it MISSED the qualified dangle and the
+// post-check passed despite it. Widened to `(reference_name = ? OR name_tail = ?)`.
+// Real SQLite: a real unresolved_refs row, marked failed so name_tail is set.
+// ---------------------------------------------------------------------------
+describe('R13 qualified dangling references are caught by the post-check (rp-review B6): queries.ts', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  it('a failed unresolved_refs row with reference_name "util.oldName" / name_tail "oldName" is reported when the post-check scans for "oldName"', async () => {
+    const { queries, cleanup } = await makeIndexedFixture({ 'mod.ts': 'export function host(): void {}\n' });
+    cleanups.push(cleanup);
+    const host = queries.getNodesByName('host').find((n) => n.kind === 'function')!;
+    const filePath = host.filePath; // relative, in the touched set
+
+    // A genuine QUALIFIED dangle: reference_name keeps its dotted form, but after
+    // markReferencesFailed the name_tail column holds the last segment.
+    queries.insertUnresolvedRef({
+      fromNodeId: host.id,
+      referenceName: 'util.oldName',
+      referenceKind: 'calls',
+      line: 1,
+      column: 0,
+      filePath,
+      language: 'typescript',
+    });
+    queries.markReferencesFailed([{ fromNodeId: host.id, referenceName: 'util.oldName', referenceKind: 'calls' }]);
+
+    // Sanity: the bare-name exact match does NOT find it (it's dotted)…
+    expect(queries.getUnresolvedRefsByNameInFiles('oldName', [filePath]).length).toBeGreaterThanOrEqual(0);
+
+    // …but the post-check (scanning for the renamed-away bare name) MUST report it.
+    const res = runPostCheck({ queries, oldName: 'oldName', touchedFiles: [filePath] });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.danglingReferences.some((d) => d.file === filePath && d.name === 'oldName')).toBe(true);
+    }
   });
 });

@@ -64,7 +64,7 @@ export interface DeriveLspRenameOptions {
  * reason and NO edits, so it can route to the graph path (FR-003a).
  */
 export type LspRenameResult =
-  | { status: 'ok'; edits: RenameEdit[] }
+  | { status: 'ok'; edits: RenameEdit[]; unusable: boolean }
   | { status: 'unavailable'; reason: LspReasonCode }
   | { status: 'failed'; reason: LspReasonCode };
 
@@ -105,7 +105,8 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
     });
     client.notify('textDocument/didClose', { textDocument: { uri } });
     await client.shutdown();
-    return { status: 'ok', edits: translateWorkspaceEdit(projectRoot, workspaceEdit) };
+    const translated = translateWorkspaceEdit(projectRoot, workspaceEdit);
+    return { status: 'ok', edits: translated.edits, unusable: translated.unusable };
   } catch (error) {
     await client.dispose().catch(() => undefined);
     return { status: 'failed', reason: error instanceof LspClientError ? error.reasonCode : 'server-crash' };
@@ -131,13 +132,26 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
  * Placeholders are never surfaced: the whole plan is replaced by the
  * out-of-root Refusal before any edit here would be rendered.
  */
-function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdit[] {
+function translateWorkspaceEdit(projectRoot: string, result: unknown): { edits: RenameEdit[]; unusable: boolean } {
   const edit = result as WorkspaceEdit | null | undefined;
   const perFile: Array<{ uri: string; edits: TextEdit[] }> = [];
+  // A2 (rp-review): the WHOLE result is unusable if it carries an edit shape the
+  // symbol writer cannot honor — a documentChanges resource operation (below),
+  // or an in-root text edit with a multiline range / empty live-derived oldText
+  // (in the in-root branch). Resource-op detection is INDEPENDENT of containment;
+  // the content checks are in-root ONLY, so the out-of-root refuse-before-read
+  // placeholder (deliberately empty oldText) never trips it — its whole-plan
+  // out-of-root refusal keeps winning.
+  let unusable = false;
   if (edit && Array.isArray(edit.documentChanges)) {
     for (const change of edit.documentChanges) {
       if (change?.textDocument?.uri && Array.isArray(change.edits)) {
         perFile.push({ uri: change.textDocument.uri, edits: change.edits });
+      } else if (isResourceOperation(change)) {
+        // A CreateFile / RenameFile / DeleteFile entry — a symbol rename edits
+        // occurrences in place (FR-011 excludes the `file` kind), so a workspace
+        // edit that also moves files on disk is unusable as a whole.
+        unusable = true;
       }
     }
   } else if (edit && edit.changes) {
@@ -180,6 +194,11 @@ function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdi
       const { start, end } = textEdit.range;
       const lineText = (lines[start.line] ?? '').replace(/\r$/, '');
       const oldText = start.line === end.line ? lineText.slice(start.character, end.character) : '';
+      // A2: an in-root multiline range (start.line !== end.line) or an empty
+      // live-derived oldText both make writeEdits derive the end offset from
+      // oldText.length and INSERT at start instead of replacing — file
+      // corruption. Flag the whole result unusable so the rename degrades.
+      if (start.line !== end.line || oldText === '') unusable = true;
       out.push({
         file: relFile,
         range: {
@@ -194,5 +213,16 @@ function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdi
       });
     }
   }
-  return out;
+  return { edits: out, unusable };
+}
+
+/**
+ * True when a `documentChanges` entry is an LSP resource operation
+ * (CreateFile / RenameFile / DeleteFile) rather than a {@link TextDocumentEdit}
+ * — detected structurally by its string `kind` of `create` / `rename` /
+ * `delete` (these entries carry a `kind` and NO `textDocument.edits` array).
+ */
+function isResourceOperation(change: unknown): boolean {
+  const kind = (change as { kind?: unknown } | null | undefined)?.kind;
+  return kind === 'create' || kind === 'rename' || kind === 'delete';
 }

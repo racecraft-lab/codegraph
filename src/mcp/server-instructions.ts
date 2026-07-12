@@ -30,9 +30,9 @@ verbatim source PLUS who calls it and what it affects, so you edit with the
 blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
-## One tool: codegraph_explore — use it instead of reading files
+## The primary tool: codegraph_explore — use it instead of reading files
 
-There is a single tool, \`codegraph_explore\`, and it is Read-equivalent. It
+The primary tool is \`codegraph_explore\`, and it is Read-equivalent. It
 takes either a natural-language question or a bag of symbol/file names and
 returns the **verbatim, line-numbered source** of the relevant symbols
 grouped by file — the same \`<n>\\t<line>\` shape \`Read\` gives you, safe to
@@ -115,4 +115,9 @@ default project — but the tools are available and work **per project**:
   for that project. Indexing is the user's decision — don't run it yourself, but
   if it comes up they can run \`codegraph init\` in a project to enable codegraph
   there (a new index is picked up live, no restart).
+
+\`codegraph_rename\` (the one WRITE tool) works the same per-project way: pass the
+\`projectPath\` of a project that HAS a \`.codegraph/\` index. It is dry-run by
+default — it returns a plan and writes nothing — and writes files only when you
+pass \`apply: true\`.
 `;

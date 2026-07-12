@@ -107,6 +107,11 @@ export * from './types';
 // into dist/ (issue #354).
 export { getDatabasePath, DatabaseConnection } from './db';
 export { QueryBuilder } from './db/queries';
+// SPEC-010 public rename API types — so consumers of the `planRename` /
+// `applyRename` facade methods can type their inputs/outputs without a deep
+// `src/refactor/types` import (rp-review A6). Names are collision-free with the
+// `export * from './types'` surface above.
+export type { TargetSelector, RenamePlan, ApplyResult, RenameEdit, Refusal } from './refactor/types';
 // SPEC-003 degradation surface: the machine-readable reason `searchNodesDetailed`
 // exposes, its result shape, and the verbatim footer strings the MCP/CLI surfaces
 // (T022) render. Re-exported from the package entry so surface + SDK consumers reach

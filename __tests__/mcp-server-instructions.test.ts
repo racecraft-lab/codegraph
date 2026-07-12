@@ -54,8 +54,8 @@ describe('SERVER_INSTRUCTIONS — codegraph_rename write-tool guidance (T047)', 
     expect(section).not.toMatch(/\bGrep\b/);
   });
 
-  it('is placed AFTER the "One tool: codegraph_explore" block and before "How to query" (explore primacy first)', () => {
-    const exploreHeading = SERVER_INSTRUCTIONS.indexOf('## One tool: codegraph_explore');
+  it('is placed AFTER the "primary tool: codegraph_explore" block and before "How to query" (explore primacy first)', () => {
+    const exploreHeading = SERVER_INSTRUCTIONS.indexOf('## The primary tool: codegraph_explore');
     const howToQueryHeading = SERVER_INSTRUCTIONS.indexOf('## How to query');
     const renameHeading = SERVER_INSTRUCTIONS.lastIndexOf('\n## ', SERVER_INSTRUCTIONS.indexOf('codegraph_rename'));
     expect(exploreHeading).toBeGreaterThanOrEqual(0);
@@ -65,9 +65,9 @@ describe('SERVER_INSTRUCTIONS — codegraph_rename write-tool guidance (T047)', 
   });
 
   it('does not dilute the existing explore-first steering (regression guard on today\'s phrasing)', () => {
-    expect(SERVER_INSTRUCTIONS).toContain('## One tool: codegraph_explore — use it instead of reading files');
+    expect(SERVER_INSTRUCTIONS).toContain('## The primary tool: codegraph_explore — use it instead of reading files');
     expect(SERVER_INSTRUCTIONS).toContain(
-      "There is a single tool, `codegraph_explore`, and it is Read-equivalent.",
+      "The primary tool is `codegraph_explore`, and it is Read-equivalent.",
     );
     expect(SERVER_INSTRUCTIONS).toContain(
       'Whether you\'re answering "how does X work" or implementing a change',
@@ -78,13 +78,16 @@ describe('SERVER_INSTRUCTIONS — codegraph_rename write-tool guidance (T047)', 
     expect(SERVER_INSTRUCTIONS).toContain('## Limitations');
   });
 
-  it('SERVER_INSTRUCTIONS_NO_ROOT_INDEX is untouched — the guidance lands only in the primary variant', () => {
-    // Design decision (artifacts are silent on the no-root-index variant): the
-    // contract doc (mcp-codegraph_rename.md) names `SERVER_INSTRUCTIONS`
-    // specifically, tasks.md T047 anchors to "the ## One tool block" which
-    // only exists in the primary variant, and the no-root-index variant
-    // already generically covers codegraph_rename via its existing
-    // "projectPath to codegraph_explore (and any other codegraph tool)" text.
-    expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).not.toMatch(/codegraph_rename/);
+  it('SERVER_INSTRUCTIONS_NO_ROOT_INDEX carries the rename guidance too (C5) — dry-run-by-default, projectPath, explicit apply', () => {
+    // The no-root variant EXPOSES codegraph_rename (its schema requires
+    // projectPath), so its guidance must name the destructive tool explicitly —
+    // a projectPath pointing at an indexed project, dry-run by default, writing
+    // only with explicit apply — rather than leaving the write tool undocumented
+    // on this surface (C5). The generic "any other codegraph tool" phrasing
+    // wasn't enough to make the dry-run/apply contract legible.
+    expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).toMatch(/codegraph_rename/);
+    expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).toMatch(/dry-run/i);
+    expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).toMatch(/\bapply\b/i);
+    expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).toMatch(/projectPath/);
   });
 });

@@ -37,9 +37,9 @@
       "enum": ["lsp", "graph"]
     },
     "lspDegradation": {
-      "description": "Present when an ok-status LSP workspace edit was rejected as unusable and the WHOLE rename degraded to the graph derivation instead (never a per-file merge): `incomplete-coverage` (SPEC-010 D3) — it was missing at least one file the graph already knows carries a span-verified occurrence of the target; `overlapping-edits` (SPEC-010 D5c) — two of its own edit ranges genuinely overlap within a file (spec.md's overlapping-range clause). Absent whenever `source` is `lsp`, and absent for the FR-003a unavailable/runtime-failed degradation routes (those carry no reason here).",
+      "description": "Present when an ok-status LSP workspace edit was rejected as unusable and the WHOLE rename degraded to the graph derivation instead (never a per-file merge): `incomplete-coverage` (SPEC-010 D3) — it was missing at least one file the graph already knows carries a span-verified occurrence of the target; `overlapping-edits` (SPEC-010 D5c) — two of its own edit ranges genuinely overlap within a file (spec.md's overlapping-range clause); `unsupported-edits` (SPEC-010 A2) — it carried an edit shape the symbol writer cannot honor (a documentChanges resource operation, or an in-root edit with a multiline range or empty live-derived oldText). Absent whenever `source` is `lsp`, and absent for the FR-003a unavailable/runtime-failed degradation routes (those carry no reason here).",
       "type": "string",
-      "enum": ["incomplete-coverage", "overlapping-edits"]
+      "enum": ["incomplete-coverage", "overlapping-edits", "unsupported-edits"]
     },
     "leftoverMentions": {
       "description": "Optional, non-gating FYI count of old-name occurrences NOT edited (comments, docstrings, strings, and dispatch sites of synthesized heuristic edges). FR-013. Omitted when not computed.",
@@ -71,7 +71,11 @@
       }
     },
     "recovery": { "$ref": "#/definitions/recovery" },
-    "writeFailure": { "$ref": "#/definitions/writeFailure" }
+    "writeFailure": { "$ref": "#/definitions/writeFailure" },
+    "resyncFailed": {
+      "description": "Present (true) on a `rolled-back` outcome whose own post-restore re-sync failed (threw or returned the lock-failure zero-shape) after the bytes were restored (SPEC-010 B2 review finding). The workspace is restored but the index is stale — the caller must run `codegraph sync`.",
+      "type": "boolean"
+    }
   },
   "definitions": {
     "position": {
@@ -118,6 +122,7 @@
       "description": "Present on a recoverable refusal (FR-007/FR-010/FR-011/FR-015/FR-016/FR-017/not-indexed). Success-shaped on both surfaces — never isError (FR-023). The one exception (rollback-failed, FR-019a) is error-shaped and carries `recovery` instead.",
       "type": "object",
       "required": ["reason", "message"],
+      "additionalProperties": false,
       "properties": {
         "reason": {
           "type": "string",
@@ -141,6 +146,7 @@
           "items": {
             "type": "object",
             "required": ["name", "kind", "file", "line", "selector"],
+            "additionalProperties": false,
             "properties": {
               "name": { "type": "string" },
               "kind": { "type": "string" },
@@ -170,12 +176,12 @@
     "recovery": {
       "description": "Present ONLY on outcome `rollback-failed` (FR-019a) — the sole error-shaped malfunction (MCP isError:true / CLI exit 4). Reports the post-rollback restore state so a caller can retry the restore step alone (an idempotent write-back of known snapshot bytes), never the rename itself.",
       "type": "object",
-      "required": ["restoredFiles", "unrestoredFiles", "recoveryDir"],
+      "required": ["restoredFiles", "unrestoredFiles"],
       "additionalProperties": false,
       "properties": {
         "restoredFiles": { "type": "array", "items": { "type": "string" }, "description": "Touched files confirmed restored byte-identically from snapshot." },
         "unrestoredFiles": { "type": "array", "items": { "type": "string" }, "description": "Touched files whose snapshot could NOT be written back (EACCES / ENOSPC / EPERM / ...)." },
-        "recoveryDir": { "type": "string", "description": "Per-incident directory holding the unrestored snapshots: .codegraph/rename-recovery-<pid>-<hex>/." }
+        "recoveryDir": { "type": "string", "description": "Per-incident directory holding the unrestored snapshots: .codegraph/rename-recovery-<pid>-<hex>/. Absent (SPEC-010 B5) when the recovery dump itself also failed — the unrestored files still need manual attention, but no dump was written." }
       }
     },
     "writeFailure": {

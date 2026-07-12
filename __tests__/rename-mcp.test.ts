@@ -278,6 +278,33 @@ describe('T044 codegraph_rename — success-shaped refusals, one isError', () =>
     expect(JSON.parse(textOf(mcp)).refusal.reason).toBe('invalid-argument');
   });
 
+  it('over-limit inputs (resource-abuse caps) → success-shaped invalid-argument refusal naming the argument, no isError (C3)', async () => {
+    const { cg } = await indexedFixture(HEURISTIC);
+    const handler = new ToolHandler(cg);
+    // Every over-limit input is capped BEFORE the graph query (parity with the
+    // MAX_INPUT_LENGTH / MAX_PATH_LENGTH caps every other tool applies), but stays
+    // inside the rename taxonomy: a success-shaped invalid-argument refusal
+    // (FR-021a/FR-023) naming the offending argument — never the generic
+    // errorResult a read tool uses for the same abuse (which would isError).
+    // target/newName cap at MAX_INPUT_LENGTH (10 000); file at MAX_PATH_LENGTH (4 096).
+    const overTarget = await handler.execute('codegraph_rename', { target: 'a'.repeat(10_001), newName: 'gadget' });
+    expect(overTarget.isError).toBeUndefined();
+    const p1 = JSON.parse(textOf(overTarget));
+    expect(p1.applied).toBe(false);
+    expect(p1.refusal.reason).toBe('invalid-argument');
+    expect(p1.refusal.message).toMatch(/target/);
+
+    const overFile = await handler.execute('codegraph_rename', {
+      target: 'widget',
+      newName: 'gadget',
+      file: 'f'.repeat(4_097),
+    });
+    expect(overFile.isError).toBeUndefined();
+    const p2 = JSON.parse(textOf(overFile));
+    expect(p2.refusal.reason).toBe('invalid-argument');
+    expect(p2.refusal.message).toMatch(/file/);
+  });
+
   it('excluded kind (import) → success-shaped excluded-kind refusal, no isError', async () => {
     const { cg } = await indexedFixture(IMPORT_NODE);
     const mcp = await new ToolHandler(cg).execute('codegraph_rename', { target: 'lodashx', newName: 'X', kind: 'import' });
@@ -319,7 +346,18 @@ describe('T044 codegraph_rename — success-shaped refusals, one isError', () =>
       }
 
       expect(mcp!.isError).toBe(true);
-      const res = JSON.parse(textOf(mcp!).replace(/^Error: /, ''));
+      // C2: the sole isError terminal must be BYTE-IDENTICAL to the CLI
+      // `--apply --json` output — the same canonical serializer string with NO
+      // `Error: ` prefix (the old errorResult wrapper broke SC-005 parity, and
+      // this test formerly hid it by stripping the prefix before parsing). Parse
+      // the payload directly — no prefix to strip.
+      const text = textOf(mcp!);
+      expect(text.startsWith('Error:')).toBe(false);
+      const res = JSON.parse(text);
+      // Byte-identical to the canonical serializer output (minified, schema key
+      // order): round-tripping the parsed object reproduces the exact string,
+      // proving no prefix / whitespace divergence from `serializeApplyResultJson`.
+      expect(text).toBe(JSON.stringify(res));
       expect(res.outcome).toBe('rollback-failed');
       expect(res.recovery.unrestoredFiles.some((f: string) => f.endsWith('caller.ts'))).toBe(true);
       expect(res.recovery.recoveryDir).toMatch(/rename-recovery-/);
@@ -362,5 +400,17 @@ describe('T045 codegraph_rename — exposure + write annotations', () => {
     const cloned = new ToolHandler(null).getTools().find((t) => t.name === 'codegraph_rename');
     expect(cloned!.annotations).toEqual(RENAME_ANNOTATIONS);
     expect(cloned!.inputSchema.required ?? []).toContain('projectPath');
+  });
+
+  it('survives the tiny-repo tool filter on a small live project — getTools() still lists codegraph_rename (C1)', async () => {
+    // A real indexed project under TINY_REPO_FILE_THRESHOLD (500 files) trims
+    // tools/list to the core set. That gating rationale is the read-flow tool
+    // salience A/Bs — the WRITE tool never competed in those — so the filter
+    // must not drop it, else codegraph_rename vanishes from tools/list on every
+    // small repo (most real targets). No allowlist → the default surface.
+    delete process.env[ENV];
+    const { cg } = await indexedFixture(HEURISTIC); // one file, well under 500
+    const listed = new ToolHandler(cg).getTools().map((t) => t.name);
+    expect(listed).toContain('codegraph_rename');
   });
 });

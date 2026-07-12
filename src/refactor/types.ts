@@ -146,11 +146,18 @@ export type EditSource = 'lsp' | 'graph';
  *   `writeEdits` keeps its own apply-time check as defense-in-depth). A
  *   fully-coincident duplicate is NOT an overlap; it still de-duplicates as
  *   usual at write time.
+ * - `unsupported-edits` — the LSP result carried an edit SHAPE the symbol
+ *   writer cannot honor: a `documentChanges` resource operation (Create/
+ *   Rename/DeleteFile), or an in-root text edit with a multiline range or an
+ *   empty live-derived `oldText` (both of which `writeEdits` would apply as an
+ *   insert-at-start rather than a replace, corrupting the file). SPEC-010 A2 —
+ *   the same "unusable rename result degrades to the graph path" contract as
+ *   the two reasons above.
  * Distinct from the FR-003a `unavailable`/`failed` degradation routes (a
  * probe failure or a runtime crash/timeout) — those carry no reason here;
  * this field is populated ONLY for an ok-but-unusable result.
  */
-export type LspDegradationReason = 'incomplete-coverage' | 'overlapping-edits';
+export type LspDegradationReason = 'incomplete-coverage' | 'overlapping-edits' | 'unsupported-edits';
 
 /**
  * Aggregate confidence over a plan's edits, driving the `--apply` gate
@@ -287,6 +294,9 @@ export interface RenamePlan {
   /** Present when a Rung-4 write/rename malfunction forced the rollback
    *  (`rolled-back` or `rollback-failed`) — D5 review finding. */
   writeFailure?: WriteFailure;
+  /** Present (`true`) on a `rolled-back` outcome whose own post-restore re-sync
+   *  failed — the bytes are restored but the index is stale (B2 review finding). */
+  resyncFailed?: boolean;
 }
 
 // =============================================================================
@@ -371,8 +381,11 @@ export interface RecoveryInfo {
   /** Touched files whose snapshot could NOT be written back (EACCES/ENOSPC/…). */
   unrestoredFiles: string[];
   /** Per-incident dir holding the unrestored snapshots
-   *  (`.codegraph/rename-recovery-<pid>-<hex>/`). */
-  recoveryDir: string;
+   *  (`.codegraph/rename-recovery-<pid>-<hex>/`). Optional (B5 review finding):
+   *  ABSENT when the recovery dump itself also failed (e.g. `.codegraph`
+   *  unwritable) — the unrestored files still need manual attention, but no dump
+   *  was written. */
+  recoveryDir?: string;
 }
 
 /**
@@ -414,6 +427,12 @@ export interface ApplyResult {
   /** Present when a Rung-4 write/rename malfunction forced the rollback that
    *  led to `outcome` `rolled-back` or `rollback-failed` (D5 review finding). */
   writeFailure?: WriteFailure;
+  /** `true` when the rollback's OWN post-restore re-sync failed (threw, or
+   *  returned the lock-failure zero-shape) AFTER the bytes were restored (B2
+   *  review finding). The workspace IS restored (`rolled-back`), but the index no
+   *  longer matches it — the caller must `codegraph sync`. Only ever set on a
+   *  `rolled-back` outcome. */
+  resyncFailed?: boolean;
 }
 
 // =============================================================================

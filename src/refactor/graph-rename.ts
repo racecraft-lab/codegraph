@@ -141,6 +141,11 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
     const lineText = lineAt(ref.sourceFilePath, ref.line);
     const range = verifySpan({ lineText, start: { line: ref.line, column: ref.column }, oldName });
     if (!range) continue; // FR-005: shadow / alias / string-similar / drift → drop
+    // A4 (rp-review): skip an occurrence already emitted (two edges recording the
+    // SAME occurrence, or an edge landing on the declaration's own position) —
+    // keyed on the verifySpan-returned range start, so the plan preview/JSON never
+    // shows a duplicate edit even though writeEdits would de-dup it at write time.
+    if (emitted.has(`${ref.sourceFilePath}:${range.start.line}:${range.start.column}`)) continue;
     push(ref.sourceFilePath, range, lineText, tier);
   }
 

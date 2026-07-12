@@ -1460,7 +1460,7 @@ function printApplyResult(result: ApplyResult, newName: string, json?: boolean):
  */
 program
   .command('rename <target> <new-name>')
-  .description('Preview a graph-aware rename as a dry-run plan (no files are written)')
+  .description('Preview a graph-aware rename as a dry-run plan; pass --apply to execute it')
   .option('-p, --path <path>', 'Project path')
   .option('--file <file>', 'Narrow the target to a declaration in this file (qualifier)')
   .option('--kind <kind>', 'Narrow the target to this NodeKind — function, method, class, … (qualifier)')

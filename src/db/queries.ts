@@ -2492,9 +2492,14 @@ export class QueryBuilder {
     for (let i = 0; i < filePaths.length; i += SQLITE_PARAM_CHUNK_SIZE) {
       const chunk = filePaths.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
       const placeholders = chunk.map(() => '?').join(',');
+      // B6 (rp-review): also match `name_tail` (the last segment of a dotted/
+      // scoped reference name — `util.oldName`/`Mod::oldName` → `oldName`), written
+      // when a ref is marked failed. A genuine QUALIFIED dangle keeps its dotted
+      // reference_name, so a bare `reference_name = ?` match MISSED it and the
+      // FR-018 post-check wrongly passed. Bind the name twice.
       const chunkRows = this.db
-        .prepare(`SELECT * FROM unresolved_refs WHERE reference_name = ? AND file_path IN (${placeholders})`)
-        .all(name, ...chunk) as UnresolvedRefRow[];
+        .prepare(`SELECT * FROM unresolved_refs WHERE (reference_name = ? OR name_tail = ?) AND file_path IN (${placeholders})`)
+        .all(name, name, ...chunk) as UnresolvedRefRow[];
       rows.push(...chunkRows);
     }
 

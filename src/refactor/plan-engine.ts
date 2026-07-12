@@ -61,7 +61,7 @@ import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
 import { checkPlanJail } from './jail';
 import { deriveLspRename } from './lsp-rename';
 import { hasOverlappingSpans } from './snapshot';
-import { LspPathDisposition, resolveTarget } from './target-resolver';
+import { GRAPH_LOCAL_KINDS, LspPathDisposition, resolveTarget } from './target-resolver';
 import {
   EditSource,
   LspDegradationReason,
@@ -125,6 +125,34 @@ export async function planRename(options: PlanRenameOptions): Promise<RenamePlan
   }
 
   const { edits, source, leftoverMentions, lspDegradation, candidateFiles } = await deriveEdits(options, target, targetId);
+
+  // A1 (rp-review) — graph-local runtime-degrade refusal (FR-010 / FR-003a).
+  // A variable/parameter target is only admitted by resolveTarget when the LSP
+  // command PROBE reported `available` (target-resolver.ts) — but if the LSP
+  // rename then fails at RUNTIME or its result was unusable, `deriveEdits`
+  // silently falls back to `deriveGraphRename`, which cannot cover a local (no
+  // tracked usage edges) — yielding a "successful" declaration-only plan that
+  // misses every local usage. The discriminator is the FINAL derivation source:
+  // when a graph-local's edits end up on the graph path, no language server
+  // actually renamed it, so refuse the WHOLE plan rather than ship an incomplete
+  // rename. Truthful per FR-003a/D7 — a server WAS configured (the probe passed);
+  // it just could not complete the rename — so the message never claims none is
+  // configured.
+  if (source === 'graph' && GRAPH_LOCAL_KINDS.has(target.kind)) {
+    return {
+      newName,
+      applied: false,
+      refusal: {
+        reason: 'unsupported-kind-graph-local',
+        message:
+          `Cannot rename the ${target.kind} "${target.name}": renaming a local or parameter needs a working ` +
+          `language server, but the LSP rename could not be completed (the server attempt failed at runtime or ` +
+          `returned an unusable result), so the rename fell back to the graph path — which has no local usage ` +
+          `tracking. Re-run once the language server is working.`,
+      },
+    };
+  }
+
   const ordered = sortEdits(edits);
 
   // FR-017 plan-time path jail + index-scope guard — refuse the whole plan at plan
@@ -159,6 +187,27 @@ export async function planRename(options: PlanRenameOptions): Promise<RenamePlan
           `Refusing the rename: the live bytes of ${drifted.join(', ')} no longer match ` +
           `the index (the index is stale). Run \`codegraph sync\` and retry.`,
         files: drifted,
+      },
+    };
+  }
+
+  // A3 (rp-review) — a resolved target whose ordered edit set is EMPTY (the
+  // declaration edit dropped because its recorded span no longer locates the
+  // name in the live file, with no references, while the file is NOT drifted so
+  // D4 passed) must not return a success plan with `edits: []`: the published
+  // schema requires `edits.minItems: 1`, and `aggregateConfidence([])` would
+  // misleadingly report `all-exact`. Refuse `stale-span` naming the declaration
+  // file — the same re-sync-and-retry remedy as a drifted candidate (FR-005).
+  if (ordered.length === 0) {
+    return {
+      newName,
+      applied: false,
+      refusal: {
+        reason: 'stale-span',
+        message:
+          `Refusing the rename: the recorded declaration span of "${target.name}" in ${target.file} could no ` +
+          `longer be located in the live file (the index is stale). Run \`codegraph sync\` and retry.`,
+        files: [target.file],
       },
     };
   }
@@ -212,6 +261,23 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
       env,
     });
     if (result.status === 'ok') {
+      // A2 (rp-review): the LSP result carried an edit SHAPE the writer cannot
+      // honor (a documentChanges resource operation, or an in-root multiline /
+      // empty-oldText edit — {@link translateWorkspaceEdit}). Per FR-003a's
+      // unusable-result contract, degrade the WHOLE rename to the graph
+      // derivation. Checked FIRST — an unusable shape is unusable regardless of
+      // coverage/overlap. The out-of-root refuse-before-read placeholder is NOT
+      // flagged unusable (content checks are in-root only), so its whole-plan
+      // out-of-root refusal (via checkPlanJail, below) still wins.
+      if (result.unusable) {
+        return {
+          edits: graph.edits,
+          source: 'graph',
+          leftoverMentions: graph.leftoverMentions,
+          lspDegradation: 'unsupported-edits',
+          candidateFiles: graph.candidateFiles,
+        };
+      }
       // D5c: a genuinely-overlapping LSP edit set is ALSO unusable (spec.md's
       // overlapping-range clause, applied here at PLAN time — writeEdits keeps
       // its own apply-time check as defense-in-depth). Checked only when
@@ -221,11 +287,15 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
       if (covers && !hasOverlappingLspEdits(result.edits)) {
         // LSP edit set is authoritative (it already includes the declaration
         // edit); the leftover count still comes from the graph-side whole-word
-        // logic, run over the LSP-touched files.
+        // logic, run over the LSP-touched files. A4 (rp-review): de-duplicate
+        // identical (file+range+newText) edits before returning them, so the
+        // dry-run preview/JSON never shows a duplicate (writeEdits still de-dups
+        // at write time as defense-in-depth).
+        const deduped = dedupeLspEdits(result.edits);
         return {
-          edits: result.edits,
+          edits: deduped,
           source: 'lsp',
-          leftoverMentions: countLspLeftovers(projectRoot, target.name, result.edits),
+          leftoverMentions: countLspLeftovers(projectRoot, target.name, deduped),
           candidateFiles: graph.candidateFiles,
         };
       }
@@ -369,23 +439,55 @@ function lspCursorPosition(projectRoot: string, target: Target): SourcePosition 
  * whole plan is about to be refused over is moot anyway).
  */
 function countLspLeftovers(projectRoot: string, oldName: string, edits: RenameEdit[]): number {
-  const files = [...new Set(edits.map((e) => e.file))]
-    .filter((file) => validatePathWithinRoot(projectRoot, file) !== null)
-    .map((file) => ({
-      file,
-      lines: fs.readFileSync(path.join(projectRoot, file), 'utf8').split('\n'),
-    }));
+  // A5 (rp-review): guard the per-file read. Normally these files were just read
+  // by translateWorkspaceEdit (lsp-rename.ts) moments ago, but a file the server
+  // invented, or one deleted in the plan→count window (TOCTOU), must not throw an
+  // uncaught internal error here — BEFORE the downstream D4 drift guard can refuse
+  // `stale-span`. An unreadable file contributes no leftover lines (skip it); its
+  // presence in the edit set still flows into `driftCandidates`, so the drift
+  // guard refuses the whole plan (no `files` row / doesn't stat). Mirrors
+  // deriveGraphRename's own defensive read (graph-rename.ts).
+  const files: Array<{ file: string; lines: string[] }> = [];
+  for (const file of new Set(edits.map((e) => e.file))) {
+    if (validatePathWithinRoot(projectRoot, file) === null) continue;
+    try {
+      files.push({ file, lines: fs.readFileSync(path.join(projectRoot, file), 'utf8').split('\n') });
+    } catch {
+      // unreadable (invented / deleted since translate) — no leftover lines
+    }
+  }
   const emitted = new Set(edits.map((e) => `${e.file}:${e.range.start.line}:${e.range.start.column}`));
   return countTextualLeftovers(files, oldName, emitted);
 }
 
-/** Deterministic total order for byte-identical CLI≡MCP parity (FR-027/SC-005). */
+/**
+ * A4 (rp-review) — de-duplicate identical LSP edits (same file + range +
+ * newText) from an accepted LSP result before it becomes the plan, keyed the
+ * SAME way writeEdits keys its own write-time de-dup. Preserves first-seen order
+ * (sortEdits re-orders deterministically afterwards).
+ */
+function dedupeLspEdits(edits: RenameEdit[]): RenameEdit[] {
+  const seen = new Set<string>();
+  return edits.filter((e) => {
+    const key = `${e.file}:${e.range.start.line}:${e.range.start.column}:${e.range.end.line}:${e.range.end.column}:${e.newText}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Deterministic total order for byte-identical CLI≡MCP parity (FR-027/SC-005).
+ *  A4 (rp-review): full tie-breakers (end line, end column, then codepoint of
+ *  newText) so two edits sharing a start can never depend on SQL/server order. */
 function sortEdits(edits: RenameEdit[]): RenameEdit[] {
   return [...edits].sort(
     (a, b) =>
       byCodepoint(a.file, b.file) ||
       a.range.start.line - b.range.start.line ||
-      a.range.start.column - b.range.start.column,
+      a.range.start.column - b.range.start.column ||
+      a.range.end.line - b.range.end.line ||
+      a.range.end.column - b.range.end.column ||
+      byCodepoint(a.newText, b.newText),
   );
 }
 

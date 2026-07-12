@@ -98,11 +98,27 @@ describe('Live tool surface keeps annotations with a project open (#1018)', () =
     else process.env[ENV] = original;
   });
 
-  it('getTools() keeps annotations, incl. codegraph_explore whose description is rebuilt', () => {
+  it('getTools() exposes the write tool with its OWN annotations and keeps read tools read-only (C8)', () => {
     process.env[ENV] = ALL_TOOLS;
     const got = new ToolHandler(cg).getTools();
     expect(got.length).toBeGreaterThan(0);
-    for (const tool of got) expectReadOnly(tool);
+
+    // Partition read vs write rather than sweeping read-only over WHATEVER
+    // getTools() returns: that sweep masked C1 — the tiny-repo filter silently
+    // dropped codegraph_rename from this small live project's tools/list, so the
+    // sweep stayed green over the surviving read tools and never noticed the
+    // write tool had vanished (and, had it been retained, would have wrongly
+    // asserted it read-only). Assert the write tool IS present and carries its
+    // mutating annotations; assert the read set stays read-only.
+    const rename = got.find((t) => t.name === 'codegraph_rename');
+    expect(rename, 'codegraph_rename must be exposed on the live small-project tools/list').toBeDefined();
+    expect(rename!.annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+    for (const tool of got) if (!WRITE_TOOLS.has(tool.name)) expectReadOnly(tool);
 
     // explore's description is regenerated with a per-repo budget suffix via
     // object spread; the annotation must survive that rewrite.

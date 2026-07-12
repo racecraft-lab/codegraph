@@ -99,6 +99,14 @@ const MAX_INPUT_LENGTH = 10_000;
 const MAX_PATH_LENGTH = 4_096;
 
 /**
+ * Maximum length for the rename `kind` qualifier. A NodeKind is always a short
+ * identifier (`enum_member` is the longest), so a value past a small bound is
+ * abuse — capped so it can't reach the resolver or bloat the invalid-argument
+ * message that echoes it back (FR-021a).
+ */
+const MAX_RENAME_KIND_LENGTH = 64;
+
+/**
  * Rust path roots that have no file-system equivalent — `crate` is the
  * current crate, `super` is the parent module, `self` is the current
  * module. Used by `matchesSymbol` to strip these before file-path
@@ -1092,6 +1100,12 @@ export class ToolHandler {
         'codegraph_explore',
         'codegraph_search',
         'codegraph_node',
+        // The write tool is exempt from the tiny-repo trim: the gating above is
+        // calibrated on read-flow tool-salience A/Bs (which read tools an agent
+        // recoups overhead on at tiny scale) — codegraph_rename never competed
+        // in those. Dropping it here would hide rename from tools/list on every
+        // repo under the threshold (most real targets), so it must survive (C1).
+        'codegraph_rename',
       ]);
       if (stats.fileCount < TINY_REPO_FILE_THRESHOLD) {
         visible = visible.filter(t => TINY_REPO_CORE_TOOLS.has(t.name));
@@ -4319,6 +4333,37 @@ export class ToolHandler {
     const kind = typeof args.kind === 'string' ? args.kind : undefined;
     const selector = { name: target, file, kind };
 
+    // Resource-abuse caps — the same MAX_INPUT_LENGTH / MAX_PATH_LENGTH bounds
+    // every other tool enforces via validateString/validateOptionalPath (a 10MB+
+    // argument could pin the graph query or bloat the echoed-back message). But an
+    // over-limit rename input stays in the rename taxonomy: a success-shaped
+    // invalid-argument refusal (FR-021a/FR-023) naming the offending argument, so
+    // the caller always gets RenamePlan-shaped JSON and never the isError generic
+    // errorResult. Checked BEFORE resolution so an oversized name never reaches
+    // getNodesByName.
+    const tooLong =
+      target.length > MAX_INPUT_LENGTH
+        ? { arg: 'target', max: MAX_INPUT_LENGTH, len: target.length }
+        : newName.length > MAX_INPUT_LENGTH
+          ? { arg: 'newName', max: MAX_INPUT_LENGTH, len: newName.length }
+          : file !== undefined && file.length > MAX_PATH_LENGTH
+            ? { arg: 'file', max: MAX_PATH_LENGTH, len: file.length }
+            : kind !== undefined && kind.length > MAX_RENAME_KIND_LENGTH
+              ? { arg: 'kind', max: MAX_RENAME_KIND_LENGTH, len: kind.length }
+              : undefined;
+    if (tooLong) {
+      return this.textResult(
+        serializeRenamePlanJson({
+          newName,
+          applied: false,
+          refusal: {
+            reason: 'invalid-argument',
+            message: `The ${tooLong.arg} argument exceeds the maximum allowed length of ${tooLong.max} characters (got ${tooLong.len}) — provide a shorter ${tooLong.arg}.`,
+          },
+        }),
+      );
+    }
+
     let cg: CodeGraph;
     try {
       cg = this.getCodeGraph(args.projectPath as string | undefined);
@@ -4358,9 +4403,14 @@ export class ToolHandler {
       });
       const json = serializeApplyResultJson(result, newName);
       // Every terminal is success-shaped EXCEPT a failed rollback restore (FR-019a),
-      // the sole malfunction — errorResult so a client that gates on isError knows
-      // the workspace was left partially modified and the recovery dir must be read.
-      return result.outcome === 'rollback-failed' ? this.errorResult(json) : this.textResult(json);
+      // the sole malfunction — flagged isError so a client that gates on it knows the
+      // workspace was left partially modified and the recovery dir must be read. The
+      // text is the RAW serializer JSON (never errorResult's `Error: ` prefix): the
+      // isError terminal must stay BYTE-IDENTICAL to the CLI `--apply --json` output
+      // so the documented CLI/MCP parity holds for every terminal (SC-005).
+      return result.outcome === 'rollback-failed'
+        ? { content: [{ type: 'text', text: json }], isError: true }
+        : this.textResult(json);
     }
 
     return this.textResult(serializeRenamePlanJson(await cg.planRename(selector, newName)));

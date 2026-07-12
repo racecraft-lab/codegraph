@@ -40,7 +40,18 @@ import {
   formatRenamePlanTable,
   serializeRenamePlanJson,
 } from '../src/refactor/plan-format';
-import type { ApplyResult, RenameEdit, RenamePlan } from '../src/refactor/types';
+import type { ApplyResult, RecoveryInfo, RenameEdit, RenamePlan, Refusal } from '../src/refactor/types';
+// R6 (rp-review A6) — the public rename API types MUST be importable from the
+// package entry, not only via a deep `src/refactor/types` import. Aliased to
+// avoid clashing with the deep-import names above; this line is the compile-time
+// pin (tsc fails if any is not re-exported from `../src`).
+import type {
+  TargetSelector as PubTargetSelector,
+  RenamePlan as PubRenamePlan,
+  ApplyResult as PubApplyResult,
+  RenameEdit as PubRenameEdit,
+  Refusal as PubRefusal,
+} from '../src';
 
 // ---------------------------------------------------------------------------
 // Shared draft-07-subset schema validator (module scope so both the plan-
@@ -1335,9 +1346,10 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     expect(plan.refusal).toBeUndefined();
     expect(plan.source).toBe('lsp');
     expect(plan.lspDegradation).toBeUndefined();
-    // De-dup is writeEdits' (apply-time) job, not the plan renderer's — the
-    // dry-run plan still carries both occurrences of the duplicate verbatim.
-    expect(plan.edits).toHaveLength(2);
+    // rp-review A4: identical (file+range+newText) LSP edits are now de-duplicated
+    // at plan derivation too (not only at writeEdits' apply-time write), so the
+    // dry-run preview/JSON never shows the duplicate occurrence twice.
+    expect(plan.edits).toHaveLength(1);
   });
 
   it('uses the graph path directly when LSP is disabled — never attempts a server', async () => {
@@ -2018,6 +2030,62 @@ describe('formatApplyResultTable rolled-back message keys on the actual cause (C
     expect(table).not.toContain('a write to');
     expect(table).toContain('index lock');
     expect(table).toContain('no file was left modified.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C6 (rp-review) — the rollback-failed recovery guidance must be ACTIONABLE.
+// The old unconditional line "Retrying the restore step alone is safe; do NOT
+// re-run the rename" instructed the impossible: no CLI command performs a
+// standalone restore. When the snapshot dump succeeded, its dir holds the
+// pre-apply bytes of the NOT-restored files (mirroring their relative paths) —
+// copy them back and re-sync. When the dump ALSO failed (B5 — no dir), say so
+// and flag the files for manual attention. Both keep "Do NOT re-run the rename".
+// Pure over an ApplyResult value object (no DB), like the block above.
+// ---------------------------------------------------------------------------
+describe('formatApplyResultTable rollback-failed guidance is actionable (C6)', () => {
+  function rollbackFailed(recovery: RecoveryInfo): ApplyResult {
+    return {
+      outcome: 'rollback-failed',
+      touchedFiles: ['decl.ts', 'caller.ts'],
+      postCheckPassed: false,
+      recovery,
+    };
+  }
+
+  it('with a recovery dir → concrete copy-back + `codegraph sync` steps, never the impossible standalone-restore line', () => {
+    const table = formatApplyResultTable(
+      rollbackFailed({
+        restoredFiles: ['decl.ts'],
+        unrestoredFiles: ['caller.ts'],
+        recoveryDir: '/proj/.codegraph/rename-recovery-123-abc',
+      }),
+      'gadget',
+    );
+    expect(table).toContain('recovery dir: /proj/.codegraph/rename-recovery-123-abc');
+    // Actionable: copy the preserved pre-apply bytes back, then re-sync the index.
+    expect(table).toMatch(/copy/i);
+    expect(table).toContain('codegraph sync');
+    expect(table).toContain('Do NOT re-run the rename.');
+    // The old instruct-the-impossible line is gone.
+    expect(table).not.toContain('Retrying the restore step alone is safe');
+  });
+
+  it('without a recovery dir (dump also failed, B5) → says the dump failed + names the files for manual attention, still "Do NOT re-run"', () => {
+    const table = formatApplyResultTable(
+      rollbackFailed({
+        restoredFiles: [],
+        unrestoredFiles: ['caller.ts'],
+        // recoveryDir intentionally absent — the dump itself failed.
+      }),
+      'gadget',
+    );
+    expect(table).toContain('the snapshot dump also failed');
+    expect(table).toMatch(/manual attention/i);
+    expect(table).toContain('codegraph sync');
+    expect(table).toContain('Do NOT re-run the rename.');
+    expect(table).not.toContain('Retrying the restore step alone is safe');
+    expect(table).not.toMatch(/recovery dir: undefined/);
   });
 });
 
@@ -2908,5 +2976,604 @@ describe('D2 refusal candidate surface — formatRenamePlanTable (FR-007)', () =
     expect(bare).toContain('target-not-found');
     expect(bare).toContain('No symbol matches "oldFn".');
     expect(bare).not.toMatch(/candidates:|valid kinds:|files:|gated edits:/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R1 (rp-review A1) — a graph-local target (variable/parameter) admitted by the
+// resolver because the LSP command PROBE said `available`, but whose LSP rename
+// then FAILS at runtime (or degrades to an unusable result), must NOT silently
+// fall back to a declaration-only graph plan that misses every local usage: the
+// whole rename refuses `unsupported-kind-graph-local`. The discriminator is the
+// FINAL derivation source — when a graph-local's edits end up on the graph path,
+// no language server actually renamed it, so the graph coverage gap is real.
+// Real SQLite + a hand-inserted `variable` node (locals aren't extracted) driven
+// through a real stub server that crashes mid-rename (T012 harness + stub).
+// ---------------------------------------------------------------------------
+describe('R1 graph-local runtime-degrade refusal — planRename (FR-010/FR-003a)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  async function setup(files: Record<string, string>): Promise<{ dir: string; queries: QueryBuilder }> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r1-'));
+    for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), content);
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    return { dir, queries };
+  }
+
+  it('a variable whose LSP rename crashes at runtime degrades to graph → refuses unsupported-kind-graph-local (never a declaration-only plan), truthfully', async () => {
+    const line = 'export function holder(localVarX) { return localVarX; }';
+    const { dir, queries } = await setup({ 'm.ts': line + '\n' });
+    const stub = writeRenameStub(dir);
+    // Hand-insert the local (the TS extractor never emits a `variable` node for a
+    // param/local) so the target resolves; its probe says `available` (the stub
+    // command exists), so the resolver admits it — the LSP path is only attempted
+    // at derivation, where the stub crashes.
+    queries.insertNode({
+      id: 'test:variable:localVarX',
+      kind: 'variable',
+      name: 'localVarX',
+      qualifiedName: 'localVarX',
+      filePath: 'm.ts',
+      language: 'typescript',
+      startLine: 1,
+      endLine: 1,
+      startColumn: line.indexOf('localVarX'),
+      endColumn: line.indexOf('localVarX') + 'localVarX'.length,
+      updatedAt: Date.now(),
+    });
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'localVarX', kind: 'variable' },
+      newName: 'renamedX',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'crash' }, // probe passes (command exists), rename exchange crashes → graph
+    });
+
+    expect(plan.refusal?.reason).toBe('unsupported-kind-graph-local');
+    // Truthful (D7 precedent): names the language-server dependency, never claims
+    // no server is configured (one WAS configured — it just failed at runtime).
+    expect(plan.refusal?.message).toMatch(/language server/i);
+    expect(plan.refusal?.message).not.toMatch(/none is configured or found/i);
+    expect(plan.refusal?.message).not.toMatch(/not on PATH/i);
+    // Whole-plan refusal: no partial (declaration-only) edit set is leaked.
+    expect(plan.edits).toBeUndefined();
+    expect(plan.target).toBeUndefined();
+    expect(plan.applied).toBe(false);
+  });
+
+  it('a parameter that degrades to graph is likewise refused unsupported-kind-graph-local', async () => {
+    const line = 'export function holder(paramP) { return paramP; }';
+    const { dir, queries } = await setup({ 'm.ts': line + '\n' });
+    const stub = writeRenameStub(dir);
+    queries.insertNode({
+      id: 'test:parameter:paramP',
+      kind: 'parameter',
+      name: 'paramP',
+      qualifiedName: 'paramP',
+      filePath: 'm.ts',
+      language: 'typescript',
+      startLine: 1,
+      endLine: 1,
+      startColumn: line.indexOf('paramP'),
+      endColumn: line.indexOf('paramP') + 'paramP'.length,
+      updatedAt: Date.now(),
+    });
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'paramP', kind: 'parameter' },
+      newName: 'renamedP',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'crash' },
+    });
+
+    expect(plan.refusal?.reason).toBe('unsupported-kind-graph-local');
+    expect(plan.edits).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2 (rp-review A2) — an `ok`-status LSP result whose edit SHAPES are unusable
+// must degrade the WHOLE rename to the graph path, recording the new
+// lspDegradation `unsupported-edits`, rather than being applied verbatim (which
+// would corrupt files). Three unusable shapes: (a) a documentChanges resource
+// operation (Create/Rename/DeleteFile) the writer cannot honor, independent of
+// containment; (b) an IN-ROOT edit with a multiline range (writeEdits derives
+// the end offset from oldText.length, so a multiline range → insert-at-start,
+// not replace); (c) an IN-ROOT edit whose live-derived oldText is empty (same
+// insert-not-replace corruption). The out-of-root refuse-before-read placeholder
+// (also empty oldText) must NOT trip this — its whole-plan out-of-root refusal
+// keeps winning (regression pin). Real SQLite + stub server (T012 harness).
+// ---------------------------------------------------------------------------
+describe('R2 unusable LSP edit shapes degrade to graph — planRename (FR-003a)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const DECL = 'export function target(x) { return x; }';
+  async function setup(): Promise<{ dir: string; queries: QueryBuilder }> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r2-'));
+    fs.writeFileSync(path.join(dir, 'solo.ts'), DECL + '\n');
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    return { dir, queries };
+  }
+
+  async function planWith(dir: string, queries: QueryBuilder, renameResult: unknown) {
+    const stub = writeRenameStub(dir);
+    return planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+  }
+
+  it('(a) a documentChanges RenameFile resource operation → source graph, lspDegradation unsupported-edits', async () => {
+    const { dir, queries } = await setup();
+    const col = DECL.indexOf('target');
+    const soloUri = pathToFileURL(path.join(dir, 'solo.ts')).href;
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: soloUri, version: 1 },
+          edits: [{ range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' }],
+        },
+        // An LSP RenameFile resource op — the symbol writer cannot honor it.
+        { kind: 'rename', oldUri: soloUri, newUri: pathToFileURL(path.join(dir, 'moved.ts')).href },
+      ],
+    };
+    const plan = await planWith(dir, queries, renameResult);
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph');
+    expect(plan.lspDegradation).toBe('unsupported-edits');
+    for (const e of plan.edits!) expect(e.source).toBe('graph');
+    const obj = JSON.parse(serializeRenamePlanJson(plan));
+    expect(obj.lspDegradation).toBe('unsupported-edits');
+    validate(obj, schema); // schema covers the new enum value
+  });
+
+  it('(b) an in-root MULTILINE text edit → source graph, lspDegradation unsupported-edits', async () => {
+    const { dir, queries } = await setup();
+    const col = DECL.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          // A multiline range — end.line !== start.line: writeEdits would derive
+          // the end from oldText.length and insert-at-start instead of replacing.
+          edits: [{ range: { start: { line: 0, character: col }, end: { line: 1, character: 0 } }, newText: 'renamed' }],
+        },
+      ],
+    };
+    const plan = await planWith(dir, queries, renameResult);
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph');
+    expect(plan.lspDegradation).toBe('unsupported-edits');
+  });
+
+  it('(c) an in-root edit whose live-derived oldText is empty (zero-width range) → source graph, lspDegradation unsupported-edits', async () => {
+    const { dir, queries } = await setup();
+    const col = DECL.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          // A zero-width range on one line → oldText '' — an insert masquerading as a rename.
+          edits: [{ range: { start: { line: 0, character: col }, end: { line: 0, character: col } }, newText: 'renamed' }],
+        },
+      ],
+    };
+    const plan = await planWith(dir, queries, renameResult);
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph');
+    expect(plan.lspDegradation).toBe('unsupported-edits');
+  });
+
+  it('(regression) an out-of-root URI still refuses out-of-root — the refuse-before-read placeholder is NOT treated as an unusable-shape degrade', async () => {
+    const { dir, queries } = await setup();
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r2-outside-'));
+    cleanups.push(() => fs.rmSync(outsideDir, { recursive: true, force: true }));
+    const outsideLine = 'export const outsideRef = target;';
+    fs.writeFileSync(path.join(outsideDir, 'outside.ts'), outsideLine + '\n');
+    const col = DECL.indexOf('target');
+    const outCol = outsideLine.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' }],
+        },
+        {
+          textDocument: { uri: pathToFileURL(path.join(outsideDir, 'outside.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: outCol }, end: { line: 0, character: outCol + 6 } }, newText: 'renamed' }],
+        },
+      ],
+    };
+    const plan = await planWith(dir, queries, renameResult);
+    expect(plan.refusal?.reason).toBe('out-of-root');
+    expect(plan.lspDegradation).toBeUndefined();
+    expect(plan.edits).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R3 (rp-review A3) — a resolved target whose ordered edit set comes out EMPTY
+// (e.g. the declaration edit dropped because its recorded span no longer locates
+// the name in the live file, and there are no references) must NOT return a
+// success plan with `edits: []` — the published schema requires edits.minItems:1
+// and aggregateConfidence([]) misleadingly reports `all-exact`. After the jail
+// and D4 drift guards, an empty edit list refuses `stale-span` naming the
+// declaration file. Real SQLite + a hand-inserted node whose position points at
+// a line NOT containing its name, with the file itself index-fresh (D4 passes).
+// ---------------------------------------------------------------------------
+describe('R3 zero-edit plan refuses stale-span — planRename (schema edits.minItems:1)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const disabledLsp = (dir: string) =>
+    resolveLspConfig({ projectRoot: dir, cliActivation: 'disable', env: {} });
+
+  it('a declaration whose recorded span no longer locates the name (no references, file index-fresh) → stale-span, not a 0-edit plan', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r3-'));
+    // The live line does NOT contain "phantom" anywhere — so the declaration edit
+    // (indexOf the name at/after the node start) is dropped, and there are no refs.
+    fs.writeFileSync(path.join(dir, 'm.ts'), 'export function realFn() { return 0; }\n');
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    // A function node recorded at m.ts:1 col 0 — but line 1 is `export function
+    // realFn()...`, which contains no "phantom". The file is NEVER touched after
+    // indexAll, so D4's index-freshness guard passes (content_hash matches) and
+    // the empty-edit path is what must refuse.
+    queries.insertNode({
+      id: 'test:function:phantom',
+      kind: 'function',
+      name: 'phantom',
+      qualifiedName: 'phantom',
+      filePath: 'm.ts',
+      language: 'typescript',
+      startLine: 1,
+      endLine: 1,
+      startColumn: 0,
+      endColumn: 7,
+      updatedAt: Date.now(),
+    });
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'phantom', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal?.reason).toBe('stale-span');
+    expect(plan.refusal?.files).toEqual(['m.ts']);
+    expect(plan.refusal?.message).toMatch(/codegraph sync/);
+    // A zero-edit success plan (schema-invalid: edits.minItems:1) is never leaked.
+    expect(plan.edits).toBeUndefined();
+    expect(plan.confidence).toBeUndefined();
+    expect(plan.applied).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R4 (rp-review A4) — duplicate edits must not survive into the plan preview /
+// JSON, on EITHER path: (1) the graph reference loop skips a candidate whose
+// verified (file,line,col) start was already emitted (two edges recording the
+// same occurrence, or an edge landing on the declaration position); (2) the
+// accepted-LSP path de-duplicates identical (file+range+newText) edits before
+// returning them. (writeEdits already de-dups at write time — this is about the
+// dry-run surface an agent reads.) Real SQLite for the graph case; stub server
+// for the LSP case (T012 harness).
+// ---------------------------------------------------------------------------
+describe('R4 duplicate-edit de-duplication — planRename / deriveGraphRename (FR-027)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const disabledLsp = (dir: string) =>
+    resolveLspConfig({ projectRoot: dir, cliActivation: 'disable', env: {} });
+
+  it('(1) two graph reference edges recording the SAME occurrence yield exactly ONE edit at that occurrence', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r4-'));
+    fs.writeFileSync(
+      path.join(dir, 'lib.ts'),
+      [
+        'export function widget(x) { return x; }', // 1 — declaration
+        'export function caller() { return 0; }', //  2
+        'export function helper() { return 1; }', //  3
+        '// widget mention', //                       4 — the shared occurrence
+      ].join('\n') + '\n',
+    );
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    const widgetId = cg.getNodesByName('widget').find((n) => n.kind === 'function')!.id;
+    const callerId = cg.getNodesByName('caller').find((n) => n.kind === 'function')!.id;
+    const helperId = cg.getNodesByName('helper').find((n) => n.kind === 'function')!.id;
+
+    // Two DISTINCT references edges (different sources → two real DB rows, not
+    // collapsed by the edges unique key) recording the SAME `widget` occurrence
+    // in the comment line (4). Before the fix both push an edit → the plan shows
+    // line 4 twice; after the fix the second is skipped (its start was already
+    // emitted). A third edge lands on the DECLARATION's own position (line 1) —
+    // it too must be skipped as already-emitted.
+    const commentCol = '// widget mention'.indexOf('widget');
+    for (const src of [callerId, helperId]) {
+      queries.insertEdge({
+        source: src,
+        target: widgetId,
+        kind: 'references',
+        line: 4,
+        column: commentCol,
+        metadata: { resolvedBy: 'import', refName: 'widget' },
+      });
+    }
+    const declCol = 'export function widget(x) { return x; }'.indexOf('widget');
+    queries.insertEdge({
+      source: callerId,
+      target: widgetId,
+      kind: 'references',
+      line: 1,
+      column: declCol, // lands on the declaration position — a would-be duplicate
+      metadata: { resolvedBy: 'import', refName: 'widget' },
+    });
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'widget', kind: 'function' },
+      newName: 'gadget',
+      lspConfig: disabledLsp(dir),
+      env: {},
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    // Exactly one edit at line 4 (the shared comment occurrence), one at line 1
+    // (the declaration) — no duplicate from the two edges or the decl-collision edge.
+    expect(plan.edits!.filter((e) => e.range.start.line === 4)).toHaveLength(1);
+    expect(plan.edits!.filter((e) => e.range.start.line === 1)).toHaveLength(1);
+    const keys = plan.edits!.map((e) => `${e.file}:${e.range.start.line}:${e.range.start.column}`);
+    expect(new Set(keys).size).toBe(keys.length); // no duplicate (file,line,col) keys
+  });
+
+  it('R6: the public rename API types are importable from the package entry (compile-time pin)', () => {
+    // A pure type-level assertion — if any of these were not re-exported from
+    // `../src`, the aliased `import type` above would fail tsc. Exercise each so
+    // the symbols are genuinely referenced (not tree-shaken as unused).
+    const sel: PubTargetSelector = { name: 'x' };
+    const refusal: PubRefusal = { reason: 'target-not-found', message: 'no' };
+    const plan: PubRenamePlan = { newName: 'y', applied: false, refusal };
+    const edit: PubRenameEdit = {
+      file: 'a.ts',
+      range: { start: { line: 1, column: 0 }, end: { line: 1, column: 1 } },
+      oldText: 'x',
+      newText: 'y',
+      lineText: 'x',
+      confidence: 'exact',
+      source: 'graph',
+    };
+    const result: PubApplyResult = { outcome: 'refused', touchedFiles: [], postCheckPassed: false, refusal };
+    expect(sel.name).toBe('x');
+    expect(plan.applied).toBe(false);
+    expect(edit.newText).toBe('y');
+    expect(result.outcome).toBe('refused');
+  });
+
+  it('(2) a fully-coincident duplicate LSP text edit is de-duplicated in the accepted-LSP plan (source stays lsp)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r4b-'));
+    fs.writeFileSync(path.join(dir, 'solo.ts'), 'export function target(x) { return x; }\n');
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    const stub = writeRenameStub(dir);
+    const declLine = 'export function target(x) { return x; }';
+    const col = declLine.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' },
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' }, // exact duplicate
+          ],
+        },
+      ],
+    };
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('lsp');
+    expect(plan.lspDegradation).toBeUndefined();
+    expect(plan.edits).toHaveLength(1); // de-duplicated at plan derivation
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R7 (rp-review A7) — the schema's `refusal` definition (and the `candidates`
+// item schema inside it) must be CLOSED (`additionalProperties: false`) like
+// every other definition, so an unknown extra property is rejected. Uses the
+// module-scope draft-07-subset `validate` + `schema` (which enforce
+// additionalProperties:false). Every EXISTING emitted refusal shape must still
+// validate — the closure declares exactly the serializer's canonical surface.
+// ---------------------------------------------------------------------------
+describe('R7 refusal schema is closed — rename-plan.schema.json (additionalProperties:false)', () => {
+  it('an adversarial refusal carrying an unknown extra property FAILS validation', () => {
+    const adversarial = {
+      newName: 'renamed',
+      applied: false,
+      refusal: { reason: 'target-not-found', message: 'no such symbol', bogusExtra: 42 },
+    };
+    expect(() => validate(adversarial, schema)).toThrow();
+  });
+
+  it('an adversarial CANDIDATE carrying an unknown extra property FAILS validation', () => {
+    const adversarial = {
+      newName: 'renamed',
+      applied: false,
+      refusal: {
+        reason: 'ambiguous-target',
+        message: 'several match',
+        candidates: [{ name: 'x', kind: 'function', file: 'a.ts', line: 1, selector: 'X.x', sneaky: true }],
+      },
+    };
+    expect(() => validate(adversarial, schema)).toThrow();
+  });
+
+  it('every legitimately-emitted refusal shape still validates (serializer parity)', () => {
+    // Drive each real refusal through the serializer and validate the JSON — the
+    // schema must match the code's canonical surface, never reject a real field.
+    const refusals: Refusal[] = [
+      { reason: 'target-not-found', message: 'no such symbol' },
+      {
+        reason: 'ambiguous-target',
+        message: 'several match',
+        candidates: [{ name: 'x', kind: 'function', file: 'a.ts', line: 1, selector: 'X.x' }],
+      },
+      { reason: 'stale-span', message: 'drifted', files: ['a.ts', 'b.ts'] },
+      {
+        reason: 'heuristic-gated',
+        message: 'below exact',
+        gatedEdits: [
+          {
+            file: 'a.ts',
+            range: { start: { line: 1, column: 0 }, end: { line: 1, column: 1 } },
+            oldText: 'x',
+            newText: 'y',
+            lineText: 'x',
+            confidence: 'heuristic',
+            source: 'graph',
+          },
+        ],
+      },
+      { reason: 'invalid-argument', message: 'bad kind', validKinds: [...NODE_KINDS] },
+    ];
+    for (const refusal of refusals) {
+      const obj = JSON.parse(serializeRenamePlanJson({ newName: 'renamed', applied: false, refusal }));
+      expect(() => validate(obj, schema)).not.toThrow();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R5 (rp-review A5) — countLspLeftovers' per-file read must not crash the plan
+// with an uncaught internal error when the accepted LSP result names a file the
+// index does not cover. NOTE ON REPRODUCIBILITY: an in-root file the server
+// invents that is ABSENT from disk cannot exercise the countLspLeftovers crash
+// directly — translateWorkspaceEdit (lsp-rename.ts) reads the same in-root file
+// FIRST, inside deriveLspRename's own try/catch, so an absent file degrades the
+// whole rename to the graph path there (probed: source `graph`, no throw), never
+// reaching countLspLeftovers. The countLspLeftovers guard added for A5 is
+// defense-in-depth for the plan→count TOCTOU window (a file readable at
+// translate, gone at count). What IS deterministically reproducible — and is the
+// intended end-state — is an in-root LSP-named file that EXISTS on disk but is
+// NOT indexed: the LSP result is accepted (coverage passes), countLspLeftovers
+// reads it without crashing, and the D4 drift guard then refuses the WHOLE plan
+// `stale-span` (no `files` row). This pins both the no-crash property and that
+// refusal path. Real SQLite + stub server (T012 harness).
+// ---------------------------------------------------------------------------
+describe('R5 countLspLeftovers read safety — planRename (FR-003a / D4)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  it('an accepted LSP result naming an in-root but UNINDEXED file → no crash; the D4 drift guard refuses the whole plan stale-span', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r5-'));
+    const decl = 'export function target(x) { return x; }';
+    fs.writeFileSync(path.join(dir, 'solo.ts'), decl + '\n');
+    // A real in-root file that the indexer NEVER saw (created after indexAll):
+    // it exists (so translateWorkspaceEdit + countLspLeftovers read it without
+    // throwing), but has no `files` row → the D4 drift guard treats it as drifted.
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    const invented = 'export const target2 = target;';
+    fs.writeFileSync(path.join(dir, 'invented.ts'), invented + '\n');
+
+    const stub = writeRenameStub(dir);
+    const col = decl.indexOf('target');
+    const invCol = invented.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'renamed' }],
+        },
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'invented.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: invCol }, end: { line: 0, character: invCol + 6 } }, newText: 'renamed' }],
+        },
+      ],
+    };
+
+    let plan: RenamePlan | undefined;
+    await expect(
+      (async () => {
+        plan = await planRename({
+          queries,
+          projectRoot: dir,
+          selector: { name: 'target', kind: 'function' },
+          newName: 'renamed',
+          lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+          env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+        });
+      })(),
+    ).resolves.toBeUndefined(); // never throws an uncaught internal error
+
+    expect(plan!.refusal?.reason).toBe('stale-span');
+    expect(plan!.refusal?.files).toContain('invented.ts');
+    expect(plan!.edits).toBeUndefined();
   });
 });
