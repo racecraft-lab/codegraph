@@ -51,6 +51,12 @@ export interface DeriveLspRenameOptions {
   position: SourcePosition;
   /** The new name handed to the server. */
   newName: string;
+  /** The target's CURRENT (old) name (R20, rp-review). When provided, an in-root
+   *  edit whose live-derived `oldText` differs from it marks the WHOLE result
+   *  unusable — a buggy server range over an unrelated token degrades to the graph
+   *  path instead of being applied verbatim. Optional so translation-only callers
+   *  (tests) compile without it; the plan engine always threads `target.name`. */
+  oldName?: string;
   /** Env override for the probe + spawned server (defaults to `process.env`). */
   env?: Record<string, string | undefined>;
 }
@@ -69,7 +75,7 @@ export type LspRenameResult =
   | { status: 'failed'; reason: LspReasonCode };
 
 export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<LspRenameResult> {
-  const { projectRoot, config, language, file, position, newName, env } = options;
+  const { projectRoot, config, language, file, position, newName, oldName, env } = options;
 
   const server = config.servers[language];
   const probe = probeLspServerCommand(server, { cwd: projectRoot, env });
@@ -105,7 +111,7 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
     });
     client.notify('textDocument/didClose', { textDocument: { uri } });
     await client.shutdown();
-    const translated = translateWorkspaceEdit(projectRoot, workspaceEdit);
+    const translated = translateWorkspaceEdit(projectRoot, workspaceEdit, oldName);
     return { status: 'ok', edits: translated.edits, unusable: translated.unusable };
   } catch (error) {
     await client.dispose().catch(() => undefined);
@@ -132,16 +138,22 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
  * Placeholders are never surfaced: the whole plan is replaced by the
  * out-of-root Refusal before any edit here would be rendered.
  */
-function translateWorkspaceEdit(projectRoot: string, result: unknown): { edits: RenameEdit[]; unusable: boolean } {
+function translateWorkspaceEdit(
+  projectRoot: string,
+  result: unknown,
+  oldName?: string,
+): { edits: RenameEdit[]; unusable: boolean } {
   const edit = result as WorkspaceEdit | null | undefined;
   const perFile: Array<{ uri: string; edits: TextEdit[] }> = [];
   // A2 (rp-review): the WHOLE result is unusable if it carries an edit shape the
   // symbol writer cannot honor — a documentChanges resource operation (below),
   // or an in-root text edit with a multiline range / empty live-derived oldText
-  // (in the in-root branch). Resource-op detection is INDEPENDENT of containment;
-  // the content checks are in-root ONLY, so the out-of-root refuse-before-read
-  // placeholder (deliberately empty oldText) never trips it — its whole-plan
-  // out-of-root refusal keeps winning.
+  // (in the in-root branch). R20 (rp-review) extends this: an in-root edit whose
+  // live-derived oldText is NOT the rename target's old name (a buggy server range
+  // over an unrelated token) is likewise unusable. Resource-op detection is
+  // INDEPENDENT of containment; the content checks are in-root ONLY, so the
+  // out-of-root refuse-before-read placeholder (deliberately empty oldText) never
+  // trips any of them — its whole-plan out-of-root refusal keeps winning.
   let unusable = false;
   if (edit && Array.isArray(edit.documentChanges)) {
     for (const change of edit.documentChanges) {
@@ -199,6 +211,12 @@ function translateWorkspaceEdit(projectRoot: string, result: unknown): { edits: 
       // oldText.length and INSERT at start instead of replacing — file
       // corruption. Flag the whole result unusable so the rename degrades.
       if (start.line !== end.line || oldText === '') unusable = true;
+      // R20 (rp-review): the range replaces a DIFFERENT token than the target — the
+      // server pointed at the wrong identifier. Applying it verbatim would rename an
+      // unrelated symbol, so the whole result is unusable (degrade to the graph
+      // path). Only when the caller threaded the target's old name (the plan engine
+      // always does); translation-only callers skip this comparison.
+      if (oldName !== undefined && oldText !== oldName) unusable = true;
       out.push({
         file: relFile,
         range: {

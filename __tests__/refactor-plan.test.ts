@@ -29,7 +29,7 @@ import { NODE_KINDS, type NodeKind } from '../src/types';
 import type { QueryBuilder } from '../src/db/queries';
 import { resolveLspConfig } from '../src/lsp';
 import { classifyEdgeConfidence } from '../src/refactor/confidence';
-import { verifySpan } from '../src/refactor/span-verify';
+import { findDeclarationNameColumn, verifySpan } from '../src/refactor/span-verify';
 import { deriveLspRename } from '../src/refactor/lsp-rename';
 import { deriveGraphRename } from '../src/refactor/graph-rename';
 import { resolveTarget } from '../src/refactor/target-resolver';
@@ -38,6 +38,7 @@ import {
   composeAfterLine,
   formatApplyResultTable,
   formatRenamePlanTable,
+  serializeApplyResultJson,
   serializeRenamePlanJson,
 } from '../src/refactor/plan-format';
 import type { ApplyResult, RecoveryInfo, RenameEdit, RenamePlan, Refusal } from '../src/refactor/types';
@@ -132,6 +133,19 @@ describe('FR-004 confidence table — classifyEdgeConfidence', () => {
         expect(classifyEdgeConfidence({ resolvedBy: 'instance-method', confidence })).toBe('exact');
       },
     );
+
+    // R19 (rp-review): the NEW explicit declaration-recovered label — every site that
+    // flows through resolveMethodOnType (a validated `Type::method`) now emits
+    // `instance-method-decl`, classified `exact` REGARDLESS of confidence (so the
+    // 0.8 objc/pascal factory chains, which collide with the 0.8 capitalization guess
+    // under the legacy split, are no longer conflated). The discriminator is the
+    // label, not the confidence.
+    it.each([[0.8], [0.85], [0.9], [1.0]])(
+      'instance-method-decl @ confidence %s (declaration-recovered, validated Type::method) → exact',
+      (confidence) => {
+        expect(classifyEdgeConfidence({ resolvedBy: 'instance-method-decl', confidence })).toBe('exact');
+      },
+    );
   });
 
   describe('heuristic tier', () => {
@@ -143,8 +157,14 @@ describe('FR-004 confidence table — classifyEdgeConfidence', () => {
     );
 
     // instance-method, capitalization-guess / word-overlap branch (confidence < 0.85).
+    // R19: this LEGACY label branch is kept UNCHANGED for backward compatibility with
+    // already-built indexes (old edges still carry the conflated `instance-method`);
+    // new indexes emit `instance-method-decl` for the declaration-recovered sites, so
+    // a NEW `instance-method` edge is only ever a Strategy 2/3 guess (0.8/0.7) → still
+    // heuristic here, and an OLD declaration-recovered `instance-method` at 0.8
+    // under-classifies to heuristic — the SAFE mis-direction (exact→heuristic).
     it.each([[0.8], [0.7], [0.65]])(
-      'instance-method @ confidence %s (capitalization-guess / word-overlap) → heuristic',
+      'instance-method (legacy conflated label) @ confidence %s (capitalization-guess / word-overlap) → heuristic',
       (confidence) => {
         expect(classifyEdgeConfidence({ resolvedBy: 'instance-method', confidence })).toBe(
           'heuristic',
@@ -263,6 +283,40 @@ describe('FR-005 / FR-016 span verification — verifySpan', () => {
     const lineText = 'x'; // the line shrank since it was indexed
     const result = verifySpan({ lineText, start: { line: 1, column: 0 }, oldName: 'total' });
     expect(result).toBeNull();
+  });
+});
+
+// R18 (rp-review, P0) — the pure declaration-name locator underneath the graph
+// declaration edit and the LSP cursor position. Whole-word, decorator-aware,
+// keyword-prefix-aware; the graph-path integration cases are pinned separately in
+// the R18 deriveGraphRename describe below.
+describe('R18 findDeclarationNameColumn — whole-word declaration-name locator', () => {
+  it('skips an accessor/modifier keyword equal to the name (`get get`) via the whitespace-gap advance', () => {
+    expect(findDeclarationNameColumn('  get get() { return 1; }', 2, 'get')).toBe(6);
+    expect(findDeclarationNameColumn('  async async() {}', 2, 'async')).toBe(8);
+    expect(findDeclarationNameColumn('  set set(v) {}', 2, 'set')).toBe(6);
+  });
+
+  it('skips a same-line `@name` decorator reference and targets the declaration name', () => {
+    expect(findDeclarationNameColumn('@foo foo = decorated();', 0, 'foo')).toBe(5);
+    expect(findDeclarationNameColumn('@foo() foo = 1;', 0, 'foo')).toBe(7);
+  });
+
+  it('never advances onto a same-name parameter (the `(` gap is not whitespace)', () => {
+    expect(findDeclarationNameColumn('function foo(foo: number) { return foo; }', 0, 'foo')).toBe(9);
+  });
+
+  it('leaves a plain declaration unchanged — the name at/after the keyword', () => {
+    expect(findDeclarationNameColumn('class Widget {', 0, 'Widget')).toBe(6);
+    expect(findDeclarationNameColumn('export function soloFn(x) { return x; }', 7, 'soloFn')).toBe(16);
+  });
+
+  it('is whole-word only — a substring occurrence (`foo` in `foobar`) is never matched', () => {
+    expect(findDeclarationNameColumn('const foobar = foo;', 0, 'foo')).toBe(15);
+  });
+
+  it('returns -1 when the name does not occur as a whole word at/after fromColumn', () => {
+    expect(findDeclarationNameColumn('class Widget {', 0, 'Gadget')).toBe(-1);
   });
 });
 
@@ -967,6 +1021,85 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
 });
 
 // ---------------------------------------------------------------------------
+// R18 (rp-review, P0) — the declaration edit must target the declaration NAME,
+// not an earlier IDENTICAL token. `graph-rename.ts` located the name with
+// `declLine.indexOf(oldName, decl.startColumn)`; the node start column is often a
+// KEYWORD that equals the name — an accessor `get`/`set` (`get get()`), an
+// `async`/modifier, or a same-line `@name` decorator — so indexOf matched the
+// keyword/decorator, and an --apply would corrupt the file (`RENAMED get()`).
+// Pinned through the graph derivation with a hand-inserted node whose startColumn
+// is CONTROLLED over a hand-written declaration line (the T011 real-SQLite harness);
+// the unique node id has no references, so `edits` is the declaration edit alone.
+// ---------------------------------------------------------------------------
+describe('R18 declaration edit targets the NAME, not a same-name keyword/decorator/parameter (graph path)', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  /** Derive the graph plan for a hand-inserted declaration node at a controlled
+   *  startColumn over `line`, and return the declaration edit's resolved column. */
+  async function declEditColumn(opts: {
+    line: string;
+    name: string;
+    startColumn: number;
+    kind?: NodeKind;
+  }): Promise<number> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r18-'));
+    // A trivial seed keeps the real extractor busy elsewhere; the decl fixture is
+    // written AFTER indexAll so the hand-inserted node owns its identity outright.
+    fs.writeFileSync(path.join(dir, 'seed.ts'), 'export const seed = 1;\n');
+    const cg = CodeGraph.initSync(dir, { config: { include: ['**/*.ts'], exclude: [] } });
+    await cg.indexAll();
+    const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+    cleanups.push(() => {
+      cg.destroy();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    fs.writeFileSync(path.join(dir, 'decl.ts'), opts.line + '\n');
+    const id = `r18:${opts.name}:${opts.startColumn}`;
+    queries.insertNode({
+      id,
+      kind: opts.kind ?? 'method',
+      name: opts.name,
+      qualifiedName: opts.name,
+      filePath: 'decl.ts',
+      language: 'typescript',
+      startLine: 1,
+      endLine: 1,
+      startColumn: opts.startColumn,
+      endColumn: opts.startColumn + opts.name.length,
+      updatedAt: Date.now(),
+    });
+    const result = deriveGraphRename({ queries, projectRoot: dir, targetId: id, newName: 'RENAMED' });
+    expect(result.edits).toHaveLength(1); // no references → the declaration edit alone
+    return result.edits[0]!.range.start.column;
+  }
+
+  it('an accessor keyword equal to the name (`get get()`) → the edit targets the SECOND `get` (the name), not the accessor keyword', async () => {
+    // startColumn 2 is the accessor keyword `get`; indexOf(name, 2) wrongly matches
+    // it. The declaration name is the SECOND `get`, at column 6.
+    expect(await declEditColumn({ line: '  get get() { return 1; }', name: 'get', startColumn: 2 })).toBe(6);
+  });
+
+  it('a decorator reference equal to the name (`@foo foo = …`) → the edit targets the non-@ property occurrence', async () => {
+    // startColumn 0 is the `@`; indexOf(name, 0) wrongly matches the `@foo` decorator
+    // reference at column 1. The declaration name is the property `foo`, at column 5.
+    expect(await declEditColumn({ line: '@foo foo = decorated();', name: 'foo', startColumn: 0, kind: 'property' })).toBe(5);
+  });
+
+  it('a same-name parameter (`function foo(foo: number)`) → the edit targets the FIRST `foo` (the name), never the parameter', async () => {
+    // The declaration name (col 9) precedes its own parameter (col 13); the gap
+    // between them is `(`, not whitespace, so the scan never advances to the param.
+    expect(await declEditColumn({ line: 'function foo(foo: number) { return foo; }', name: 'foo', startColumn: 0, kind: 'function' })).toBe(9);
+  });
+
+  it('a plain declaration (`class Widget {`) → unchanged: the edit targets the name at/after the keyword', async () => {
+    expect(await declEditColumn({ line: 'class Widget {', name: 'Widget', startColumn: 0, kind: 'class' })).toBe(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T017 — Target selector resolution (resolveTarget) against a REAL indexed
 // project (SPEC-010 FR-006). BASIC contract only: a bare or qualified
 // `Class.method` name, optionally narrowed by `--file` / `--kind`, resolves to
@@ -1273,19 +1406,21 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
   });
 
   // -------------------------------------------------------------------------
-  // D5c review remediation (MINOR) — spec.md's overlapping-range clause: a
-  // genuinely-overlapping LSP edit set is an unusable rename result that
-  // degrades the WHOLE rename to the graph path AT DERIVATION (plan time),
-  // not only when writeEdits happens to catch it at Rung 4 (apply time).
-  // Mirrors D3's 'incomplete-coverage' precedent exactly — a second, distinct
-  // reason an `ok`-status LSP result can be rejected as unusable.
+  // D5c / R20 — a set of GENUINELY-DIFFERENT overlapping ranges necessarily
+  // includes at least one edit whose live-derived oldText is NOT the target name
+  // (two distinct ranges cannot both slice to the same identifier). Since R20's
+  // oldName guard marks the WHOLE result `unusable` and is checked BEFORE the
+  // overlap check, such a set now degrades as `unsupported-edits` (the wrong-token
+  // defect is caught first). Token-aligned overlap — the ONLY overlap where every
+  // oldText IS the target name — is identical-range/different-newText, covered by
+  // R14 below as `overlapping-edits`; the two reasons no longer collide.
   // -------------------------------------------------------------------------
-  it('D5c: genuinely-overlapping LSP edit ranges are an unusable result — degrades the WHOLE rename to graph, recording lspDegradation overlapping-edits (spec.md overlapping-range clause)', async () => {
+  it('D5c/R20: genuinely-DIFFERENT overlapping LSP ranges carry a wrong-token edit → the oldName guard degrades to graph as unsupported-edits FIRST (before the overlap check)', async () => {
     const { dir, queries } = await setup({ 'solo.ts': 'export function target(x) { return x; }\n' });
     const stub = writeRenameStub(dir);
-    // Two edits on solo.ts whose ranges genuinely overlap ([0,6) and [3,9)) —
-    // a malformed/misbehaving workspace edit; the coverage check alone would
-    // accept it (solo.ts is the ONLY file the graph derivation also touches).
+    // Two edits on solo.ts whose ranges genuinely overlap ([0,6) and [3,9)) — a
+    // malformed/misbehaving workspace edit. Neither slices to `target`
+    // (`export` / `ort fu`), so R20's oldName guard fires before the overlap check.
     const renameResult = {
       documentChanges: [
         {
@@ -1308,13 +1443,13 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     });
 
     expect(plan.refusal).toBeUndefined();
-    expect(plan.source).toBe('graph'); // NOT lsp — a genuinely-overlapping edit set is unusable
-    expect(plan.lspDegradation).toBe('overlapping-edits');
+    expect(plan.source).toBe('graph'); // NOT lsp — a wrong-token edit set is unusable
+    expect(plan.lspDegradation).toBe('unsupported-edits'); // R20 guard preempts the overlap check
     for (const e of plan.edits!) expect(e.source).toBe('graph'); // whole-plan degrade, never a per-file merge
 
     const obj = JSON.parse(serializeRenamePlanJson(plan));
-    expect(obj.lspDegradation).toBe('overlapping-edits');
-    validate(obj, schema); // schema-covers the new enum value too
+    expect(obj.lspDegradation).toBe('unsupported-edits');
+    validate(obj, schema); // schema-covers the enum value
   });
 
   it('D5c: a fully-coincident duplicate LSP edit is NOT an overlap — still de-duplicates at write time, stays source lsp, no lspDegradation', async () => {
@@ -1350,6 +1485,58 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     // at plan derivation too (not only at writeEdits' apply-time write), so the
     // dry-run preview/JSON never shows the duplicate occurrence twice.
     expect(plan.edits).toHaveLength(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // R14 (round-2 review, D1) — the plan-time overlap check's pre-dedup key was
+  // `${start}:${end}` WITHOUT `newText`, so two COINCIDENT LSP edits carrying
+  // DIFFERENT `newText` (a genuinely contradictory workspace edit — which
+  // replacement wins?) collapsed to one span and were NOT flagged as
+  // overlapping: the dry-run plan returned source `lsp` carrying both edits,
+  // yet apply-time `writeEdits` (whose dedup key DOES include `newText`) would
+  // refuse/degrade the same set — a plan/apply disagreement. Including `newText`
+  // in the plan-time dedup key (matching `writeEdits`) keeps them two spans, so
+  // `hasOverlappingSpans` flags them and the WHOLE rename degrades to graph AT
+  // PLAN TIME, exactly like the D5c overlapping-range case above.
+  // -------------------------------------------------------------------------
+  it('R14: two coincident LSP edits with DIFFERENT newText are a genuine overlap — degrades the WHOLE rename to graph, lspDegradation overlapping-edits (plan≡apply)', async () => {
+    const { dir, queries } = await setup({ 'solo.ts': 'export function target(x) { return x; }\n' });
+    const stub = writeRenameStub(dir);
+    const declLine = 'export function target(x) { return x; }';
+    const col = declLine.indexOf('target');
+    // Both edits address the IDENTICAL range [col, col+6) but substitute
+    // DIFFERENT text — the pre-fix `${start}:${end}` dedup key collapsed them
+    // into ONE span (no overlap detected → wrongly accepted as source lsp with
+    // both edits). Their live-derived `oldText` is `target` for both.
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'alpha' },
+            { range: { start: { line: 0, character: col }, end: { line: 0, character: col + 6 } }, newText: 'beta' },
+          ],
+        },
+      ],
+    };
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph'); // NOT lsp — coincident-but-different newText is a genuine overlap
+    expect(plan.lspDegradation).toBe('overlapping-edits');
+    for (const e of plan.edits!) expect(e.source).toBe('graph'); // whole-plan degrade, never a per-file merge
+
+    const obj = JSON.parse(serializeRenamePlanJson(plan));
+    expect(obj.lspDegradation).toBe('overlapping-edits');
+    validate(obj, schema); // the degraded plan still validates against the contract
   });
 
   it('uses the graph path directly when LSP is disabled — never attempts a server', async () => {
@@ -2208,12 +2395,15 @@ describe('T014 CLI dry-run — codegraph rename (built binary, FR-001/FR-026/FR-
       expect(e.newText).toBe('newFn');
     }
 
-    // Parity (FR-027/SC-005): the CLI --json stdout equals the library's own
-    // canonical serialization of the plan it returns for the identical request.
+    // Parity (FR-027/SC-005), framing contract (R21): the JSON PAYLOAD is
+    // byte-identical to the library's own canonical serialization; the CLI stdout
+    // appends EXACTLY ONE trailing newline as terminal framing (the MCP text result
+    // carries the same payload with NO trailing newline — see rename-mcp.test.ts).
+    // Asserted with no trim() so the framing can never silently drift.
     const cg = await CodeGraph.open(dir);
     try {
       const libPlan = await cg.planRename({ name: 'oldFn', kind: 'function' }, 'newFn');
-      expect(res.stdout.trim()).toBe(serializeRenamePlanJson(libPlan));
+      expect(res.stdout).toBe(serializeRenamePlanJson(libPlan) + '\n');
       expect(parsed).toEqual(JSON.parse(serializeRenamePlanJson(libPlan)));
     } finally {
       cg.close();
@@ -3190,6 +3380,30 @@ describe('R2 unusable LSP edit shapes degrade to graph — planRename (FR-003a)'
     expect(plan.lspDegradation).toBe('unsupported-edits');
   });
 
+  it('(d, R20) an in-root edit over a DIFFERENT token (live oldText ≠ the target old name) → source graph, lspDegradation unsupported-edits', async () => {
+    // A buggy server whose range covers `function` (cols 7–15) instead of the
+    // `target` identifier: the live-derived oldText is `function`, not `target`, so
+    // applying it verbatim would replace the wrong token. Single-line + non-empty, so
+    // it slips past the (b)/(c) shape guards — only the oldName comparison catches it.
+    const { dir, queries } = await setup();
+    const fnStart = DECL.indexOf('function');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'solo.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: fnStart }, end: { line: 0, character: fnStart + 'function'.length } }, newText: 'renamed' }],
+        },
+      ],
+    };
+    const plan = await planWith(dir, queries, renameResult);
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph'); // NOT lsp — the wrong-token edit is unusable
+    expect(plan.lspDegradation).toBe('unsupported-edits');
+    for (const e of plan.edits!) expect(e.source).toBe('graph');
+    const obj = JSON.parse(serializeRenamePlanJson(plan));
+    expect(obj.lspDegradation).toBe('unsupported-edits');
+  });
+
   it('(regression) an out-of-root URI still refuses out-of-root — the refuse-before-read placeholder is NOT treated as an unusable-shape degrade', async () => {
     const { dir, queries } = await setup();
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-r2-outside-'));
@@ -3499,6 +3713,68 @@ describe('R7 refusal schema is closed — rename-plan.schema.json (additionalPro
       const obj = JSON.parse(serializeRenamePlanJson({ newName: 'renamed', applied: false, refusal }));
       expect(() => validate(obj, schema)).not.toThrow();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R16 (round-2 review, D3) — a serialized APPLY result must ALSO validate against
+// contracts/rename-plan.schema.json (the same one contract the dry-run plan is
+// pinned to). `serializeApplyResultJson` always emits `touchedFiles` and
+// `postCheckPassed`, but the schema's envelope (top-level RenamePlan,
+// `additionalProperties:false`) declared NEITHER — so every serialized apply
+// result violated the published contract. This block drives an APPLIED and a
+// ROLLED-BACK result through the serializer and validates the JSON against the
+// module-scope draft-07-subset `validate` + `schema` (shared with the T013/R7
+// dry-run tests), and keeps the closed-schema guarantee: an apply JSON carrying
+// an unknown extra property still FAILS validation.
+// ---------------------------------------------------------------------------
+describe('R16 serialized apply result validates against rename-plan.schema.json (additionalProperties:false)', () => {
+  const applied: ApplyResult = {
+    outcome: 'applied',
+    touchedFiles: ['a.ts', 'sub/b.ts'],
+    postCheckPassed: true,
+  };
+  const rolledBack: ApplyResult = {
+    outcome: 'rolled-back',
+    touchedFiles: ['a.ts'],
+    postCheckPassed: false,
+    danglingReferences: [
+      { file: 'a.ts', range: { start: { line: 3, column: 2 }, end: { line: 3, column: 7 } }, name: 'oldFn' },
+    ],
+  };
+
+  it('an APPLIED result serializes to schema-valid JSON (touchedFiles + postCheckPassed now declared)', () => {
+    const obj = JSON.parse(serializeApplyResultJson(applied, 'newFn'));
+    validate(obj, schema); // pre-fix: THROWS — touchedFiles/postCheckPassed are undeclared extra keys
+    expect(obj.outcome).toBe('applied');
+    expect(obj.applied).toBe(true);
+    expect(obj.touchedFiles).toEqual(['a.ts', 'sub/b.ts']);
+    expect(obj.postCheckPassed).toBe(true);
+  });
+
+  it('a ROLLED-BACK result serializes to schema-valid JSON (danglingReferences alongside touchedFiles/postCheckPassed)', () => {
+    const obj = JSON.parse(serializeApplyResultJson(rolledBack, 'newFn'));
+    validate(obj, schema);
+    expect(obj.outcome).toBe('rolled-back');
+    expect(obj.applied).toBe(false);
+    expect(obj.touchedFiles).toEqual(['a.ts']);
+    expect(obj.postCheckPassed).toBe(false);
+    // The ONE surface conversion still applies to the dangling range (internal
+    // 1-indexed line → 0-based line/character).
+    expect(obj.danglingReferences[0].range.start.line).toBe(2);
+    expect(obj.danglingReferences[0].range.start.character).toBe(2);
+  });
+
+  it('an adversarial apply result carrying an unknown extra property STILL fails validation (schema stays closed)', () => {
+    const adversarial = {
+      newName: 'newFn',
+      applied: true,
+      outcome: 'applied',
+      touchedFiles: ['a.ts'],
+      postCheckPassed: true,
+      bogusExtra: 42,
+    };
+    expect(() => validate(adversarial, schema)).toThrow();
   });
 });
 

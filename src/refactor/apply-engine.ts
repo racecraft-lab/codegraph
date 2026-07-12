@@ -327,15 +327,14 @@ async function rollback(
  * restore ITSELF fails, return the `rollback-failed` recovery terminal instead —
  * never re-sync a workspace left in an unknown partial state, nor leak the throw
  * over renamed-but-not-restored files. Distinct from {@link rollback}: a throw is
- * not a modeled `rolled-back` dangle outcome, so there is no dangle list and no
- * post-restore re-sync (the re-sync may be exactly what threw).
+ * not a modeled `rolled-back` dangle outcome, so there is no dangle list.
  */
-function restoreOrRethrow(
+async function restoreOrRethrow(
   options: ApplyRenameOptions,
   snapshots: Map<string, Buffer>,
   touchedFiles: string[],
   error: unknown,
-): ApplyResult {
+): Promise<ApplyResult> {
   const restore = restoreSnapshots({ projectRoot: options.projectRoot, snapshots });
   if (restore.unrestoredFiles.length > 0) {
     const recovery: RecoveryInfo = {
@@ -344,6 +343,19 @@ function restoreOrRethrow(
       ...(restore.recoveryDir !== undefined && { recoveryDir: restore.recoveryDir }),
     };
     return { outcome: 'rollback-failed', touchedFiles, postCheckPassed: false, recovery };
+  }
+  // R15 (round-2 review): the throw can land AFTER the Rung-5 re-sync already
+  // SUCCEEDED (e.g. the post-check threw), so the index reflects the RENAMED
+  // files while the bytes above were just restored to the OLD name — graph and
+  // workspace disagree. Re-sync the restored bytes so the index matches again
+  // BEFORE rethrowing. Guarded: a re-sync failure here (a throw, or the
+  // lock-failure zero-shape — the result is deliberately ignored) must NEVER mask
+  // the original error, which is the surface the caller acts on; `codegraph sync`
+  // / the daemon watcher self-heals a still-stale index.
+  try {
+    await options.sync();
+  } catch {
+    // swallowed — the original `error` below is what the caller must see
   }
   throw error; // workspace restored byte-identically — the exit-1 path is honest
 }

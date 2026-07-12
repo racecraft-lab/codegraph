@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://codegraph/spec-010/rename-plan.schema.json",
   "title": "RenamePlan",
-  "description": "The stable, surface-neutral result of a codegraph rename. Emitted byte-identically by the CLI `-j, --json` flag (FR-027) and the codegraph_rename MCP tool result (SC-005). Field names are identical across both surfaces. All offsets are UTF-16 code units (SPEC-008 pin). Byte-identical parity requires a canonical serialization: stable object-key order, UTF-8, no insignificant whitespace, and the deterministic array ordering noted on `edits`. The MCP tool returns this JSON as its text result content (matching the repo's textResult convention in src/mcp/tools.ts), not structuredContent. One envelope carries three result shapes; a consumer branches on `applied` and `refusal`: (1) a successful PLAN (dry-run, or an apply that reached post-check-green) carries `target`, `edits` (>=1, incl. the declaration edit), `confidence`, and per-edit `source`, with `applied` false (dry-run) or true (apply-green); (2) a recoverable REFUSAL carries `refusal` (success-shaped, `applied` false) and MAY omit `target`/`edits`/`confidence`, since a refused request (ambiguous-target, not-indexed, target-not-found, invalid-argument, ...) has no resolved target or edit set; (3) an APPLY terminal additionally carries `outcome`, with `danglingReferences` on `rolled-back` and `recovery` on `rollback-failed`. Only `newName` (the echoed request) and `applied` are present in every shape, so they are the sole always-required fields.",
+  "description": "The stable, surface-neutral result of a codegraph rename. Emitted byte-identically by the CLI `-j, --json` flag (FR-027) and the codegraph_rename MCP tool result (SC-005). Field names are identical across both surfaces. All offsets are UTF-16 code units (SPEC-008 pin). Byte-identical parity requires a canonical serialization: stable object-key order, UTF-8, no insignificant whitespace, and the deterministic array ordering noted on `edits`. The MCP tool returns this JSON as its text result content (matching the repo's textResult convention in src/mcp/tools.ts), not structuredContent. One envelope carries three result shapes; a consumer branches on `applied` and `refusal`: (1) a successful PLAN (dry-run, or an apply that reached post-check-green) carries `target`, `edits` (>=1, incl. the declaration edit), `confidence`, and per-edit `source`, with `applied` false (dry-run) or true (apply-green); (2) a recoverable REFUSAL carries `refusal` (success-shaped, `applied` false) and MAY omit `target`/`edits`/`confidence`, since a refused request (ambiguous-target, not-indexed, target-not-found, invalid-argument, ...) has no resolved target or edit set; (3) an APPLY terminal additionally carries `outcome`, `touchedFiles`, and `postCheckPassed`, with `danglingReferences` on `rolled-back` and `recovery` on `rollback-failed`. Only `newName` (the echoed request) and `applied` are present in every shape, so they are the sole always-required fields.",
   "type": "object",
   "required": ["newName", "applied"],
   "additionalProperties": false,
@@ -54,6 +54,15 @@
       "description": "Apply outcome (Slice 2). Absent/ignored on a dry-run. `applied` = post-check green; `refused` = a recoverable gate refusal with zero writes; `rolled-back` = wrote then restored byte-identically; `rollback-failed` = the sole malfunction (FR-019a).",
       "type": "string",
       "enum": ["applied", "refused", "rolled-back", "rollback-failed"]
+    },
+    "touchedFiles": {
+      "description": "Apply-only (Slice 2): every file the apply snapshotted and wrote (or attempted to write). Present on an apply terminal (`outcome` set) — an empty array on a `refused` terminal that never wrote — and absent on a dry-run plan. FR-018/FR-020.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "postCheckPassed": {
+      "description": "Apply-only (Slice 2): whether the FR-018 touched-file-scoped post-check passed. true only on an `applied` terminal; false on every other apply terminal (a `refused` that never ran the post-check, or a rollback). Absent on a dry-run plan.",
+      "type": "boolean"
     },
     "refusal": { "$ref": "#/definitions/refusal" },
     "danglingReferences": {

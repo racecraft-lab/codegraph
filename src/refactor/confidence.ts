@@ -62,8 +62,19 @@ export function classifyEdgeConfidence(input: EdgeConfidenceInput): ConfidenceTi
     case 'qualified-name': // scoped qualified lookup; refuses on ambiguity
     case 'function-ref': // exact function/method name, no fuzzy fallback
       return 'exact';
+    case 'instance-method-decl':
+      // rp-review: the explicit declaration-recovered label — resolveMethodOnType
+      // validated `Type::method` against a real declaration, so it is `exact`
+      // regardless of confidence (no threshold; the label alone is the discriminator).
+      return 'exact';
     case 'instance-method':
-      // Declaration-recovered branch vs capitalization-guess / word-overlap.
+      // LEGACY conflated label, kept UNCHANGED for backward compatibility with
+      // already-built indexes: new indexes emit `instance-method-decl` for the
+      // declaration-recovered sites (above), so a fresh `instance-method` edge is
+      // only ever a Strategy 2/3 guess (0.8/0.7 → heuristic here). An OLD
+      // declaration-recovered `instance-method` at 0.8 under-classifies to heuristic
+      // — the SAFE mis-direction (a true-exact edge treated as heuristic gates it
+      // behind confirmation, never the reverse).
       return (confidence ?? 0) >= INSTANCE_METHOD_EXACT_MIN_CONFIDENCE ? 'exact' : 'heuristic';
     // heuristic ---------------------------------------------------------------
     // `exact-match` / `fuzzy` (last-resort strategies that still emit on a best

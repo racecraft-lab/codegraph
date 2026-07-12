@@ -172,7 +172,10 @@ describe('T043 codegraph_rename — contract + CLI parity', () => {
 
     const mcp = await new ToolHandler(cg).execute('codegraph_rename', { target: 'widget', newName: 'gadget' });
     expect(mcp.isError).toBeUndefined();
-    expect(textOf(mcp)).toBe(cli.stdout.trimEnd()); // byte-identical (CLI adds one trailing \n)
+    // Framing contract (R21): the MCP text IS the canonical JSON payload byte-for-byte;
+    // the CLI emits that SAME payload plus EXACTLY ONE trailing newline (terminal
+    // framing). Asserted with no trim so the framing can never silently drift.
+    expect(cli.stdout).toBe(textOf(mcp) + '\n');
 
     // Sanity: it really is a dry-run plan with the deterministic edit set.
     const plan = JSON.parse(textOf(mcp));
@@ -197,7 +200,8 @@ describe('T043 codegraph_rename — contract + CLI parity', () => {
       apply: true,
     });
     expect(mcp.isError).toBeUndefined();
-    expect(textOf(mcp)).toBe(cli.stdout.trimEnd());
+    // Framing contract (R21): CLI stdout = MCP text payload + exactly one trailing newline.
+    expect(cli.stdout).toBe(textOf(mcp) + '\n');
     expect(JSON.parse(textOf(mcp))).toEqual({
       newName: 'gadget',
       applied: true,
@@ -225,7 +229,8 @@ describe('T043 codegraph_rename — contract + CLI parity', () => {
       kind: 'notakind',
     });
     expect(mcp.isError).toBeUndefined();
-    expect(textOf(mcp)).toBe(cli.stdout.trimEnd());
+    // Framing contract (R21): CLI stdout = MCP text payload + exactly one trailing newline.
+    expect(cli.stdout).toBe(textOf(mcp) + '\n');
     const plan = JSON.parse(textOf(mcp));
     expect(plan.refusal.reason).toBe('invalid-argument');
     expect(plan.refusal.validKinds).toContain('function');

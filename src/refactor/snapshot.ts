@@ -144,8 +144,21 @@ export function writeEdits(input: {
     // otherwise inherits the temp's 0o600. Re-applied to the temp just before
     // renameSync, so the CodeQL js/insecure-temporary-file sink stays closed
     // (the temp is 0o600 for the whole window it could be pre-empted).
-    const mode = fs.statSync(abs).mode & 0o7777;
-    const raw = fs.readFileSync(abs);
+    // R17 (round-2 review): take the mode AND the bytes through a SINGLE open file
+    // descriptor (fstat + read the same inode) instead of a `statSync` followed by
+    // a separate path-based `readFileSync` — those two path lookups were a TOCTOU
+    // the file could change between (CodeQL js/file-system-race, alert #46). The
+    // fd-based fstat/read see one consistent inode even if the path is swapped
+    // concurrently; the fd is always closed in the `finally`.
+    const fd = fs.openSync(abs, 'r');
+    let mode: number;
+    let raw: Buffer;
+    try {
+      mode = fs.fstatSync(fd).mode & 0o7777;
+      raw = fs.readFileSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     const bom = hasUtf8Bom(raw);
     const text = (bom ? raw.subarray(3) : raw).toString('utf8');
     const lineStarts = computeLineStarts(text);

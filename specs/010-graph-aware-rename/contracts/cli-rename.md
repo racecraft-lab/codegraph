@@ -17,7 +17,7 @@ codegraph rename <target> <new-name> [options]
 |---|---|---|---|---|
 | `--file <path>` | 1 | string | — | Narrow the target to one file (qualifier). |
 | `--kind <kind>` | 1 | string | — | Narrow the target to one NodeKind (qualifier). |
-| `-j, --json` | 1 | boolean | false | Emit the plan as the stable JSON schema (`rename-plan.schema.json`) instead of the human table. Byte-identical to the MCP result (SC-005). |
+| `-j, --json` | 1 | boolean | false | Emit the plan as the stable JSON schema (`rename-plan.schema.json`) instead of the human table. The JSON PAYLOAD is byte-identical to the MCP result (SC-005); CLI stdout appends exactly one trailing newline as terminal framing (`stdout === payload + "\n"`), whereas the MCP text payload has none. |
 | `--apply` | 2 | boolean | false | Recompute the plan from the live index and execute the apply safety ladder (FR-014). **Absent in a Slice-1 build** — a Slice-1 binary rejects `--apply` with commander's standard unknown-option error (Assumptions), not a bespoke refusal. |
 | `--include-heuristic` | 2 | boolean | false | Permit apply when the plan contains `heuristic`-tier edits (FR-015). No effect on a dry-run. |
 | `--path <dir>` | 1 | string | cwd | Project root (existing global convention; shown for completeness). |

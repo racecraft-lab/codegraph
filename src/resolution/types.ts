@@ -38,8 +38,11 @@ export interface ResolvedRef {
   targetNodeId: string;
   /** Confidence score (0-1) */
   confidence: number;
-  /** How it was resolved */
-  resolvedBy: 'exact-match' | 'import' | 'qualified-name' | 'framework' | 'fuzzy' | 'instance-method' | 'file-path' | 'function-ref';
+  /** How it was resolved. `instance-method-decl` is the declaration-recovered
+   *  subset of `instance-method` (validated `Type::method` via resolveMethodOnType);
+   *  SPEC-010 FR-004 classifies it `exact` while the shared `instance-method` label
+   *  (capitalization/word-overlap guesses) stays confidence-gated. */
+  resolvedBy: 'exact-match' | 'import' | 'qualified-name' | 'framework' | 'fuzzy' | 'instance-method' | 'instance-method-decl' | 'file-path' | 'function-ref';
 }
 
 /**

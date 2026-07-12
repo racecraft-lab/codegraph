@@ -406,10 +406,14 @@ export interface WriteFailure {
 }
 
 /**
- * The full internal result of an apply (data-model ApplyResult). Richer than the
- * serialized {@link RenamePlan} envelope: `touchedFiles` and `postCheckPassed`
- * are internal-only (never surfaced). The serializer folds the rest onto the
- * envelope (`outcome`, `danglingReferences`, `recovery`, `refusal`).
+ * The full internal result of an apply (data-model ApplyResult). The serializer
+ * (`serializeApplyResultJson`) folds it onto the {@link RenamePlan} surface
+ * envelope: `outcome`, `touchedFiles`, and `postCheckPassed` on every apply
+ * terminal, plus whichever terminal payload it carries (`danglingReferences` /
+ * `recovery` / `refusal` / `writeFailure` / `resyncFailed`) — every one declared
+ * in `rename-plan.schema.json` (R16 review finding: `touchedFiles` /
+ * `postCheckPassed` were formerly mis-noted here as internal-only, yet the
+ * serializer has always emitted them, so the schema now declares them too).
  */
 export interface ApplyResult {
   outcome: ApplyOutcome;

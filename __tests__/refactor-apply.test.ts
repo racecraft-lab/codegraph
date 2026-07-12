@@ -1842,6 +1842,77 @@ describe('R8 post-write throws reach rollback (FR-019): apply-engine.ts', () => 
 });
 
 // ---------------------------------------------------------------------------
+// R15 (round-2 review, D2) — restoreOrRethrow, after a post-write THROW, restored
+// the snapshots and immediately rethrew WITHOUT re-syncing. But the Rung-5 re-sync
+// runs BEFORE the post-check: when it SUCCEEDS and then the post-check throws, the
+// index already reflects the RENAMED files while restoreOrRethrow puts the bytes
+// back to the old name — leaving graph and workspace in disagreement (the new name
+// still in the index, observable by the caller). The fix performs a guarded
+// re-sync of the restored bytes before rethrowing the ORIGINAL error (a re-sync
+// failure is swallowed — the thrown error is the surface, and `codegraph sync` /
+// the daemon watcher self-heals). Same throwing-post-check seam as R8; this test
+// additionally asserts the graph state post-facto. Real SQLite (T034 fixture).
+// ---------------------------------------------------------------------------
+describe('R15 restoreOrRethrow re-syncs the restored workspace before rethrowing (FR-018/B1): apply-engine.ts', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  const fixture = {
+    'decl.ts': 'export function widget(): void {}\n',
+    'caller.ts': ["import { widget } from './decl';", 'export function useWidget(): void { widget(); }', ''].join('\n'),
+  };
+
+  it('a post-check THROW after a SUCCEEDED Rung-5 re-sync → files restored byte-identically AND the index re-synced (old name back, new name gone); the ORIGINAL error still rejects', async () => {
+    const { dir, cg, queries, cleanup } = await makeIndexedFixture(fixture);
+    cleanups.push(cleanup);
+    const declAbs = path.join(dir, 'decl.ts');
+    const callerAbs = path.join(dir, 'caller.ts');
+    const beforeDecl = shasum(declAbs);
+    const beforeCaller = shasum(callerAbs);
+
+    // The Rung-5 re-sync is REAL and SUCCEEDS (so the index picks up the renamed
+    // `gadget` declaration), THEN the post-check's unresolved-refs probe throws —
+    // landing in restoreOrRethrow (identical seam to R8's Rung-5b test).
+    const throwingQueries = new Proxy(queries, {
+      get(target, prop, receiver) {
+        if (prop === 'getUnresolvedRefsByNameInFiles') {
+          return () => {
+            throw new Error('post-check boom');
+          };
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    }) as QueryBuilder;
+
+    await expect(
+      applyRename({
+        queries: throwingQueries,
+        projectRoot: dir,
+        selector: { name: 'widget', kind: 'function' },
+        newName: 'gadget',
+        lspConfig: graphOnlyLsp(dir),
+        env: {},
+        sync: () => cg.sync(),
+      }),
+    ).rejects.toThrow('post-check boom'); // the ORIGINAL error is still what rejects
+
+    // The workspace bytes are restored byte-identically…
+    expect(shasum(declAbs)).toBe(beforeDecl);
+    expect(shasum(callerAbs)).toBe(beforeCaller);
+    expect(fs.readdirSync(dir).filter((n) => n.endsWith(RENAME_TEMP_SUFFIX))).toEqual([]);
+    // …AND the index was re-synced to MATCH them: the succeeded Rung-5 re-sync had
+    // left the graph reflecting the renamed `gadget`, so after the restore the
+    // engine must re-sync — the old name is back in the graph and the new name is
+    // gone. Before the fix the index still held `gadget` (graph/workspace disagree).
+    expect(cg.getNodesByName('widget').some((n) => n.kind === 'function')).toBe(true);
+    expect(cg.getNodesByName('gadget').filter((n) => n.kind === 'function')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // R9 (rp-review B2) — rollback()'s OWN post-restore re-sync can fail (its
 // injected sync throws or returns the lock-failure zero-shape) AFTER the bytes
 // were already restored. That must still report `rolled-back` (the workspace IS

@@ -25,7 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { QueryBuilder } from '../db/queries';
 import { classifyEdgeConfidence } from './confidence';
-import { verifySpan } from './span-verify';
+import { findDeclarationNameColumn, verifySpan } from './span-verify';
 import { ConfidenceTier, RenameEdit, SourceRange } from './types';
 
 export interface DeriveGraphRenameOptions {
@@ -108,8 +108,11 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   // Declaration edit — always present (FR-002). The node start column is the
   // declaration keyword, so find the NAME occurrence at/after it (research
   // Decision 8), then span-verify it like any other edit; it is `exact` (FR-004).
+  // R18 (rp-review): a raw indexOf would match an earlier IDENTICAL token — an
+  // accessor/modifier keyword equal to the name (`get get()`) or a same-line
+  // `@name` decorator — so use the whole-word, decorator-aware scan instead.
   const declLine = lineAt(decl.filePath, decl.startLine);
-  const declCol = declLine.indexOf(oldName, decl.startColumn);
+  const declCol = findDeclarationNameColumn(declLine, decl.startColumn, oldName);
   if (declCol >= 0) {
     const range = verifySpan({ lineText: declLine, start: { line: decl.startLine, column: declCol }, oldName });
     if (range) push(decl.filePath, range, declLine, 'exact');

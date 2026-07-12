@@ -61,6 +61,7 @@ import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
 import { checkPlanJail } from './jail';
 import { deriveLspRename } from './lsp-rename';
 import { hasOverlappingSpans } from './snapshot';
+import { findDeclarationNameColumn } from './span-verify';
 import { GRAPH_LOCAL_KINDS, LspPathDisposition, resolveTarget } from './target-resolver';
 import {
   EditSource,
@@ -258,6 +259,9 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
       file: target.file,
       position: lspCursorPosition(projectRoot, target),
       newName,
+      // R20 (rp-review): thread the target's old name so translateWorkspaceEdit can
+      // reject an in-root edit whose live bytes replace an unrelated token.
+      oldName: target.name,
       env,
     });
     if (result.status === 'ok') {
@@ -342,11 +346,17 @@ const LSP_OVERLAP_LINE_BASE = 1_000_000;
 /**
  * D5c — true when, per file, two of `edits`' own ranges genuinely overlap
  * (spec.md's overlapping-range clause, checked at PLAN time). Fully-coincident
- * duplicates (identical start+end) are de-duplicated first — they are NOT an
- * overlap; `writeEdits` still de-duplicates them again at write time. Reuses
- * {@link hasOverlappingSpans} (shared with `writeEdits`' own byte-offset
- * check) over a (line, column)-derived numeric encoding — no file read
- * needed, since overlap is a pure property of the edit ranges themselves.
+ * duplicates (identical start+end AND `newText`) are de-duplicated first — the
+ * same edit emitted twice is NOT an overlap; `writeEdits` still de-duplicates
+ * them again at write time. The dedup key includes `newText` to MATCH
+ * `writeEdits`' own `${start}:${end}:${newText}` key (D1 round-2 review finding):
+ * two coincident ranges carrying DIFFERENT `newText` are a genuine, contradictory
+ * overlap the writer would refuse — omitting `newText` here collapsed them to one
+ * span, so the plan reported source `lsp` while apply-time `writeEdits` would
+ * degrade the same set (a plan/apply disagreement). Reuses
+ * {@link hasOverlappingSpans} (shared with `writeEdits`' own byte-offset check)
+ * over a (line, column)-derived numeric encoding — no file read needed, since
+ * overlap is a pure property of the edit ranges themselves.
  */
 function hasOverlappingLspEdits(edits: RenameEdit[]): boolean {
   const byFile = new Map<string, RenameEdit[]>();
@@ -359,10 +369,11 @@ function hasOverlappingLspEdits(edits: RenameEdit[]): boolean {
     const spans = fileEdits.map((e) => ({
       start: e.range.start.line * LSP_OVERLAP_LINE_BASE + e.range.start.column,
       end: e.range.end.line * LSP_OVERLAP_LINE_BASE + e.range.end.column,
+      newText: e.newText,
     }));
     const seen = new Set<string>();
     const unique = spans.filter((s) => {
-      const key = `${s.start}:${s.end}`;
+      const key = `${s.start}:${s.end}:${s.newText}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -421,7 +432,10 @@ function findTargetNodeId(queries: QueryBuilder, target: Target): string | null 
 function lspCursorPosition(projectRoot: string, target: Target): SourcePosition {
   try {
     const raw = fs.readFileSync(path.join(projectRoot, target.file), 'utf8').split('\n')[target.range.start.line - 1] ?? '';
-    const col = raw.replace(/\r$/, '').indexOf(target.name, target.range.start.column);
+    // R18 (rp-review): whole-word, decorator-aware scan — the SAME helper the graph
+    // declaration edit uses — so an accessor/modifier keyword or `@name` decorator
+    // equal to the name never mis-aims the LSP rename cursor at the wrong token.
+    const col = findDeclarationNameColumn(raw.replace(/\r$/, ''), target.range.start.column, target.name);
     if (col >= 0) return { line: target.range.start.line, column: col };
   } catch {
     /* fall through to the declaration start */
