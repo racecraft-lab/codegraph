@@ -56,6 +56,7 @@ import { QueryBuilder } from '../db/queries';
 import { hashContent } from '../extraction';
 import { detectLanguage } from '../extraction/grammars';
 import { EffectiveLspConfig, isLspLanguage, probeLspServerCommand } from '../lsp';
+import { validatePathWithinRoot } from '../utils';
 import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
 import { checkPlanJail } from './jail';
 import { deriveLspRename } from './lsp-rename';
@@ -350,12 +351,22 @@ function lspCursorPosition(projectRoot: string, target: Target): SourcePosition 
   return target.range.start;
 }
 
-/** Leftover-mention FYI over the LSP-touched files (same whole-word logic). */
+/**
+ * Leftover-mention FYI over the LSP-touched files (same whole-word logic).
+ * Runs BEFORE `checkPlanJail` (called by this module's own caller, below) —
+ * an out-of-root file's edits reach here too, so it is excluded from the read
+ * the SAME refuse-before-read way `translateWorkspaceEdit` (lsp-rename.ts)
+ * excludes it (Copilot review finding: this was the second, easy-to-miss read
+ * site on the identical LSP-ok code path — a leftover count for a file the
+ * whole plan is about to be refused over is moot anyway).
+ */
 function countLspLeftovers(projectRoot: string, oldName: string, edits: RenameEdit[]): number {
-  const files = [...new Set(edits.map((e) => e.file))].map((file) => ({
-    file,
-    lines: fs.readFileSync(path.join(projectRoot, file), 'utf8').split('\n'),
-  }));
+  const files = [...new Set(edits.map((e) => e.file))]
+    .filter((file) => validatePathWithinRoot(projectRoot, file) !== null)
+    .map((file) => ({
+      file,
+      lines: fs.readFileSync(path.join(projectRoot, file), 'utf8').split('\n'),
+    }));
   const emitted = new Set(edits.map((e) => `${e.file}:${e.range.start.line}:${e.range.start.column}`));
   return countTextualLeftovers(files, oldName, emitted);
 }

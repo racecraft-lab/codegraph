@@ -210,10 +210,17 @@ export function formatApplyResultTable(result: ApplyResult, newName: string): st
     // D5 review finding: the write ladder can now roll back for a Rung-4
     // write malfunction, not only a post-check dangle — the message must
     // name the actual cause rather than always blaming the post-check.
+    // Copilot review finding: a THIRD cause exists too — the Rung-5 re-sync
+    // lock-failure path (apply-engine's discriminateSyncResult) also rolls
+    // back, with an EMPTY danglingReferences and no writeFailure, since no
+    // post-check ever ran there either — the old unconditional `else` wrongly
+    // blamed the post-check for that cause too.
     if (result.writeFailure) {
       lines.push(`a write to ${result.writeFailure.file} failed (${result.writeFailure.message}); no file was left modified.`);
-    } else {
+    } else if (result.danglingReferences?.length) {
       lines.push('the post-check found dangling references to the old name; no file was left modified.');
+    } else {
+      lines.push('the post-apply re-sync could not acquire the index lock; no file was left modified.');
     }
     if (result.danglingReferences?.length) {
       lines.push('dangling references:');

@@ -36,10 +36,11 @@ import { resolveTarget } from '../src/refactor/target-resolver';
 import { planRename } from '../src/refactor/plan-engine';
 import {
   composeAfterLine,
+  formatApplyResultTable,
   formatRenamePlanTable,
   serializeRenamePlanJson,
 } from '../src/refactor/plan-format';
-import type { RenameEdit, RenamePlan } from '../src/refactor/types';
+import type { ApplyResult, RenameEdit, RenamePlan } from '../src/refactor/types';
 
 // ---------------------------------------------------------------------------
 // Shared draft-07-subset schema validator (module scope so both the plan-
@@ -1514,6 +1515,58 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     expect(plan.applied).toBe(false);
     expect(plan.newName).toBe('renamed');
   });
+
+  // Copilot review finding (PR #44, FR-017): translateWorkspaceEdit
+  // (lsp-rename.ts) previously read EVERY workspace-edit file — including an
+  // out-of-root one — before the jail above ever runs, violating
+  // refuse-before-read. The read-probe: an out-of-root URI whose file does
+  // NOT exist on disk. Pre-fix, the unconditional fs.readFileSync throws
+  // ENOENT inside deriveLspRename's own try/catch, which mis-classifies it as
+  // a generic 'server-crash' LSP failure — silently degrading the WHOLE
+  // rename to the graph path (never surfacing the out-of-root condition at
+  // all, and never even reaching this test's out-of-root assertions).
+  // Post-fix, the file is never opened: the out-of-root URI still flows into
+  // the SAME whole-plan out-of-root refusal T040 pins, with zero reads.
+  it('T040b refuses at plan time (out-of-root) even when the LSP-named out-of-root file does not exist on disk — never read (Copilot review finding)', async () => {
+    const { dir, queries } = await setup({ 'a.ts': A_DECL + '\n' });
+    const stub = writeRenameStub(dir);
+
+    // A directory OUTSIDE the workspace root that exists, but the file inside
+    // it never gets written — any attempt to read it throws observably.
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rename-outside-'));
+    cleanups.push(() => fs.rmSync(outsideDir, { recursive: true, force: true }));
+    const missingOutside = path.join(outsideDir, 'outside.ts'); // deliberately never written
+
+    const aCol = A_DECL.indexOf('target');
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'a.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: aCol }, end: { line: 0, character: aCol + 6 } }, newText: 'renamed' }],
+        },
+        {
+          textDocument: { uri: pathToFileURL(missingOutside).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 6 } }, newText: 'renamed' }],
+        },
+      ],
+    };
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(plan.refusal?.reason).toBe('out-of-root');
+    const relOutside = path.relative(dir, missingOutside);
+    expect(plan.refusal?.files).toEqual([relOutside]);
+    expect(plan.edits).toBeUndefined();
+    expect(plan.applied).toBe(false);
+    expect(plan.newName).toBe('renamed');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1912,6 +1965,59 @@ describe('T013 plan format + schema — plan-format (FR-027 / SC-001)', () => {
     const plain = JSON.parse(serializeRenamePlanJson(successPlan()));
     validate(plain, schema);
     expect(plain.lspDegradation).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Copilot review finding (PR #44) — formatApplyResultTable's `rolled-back`
+// message must name the ACTUAL cause. Before this fix it unconditionally
+// blamed "the post-check found dangling references..." even when the
+// rollback was forced by the Rung-5 re-sync lock-failure path
+// (apply-engine's discriminateSyncResult), which rolls back with an EMPTY
+// danglingReferences array and no writeFailure — no post-check ever ran.
+// Pure over an ApplyResult value object (no DB), like T013.
+// ---------------------------------------------------------------------------
+describe('formatApplyResultTable rolled-back message keys on the actual cause (Copilot review finding)', () => {
+  function rolledBack(overrides: Partial<ApplyResult>): ApplyResult {
+    return {
+      outcome: 'rolled-back',
+      touchedFiles: ['a.ts'],
+      postCheckPassed: false,
+      danglingReferences: [],
+      ...overrides,
+    };
+  }
+
+  it('a write-failure-caused rollback names the failed write (writeFailure present) — existing message, pinned', () => {
+    const table = formatApplyResultTable(
+      rolledBack({ writeFailure: { file: 'a.ts', message: 'EACCES: permission denied' } }),
+      'newFn',
+    );
+    expect(table).toContain('a write to a.ts failed (EACCES: permission denied); no file was left modified.');
+    expect(table).not.toContain('post-check found dangling references');
+    expect(table).not.toContain('index lock');
+  });
+
+  it('a post-check-caused rollback names the dangling references (danglingReferences non-empty, no writeFailure) — existing message, pinned', () => {
+    const table = formatApplyResultTable(
+      rolledBack({
+        danglingReferences: [
+          { file: 'a.ts', range: { start: { line: 3, column: 1 }, end: { line: 3, column: 6 } }, name: 'oldFn' },
+        ],
+      }),
+      'newFn',
+    );
+    expect(table).toContain('the post-check found dangling references to the old name; no file was left modified.');
+    expect(table).not.toContain('a write to');
+    expect(table).not.toContain('index lock');
+  });
+
+  it('a re-sync lock-failure rollback (empty danglingReferences, no writeFailure) gets its OWN message, not the post-check one', () => {
+    const table = formatApplyResultTable(rolledBack({}), 'newFn');
+    expect(table).not.toContain('post-check found dangling references');
+    expect(table).not.toContain('a write to');
+    expect(table).toContain('index lock');
+    expect(table).toContain('no file was left modified.');
   });
 });
 

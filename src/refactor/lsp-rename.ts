@@ -28,7 +28,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { LspClientError, LspJsonRpcClient } from '../lsp/client';
 import { probeLspServerCommand } from '../lsp/prereqs';
 import { EffectiveLspConfig, LspLanguage, LspReasonCode } from '../lsp/types';
-import { normalizePath } from '../utils';
+import { normalizePath, validatePathWithinRoot } from '../utils';
 import { RenameEdit, SourcePosition, TextEdit, WorkspaceEdit } from './types';
 
 /** LSP `languageId` values that differ from our Language tokens (didOpen). */
@@ -114,11 +114,22 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
 
 /**
  * Translate a `textDocument/rename` workspace edit into `RenameEdit[]`. The
- * server sends only `newText` + range, so each edited file is read once to
- * recover `oldText` (the live bytes the range replaces) and `lineText` (the full
- * pre-edit source line for the before/after preview, FR-027). LSP ranges are
- * 0-indexed UTF-16; the line converts once to graph-native 1-indexed and the
- * column passes through verbatim (research Decision 2).
+ * server sends only `newText` + range, so each IN-ROOT edited file is read
+ * once to recover `oldText` (the live bytes the range replaces) and
+ * `lineText` (the full pre-edit source line for the before/after preview,
+ * FR-027). LSP ranges are 0-indexed UTF-16; the line converts once to
+ * graph-native 1-indexed and the column passes through verbatim (research
+ * Decision 2).
+ *
+ * FR-017 refuse-before-read (Copilot review finding): an out-of-root file's
+ * bytes are NEVER read here — reusing the SAME containment check jail.ts
+ * uses ({@link validatePathWithinRoot}), not a new one. Its edits still carry
+ * the correct (escaping) `file` path with empty `oldText`/`lineText`
+ * placeholders, so the file still lands in the edit set `checkPlanJail`
+ * (called later by planRename/applyRename) refuses the WHOLE plan over —
+ * only the read is skipped, never the file's presence in that check.
+ * Placeholders are never surfaced: the whole plan is replaced by the
+ * out-of-root Refusal before any edit here would be rendered.
  */
 function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdit[] {
   const edit = result as WorkspaceEdit | null | undefined;
@@ -138,12 +149,33 @@ function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdi
   const out: RenameEdit[] = [];
   for (const { uri, edits } of perFile) {
     const absPath = fileURLToPath(uri);
-    const lines = fs.readFileSync(absPath, 'utf8').split('\n');
     // Normalize to the graph's forward-slash path convention: `path.relative`
     // uses the CURRENT PLATFORM's separator, which is `\` on win32 — the same
     // normalization precision-pass.ts's uriToProjectPath already applies
-    // (D5-win review finding).
+    // (D5-win review finding). Pure path math — no I/O — so it's safe to
+    // compute before the containment check below.
     const relFile = normalizePath(path.relative(projectRoot, absPath));
+
+    if (validatePathWithinRoot(projectRoot, absPath) === null) {
+      for (const textEdit of edits) {
+        const { start, end } = textEdit.range;
+        out.push({
+          file: relFile,
+          range: {
+            start: { line: start.line + 1, column: start.character },
+            end: { line: end.line + 1, column: end.character },
+          },
+          oldText: '',
+          newText: textEdit.newText,
+          lineText: '',
+          confidence: 'exact',
+          source: 'lsp',
+        });
+      }
+      continue;
+    }
+
+    const lines = fs.readFileSync(absPath, 'utf8').split('\n');
     for (const textEdit of edits) {
       const { start, end } = textEdit.range;
       const lineText = (lines[start.line] ?? '').replace(/\r$/, '');

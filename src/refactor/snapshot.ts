@@ -177,9 +177,19 @@ export function writeEdits(input: {
 
   const writtenFiles: string[] = [];
   for (const p of planned) {
-    const tmp = path.join(path.dirname(p.abs), '.' + path.basename(p.abs) + RENAME_TEMP_SUFFIX);
+    // CodeQL js/insecure-temporary-file (alert #43): a per-write random
+    // component makes the temp-sibling name unpredictable — defense against a
+    // pre-planted file/symlink at a guessable path. `.codegraph-tmp` stays
+    // the TRAILING suffix (isSourceFile's extension check, and every
+    // `*.codegraph-tmp` test assertion, key on the suffix alone). `mode:
+    // 0o600` closes the CodeQL sink directly (it fires on any writeFileSync
+    // with no/insecure mode, independent of name predictability).
+    const tmp = path.join(
+      path.dirname(p.abs),
+      `.${path.basename(p.abs)}.${randomBytes(6).toString('hex')}${RENAME_TEMP_SUFFIX}`,
+    );
     try {
-      fs.writeFileSync(tmp, p.bytes);
+      fs.writeFileSync(tmp, p.bytes, { mode: 0o600 });
       fs.renameSync(tmp, p.abs); // atomic within the directory (same filesystem)
     } catch (error) {
       // D5 review finding (BLOCKER): a mid-loop write/rename malfunction
@@ -187,6 +197,16 @@ export function writeEdits(input: {
       // written. Report the cause instead of throwing uncaught, so the caller
       // (which holds the pre-write snapshots) can route the WHOLE plan
       // through rollback rather than leaving a half-renamed workspace.
+      // Copilot review finding: best-effort clean up the orphaned temp
+      // sibling (e.g. writeFileSync succeeded but the FOLLOWING renameSync
+      // is what threw) so a failed write never leaves .codegraph-tmp
+      // clutter; swallow any cleanup failure of its own (tmp may never have
+      // been created at all) — the ORIGINAL error below is what's reported.
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        // best-effort — nothing to report if this itself fails
+      }
       return { writeError: true, file: p.file, message: error instanceof Error ? error.message : String(error) };
     }
     writtenFiles.push(p.file);
@@ -225,7 +245,14 @@ export function restoreSnapshots(input: {
   const unrestoredFiles: string[] = [];
   for (const [file, bytes] of input.snapshots) {
     try {
-      fs.writeFileSync(path.resolve(input.projectRoot, file), bytes);
+      // CodeQL js/insecure-temporary-file (alert #44): `mode: 0o600` closes
+      // the sink (it fires on any writeFileSync with no/insecure mode). A
+      // no-op for the normal restore-of-an-existing-file case — POSIX only
+      // applies the mode argument when open() actually CREATES the file, so
+      // an existing file's own permission bits are untouched — and only
+      // tightens permissions in the edge case where the file was itself
+      // deleted and gets recreated here.
+      fs.writeFileSync(path.resolve(input.projectRoot, file), bytes, { mode: 0o600 });
       restoredFiles.push(file);
     } catch {
       unrestoredFiles.push(file);
@@ -238,10 +265,17 @@ export function restoreSnapshots(input: {
     '.codegraph',
     `rename-recovery-${process.pid}-${randomBytes(4).toString('hex')}`,
   );
+  // CodeQL js/insecure-temporary-file (alert #45 covers the per-file write
+  // below; this hardens the DIRECTORY the same way): created up front at
+  // 0o700 so the incident dump — potentially-sensitive unrestored source —
+  // is owner-only from its first file, regardless of how many/which files
+  // land inside it (a per-file nested mkdirSync below only ever adds
+  // subdirectories INSIDE this already-locked-down directory).
+  fs.mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
   for (const file of unrestoredFiles) {
     const dest = path.join(recoveryDir, file);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, input.snapshots.get(file)!);
+    fs.writeFileSync(dest, input.snapshots.get(file)!, { mode: 0o600 });
   }
   return { restoredFiles, unrestoredFiles, recoveryDir };
 }

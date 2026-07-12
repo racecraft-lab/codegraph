@@ -33,6 +33,7 @@ import * as path from 'path';
 import { QueryBuilder } from '../db/queries';
 import { SyncResult } from '../extraction';
 import { EffectiveLspConfig } from '../lsp';
+import { normalizePath } from '../utils';
 import { checkPlanJail } from './jail';
 import { planRename } from './plan-engine';
 import { discriminateSyncResult, runPostCheck } from './post-check';
@@ -126,8 +127,19 @@ async function runLadder(options: ApplyRenameOptions, reDerived: boolean): Promi
   if (jail) return refused(jail);
 
   // Rung 3 — pre-write in-memory byte snapshots of every touched file (FR-018/FR-020),
-  // taken BEFORE any write so a rollback restores byte-identically.
-  const snapshots = takeSnapshots(projectRoot, files);
+  // taken BEFORE any write so a rollback restores byte-identically. A file that is
+  // UNREADABLE here (e.g. deleted between the recompute above and this point —
+  // Copilot review finding) gets the SAME zero-write refusal Rung 3b already
+  // gives an unreadable file below: nothing has been written yet, so there is
+  // nothing to roll back. takeSnapshots has no injected read seam (unlike
+  // reverifySpans below), so the failing file is recovered from the thrown
+  // error's own `.path` instead.
+  let snapshots: Map<string, Buffer>;
+  try {
+    snapshots = takeSnapshots(projectRoot, files);
+  } catch (error) {
+    return unreadableFileRefusal(unreadableFileFromError(error, projectRoot, files));
+  }
 
   // Rung 3b — apply-time span re-verify against the LIVE bytes (FR-016). A file
   // that drifted in the recompute→write window refuses `stale-span` with the
@@ -151,13 +163,7 @@ async function runLadder(options: ApplyRenameOptions, reDerived: boolean): Promi
       },
     });
   } catch {
-    return refused({
-      reason: 'stale-span',
-      message:
-        `Refusing to apply: the live bytes of ${unreadableFile} could not be read ` +
-        `(it may have been deleted since the plan was made). Run \`codegraph sync\` and retry.`,
-      files: unreadableFile ? [unreadableFile] : [],
-    });
+    return unreadableFileRefusal(unreadableFile);
   }
   if (!reverify.ok) {
     return refused({
@@ -212,6 +218,38 @@ async function runLadder(options: ApplyRenameOptions, reDerived: boolean): Promi
 /** A pre-write, success-shaped refusal terminal — zero writes (FR-023). */
 function refused(refusal: Refusal): ApplyResult {
   return { outcome: 'refused', touchedFiles: [], postCheckPassed: false, refusal };
+}
+
+/**
+ * A pre-write refusal for a touched file that could not be read — Rung 3
+ * (takeSnapshots) and Rung 3b (reverifySpans) both route an unreadable
+ * touched file here: it is treated identically to a drifted span (FR-016),
+ * since nothing has been written yet and there is nothing to roll back
+ * (Copilot review finding, Rung 3; D5 review finding, Rung 3b).
+ */
+function unreadableFileRefusal(file: string | undefined): ApplyResult {
+  return refused({
+    reason: 'stale-span',
+    message:
+      `Refusing to apply: the live bytes of ${file} could not be read ` +
+      `(it may have been deleted since the plan was made). Run \`codegraph sync\` and retry.`,
+    files: file ? [file] : [],
+  });
+}
+
+/**
+ * Recover the workspace-relative file name from a thrown fs read error's
+ * `.path` (a standard Node `ErrnoException` field, set by every `fs.read*`
+ * throw) — takeSnapshots itself throws whatever `fs.readFileSync` throws,
+ * with no injected seam to capture which file failed, so the caller derives
+ * it from the error instead. `normalizePath` matches the same win32
+ * forward-slash convention `path.relative`'s other callers already apply
+ * (D5-win review finding).
+ */
+function unreadableFileFromError(error: unknown, projectRoot: string, files: string[]): string | undefined {
+  const raw = error && typeof error === 'object' && 'path' in error ? (error as { path?: unknown }).path : undefined;
+  if (typeof raw !== 'string') return files[0];
+  return normalizePath(path.relative(projectRoot, raw));
 }
 
 /**

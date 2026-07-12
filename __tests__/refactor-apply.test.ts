@@ -57,9 +57,12 @@ import type { SyncResult } from '../src';
 // function, and `readFileSync`'s DEFAULT behavior, are the untouched real
 // implementation; only the one Rung-3b test below installs a temporary custom
 // implementation (reset back to a plain passthrough in its own `finally`).
+// `renameSync` is wrapped the SAME way (Copilot review finding, Rung 4): the
+// orphaned-temp-sibling-cleanup test forces ONLY renameSync to throw while
+// writeFileSync stays real, so a genuine temp sibling lands on disk first.
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
-  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync), renameSync: vi.fn(actual.renameSync) };
 });
 
 const OLD_NAME_REF = 'ghostRef'; //   name of the unresolved (dangling) reference
@@ -1274,6 +1277,62 @@ describe('D5 write-path malfunctions reach the rollback ladder (FR-019/FR-019a):
     },
   );
 
+  // Copilot review finding (PR #44): writeEdits' catch path returned the
+  // writeError result WITHOUT cleaning up a temp sibling that writeFileSync
+  // had already created before renameSync threw — leaving a `.codegraph-tmp`
+  // file behind. renameSync is mocked to fail for exactly the touched file's
+  // target path (writeFileSync stays REAL, so a genuine temp sibling lands on
+  // disk first) — a static chmod can't isolate renameSync alone from
+  // writeFileSync, since POSIX rename() and file creation both need the SAME
+  // directory-write permission, so there is no static permission state that
+  // blocks one but not the other.
+  it('Rung 4: renameSync throws AFTER the temp sibling is already written → the orphaned .codegraph-tmp file is cleaned up (Copilot review finding)', async () => {
+    const { dir, cg, queries } = await makeIndexedFixture({
+      'decl.ts': 'export function widget(): void {}\n',
+    }).then((f) => {
+      cleanups.push(f.cleanup);
+      return f;
+    });
+    const declAbs = path.resolve(dir, 'decl.ts');
+
+    const realFs = await vi.importActual<typeof import('fs')>('fs');
+    const mockedRename = vi.mocked(fs.renameSync);
+    mockedRename.mockImplementation(((...args: Parameters<typeof fs.renameSync>) => {
+      // writeEdits' temp-sibling rename target is always the touched file's
+      // own absolute path (the second argument) — force ONLY this rename to
+      // fail, after the real writeFileSync already created the temp sibling.
+      if (args[1] === declAbs) {
+        throw Object.assign(new Error(`EACCES: permission denied, rename to '${declAbs}'`), { code: 'EACCES' });
+      }
+      return (realFs.renameSync as (...a: Parameters<typeof fs.renameSync>) => void)(...args);
+    }) as typeof fs.renameSync);
+
+    let result: ApplyResult | undefined;
+    try {
+      result = await applyRename({
+        queries,
+        projectRoot: dir,
+        selector: { name: 'widget', kind: 'function' },
+        newName: 'gadget',
+        lspConfig: graphOnlyLsp(dir),
+        env: {},
+        sync: () => cg.sync(),
+      });
+    } finally {
+      // Reset to a plain passthrough so no later test in this file inherits
+      // this test's custom (rename-failing) implementation.
+      mockedRename.mockImplementation(realFs.renameSync as typeof fs.renameSync);
+    }
+
+    assertExactlyOneTerminal(result!);
+    expect(result!.outcome).toBe('rolled-back');
+    expect(result!.writeFailure).toBeDefined();
+    expect(result!.writeFailure!.file).toContain('decl.ts');
+    // The temp sibling writeFileSync created before the failed rename must
+    // not be left behind.
+    expect(fs.readdirSync(dir).filter((n) => n.endsWith(RENAME_TEMP_SUFFIX))).toEqual([]);
+  });
+
   it('Rung 3b: a touched file deleted AFTER takeSnapshots captures it but BEFORE reverifySpans reads it → zero writes, stale-span-shaped refusal, no throw', async () => {
     const { dir, cg, queries } = await makeIndexedFixture({
       'decl.ts': 'export function widget(): void {}\n',
@@ -1315,6 +1374,59 @@ describe('D5 write-path malfunctions reach the rollback ladder (FR-019/FR-019a):
     } finally {
       // Reset to a plain passthrough so no later test in this file inherits
       // this test's custom (file-deleting) implementation.
+      mocked.mockImplementation(realFs.readFileSync as typeof fs.readFileSync);
+    }
+
+    assertExactlyOneTerminal(result!);
+    expect(result!.outcome).toBe('refused');
+    expect(result!.refusal?.reason).toBe('stale-span');
+    expect(result!.touchedFiles).toEqual([]);
+    expect(result!.refusal?.files).toContain('decl.ts');
+  });
+
+  // Copilot review finding (PR #44): a touched file deleted between the Rung-0
+  // recompute and Rung 3 (takeSnapshots) previously threw UNCAUGHT — takeSnapshots
+  // itself has no injected read seam (unlike reverifySpans above), so the file is
+  // made unreadable by forcing takeSnapshots' OWN read (the Buffer-mode call, no
+  // encoding argument — unique to takeSnapshots; every other read site in this
+  // path passes 'utf8') to fail directly, without needing to delete anything for
+  // real. Nothing has been written yet, so the correct terminal is the SAME
+  // zero-write stale-span refusal Rung 3b already gives an unreadable file.
+  it('Rung 3: a touched file unreadable when takeSnapshots reads it (deleted after the plan was derived) → zero writes, stale-span-shaped refusal, no throw', async () => {
+    const { dir, cg, queries } = await makeIndexedFixture({
+      'decl.ts': 'export function widget(): void {}\n',
+    }).then((f) => {
+      cleanups.push(f.cleanup);
+      return f;
+    });
+    const declAbs = path.resolve(dir, 'decl.ts');
+
+    const realFs = await vi.importActual<typeof import('fs')>('fs');
+    const mocked = vi.mocked(fs.readFileSync);
+    mocked.mockImplementation(((...args: Parameters<typeof fs.readFileSync>) => {
+      if (args[0] === declAbs && args[1] === undefined) {
+        const err = new Error(`ENOENT: no such file or directory, open '${declAbs}'`) as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        err.path = declAbs;
+        throw err;
+      }
+      return (realFs.readFileSync as (...a: Parameters<typeof fs.readFileSync>) => ReturnType<typeof fs.readFileSync>)(...args);
+    }) as typeof fs.readFileSync);
+
+    let result: ApplyResult | undefined;
+    try {
+      result = await applyRename({
+        queries,
+        projectRoot: dir,
+        selector: { name: 'widget', kind: 'function' },
+        newName: 'gadget',
+        lspConfig: graphOnlyLsp(dir),
+        env: {},
+        sync: () => cg.sync(),
+      });
+    } finally {
+      // Reset to a plain passthrough so no later test in this file inherits
+      // this test's custom (throwing) implementation.
       mocked.mockImplementation(realFs.readFileSync as typeof fs.readFileSync);
     }
 
