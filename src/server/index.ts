@@ -303,17 +303,21 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       // in the request PATH (e.g. `/api/<token>`): redact it before logging.
       try {
         // FR-014a is absolute: the token must never appear in a log in ANY
-        // reversible form. A client can place it in the path verbatim OR
-        // percent-encoded, and enumerating every equivalent encoding is
-        // impractical — so if the token appears in the raw OR the once-decoded
-        // path, collapse the whole path to a fixed marker rather than trying to
-        // redact just the token substring.
+        // reversible form. A client can place it in the path verbatim, singly OR
+        // MULTIPLY percent-encoded, so check the raw path AND every decoding level
+        // (bounded, to avoid an infinite loop on malformed input); a match at any
+        // level collapses the whole path to a fixed marker. Decoding here is only
+        // for the redaction check — nothing is served from it, so (unlike the
+        // static mount) it may safely decode to a fixed point.
         let safePath = rawPath;
         if (security.token) {
-          let decoded = rawPath;
-          try { decoded = decodeURIComponent(rawPath); } catch { /* malformed % — keep raw */ }
-          if (rawPath.includes(security.token) || decoded.includes(security.token)) {
-            safePath = '/<redacted>';
+          let probe = rawPath;
+          for (let i = 0; i < 6; i++) {
+            if (probe.includes(security.token)) { safePath = '/<redacted>'; break; }
+            let next: string;
+            try { next = decodeURIComponent(probe); } catch { break; } // malformed % — stop
+            if (next === probe) break; // fully decoded / stable
+            probe = next;
           }
         }
         options.logger?.(`${method} ${safePath} -> ${status}`);

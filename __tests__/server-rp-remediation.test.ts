@@ -198,11 +198,14 @@ describe('SPEC-005 R3: request logger redacts the configured token in the path (
       logger: (line) => logs.push(line),
     });
     try {
+      const doubleEncoded = encodeURIComponent(encoded); // e.g. sec%252Fret%2520tok%252Ben
       await fetch(`http://${handle.host}:${handle.port}/api/${encoded}/x`).catch(() => undefined);
+      await fetch(`http://${handle.host}:${handle.port}/api/${doubleEncoded}/y`).catch(() => undefined);
       expect(logs.length).toBeGreaterThan(0);
       const joined = logs.join('\n');
       expect(joined).not.toContain(TOKEN); // not the cleartext token
-      expect(joined).not.toContain(encoded); // nor the reversible percent-encoded form
+      expect(joined).not.toContain(encoded); // nor the singly percent-encoded reversible form
+      expect(joined).not.toContain(doubleEncoded); // nor the MULTIPLY-encoded form
       expect(logs.some((l) => l.includes('<redacted>'))).toBe(true);
     } finally {
       await handle.close();
