@@ -488,6 +488,13 @@ export interface JobApiDeps {
    * the read handlers use for `?repo`.
    */
   resolveRepo(repoId: string | undefined): RepoInfo | null;
+  /**
+   * Whether `root` already has an index (`.codegraph/`). A re-index job RECOVERS an
+   * existing index; it never initializes a new project (FR-020, Constitution VII
+   * dormancy). `resolveRepo` returns the startup repo even when its directory has no
+   * index, so the POST path must gate on this to 404 rather than start a doomed job.
+   */
+  isRepoIndexed(root: string): boolean;
   /** The in-memory latest-job-per-repo registry (jobs.ts). */
   registry: JobRegistry;
 }
@@ -501,6 +508,11 @@ function reindexPostHandler(deps: JobApiDeps): RouteHandler {
     if (!ctx.params.repo) return notFound('repo');
     const repo = deps.resolveRepo(ctx.params.repo);
     if (!repo) return notFound('repo');
+    // resolveRepo returns the startup repo for its own id even when that directory
+    // has NO index — but re-index recovers an existing index, it never initializes a
+    // new project (FR-020, Constitution VII). An un-indexed target is 404 `repo` here,
+    // not a 202 that spawns a job doomed to terminal `index_failed`.
+    if (!deps.isRepoIndexed(repo.root)) return notFound('repo');
     // URL-only: mode from `?full=true`; NO request body is read (FR-020, Edge Cases).
     const mode: JobMode = ctx.query.get('full') === 'true' ? 'full' : 'sync';
     try {

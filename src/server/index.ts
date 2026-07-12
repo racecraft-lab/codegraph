@@ -313,7 +313,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   // the document omits the reindex surface), so the job routes must not join it.
   const routes = [
     ...buildReadRoutes(readDeps),
-    ...buildJobRoutes({ resolveRepo, registry: jobRegistry }),
+    ...buildJobRoutes({
+      resolveRepo,
+      isRepoIndexed: (root) => findNearestCodeGraphRoot(root) !== null,
+      registry: jobRegistry,
+    }),
   ];
 
   const server = http.createServer((req, res) => {

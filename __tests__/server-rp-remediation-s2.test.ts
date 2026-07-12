@@ -424,4 +424,51 @@ describe('SPEC-005 slice-2 round-4 remediation', () => {
     // message instead of hanging for the 5s default.
     await expect(transport.request('roots/list', undefined, 250)).rejects.toThrow('Transport stopped');
   });
+
+  // S2-F2 (FR-020, Constitution VII): POST /api/reindex/:repo for a resolvable-but-
+  // UN-INDEXED repo (the startup repo whose directory has no `.codegraph/`) must 404
+  // `repo` — a re-index RECOVERS an existing index, it never initializes a new project.
+  // Before, resolveRepo returned the startup repo regardless, so the POST 202'd and the
+  // spawned job then failed terminal `index_failed`. buildJobRoutes now gates on
+  // isRepoIndexed before starting a job.
+  const jobPostCtx = (repoId: string): RouteContext => ({
+    method: 'POST',
+    rawPath: `/api/reindex/${repoId}`,
+    params: {}, // handleApiRequest fills params.repo from the matched pattern
+    query: new URLSearchParams(),
+    headers: {},
+  });
+
+  it('S2-F2: reindex POST on an un-indexed repo is 404 not_found (resource:repo), starts no job', async () => {
+    const repo: RepoInfo = { id: 'b'.repeat(16), root: '/no-index-here', name: 'x' };
+    const registry = new JobRegistry({ isLockHeld: () => false, rearmWatcher: () => undefined });
+    const routes = buildJobRoutes({ resolveRepo: () => repo, isRepoIndexed: () => false, registry });
+    const res = await handleApiRequest(routes, jobPostCtx(repo.id));
+    expect(res?.status).toBe(404);
+    expect((res?.body as { error: { details?: { resource?: string } } }).error.details?.resource).toBe('repo');
+    expect(registry.latest(repo.id)).toBeNull(); // no doomed job was created
+  });
+
+  it('S2-F2: reindex POST on an INDEXED repo still returns 202 (guard does not over-restrict)', async () => {
+    const repo: RepoInfo = { id: 'c'.repeat(16), root: os.tmpdir(), name: 'x' };
+    const registry = new JobRegistry({
+      runIndex: async () => ({
+        filesChecked: 0,
+        filesAdded: 0,
+        filesModified: 0,
+        filesRemoved: 0,
+        nodesUpdated: 0,
+        durationMs: 0,
+      }),
+      isLockHeld: () => false,
+      rearmWatcher: () => undefined,
+    });
+    const routes = buildJobRoutes({ resolveRepo: () => repo, isRepoIndexed: () => true, registry });
+    try {
+      const res = await handleApiRequest(routes, jobPostCtx(repo.id));
+      expect(res?.status).toBe(202);
+    } finally {
+      await registry.abortAll(); // stop the background job before the test exits
+    }
+  });
 });

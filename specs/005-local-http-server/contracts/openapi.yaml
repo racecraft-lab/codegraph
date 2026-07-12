@@ -344,7 +344,9 @@ paths:
         '409':
           description: A job is already active for this repo (FR-022). Not used for lock contention.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
-        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach failure (FR-015a)
+        # No '503': a re-index job runs IN the serve process (FR-021), so there is no daemon
+        # attach to fail; lock contention is a terminal job error (lock_unavailable), never a
+        # 503 (FR-021a). Matches the shipped src/server/openapi.yaml, which omits it.
     get:
       tags: [jobs]
       summary: Latest job state for the repo (terminal outcome readable after finish, FR-024).
