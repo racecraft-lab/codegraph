@@ -12,8 +12,9 @@
  *   - Anti-patterns (don't re-verify with grep; don't hand-reconstruct flows)
  *
  * Keep it tight. The agent reads this every session — long instructions
- * burn tokens. The DEFAULT MCP surface is `codegraph_explore` ALONE (see
- * DEFAULT_MCP_TOOLS in tools.ts) — reference only that tool here. The other
+ * burn tokens. The DEFAULT MCP surface is `codegraph_explore` (the retrieval
+ * PRIMARY) plus `codegraph_rename` (the SPEC-010 write tool, documented in
+ * its own short section) — see DEFAULT_MCP_TOOLS in tools.ts. The other
  * tools (node/search/callers/…) stay defined and are re-enablable via
  * CODEGRAPH_MCP_TOOLS, but they are NOT listed to agents, so don't name them.
  */

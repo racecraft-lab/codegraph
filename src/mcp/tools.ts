@@ -4302,8 +4302,12 @@ export class ToolHandler {
    * ambiguous / excluded / unsupported-kind target, an invalid argument, a
    * heuristic-gated apply, a not-indexed project — is delivered as a SUCCESS-shaped
    * `refusal` object (textResult, no isError), so an early refusal never teaches the
-   * agent to abandon the toolset (Principle VI). The SOLE isError is a failed
-   * rollback restore (FR-019a), the one genuine malfunction on this surface.
+   * agent to abandon the toolset (Principle VI). The SOLE isError reachable
+   * from a request is a failed rollback restore (FR-019a), the one genuine
+   * malfunction on this surface; {@link ../refactor/apply-engine}'s one other
+   * throw — an overlap guard impossible by construction (FR-005 disjoint
+   * occurrences) — would also surface here via the generic catch as a
+   * retryable isError, but should never actually fire.
    */
   private async handleRename(args: Record<string, unknown>): Promise<ToolResult> {
     // The CLI takes target / new-name as positional strings; mirror that coercion
