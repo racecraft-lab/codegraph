@@ -902,15 +902,23 @@ For each task:
 
 ### What Worked Well
 
--
+- The spec's own layered gates each caught a distinct real defect class no earlier layer saw: Slice-1 UAT → D1/D2; self-repo dogfood → D3; quickstart gate → D4; independent post-implementation code review → D5; PR automation (CodeQL/Copilot) → D6. Five TDD remediation batches, all same-session find→fix→re-validate.
+- Security-consensus + human ratification up front (FR-017/019a/020/028) meant zero design forks during implementation — every defect resolution was anchorable to already-committed spec text.
+- First-hand orchestrator verification of every executor claim (tsc + suites re-run, diffs read) caught zero fabrications across ~15 executor units — but the discipline is what made executor reports trustworthy inputs to gates.
+- Evidence-bearing durable records (workflow rows, packets, checkpoints in autopilot-state) made post-implementation verification (verify/phantom/retrospective) fast and non-circular.
 
 ### Challenges Encountered
 
--
+- The 405-LOC scaffold estimate froze before Clarify/Checklist grew the requirement surface; actual reviewable LOC ran ~4× per slice. Mitigated by disclosure + packets, not prevented. (Retrospective recommendation: re-estimate after Checklist.)
+- Runner mutation ops rejected on the installed runner all run — every generator (spec-index, PR body, UAT skeleton, reviewability tasks-mode) needed its documented fallback.
+- Infra flakiness consumed orchestrator cycles: stale IDE TS-server diagnostics (never once real), the iTerm2 teammate backend dying mid-run (fell back to in-process agents), one executor lost to a session limit, and locked-down agent types unable to deliver reports (SendMessage denied → scratchpad-file protocol).
+- The dogfood embedding env leak (direnv) forced the TEST_ENV_SCRUB prefix as a binding invariant on every test invocation.
 
 ### Patterns to Reuse
 
--
+- Plan-time verification against the graph as the safety spine: D3 (completeness ⊇ check), D4 (file-level freshness discriminating drift from false positives), D5c (overlap degrade) all follow one shape — verify the foreign input against what the index already knows, degrade or refuse whole-rename, never merge or silently drop.
+- Zero-write-before-mutation refusals vs rollback-after-mutation as the two-terminal discipline (Rung 3/3b errors refuse; Rung 4+ errors roll back) — the D5/D6 fixes are mechanical once that line is drawn.
+- The reap-on-report agent lifecycle + TaskStop for handshake-incapable types; per-slice marker checkpoints in autopilot-state; live-grounding documents (UAT runbook captured real CLI output, not prose).
 
 ---
 
