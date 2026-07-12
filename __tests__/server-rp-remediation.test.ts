@@ -184,4 +184,28 @@ describe('SPEC-005 R3: request logger redacts the configured token in the path (
       await handle.close();
     }
   });
+
+  it('a percent-ENCODED token in the path is also redacted — no reversible form (FR-014a)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rp-tok-enc-'));
+    dirs.push(dir);
+    const TOKEN = 'sec/ret tok+en'; // contains chars that URL-encode (/ space +)
+    const encoded = encodeURIComponent(TOKEN); // e.g. sec%2Fret%20tok%2Ben
+    const logs: string[] = [];
+    const handle = await startWebServer({
+      port: 0,
+      projectPath: dir,
+      token: TOKEN,
+      logger: (line) => logs.push(line),
+    });
+    try {
+      await fetch(`http://${handle.host}:${handle.port}/api/${encoded}/x`).catch(() => undefined);
+      expect(logs.length).toBeGreaterThan(0);
+      const joined = logs.join('\n');
+      expect(joined).not.toContain(TOKEN); // not the cleartext token
+      expect(joined).not.toContain(encoded); // nor the reversible percent-encoded form
+      expect(logs.some((l) => l.includes('<redacted>'))).toBe(true);
+    } finally {
+      await handle.close();
+    }
+  });
 });
