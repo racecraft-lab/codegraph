@@ -772,6 +772,7 @@ describe('F3 — an SSE stream throw is contained at the writer or the handler (
     registry.start({ id: 'r1', root: '/tmp/x' }, 'sync'); // a running job
     const routes = buildJobRoutes({
       resolveRepo: (id) => (id === 'r1' ? { id: 'r1', root: '/tmp/x', name: 'x' } : null),
+      isRepoIndexed: () => true, // SSE events route never invokes it (only POST gates on it)
       registry,
     });
     const eventsRoute = routes.find((r) => r.method === 'GET' && r.pattern.endsWith('/events'))!;

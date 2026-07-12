@@ -519,7 +519,7 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
       evictClient: () => {}, // never invoked by route enumeration
       isRepoIndexed: () => false,
     };
-    const jobStub: JobApiDeps = { resolveRepo: () => null, registry: new JobRegistry() };
+    const jobStub: JobApiDeps = { resolveRepo: () => null, isRepoIndexed: () => false, registry: new JobRegistry() };
     const live = [...buildReadRoutes(readStub), ...buildJobRoutes(jobStub)].map((r) => ({
       // `/api/node/:id` → `/api/node/{id}` (the OpenAPI path-template form).
       key: `${r.method} ${r.pattern.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`,

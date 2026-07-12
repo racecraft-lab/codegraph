@@ -364,6 +364,7 @@ describe('SPEC-005 slice-2 round-4 remediation', () => {
       // Mirror index.ts: '' (and undefined) resolve to the DEFAULT repo — exactly
       // the wrong resolution the guard prevents. A started job here would be a bug.
       resolveRepo: (id) => (id === undefined || id === '' || id === 'r1' ? repo : null),
+      isRepoIndexed: () => true, // empty-path repos 404 before the isRepoIndexed gate is reached
       registry: new JobRegistry({
         runIndex: async () => { throw new Error('no job must start for an empty path repo'); },
         isLockHeld: () => false,
