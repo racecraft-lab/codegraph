@@ -338,6 +338,26 @@ describe('R18 findDeclarationNameColumn — whole-word declaration-name locator'
     // no occurrence precedes it — fall back to the first whole-word occurrence.
     expect(findDeclarationNameColumn('func (s *Server) handle(cfg Config) {', 0, 'handle')).toBe(17);
   });
+
+  // R24 (rp-review round-4, P0) — the delimiter scan and the whole-word occurrence
+  // collection ran over the RAW line, so a signature-delimiter character INSIDE a
+  // comment poisoned the rule. In `get /* returns: cached value */ get()` the `:`
+  // inside the block comment became the "first delimiter", so the name AFTER the
+  // comment was excluded and the accessor keyword before it was selected — which
+  // then span-verified (its bytes match) and would be rewritten on --apply. Both
+  // C-family comment forms are now masked to spaces (indices preserved) before the
+  // scan, so neither a delimiter nor a same-name token inside a comment counts.
+  it('R24: a signature delimiter inside a `/* … */` block comment does not poison the delimiter scan', () => {
+    expect(findDeclarationNameColumn('get /* returns: cached value */ get() {}', 0, 'get')).toBe(32);
+    expect(findDeclarationNameColumn('get /* note: cached */ get()', 0, 'get')).toBe(23);
+  });
+
+  it('R24: a `//` line comment truncates the scan region without breaking a name before it', () => {
+    // `foo` precedes the `//`; the `:` inside the comment must not be treated as the
+    // signature delimiter (it would still resolve here, but the truncation is what
+    // keeps a comment-internal token from ever being collected as the name).
+    expect(findDeclarationNameColumn('foo // sets: x', 0, 'foo')).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -929,22 +949,29 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
     expect(refLine.slice(ref.range.start.column, ref.range.end.column)).toBe('onEvent');
   });
 
-  it('drops a self-loop sentinel references edge (source===target) BEFORE tier classification — never an edit, even where its own span WOULD verify (FR-004)', async () => {
+  // R25 (rp-review round-4, P0) — the self-loop skip is now POSITIVE: only a
+  // FRAMEWORK self-loop sentinel (resolvedBy='framework') is dropped. This guard
+  // pins that the framework marker is still excluded even though its recorded span
+  // WOULD verify against the live bytes — i.e. the drop is the endpoint+marker guard,
+  // not verifySpan. The companion test below pins that a NON-framework self-loop
+  // (recursion) now flows through instead of being silently dropped.
+  it('R25: drops ONLY a framework self-loop SENTINEL (source===target, resolvedBy=framework) — never an edit even where its span WOULD verify, counted nowhere (FR-004)', async () => {
     const { dir, cg, queries } = await indexFixture({
       'lib.ts': 'export function handler(x) { return x; }\n// handler mention here\n',
     });
     const id = fnId(cg, 'handler');
-    // A hand-inserted framework self-loop sentinel. Its (line, col) points at a real
-    // `handler` token (lib.ts:2, a comment) whose live slice WOULD pass span
-    // verification — so ONLY the source===target guard can drop it
-    // (classifyEdgeConfidence cannot see endpoints — the carried-forward T004 rule).
+    // A hand-inserted FRAMEWORK self-loop sentinel — the FR-004 confidence-1.0
+    // framework-global marker. Its (line, col) points at a real `handler` token
+    // (lib.ts:2, a comment) whose live slice WOULD pass span verification, so ONLY the
+    // positive source===target-AND-framework guard drops it (classifyEdgeConfidence
+    // cannot see endpoints — the carried-forward T004 rule).
     queries.insertEdge({
       source: id,
       target: id,
       kind: 'references',
       line: 2,
       column: 3,
-      metadata: { resolvedBy: 'import', refName: 'handler' },
+      metadata: { resolvedBy: 'framework', confidence: 1, refName: 'handler' },
     });
     // Sanity: the statement DOES return the self-loop, so dropping it is the module's job.
     expect(queries.getReferencesToNode(id).some((r) => r.sourceId === id)).toBe(true);
@@ -955,9 +982,58 @@ describe('T011 graph-path rename derivation — deriveGraphRename (real SQLite)'
       targetId: id,
       newName: 'process',
     });
-    expect(result.edits).toHaveLength(1); // declaration only
+    expect(result.edits).toHaveLength(1); // declaration only — the sentinel is never an edit
     expect(result.edits[0]!.range.start.line).toBe(1);
     expect(result.edits.some((e) => e.range.start.line === 2)).toBe(false); // the comment token is never edited
+    // Counted nowhere: the sentinel adds nothing to the plan. The lone leftover is the
+    // independent comment occurrence (`// handler mention here`), present with or
+    // without the sentinel edge; the framework marker is skipped BEFORE the synthesized
+    // (provenance='heuristic') dispatch tally, so it contributes 0 there too.
+    expect(result.leftoverMentions).toBe(1);
+  });
+
+  it('R25: a RECURSIVE self-reference (source===target, non-framework) is span-verified and edited alongside the declaration — not dropped as a sentinel', async () => {
+    // The TS resolver emits a genuine self-loop `references` edge for the recursive
+    // call (probed: resolvedBy='exact-match' → heuristic tier, provenance null), whose
+    // (line, col) IS the real `countdown` occurrence in the body. Before R25 the blanket
+    // source===target skip dropped it, so a recursive function's call sites were never
+    // renamed and the plan was incomplete; it must now flow through like any reference.
+    const { dir, cg, queries } = await indexFixture({
+      'rec.ts':
+        'export function countdown(n) {\n  if (n <= 0) return;\n  return countdown(n - 1);\n}\n',
+    });
+    const id = fnId(cg, 'countdown');
+    // Sanity: the resolver produced the recursive self-loop this test depends on.
+    expect(queries.getReferencesToNode(id).some((r) => r.sourceId === id && r.line === 3)).toBe(true);
+
+    const result = deriveGraphRename({
+      queries,
+      projectRoot: dir,
+      targetId: id,
+      newName: 'tick',
+    });
+
+    // BOTH the declaration AND the recursive call site are edited (was: declaration only).
+    expect(result.edits).toHaveLength(2);
+    const declLine = 'export function countdown(n) {';
+    const decl = result.edits.find((e) => e.range.start.line === 1)!;
+    expect(decl.range.start.column).toBe(declLine.indexOf('countdown')); // 16
+    expect(decl.confidence).toBe('exact');
+
+    const callLine = '  return countdown(n - 1);';
+    const call = result.edits.find((e) => e.range.start.line === 3)!;
+    expect(call).toBeDefined();
+    expect(call.range).toEqual({
+      start: { line: 3, column: callLine.indexOf('countdown') }, // 9
+      end: { line: 3, column: callLine.indexOf('countdown') + 'countdown'.length },
+    });
+    expect(callLine.slice(call.range.start.column, call.range.end.column)).toBe('countdown');
+    expect(call.oldText).toBe('countdown');
+    expect(call.newText).toBe('tick');
+    expect(call.source).toBe('graph');
+    expect(call.confidence).toBe('heuristic'); // resolvedBy='exact-match' → heuristic (FR-004)
+    // The recursive call is now a proper edit, so it is no longer a leftover mention.
+    expect(result.leftoverMentions).toBe(0);
   });
 
   it('leftover FYI tallies comment/string occurrences + synthesized (provenance=heuristic) dispatch sites, but edits NONE of them (FR-012/FR-013)', async () => {
@@ -1128,6 +1204,14 @@ describe('R18 declaration edit targets the NAME, not a same-name keyword/decorat
 
   it('R22: an intervening keyword (`async function async()`) → the second async, never the keyword', async () => {
     expect(await declEditColumn({ line: 'async function async() {', name: 'async', startColumn: 0, kind: 'function' })).toBe(15);
+  });
+
+  // R24 (rp-review round-4) — a signature delimiter (`:`) INSIDE a block comment no
+  // longer poisons the delimiter scan: end-to-end, the declaration edit lands on the
+  // real name after the comment (col 32), not the accessor keyword before it (col 0,
+  // which span-verifies against the live bytes and would corrupt the file on --apply).
+  it('R24: a signature delimiter inside a block comment (`get /* returns: cached value */ get()`) → the second get', async () => {
+    expect(await declEditColumn({ line: 'get /* returns: cached value */ get() {}', name: 'get', startColumn: 0 })).toBe(32);
   });
 });
 

@@ -29,6 +29,44 @@ const IDENT_CHAR = /[A-Za-z0-9_$]/;
 const SIGNATURE_DELIMITER = /[(={:;<]/;
 
 /**
+ * R24 (rp-review round-4, P0) — return a copy of `lineText` (same length, indices
+ * preserved) with the two C-family comment forms blanked to spaces: a block comment
+ * opened by a slash-star (an unterminated open blanks to end of line, otherwise up
+ * to and including its matching close) and a `//` line comment (blanks from `//` to
+ * end of line). {@link findDeclarationNameColumn} scans this masked copy so a
+ * signature-delimiter character — or a same-name token — that sits INSIDE a comment
+ * can neither become the "first delimiter" nor be collected as a declaration-name
+ * occurrence (either would mis-place the edit; the former was the round-4 finding).
+ * Only these two forms are handled — the comment syntax shared by every language
+ * whose keyword/name collision this locator untangles (JS/TS, C/C++, C#, Java,
+ * Swift, Kotlin). `#` (Python/Ruby/shell) and `--` (SQL/Lua/Haskell) are deliberately
+ * NOT masked: they are ambiguous outside those languages (`#define foo`, an `a--b`
+ * decrement) and would false-positive here. No string-literal awareness — a comment
+ * opener inside a string is still masked; that can only make
+ * {@link findDeclarationNameColumn} drop an occurrence, and {@link verifySpan}
+ * re-checks the chosen column against the live bytes, so an over-eager mask drops an
+ * edit but never corrupts one.
+ */
+function maskLineComments(lineText: string): string {
+  const out = lineText.split('');
+  for (let i = 0; i < lineText.length; ) {
+    if (lineText[i] === '/' && lineText[i + 1] === '/') {
+      for (let k = i; k < lineText.length; k += 1) out[k] = ' ';
+      break; // everything after `//` is the line comment
+    }
+    if (lineText[i] === '/' && lineText[i + 1] === '*') {
+      const close = lineText.indexOf('*/', i + 2);
+      const stop = close === -1 ? lineText.length : close + 2; // unterminated → EOL
+      for (let k = i; k < stop; k += 1) out[k] = ' ';
+      i = stop;
+      continue;
+    }
+    i += 1;
+  }
+  return out.join('');
+}
+
+/**
  * R18/R22 (rp-review, P0) — locate the DECLARATION NAME occurrence of `name` on
  * `lineText`, scanning WHOLE-WORD occurrences at/after `fromColumn`. Returns the
  * 0-indexed UTF-16 start column, or `-1` when `name` never occurs as a whole word
@@ -48,6 +86,11 @@ const SIGNATURE_DELIMITER = /[(={:;<]/;
  *    (whitespace, a block comment, or an intervening keyword). R22: the earlier
  *    whitespace-only advance broke on a comment/keyword gap, keeping the keyword —
  *    which then span-verified and got rewritten on --apply (round-3 finding).
+ *    R24: the scan runs over a COMMENT-MASKED copy of the line
+ *    ({@link maskLineComments}) — a signature delimiter (or a same-name token) inside
+ *    a block or line comment would otherwise poison the delimiter position and the
+ *    occurrence set alike; a `:` inside a block comment used to select the keyword
+ *    before the comment instead of the real name after it (round-4 finding).
  * If NO candidate precedes the first delimiter — a receiver/parenthesized prefix
  * opens the line before the name (Go `func (s *Server) foo(`) — fall back to the
  * FIRST whole-word occurrence at/after `fromColumn`. Whole-word = identifier
@@ -60,21 +103,25 @@ const SIGNATURE_DELIMITER = /[(={:;<]/;
 export function findDeclarationNameColumn(lineText: string, fromColumn: number, name: string): number {
   if (name.length === 0) return -1;
   const from = Math.max(0, fromColumn);
+  // R24: scan a comment-masked copy so a delimiter or a same-name token INSIDE a
+  // comment can't poison the rule; masking preserves length/indices, so every column
+  // below indexes the raw `lineText` unchanged (and {@link verifySpan} re-checks it).
+  const scan = maskLineComments(lineText);
   // Whole-word occurrences of `name` at/after `fromColumn` (ascending), dropping a
   // decorator reference (`@name`) — never the declaration name.
   const occurrences: number[] = [];
-  for (let idx = lineText.indexOf(name, from); idx >= 0; idx = lineText.indexOf(name, idx + 1)) {
-    const before = lineText[idx - 1] ?? ''; // out-of-range (incl. idx 0) → '' (a boundary)
-    const after = lineText[idx + name.length] ?? '';
+  for (let idx = scan.indexOf(name, from); idx >= 0; idx = scan.indexOf(name, idx + 1)) {
+    const before = scan[idx - 1] ?? ''; // out-of-range (incl. idx 0) → '' (a boundary)
+    const after = scan[idx + name.length] ?? '';
     if (IDENT_CHAR.test(before) || IDENT_CHAR.test(after)) continue; // not whole-word
     if (before === '@') continue; // decorator reference
     occurrences.push(idx);
   }
   if (occurrences.length === 0) return -1;
   // The first signature delimiter at/after `fromColumn` (line end when none).
-  let delimiter = lineText.length;
-  for (let idx = from; idx < lineText.length; idx += 1) {
-    if (SIGNATURE_DELIMITER.test(lineText[idx]!)) {
+  let delimiter = scan.length;
+  for (let idx = from; idx < scan.length; idx += 1) {
+    if (SIGNATURE_DELIMITER.test(scan[idx]!)) {
       delimiter = idx;
       break;
     }

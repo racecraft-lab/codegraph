@@ -11,10 +11,12 @@
  * against the live line (`verifySpan`, FR-005), and assigns a confidence tier
  * (`classifyEdgeConfidence`, FR-004) — emitting `source:'graph'` edits. The
  * declaration edit is ALWAYS included (an empty-reference plan is valid, not an
- * error — FR-002); a framework self-loop sentinel (`source===target`) is dropped
- * before classification (the endpoints are invisible to the tier function); and
- * un-editable occurrences (comments/strings, synthesized dispatch sites) are only
- * tallied in the leftover-mention FYI, never edited (FR-012/FR-013).
+ * error — FR-002); a framework self-loop SENTINEL (`source===target` with
+ * resolvedBy='framework') is dropped before classification (the endpoints are
+ * invisible to the tier function), while every OTHER self-edge — a recursive call
+ * included (R25) — flows through the normal pipeline; and un-editable occurrences
+ * (comments/strings, synthesized dispatch sites) are only tallied in the
+ * leftover-mention FYI, never edited (FR-012/FR-013).
  *
  * Positions are UTF-16 code units end-to-end (SPEC-008 pin); the module reads each
  * touched file once (plan-time span read) and reuses those lines for both the
@@ -121,10 +123,21 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   // Reference edits + the synthesized-dispatch leftover count.
   let synthesized = 0;
   for (const ref of queries.getReferencesToNode(targetId)) {
-    // Framework self-loop sentinel (`source===target`): a framework-global marker,
-    // NEVER a candidate at any tier — dropped before classification, which cannot
-    // see the endpoints (FR-004, carried-forward T004 rule).
-    if (ref.sourceId === targetId) continue;
+    // Framework self-loop SENTINEL (`source===target` AND resolvedBy='framework'):
+    // the FR-004 confidence-1.0 framework-global marker — a synthetic self-edge with
+    // no real name occurrence at its recorded position — is NEVER a candidate, so it
+    // is dropped before classification (which sees only resolvedBy/provenance, not the
+    // endpoints, so this endpoint+marker test must live here — carried-forward T004
+    // rule). R25 (rp-review round-4, P0): the drop is now POSITIVE — ONLY the framework
+    // marker is a sentinel. A RECURSIVE reference (a function/method calling itself) is
+    // also a self-loop, but its recorded (line, col) IS a real name occurrence in the
+    // body; it must flow through classifyEdgeConfidence + verifySpan like any other
+    // reference, or the recursive call sites are silently dropped and the plan is
+    // incomplete (an --apply would then rename only the declaration and rely on the
+    // FR-018 post-check to roll back — safe, but the rename is impossible).
+    if (ref.sourceId === targetId && (ref.metadata?.resolvedBy as string | undefined) === 'framework') {
+      continue;
+    }
     const tier = classifyEdgeConfidence({
       resolvedBy: ref.metadata?.resolvedBy as string | undefined,
       provenance: ref.provenance,
