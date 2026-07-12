@@ -2318,9 +2318,12 @@ describe('T022 ambiguous-target refusal — resolveTarget (real SQLite, FR-007/F
 // T023 — Kind-coverage refusals (resolveTarget, SPEC-010 FR-009/FR-010/FR-011 +
 // FR-003a honesty). The graph path cannot cover locals/parameters (no tracked
 // references), so a `variable`/`parameter` target on the graph path is refused
-// `unsupported-kind-graph-local`; when the graph path was reached by DEGRADING a
-// configured-but-unavailable server, the message stays honest that a WORKING
-// server is required. The LSP path (FR-009) renames any kind — the resolver lifts
+// `unsupported-kind-graph-local`; when the graph path was reached by DEGRADING an
+// unavailable server, the message stays honest about WHY — a CONFIGURED-but-
+// unexecutable command names itself as the problem (never "did not respond": this
+// is a command-availability probe, no server process is ever spawned), while
+// nothing configured/found for the language says exactly that.
+// The LSP path (FR-009) renames any kind — the resolver lifts
 // the restriction when the disposition is `available`, and the LSP-path derivation
 // itself never kind-filters. `file`/`route`/`import`/`export` are `excluded-kind`
 // on EVERY path (FR-011). Locals/parameters/excluded kinds are not produced by TS
@@ -2382,14 +2385,36 @@ describe('T023 kind-coverage refusals — resolveTarget (FR-009/FR-010/FR-011, F
     expect(result.reason).toBe('unsupported-kind-graph-local');
   });
 
-  it('FR-003a honesty: a graph path reached by DEGRADING a configured-but-unavailable server → message requires a WORKING server', async () => {
+  it('FR-003a honesty: unavailable-missing-command (nothing configured/found for the language) → message says no server is configured or found', async () => {
     const { queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
     insertKindNode(queries, { name: 'localX', kind: 'variable', file: 'm.ts', line: 1 });
-    const result = resolveTarget({ queries, selector: { name: 'localX' }, newName: 'renamedX', lspPath: () => 'unavailable' });
+    const result = resolveTarget({
+      queries,
+      selector: { name: 'localX' },
+      newName: 'renamedX',
+      lspPath: () => 'unavailable-missing-command',
+    });
     if (!('reason' in result)) throw new Error('expected a refusal');
     expect(result.reason).toBe('unsupported-kind-graph-local');
-    expect(result.message).toMatch(/working/i); // honesty clause: the configured server did not respond
-    expect(result.message).toMatch(/language server/i);
+    expect(result.message).toMatch(/no local usage tracking/i);
+    expect(result.message).toMatch(/none is configured or found/i);
+    expect(result.message).not.toMatch(/did not respond/i);
+  });
+
+  it('FR-003a honesty: unavailable-command-not-executable (configured but not on PATH/executable) → message names the CONFIGURED command as unavailable, never "did not respond"', async () => {
+    const { queries } = await indexFixture({ 'm.ts': 'export function f(p) { return p; }\n' });
+    insertKindNode(queries, { name: 'localX', kind: 'variable', file: 'm.ts', line: 1 });
+    const result = resolveTarget({
+      queries,
+      selector: { name: 'localX' },
+      newName: 'renamedX',
+      lspPath: () => 'unavailable-command-not-executable',
+    });
+    if (!('reason' in result)) throw new Error('expected a refusal');
+    expect(result.reason).toBe('unsupported-kind-graph-local');
+    expect(result.message).toMatch(/working language server/i);
+    expect(result.message).toMatch(/configured server command is not available/i);
+    expect(result.message).not.toMatch(/did not respond/i);
   });
 
   it('FR-009: on the LSP path (available) a local/parameter is NOT restricted — it resolves to a Target', async () => {

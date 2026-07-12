@@ -29,16 +29,29 @@ import { Candidate, Refusal, Target, TargetSelector } from './types';
  * FR-003a fork disposition for a resolved target's language, supplied by the plan
  * engine (which owns the SPEC-008 availability probe). The resolver consults it
  * ONLY for a local/parameter target — the one kind whose renameability differs by
- * path (FR-009 vs FR-010) — so the probe is paid only when it changes the outcome:
- * - `available`   — a server covers the language and is usable: the LSP path renames
- *                   any kind (FR-009), so no local/parameter restriction.
- * - `absent`      — LSP disabled or no server covers the language: the graph path
- *                   applies; a local/parameter is refused (needs a language server).
- * - `unavailable` — a CONFIGURED server is missing/unusable/failed: the graph path
- *                   applies AND the refusal message stays honest that a WORKING
- *                   server is required (FR-003a honesty clause).
+ * path (FR-009 vs FR-010) — so the probe is paid only when it changes the outcome.
+ * This is a command-availability probe ONLY (no server process is ever spawned to
+ * reach this disposition), so its wording must never imply one was attempted:
+ * - `available`                          — a server covers the language and is
+ *   usable: the LSP path renames any kind (FR-009), so no local/parameter
+ *   restriction.
+ * - `absent`                             — LSP disabled or no server covers the
+ *   language: the graph path applies; a local/parameter is refused (needs a
+ *   language server).
+ * - `unavailable-missing-command`        — LSP covers the language but nothing is
+ *   configured/found for it (SPEC-008 `missing-default-command`): the graph path
+ *   applies; the refusal says no server is configured or found.
+ * - `unavailable-command-not-executable` — a server command IS configured for this
+ *   language, but it isn't on PATH / isn't executable (SPEC-008
+ *   `configured-command-unavailable`): the graph path applies AND the refusal
+ *   names the CONFIGURED command as unavailable (FR-003a honesty clause) — never
+ *   "did not respond", since no server was ever launched at probe time.
  */
-export type LspPathDisposition = 'available' | 'absent' | 'unavailable';
+export type LspPathDisposition =
+  | 'available'
+  | 'absent'
+  | 'unavailable-missing-command'
+  | 'unavailable-command-not-executable';
 
 /** Kinds excluded from rename on EVERY path (FR-011). */
 const EXCLUDED_KINDS: ReadonlySet<string> = new Set(['file', 'route', 'import', 'export']);
@@ -246,13 +259,20 @@ function uniqueSelector(node: Node, matches: Node[]): string {
   return segs.length >= 2 ? segs.join('.') : `--file ${node.filePath}`;
 }
 
-/** The FR-010 refusal message, honest per FR-003a about whether a WORKING server
- *  is required (a configured-but-`unavailable` server that did not respond) or
- *  one must be enabled for this language. */
+/** The FR-010 refusal message, truthful per FR-003a about WHY the LSP path isn't
+ *  available. `lspPathDisposition` is a command-availability probe only — no
+ *  server process is ever spawned to reach any of these dispositions — so the
+ *  message never claims a server "did not respond": `unavailable-command-not-
+ *  executable` names the CONFIGURED command as unavailable (not on PATH / not
+ *  executable, the FR-003a honesty case); `absent` and `unavailable-missing-
+ *  command` both mean no server is configured or found for the language. */
 function graphLocalMessage(target: Target, disposition: LspPathDisposition): string {
   const who = `the ${target.kind} "${target.name}"`;
-  if (disposition === 'unavailable') {
-    return `Cannot rename ${who}: renaming a local or parameter needs a working language server, but the configured one did not respond. Restore the server and retry.`;
+  if (disposition === 'unavailable-command-not-executable') {
+    return `Cannot rename ${who}: renaming a local or parameter needs a working language server, but the configured server command is not available (not on PATH or not executable). Fix the configured command and retry.`;
+  }
+  if (disposition === 'unavailable-missing-command') {
+    return `Cannot rename ${who} on the graph path — no local usage tracking for locals/parameters, which needs a language server, but none is configured or found for this language. Configure a language server command and retry.`;
   }
   return `Cannot rename ${who} on the graph path — no local usage tracking for locals/parameters, which needs a language server. Enable an LSP server for this language and retry.`;
 }
