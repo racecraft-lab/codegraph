@@ -97,7 +97,10 @@
       "uat_runbook": "skipped: generate-uat-skeleton deferred; committed quickstart + dogfood evidence stands in",
       "stack_manager": "detect-stack-manager deferred → explicit gh pr create --base/--head/--title/--body-file fallback (sanctioned path)"
     },
-    "pr_mappings": null,
+    "pr_mappings": {
+      "slice-1-read-api": 41,
+      "slice-2-jobs-sse": 42
+    },
     "reviewability_evidence": {
       "setup_gate": "warn (620 LOC / 7 prod files, greenfield warn line 600) — recorded at scaffold with accepted split",
       "plan_estimator": "not_estimated (no parseable declared-file table)",
@@ -113,5 +116,29 @@
         "verdict": "both markers over the ~400 reviewable-LOC target — size-only findings, recorded in both PR packets; marker plan proceeds per rules (no undisclosed scope; PR packets carry review-order and traceability to compensate)"
       }
     }
+  },
+  "multi_pr_emission": {
+    "status": "complete",
+    "mode": "marker-based, explicit gh fallback (detect-stack-manager + multi-pr-emission helpers deferred on installed runner)",
+    "prs": [
+      {
+        "slice": "slice-1-read-api",
+        "pr": 41,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/41",
+        "branch": "005-local-http-server-s1",
+        "base": "main",
+        "head_sha": "17cef94df35b66ede2346e9374e172a517cc30d0"
+      },
+      {
+        "slice": "slice-2-jobs-sse",
+        "pr": 42,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/42",
+        "branch": "005-local-http-server",
+        "base": "005-local-http-server-s1"
+      }
+    ],
+    "prs_manifest": "specs/005-local-http-server/.process/prs.json",
+    "verification_evidence": "specs/005-local-http-server/.process/emission/full-verify-evidence.md",
+    "date": "2026-07-11"
   }
 }
