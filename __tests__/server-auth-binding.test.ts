@@ -43,14 +43,14 @@ import {
 import { startWebServer, type WebServerHandle } from '../src/server/index';
 
 describe('isLoopbackHost (FR-012 shared loopback predicate)', () => {
-  it.each(['localhost', '::1', '[::1]', '127.0.0.1', '127.9.9.9'])(
+  it.each(['localhost', '::1', '[::1]', '127.0.0.1', '127.9.9.9', '127.000.000.001'])(
     'treats %s as loopback',
     (host) => {
       expect(isLoopbackHost(host)).toBe(true);
     }
   );
 
-  it.each(['0.0.0.0', '::', '192.168.1.1', 'example.com'])(
+  it.each(['0.0.0.0', '::', '192.168.1.1', 'example.com', '127.999.999.999', '127.256.0.1'])(
     'treats %s as non-loopback',
     (host) => {
       expect(isLoopbackHost(host)).toBe(false);

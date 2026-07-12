@@ -120,7 +120,11 @@ function statusOp(cg: CodeGraph): unknown {
       edgeCount: stats.edgeCount,
       lastIndexed: stats.lastUpdated ? new Date(stats.lastUpdated).toISOString() : null,
     },
-    hybridSearch: { available: embActive, reason: embActive ? null : 'embeddings not configured' },
+    // `reason` is a string explaining unavailability; omit it entirely when
+    // hybrid search is available (contract models it as a string, not null).
+    hybridSearch: embActive
+      ? { available: true }
+      : { available: false, reason: 'embeddings not configured' },
     lsp: { available: lspEnabled },
   };
 }

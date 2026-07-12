@@ -144,7 +144,7 @@ components:
             fileCount: { type: integer }
             nodeCount: { type: integer }
             edgeCount: { type: integer }
-            lastIndexed: { type: string }
+            lastIndexed: { type: ['string', 'null'], description: 'ISO-8601 timestamp of the last index, or null for a never-indexed repo.' }
         hybridSearch:
           type: object
           properties:
