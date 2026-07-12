@@ -283,10 +283,13 @@ describe('SPEC-005 S1-A: a mid-session daemon read failure evicts the client, re
         pool.set(repo.id, c);
         return c;
       },
-      evictClient: (repo) => {
-        const c = pool.get(repo.id);
-        pool.delete(repo.id);
-        c?.close();
+      evictClient: (repo, client) => {
+        // Identity-aware, mirroring production: only evict if the pool still holds
+        // THIS client (a concurrent failure must not close a healthy replacement).
+        if (pool.get(repo.id) === client) {
+          pool.delete(repo.id);
+          client.close();
+        }
       },
       isRepoIndexed: () => true,
     };
@@ -360,5 +363,69 @@ describe('SPEC-005 S1-D: redaction survives a malformed escape in the path (FR-0
     } finally {
       await handle.close();
     }
+  });
+});
+
+// R7-A (FR-002/015a): statusHandler has its OWN attach path — it does NOT go through
+// withClient. A daemon that dies AFTER a successful attach makes readStatusHealth
+// reject; before, that reached the router as a 500 and the dead client stayed pooled,
+// so every later /api/status repeated the 500. Now the health read is guarded: evict
+// the dead client (identity-aware) and return a transient 503, so the next status
+// re-attaches. (The identity check itself lives in the closure-private pool in
+// index.ts — no unit seam without a live daemon; the wiring that passes the failed
+// client is exercised here and in the S1-A test above.)
+describe('SPEC-005 R7-A: /api/status evicts a dead client on a mid-session read failure', () => {
+  it('a health-read failure after a successful attach → 503 (not 500), evicts+closes, re-attaches', async () => {
+    const defaultRepo: RepoInfo = { id: 'a'.repeat(16), root: '/x', name: 'x' };
+    let attachCount = 0;
+    let closeCount = 0;
+    const pool = new Map<string, DaemonReadClient>();
+    const makeDeadClient = (): DaemonReadClient =>
+      ({
+        // The health read (client.read('status', {})) rejects — a dead socket.
+        read: async () => {
+          throw new Error('socket closed');
+        },
+        close: () => {
+          closeCount += 1;
+        },
+      }) as unknown as DaemonReadClient;
+    const deps: ReadApiDeps = {
+      version: 'test',
+      defaultRepo,
+      resolveRepo: () => defaultRepo,
+      getClient: async (repo) => {
+        const cached = pool.get(repo.id);
+        if (cached) return cached;
+        attachCount += 1;
+        const c = makeDeadClient();
+        pool.set(repo.id, c);
+        return c;
+      },
+      evictClient: (repo, client) => {
+        if (pool.get(repo.id) === client) {
+          pool.delete(repo.id);
+          client.close();
+        }
+      },
+      isRepoIndexed: () => true, // indexed → NOT the un-indexed 200 path; a read failure is 503
+    };
+    const routes = buildReadRoutes(deps);
+    const ctx = (): RouteContext => ({
+      method: 'GET',
+      rawPath: '/api/status',
+      params: {},
+      query: new URLSearchParams(),
+      headers: {},
+    });
+
+    const first = await handleApiRequest(routes, ctx());
+    expect(first?.status).toBe(503); // transient daemonUnavailable, NOT a 500
+    expect(closeCount).toBe(1); // the dead client was closed
+    expect(pool.size).toBe(0); // ...and evicted from the pool
+
+    const second = await handleApiRequest(routes, ctx());
+    expect(second?.status).toBe(503);
+    expect(attachCount).toBe(2); // re-attached, never reused the dead client
   });
 });
