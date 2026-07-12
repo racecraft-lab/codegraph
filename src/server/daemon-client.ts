@@ -6,10 +6,13 @@
  * share one warm index. Non-default repos are attached lazily on first access
  * (Q2); `/api/repos` is sourced from the daemon registry (FR-009).
  *
- * Reads are forwarded as MCP JSON-RPC over the daemon socket — NO new daemon
- * RPC is added (FR-021). Attach reuses the exported `connectWithHello`
- * (src/mcp/proxy.ts); the round-trip rides `SocketTransport.request`
- * (src/mcp/transport.ts): an `initialize` handshake then `tools/call`. An
+ * Attach rides the exported `connectWithHello` (src/mcp/proxy.ts) — the hello
+ * plus an `initialize` handshake — and every round-trip rides
+ * `SocketTransport.request` (src/mcp/transport.ts). Reads use two JSON-RPC
+ * methods over that socket: `tools/call` for the MCP tool surface, and the
+ * additive read-only `codegraph/read` structured method (a human-ratified
+ * amendment) for the typed graph reads the REST API returns. FR-021 still
+ * holds — no *indexing* RPC is added; the daemon only ever serves reads. An
  * attach/spawn failure never crashes — it maps to the 503 `unavailable`
  * envelope carrying `Retry-After` (FR-015a edge case).
  *
@@ -21,6 +24,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { Socket } from 'net';
+import { pathToFileURL } from 'node:url';
 import { connectWithHello } from '../mcp/proxy';
 import { getDaemonSocketCandidates } from '../mcp/daemon-paths';
 import { listDaemons } from '../mcp/daemon-registry';
@@ -198,7 +202,7 @@ async function connectAnyCandidate(
  */
 async function makeReadClient(socket: Socket, root: string): Promise<DaemonReadClient> {
   const transport = new SocketTransport(socket, 'cg-web');
-  const rootUri = `file://${root}`;
+  const rootUri = pathToFileURL(root).href;
   transport.start(async (msg) => {
     // The daemon session may ask us for workspace roots; answer with the root so
     // it never waits out its 5s roots/list timeout. Everything else is ignored.

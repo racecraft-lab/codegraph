@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,10 +31,10 @@
 
 ## Notes
 
-- **Three `[NEEDS CLARIFICATION]` markers remain by design**, one per the three planned downstream Clarify sessions. They are NOT resolved in this Specify phase; they are handed to `/speckit-clarify` (consensus protocol) next:
+- **The three deliberate `[NEEDS CLARIFICATION]` markers were resolved during the Clarify phase (sessions 1–3); zero remain.** They were surfaced in Specify (one per planned downstream Clarify session) and pinned via the consensus protocol as follows:
   1. **API contract edge** (FR-010): repo identifier scheme for `/api/repos` and the `:repo` path segment.
   2. **Jobs/SSE lifecycle edge** (FR-023): stream subscription/correlation model and shutdown-mid-job behavior.
   3. **Bind/auth/lifecycle edge** (FR-012): default listen port, `--web`/`--mcp` coexistence, and IPv6-loopback treatment.
-- These are genuinely unresolved edge semantics not pinned by the design concept (Q1–Q13); per Constitution Principle I they are surfaced as markers rather than silently invented. Gate G1 is expected to remain blocked until Clarify resolves them.
+- These were genuinely unresolved edge semantics not pinned by the design concept (Q1–Q13); per Constitution Principle I they were surfaced as markers rather than silently invented, then resolved in Clarify. Gate G1 is unblocked.
 - A few closely-related edges were resolved to the design-concept reading and recorded in Assumptions rather than spending a marker (e.g., loopback-plus-token auth interaction), to stay within the 3-marker limit and reserve markers for the highest-impact opens.
 - All other content-quality, completeness, and readiness items pass on the current draft.

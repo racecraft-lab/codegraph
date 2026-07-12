@@ -102,7 +102,7 @@ components:
       required: [items, total, limit, offset]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Node' } }
-        total: { type: integer, description: Full match count (FR-006). }
+        total: { type: integer, description: 'Match count. For /api/search this is capped at the search scan ceiling (500) — clients MUST treat the search total as min(matches, 500) (FR-006).' }
         limit: { type: integer, description: Effective (clamped) page size. }
         offset: { type: integer }
     Repo:
@@ -133,7 +133,7 @@ components:
             fileCount: { type: integer }
             nodeCount: { type: integer }
             edgeCount: { type: integer }
-            lastIndexed: { type: string }
+            lastIndexed: { type: ['string', 'null'], description: 'ISO-8601 timestamp of the last index, or null for a never-indexed repo.' }
         hybridSearch:
           type: object
           properties:
