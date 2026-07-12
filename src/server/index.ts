@@ -152,6 +152,45 @@ function mapListenError(err: NodeJS.ErrnoException, host: string, port: number):
  * Bind and start the local HTTP server (FR-001/FR-026). Resolves once the port
  * is bound; rejects (with no half-open listener) on a bind failure.
  */
+/**
+ * Decode every percent-escape run we CAN, leaving a malformed run (e.g. `%ZZ`, a
+ * truncated `%A`) literal. Unlike `decodeURIComponent`, never throws — so one bad
+ * escape can't abort a token-redaction scan and let an encoded token through
+ * (FR-014a).
+ */
+function tolerantDecode(s: string): string {
+  return s.replace(/(?:%[0-9a-fA-F]{2})+/g, (run) => {
+    try {
+      return decodeURIComponent(run);
+    } catch {
+      return run;
+    }
+  });
+}
+
+/**
+ * Whether `s` contains `token` at ANY decoding level — verbatim, or after up to a
+ * few bounded rounds of percent-decoding (tolerant of a malformed escape). Empty
+ * `token` → never (redaction is a no-op when no token is configured). Used to keep
+ * the configured token out of the request log in any reversible form (FR-014a).
+ */
+function containsToken(s: string, token: string | null | undefined): boolean {
+  if (!token) return false;
+  let probe = s;
+  for (let i = 0; i < 6; i++) {
+    if (probe.includes(token)) return true;
+    let next: string;
+    try {
+      next = decodeURIComponent(probe);
+    } catch {
+      next = tolerantDecode(probe); // one bad escape must not stop the scan
+    }
+    if (next === probe) break; // fully decoded / stable
+    probe = next;
+  }
+  return false;
+}
+
 export async function startWebServer(options: WebServerOptions = {}): Promise<WebServerHandle> {
   const host = options.host ?? DEFAULT_HOST;
   const requestedPort = options.port ?? DEFAULT_PORT;
@@ -222,11 +261,27 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
     }
     return null; // unregistered → 404 repo
   };
+  // Drop a repo's pooled client after a mid-session socket death (the daemon
+  // exited/restarted). getClient only evicts on a FAILED attach; a client that
+  // dies AFTER a successful attach stays cached and every later read reuses the
+  // dead socket. withClient calls this on a read failure so the next request
+  // re-attaches (FR-002/015a). Best-effort: close the settled client and drop it
+  // from the shutdown set.
+  const evictClient = (repo: RepoInfo): void => {
+    const cached = clientPool.get(repo.id);
+    if (!cached) return;
+    clientPool.delete(repo.id);
+    cached.then(
+      (client) => { daemonClients.delete(client); try { client.close(); } catch { /* best-effort */ } },
+      () => { /* a rejected attach already evicted itself via getClient's .catch */ },
+    );
+  };
   const readDeps: ReadApiDeps = {
     version: CodeGraphPackageVersion,
     defaultRepo,
     resolveRepo,
     getClient,
+    evictClient,
     isRepoIndexed: (root) => findNearestCodeGraphRoot(root) !== null,
   };
   const routes = buildReadRoutes(readDeps);
@@ -303,23 +358,16 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       // in the request PATH (e.g. `/api/<token>`): redact it before logging.
       try {
         // FR-014a is absolute: the token must never appear in a log in ANY
-        // reversible form. A client can place it in the path verbatim, singly OR
-        // MULTIPLY percent-encoded, so check the raw path AND every decoding level
-        // (bounded, to avoid an infinite loop on malformed input); a match at any
-        // level collapses the whole path to a fixed marker. Decoding here is only
-        // for the redaction check — nothing is served from it, so (unlike the
-        // static mount) it may safely decode to a fixed point.
-        let safePath = rawPath;
-        if (security.token) {
-          let probe = rawPath;
-          for (let i = 0; i < 6; i++) {
-            if (probe.includes(security.token)) { safePath = '/<redacted>'; break; }
-            let next: string;
-            try { next = decodeURIComponent(probe); } catch { break; } // malformed % — stop
-            if (next === probe) break; // fully decoded / stable
-            probe = next;
-          }
-        }
+        // reversible form. A client can place it in the request PATH verbatim,
+        // singly OR MULTIPLY percent-encoded — and a single malformed escape
+        // (e.g. `%ZZ`) must not abort the scan and let an encoded token through.
+        // `containsToken` checks every decoding level (bounded, tolerant of a bad
+        // escape); a match collapses the path to a fixed marker. Decoding here is
+        // only for the check — nothing is served from it. (The method needs no
+        // redaction: node:http's strict parser rejects any nonstandard method with
+        // HPE_INVALID_METHOD before the handler runs, so `method` is always a
+        // validated standard verb and can never carry the token.)
+        const safePath = containsToken(rawPath, security.token) ? '/<redacted>' : rawPath;
         options.logger?.(`${method} ${safePath} -> ${status}`);
       } catch { /* a log sink must never take down the server */ }
     }

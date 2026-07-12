@@ -124,6 +124,11 @@ function statusOp(cg: CodeGraph): unknown {
   // reported as 'indexed'. An empty graph stays 'empty'; a healthy/unknown state
   // reads 'indexed'.
   const persisted = cg.getIndexState();
+  // `stats.lastUpdated` is stamped `Date.now()` on every getStats() call, so it
+  // reports request time, not index time — an old index would always look fresh.
+  // Use the PERSISTED completion timestamp (MAX(files.indexed_at)) instead, null
+  // when nothing is indexed yet (FR-005 `lastIndexed`).
+  const lastIndexedAt = cg.getLastIndexedAt();
   return {
     index: {
       state:
@@ -135,7 +140,7 @@ function statusOp(cg: CodeGraph): unknown {
       fileCount: stats.fileCount,
       nodeCount: stats.nodeCount,
       edgeCount: stats.edgeCount,
-      lastIndexed: stats.lastUpdated ? new Date(stats.lastUpdated).toISOString() : null,
+      lastIndexed: lastIndexedAt != null ? new Date(lastIndexedAt).toISOString() : null,
     },
     // `reason` is a string explaining unavailability; omit it entirely when
     // hybrid search is available (contract models it as a string, not null).

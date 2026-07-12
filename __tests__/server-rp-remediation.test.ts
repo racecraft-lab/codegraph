@@ -14,12 +14,21 @@
  */
 
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { serveStatic, placeholderPage } from '../src/server/static';
 import { startWebServer } from '../src/server/index';
 import { executeReadOp } from '../src/mcp/read-ops';
+import {
+  buildReadRoutes,
+  handleApiRequest,
+  type ReadApiDeps,
+  type RepoInfo,
+  type RouteContext,
+} from '../src/server/routes';
+import type { DaemonReadClient } from '../src/server/daemon-client';
 import type CodeGraph from '../src/index';
 
 describe('SPEC-005 slice-1 review remediation', () => {
@@ -78,12 +87,17 @@ describe('SPEC-005 slice-1 review remediation', () => {
 function statusStub(
   persisted: 'indexing' | 'complete' | 'partial' | 'failed' | null,
   nodeCount: number,
+  lastIndexedAt: number | null = null,
 ): CodeGraph {
   return {
-    getStats: () => ({ nodeCount, fileCount: nodeCount, edgeCount: 0, lastUpdated: null }),
+    // `lastUpdated` is stamped `Date.now()` by the real getStats() on every call —
+    // here a fixed FAR-FUTURE sentinel, deliberately distinct from `getLastIndexedAt()`,
+    // so S1-C can prove statusOp reports the persisted index time, not this stamp.
+    getStats: () => ({ nodeCount, fileCount: nodeCount, edgeCount: 0, lastUpdated: 1_900_000_000_000 }),
     getEmbeddingStatus: () => ({ active: false, coverage: { embedded: 0 } }),
     getLspStatus: () => ({ enabled: false }),
     getIndexState: () => persisted,
+    getLastIndexedAt: () => lastIndexedAt,
   } as unknown as CodeGraph;
 }
 
@@ -206,6 +220,142 @@ describe('SPEC-005 R3: request logger redacts the configured token in the path (
       expect(joined).not.toContain(TOKEN); // not the cleartext token
       expect(joined).not.toContain(encoded); // nor the singly percent-encoded reversible form
       expect(joined).not.toContain(doubleEncoded); // nor the MULTIPLY-encoded form
+      expect(logs.some((l) => l.includes('<redacted>'))).toBe(true);
+    } finally {
+      await handle.close();
+    }
+  });
+});
+
+// S1-C (FR-005): `index.lastIndexed` must report the PERSISTED index-completion time
+// (getLastIndexedAt → MAX(files.indexed_at)), NEVER `getStats().lastUpdated` — which
+// the real QueryBuilder stamps `Date.now()` on every call, making a stale index look
+// freshly indexed on every status request.
+describe('SPEC-005 S1-C: status.index.lastIndexed reflects the persisted index time', () => {
+  it('reports getLastIndexedAt(), not the per-call getStats().lastUpdated', async () => {
+    const OLD = 1_600_000_000_000; // 2020 — the real last-index time
+    const res = (await executeReadOp(statusStub('complete', 42, OLD), 'status', {})) as {
+      index: { lastIndexed: string | null };
+    };
+    // The stub's getStats().lastUpdated is a far-FUTURE sentinel (2030); reporting the
+    // 2020 persisted time proves lastUpdated is not the source.
+    expect(res.index.lastIndexed).toBe(new Date(OLD).toISOString());
+  });
+
+  it('reports null when nothing has been indexed (getLastIndexedAt() === null)', async () => {
+    const res = (await executeReadOp(statusStub('complete', 42, null), 'status', {})) as {
+      index: { lastIndexed: string | null };
+    };
+    expect(res.index.lastIndexed).toBeNull();
+  });
+});
+
+// S1-A (FR-002/015a): a daemon client that dies AFTER a successful attach makes its
+// pooled read reject. Before, that rejection escaped withClient (which guarded only
+// the attach) and became a 500, and the dead client stayed pooled so every later read
+// failed forever. Now withClient catches it: evict the client and return a transient
+// 503, so the next request re-attaches.
+describe('SPEC-005 S1-A: a mid-session daemon read failure evicts the client, returns 503', () => {
+  it('returns 503 (not 500), evicts+closes the dead client, and re-attaches next request', async () => {
+    const defaultRepo: RepoInfo = { id: 'a'.repeat(16), root: '/x', name: 'x' };
+    let attachCount = 0;
+    let closeCount = 0;
+    const pool = new Map<string, DaemonReadClient>();
+    const makeDeadClient = (): DaemonReadClient =>
+      ({
+        // A recoverable condition RETURNS a result; a throw means the round-trip failed.
+        read: async () => {
+          throw new Error('socket closed');
+        },
+        close: () => {
+          closeCount += 1;
+        },
+      }) as unknown as DaemonReadClient;
+    const deps: ReadApiDeps = {
+      version: 'test',
+      defaultRepo,
+      resolveRepo: () => defaultRepo,
+      getClient: async (repo) => {
+        const cached = pool.get(repo.id);
+        if (cached) return cached;
+        attachCount += 1;
+        const c = makeDeadClient();
+        pool.set(repo.id, c);
+        return c;
+      },
+      evictClient: (repo) => {
+        const c = pool.get(repo.id);
+        pool.delete(repo.id);
+        c?.close();
+      },
+      isRepoIndexed: () => true,
+    };
+    const routes = buildReadRoutes(deps);
+    const ctx = (): RouteContext => ({
+      method: 'GET',
+      rawPath: '/api/node/n1',
+      params: {},
+      query: new URLSearchParams(),
+      headers: {},
+    });
+
+    const first = await handleApiRequest(routes, ctx());
+    expect(first?.status).toBe(503); // transient daemonUnavailable, NOT a 500
+    expect(attachCount).toBe(1);
+    expect(closeCount).toBe(1); // the dead client was closed
+    expect(pool.size).toBe(0); // ...and evicted from the pool
+
+    const second = await handleApiRequest(routes, ctx());
+    expect(second?.status).toBe(503);
+    expect(attachCount).toBe(2); // re-attached, never reused the dead client
+  });
+});
+
+// S1-D (FR-014a): the token-redaction scan must not be defeated by a MALFORMED
+// percent escape earlier in the path that used to abort the decode loop and let an
+// encoded token through. A raw socket sends the exact request bytes so a client
+// library can't normalize `%ZZ` before it reaches the server. (The reviewer also
+// flagged the HTTP method as un-redacted, but that vector is unreachable: node:http's
+// strict parser rejects a nonstandard method with HPE_INVALID_METHOD before the
+// handler runs — verified — so `method` is always a validated standard verb.)
+describe('SPEC-005 S1-D: redaction survives a malformed escape in the path (FR-014a)', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  const rawRequest = (host: string, port: number, requestLine: string): Promise<void> =>
+    new Promise((resolve) => {
+      const sock = net.connect(port, host, () => {
+        sock.write(`${requestLine}\r\nHost: ${host}:${port}\r\nConnection: close\r\n\r\n`);
+      });
+      sock.on('data', () => {
+        /* drain */
+      });
+      sock.on('close', () => resolve());
+      sock.on('error', () => resolve());
+    });
+
+  it('a malformed %ZZ before an ENCODED token does not bypass redaction', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-rp-tok-bad-'));
+    dirs.push(dir);
+    const TOKEN = 'sec/ret';
+    const encoded = encodeURIComponent(TOKEN); // sec%2Fret
+    const logs: string[] = [];
+    const handle = await startWebServer({
+      port: 0,
+      projectPath: dir,
+      token: TOKEN,
+      logger: (line) => logs.push(line),
+    });
+    try {
+      // `%ZZ` (invalid) precedes the encoded token: the old scan threw on it and
+      // stopped, logging the still-encoded token. The tolerant scan must catch it.
+      await rawRequest(handle.host, handle.port, `GET /api/bad%ZZ/${encoded} HTTP/1.1`);
+      const joined = logs.join('\n');
+      expect(logs.length).toBeGreaterThan(0);
+      expect(joined).not.toContain(TOKEN); // not the cleartext token
+      expect(joined).not.toContain(encoded); // nor its reversible encoded form
       expect(logs.some((l) => l.includes('<redacted>'))).toBe(true);
     } finally {
       await handle.close();
