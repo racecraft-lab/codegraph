@@ -60,8 +60,39 @@
       "atomicity-route classifier returned one-navigable-PR (signal: change-shape:modify-heavy, releasable:true) — advisory dissent from the ratified 2-slice split; ratified split governs PR emission",
       "tasks-mode reviewability-gate deferred on installed runner — fallback evidence chain: setup-mode WARN 405>400 pass=true (scaffold 2026-07-10) + estimate-reviewable-loc not_estimated + human-ratified split (Q11, Clarify S3)"
     ],
-    "final_marker_split": null,
-    "packet_validation": null,
-    "pr_mappings": null
+    "final_marker_split": {
+      "slice-1-plan-engine": {
+        "head": "010-graph-aware-rename-slice-1",
+        "tip": "2bb5aa5",
+        "base": "main"
+      },
+      "slice-2-apply-mcp": {
+        "head": "010-graph-aware-rename",
+        "tip": "e4e0818+",
+        "base": "010-graph-aware-rename-slice-1",
+        "note": "stacked; retarget to main after PR 43 merges (GitHub auto-retargets on base-branch delete)"
+      }
+    },
+    "packet_validation": {
+      "status": "ok",
+      "method": "validate-pr-workflow-contract (read_only runner op)",
+      "validated": [
+        "slice-1 title+body",
+        "slice-2 title+body"
+      ],
+      "date": "2026-07-12"
+    },
+    "pr_mappings": [
+      {
+        "marker_id": "slice-1-plan-engine",
+        "pr": 43,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/43"
+      },
+      {
+        "marker_id": "slice-2-apply-mcp",
+        "pr": 44,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/44"
+      }
+    ]
   }
 }
