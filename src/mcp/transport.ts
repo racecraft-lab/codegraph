@@ -112,6 +112,12 @@ abstract class LineBasedJsonRpcTransport implements JsonRpcTransport {
    * on timeout so callers can fall back rather than hang forever.
    */
   request(method: string, params?: unknown, timeoutMs = 5000): Promise<unknown> {
+    // A stopped transport can never deliver a response — reject at once rather than
+    // register a pending request that only rejects when its timeout elapses. This
+    // lets a caller that calls stop() to abort an in-flight round-trip (e.g. the
+    // web server's shutdown-aborted watcher re-arm) fail fast instead of holding a
+    // dead socket for the full timeout.
+    if (this.stopped) return Promise.reject(new Error('Transport stopped'));
     const id = `${this.idPrefix()}-${this.nextRequestId++}`;
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {

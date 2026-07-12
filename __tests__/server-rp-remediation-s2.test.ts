@@ -15,6 +15,7 @@ import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defaultIsLockHeld, JobConflictError, JobRegistry, ReindexJob, type JobDescriptor } from '../src/server/jobs';
 import { SseWriter, streamJobToResponse } from '../src/server/sse';
+import { StdioTransport } from '../src/mcp/transport';
 import {
   buildJobRoutes,
   buildReadRoutes,
@@ -407,4 +408,20 @@ describe('SPEC-005 slice-2 round-4 remediation', () => {
   // retained on the job's AbortSignal. There is no surgical unit seam for the
   // removal without a live daemon socket; the re-arm path itself stays covered by
   // the R2-P1d (signal passed) and R3-#4 (re-arm runs on the abort path) tests.
+
+  // R5-STOPPED-REQUEST (FR-021a): when the shutdown-aborted re-arm calls
+  // transport.stop() to abort an in-flight round-trip, a subsequent request() must
+  // reject AT ONCE rather than register a pending entry that only rejects when its
+  // timeout elapses — otherwise a dead socket is held for the full timeout. The
+  // guard rejects synchronously with 'Transport stopped' (matching stop()'s own
+  // rejectPending reason); without it, request() would instead reject with the
+  // 'Timed out after …' message after the timeout. StdioTransport is the socket-free
+  // seam: stop() sets `stopped` without start() (no readline, no process.exit).
+  it('R5-STOPPED-REQUEST: request() on a stopped transport rejects immediately with "Transport stopped"', async () => {
+    const transport = new StdioTransport({ exitOnClose: false });
+    transport.stop(); // sets stopped=true; empty pending, rl null → no side effects
+    // Small timeout so a regression (guard removed) fails fast with the timeout
+    // message instead of hanging for the 5s default.
+    await expect(transport.request('roots/list', undefined, 250)).rejects.toThrow('Transport stopped');
+  });
 });
