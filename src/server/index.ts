@@ -302,7 +302,20 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       // form — including the rare case where a client puts the configured token
       // in the request PATH (e.g. `/api/<token>`): redact it before logging.
       try {
-        const safePath = security.token ? rawPath.split(security.token).join('<redacted>') : rawPath;
+        // FR-014a is absolute: the token must never appear in a log in ANY
+        // reversible form. A client can place it in the path verbatim OR
+        // percent-encoded, and enumerating every equivalent encoding is
+        // impractical — so if the token appears in the raw OR the once-decoded
+        // path, collapse the whole path to a fixed marker rather than trying to
+        // redact just the token substring.
+        let safePath = rawPath;
+        if (security.token) {
+          let decoded = rawPath;
+          try { decoded = decodeURIComponent(rawPath); } catch { /* malformed % — keep raw */ }
+          if (rawPath.includes(security.token) || decoded.includes(security.token)) {
+            safePath = '/<redacted>';
+          }
+        }
         options.logger?.(`${method} ${safePath} -> ${status}`);
       } catch { /* a log sink must never take down the server */ }
     }
