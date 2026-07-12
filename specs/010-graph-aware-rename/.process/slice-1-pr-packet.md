@@ -30,6 +30,17 @@ through the Slice-1 tip `f911f95`, plus the checkpoint chore `2bb5aa5`.
 Reviewers can skim the six spec-artifact commits (they are the SDD paper trail);
 the reviewable code is the three implementation commits.
 
+**Reviewable size (disclosed up front):** src **+1,683** / tests **+2,315**
+(test:src ≈ 1.4:1). The scaffold-time estimate was 405 reviewable LOC across
+the whole spec (WARN at the 400 advisory ceiling, recorded
+within-greenfield-allowance); the implemented slice alone is ~4× that estimate
+— growth driven by the Clarify/Checklist-hardened refusal taxonomy (10 refusal
+codes, candidate payloads, kind coverage) and the D1/D2 UAT remediations. The
+ceiling is advisory (the hard re-slice gate is PRSG-010, not installed here);
+the Review order and FR-traceability sections above are the navigation
+mitigation, and the module is fully greenfield (12 new files, zero upstream
+rewrites).
+
 ## Scope statement — this slice is READ-ONLY
 
 At `f911f95` the CLI had **no `--apply` flag**: `codegraph rename` was dry-run

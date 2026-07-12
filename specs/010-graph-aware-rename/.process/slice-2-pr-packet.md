@@ -21,7 +21,19 @@ gate commit itself:
 | *(gate commit)* | T053 — this packet, plus any gate-driven fixes |
 
 Verified: `git log --oneline 2bb5aa5..e12952f` returns exactly these 8 commits in
-this order.
+this order. (Post-gate commits — the D4 fix `acf1a60`, checkpoint `f5d9673`,
+overview flip `c03cb57`, verify-step fixes `1b24b57`/`2fc8702`, the Slice-1
+packet `79eb7fc`, and the D5 review batch `eea5e1f` — extend the slice through
+the post-implementation steps.)
+
+**Reviewable size (disclosed up front):** src **+1,419/−46** / tests
+**+2,624/−72** (test:src ≈ 1.8:1) across the slice including the D3/D4/D5
+hardening. Like Slice 1 this materially exceeds the 400-LOC advisory ceiling
+(scaffold estimate for the WHOLE spec was 405); the apply safety ladder's
+ratified taxonomy plus three defect-remediation batches are the growth. The
+ceiling is advisory (PRSG-010 not installed); the Review order, FR
+traceability, and this packet's finding narratives are the navigation
+mitigation.
 
 ## Gate results
 
