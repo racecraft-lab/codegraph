@@ -559,10 +559,13 @@ codegraph impact <symbol>         # Analyze what code is affected by changing a 
 codegraph affected [files...]     # Find test files affected by changes (see below)
 codegraph daemon                  # Manage background daemons — pick one to stop (alias: daemons)
 codegraph telemetry [on|off]      # Show or change anonymous usage telemetry
+codegraph serve --web             # Start a local HTTP server exposing the read REST API (--host, --port)
 codegraph upgrade [version]       # Update to the latest release (--check, --force)
 codegraph version                 # Print the installed version (also -v, --version)
 codegraph help [command]          # Show help, optionally for one command
 ```
+
+The `serve --web` local REST API (endpoints, auth, and OpenAPI) is documented in [docs/web-server.md](docs/web-server.md).
 
 ### `codegraph affected`
 

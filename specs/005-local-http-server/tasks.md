@@ -466,10 +466,10 @@ shutdown-abort (SC-004).
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T046 [P] Document `codegraph serve --web` for users — flags (`--web`,
+- [x] T046 [P] Document `codegraph serve --web` for users — flags (`--web`,
   `--host`, `--port`, `--port 0`), `CODEGRAPH_SERVER_TOKEN`, the loopback default,
   and the endpoint list — in the appropriate user doc; no internal symbols/paths.
-- [ ] T047 Self-repo dogfood (SC-008, Constitution "Dogfooding (binding)") — the
+- [x] T047 Self-repo dogfood (SC-008, Constitution "Dogfooding (binding)") — the
   **final** validation: run `node dist/bin/codegraph.js serve --web --port 0`
   against **this repository's own index**; confirm `GET /api/status` reports this
   project's health and `GET /api/search?q=ExtractionOrchestrator` returns this
