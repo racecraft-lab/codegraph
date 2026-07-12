@@ -84,7 +84,7 @@ export interface JobDeps {
   /** Whether the index file lock is held by a FOREIGN live process (contention). */
   isLockHeld?(root: string): boolean;
   /** Fire the watcher re-arm control message after lock release (best-effort). */
-  rearmWatcher?(root: string): void | Promise<void>;
+  rearmWatcher?(root: string, signal?: AbortSignal): void | Promise<void>;
   /** Bounded lock-retry window (ms). */
   lockRetryWindowMs?: number;
   /** Poll interval within the lock-retry window (ms). */
@@ -122,7 +122,19 @@ const REARM_TIMEOUT_MS = 15_000;
  */
 const INDEX_FAILED_REASON = 'index_failed';
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/**
+ * A `sleep(ms)` that also resolves promptly when `signal` aborts (removing its
+ * listener), so a shutdown abort during a lock-retry wait is observed at once
+ * rather than only after the interval elapses (FR-023/026).
+ */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    const onAbort = (): void => { clearTimeout(t); resolve(); };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Result whitelisting + contention detection.
@@ -268,14 +280,14 @@ async function runWithLockRetry(
     if (signal.aborted) return { contended: false }; // caller maps to `aborted`
     if (isLockHeld(root)) {
       if (Date.now() >= deadline) return { contended: true };
-      await sleep(intervalMs);
+      await abortableSleep(intervalMs, signal);
       continue;
     }
     const result = await runIndex(root, mode, onProgress, signal);
     if (isContentionSentinel(mode, result) && isLockHeld(root)) {
       // Race: a foreign writer took the lock between the probe and the acquire.
       if (Date.now() >= deadline) return { contended: true };
-      await sleep(intervalMs);
+      await abortableSleep(intervalMs, signal);
       continue;
     }
     return { result, contended: false };
@@ -394,7 +406,7 @@ export class ReindexJob {
       // lock release. Gated on the daemon side (isDegraded), so a healthy
       // watcher is a cheap no-op (FR-021a). Best-effort — never fails the job.
       try {
-        await this.deps.rearmWatcher?.(this.root);
+        await this.deps.rearmWatcher?.(this.root, this.controller.signal);
       } catch {
         /* best-effort watcher restore */
       }
@@ -522,7 +534,8 @@ export class JobRegistry {
  * (daemon-client.ts, upstream-adjacent) speaks only `tools/call`/`codegraph/read`
  * — this is a distinct control method. Kept minimal and fully wrapped.
  */
-export async function defaultRearmWatcher(root: string): Promise<void> {
+export async function defaultRearmWatcher(root: string, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return; // shutdown already in progress → nothing to re-arm
   let indexedRoot: string;
   try {
     const real = fs.realpathSync(root);
@@ -548,6 +561,9 @@ export async function defaultRearmWatcher(root: string): Promise<void> {
   if (!socket) return; // no live daemon → its watcher cannot have been degraded by us
 
   const transport = new SocketTransport(socket, 'cg-web-rearm');
+  // An abort during the initialize/rearm round-trip tears the socket down at once
+  // (the transport.request REARM_TIMEOUT_MS is the backstop, not the fast path).
+  signal?.addEventListener('abort', () => transport.stop(), { once: true });
   const rootUri = pathToFileURL(indexedRoot).href;
   transport.start(async (msg) => {
     const m = msg as { method?: string; id?: string | number };

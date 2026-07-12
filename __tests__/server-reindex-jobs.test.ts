@@ -762,8 +762,11 @@ describe('F1 — a contained job failure logs the cause locally, wire reason sta
   }, CT(20000));
 });
 
-describe('F3 — an SSE stream that throws AFTER writeHead is contained (no double writeHead)', () => {
-  it('the events handler catches a post-header throw, returns hijacked, and ends the stream', () => {
+describe('F3 — an SSE stream throw is contained at the writer or the handler (no double writeHead)', () => {
+  // Build the events route over a running job and invoke it once; the throw must
+  // NEVER escape (a non-hijacked error result → a second writeHead →
+  // ERR_HTTP_HEADERS_SENT → unhandled rejection).
+  function callEvents(res: object, diag: string[]): { result: unknown; settle: () => void } {
     const ctl = controllable();
     const registry = new JobRegistry(ctl.deps);
     registry.start({ id: 'r1', root: '/tmp/x' }, 'sync'); // a running job
@@ -772,17 +775,6 @@ describe('F3 — an SSE stream that throws AFTER writeHead is contained (no doub
       registry,
     });
     const eventsRoute = routes.find((r) => r.method === 'GET' && r.pattern.endsWith('/events'))!;
-
-    // A response whose write() throws AFTER writeHead has flipped headersSent.
-    let ended = false;
-    const res = {
-      headersSent: false,
-      writeHead(): void { (res as { headersSent: boolean }).headersSent = true; },
-      write(): boolean { throw new Error('EPIPE after headers'); },
-      end(): void { ended = true; },
-      on(): void { /* drain/close — unused here */ },
-    };
-    const diag: string[] = [];
     const ctx: RouteContext = {
       method: 'GET', rawPath: '/api/reindex/r1/events', params: { repo: 'r1' },
       query: new URLSearchParams(''), headers: {},
@@ -790,16 +782,51 @@ describe('F3 — an SSE stream that throws AFTER writeHead is contained (no doub
       req: { on: () => undefined } as unknown as RouteContext['req'],
       logDiagnostic: (m) => diag.push(m),
     };
-
     let result: unknown;
-    // The throw must NOT escape (it would return a non-hijacked error result → a
-    // second writeHead → ERR_HTTP_HEADERS_SENT → unhandled rejection).
     expect(() => { result = eventsRoute.handler(ctx); }).not.toThrow();
-    expect(result).toMatchObject({ status: 200, hijacked: true });
-    expect(ended).toBe(true);                       // the hijacked stream was ended cleanly
-    expect(diag.join('\n')).toContain('SSE stream failed');
+    return { result, settle: () => ctl.release.resolve(syncResult()) };
+  }
 
-    ctl.release.resolve(syncResult()); // let the running job settle
+  // R2-P1c: a mid-stream write throw (client socket gone, EPIPE) is now contained
+  // INSIDE the writer (safeWrite → writer.close → res.end), so it never reaches the
+  // handler catch. The handler still returns hijacked (no second writeHead) and a
+  // routine mid-write client disconnect is NOT logged as a server fault.
+  it('a post-header write() throw is contained by the writer; hijacked + ended, no fault logged', () => {
+    let ended = false;
+    const res = {
+      headersSent: false,
+      writeHead(): void { (res as { headersSent: boolean }).headersSent = true; },
+      write(): boolean { throw new Error('EPIPE after headers'); },
+      end(): void { ended = true; },
+      on(): void { /* drain/close — unused here */ },
+      off(): void { /* unused */ },
+    };
+    const diag: string[] = [];
+    const { result, settle } = callEvents(res, diag);
+    expect(result).toMatchObject({ status: 200, hijacked: true });
+    expect(ended).toBe(true);          // safeWrite caught the throw and closed the writer → res.end()
+    expect(diag.join('\n')).toBe('');  // a routine mid-write client disconnect is not a logged fault
+    settle();                          // let the running job settle
+  });
+
+  // A throw that ESCAPES the writer (here writeHead itself) is still contained by
+  // the handler catch: no re-throw, hijacked is returned, the stream is ended, and
+  // it IS logged (via the R2-P1f safeDiagnostic).
+  it('a writeHead throw escapes the writer and is contained by the handler catch (logged, hijacked)', () => {
+    let ended = false;
+    const res = {
+      headersSent: false,
+      writeHead(): void { throw new Error('writeHead failed'); },
+      write(): boolean { return true; },
+      end(): void { ended = true; },
+      on(): void { /* unused */ },
+    };
+    const diag: string[] = [];
+    const { result, settle } = callEvents(res, diag);
+    expect(result).toMatchObject({ status: 200, hijacked: true });
+    expect(ended).toBe(true);                        // the handler catch ended the hijacked response
+    expect(diag.join('\n')).toContain('SSE stream failed');
+    settle();                                        // let the running job settle
   });
 });
 

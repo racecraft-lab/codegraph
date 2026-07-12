@@ -30,6 +30,7 @@ export interface SseSink {
   write(chunk: string): boolean;
   end(cb?: () => void): void;
   on(event: string, listener: (...args: unknown[]) => void): void;
+  off?(event: string, listener: (...args: unknown[]) => void): void;
   writableEnded?: boolean;
 }
 
@@ -87,11 +88,27 @@ export class SseWriter {
     }
   };
 
+  /**
+   * The single write chokepoint: a SYNCHRONOUS throw from the sink (a socket torn
+   * down mid-write) transitions the writer to closed rather than propagating, so a
+   * broken subscriber never crashes the job or the other subscribers (FR-023). The
+   * boolean return preserves the existing backpressure/coalesce contract.
+   */
+  private safeWrite(chunk: string): boolean {
+    if (this.closed) return false;
+    try {
+      return this.sink.write(chunk);
+    } catch {
+      this.close();
+      return false;
+    }
+  }
+
   private writeFrame(event: string, data: unknown): void {
     if (this.closed) return;
     // Always attempt the write (the runtime queues it even when it returns
     // false); track backpressure so the NEXT progress coalesces.
-    const ok = this.sink.write(frame(event, data));
+    const ok = this.safeWrite(frame(event, data));
     if (!ok) this.draining = true;
   }
 
@@ -111,7 +128,7 @@ export class SseWriter {
       this.pendingProgress = progress; // coalesce to latest — bounded to one frame
       return;
     }
-    const ok = this.sink.write(frame('progress', progress));
+    const ok = this.safeWrite(frame('progress', progress));
     if (!ok) this.draining = true;
   }
 
@@ -129,7 +146,7 @@ export class SseWriter {
     // (bounded memory, FR-023); if the heartbeat is itself the write that fills the
     // socket buffer, arm draining so the next progress coalesces.
     if (this.closed || this.draining) return;
-    if (!this.sink.write(': heartbeat\n\n')) this.draining = true;
+    if (!this.safeWrite(': heartbeat\n\n')) this.draining = true;
   }
 
   /** Stop writing and end the response. Idempotent. */
@@ -137,6 +154,7 @@ export class SseWriter {
     if (this.closed) return;
     this.closed = true;
     this.pendingProgress = null;
+    this.sink.off?.('drain', this.onDrain); // stop listening once we stop writing
     try {
       this.sink.end();
     } catch {
@@ -198,12 +216,17 @@ export function streamJobToResponse(res: SseResponse, req: SseRequest | undefine
   if (job.isTerminal()) finishStream(job.descriptor());
 
   // Client disconnect: stop writing to THIS response, but NEVER cancel the job
-  // (FR-023) and never touch the other subscribers.
-  req?.on('close', () => {
+  // (FR-023) and never touch the other subscribers. Idempotent via `done` so the
+  // req-close and the RESPONSE's own close/error (the reliable long-lived-response
+  // disconnect signal) all funnel through it exactly once.
+  const cleanup = (): void => {
     if (done) return;
     done = true;
     clearInterval(heartbeat);
     unsubscribe();
     writer.close();
-  });
+  };
+  req?.on('close', cleanup);
+  res.on('close', cleanup);
+  res.on('error', cleanup);
 }

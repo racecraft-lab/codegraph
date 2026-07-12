@@ -197,7 +197,7 @@ export async function handleApiRequest(
     // FR-015a: the client gets the generic 500 envelope (no fault detail). Log the
     // underlying exception LOCALLY so the operator can diagnose it (F1); the sink
     // only receives the exception, never the request headers/token.
-    ctx.logDiagnostic?.(diagnosticLine('request handler', err));
+    safeDiagnostic(ctx.logDiagnostic, diagnosticLine('request handler', err));
     return internalError();
   }
 }
@@ -210,6 +210,11 @@ export async function handleApiRequest(
 function diagnosticLine(where: string, err: unknown): string {
   const e = err instanceof Error ? err : new Error(String(err));
   return `[codegraph:web] ${where}: ${e.message}${e.stack ? `\n${e.stack}` : ''}`;
+}
+
+/** Invoke a diagnostic sink defensively — a throwing sink must never change the wire outcome. */
+function safeDiagnostic(sink: ((message: string) => void) | undefined, message: string): void {
+  try { sink?.(message); } catch { /* a diagnostic sink must never affect the response */ }
 }
 
 // ===========================================================================
@@ -306,7 +311,7 @@ async function withClient(
     // The client sees a generic transient 503 (FR-015a); log WHY locally so the
     // operator can tell a version-mismatch / never-bound / spawn failure apart
     // (the DaemonUnavailableError message distinguishes them) (F1).
-    ctx.logDiagnostic?.(diagnosticLine('daemon attach failed', err));
+    safeDiagnostic(ctx.logDiagnostic, diagnosticLine('daemon attach failed', err));
     return daemonUnavailable(err);
   }
   return fn(client);
@@ -335,7 +340,7 @@ function statusHandler(deps: ReadApiDeps): RouteHandler {
         };
       }
       // Indexed but the daemon could not be attached → transient 503; log why (F1).
-      ctx.logDiagnostic?.(diagnosticLine('daemon attach failed (status)', err));
+      safeDiagnostic(ctx.logDiagnostic, diagnosticLine('daemon attach failed (status)', err));
       return daemonUnavailable(err);
     }
     const health = await readStatusHealth(client);
@@ -446,10 +451,10 @@ export function buildReadRoutes(deps: ReadApiDeps): Route[] {
 // ===========================================================================
 // SPEC-005 Slice-2 job routes (T038) — POST/GET /api/reindex/:repo and the SSE
 // stream GET /api/reindex/:repo/events. Kept in a SEPARATE builder from
-// buildReadRoutes so the read-slice OpenAPI contract walk (which asserts a
-// bijection between buildReadRoutes and the 8 documented read paths, and that
-// the document OMITS the Slice-2 reindex surface) stays green. The reindex
-// paths are intentionally undocumented in the read-slice openapi.yaml.
+// buildReadRoutes so the OpenAPI contract walk's per-builder bijection stays
+// green: buildReadRoutes maps to the 8 read paths, buildJobRoutes to the 2
+// reindex path templates. The shipped openapi.yaml now documents BOTH surfaces
+// (the contract walk asserts read + jobs).
 //
 // The `:repo` is a PATH param resolved against the daemon registry (FR-020);
 // an unregistered repo, or a registered repo with no job on record, → 404
@@ -520,7 +525,7 @@ function reindexEventsHandler(deps: JobApiDeps): RouteHandler {
       // always POST-writeHead. Returning a normal error result would let the
       // dispatcher writeHead a SECOND time (ERR_HTTP_HEADERS_SENT → an uncaught
       // rejection, F3). Instead end the hijacked response and log locally.
-      ctx.logDiagnostic?.(diagnosticLine('SSE stream failed', err));
+      safeDiagnostic(ctx.logDiagnostic, diagnosticLine('SSE stream failed', err));
       try { (ctx.res as SseResponse).end(); } catch { /* already ended / gone */ }
     }
     return { status: 200, body: undefined, hijacked: true };

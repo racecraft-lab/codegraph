@@ -13,8 +13,15 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { defaultIsLockHeld, JobRegistry, ReindexJob } from '../src/server/jobs';
-import { SseWriter } from '../src/server/sse';
+import { defaultIsLockHeld, JobRegistry, ReindexJob, type JobDescriptor } from '../src/server/jobs';
+import { SseWriter, streamJobToResponse } from '../src/server/sse';
+import {
+  buildReadRoutes,
+  handleApiRequest,
+  type ReadApiDeps,
+  type RepoInfo,
+  type RouteContext,
+} from '../src/server/routes';
 import { getCodeGraphDir } from '../src/directory';
 
 describe('SPEC-005 slice-2 review remediation', () => {
@@ -171,5 +178,116 @@ describe('SPEC-005 slice-2 review remediation', () => {
 
     writer.writeHeartbeat(); // must be a no-op while draining
     expect(writes.length).toBe(afterProgress);
+  });
+});
+
+describe('SPEC-005 slice-2 round-2 remediation', () => {
+  // R2-P1e (FR-023/026): an abort during a lock-retry WAIT must be observed at
+  // once, not only after the interval elapses. With a long interval, a plain
+  // sleep would block ~30s; the abortable sleep resolves promptly → `aborted`.
+  it('R2-P1e: a job aborted during a lock-retry wait settles promptly as aborted', async () => {
+    const job = new ReindexJob({ id: 'r', root: os.tmpdir() }, 'sync', {
+      runIndex: async () => { throw new Error('runIndex must not run while the lock is held'); },
+      isLockHeld: () => true,        // always contended → the retry loop waits
+      rearmWatcher: () => undefined,
+      lockRetryWindowMs: 60_000,     // far deadline: we're mid-wait, not past it
+      lockRetryIntervalMs: 30_000,   // a long wait the abort must cut short
+    });
+
+    const runP = job.run();
+    await new Promise((r) => setImmediate(r)); // let run() enter the abortable wait
+    job.abort();
+    await runP;                       // resolves at once — not after 30s
+    await job.whenSettled();
+    expect(job.isTerminal()).toBe(true);
+    expect(job.descriptor().status).toBe('error');
+    expect(job.descriptor().reason).toBe('aborted');
+  });
+
+  // R2-P1d (FR-021a): the watcher re-arm receives the job's AbortSignal so a
+  // shutdown abort during the re-arm RPC tears the socket down promptly.
+  it('R2-P1d: the watcher re-arm is invoked with the job AbortSignal', async () => {
+    let receivedSignal: unknown = 'unset';
+    const job = new ReindexJob({ id: 'r', root: os.tmpdir() }, 'sync', {
+      runIndex: async () => ({
+        filesChecked: 1, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 1,
+      }),
+      isLockHeld: () => false,
+      rearmWatcher: (_root, signal) => { receivedSignal = signal; },
+    });
+    await job.run();
+    await job.whenSettled();
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  // R2-P1c (FR-023): a SYNCHRONOUS throw from the sink (socket torn down
+  // mid-write) must transition the writer to closed, not propagate.
+  it('R2-P1c: a synchronous write() throw transitions the writer to closed, not propagated', () => {
+    let ended = false;
+    const sink = {
+      write: (): boolean => { throw new Error('EPIPE mid-write'); },
+      end: () => { ended = true; },
+      on: () => undefined,
+      off: () => undefined,
+    };
+    const writer = new SseWriter(sink as never);
+    const descriptor: JobDescriptor = {
+      id: 'j', repo: 'r', mode: 'sync', status: 'running', startedAt: new Date().toISOString(),
+    };
+    expect(() => writer.writeSnapshot(descriptor)).not.toThrow(); // caught in safeWrite
+    expect(ended).toBe(true);                                     // …and the writer closed
+    // Once closed, further writes are inert no-ops (never re-throw).
+    expect(() => writer.writeProgress({ phase: 'parsing', current: 1, total: 2 } as never)).not.toThrow();
+  });
+
+  // R2-P1c (FR-023): the RESPONSE's own close/error — the reliable long-lived
+  // disconnect signal — must run cleanup (heartbeat cleared, unsubscribed, writer
+  // closed), idempotently.
+  it('R2-P1c: a response close/error signal runs cleanup and closes the writer (idempotent)', () => {
+    // A fresh, un-run job stays `running`/non-terminal — enough to drive the glue.
+    const job = new ReindexJob({ id: 'r', root: os.tmpdir() }, 'sync', {});
+    const listeners: Record<string, Array<() => void>> = {};
+    let ended = false;
+    const res = {
+      writeHead: () => undefined,
+      write: () => true,
+      end: () => { ended = true; },
+      on: (event: string, l: () => void) => { (listeners[event] ??= []).push(l); },
+      off: () => undefined,
+    };
+    streamJobToResponse(res as never, undefined, job);
+    expect(ended).toBe(false); // live stream: snapshot written, not ended
+    // The RESPONSE's own close AND error are wired (not only req-close).
+    expect((listeners.close ?? []).length).toBeGreaterThan(0);
+    expect((listeners.error ?? []).length).toBeGreaterThan(0);
+    for (const l of listeners.error) l(); // a response error fires cleanup → writer.close() → res.end()
+    expect(ended).toBe(true);
+    for (const l of listeners.close) l(); // idempotent: a later close neither re-runs nor throws
+    expect(ended).toBe(true);
+  });
+
+  // R2-P1f (FR-015a): a throwing diagnostic sink on the daemon-attach path must
+  // not turn the documented 503 into a 500 — safeDiagnostic contains it.
+  // (R2-P2b is a comment-only fix with no separate behavioral surface.)
+  it('R2-P1f: a throwing diagnostic sink on the daemon-attach path still returns 503, not 500', async () => {
+    const repo: RepoInfo = { id: 'r1', root: '/tmp/x', name: 'x' };
+    const deps: ReadApiDeps = {
+      version: '1.0.0',
+      defaultRepo: repo,
+      resolveRepo: (id) => (id === undefined || id === 'r1' ? repo : null),
+      getClient: async () => { throw new Error('daemon spawn failed'); },
+      isRepoIndexed: () => true,
+    };
+    const routes = buildReadRoutes(deps);
+    const ctx: RouteContext = {
+      method: 'GET',
+      rawPath: '/api/node/abc',
+      params: {},
+      query: new URLSearchParams(''),
+      headers: {},
+      logDiagnostic: () => { throw new Error('diagnostic sink boom'); },
+    };
+    const result = await handleApiRequest(routes, ctx);
+    expect(result?.status).toBe(503);
   });
 });
