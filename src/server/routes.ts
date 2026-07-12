@@ -69,6 +69,15 @@ export interface RouteContext {
   res?: SseResponse;
   /** The raw request — the SSE handler subscribes to its `close` (client disconnect). */
   req?: SseRequest;
+  /**
+   * LOCAL server-side diagnostic sink (F1). A contained fault becomes the generic
+   * `internal`/`unavailable` envelope on the wire (FR-015/015a) — which hides the
+   * cause from the operator too. When set, the dispatch/handlers log the caught
+   * exception (message + stack) here so an operator can diagnose it. Fed ONLY the
+   * exception, never request headers, so it can never carry a token (FR-014a).
+   * Silent unless `startWebServer` wires it (default `console.error` in CLI mode).
+   */
+  logDiagnostic?(message: string): void;
 }
 
 /** A registered route: an HTTP method, a path pattern, and its handler. */
@@ -184,9 +193,23 @@ export async function handleApiRequest(
     if (!match.matched) return notFound('route');
     ctx.params = match.params;
     return await match.route.handler(ctx);
-  } catch {
+  } catch (err) {
+    // FR-015a: the client gets the generic 500 envelope (no fault detail). Log the
+    // underlying exception LOCALLY so the operator can diagnose it (F1); the sink
+    // only receives the exception, never the request headers/token.
+    ctx.logDiagnostic?.(diagnosticLine('request handler', err));
     return internalError();
   }
+}
+
+/**
+ * Format a caught exception for the LOCAL diagnostic sink (F1): message + stack
+ * only. Never touches request headers, so it can never carry a token (FR-014a) —
+ * the counterpart to the whitelisted wire envelope (FR-015a).
+ */
+function diagnosticLine(where: string, err: unknown): string {
+  const e = err instanceof Error ? err : new Error(String(err));
+  return `[codegraph:web] ${where}: ${e.message}${e.stack ? `\n${e.stack}` : ''}`;
 }
 
 // ===========================================================================
@@ -280,6 +303,10 @@ async function withClient(
   try {
     client = await deps.getClient(repo);
   } catch (err) {
+    // The client sees a generic transient 503 (FR-015a); log WHY locally so the
+    // operator can tell a version-mismatch / never-bound / spawn failure apart
+    // (the DaemonUnavailableError message distinguishes them) (F1).
+    ctx.logDiagnostic?.(diagnosticLine('daemon attach failed', err));
     return daemonUnavailable(err);
   }
   return fn(client);
@@ -287,7 +314,7 @@ async function withClient(
 
 /** GET /api/status (T014, FR-005/016) — not repo-scoped; reports the default repo. */
 function statusHandler(deps: ReadApiDeps): RouteHandler {
-  return async (): Promise<HandlerResult> => {
+  return async (ctx): Promise<HandlerResult> => {
     const repo = deps.defaultRepo;
     let client: DaemonReadClient;
     try {
@@ -307,6 +334,8 @@ function statusHandler(deps: ReadApiDeps): RouteHandler {
           },
         };
       }
+      // Indexed but the daemon could not be attached → transient 503; log why (F1).
+      ctx.logDiagnostic?.(diagnosticLine('daemon attach failed (status)', err));
       return daemonUnavailable(err);
     }
     const health = await readStatusHealth(client);
@@ -475,7 +504,16 @@ function reindexEventsHandler(deps: JobApiDeps): RouteHandler {
     // Hand the raw response to the SSE writer; it owns the socket from here
     // (headers + snapshot + progress + terminal + heartbeat). `hijacked` tells
     // the dispatcher NOT to serialize a JSON body over the same response.
-    streamJobToResponse(ctx.res as SseResponse, ctx.req as SseRequest | undefined, job);
+    try {
+      streamJobToResponse(ctx.res as SseResponse, ctx.req as SseRequest | undefined, job);
+    } catch (err) {
+      // The stream writes headers as its FIRST action, so a throw here is almost
+      // always POST-writeHead. Returning a normal error result would let the
+      // dispatcher writeHead a SECOND time (ERR_HTTP_HEADERS_SENT → an uncaught
+      // rejection, F3). Instead end the hijacked response and log locally.
+      ctx.logDiagnostic?.(diagnosticLine('SSE stream failed', err));
+      try { (ctx.res as SseResponse).end(); } catch { /* already ended / gone */ }
+    }
     return { status: 200, body: undefined, hijacked: true };
   };
 }

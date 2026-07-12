@@ -16,7 +16,7 @@ import { findNearestCodeGraphRoot } from '../directory';
 import { watchDisabledReason } from '../sync';
 import { ToolHandler } from './tools';
 import { QueryPool, resolvePoolSize } from './query-pool';
-import { executeReadOp, readOnMissingIndex } from './read-ops';
+import { executeReadOp, readOnMissingIndex, type ReadOp } from './read-ops';
 
 // Lazy-load the heavy CodeGraph chain (sqlite + query/graph/context layers) OFF
 // the MCP startup path. It's only needed once a tool actually opens a project —
@@ -127,12 +127,16 @@ export class MCPEngine {
    * throw. Unknown ops throw {@link import('./read-ops').UnknownReadOpError}.
    */
   async executeRead(op: string, params: Record<string, unknown>): Promise<unknown> {
+    // The wire `op` is arbitrary JSON-RPC input; the ReadOp cast is compile-time
+    // only. An unrecognized value falls through to the dispatcher's `default`
+    // case, which throws UnknownReadOpError at runtime (→ InvalidParams).
+    const readOp = op as ReadOp;
     const cg = this.cg;
-    if (!cg) return readOnMissingIndex(op);
+    if (!cg) return readOnMissingIndex(readOp);
     // Pick up an index replaced on disk (#925) before serving, mirroring the
     // ToolHandler read path's freshen; never fail the read over it.
     try { cg.reopenIfReplaced(); } catch { /* keep the current handle */ }
-    return executeReadOp(cg, op, params);
+    return executeReadOp(cg, readOp, params);
   }
 
   /** Whether the default project's CodeGraph is open. */

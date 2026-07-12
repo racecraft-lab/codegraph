@@ -88,6 +88,15 @@ export interface JobDeps {
   lockRetryWindowMs?: number;
   /** Poll interval within the lock-retry window (ms). */
   lockRetryIntervalMs?: number;
+  /**
+   * Server-side diagnostic sink (F1). A CONTAINED in-job failure is whitelisted
+   * to `index_failed` on the wire (FR-015a) — which hides the real fault from the
+   * operator too. This logs the underlying exception (message + stack) locally so
+   * an operator can diagnose it. NEVER carries a token/Authorization (it only
+   * receives the caught exception, never request headers). Silent unless wired;
+   * `runWebServerCli` defaults it to `console.error`.
+   */
+  logDiagnostic?(message: string): void;
 }
 
 /** A duplicate active job already tracked in this server's registry (→ 409, FR-022). */
@@ -181,20 +190,26 @@ function isContentionSentinel(mode: JobMode, result: SyncResult | IndexResult): 
  * signal — it resolves the `sync()` zero-shape ambiguity by construction (a
  * genuinely-empty sync returns the zero-shape but leaves no foreign lock held).
  */
-function defaultIsLockHeld(root: string): boolean {
+export function defaultIsLockHeld(root: string): boolean {
+  let content: string;
   try {
-    const content = fs.readFileSync(path.join(getCodeGraphDir(root), 'codegraph.lock'), 'utf8').trim();
-    const pid = parseInt(content, 10);
-    if (!Number.isInteger(pid) || pid <= 0) return false;
-    if (pid === process.pid) return false; // our own re-entrant hold — not contention
-    try {
-      process.kill(pid, 0);
-      return true; // a live foreign holder → contention
-    } catch {
-      return false; // stale (dead pid) → not held
-    }
+    content = fs.readFileSync(path.join(getCodeGraphDir(root), 'codegraph.lock'), 'utf8').trim();
+  } catch (err) {
+    // ENOENT is the common, unambiguous "no lock file → free" case. Any OTHER
+    // read failure (EACCES, EIO, EISDIR, …) means we cannot prove the lock is
+    // free — treat it conservatively as HELD so a job never races an indexer we
+    // simply failed to observe (FR-021a).
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
+    return true;
+  }
+  const pid = parseInt(content, 10);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (pid === process.pid) return false; // our own re-entrant hold — not contention
+  try {
+    process.kill(pid, 0);
+    return true; // a live foreign holder → contention
   } catch {
-    return false; // no lock file → free
+    return false; // stale (dead pid) → not held
   }
 }
 
@@ -358,6 +373,12 @@ export class ReindexJob {
       }
     } catch (err) {
       // FR-021: contain every non-lock/non-abort failure as a terminal error.
+      // The wire `reason` is the whitelisted `index_failed` (FR-015a) — log the
+      // underlying cause server-side so the operator can still diagnose it (F1);
+      // an abort is expected shutdown, not a fault, so it is not logged.
+      if (!this.controller.signal.aborted) {
+        this.deps.logDiagnostic?.(diagnosticLine('reindex job failed', err));
+      }
       this.finish('error', { reason: this.controller.signal.aborted ? 'aborted' : classifyReason(err) });
     } finally {
       // The op released the file lock in its own `finally`, so this fires AFTER
@@ -396,6 +417,16 @@ export class ReindexJob {
 /** FR-015a: never leak the underlying fault — a fixed, whitelisted terminal reason. */
 function classifyReason(_err: unknown): string {
   return INDEX_FAILED_REASON;
+}
+
+/**
+ * Format a caught exception for the LOCAL diagnostic sink (F1): message + stack
+ * only. Never touches request headers, so it can never carry a token — the
+ * counterpart to the whitelisted wire reason (FR-015a).
+ */
+function diagnosticLine(where: string, err: unknown): string {
+  const e = err instanceof Error ? err : new Error(String(err));
+  return `[codegraph:web] ${where}: ${e.message}${e.stack ? `\n${e.stack}` : ''}`;
 }
 
 function randomId(): string {

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import {
@@ -13,7 +14,9 @@ import { __emitWatchEventForTests } from '../src/sync/watcher';
 import { MCPEngine } from '../src/mcp/engine';
 import { MCPSession } from '../src/mcp/session';
 import { SseWriter } from '../src/server/sse';
+import { ReindexJob, JobRegistry, defaultIsLockHeld } from '../src/server/jobs';
 import type { JobDeps, JobDescriptor } from '../src/server/jobs';
+import { buildJobRoutes, type RouteContext } from '../src/server/routes';
 import type { IndexProgress, IndexResult, SyncResult } from '../src/extraction';
 import type { JsonRpcTransport, MessageHandler } from '../src/mcp/transport';
 
@@ -714,6 +717,199 @@ describe('watcher re-arm (FR-021a)', () => {
       engine.stop();
     }
   }, CT(20000));
+});
+
+// ===========================================================================
+// Code-review remediation — F1 (diagnostics), F3 (SSE cascade), F6 (lock probe),
+// t1/t2 (contention-sentinel disambiguation), t4 (emit isolation).
+// ===========================================================================
+
+/** The all-zero incremental-sync shape the library returns on contention (or a genuinely-empty sync). */
+function zeroSync(): SyncResult {
+  return { filesChecked: 0, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 0 };
+}
+/** A full-mode contention sentinel: success:false, durationMs:0, a lock-flavored error. */
+function fullLockSentinel(): IndexResult {
+  return {
+    success: false, filesIndexed: 0, filesSkipped: 0, filesErrored: 0,
+    nodesCreated: 0, edgesCreated: 0, errors: [{ message: 'index lock held', severity: 'error' }], durationMs: 0,
+  } as unknown as IndexResult;
+}
+
+describe('F1 — a contained job failure logs the cause locally, wire reason stays whitelisted', () => {
+  it('logDiagnostic receives the real exception while term.reason is the whitelisted token', async () => {
+    const diag: string[] = [];
+    const secret = '/abs/secret/only-in-local-logs.ts';
+    const fx = await server({
+      jobDeps: {
+        runIndex: async () => { throw new Error(`extractor exploded: ${secret}`); },
+        isLockHeld: () => false,
+        rearmWatcher: () => {},
+        logDiagnostic: (m) => diag.push(m),
+      },
+    });
+    const res = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    expect(res.status).toBe(202); // the already-returned 202 never becomes a 5xx
+    const term = await waitTerminal(fx.baseURL, fx.repoId, CT(15000));
+    expect(term.status).toBe('error');
+    expect(term.reason).toBe('index_failed'); // FR-015a whitelisted token on the wire
+    expect(term.reason).not.toContain(secret);
+    // …but the operator diagnostic captured the underlying cause (F1).
+    const joined = diag.join('\n');
+    expect(joined).toContain(secret);
+    expect(joined.toLowerCase()).not.toContain('authorization');
+    expect(joined.toLowerCase()).not.toContain('bearer');
+  }, CT(20000));
+});
+
+describe('F3 — an SSE stream that throws AFTER writeHead is contained (no double writeHead)', () => {
+  it('the events handler catches a post-header throw, returns hijacked, and ends the stream', () => {
+    const ctl = controllable();
+    const registry = new JobRegistry(ctl.deps);
+    registry.start({ id: 'r1', root: '/tmp/x' }, 'sync'); // a running job
+    const routes = buildJobRoutes({
+      resolveRepo: (id) => (id === 'r1' ? { id: 'r1', root: '/tmp/x', name: 'x' } : null),
+      registry,
+    });
+    const eventsRoute = routes.find((r) => r.method === 'GET' && r.pattern.endsWith('/events'))!;
+
+    // A response whose write() throws AFTER writeHead has flipped headersSent.
+    let ended = false;
+    const res = {
+      headersSent: false,
+      writeHead(): void { (res as { headersSent: boolean }).headersSent = true; },
+      write(): boolean { throw new Error('EPIPE after headers'); },
+      end(): void { ended = true; },
+      on(): void { /* drain/close — unused here */ },
+    };
+    const diag: string[] = [];
+    const ctx: RouteContext = {
+      method: 'GET', rawPath: '/api/reindex/r1/events', params: { repo: 'r1' },
+      query: new URLSearchParams(''), headers: {},
+      res: res as unknown as RouteContext['res'],
+      req: { on: () => undefined } as unknown as RouteContext['req'],
+      logDiagnostic: (m) => diag.push(m),
+    };
+
+    let result: unknown;
+    // The throw must NOT escape (it would return a non-hijacked error result → a
+    // second writeHead → ERR_HTTP_HEADERS_SENT → unhandled rejection).
+    expect(() => { result = eventsRoute.handler(ctx); }).not.toThrow();
+    expect(result).toMatchObject({ status: 200, hijacked: true });
+    expect(ended).toBe(true);                       // the hijacked stream was ended cleanly
+    expect(diag.join('\n')).toContain('SSE stream failed');
+
+    ctl.release.resolve(syncResult()); // let the running job settle
+  });
+});
+
+describe('F6 — defaultIsLockHeld distinguishes ENOENT (free) from other read errors (held)', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } }
+  });
+  const mkroot = (): string => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lockprobe-'));
+    dirs.push(d);
+    fs.mkdirSync(getCodeGraphDir(d), { recursive: true });
+    return d;
+  };
+  const lockPath = (root: string): string => path.join(getCodeGraphDir(root), 'codegraph.lock');
+
+  it('a missing lock file (ENOENT) → not held (free)', () => {
+    expect(defaultIsLockHeld(mkroot())).toBe(false);
+  });
+
+  it('our own pid in the lock → not held (re-entrant, not contention)', () => {
+    const root = mkroot();
+    fs.writeFileSync(lockPath(root), String(process.pid));
+    expect(defaultIsLockHeld(root)).toBe(false);
+  });
+
+  it('a dead foreign pid → not held (stale)', () => {
+    const root = mkroot();
+    fs.writeFileSync(lockPath(root), '2147483646'); // ~never a live pid → ESRCH
+    expect(defaultIsLockHeld(root)).toBe(false);
+  });
+
+  it('a NON-ENOENT read failure (lock path is a directory → EISDIR) → conservatively HELD', () => {
+    const root = mkroot();
+    fs.mkdirSync(lockPath(root)); // reading a directory throws EISDIR, not ENOENT
+    expect(defaultIsLockHeld(root)).toBe(true);
+  });
+});
+
+describe('t1/t2 — contention-sentinel disambiguation (runWithLockRetry)', () => {
+  it('t1: all-zero sync sentinel + lock held on re-probe ⇒ lock_unavailable', async () => {
+    let probes = 0; // pre-probe (call #1) false, re-probe (call #2+) true
+    const fx = await server({
+      jobDeps: {
+        runIndex: async () => zeroSync(),
+        isLockHeld: () => probes++ > 0,
+        rearmWatcher: () => {},
+        lockRetryWindowMs: 0,
+        lockRetryIntervalMs: 1,
+      },
+    });
+    const res = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    expect(res.status).toBe(202);
+    const term = await waitTerminal(fx.baseURL, fx.repoId, CT(15000));
+    expect(term.status).toBe('error');
+    expect(term.reason).toBe('lock_unavailable');
+  }, CT(20000));
+
+  it('t1: all-zero sync sentinel + lock never held ⇒ done (genuinely-empty sync)', async () => {
+    const fx = await server({
+      jobDeps: {
+        runIndex: async () => zeroSync(),
+        isLockHeld: () => false,
+        rearmWatcher: () => {},
+      },
+    });
+    const res = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    expect(res.status).toBe(202);
+    const term = await waitTerminal(fx.baseURL, fx.repoId, CT(15000));
+    expect(term.status).toBe('done');
+    expect(term.reason).not.toBe('lock_unavailable');
+    expect((term.result as SyncResult).filesChecked).toBe(0); // the whitelisted zero result
+  }, CT(20000));
+
+  it('t2: full-mode errors[] lock sentinel + lock held on re-probe ⇒ lock_unavailable; POST still 202', async () => {
+    let probes = 0;
+    const fx = await server({
+      jobDeps: {
+        runIndex: async () => fullLockSentinel(),
+        isLockHeld: () => probes++ > 0,
+        rearmWatcher: () => {},
+        lockRetryWindowMs: 0,
+        lockRetryIntervalMs: 1,
+      },
+    });
+    const res = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}?full=true`, { method: 'POST' });
+    expect(res.status).toBe(202);
+    const term = await waitTerminal(fx.baseURL, fx.repoId, CT(15000));
+    expect(term.status).toBe('error');
+    expect(term.mode).toBe('full');
+    expect(term.reason).toBe('lock_unavailable');
+  }, CT(20000));
+});
+
+describe('t4 — ReindexJob.emit subscriber isolation', () => {
+  it('a throwing subscriber never stops a good one from receiving the terminal; the job settles', async () => {
+    const deps: JobDeps = {
+      runIndex: async () => syncResult(),
+      isLockHeld: () => false,
+      rearmWatcher: () => {},
+    };
+    const job = new ReindexJob({ id: 'r1', root: '/tmp/x' }, 'sync', deps);
+    const received: Array<{ type: string }> = [];
+    job.subscribe(() => { throw new Error('bad subscriber'); });
+    job.subscribe((evt) => { received.push(evt); });
+    await job.run();
+    await job.whenSettled();
+    expect(received.some((e) => e.type === 'terminal')).toBe(true);
+    expect(job.descriptor().status).toBe('done');
+  }, CT(15000));
 });
 
 // ---------------------------------------------------------------------------

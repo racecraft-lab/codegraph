@@ -87,7 +87,7 @@ parameter to target a specific indexed project (the `id` comes from
 | `GET /api/callers/:id` | What calls a symbol |
 | `GET /api/callees/:id` | What a symbol calls |
 | `GET /api/impact/:id?depth=<n>` | What is affected by changing a symbol |
-| `GET /api/graph/:id?depth=<n>&limit=<n>` | The graph neighborhood around a symbol |
+| `GET /api/graph/:id?depth=<n>` | The graph neighborhood around a symbol |
 
 Symbol ids can contain characters that must be URL-encoded when placed in the
 path.

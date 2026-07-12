@@ -10,16 +10,15 @@
  *
  * @module server/index
  *
- * Read routes are an empty table until later Slice-1 tasks register the read
- * handlers; the static mount composes in as its task lands. The `'upgrade'`
- * attach point is exposed but wired to nothing (reserved for SPEC-009).
+ * Read routes (`buildReadRoutes`) and re-index job routes (`buildJobRoutes`) are
+ * both registered, and the static mount is active. The `'upgrade'` attach point
+ * is exposed but wired to nothing (reserved for SPEC-009).
  */
 
 import * as http from 'http';
 import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as crypto from 'crypto';
 import {
   handleApiRequest,
   buildReadRoutes,
@@ -32,7 +31,7 @@ import {
 import { internalError, apiError } from './errors';
 import { resolveBindSecurity, isAllowedHostHeader } from './auth';
 import { serveStatic } from './static';
-import { attachDaemonClient, type DaemonReadClient } from './daemon-client';
+import { attachDaemonClient, repoIdForRoot, type DaemonReadClient } from './daemon-client';
 import { JobRegistry, defaultRearmWatcher, type JobDeps } from './jobs';
 import { CodeGraphPackageVersion } from '../mcp/version';
 import { listDaemons } from '../mcp/daemon-registry';
@@ -68,6 +67,18 @@ export interface WebServerOptions {
    * property. The sink MUST stay local (no external egress, Constitution VII).
    */
   logger?: (message: string) => void;
+  /**
+   * LOCAL server-side diagnostic sink (F1). Distinct from `logger` (the FR-014a
+   * request line): this receives the CAUGHT EXCEPTION (message + stack) at a
+   * contained-fault site — a handler throw, a re-index job failure, or a daemon
+   * attach failure — whose wire response is the generic `internal`/`unavailable`
+   * envelope (FR-015a) that hides the cause from the operator. It NEVER receives
+   * request headers, so it can never carry a token/Authorization (FR-014a).
+   * Silent by default in library/embedded use; `runWebServerCli` wires it to
+   * `console.error` so a CLI operator sees faults on stderr. Tests inject a
+   * capturing sink to assert the cause is logged AND the token never leaks.
+   */
+  diagnostics?: (message: string) => void;
   /**
    * SPEC-005 Slice-2 test seam (FR-020..FR-023): override the reindex job
    * subsystem's injectable dependencies (index runner, lock probe, watcher
@@ -129,14 +140,6 @@ function safeRealpath(p: string): string {
   } catch {
     return path.resolve(p);
   }
-}
-
-/**
- * 16-hex repo id — the SHA-256 prefix of the resolved root, identical to the
- * daemon registry's own record key by construction (FR-010).
- */
-function repoIdForRoot(root: string): string {
-  return crypto.createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 16);
 }
 
 /** Map a `listen` error to a clear, actionable {@link WebServerError} (FR-026). */
@@ -232,6 +235,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   // `options.jobDeps` (index runner / lock probe / re-arm spy / retry timing).
   const jobRegistry = new JobRegistry({
     rearmWatcher: defaultRearmWatcher,
+    logDiagnostic: options.diagnostics, // F1: a contained job failure is logged locally
     ...(options.jobDeps ?? {}),
   });
 
@@ -290,6 +294,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
         // streams frames directly. Every other handler ignores them.
         req,
         res,
+        // F1: contained-fault sites log the caught exception here (never headers).
+        logDiagnostic: options.diagnostics,
       };
 
       // FR-014 Bearer scope: on a token-bound bind, handleApiRequest 401s every
@@ -404,6 +410,15 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
 
 /** Serialize a handler/error result as the JSON envelope (FR-015). */
 function writeResult(res: http.ServerResponse, r: HandlerResult): void {
+  // A response whose headers already went out (e.g. a hijacked SSE stream that
+  // then threw, so the dispatcher fell back to an error result) must NOT be
+  // written again — a second writeHead throws ERR_HTTP_HEADERS_SENT, which the
+  // top-level catch would then re-throw into an unhandled rejection (F3). Abort
+  // the socket instead; the client sees a truncated stream, never a crash.
+  if (res.headersSent) {
+    try { res.destroy(); } catch { /* already gone */ }
+    return;
+  }
   res.writeHead(r.status, { 'Content-Type': 'application/json', ...(r.headers ?? {}) });
   res.end(JSON.stringify(r.body));
 }
@@ -449,6 +464,9 @@ export async function runWebServerCli(options: RunWebServerCliOptions): Promise<
     host: options.host,
     port,
     token: process.env.CODEGRAPH_SERVER_TOKEN ?? null,
+    // F1: surface contained-fault causes on stderr for the operator (the wire
+    // response stays the generic FR-015a envelope). Never carries the token.
+    diagnostics: (message) => console.error(message),
   });
   // Print the ACTUAL bound port (resolved when --port 0 was requested, FR-026);
   // stderr keeps stdout clean, mirroring the serve command's other output.

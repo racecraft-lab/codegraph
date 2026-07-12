@@ -25,6 +25,9 @@
  */
 import { afterEach, describe, it, expect } from 'vitest';
 import * as net from 'net';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { isLoopbackHost } from '../src/utils';
 import {
   resolveBindSecurity,
@@ -266,10 +269,14 @@ function rawRequest(
 
 describe('SPEC-005 auth/binding HTTP wiring (loopback, FR-012/013/014a)', () => {
   const handles: WebServerHandle[] = [];
+  const dirs: string[] = [];
 
   afterEach(async () => {
     for (const h of handles.splice(0)) {
       try { await h.close(); } catch { /* already closed */ }
+    }
+    for (const d of dirs.splice(0)) {
+      try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   });
 
@@ -330,6 +337,29 @@ describe('SPEC-005 auth/binding HTTP wiring (loopback, FR-012/013/014a)', () => 
     const joined = lines.join('\n');
     expect(joined).toContain('/api/nope'); // a redacted request line WAS logged
     expect(joined).not.toContain(secret); // the token never appears, in any form
+    expect(joined.toLowerCase()).not.toContain('authorization');
+    expect(joined.toLowerCase()).not.toContain('bearer');
+  });
+
+  it('F1: the diagnostics seam logs a daemon-attach failure but never the token (FR-014a)', async () => {
+    const diag: string[] = [];
+    const secret = 'D14G_never_log_z9y8x7w6';
+    // An un-indexed default repo (a fresh temp dir with no .codegraph/) makes the
+    // daemon attach fail fast WITHOUT spawning anything (no dogfood hazard) → 503,
+    // and the contained cause is routed to the diagnostics sink (F1).
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-auth-diag-'));
+    dirs.push(dir);
+    const h = await start({ projectPath: dir, diagnostics: (m: string) => diag.push(m) });
+
+    const res = await fetch(`http://127.0.0.1:${h.port}/api/search?q=x`, {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    expect(res.status).toBe(503); // transient daemon-unavailable, never a crash
+
+    const joined = diag.join('\n');
+    expect(joined.length).toBeGreaterThan(0);            // the cause WAS logged locally
+    expect(joined).toContain('daemon attach failed');    // …with the diagnostic label
+    expect(joined).not.toContain(secret);                // but never the token, in any form
     expect(joined.toLowerCase()).not.toContain('authorization');
     expect(joined.toLowerCase()).not.toContain('bearer');
   });

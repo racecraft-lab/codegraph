@@ -28,6 +28,7 @@ import { SocketTransport } from '../mcp/transport';
 import { findNearestCodeGraphRoot, getCodeGraphDir } from '../directory';
 import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
 import { unavailable, DEFAULT_RETRY_AFTER_SECONDS, type ApiError } from './errors';
+import type { ReadOp } from '../mcp/read-ops';
 
 /**
  * The `/api/repos` wire shape (FR-010, data-model "Repo"). `id` is the 16-hex
@@ -67,7 +68,7 @@ export interface DaemonReadClient {
    * library read against its warm index and returns structured data (no second
    * in-process index copy). Rejects if the daemon reports an error (unknown op).
    */
-  read(op: string, params?: Record<string, unknown>): Promise<unknown>;
+  read(op: ReadOp, params?: Record<string, unknown>): Promise<unknown>;
   /** End the socket, decrementing the daemon's client refcount (FR-026). */
   close(): void;
 }
@@ -148,6 +149,14 @@ function defaultSpawnDaemon(root: string): void {
       [...process.execArgv, scriptPath, 'serve', '--mcp', '--path', root],
       { detached: true, stdio, windowsHide: true, env },
     );
+    // A spawn failure (e.g. ENOENT/EACCES on execPath) surfaces as an async
+    // 'error' event; with no listener Node re-throws it as an uncaughtException.
+    // Absorb it (surfacing it to the operator via stderr, F1's diagnostic
+    // channel in CLI mode) so the attach simply degrades to the poll-timeout 503
+    // (FR-015a) instead of crashing the serve process.
+    child.on('error', (err) => {
+      try { process.stderr.write(`[codegraph:web] daemon spawn failed: ${err.message}\n`); } catch { /* ignore */ }
+    });
     child.unref();
   } finally {
     if (logFd !== null) {
@@ -199,16 +208,25 @@ async function makeReadClient(socket: Socket, root: string): Promise<DaemonReadC
     }
   });
 
-  await transport.request(
-    'initialize',
-    {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: { name: 'codegraph-web', version: '0.0.0' },
-      rootUri,
-    },
-    INITIALIZE_TIMEOUT_MS,
-  );
+  try {
+    await transport.request(
+      'initialize',
+      {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'codegraph-web', version: '0.0.0' },
+        rootUri,
+      },
+      INITIALIZE_TIMEOUT_MS,
+    );
+  } catch (err) {
+    // A rejected/timed-out handshake would otherwise leak the socket + its data
+    // listener (the transport was started above). Close it before propagating so
+    // the failed attach doesn't leak a socket per attempt (mirrors the
+    // try/finally in jobs.ts defaultRearmWatcher).
+    transport.stop();
+    throw err;
+  }
 
   return {
     async request(toolName, args) {
@@ -489,11 +507,13 @@ export function daemonUnavailable(err?: unknown): ApiError {
 
 /**
  * 16-hex repo id — the SHA-256 prefix of the resolved root, identical to the
- * daemon registry's own record key (`recordPath`, src/mcp/daemon-registry.ts)
- * and to `repoIdForRoot` in src/server/index.ts by construction, so an API id
- * equals a registry key without a second hashing scheme (FR-010).
+ * daemon registry's own record key (`recordPath`, src/mcp/daemon-registry.ts) by
+ * construction, so an API id equals a registry key without a second hashing
+ * scheme (FR-010). Exported as the SINGLE source of this hashing so src/server/
+ * index.ts imports it rather than keeping a byte-for-byte twin (whose equality
+ * FR-010 relies on).
  */
-function repoIdForRoot(root: string): string {
+export function repoIdForRoot(root: string): string {
   return crypto.createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 16);
 }
 
