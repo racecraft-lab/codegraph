@@ -68,6 +68,7 @@ export function formatRenamePlanTable(plan: RenamePlan): string {
 
   const footer = [`confidence: ${plan.confidence ?? 'n/a'}`];
   if (plan.leftoverMentions !== undefined) footer.push(`${plan.leftoverMentions} leftover mention(s)`);
+  if (plan.lspDegradation) footer.push(`lsp degraded: ${plan.lspDegradation}`);
   lines.push('', footer.join(' · '));
   return lines.join('\n') + '\n';
 }
@@ -180,6 +181,7 @@ function toSurfacePlan(plan: RenamePlan): Record<string, unknown> {
   if (plan.edits) out.edits = plan.edits.map(toSurfaceEdit);
   if (plan.confidence) out.confidence = plan.confidence;
   if (plan.source) out.source = plan.source;
+  if (plan.lspDegradation) out.lspDegradation = plan.lspDegradation;
   if (plan.leftoverMentions !== undefined) out.leftoverMentions = plan.leftoverMentions;
   out.applied = plan.applied;
   if (plan.refusal) out.refusal = toSurfaceRefusal(plan.refusal);

@@ -16,6 +16,20 @@
  * always carries a leftover-mention count computed with the identical whole-word
  * logic ({@link countTextualLeftovers}).
  *
+ * ## D3 — the completeness check on an `ok` LSP result
+ * The graph derivation ({@link deriveGraphRename}) now runs FIRST and
+ * unconditionally, once, because an `ok`-status LSP result is no longer
+ * automatically authoritative: it is accepted only when its touched files are
+ * a superset of every file the graph independently knows carries a
+ * span-verified occurrence of the target ({@link lspCoversGraphFiles}). A
+ * server can answer `ok` from a single open file before it finishes loading
+ * the wider project (observed on a real multi-hundred-file repo), silently
+ * dropping cross-file edits — per FR-003a's unusable-result contract (the
+ * spec's overlapping-range clause is the existing precedent), that is treated
+ * as UNUSABLE, not merely smaller: the WHOLE rename degrades to the graph
+ * derivation (never a per-file merge of the two sources), and the plan
+ * records why via `lspDegradation`.
+ *
  * Injected dependencies (a `QueryBuilder`, the project root, and a resolved LSP
  * config) keep the `CodeGraph.planRename` wrapper (a later task) thin. No writes.
  */
@@ -29,7 +43,16 @@ import { countTextualLeftovers, deriveGraphRename } from './graph-rename';
 import { checkPlanJail } from './jail';
 import { deriveLspRename } from './lsp-rename';
 import { LspPathDisposition, resolveTarget } from './target-resolver';
-import { EditSource, PlanConfidence, RenameEdit, RenamePlan, SourcePosition, Target, TargetSelector } from './types';
+import {
+  EditSource,
+  LspDegradationReason,
+  PlanConfidence,
+  RenameEdit,
+  RenamePlan,
+  SourcePosition,
+  Target,
+  TargetSelector,
+} from './types';
 
 export interface PlanRenameOptions {
   /** The graph the engine reads (same access pattern the derivation paths use). */
@@ -80,7 +103,7 @@ export async function planRename(options: PlanRenameOptions): Promise<RenamePlan
     };
   }
 
-  const { edits, source, leftoverMentions } = await deriveEdits(options, target, targetId);
+  const { edits, source, leftoverMentions, lspDegradation } = await deriveEdits(options, target, targetId);
   const ordered = sortEdits(edits);
 
   // FR-017 plan-time path jail + index-scope guard — refuse the whole plan at plan
@@ -99,6 +122,7 @@ export async function planRename(options: PlanRenameOptions): Promise<RenamePlan
     edits: ordered,
     confidence: aggregateConfidence(ordered),
     source,
+    lspDegradation,
     leftoverMentions,
     applied: false,
   };
@@ -108,12 +132,23 @@ interface Derivation {
   edits: RenameEdit[];
   source: EditSource;
   leftoverMentions: number;
+  /** Set only when an `ok` LSP result was rejected as unusable-incomplete and
+   *  this derivation is the graph fallback for the WHOLE rename (D3). */
+  lspDegradation?: LspDegradationReason;
 }
 
-/** The FR-003/FR-003a fork: LSP path when covered+available, else the graph path. */
+/**
+ * The FR-003/FR-003a fork: LSP path when covered+available, else the graph
+ * path. The graph derivation is computed FIRST and unconditionally — it is
+ * both the FR-003a fallback (as before D3) and, new in D3, the completeness
+ * baseline an `ok` LSP result is checked against, so it is derived exactly
+ * once regardless of which path the plan ultimately uses (its queries are
+ * sub-millisecond — not a meaningful added cost on every rename).
+ */
 async function deriveEdits(options: PlanRenameOptions, target: Target, targetId: string): Promise<Derivation> {
   const { queries, projectRoot, newName, lspConfig, env } = options;
   const language = detectLanguage(target.file);
+  const graph = deriveGraphRename({ queries, projectRoot, targetId, newName });
 
   if (lspConfig.enabled && isLspLanguage(language)) {
     const result = await deriveLspRename({
@@ -126,20 +161,43 @@ async function deriveEdits(options: PlanRenameOptions, target: Target, targetId:
       env,
     });
     if (result.status === 'ok') {
-      // LSP edit set is authoritative (it already includes the declaration
-      // edit); the leftover count still comes from the graph-side whole-word
-      // logic, run over the LSP-touched files.
-      return {
-        edits: result.edits,
-        source: 'lsp',
-        leftoverMentions: countLspLeftovers(projectRoot, target.name, result.edits),
-      };
+      if (lspCoversGraphFiles(graph.edits, result.edits)) {
+        // LSP edit set is authoritative (it already includes the declaration
+        // edit); the leftover count still comes from the graph-side whole-word
+        // logic, run over the LSP-touched files.
+        return {
+          edits: result.edits,
+          source: 'lsp',
+          leftoverMentions: countLspLeftovers(projectRoot, target.name, result.edits),
+        };
+      }
+      // D3 (dogfood UAT finding): the LSP edit set is missing at least one
+      // file the graph already knows carries a span-verified occurrence of
+      // the target — e.g. an ephemeral client's `textDocument/rename` landing
+      // before the server finishes project load, so it answers from the
+      // single open file only. Per FR-003a's unusable-result contract (the
+      // spec's overlapping-range clause is the existing precedent), this is
+      // UNUSABLE, not merely smaller: degrade the WHOLE rename to the graph
+      // derivation (never a per-file merge of the two sources), recording why.
+      return { edits: graph.edits, source: 'graph', leftoverMentions: graph.leftoverMentions, lspDegradation: 'incomplete-coverage' };
     }
     // FR-003a: unavailable / runtime-failed → degrade THAT rename to the graph.
   }
 
-  const graph = deriveGraphRename({ queries, projectRoot, targetId, newName });
   return { edits: graph.edits, source: 'graph', leftoverMentions: graph.leftoverMentions };
+}
+
+/**
+ * D3 completeness check: every file carrying ≥1 span-verified graph edit must
+ * appear among the LSP result's touched files. File-level on purpose — the
+ * graph and a real language server can legitimately disagree on exact spans
+ * (e.g. whether an import specifier is itself renamed), so this asks only "did
+ * the LSP result reach every file the graph already knows about", never "does
+ * every individual edit match".
+ */
+function lspCoversGraphFiles(graphEdits: RenameEdit[], lspEdits: RenameEdit[]): boolean {
+  const lspFiles = new Set(lspEdits.map((e) => e.file));
+  return graphEdits.every((e) => lspFiles.has(e.file));
 }
 
 /**

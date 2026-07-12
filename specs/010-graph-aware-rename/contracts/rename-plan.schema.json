@@ -36,6 +36,11 @@
       "type": "string",
       "enum": ["lsp", "graph"]
     },
+    "lspDegradation": {
+      "description": "Present when an ok-status LSP workspace edit was rejected as unusable-incomplete (SPEC-010 D3): it was missing at least one file the graph already knows carries a span-verified occurrence of the target, so the WHOLE rename degraded to the graph derivation instead (never a per-file merge). Absent whenever `source` is `lsp`, and absent for the FR-003a unavailable/runtime-failed degradation routes (those carry no reason here).",
+      "type": "string",
+      "enum": ["incomplete-coverage"]
+    },
     "leftoverMentions": {
       "description": "Optional, non-gating FYI count of old-name occurrences NOT edited (comments, docstrings, strings, and dispatch sites of synthesized heuristic edges). FR-013. Omitted when not computed.",
       "type": "integer",

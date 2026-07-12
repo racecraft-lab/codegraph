@@ -132,6 +132,22 @@ export type ConfidenceTier = 'exact' | 'heuristic';
 export type EditSource = 'lsp' | 'graph';
 
 /**
+ * Why an `ok`-status LSP result was rejected as unusable and the WHOLE rename
+ * degraded to the graph derivation instead — never a per-file merge of the two
+ * sources (FR-003a's unusable-result contract; spec.md's overlapping-range
+ * clause is the precedent this extends — SPEC-010 D3). Currently the sole
+ * value: `incomplete-coverage` — the LSP edit set was missing at least one file
+ * the graph already knows carries a span-verified occurrence of the target
+ * (observed cause: an ephemeral LSP client issuing `textDocument/rename`
+ * before the language server finishes project load, so it answers from the
+ * single open file only). Distinct from the FR-003a `unavailable`/`failed`
+ * degradation routes (a probe failure or a runtime crash/timeout) — those
+ * carry no reason here; this field is populated ONLY for the ok-but-incomplete
+ * case.
+ */
+export type LspDegradationReason = 'incomplete-coverage';
+
+/**
  * Aggregate confidence over a plan's edits, driving the `--apply` gate
  * (FR-015): `contains-heuristic` refuses apply unless heuristics are opted in.
  */
@@ -247,6 +263,10 @@ export interface RenamePlan {
   confidence?: PlanConfidence;
   /** Whole-plan derivation path when uniform; per-edit `source` is authoritative. */
   source?: EditSource;
+  /** Present when an `ok` LSP result was unusable-incomplete and the WHOLE
+   *  rename degraded to the graph derivation instead (D3 / FR-003a extension).
+   *  Never present when `source` is `lsp`. */
+  lspDegradation?: LspDegradationReason;
   /** Optional, non-gating FYI count of un-edited old-name occurrences (FR-013). */
   leftoverMentions?: number;
   /** `false` for every dry-run; `true` only on a post-check-green apply (always present). */

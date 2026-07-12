@@ -41,6 +41,61 @@ import {
 } from '../src/refactor/plan-format';
 import type { RenameEdit, RenamePlan } from '../src/refactor/types';
 
+// ---------------------------------------------------------------------------
+// Shared draft-07-subset schema validator (module scope so both the plan-
+// assembly tests (T012 / D3) and the plan-format tests (T013) can validate a
+// serialized plan against the ONE contract file without loading/parsing it
+// twice or duplicating the recursive validator.
+// ---------------------------------------------------------------------------
+const schema = JSON.parse(
+  fs.readFileSync(
+    path.join(process.cwd(), 'specs/010-graph-aware-rename/contracts/rename-plan.schema.json'),
+    'utf8',
+  ),
+) as Record<string, unknown>;
+
+/** Resolve a local `#/definitions/...` (or any `#/...`) ref against the schema. */
+function resolveRef(ref: string): Record<string, unknown> {
+  let cur: unknown = schema;
+  for (const part of ref.replace(/^#\//, '').split('/')) {
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return cur as Record<string, unknown>;
+}
+
+/** A focused JSON-Schema (draft-07 subset) validator tied to the loaded file. */
+function validate(value: unknown, node: Record<string, unknown>, where = '$'): void {
+  if (typeof node.$ref === 'string') return validate(value, resolveRef(node.$ref), where);
+  if (Array.isArray(node.enum)) expect(node.enum, `${where} enum`).toContain(value);
+  const type = (node.type as string | undefined) ?? (node.properties || node.required ? 'object' : undefined);
+  if (type === 'object') {
+    expect(typeof value === 'object' && value !== null, `${where} object`).toBe(true);
+    const obj = value as Record<string, unknown>;
+    for (const req of (node.required as string[] | undefined) ?? []) {
+      expect(Object.keys(obj), `${where} required ${req}`).toContain(req);
+    }
+    const props = (node.properties as Record<string, Record<string, unknown>> | undefined) ?? {};
+    if (node.additionalProperties === false) {
+      for (const k of Object.keys(obj)) expect(Object.keys(props), `${where} extra key "${k}"`).toContain(k);
+    }
+    for (const [k, sub] of Object.entries(props)) {
+      if (obj[k] !== undefined) validate(obj[k], sub, `${where}.${k}`);
+    }
+  } else if (type === 'array') {
+    expect(Array.isArray(value), `${where} array`).toBe(true);
+    const arr = value as unknown[];
+    if (typeof node.minItems === 'number') expect(arr.length, `${where} minItems`).toBeGreaterThanOrEqual(node.minItems);
+    for (let i = 0; i < arr.length; i++) validate(arr[i], node.items as Record<string, unknown>, `${where}[${i}]`);
+  } else if (type === 'string') {
+    expect(typeof value, `${where} string`).toBe('string');
+  } else if (type === 'integer') {
+    expect(Number.isInteger(value), `${where} integer`).toBe(true);
+    if (typeof node.minimum === 'number') expect(value as number, `${where} minimum`).toBeGreaterThanOrEqual(node.minimum);
+  } else if (type === 'boolean') {
+    expect(typeof value, `${where} boolean`).toBe('boolean');
+  }
+}
+
 describe('FR-004 confidence table — classifyEdgeConfidence', () => {
   describe('exact tier', () => {
     it.each([['import'], ['qualified-name'], ['function-ref']])(
@@ -1066,6 +1121,9 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     expect(plan.target?.kind).toBe('function');
     // Deterministic order — a.ts before b.ts.
     expect(plan.edits!.map((e) => e.file)).toEqual(['a.ts', 'b.ts']);
+    // D3: this LSP result covers every file the graph independently knows
+    // about (a.ts + b.ts) — COMPLETE coverage, so no degradation is recorded.
+    expect(plan.lspDegradation).toBeUndefined();
   });
 
   it('degrades to the graph path when the configured LSP server is UNAVAILABLE (per-edit source graph, from the start)', async () => {
@@ -1103,6 +1161,61 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
     expect(plan.refusal).toBeUndefined();
     expect(plan.source).toBe('graph');
     for (const e of plan.edits!) expect(e.source).toBe('graph');
+  });
+
+  // -------------------------------------------------------------------------
+  // D3 — dogfood UAT finding: on a real 381-file TS repo, an ephemeral LSP
+  // client issued `textDocument/rename` before tsserver finished project
+  // load, so the server answered `ok` from the single open (declaration)
+  // file only — silently missing a cross-file import + call site the graph
+  // already knew about. `deriveEdits` treated any `status:'ok'` LSP result as
+  // authoritative with no completeness check, so the plan (and the apply it
+  // fed) covered only the declaration file and left the repo not compiling.
+  //
+  // Per FR-003a's unusable-result contract (spec.md's overlapping-range
+  // clause is the existing precedent — a misbehaving workspace edit "MUST be
+  // handled as an unusable rename result that degrades that rename to the
+  // graph path"), an `ok` result missing a graph-known file is symmetrically
+  // UNUSABLE: the WHOLE rename degrades to the graph derivation (never a
+  // per-file merge of the two sources), recording why via `lspDegradation`.
+  // -------------------------------------------------------------------------
+  it('D3: an ok-status LSP result missing a file the graph already knows about is unusable-incomplete — degrades the WHOLE rename to graph, recording lspDegradation', async () => {
+    const { dir, queries } = await setup(forkFixture());
+    const stub = writeRenameStub(dir);
+    const aCol = A_DECL.indexOf('target');
+    // The stub answers `ok`, but its workspace edit covers ONLY the
+    // declaration file (a.ts) — it never reaches b.ts's import specifier or
+    // its `bus.on(target)` call site, both of which the graph already knows
+    // carry a span-verified occurrence of `target` (T012's own fixture).
+    const renameResult = {
+      documentChanges: [
+        {
+          textDocument: { uri: pathToFileURL(path.join(dir, 'a.ts')).href, version: 1 },
+          edits: [{ range: { start: { line: 0, character: aCol }, end: { line: 0, character: aCol + 6 } }, newText: 'renamed' }],
+        },
+      ],
+    };
+
+    const plan = await planRename({
+      queries,
+      projectRoot: dir,
+      selector: { name: 'target', kind: 'function' },
+      newName: 'renamed',
+      lspConfig: lspConfigFor(dir, [process.execPath, stub, '--stdio']),
+      env: { CG_STUB_MODE: 'ok', CG_STUB_RENAME_RESULT: JSON.stringify(renameResult) },
+    });
+
+    expect(plan.refusal).toBeUndefined();
+    expect(plan.source).toBe('graph'); // NOT lsp — an incomplete ok-result is unusable
+    expect(plan.lspDegradation).toBe('incomplete-coverage');
+    expect(plan.edits!.some((e) => e.file === 'a.ts')).toBe(true);
+    expect(plan.edits!.some((e) => e.file === 'b.ts')).toBe(true); // recovered via the graph path
+    for (const e of plan.edits!) expect(e.source).toBe('graph'); // whole-plan degrade, never a per-file merge
+
+    // The degradation reason round-trips through the canonical JSON surface
+    // (CLI -j/--json ≡ MCP result) — the same object every consumer sees.
+    const obj = JSON.parse(serializeRenamePlanJson(plan));
+    expect(obj.lspDegradation).toBe('incomplete-coverage');
   });
 
   it('uses the graph path directly when LSP is disabled — never attempts a server', async () => {
@@ -1295,54 +1408,8 @@ describe('T012 plan assembly — planRename (LSP-vs-graph fork, confidence, orde
 // composition right-to-left by range start (FR-027).
 // ---------------------------------------------------------------------------
 describe('T013 plan format + schema — plan-format (FR-027 / SC-001)', () => {
-  const schema = JSON.parse(
-    fs.readFileSync(
-      path.join(process.cwd(), 'specs/010-graph-aware-rename/contracts/rename-plan.schema.json'),
-      'utf8',
-    ),
-  ) as Record<string, unknown>;
-
-  /** Resolve a local `#/definitions/...` (or any `#/...`) ref against the schema. */
-  function resolveRef(ref: string): Record<string, unknown> {
-    let cur: unknown = schema;
-    for (const part of ref.replace(/^#\//, '').split('/')) {
-      cur = (cur as Record<string, unknown>)[part];
-    }
-    return cur as Record<string, unknown>;
-  }
-
-  /** A focused JSON-Schema (draft-07 subset) validator tied to the loaded file. */
-  function validate(value: unknown, node: Record<string, unknown>, where = '$'): void {
-    if (typeof node.$ref === 'string') return validate(value, resolveRef(node.$ref), where);
-    if (Array.isArray(node.enum)) expect(node.enum, `${where} enum`).toContain(value);
-    const type = (node.type as string | undefined) ?? (node.properties || node.required ? 'object' : undefined);
-    if (type === 'object') {
-      expect(typeof value === 'object' && value !== null, `${where} object`).toBe(true);
-      const obj = value as Record<string, unknown>;
-      for (const req of (node.required as string[] | undefined) ?? []) {
-        expect(Object.keys(obj), `${where} required ${req}`).toContain(req);
-      }
-      const props = (node.properties as Record<string, Record<string, unknown>> | undefined) ?? {};
-      if (node.additionalProperties === false) {
-        for (const k of Object.keys(obj)) expect(Object.keys(props), `${where} extra key "${k}"`).toContain(k);
-      }
-      for (const [k, sub] of Object.entries(props)) {
-        if (obj[k] !== undefined) validate(obj[k], sub, `${where}.${k}`);
-      }
-    } else if (type === 'array') {
-      expect(Array.isArray(value), `${where} array`).toBe(true);
-      const arr = value as unknown[];
-      if (typeof node.minItems === 'number') expect(arr.length, `${where} minItems`).toBeGreaterThanOrEqual(node.minItems);
-      for (let i = 0; i < arr.length; i++) validate(arr[i], node.items as Record<string, unknown>, `${where}[${i}]`);
-    } else if (type === 'string') {
-      expect(typeof value, `${where} string`).toBe('string');
-    } else if (type === 'integer') {
-      expect(Number.isInteger(value), `${where} integer`).toBe(true);
-      if (typeof node.minimum === 'number') expect(value as number, `${where} minimum`).toBeGreaterThanOrEqual(node.minimum);
-    } else if (type === 'boolean') {
-      expect(typeof value, `${where} boolean`).toBe('boolean');
-    }
-  }
+  // `schema` / `resolveRef` / `validate` are module-scope (shared with the D3
+  // tests in T012) — see the block right after the imports.
 
   function successPlan(): RenamePlan {
     return {
@@ -1507,6 +1574,28 @@ describe('T013 plan format + schema — plan-format (FR-027 / SC-001)', () => {
     // order must not matter (the composer sorts descending by range start).
     expect(composeAfterLine(lineText, [mk(first), mk(second)])).toBe(expected);
     expect(composeAfterLine(lineText, [mk(second), mk(first)])).toBe(expected);
+  });
+
+  // D3 — the plan-level `lspDegradation` FYI (an ok-status LSP result rejected
+  // as unusable-incomplete; see T012's D3 tests for how the engine derives
+  // it). Pure format/serialization coverage here: it renders in the human
+  // table, round-trips through the canonical JSON, and the object still
+  // schema-validates — `additionalProperties:false` would flag an
+  // unregistered key if the schema were not updated alongside the type.
+  it('D3: a plan-level lspDegradation renders in the human table footer and the canonical JSON, and the object still schema-validates', () => {
+    const plan: RenamePlan = { ...successPlan(), source: 'graph', lspDegradation: 'incomplete-coverage' };
+
+    const table = formatRenamePlanTable(plan);
+    expect(table).toContain('incomplete-coverage');
+
+    const obj = JSON.parse(serializeRenamePlanJson(plan));
+    validate(obj, schema);
+    expect(obj.lspDegradation).toBe('incomplete-coverage');
+
+    // Omitted when absent — a plan that never degraded carries no stray key.
+    const plain = JSON.parse(serializeRenamePlanJson(successPlan()));
+    validate(plain, schema);
+    expect(plain.lspDegradation).toBeUndefined();
   });
 });
 

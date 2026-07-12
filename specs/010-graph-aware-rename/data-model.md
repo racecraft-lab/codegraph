@@ -13,7 +13,8 @@ The computed result of a dry-run (and the recomputed basis of an apply — FR-01
 | `newName` | string | Requested replacement identifier. |
 | `edits` | RenameEdit[] | Ordered deterministically by (file, range start line, start character) for byte-identical CLI≡MCP parity (SC-005/FR-027); non-empty — an empty-references plan still contains the declaration edit (FR-002, US1 scenario 3). |
 | `confidence` | `all-exact` \| `contains-heuristic` | Aggregate over `edits`; drives the apply gate (FR-015). |
-| `source` | `lsp` \| `graph` | Whole-plan derivation path when uniform; per-edit `source` is authoritative (FR-003). |
+| `source` | `lsp` \| `graph` | Whole-plan derivation path when uniform; per-edit `source` is authoritative (FR-003). An `ok` LSP result is used only after FR-003a completeness verification: its file set must cover every file carrying ≥1 span-verified graph edit, else the whole rename degrades to the graph derivation (D3). |
+| `lspDegradation` | `incomplete-coverage`? | Optional; present only when an `ok` LSP result failed the FR-003a completeness verification and the rename degraded to the graph path (D3, self-repo dogfood finding). |
 | `leftoverMentions` | integer? | Optional, non-gating FYI count of un-edited old-name occurrences (FR-013). |
 | `applied` | boolean | `false` for every dry-run; `true` only on a post-check-green apply. |
 | `outcome` | ApplyOutcome? | Apply-only (Slice 2); absent on dry-run. |
