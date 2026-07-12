@@ -516,6 +516,7 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
       defaultRepo: { id: '0'.repeat(16), root: '/does/not/exist', name: 'x' },
       resolveRepo: () => null,
       getClient: () => Promise.reject(new Error('stub — never invoked by route enumeration')),
+      evictClient: () => {}, // never invoked by route enumeration
       isRepoIndexed: () => false,
     };
     const jobStub: JobApiDeps = { resolveRepo: () => null, registry: new JobRegistry() };

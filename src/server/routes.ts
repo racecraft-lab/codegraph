@@ -249,10 +249,12 @@ export interface ReadApiDeps {
   /** Lazily attach (cached) a daemon read client; throws → 503 (FR-002/015a). */
   getClient(repo: RepoInfo): Promise<DaemonReadClient>;
   /**
-   * Drop a repo's pooled client after its socket died mid-session, so the next
-   * request re-attaches instead of reusing the dead client forever (FR-002/015a).
+   * Drop a repo's pooled client after ITS socket died mid-session, so the next
+   * request re-attaches instead of reusing the dead client forever. Identity-scoped:
+   * the exact failed `client` is passed so a concurrent failure that already replaced
+   * it with a healthy client does not get that replacement evicted (FR-002/015a).
    */
-  evictClient(repo: RepoInfo): void;
+  evictClient(repo: RepoInfo, client: DaemonReadClient): void;
   /** Whether `root` has a reachable `.codegraph/` (un-indexed status, FR-005). */
   isRepoIndexed(root: string): boolean;
 }
@@ -329,7 +331,7 @@ async function withClient(
     // the dead client so the next request re-attaches, and surface a transient 503
     // rather than a 500 that would recur forever against the same dead client
     // (FR-002/015a).
-    deps.evictClient(repo);
+    deps.evictClient(repo, client);
     return daemonUnavailable(err);
   }
 }
@@ -360,8 +362,19 @@ function statusHandler(deps: ReadApiDeps): RouteHandler {
       safeDiagnostic(ctx.logDiagnostic, diagnosticLine('daemon attach failed (status)', err));
       return daemonUnavailable(err);
     }
-    const health = await readStatusHealth(client);
-    return { status: 200, body: { version: deps.version, repo, ...health } };
+    try {
+      const health = await readStatusHealth(client);
+      return { status: 200, body: { version: deps.version, repo, ...health } };
+    } catch (err) {
+      // Attach succeeded but the daemon died mid-session, so the health read rejects
+      // HERE (statusHandler has its own attach path — it does not go through
+      // withClient). Evict the dead client so the next status re-attaches, and return
+      // a transient 503 rather than a 500 that recurs against the same dead client
+      // (FR-002/015a). The repo is indexed (attach succeeded), so this is NOT the
+      // un-indexed 200 path above.
+      deps.evictClient(repo, client);
+      return daemonUnavailable(err);
+    }
   };
 }
 

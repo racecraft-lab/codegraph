@@ -277,15 +277,22 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   // Drop a repo's pooled client after a mid-session socket death (the daemon
   // exited/restarted). getClient only evicts on a FAILED attach; a client that
   // dies AFTER a successful attach stays cached and every later read reuses the
-  // dead socket. withClient calls this on a read failure so the next request
-  // re-attaches (FR-002/015a). Best-effort: close the settled client and drop it
-  // from the shutdown set.
-  const evictClient = (repo: RepoInfo): void => {
+  // dead socket. withClient (and statusHandler) call this on a read failure so the
+  // next request re-attaches (FR-002/015a). Identity-scoped: only evict if the pool
+  // STILL resolves to THIS dead client — a concurrent failure may have already
+  // evicted it and a newer request attached a healthy replacement, which must not be
+  // closed. Best-effort close + drop from the shutdown set.
+  const evictClient = (repo: RepoInfo, client: DaemonReadClient): void => {
     const cached = clientPool.get(repo.id);
     if (!cached) return;
-    clientPool.delete(repo.id);
     cached.then(
-      (client) => { daemonClients.delete(client); try { client.close(); } catch { /* best-effort */ } },
+      (pooled) => {
+        if (pooled !== client) return; // superseded by a healthy replacement — leave it
+        if (clientPool.get(repo.id) !== cached) return; // already evicted by a racing failure
+        clientPool.delete(repo.id);
+        daemonClients.delete(client);
+        try { client.close(); } catch { /* best-effort */ }
+      },
       () => { /* a rejected attach already evicted itself via getClient's .catch */ },
     );
   };
