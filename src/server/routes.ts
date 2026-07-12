@@ -248,6 +248,11 @@ export interface ReadApiDeps {
   resolveRepo(repoId: string | undefined): RepoInfo | null;
   /** Lazily attach (cached) a daemon read client; throws → 503 (FR-002/015a). */
   getClient(repo: RepoInfo): Promise<DaemonReadClient>;
+  /**
+   * Drop a repo's pooled client after its socket died mid-session, so the next
+   * request re-attaches instead of reusing the dead client forever (FR-002/015a).
+   */
+  evictClient(repo: RepoInfo): void;
   /** Whether `root` has a reachable `.codegraph/` (un-indexed status, FR-005). */
   isRepoIndexed(root: string): boolean;
 }
@@ -314,7 +319,19 @@ async function withClient(
     safeDiagnostic(ctx.logDiagnostic, diagnosticLine('daemon attach failed', err));
     return daemonUnavailable(err);
   }
-  return fn(client);
+  try {
+    return await fn(client);
+  } catch (err) {
+    // The attach succeeded but the pooled socket died mid-session (the daemon
+    // exited or was restarted): the read rejects HERE, not at getClient. A
+    // recoverable query condition (not-found, empty) is a returned HandlerResult,
+    // never a throw — so a throw means the daemon round-trip itself failed. Evict
+    // the dead client so the next request re-attaches, and surface a transient 503
+    // rather than a 500 that would recur forever against the same dead client
+    // (FR-002/015a).
+    deps.evictClient(repo);
+    return daemonUnavailable(err);
+  }
 }
 
 /** GET /api/status (T014, FR-005/016) — not repo-scoped; reports the default repo. */
