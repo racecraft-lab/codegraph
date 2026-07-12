@@ -71,7 +71,9 @@ The server is **loopback-first and fail-closed**:
 
 ## Endpoints
 
-All responses are JSON. Read endpoints accept an optional **`?repo=<id>`** query
+All responses are JSON, except the events endpoint
+(`GET /api/reindex/:repo/events`), which is a Server-Sent Events stream
+(`text/event-stream`). Read endpoints accept an optional **`?repo=<id>`** query
 parameter to target a specific indexed project (the `id` comes from
 `/api/repos`); omit it to use the project the server was started for.
 `/api/status` and `/api/repos` are not repo-scoped and ignore `?repo`.
@@ -83,7 +85,7 @@ parameter to target a specific indexed project (the `id` comes from
 | `GET /api/status` | Server version and index health/counts for the default project |
 | `GET /api/repos` | The indexed projects the server can address; the startup project is the default |
 | `GET /api/search?q=<text>&mode=<mode>` | Symbol search. `mode` is one of `keyword`, `semantic`, `hybrid`, `auto` (default `auto`) |
-| `GET /api/node/:id` | One symbol's detail (source + call trail) |
+| `GET /api/node/:id` | One symbol's own fields (identity, kind, name, location, signature, doc); relationships come from `callers`/`callees`/`impact`/`graph` |
 | `GET /api/callers/:id` | What calls a symbol |
 | `GET /api/callees/:id` | What a symbol calls |
 | `GET /api/impact/:id?depth=<n>` | What is affected by changing a symbol |
@@ -98,7 +100,7 @@ path.
 |---------------|---------|
 | `POST /api/reindex/:repo` | Start an incremental sync (default) or a full rebuild with `?full=true`. Returns **202** with a job descriptor. Only re-indexes projects already in the registry; never initializes a new one |
 | `GET /api/reindex/:repo` | The latest job's state for that project (readable after it finishes) |
-| `GET /api/reindex/:repo/events` | A **Server-Sent Events** stream of that project's job progress — a snapshot, then progress events, then one terminal event |
+| `GET /api/reindex/:repo/events` | A **Server-Sent Events** stream of that project's job progress — a snapshot, then progress events, then one terminal event. A fast or already-finished job may deliver the terminal status inside the initial snapshot and close, so clients must not block waiting for a separate `done`/`error` event |
 
 Only one job runs per project at a time; starting a second while one is active
 returns **409**.

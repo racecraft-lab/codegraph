@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import type { Socket } from 'net';
+import { pathToFileURL } from 'node:url';
 import CodeGraph from '../index';
 import type { IndexProgress, IndexResult, SyncResult } from '../extraction';
 import { connectWithHello } from '../mcp/proxy';
@@ -518,7 +519,7 @@ export async function defaultRearmWatcher(root: string): Promise<void> {
   if (!socket) return; // no live daemon → its watcher cannot have been degraded by us
 
   const transport = new SocketTransport(socket, 'cg-web-rearm');
-  const rootUri = `file://${indexedRoot}`;
+  const rootUri = pathToFileURL(indexedRoot).href;
   transport.start(async (msg) => {
     const m = msg as { method?: string; id?: string | number };
     if (m.method === 'roots/list' && m.id !== undefined) {

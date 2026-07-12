@@ -20,23 +20,22 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { CodeGraph } from '../../src';
 import { startWebServer, type WebServerHandle } from '../../src/server/index';
+import { repoIdForRoot } from '../../src/server/daemon-client';
 import { getDaemonPidPath } from '../../src/mcp/daemon-paths';
 import type { JobDeps } from '../../src/server/jobs';
 
 /**
- * The 16-hex repo id for a root — `sha256(path.resolve(root)).slice(0,16)`,
- * identical to `repoIdForRoot` in src/server/index.ts and the daemon registry
- * key by construction. The Slice-2 job tests address the DEFAULT repo by this id
- * (POST/GET /api/reindex/:repo) without needing a running daemon: `resolveRepo`
- * returns the default repo for its own id directly.
+ * The 16-hex repo id for a root — re-exported from the single source of this
+ * hashing (`repoIdForRoot`, src/server/daemon-client.ts) so the fixture never
+ * keeps a byte-for-byte twin whose equality FR-010 relies on. The Slice-2 job
+ * tests address the DEFAULT repo by this id (POST/GET /api/reindex/:repo)
+ * without a running daemon: `resolveRepo` returns the default repo for its own
+ * id directly.
  */
-export function repoIdForRoot(root: string): string {
-  return crypto.createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 16);
-}
+export { repoIdForRoot };
 
 /** The built CLI a spawned read-forwarding daemon re-invokes (dist must be built). */
 const CLI_BIN = path.resolve(__dirname, '../../dist/bin/codegraph.js');

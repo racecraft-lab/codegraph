@@ -1,13 +1,18 @@
 /**
  * SPEC-005 Slice-2 Server-Sent Events writer (FR-023).
  *
- * Per-subscriber framing with backpressure discipline: `snapshot` and the single
- * terminal `done`/`error` frame are ALWAYS delivered; live `progress` frames
- * (the library's IndexProgress fires per file — thousands of times) coalesce to
- * the LATEST pending frame when the socket refuses a write, so a slow subscriber
- * never grows an unbounded in-memory backlog and never stalls the job or the
- * other subscribers. A `:`-prefixed heartbeat comment (~15s) keeps a quiet
- * stream under the common proxy/browser idle timeout.
+ * Per-subscriber framing with backpressure discipline: the `snapshot` frame is
+ * ALWAYS delivered on connect. A separate terminal `done`/`error` frame is
+ * delivered only for a job still RUNNING at subscribe time (it fires when the
+ * job later reaches terminal). A subscriber connecting to an already-finished
+ * job gets the terminal STATE inside that one snapshot (its payload carries the
+ * terminal status) and the stream then closes — no separate done/error frame.
+ * Live `progress` frames (the library's IndexProgress fires per file —
+ * thousands of times) coalesce to the LATEST pending frame when the socket
+ * refuses a write, so a slow subscriber never grows an unbounded in-memory
+ * backlog and never stalls the job or the other subscribers. A `:`-prefixed
+ * heartbeat comment (~15s) keeps a quiet stream under the common proxy/browser
+ * idle timeout.
  *
  * @module server/sse
  */

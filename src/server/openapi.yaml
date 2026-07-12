@@ -367,10 +367,13 @@ paths:
             `done`/`error`. A `:`-prefixed comment heartbeat (~15s, ignored by
             EventSource) keeps quiet jobs alive; under a slow consumer `progress`
             frames coalesce to the latest (bounded memory) while `snapshot` and
-            the terminal event are always delivered. Multiple concurrent
-            subscribers each snapshot independently, and one slow/disconnected
-            subscriber never stalls the job or the others. No Last-Event-ID
-            replay. Disconnect never cancels the job.
+            the terminal event are always delivered. A client connecting to an
+            already-finished job receives one `snapshot` event carrying the
+            terminal status, then the stream closes — no separate `done`/`error`
+            event follows (the terminal state is collapsed into the snapshot).
+            Multiple concurrent subscribers each snapshot independently, and one
+            slow/disconnected subscriber never stalls the job or the others. No
+            Last-Event-ID replay. Disconnect never cancels the job.
           headers:
             Cache-Control:
               description: No caching of the live stream.
