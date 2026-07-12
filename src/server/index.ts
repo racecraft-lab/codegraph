@@ -485,7 +485,8 @@ export async function runWebServerCli(options: RunWebServerCliOptions): Promise<
   });
   // Print the ACTUAL bound port (resolved when --port 0 was requested, FR-026);
   // stderr keeps stdout clean, mirroring the serve command's other output.
-  console.error(`CodeGraph web server listening on http://${handle.host}:${handle.port}`);
+  const displayHost = handle.host.includes(':') ? `[${handle.host}]` : handle.host;
+  console.error(`CodeGraph web server listening on http://${displayHost}:${handle.port}`);
   console.error('Press Ctrl+C to stop.');
 
   let shuttingDown = false;
