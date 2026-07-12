@@ -356,20 +356,22 @@ function reposHandler(deps: ReadApiDeps): RouteHandler {
 
 /** GET /api/search (T015, FR-006/006a). */
 function searchHandler(deps: ReadApiDeps): RouteHandler {
-  return (ctx) =>
-    withClient(deps, ctx, async (client) => {
-      const q = ctx.query.get('q');
-      if (!q) {
-        return apiError('invalid_request', {
-          message: 'Missing required query parameter: q',
-          details: { param: 'q' },
-        });
-      }
-      // Supplied-but-invalid mode → 400 (diverges from MCP/CLI coercion, FR-006a).
-      const rawMode = ctx.query.get('mode');
-      if (rawMode !== null && !SEARCH_MODES.has(rawMode)) return invalidParam('mode');
-      const paging = parsePaging(ctx.query);
-      if ('status' in paging) return paging;
+  return (ctx) => {
+    // Validate params BEFORE acquiring the daemon client so a malformed request
+    // 400s without a (failure-prone) attach — never a 503 for an absent/invalid q.
+    const q = ctx.query.get('q');
+    if (!q) {
+      return apiError('invalid_request', {
+        message: 'Missing required query parameter: q',
+        details: { param: 'q' },
+      });
+    }
+    // Supplied-but-invalid mode → 400 (diverges from MCP/CLI coercion, FR-006a).
+    const rawMode = ctx.query.get('mode');
+    if (rawMode !== null && !SEARCH_MODES.has(rawMode)) return invalidParam('mode');
+    const paging = parsePaging(ctx.query);
+    if ('status' in paging) return paging;
+    return withClient(deps, ctx, async (client) => {
       const result = await readSearch(client, {
         query: q,
         limit: paging.limit,
@@ -378,6 +380,7 @@ function searchHandler(deps: ReadApiDeps): RouteHandler {
       });
       return { status: 200, body: result };
     });
+  };
 }
 
 /** GET /api/node/:id (T017, FR-004/004a) — own fields only, bounded. */
@@ -392,29 +395,35 @@ function nodeHandler(deps: ReadApiDeps): RouteHandler {
 
 /** GET /api/callers|callees/:id (T016, FR-004/006). */
 function relationHandler(deps: ReadApiDeps, which: 'callers' | 'callees'): RouteHandler {
-  return (ctx) =>
-    withClient(deps, ctx, async (client) => {
-      const paging = parsePaging(ctx.query);
-      if ('status' in paging) return paging;
+  return (ctx) => {
+    // Paging validated before the daemon attach (a malformed limit/offset 400s
+    // without a client acquisition, never a 503).
+    const paging = parsePaging(ctx.query);
+    if ('status' in paging) return paging;
+    return withClient(deps, ctx, async (client) => {
       const fetch = which === 'callers' ? readCallers : readCallees;
       const result = await fetch(client, ctx.params.id ?? '', paging.limit, paging.offset);
       if (!result) return notFound('node');
       return { status: 200, body: result };
     });
+  };
 }
 
 /** GET /api/impact|graph/:id (T018, FR-004/007) — shared subgraph, divergent depth. */
 function subgraphHandler(deps: ReadApiDeps, which: 'impact' | 'graph'): RouteHandler {
-  return (ctx) =>
-    withClient(deps, ctx, async (client) => {
-      // Impact's own natural default is 3; graph-neighborhood's is 1 (FR-004/007).
-      const depth = parseDepth(ctx.query, which === 'impact' ? 3 : 1);
-      if (typeof depth !== 'number') return depth;
+  return (ctx) => {
+    // Depth validated before the daemon attach (a malformed/negative depth 400s
+    // without a client acquisition, never a 503). Impact's own natural default is
+    // 3; graph-neighborhood's is 1 (FR-004/007).
+    const depth = parseDepth(ctx.query, which === 'impact' ? 3 : 1);
+    if (typeof depth !== 'number') return depth;
+    return withClient(deps, ctx, async (client) => {
       const fetch = which === 'impact' ? readImpact : readNeighborhood;
       const result = await fetch(client, ctx.params.id ?? '', depth);
       if (!result) return notFound('node');
       return { status: 200, body: result };
     });
+  };
 }
 
 /**

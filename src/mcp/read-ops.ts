@@ -17,6 +17,7 @@
 
 import type CodeGraph from '../index';
 import type { Node, Edge, SearchMode } from '../types';
+import { resolveAutoMode } from '../search/hybrid';
 
 /** An unrecognized `op` — surfaced as a JSON-RPC InvalidParams by the session. */
 export class UnknownReadOpError extends Error {}
@@ -110,11 +111,29 @@ function idParam(params: Record<string, unknown>): string {
 
 function statusOp(cg: CodeGraph): unknown {
   const stats = cg.getStats();
-  const embActive = cg.getEmbeddingStatus().active === true;
+  // Coverage-aware hybrid availability — the SAME predicate the CLI/`codegraph
+  // status` uses: a configured provider is not enough; ≥1 matching-model vector
+  // must exist too (a provider with zero vectors still resolves to keyword).
+  const emb = cg.getEmbeddingStatus();
+  const hybridAvailable =
+    resolveAutoMode({
+      providerConfigured: emb.active,
+      matchingVectorCount: emb.active ? emb.coverage.embedded : 0,
+    }) === 'hybrid';
   const lspEnabled = cg.getLspStatus().enabled === true;
+  // Prefer the persisted index-completeness state over a nodeCount>0 heuristic, so
+  // a known-bad index (killed mid-run, silently truncated, or failed) is not
+  // reported as 'indexed'. An empty graph stays 'empty'; a healthy/unknown state
+  // reads 'indexed'.
+  const persisted = cg.getIndexState();
   return {
     index: {
-      state: stats.nodeCount > 0 ? 'indexed' : 'empty',
+      state:
+        stats.nodeCount === 0
+          ? 'empty'
+          : persisted === 'partial' || persisted === 'indexing' || persisted === 'failed'
+            ? persisted
+            : 'indexed',
       fileCount: stats.fileCount,
       nodeCount: stats.nodeCount,
       edgeCount: stats.edgeCount,
@@ -122,7 +141,7 @@ function statusOp(cg: CodeGraph): unknown {
     },
     // `reason` is a string explaining unavailability; omit it entirely when
     // hybrid search is available (contract models it as a string, not null).
-    hybridSearch: embActive
+    hybridSearch: hybridAvailable
       ? { available: true }
       : { available: false, reason: 'embeddings not configured' },
     lsp: { available: lspEnabled },

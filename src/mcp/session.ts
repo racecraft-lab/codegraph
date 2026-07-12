@@ -13,6 +13,7 @@
  */
 
 import * as path from 'path';
+import { fileURLToPath } from 'node:url';
 import { JsonRpcRequest, JsonRpcNotification, JsonRpcTransport, ErrorCodes } from './transport';
 import { MCPEngine } from './engine';
 import { tools } from './tools';
@@ -70,12 +71,7 @@ const ROOTS_LIST_TIMEOUT_MS = 5000;
  */
 function fileUriToPath(uri: string): string {
   try {
-    const url = new URL(uri);
-    let filePath = decodeURIComponent(url.pathname);
-    if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
-      filePath = filePath.slice(1);
-    }
-    return path.resolve(filePath);
+    return path.resolve(fileURLToPath(uri));
   } catch {
     return uri.replace(/^file:\/\/\/?/, '');
   }
