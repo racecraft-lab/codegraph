@@ -168,13 +168,24 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   // Live connections, tracked so shutdown can release the port promptly instead
   // of waiting out idle keep-alive sockets.
   const connections = new Set<net.Socket>();
+  // Shutdown sentinel, set synchronously by close(). Declared before getClient so
+  // a daemon attach still in flight when shutdown begins (its `.then` below) can
+  // see the server is closing and drop the late client instead of leaking it past
+  // the drain that already emptied `daemonClients`.
+  let closing: Promise<void> | null = null;
 
   // Read-forwarding wiring (FR-002/010): the startup (default) repo, a per-repo
   // daemon-client pool (attach lazily on first access, reuse for the server's
   // lifetime, close on shutdown), and the `?repo` resolver. Ids hash the same
   // canonical root the daemon registry keys on, so an API id equals a registry
   // key by construction.
-  const startupRoot = safeRealpath(options.projectPath ?? process.cwd());
+  // Canonicalize the startup repo to the nearest indexed root so the API repo id
+  // equals the daemon registry's key (a start from a nested dir under an indexed
+  // root must resolve to that ancestor). No index above the start → keep the raw
+  // path (the un-indexed-startup case, FR-005).
+  const startupPath = safeRealpath(options.projectPath ?? process.cwd());
+  const nearestIndexed = findNearestCodeGraphRoot(startupPath);
+  const startupRoot = nearestIndexed ? safeRealpath(nearestIndexed) : startupPath;
   const defaultRepo: RepoInfo = {
     id: repoIdForRoot(startupRoot),
     root: startupRoot,
@@ -188,6 +199,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       repo.root,
       options.spawnDaemon ? { spawnDaemon: options.spawnDaemon } : {},
     ).then((client) => {
+      // Shutdown may have drained daemonClients while this attach was resolving —
+      // close the late client rather than leaking it back into a closed server.
+      if (closing) { try { client.close(); } catch { /* best-effort */ } return client; }
       daemonClients.add(client);
       return client;
     });
@@ -286,7 +300,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       // FR-014a: a LOCAL, redacted request line — method + path + status ONLY.
       // NEVER the headers object, the `Authorization` header, or the token in any
       // form. Silent unless a logger sink was injected.
-      options.logger?.(`${method} ${rawPath} -> ${status}`);
+      try {
+        options.logger?.(`${method} ${rawPath} -> ${status}`);
+      } catch { /* a log sink must never take down the server */ }
     }
   }
 
@@ -308,7 +324,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   const addr = server.address();
   const boundPort = typeof addr === 'object' && addr !== null ? addr.port : requestedPort;
 
-  let closing: Promise<void> | null = null;
   const close = (): Promise<void> => {
     if (closing) return closing;
     closing = (async () => {

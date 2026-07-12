@@ -135,7 +135,11 @@ export function serveStatic(rawPath: string, webRoot: string): StaticResult {
   if (resolved === null) return routeMiss();
 
   const ext = path.extname(relative);
-  const present = fs.existsSync(path.join(webRoot, 'index.html'));
+  // Resolve the app shell through the SAME symlink-aware chokepoint asset reads
+  // use (FR-017b): a null (an `index.html` symlink whose real target escapes the
+  // web root) makes the build "absent" so it never serves the out-of-root file.
+  const shellPath = validatePathWithinRoot(webRoot, 'index.html');
+  const present = shellPath !== null && fs.existsSync(shellPath);
 
   // (3a) Asset-extension path: serve the exact file, else 404 — NEVER the shell
   //      (FR-018). Holds identically whether the web build is present or absent.
@@ -154,7 +158,7 @@ export function serveStatic(rawPath: string, webRoot: string): StaticResult {
   //      (FR-017/FR-017a/FR-018).
   if (present) {
     try {
-      const body = fs.readFileSync(path.join(webRoot, 'index.html'));
+      const body = fs.readFileSync(shellPath!);
       return { status: 200, headers: { 'Content-Type': HTML_CONTENT_TYPE }, body };
     } catch {
       // index.html vanished between the existence check and the read — degrade

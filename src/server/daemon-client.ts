@@ -110,6 +110,14 @@ export class DaemonUnavailableError extends Error {
 const DEFAULT_CONNECT_MAX_RETRIES = 240;
 const DEFAULT_CONNECT_RETRY_DELAY_MS = 25;
 
+/**
+ * Overall wall-clock ceiling for the post-spawn attach poll (~6s, matching the
+ * documented connect-poll budget). Bounds the retry loop by elapsed time as well
+ * as attempt count so a daemon that never binds fails fast to a 503 instead of
+ * stalling for minutes when individual connect attempts each wait seconds.
+ */
+const ATTACH_BUDGET_MS = 6000;
+
 /** Timeouts for the two forwarded JSON-RPC phases (generous for a cold daemon). */
 const INITIALIZE_TIMEOUT_MS = 15_000;
 const TOOL_CALL_TIMEOUT_MS = 30_000;
@@ -161,6 +169,7 @@ function defaultSpawnDaemon(root: string): void {
       [...process.execArgv, scriptPath, 'serve', '--mcp', '--path', root],
       { detached: true, stdio, windowsHide: true, env },
     );
+    child.on('error', () => { /* spawn failed (EMFILE/ENOMEM); attach poll loop times out -> 503 */ });
     child.unref();
   } finally {
     if (logFd !== null) {
@@ -212,16 +221,25 @@ async function makeReadClient(socket: Socket, root: string): Promise<DaemonReadC
     }
   });
 
-  await transport.request(
-    'initialize',
-    {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: { name: 'codegraph-web', version: '0.0.0' },
-      rootUri,
-    },
-    INITIALIZE_TIMEOUT_MS,
-  );
+  try {
+    await transport.request(
+      'initialize',
+      {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'codegraph-web', version: '0.0.0' },
+        rootUri,
+      },
+      INITIALIZE_TIMEOUT_MS,
+    );
+  } catch (err) {
+    // A timed-out / failed handshake must not leak the socket — stop the transport
+    // and surface a transient attach failure (→ 503) rather than a live-but-unusable client.
+    transport.stop();
+    throw new DaemonUnavailableError(
+      `daemon initialize failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   return {
     async request(toolName, args) {
@@ -335,7 +353,10 @@ function mapNode(n: LibNode): WireNode {
 
 function mapEdge(e: LibEdge): WireEdge {
   const out: WireEdge = { source: e.source, target: e.target, kind: e.kind };
-  if (e.provenance) out.provenance = e.provenance;
+  // Collapse the library provenance (tree-sitter/scip/lsp/heuristic) to the
+  // 2-value wire enum (static|heuristic, openapi): 'heuristic' for a synthesized
+  // edge, 'static' for every statically-extracted one.
+  if (e.provenance) out.provenance = e.provenance === 'heuristic' ? 'heuristic' : 'static';
   return out;
 }
 
@@ -475,9 +496,16 @@ export async function attachDaemonClient(
   }
   if (probe) return makeReadClient(probe, indexedRoot);
 
-  // None reachable — spawn one (detached) and poll for its bind.
+  // None reachable — spawn one (detached) and poll for its bind, bounded by BOTH
+  // the attempt count and an overall wall-clock deadline (FR-015a): a daemon that
+  // never binds fails fast to a 503 instead of stalling for minutes.
   spawnDaemon(indexedRoot);
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  const attachStart = Date.now();
+  for (
+    let attempt = 0;
+    attempt < maxRetries && Date.now() - attachStart < ATTACH_BUDGET_MS;
+    attempt++
+  ) {
     await sleep(retryDelayMs);
     const s = await connectAnyCandidate(candidates, connect);
     if (s === 'version-mismatch') throw new DaemonUnavailableError('daemon version mismatch');

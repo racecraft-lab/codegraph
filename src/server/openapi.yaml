@@ -23,15 +23,14 @@ servers:
 tags:
   - name: read     # Slice 1
 
-# Bearer applies ONLY when a token is configured for a non-loopback bind (FR-014).
-# On the default loopback bind no security is enforced. Documented globally;
-# the contract test asserts 401 shape on a token-bound fixture and open access
-# on a loopback fixture.
+# Bearer auth applies ONLY when a token is configured for a non-loopback bind
+# (FR-014); the loopback-default bind enforces no auth and serves /api/* with no
+# credentials — which is the contract every path below is walked against. This
+# read-slice document therefore declares no securityScheme and no per-operation
+# 401: the token-bound 401 surface (FR-014) and the Host-header 400 gate are
+# covered by __tests__/server-auth-binding.test.ts, and the top-level 500 catch
+# is FR-015a.
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
   parameters:
     NodeId:
       name: id
@@ -158,9 +157,6 @@ components:
         edges: { type: array, items: { $ref: '#/components/schemas/Edge' } }
         truncated: { type: boolean, description: 'True when the node cap was hit — 2000 nodes for /api/graph (FR-007); /api/impact shares this subgraph shape and flags truncation of its own capped traversal (FR-004).' }
   responses:
-    Unauthorized:
-      description: Missing/invalid Bearer on a token-bound bind (FR-014); generic body.
-      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     NotFound:
       description: Unknown node/repo/route (FR-011/015a); details.resource discriminates.
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
