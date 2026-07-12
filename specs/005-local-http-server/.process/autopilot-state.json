@@ -77,7 +77,26 @@
     ],
     "warnings": [],
     "final_marker_split": null,
-    "packet_validation": null,
+    "packet_validation": {
+      "generate_pr_body": "deferred on installed runner (not in read-only helper registry) — LOUD WARNING per fail-open rule: PR bodies hand-authored from the committed T032/T045 packets at specs/005-local-http-server/.process/emission/pr{1,2}-body.md",
+      "validate_pr_packet_read_only": "not applicable — no generator packet JSON exists; committed packet markdowns are the evidence",
+      "validate_pr_workflow_contract": {
+        "pr1": {
+          "title": "feat(SPEC-005): local HTTP server — read API (slice 1)",
+          "status": "passed",
+          "exit": 0,
+          "changed_files": 42
+        },
+        "pr2": {
+          "title": "feat(SPEC-005): local HTTP server — re-index jobs & SSE (slice 2)",
+          "status": "passed",
+          "exit": 0,
+          "changed_files": 24
+        }
+      },
+      "uat_runbook": "skipped: generate-uat-skeleton deferred; committed quickstart + dogfood evidence stands in",
+      "stack_manager": "detect-stack-manager deferred → explicit gh pr create --base/--head/--title/--body-file fallback (sanctioned path)"
+    },
     "pr_mappings": null,
     "reviewability_evidence": {
       "setup_gate": "warn (620 LOC / 7 prod files, greenfield warn line 600) — recorded at scaffold with accepted split",
