@@ -13,11 +13,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { defaultIsLockHeld, JobRegistry, ReindexJob, type JobDescriptor } from '../src/server/jobs';
+import { defaultIsLockHeld, JobConflictError, JobRegistry, ReindexJob, type JobDescriptor } from '../src/server/jobs';
 import { SseWriter, streamJobToResponse } from '../src/server/sse';
 import {
+  buildJobRoutes,
   buildReadRoutes,
   handleApiRequest,
+  type JobApiDeps,
   type ReadApiDeps,
   type RepoInfo,
   type RouteContext,
@@ -347,4 +349,62 @@ describe('SPEC-005 slice-2 round-3 remediation', () => {
     expect(job.descriptor().status).toBe('error');
     expect(job.descriptor().reason).toBe('lock_unavailable'); // NOT 'done'
   });
+});
+
+describe('SPEC-005 slice-2 round-4 remediation', () => {
+  // R4-EMPTY (FR-020/024): matchRoute accepts an EMPTY `:repo` segment, so
+  // `/api/reindex/` and `/api/reindex//events` match with repo=''. index.ts's
+  // resolveRepo maps '' → the DEFAULT repo (correct for the OPTIONAL `?repo`
+  // query, wrong for the REQUIRED path id), so each job handler must reject an
+  // empty path repo BEFORE resolveRepo — 404 resource:repo, never the default.
+  it('R4-EMPTY: an empty path repo (/api/reindex/, /api/reindex//events) → 404 repo, not the default', async () => {
+    const repo: RepoInfo = { id: 'r1', root: '/tmp/x', name: 'x' };
+    const deps: JobApiDeps = {
+      // Mirror index.ts: '' (and undefined) resolve to the DEFAULT repo — exactly
+      // the wrong resolution the guard prevents. A started job here would be a bug.
+      resolveRepo: (id) => (id === undefined || id === '' || id === 'r1' ? repo : null),
+      registry: new JobRegistry({
+        runIndex: async () => { throw new Error('no job must start for an empty path repo'); },
+        isLockHeld: () => false,
+        rearmWatcher: () => undefined,
+      }),
+    };
+    const routes = buildJobRoutes(deps);
+    for (const [method, rawPath] of [
+      ['POST', '/api/reindex/'],
+      ['GET', '/api/reindex/'],
+      ['GET', '/api/reindex//events'],
+    ] as const) {
+      const ctx: RouteContext = {
+        method, rawPath, params: {}, query: new URLSearchParams(''), headers: {},
+      };
+      const res = await handleApiRequest(routes, ctx);
+      expect(res?.status, `${method} ${rawPath}`).toBe(404);
+      const body = res?.body as { error: { details?: { resource?: string } } };
+      expect(body.error.details?.resource).toBe('repo');
+    }
+  });
+
+  // R4-SHUTDOWN-START (FR-026): once shutdown has begun (abortAll set the flag), a
+  // POST that raced onto a keep-alive connection must be REJECTED, not spawn a job
+  // that abortAll's one-shot snapshot can no longer track. start() throws
+  // JobConflictError (the route maps it to 409 — acceptable, the server is closing).
+  it('R4-SHUTDOWN-START: start() after abortAll() throws JobConflictError (no untracked shutdown job)', async () => {
+    const registry = new JobRegistry({
+      runIndex: async () => ({
+        filesChecked: 0, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 0,
+      }),
+      isLockHeld: () => false,
+      rearmWatcher: () => undefined,
+    });
+    await registry.abortAll(); // shutdown begins (nothing in flight)
+    expect(() => registry.start({ id: 'r', root: os.tmpdir() }, 'sync')).toThrow(JobConflictError);
+  });
+
+  // R4-REARM-LISTENER (FR-021a): the abort→transport.stop() listener in
+  // defaultRearmWatcher is now NAMED and removed in the finally, so a completed
+  // re-arm never leaves the listener (and the stopped transport it closes over)
+  // retained on the job's AbortSignal. There is no surgical unit seam for the
+  // removal without a live daemon socket; the re-arm path itself stays covered by
+  // the R2-P1d (signal passed) and R3-#4 (re-arm runs on the abort path) tests.
 });

@@ -186,7 +186,8 @@ components:
         finishedAt: { type: string, format: date-time }
         reason:
           type: string
-          description: 'On error: aborted | lock_unavailable | a contained extraction failure (whitelisted token, never raw text — FR-015a/021a).'
+          enum: [aborted, lock_unavailable, index_failed]
+          description: 'On error: the whitelisted terminal reason — aborted | lock_unavailable | index_failed (a contained extraction failure, never raw text — FR-015a/021/021a/023).'
         result:
           description: Present on terminal done (and a partial full). Discriminated on `mode` (FR-023/024).
           oneOf:

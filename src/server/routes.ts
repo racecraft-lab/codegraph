@@ -478,6 +478,10 @@ export interface JobApiDeps {
 /** POST /api/reindex/:repo (T038, FR-020/021a/022) — URL-only; 202 + descriptor. */
 function reindexPostHandler(deps: JobApiDeps): RouteHandler {
   return (ctx) => {
+    // An EMPTY path segment (`/api/reindex/`) matches `:repo` = '' but is a MISSING
+    // required id, not the default repo — reject before resolveRepo (which treats
+    // '' as the default `?repo`). 404 `resource: repo` (FR-020/024).
+    if (!ctx.params.repo) return notFound('repo');
     const repo = deps.resolveRepo(ctx.params.repo);
     if (!repo) return notFound('repo');
     // URL-only: mode from `?full=true`; NO request body is read (FR-020, Edge Cases).
@@ -497,6 +501,8 @@ function reindexPostHandler(deps: JobApiDeps): RouteHandler {
 /** GET /api/reindex/:repo (T038, FR-024) — latest job state; no job → 404 repo. */
 function reindexGetHandler(deps: JobApiDeps): RouteHandler {
   return (ctx) => {
+    // An EMPTY path segment is a missing required id, not the default repo (FR-024).
+    if (!ctx.params.repo) return notFound('repo');
     const repo = deps.resolveRepo(ctx.params.repo);
     if (!repo) return notFound('repo');
     const latest = deps.registry.latest(repo.id);
@@ -510,6 +516,9 @@ function reindexGetHandler(deps: JobApiDeps): RouteHandler {
 /** GET /api/reindex/:repo/events (T038, FR-023) — the SSE stream (hijacks `res`). */
 function reindexEventsHandler(deps: JobApiDeps): RouteHandler {
   return (ctx) => {
+    // An EMPTY path segment (`/api/reindex//events`) is a missing required id, not
+    // the default repo — reject before resolveRepo (FR-024).
+    if (!ctx.params.repo) return notFound('repo');
     const repo = deps.resolveRepo(ctx.params.repo);
     if (!repo) return notFound('repo');
     const job = deps.registry.get(repo.id);

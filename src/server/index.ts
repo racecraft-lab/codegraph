@@ -381,18 +381,20 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   const close = (): Promise<void> => {
     if (closing) return closing;
     closing = (async () => {
-      // FR-026 ordered shutdown. (1) stop accepting new connections; capture the
-      // drain completion (fires once existing connections finish, or the grace
-      // backstop trips).
-      const drained = new Promise<void>((resolve) => {
-        let settled = false;
-        const finish = (): void => {
-          if (!settled) { settled = true; resolve(); }
-        };
-        server.close(() => finish());
-        const backstop = setTimeout(finish, SHUTDOWN_GRACE_MS);
-        backstop.unref?.();
-      });
+      // FR-026 ordered shutdown. (1) stop accepting new connections and capture the
+      // REAL `server.close()` callback — it fires only once EVERY connection has
+      // closed, so awaiting it (step 3) guarantees the listening socket is fully
+      // released before close() resolves (no rebind race). The grace backstop does
+      // NOT resolve the wait; it only DESTROYS any lingering socket so that callback
+      // can complete against an idle keep-alive that would otherwise hold the
+      // listener past the deadline.
+      let serverClosed!: () => void;
+      const serverClosePromise = new Promise<void>((r) => { serverClosed = r; });
+      server.close(() => serverClosed());
+      const backstop = setTimeout(() => {
+        for (const socket of connections) { try { socket.destroy(); } catch { /* gone */ } }
+      }, SHUTDOWN_GRACE_MS);
+      backstop.unref?.();
       // (2) abort any in-flight reindex job via its AbortSignal: the job records a
       // terminal `aborted` outcome, emits the terminal SSE event to every
       // subscriber, releases the index lock (indexAll's finally), and fires the
@@ -407,13 +409,14 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       // (3) release the bound port. GRACEFULLY end each socket first (`end()`
       // flushes the write buffer before FIN) so the terminal SSE frame written in
       // step 2 is delivered rather than dropped by an abrupt `destroy()`; then
-      // await the server drain (bounded by the grace backstop). Any straggler
-      // that has not closed by the deadline is force-destroyed so an idle
-      // keep-alive socket can never hold the port past the grace window.
+      // await the REAL server close — it resolves only once every connection has
+      // closed (stragglers destroyed by the grace backstop), so close() never
+      // resolves while the listening socket is still open (no rebind race).
       for (const socket of connections) {
         try { socket.end(); } catch { /* already gone */ }
       }
-      await drained;
+      await serverClosePromise;
+      clearTimeout(backstop);
       for (const socket of connections) {
         try { socket.destroy(); } catch { /* already gone */ }
       }

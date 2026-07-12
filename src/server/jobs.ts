@@ -483,6 +483,10 @@ export class JobRegistry {
   // shutdown (abortAll) still awaits a job that finished but whose re-arm is in
   // flight, or one already replaced in the latest-per-repo map by a newer job.
   private readonly inFlight = new Set<ReindexJob>();
+  // Set synchronously by abortAll() once shutdown begins — after this, start()
+  // rejects so a POST arriving on a keep-alive connection AFTER abortAll snapshotted
+  // inFlight can never spawn an untracked job that outlives shutdown (FR-026).
+  private shuttingDown = false;
   private readonly deps: JobDeps;
 
   constructor(deps: JobDeps = {}) {
@@ -493,6 +497,9 @@ export class JobRegistry {
   start(repo: { id: string; root: string }, mode: JobMode): JobDescriptor {
     const existing = this.jobs.get(repo.id);
     if (existing && !existing.isTerminal()) throw new JobConflictError();
+    // Shutdown has begun: reject rather than start a job abortAll can't track
+    // (mapped to 409 by the route — acceptable, the server is closing, FR-026).
+    if (this.shuttingDown) throw new JobConflictError();
     const job = new ReindexJob(repo, mode, this.deps);
     this.jobs.set(repo.id, job); // latest-per-repo: replaces any prior terminal job
     this.inFlight.add(job);
@@ -519,6 +526,7 @@ export class JobRegistry {
    * newer job (FR-026). Bounded by index.ts close()'s grace race.
    */
   async abortAll(): Promise<void> {
+    this.shuttingDown = true; // reject any start() that races the snapshot below
     const jobs = [...this.inFlight];
     for (const j of jobs) if (!j.isTerminal()) j.abort();
     await Promise.all(jobs.map((j) => j.whenSettled()));
@@ -572,7 +580,10 @@ export async function defaultRearmWatcher(root: string, signal?: AbortSignal): P
   const transport = new SocketTransport(socket, 'cg-web-rearm');
   // An abort during the initialize/rearm round-trip tears the socket down at once
   // (the transport.request REARM_TIMEOUT_MS is the backstop, not the fast path).
-  signal?.addEventListener('abort', () => transport.stop(), { once: true });
+  // Named + removed in the finally so a completed re-arm never leaves the listener
+  // (and the stopped transport it closes over) retained on the signal.
+  const onAbort = (): void => transport.stop();
+  signal?.addEventListener('abort', onAbort, { once: true });
   const rootUri = pathToFileURL(indexedRoot).href;
   transport.start(async (msg) => {
     const m = msg as { method?: string; id?: string | number };
@@ -593,6 +604,7 @@ export async function defaultRearmWatcher(root: string, signal?: AbortSignal): P
     );
     await transport.request('codegraph/rearm-watcher', {}, REARM_TIMEOUT_MS);
   } finally {
+    signal?.removeEventListener('abort', onAbort);
     transport.stop();
   }
 }
