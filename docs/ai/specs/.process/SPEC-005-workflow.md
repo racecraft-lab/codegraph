@@ -717,17 +717,29 @@ Before starting any task:
 
 ---
 
+### Self-Review (auto-generated)
+
+**Tests executed:** BUILD ran at G7 (2026-07-11, `npm run build` exit 0, `dist/server/openapi.yaml` shipped) and again for the F4 dist byte-identity rebuild. TYPECHECK (`npx tsc --noEmit`) ran after every implementation group; latest post-remediation run exit 0 (2026-07-11 19:58 local). LINT: the repo defines no lint script (`package.json` scripts: build/typecheck/test/…) — typecheck is the static gate; noted, not inferred. UNIT+INTEGRATION: full env-stripped `npm test` ran twice this session — G7 (176 files, 3152 passed / 7 skipped, exit 0) and Post: Integration Suite after remediation (2026-07-11 19:59 local, 176 files, **3167 passed / 7 skipped, exit 0**). Nothing inferred from "no errors reported."
+
+**Edge cases:** all acceptance criteria carry non-happy-path tests across the 5 server suites (255 tests): missing/empty `q` and invalid `mode` → 400; unknown/malformed node id, unregistered/malformed repo, registered-no-job, route-miss → 404 with the right `details.resource`; duplicate POST → 409; missing/invalid Bearer → generic 401 (byte-identical bodies); non-loopback-no-token → startup refused; bad Host → 400; daemon unreachable/version-mismatch/never-bound → 503 + Retry-After; traversal probes (encoded separators, double-encoding, NUL) → 404 no file read; lock contention → terminal `lock_unavailable` (sync sentinel + full-mode sentinel + foreign-lock probe branches); shutdown abort → terminal `aborted`; SSE disconnect-doesn't-cancel, mid-job reconnect re-snapshot, backpressure coalescing, throwing-subscriber isolation, post-writeHead fault containment. Two spec edge conditions are unit-grounded rather than end-to-end (watcher-restore true→false; live mid-index abort) — recorded honestly in slice2-quickstart-evidence.md, `[edge-case-gap]` not warranted (the behavior is pinned at unit level by design).
+
+**Requirements matched:** independent post-implementation verification (Post: Verify Implementation) traced **34/34 FRs and 8/8 SCs** to implementation + tests; the fresh-session phantom check returned **47/47 tasks VERIFIED, zero phantom/partial**. One benign task-text drift (T039 names `daemon.ts`; the dispatch case landed in `session.ts`, the daemon's session dispatcher) — documented, not an orphan. No FR without a task, no task without evidence.
+
+**Follow-up & tidiness:** zero `TODO`/`[DEFERRED]`/`[OUT-OF-SCOPE]` markers in spec.md/plan.md/tasks.md (grep-verified). Explicit deferrals, each with a landing place: SPEC-006 (web UI) and SPEC-009 (LSP-over-WebSocket) → named in both PR packets + roadmap; review-panel deferred refactors (JobDescriptor discriminated union, BindSecurity union, rearmWatcher helper consolidation) → recorded in slice2-pr-packet.md §Review-panel remediation for the PR body's follow-up section. No silent deferrals. Diff scanned: no debug logging, no `console.log` in new src (the diagnostics seam is deliberate and injectable, CLI-only stderr), no commented-out code, no temp fixtures, no orphaned files — no `[tidiness]` flags.
+
+---
+
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in tasks.md
-- [ ] Build succeeds: `npm run build` (openapi.yaml lands in dist/ via copy-assets)
-- [ ] Tests pass: `npm test` (including the openapi contract test)
-- [ ] Zero-dep check: `package.json` dependencies unchanged
-- [ ] Dormancy check: `serve --mcp` behavior unchanged; no HTTP port without `--web`
-- [ ] Self-repo UAT (Dogfooding Protocol): `node dist/bin/codegraph.js serve --web`
+- [x] All tasks marked complete in tasks.md
+- [x] Build succeeds: `npm run build` (openapi.yaml lands in dist/ via copy-assets)
+- [x] Tests pass: `npm test` (including the openapi contract test)
+- [x] Zero-dep check: `package.json` dependencies unchanged
+- [x] Dormancy check: `serve --mcp` behavior unchanged; no HTTP port without `--web`
+- [x] Self-repo UAT (Dogfooding Protocol): `node dist/bin/codegraph.js serve --web`
       against this repo's own index; verify `/api/status`, a search, a node
       detail, a graph neighborhood, and a sync job with SSE progress
-- [ ] CHANGELOG entry under `[Unreleased]`
+- [x] CHANGELOG entry under `[Unreleased]`
 - [ ] PRs created (2, per recorded split) and reviewed — no session URLs in PR
       bodies or commits; PRs target origin (racecraft-lab), never upstream
 - [ ] Merged to main; then `npm run build` + `codegraph sync` (protocol step 1)
