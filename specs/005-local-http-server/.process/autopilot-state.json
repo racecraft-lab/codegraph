@@ -49,11 +49,12 @@
         ],
         "fold_target_for": "polish tasks T046-T047 (cross-cutting, validate whole feature)",
         "checkpoint": {
-          "head_sha": "54ab0c25daef6e063f2d0739b8ce6f8763fc37b2",
+          "head_sha": "e69f84e4a825538693fb561e1c34269d4296d4d2",
           "date": "2026-07-11",
           "tests": "G7 full env-stripped suite: 176 files, 3152 passed / 7 skipped, exit 0; slice suites: reindex-jobs 27, openapi-contract 43 (jobs walk added), read-api 90; T042 retrieval-guardian OVERALL PASS 7/7 zero blocking; T047 self-repo dogfood UAT 7/7 PASS",
           "warnings": [
-            "actual slice-2 size ~922 src insertions + 117 openapi (~560 logic LOC) — over the ~400 estimate; size-only finding, marker plan proceeds; recorded in slice2-pr-packet.md"
+            "actual slice-2 size ~922 src insertions + 117 openapi (~560 logic LOC) — over the ~400 estimate; size-only finding, marker plan proceeds; recorded in slice2-pr-packet.md",
+            "checkpoint advanced 54ab0c2 -> e69f84e: 6-aspect review-panel remediation (F1-F10, 15 guard tests) folds into PR 2 like polish (cross-cutting close-out)"
           ]
         }
       }
@@ -70,7 +71,7 @@
       },
       {
         "marker": "slice-2-jobs-sse",
-        "head_sha": "54ab0c25daef6e063f2d0739b8ce6f8763fc37b2",
+        "head_sha": "e69f84e4a825538693fb561e1c34269d4296d4d2",
         "status": "complete"
       }
     ],

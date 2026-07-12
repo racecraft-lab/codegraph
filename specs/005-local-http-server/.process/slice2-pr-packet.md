@@ -197,3 +197,23 @@ Scope: `git diff main...HEAD` over `src/mcp/`, `src/utils.ts`, `src/embeddings/c
 **BLOCKING:** none.
 
 **ADVISORY:** (a) Check 8 Sonnet-floor A/B is **N/A** — no retrieval-affecting surface changed, gate not triggered. (b) Out of scope: `src/server/auth.ts:44` also consumes `isLoopbackHost` — new slice-1 file, not a retrieval surface. (c) Minor non-retrieval: `searchOp` caps `total` at `SEARCH_SCAN_CEILING=500` (read-ops.ts:38) — intended per FR-006; flagged so the REST-contract reviewer confirms the paging contract expects a capped total.
+
+---
+
+## Review-panel remediation (post-implementation, folded into this PR)
+
+A 6-aspect review panel (code, errors, tests, types, comments, simplify) ran over the
+full branch. All accepted findings were remediated in one commit (F1-F10): an
+injectable server-side diagnostics seam (contained errors now log their cause to the
+operator; HTTP bodies and the FR-014a no-token-in-logs guarantee unchanged), a
+transport/socket leak fix on failed daemon handshakes, containment of post-writeHead
+SSE faults (no more double-writeHead/unhandled rejection), the search `total`
+contract amended to document the 500 scan-ceiling cap, a spawn-failure listener,
+conservative non-ENOENT lock-probe handling, single-sourced repoIdForRoot, a shared
+ReadOp union across the three codegraph/read dispatch sites, doc corrections, and 15
+new guard tests (5 suites now 255 green).
+
+Deferred with rationale (candidates for a follow-up, not defects): JobDescriptor
+discriminated-union reshape (wire-shape churn), BindSecurity union (single correct
+factory, fails safe), rearmWatcher helper consolidation (weighs against the ratified
+jobs/daemon-client seam).
