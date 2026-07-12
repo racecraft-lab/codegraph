@@ -33,6 +33,13 @@ const SEARCH_SCAN_CEILING = 500;
 /** Hard node cap on a subgraph response; `truncated` flags a hit (FR-007). */
 const SUBGRAPH_NODE_CAP = 2000;
 
+// Defensive re-clamp at the daemon read boundary. The HTTP routes already clamp
+// `limit`/`depth` (routes.ts MAX_LIMIT=500 / MAX_DEPTH=3), but `codegraph/read`
+// is directly callable, so mirror the caps here — clamp, never error (matches
+// the HTTP layer's clamp-not-error contract).
+const MAX_LIMIT = 500;
+const MAX_DEPTH = 3;
+
 /** `codegraph/read` request payload: an op discriminator + its params. */
 export interface ReadRequest {
   op: string;
@@ -120,10 +127,10 @@ function statusOp(cg: CodeGraph): unknown {
   return {
     index: {
       state:
-        stats.nodeCount === 0
-          ? 'empty'
-          : persisted === 'partial' || persisted === 'indexing' || persisted === 'failed'
-            ? persisted
+        persisted === 'partial' || persisted === 'indexing' || persisted === 'failed'
+          ? persisted
+          : stats.nodeCount === 0
+            ? 'empty'
             : 'indexed',
       fileCount: stats.fileCount,
       nodeCount: stats.nodeCount,
@@ -141,8 +148,8 @@ function statusOp(cg: CodeGraph): unknown {
 
 async function searchOp(cg: CodeGraph, params: Record<string, unknown>): Promise<unknown> {
   const query = typeof params.query === 'string' ? params.query : '';
-  const limit = Number(params.limit) || 100;
-  const offset = Number(params.offset) || 0;
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(params.limit) || 100));
+  const offset = Math.max(0, Number(params.offset) || 0);
   const mode = (typeof params.mode === 'string' ? params.mode : 'auto') as SearchMode;
 
   // Mirror the MCP search handler: the semantic arm's query embed is the one
@@ -171,8 +178,8 @@ function relationOp(
 ): unknown {
   const id = idParam(params);
   if (!cg.getNode(id)) return { found: false };
-  const limit = Number(params.limit) || 100;
-  const offset = Number(params.offset) || 0;
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(params.limit) || 100));
+  const offset = Math.max(0, Number(params.offset) || 0);
   const raw = which === 'callers' ? cg.getCallers(id) : cg.getCallees(id);
   // De-dup by node id — a symbol can be reached over multiple edges.
   const seen = new Set<string>();
@@ -193,7 +200,7 @@ function subgraphOp(
 ): unknown {
   const id = idParam(params);
   if (!cg.getNode(id)) return { found: false };
-  const depth = Number(params.depth) || (which === 'impact' ? 3 : 1);
+  const depth = Math.min(MAX_DEPTH, Math.max(1, Number(params.depth) || (which === 'impact' ? 3 : 1)));
   // Impact's Subgraph has no internal cap (cap post-hoc); the neighborhood BFS
   // caps during traversal — scan one past the cap so a hit is detectable.
   const sg =

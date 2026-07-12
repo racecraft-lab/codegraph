@@ -24,6 +24,9 @@ tags:
 # On the default loopback bind no security is enforced. Documented globally;
 # the contract test asserts 401 shape on a token-bound fixture and open access
 # on a loopback fixture.
+security:
+  - {}                 # loopback default: no credentials required (FR-012/013)
+  - bearerAuth: []     # non-loopback bind requires a valid Bearer token (FR-014)
 components:
   securitySchemes:
     bearerAuth:

@@ -18,6 +18,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { serveStatic, placeholderPage } from '../src/server/static';
+import { executeReadOp } from '../src/mcp/read-ops';
+import type CodeGraph from '../src/index';
 
 describe('SPEC-005 slice-1 review remediation', () => {
   const cleanups: Array<() => void> = [];
@@ -64,5 +66,88 @@ describe('SPEC-005 slice-1 review remediation', () => {
     expect(res.status).toBe(200);
     expect(String(res.body)).toContain('<!doctype html>');
     expect(res.body).not.toBe(placeholderPage());
+  });
+});
+
+/**
+ * A minimal `CodeGraph` stub shaped just for `statusOp` — the four methods it
+ * reads, no real DB. `getIndexState` and `getStats().nodeCount` drive the state
+ * field under test; the embedding/LSP stubs keep the rest of the status shape well-formed.
+ */
+function statusStub(
+  persisted: 'indexing' | 'complete' | 'partial' | 'failed' | null,
+  nodeCount: number,
+): CodeGraph {
+  return {
+    getStats: () => ({ nodeCount, fileCount: nodeCount, edgeCount: 0, lastUpdated: null }),
+    getEmbeddingStatus: () => ({ active: false, coverage: { embedded: 0 } }),
+    getLspStatus: () => ({ enabled: false }),
+    getIndexState: () => persisted,
+  } as unknown as CodeGraph;
+}
+
+// R2-41M (FR-005/016): a FAILED/partial/indexing index that produced ZERO nodes
+// must surface its persisted failure state, not be masked as 'empty'. The
+// persisted failure states win FIRST; only a healthy/unknown persisted state
+// falls through to the nodeCount===0 → 'empty' heuristic.
+describe('SPEC-005 R2-41M: a zero-node non-healthy index is not reported empty', () => {
+  it.each(['failed', 'partial', 'indexing'] as const)(
+    "reports state='%s' (not 'empty') for a 0-node index in that persisted state",
+    async (persisted) => {
+      const res = (await executeReadOp(statusStub(persisted, 0), 'status', {})) as {
+        index: { state: string };
+      };
+      expect(res.index.state).toBe(persisted);
+    },
+  );
+
+  it("still reports 'empty' for a genuinely empty index (complete/null persisted state)", async () => {
+    for (const persisted of ['complete', null] as const) {
+      const res = (await executeReadOp(statusStub(persisted, 0), 'status', {})) as {
+        index: { state: string };
+      };
+      expect(res.index.state).toBe('empty');
+    }
+  });
+
+  it("reports 'indexed' for a healthy non-empty index", async () => {
+    const res = (await executeReadOp(statusStub('complete', 42), 'status', {})) as {
+      index: { state: string };
+    };
+    expect(res.index.state).toBe('indexed');
+  });
+});
+
+// R2-DEPTH (FR-004/006/007): the HTTP routes clamp depth (max 3) / limit (max
+// 500), but `codegraph/read` is directly callable — so the read-ops defensively
+// re-clamp any over-cap depth/limit BEFORE the library call (clamp, never error).
+describe('SPEC-005 R2-DEPTH: read-ops defensively clamp over-cap depth/limit', () => {
+  it('clamps an over-cap impact depth to 3 before the library call', async () => {
+    let capturedDepth: number | undefined;
+    const cg = {
+      getNode: () => ({ id: 'x', kind: 'function', name: 'x' }),
+      getImpactRadius: (_id: string, depth: number) => {
+        capturedDepth = depth;
+        return { nodes: new Map(), edges: [] };
+      },
+    } as unknown as CodeGraph;
+    await executeReadOp(cg, 'impact', { id: 'x', depth: 99 });
+    expect(capturedDepth).toBe(3);
+  });
+
+  it('clamps an over-cap callers limit to 500', async () => {
+    const callers = Array.from({ length: 600 }, (_, i) => ({
+      node: { id: `c${i}`, kind: 'function', name: `c${i}` },
+    }));
+    const cg = {
+      getNode: () => ({ id: 'target', kind: 'function', name: 'target' }),
+      getCallers: () => callers,
+    } as unknown as CodeGraph;
+    const res = (await executeReadOp(cg, 'callers', { id: 'target', limit: 9999 })) as {
+      items: unknown[];
+      total: number;
+    };
+    expect(res.items.length).toBe(500);
+    expect(res.total).toBe(600);
   });
 });

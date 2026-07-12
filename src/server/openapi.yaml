@@ -25,12 +25,18 @@ tags:
 
 # Bearer auth applies ONLY when a token is configured for a non-loopback bind
 # (FR-014); the loopback-default bind enforces no auth and serves /api/* with no
-# credentials — which is the contract every path below is walked against. This
-# read-slice document therefore declares no securityScheme and no per-operation
-# 401: the token-bound 401 surface (FR-014) and the Host-header 400 gate are
-# covered by __tests__/server-auth-binding.test.ts, and the top-level 500 catch
-# is FR-015a.
+# credentials — which is the contract every path below is walked against. The
+# top-level `security` below makes auth OPTIONAL (the empty `{}` = the no-auth
+# loopback default; `bearerAuth` = a token-bound non-loopback bind), documenting
+# the scheme without a per-operation 401: the token-bound 401 surface (FR-014)
+# and the Host-header 400 gate are covered by
+# __tests__/server-auth-binding.test.ts, and the top-level 500 catch is FR-015a.
+security:
+  - {}                 # loopback default: no credentials required (FR-012/013)
+  - bearerAuth: []     # non-loopback bind requires a valid Bearer token (FR-014)
 components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
   parameters:
     NodeId:
       name: id
