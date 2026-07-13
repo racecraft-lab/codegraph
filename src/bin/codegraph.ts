@@ -1033,6 +1033,8 @@ program
         // SPEC-003 FR-017: derive the flat availability fields from the SAME embedding
         // snapshot the `embedding` block reports (no second probe).
         const embeddingStatus = cg.getEmbeddingStatus();
+        // SPEC-018 FR-006: the network-free LLM status snapshot, parallel to `embedding`.
+        const llmStatus = cg.getLlmStatus();
         const hybrid = deriveHybridSearchAvailability(embeddingStatus);
         console.log(JSON.stringify({
           initialized: true,
@@ -1073,6 +1075,10 @@ program
           // Embedding observability (SPEC-001 FR-022): parallel to the human
           // section below; automated probes read this machine shape.
           embedding: embeddingStatus,
+          // SPEC-018 FR-006: the LLM status snapshot parallel to `embedding`
+          // (contracts/status-llm-json.md) — the same snapshot the human `LLM:`
+          // block renders; automated probes read this machine shape.
+          llm: llmStatus,
           lsp,
           // SPEC-003 FR-017: additive, flat, top-level query-side availability —
           // derived from `embedding` above; `hybridSearchReason` is null iff available.
@@ -1179,6 +1185,44 @@ program
       const hybrid = deriveHybridSearchAvailability(embedding);
       const hybridValue = hybrid.available ? 'yes' : `no (${hybrid.reason})`;
       console.log(`  Hybrid search available: ${hybridValue}`);
+      console.log();
+
+      // LLM (SPEC-018 FR-006): a dedicated block AFTER Embeddings, rendered
+      // without touching the embeddings block above. endpoint-active shows
+      // provider / redacted endpoint / model + the in-status plaintext advisory;
+      // agent is a slice-1 `Provider: agent` stub; misconfigured names the
+      // missing var (or the invalid provider value); dormant is neutral (never
+      // warn-styled — dormancy is not an error). Network-free: getLlmStatus()
+      // reads only the environment.
+      const llm = cg.getLlmStatus();
+      console.log(chalk.bold('LLM:'));
+      if (llm.active) {
+        console.log(`  Provider:  ${llm.mode}`);
+        if (llm.mode === 'endpoint') {
+          console.log(`  Endpoint:  ${llm.endpoint}`);
+          console.log(`  Model:     ${llm.model}`);
+          if (llm.plaintextWarning) {
+            console.log('  ' + chalk.yellow(`${getGlyphs().warn} ${llm.plaintextWarning}`));
+          }
+        }
+        // agent (slice 1): the bare `Provider: agent` stub above — no endpoint/model lines.
+      } else if ('misconfigured' in llm) {
+        if (llm.invalidValue !== undefined) {
+          // Unrecognized CODEGRAPH_LLM_PROVIDER: the variable IS set, just not to a valid
+          // provider — name the value + the allowed set, not the "X set but Y missing" phrasing.
+          warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_LLM_PROVIDER="${llm.invalidValue}" is not a valid provider ${getGlyphs().dash} must be one of: ${(llm.allowedValues ?? []).join(', ')}.`);
+        } else if (llm.missingVariables !== undefined && llm.missingVariables.length > 1) {
+          // Explicit endpoint selection with BOTH URL and MODEL unset: name both, never claim the counterpart is set.
+          warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_LLM_PROVIDER=endpoint but ${llm.missingVariables.join(' and ')} are not set. Set both to activate the LLM endpoint.`);
+        } else {
+          const setVar = llm.missingVariable === 'CODEGRAPH_LLM_MODEL'
+            ? 'CODEGRAPH_LLM_URL'
+            : 'CODEGRAPH_LLM_MODEL';
+          warn(`Misconfigured ${getGlyphs().dash} ${setVar} is set but ${llm.missingVariable} is missing. Set ${llm.missingVariable} to activate the LLM endpoint.`);
+        }
+      } else {
+        console.log('  ' + chalk.dim(`Dormant ${getGlyphs().dash} set ${llm.activationVars[0]} and ${llm.activationVars[1]} for an OpenAI-compatible endpoint to enable.`));
+      }
       console.log();
 
       // LSP precision. Reading status never starts language servers; this is

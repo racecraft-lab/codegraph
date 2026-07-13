@@ -1,0 +1,200 @@
+/**
+ * Prompt composition + deterministic token-budget guard — unit tests (SPEC-018 slice 1, T007).
+ *
+ * Pins `src/llm/prompt.ts` against research D5, spec FR-018/FR-019, data-model §1
+ * (ProseTask), and contracts/endpoint-wire.md §"Token budget guard":
+ *   - estimateTokens(s) = ceil(s.length / CHARS_PER_TOKEN), CHARS_PER_TOKEN = 4 (no external tokenizer).
+ *   - GRAPH_CONTEXT_TOKEN_BUDGET = 2000 → GRAPH_CONTEXT_CHAR_BUDGET = 8000 (2000 × 4).
+ *   - composePrompt composes the chat messages in the FIXED priority order
+ *     instructions > output contract > graph context. Instructions and the output
+ *     contract are NEVER trimmed; ONLY the graph-context tier is trimmed to the char
+ *     budget by dropping WHOLE trailing items (never mid-item byte truncation) and
+ *     appending the marker `[context truncated: N of M]` (N kept of M total).
+ *   - Deterministic: identical input → byte-identical output (SC-003). No auto-chunk (FR-019).
+ *
+ * Pure functions over plain values — hermetic (no fs, no env, no network, no teardown).
+ * Message lookups are defensive (`.find`/`?? ''`) so a wrong-shaped result fails on a real
+ * assertion rather than a TypeError.
+ */
+import { describe, it, expect } from 'vitest';
+import {
+  CHARS_PER_TOKEN,
+  GRAPH_CONTEXT_TOKEN_BUDGET,
+  GRAPH_CONTEXT_CHAR_BUDGET,
+  estimateTokens,
+  trimToBudget,
+  composePrompt,
+} from '../src/llm/prompt';
+import type { ChatMessage } from '../src/llm/prompt';
+import type { ProseTask, OutputContract } from '../src/llm/generate';
+
+const CONTRACT: OutputContract = { requiredFields: [{ name: 'prose', type: 'string', nonEmpty: true }] };
+
+function makeTask(over: Partial<ProseTask> = {}): ProseTask {
+  return {
+    instructions: 'Write a concise summary of the module.',
+    graphContext: [],
+    outputContract: CONTRACT,
+    fallback: 'FALLBACK_SENTINEL',
+    ...over,
+  };
+}
+
+const roles = (messages: ChatMessage[]): string[] => messages.map((m) => m.role);
+const contentOf = (messages: ChatMessage[], role: ChatMessage['role']): string =>
+  messages.find((m) => m.role === role)?.content ?? '';
+
+describe('estimateTokens — ceil(length / CHARS_PER_TOKEN) (FR-018)', () => {
+  it('is 0 for the empty string', () => {
+    expect(estimateTokens('')).toBe(0);
+  });
+
+  it('is length/4 on an exact multiple of 4', () => {
+    expect(estimateTokens('abcd')).toBe(1);
+    expect(estimateTokens('a'.repeat(400))).toBe(100);
+  });
+
+  it('rounds UP a partial token (ceil, not floor)', () => {
+    expect(estimateTokens('abcde')).toBe(2); // 5 / 4 = 1.25 -> 2
+    expect(estimateTokens('a')).toBe(1); //     1 / 4 = 0.25 -> 1
+  });
+});
+
+describe('token-budget constants (research D5 / CRL 3)', () => {
+  it('CHARS_PER_TOKEN is 4', () => {
+    expect(CHARS_PER_TOKEN).toBe(4);
+  });
+
+  it('GRAPH_CONTEXT_TOKEN_BUDGET is 2000', () => {
+    expect(GRAPH_CONTEXT_TOKEN_BUDGET).toBe(2000);
+  });
+
+  it('GRAPH_CONTEXT_CHAR_BUDGET is 8000 = 2000 tokens x 4 chars', () => {
+    expect(GRAPH_CONTEXT_CHAR_BUDGET).toBe(8000);
+    expect(GRAPH_CONTEXT_CHAR_BUDGET).toBe(GRAPH_CONTEXT_TOKEN_BUDGET * CHARS_PER_TOKEN);
+  });
+});
+
+describe('trimToBudget — deterministic whole-item graph-context trim (FR-018)', () => {
+  it('keeps every item verbatim when the tier fits the budget (no marker)', () => {
+    const items = ['a'.repeat(3000), 'b'.repeat(3000)]; // sum 6000 <= 8000
+    const r = trimToBudget(items);
+    expect(r.kept).toEqual(items);
+    expect(r.kept[0]).toBe(items[0]); // byte-identical, same reference — no mid-item truncation
+    expect(r.total).toBe(2);
+    expect(r.truncated).toBe(false);
+    expect(r.marker).toBeUndefined();
+  });
+
+  it('treats a tier summing to EXACTLY the budget as fitting (inclusive)', () => {
+    const items = ['a'.repeat(4000), 'b'.repeat(4000)]; // sum 8000 == budget
+    const r = trimToBudget(items);
+    expect(r.kept).toEqual(items);
+    expect(r.truncated).toBe(false);
+    expect(r.marker).toBeUndefined();
+  });
+
+  it('drops WHOLE trailing items and appends [context truncated: N of M]', () => {
+    const items = ['x'.repeat(5000), 'y'.repeat(4000), 'z'.repeat(100)];
+    // 5000 fits; 5000 + 4000 = 9000 > 8000 -> stop. Keep only the first item.
+    const r = trimToBudget(items);
+    expect(r.kept).toEqual([items[0]]);
+    expect(r.total).toBe(3);
+    expect(r.truncated).toBe(true);
+    expect(r.marker).toBe('[context truncated: 1 of 3]');
+  });
+
+  it('keeps ZERO items when the first item alone exceeds the budget', () => {
+    const items = ['x'.repeat(8001)];
+    const r = trimToBudget(items);
+    expect(r.kept).toEqual([]);
+    expect(r.truncated).toBe(true);
+    expect(r.marker).toBe('[context truncated: 0 of 1]');
+  });
+
+  it('returns an empty, untruncated result for no items', () => {
+    const r = trimToBudget([]);
+    expect(r.kept).toEqual([]);
+    expect(r.total).toBe(0);
+    expect(r.truncated).toBe(false);
+    expect(r.marker).toBeUndefined();
+  });
+
+  it('is deterministic — identical input yields identical output (SC-003)', () => {
+    const items = ['a'.repeat(6000), 'b'.repeat(6000), 'c'.repeat(100)];
+    const a = trimToBudget(items);
+    const b = trimToBudget(items);
+    expect(a).toEqual(b);
+    expect(a.marker).toBe('[context truncated: 1 of 3]'); // concrete pin, not just self-equality
+  });
+});
+
+describe('composePrompt — fixed priority order, only graph context trimmed (FR-018/FR-019)', () => {
+  it('emits exactly two messages: [system, user]', () => {
+    const messages = composePrompt(makeTask({ graphContext: ['ctx'] }));
+    expect(roles(messages)).toEqual(['system', 'user']);
+  });
+
+  it('puts instructions THEN the output contract in the system message (never the graph context)', () => {
+    const task = makeTask({
+      instructions: 'INSTRUCTIONS_SENTINEL',
+      graphContext: ['CONTEXT_SENTINEL'],
+    });
+    const system = contentOf(composePrompt(task), 'system');
+    const contractJson = JSON.stringify(task.outputContract);
+    expect(system).toContain('INSTRUCTIONS_SENTINEL');
+    expect(system).toContain(contractJson);
+    // Fixed priority order within the protected tier: instructions precede the contract.
+    expect(system.indexOf('INSTRUCTIONS_SENTINEL')).toBeLessThan(system.indexOf(contractJson));
+    // Graph context never rides in the protected (system) tier.
+    expect(system).not.toContain('CONTEXT_SENTINEL');
+  });
+
+  it('puts the graph context (verbatim) in the user message', () => {
+    const task = makeTask({ graphContext: ['CONTEXT_SENTINEL_A', 'CONTEXT_SENTINEL_B'] });
+    const user = contentOf(composePrompt(task), 'user');
+    expect(user).toContain('CONTEXT_SENTINEL_A');
+    expect(user).toContain('CONTEXT_SENTINEL_B');
+  });
+
+  it('never leaks the consumer fallback into the model prompt', () => {
+    const messages = composePrompt(makeTask({ graphContext: ['ctx'], fallback: 'FALLBACK_SENTINEL' }));
+    expect(contentOf(messages, 'system')).not.toContain('FALLBACK_SENTINEL');
+    expect(contentOf(messages, 'user')).not.toContain('FALLBACK_SENTINEL');
+  });
+
+  it('NEVER trims instructions or the contract, even when far larger than the budget', () => {
+    const bigInstructions = 'I'.repeat(GRAPH_CONTEXT_CHAR_BUDGET * 3); // 24000 >> 8000
+    const task = makeTask({ instructions: bigInstructions, graphContext: [] });
+    const system = contentOf(composePrompt(task), 'system');
+    expect(system).toContain(bigInstructions); // present in full — untrimmed
+    expect(system).toContain(JSON.stringify(task.outputContract));
+  });
+
+  it('trims ONLY the graph-context tier and marks it, leaving instructions intact', () => {
+    const task = makeTask({
+      instructions: 'KEEP_INSTRUCTIONS',
+      graphContext: ['KEEP' + 'a'.repeat(6000), 'DROP' + 'z'.repeat(3000)], // 6004 kept, +3004 over -> drop
+    });
+    const messages = composePrompt(task);
+    const user = contentOf(messages, 'user');
+    expect(user).toContain('[context truncated: 1 of 2]');
+    expect(user).toContain('KEEP');
+    expect(user).not.toContain('DROP'); // whole trailing item dropped, not byte-truncated
+    expect(contentOf(messages, 'system')).toContain('KEEP_INSTRUCTIONS'); // protected tier untouched
+  });
+
+  it('appends NO marker when the graph context fits', () => {
+    const task = makeTask({ graphContext: ['a'.repeat(1000), 'b'.repeat(1000)] });
+    expect(contentOf(composePrompt(task), 'user')).not.toContain('context truncated');
+  });
+
+  it('is deterministic — identical task yields byte-identical messages (SC-003)', () => {
+    const task = makeTask({ graphContext: ['a'.repeat(6000), 'b'.repeat(6000)] });
+    const a = composePrompt(task);
+    const b = composePrompt(task);
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    expect(contentOf(a, 'user')).toContain('[context truncated: 1 of 2]'); // concrete pin
+  });
+});
