@@ -2037,8 +2037,11 @@ program
   .description('Start CodeGraph as an MCP server for AI assistants')
   .option('-p, --path <path>', 'Project path (optional for MCP mode, uses rootUri from client)')
   .option('--mcp', 'Run as MCP server (stdio transport)')
+  .option('--web', 'Run as a local HTTP server exposing the read REST API (SPEC-005)')
+  .option('--host <host>', 'Web mode: bind host (default 127.0.0.1)')
+  .option('--port <port>', 'Web mode: bind port (default 11235; 0 = OS-assigned)')
   .option('--no-watch', 'Disable the file watcher (no auto-sync; useful on slow filesystems like WSL2 /mnt drives)')
-  .action(async (options: { path?: string; mcp?: boolean; watch?: boolean }) => {
+  .action(async (options: { path?: string; mcp?: boolean; web?: boolean; host?: string; port?: string; watch?: boolean }) => {
     const projectPath = options.path ? resolveProjectPath(options.path) : undefined;
 
     // Commander sets watch=false when --no-watch is passed. Route it through
@@ -2047,7 +2050,21 @@ program
       process.env.CODEGRAPH_NO_WATCH = '1';
     }
 
+    // --web (HTTP) and --mcp (stdio) are different transports with different
+    // consumers and lifecycles; co-hosting buys nothing (they share the warm
+    // index at the daemon layer already), so refuse both (FR-001).
+    if (options.web && options.mcp) {
+      error('Choose one server mode: pass --web (HTTP) or --mcp (stdio), not both.');
+      process.exit(1);
+    }
+
     try {
+      if (options.web) {
+        // All web-server behaviour lives in src/server/ (fork discipline).
+        const { runWebServerCli } = await import('../server/index');
+        await runWebServerCli({ projectPath, host: options.host, port: options.port });
+        return;
+      }
       if (options.mcp) {
         // `serve --mcp` is the stdio MCP server an AI agent launches for itself,
         // not a command to run by hand. A human in a terminal would otherwise

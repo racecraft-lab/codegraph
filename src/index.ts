@@ -2677,6 +2677,21 @@ export class CodeGraph {
   }
 
   /**
+   * Graph neighborhood around a node — a bidirectional BFS subgraph within
+   * `maxDepth`, capped at `limit` nodes (SPEC-005 `GET /api/graph/:id`, FR-007).
+   * A thin public delegate to the traverser's BFS, mirroring
+   * {@link getImpactRadius}; the read API caps at 2000 and flags `truncated`.
+   */
+  getNeighborhood(nodeId: string, maxDepth: number = 1, limit: number = 2000): Subgraph {
+    return this.traverser.traverseBFS(nodeId, {
+      maxDepth,
+      limit,
+      direction: 'both',
+      includeStart: true,
+    });
+  }
+
+  /**
    * Find the shortest path between two nodes
    *
    * @param fromId - Starting node ID

@@ -20,6 +20,8 @@
  * `resolveParsePoolSize` in `src/extraction/parse-pool.ts`.
  */
 
+import { isLoopbackHost } from '../utils';
+
 /** Parsed, in-memory embedding config. Never persisted (FR-023). */
 export interface EmbeddingConfig {
   /** OpenAI-compatible embeddings endpoint base URL. Required to activate. */
@@ -196,14 +198,6 @@ function parseOptionalPositiveInt(raw: string | undefined): number | undefined {
   const n = Number(raw);
   if (Number.isFinite(n) && n >= 1) return Math.floor(n);
   return undefined;
-}
-
-/** Loopback host per FR: `localhost`, `127.0.0.0/8`, or IPv6 `::1`. */
-function isLoopbackHost(hostname: string): boolean {
-  // URL.hostname keeps IPv6 brackets (`[::1]`); strip them before comparing.
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (h === 'localhost' || h === '::1') return true;
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
 }
 
 /**
