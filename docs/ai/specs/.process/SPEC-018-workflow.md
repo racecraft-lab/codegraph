@@ -71,7 +71,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | |
+| Specify | `/speckit-specify` | ✅ Complete | 5 US (P1–P5, mapped to 2-slice split) / 31 FR / 19 acceptance scenarios / 7 SC / 8 edge cases / 6 key entities; 0 markers; G1 PASS (direct verification — gate-validator agent terminated early, logged). spec.md + checklists/requirements.md + feature.json created. Spec's own budget declaration (~900–1300 LOC total) exceeds the roadmap 405 projection — flagged for the plan-phase estimator |
 | Clarify | `/speckit-clarify` | ⏳ Pending | 3 sessions seeded from design-concept Open Questions |
 | Plan | `/speckit-plan` | ⏳ Pending | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | llm-integration, error-handling, security |
@@ -269,13 +269,15 @@ heuristic degradation, so consumers ask for prose exactly one way.
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | |
-| User Stories | |
-| Acceptance Criteria | |
+| Functional Requirements | 31 (FR-001–FR-031: config posture, generate() seam, endpoint path, agent-bundle path, CLI ingest, research note/delivery) |
+| User Stories | 5 (US1 P1 seam/degradation; US2 P2 endpoint; US3 P3 bundle emission; US4 P4 ingest; US5 P5 research note) — slice 1 = US1+US2, slice 2 = US3+US4+US5 |
+| Acceptance Criteria | 19 acceptance scenarios + 7 success criteria (SC-001–SC-007) + 8 edge cases |
+
+Hooks: `after_specify` agent-context.update **skipped** (repo CLAUDE.md is hand-curated; no tech-stack change at specify — SPEC-025 precedent, logged); git.commit honored via orchestrator checkpoint commit. Spec-index regen: **deferred** on installed runner (SPEC-025-recorded evidence; applies to all phase boundaries).
 
 ### Files Generated
 
-- [ ] `specs/018-llm-access-layer/spec.md`
+- [x] `specs/018-llm-access-layer/spec.md` (+ `checklists/requirements.md`, `.specify/feature.json`)
 
 ### SpecKit Traceability Markers
 
