@@ -45,3 +45,19 @@
   `specs/003-hybrid-semantic-search/` removed with provenance in
   [archive-reports/2026-07-10-SPEC-003.md](archive-reports/2026-07-10-SPEC-003.md);
   `.specify/feature.json` cleared (no feature in flight).
+
+- **2026-07-13** - SPEC-005 archived. PRs #41 (`316ade4`) and #42 (`1857872`)
+  merged (two stacked slices: read API; re-index jobs & SSE); roadmap row flipped
+  to complete; SPEC-006 and SPEC-009 unblocked (both depended on SPEC-005's
+  API/daemon surface); `codegraph serve --web` is live on main (post-merge dogfood
+  loop: build + sync + status healthy); `specs/005-local-http-server/` removed
+  with provenance in
+  [archive-reports/2026-07-13-SPEC-005.md](archive-reports/2026-07-13-SPEC-005.md).
+
+- **2026-07-13** - SPEC-010 archived. PRs #43 (`0db9db5`) and #44 (`f2e307d`)
+  merged (two vertical slices: plan engine + CLI dry-run; atomic apply + MCP
+  tool); roadmap row flipped to complete; no downstream spec changes readiness
+  (SPEC-010 is a dependency-graph leaf); `specs/010-graph-aware-rename/` removed
+  with provenance in
+  [archive-reports/2026-07-13-SPEC-010.md](archive-reports/2026-07-13-SPEC-010.md);
+  `.specify/feature.json` cleared (no feature in flight after this cleanup).

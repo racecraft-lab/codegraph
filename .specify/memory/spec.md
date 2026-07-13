@@ -89,3 +89,39 @@ keyword behavior and zero new env vars. Detailed provenance + recovery:
 The active `specs/003-hybrid-semantic-search/` folder was removed because the
 shipped code, tests, CHANGELOG/BUNDLING docs, and preserved workflow/design
 evidence carry the durable record.
+
+## SPEC-005 - Local HTTP Server & REST API (archived 2026-07-13)
+
+`codegraph serve --web` shipped as two stacked slices: PR #41 (read API) + PR #42
+(re-index jobs & SSE). A zero-dependency `node:http` local REST API rides the
+existing daemon/query-pool — server/index health, machine repo list, symbol
+search, node detail with callers/callees, impact radius, and graph neighborhood;
+plus `POST /api/reindex/:repo` background jobs with `GET .../events` SSE progress
+(one active job per repo, 409 on duplicate, survives client disconnect). Safe by
+default: loopback bind (`127.0.0.1:11235`), fail-closed on non-loopback unless
+`CODEGRAPH_SERVER_TOKEN` is set (then a required `Bearer` token), Host-header
+allowlist, closed six-code JSON error vocabulary, and token-redacting request
+logs (FR-014a). Static-asset mount reserved for SPEC-006, WebSocket hook for
+SPEC-009. Dormant without `--web`. Canonical code: `src/server/`,
+`src/bin/codegraph.ts serve --web`. Detailed provenance + recovery:
+[archive-reports/2026-07-13-SPEC-005.md](archive-reports/2026-07-13-SPEC-005.md).
+The active `specs/005-local-http-server/` folder was removed because the shipped
+code, tests, committed OpenAPI contract, and preserved workflow/design evidence
+carry the durable record; SPEC-006 and SPEC-009 are unblocked.
+
+## SPEC-010 - Graph-Aware Rename (archived 2026-07-13)
+
+Graph-aware symbol rename shipped as two vertical slices: PR #43 (plan engine +
+CLI dry-run) + PR #44 (atomic apply + MCP tool). `codegraph rename <target>
+<new-name>` produces a dry-run plan first — every file touched, a before/after
+preview and confidence rating per edit, LSP-powered where a language server
+exists and graph-derived everywhere else, `--json` for machine consumption, zero
+writes. The apply path is guarded end-to-end: span re-verification, atomic write,
+snapshot rollback, post-check, targeted re-sync. The `codegraph_rename` MCP tool
+brings the same contract into the agent loop without regressing retrieval.
+Canonical code: `src/refactor/`, `src/bin/codegraph.ts rename`, `src/mcp/tools.ts`
+(`codegraph_rename`). Detailed provenance + recovery:
+[archive-reports/2026-07-13-SPEC-010.md](archive-reports/2026-07-13-SPEC-010.md).
+The active `specs/010-graph-aware-rename/` folder was removed because the shipped
+code, tests, and preserved workflow/design evidence carry the durable record;
+SPEC-010 is a dependency-graph leaf with no downstream unblock.

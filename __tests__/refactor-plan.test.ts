@@ -62,7 +62,7 @@ import type {
 // ---------------------------------------------------------------------------
 const schema = JSON.parse(
   fs.readFileSync(
-    path.join(process.cwd(), 'specs/010-graph-aware-rename/contracts/rename-plan.schema.json'),
+    path.join(process.cwd(), '__tests__/fixtures/refactor/rename-plan.schema.json'),
     'utf8',
   ),
 ) as Record<string, unknown>;

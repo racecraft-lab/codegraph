@@ -105,12 +105,12 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-002 | Bundled Local Embedding Fallback | ✅ Complete | [SPEC-002-workflow.md](.process/SPEC-002-workflow.md) | Merged (#22); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-002.md` |
 | SPEC-003 | Hybrid Semantic Search | ✅ Complete | [SPEC-003-workflow.md](.process/SPEC-003-workflow.md) | Merged (#36); archived in `.specify/memory/archive-reports/2026-07-10-SPEC-003.md` |
 | SPEC-004 | Web Framework Research Spike | ✅ Complete | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Merged (#19); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-004.md` |
-| SPEC-005 | Local HTTP Server & REST API | 🔄 In Progress | [SPEC-005-workflow.md](.process/SPEC-005-workflow.md) | Scaffolded 2026-07-10 on `005-local-http-server`; split: 2 vertical slices (read API; jobs/SSE) |
-| SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Blocked by SPEC-005 |
+| SPEC-005 | Local HTTP Server & REST API | ✅ Complete | [SPEC-005-workflow.md](.process/SPEC-005-workflow.md) | Merged (#41, #42); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-005.md` |
+| SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Ready (SPEC-005 shipped the API + static-asset mount) |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
 | SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
-| SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Blocked by SPEC-005 |
-| SPEC-010 | Graph-Aware Rename | 🔄 In Progress | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Scaffolded 2026-07-10 on `010-graph-aware-rename`; split: 2 vertical slices (plan engine + CLI dry-run; apply + MCP) |
+| SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Ready (SPEC-005 shipped the serve daemon + WebSocket hook) |
+| SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
 | SPEC-011 | Execution Flows & Clusters | ⏳ Pending | [SPEC-011-workflow.md](SPEC-011-workflow.md) | Specify (parallel-safe) |
 | SPEC-012 | Change Impact Detection | ⏳ Pending | [SPEC-012-workflow.md](SPEC-012-workflow.md) | Prefers SPEC-011 |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
