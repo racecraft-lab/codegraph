@@ -69,3 +69,29 @@ status truthfulness). Reviewability ran over the setup estimate (743 code-only
 LOC vs ~195; WARN-proceed recorded in autopilot-state). Explore-side fusion
 deliberately deferred to a future A/B-gated spec. Full plan recoverable:
 `git show 2c6c643:specs/003-hybrid-semantic-search/plan.md`.
+
+## SPEC-005 - Local HTTP Server & REST API (archived 2026-07-13)
+
+Plan shape that shipped: a new `src/server/` module (framework-light `node:http`
++ hand-rolled router per the SPEC-004 decision, zero new dependencies) split into
+two vertical slices — Slice 1 the read surface + security model (loopback bind,
+token auth for non-loopback, Host allowlist, closed error vocabulary, redacted
+logs), Slice 2 the re-index job subsystem (background jobs over the existing
+indexing entrypoints, SSE progress, single-active-job gate, disconnect survival).
+The server rides the existing daemon/query-pool rather than opening the DB
+directly; a committed `openapi.yaml` is the contract (copied into `dist/` by
+`copy-assets`). Static-asset mount and WebSocket upgrade are reserved seams for
+SPEC-006/009. Full plan recoverable:
+`git show 1857872:specs/005-local-http-server/plan.md`.
+
+## SPEC-010 - Graph-Aware Rename (archived 2026-07-13)
+
+Plan shape that shipped: a new `src/refactor/` module split into a read-only
+Slice 1 (target resolver with teaching refusals, plan engine, LSP + graph rename
+site resolution, confidence, plan formatting) and a write Slice 2 (span-verify
+guard, atomic apply engine, snapshot rollback, post-check, path jail, targeted
+re-sync) plus the `codegraph_rename` MCP tool. Dry-run is the default and the
+whole of Slice 1; the write path only activates on explicit apply and is
+guarded so a failure leaves the tree untouched. Rides the SPEC-008 LSP substrate
+where a server is present, graph-derived otherwise. Full plan recoverable:
+`git show f2e307d:specs/010-graph-aware-rename/plan.md`.

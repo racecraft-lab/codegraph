@@ -337,12 +337,10 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-SPEC-010 (Graph-Aware Rename) is in flight on branch `010-graph-aware-rename`;
-active plan: `specs/010-graph-aware-rename/plan.md` (spec, research, data-model,
-contracts, and quickstart alongside it).
+No spec is currently in flight.
 
-SPEC-001, SPEC-002, SPEC-003, SPEC-004, SPEC-008, SPEC-023, and SPEC-025 are
-complete and archived; provenance and recovery commands live in
+SPEC-001, SPEC-002, SPEC-003, SPEC-004, SPEC-005, SPEC-008, SPEC-010, SPEC-023,
+and SPEC-025 are complete and archived; provenance and recovery commands live in
 `.specify/memory/archive-reports/`.
 
 Canonical completed-spec artifacts:
@@ -353,19 +351,26 @@ Canonical completed-spec artifacts:
   write-version token, and the hybrid CI gates in `__tests__/hybrid-*.test.ts`.
   Dormant without embedding env; active in this repo's dogfood setup.
 - SPEC-004: web-stack decision in `docs/design/web-framework-decision.md`.
+- SPEC-005: local HTTP server & REST API in `src/server/` (read endpoints +
+  re-index jobs/SSE, loopback-default with token auth for non-loopback), wired
+  to `codegraph serve --web`; committed `src/server/openapi.yaml`. Dormant
+  without `--web`.
 - SPEC-008: default-off LSP precision layer in `src/lsp/`, LSP provenance schema
   and query updates, sync integration, validation gates, and zero-unowned-row
   parity evidence.
+- SPEC-010: graph-aware rename in `src/refactor/` (dry-run plan engine + atomic
+  apply with span-verify/snapshot/post-check), the `codegraph rename` CLI, and
+  the `codegraph_rename` MCP tool.
 - SPEC-023: OCaml grammar, extractor, Dune-aware resolver, fixtures, tests, and
   grammar docs.
 - SPEC-025: plugin-channel decision in `docs/design/plugin-channel-decision.md`
   (the contract SPEC-026 implements).
 
-SPEC-005 is ready to scaffold. SPEC-006 and SPEC-007 remain
-downstream of SPEC-005. SPEC-010 is ready because SPEC-008 shipped the LSP
-substrate. SPEC-024 is dormant unless future parity drift creates a concrete
-unowned language, feature, or capability row. SPEC-026 (plugin-channel
-distribution — Claude Code + Codex plugins carrying the MCP server, prompt
-hook, skills, and agents) is ready to scaffold now that SPEC-025's decision
-document is merged.
+SPEC-006 (Web UI: Graph Browser) and SPEC-009 (LSP Server Facade) are ready
+because SPEC-005 shipped the server, API, static-asset mount, and WebSocket
+hook; SPEC-007 remains downstream of SPEC-006. SPEC-024 is dormant unless future
+parity drift creates a concrete unowned language, feature, or capability row.
+SPEC-026 (plugin-channel distribution — Claude Code + Codex plugins carrying the
+MCP server, prompt hook, skills, and agents) is ready to scaffold now that
+SPEC-025's decision document is merged.
 <!-- SPECKIT END -->
