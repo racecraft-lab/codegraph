@@ -74,7 +74,14 @@ describe('FileWatcher', () => {
     __setFsWatchForTests(null); // reset the injected fs.watch seam
     vi.restoreAllMocks();
     if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
+      // The real-fs-watch integration test below leaves a WAL checkpoint /
+      // trailing debounced sync writing into `.codegraph` a beat after
+      // cg.close(), which races this recursive remove as ENOTEMPTY on POSIX
+      // CI runners (worsened under EMFILE "too many open files" pressure).
+      // The suite-wide rm-tolerance default (5×100ms) only swallows on win32;
+      // POSIX stays strict, so give the remove a wider retry window to wait
+      // the trailing writer out (matches mcp-unindexed.test.ts).
+      fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
   });
 
