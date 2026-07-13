@@ -75,7 +75,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 14 questions (9 accepted directly, 6 consensus items incl. 1 Round-2 escape and 1 mandatory security human-gate — maintainer approved FR-029a); 11 analyst runs + 6 syntheses; spec gained FR-010a/016a/024a/028a/029a + CLI naming, manifest enum, budget anchor, timeout semantics, note-in-slice-2-PR; 2 executor recommendations reversed by consensus evidence (8K budget → ~2K anchor; note follow-up → in-PR); G2 PASS (0 markers) |
 | Plan | `/speckit-plan` | ✅ Complete | plan.md + research.md (14 decisions D1–D14, all clarify-pinned constants set: budget 2000tok/8000chars, total timeout 300s, idle 45s, max_tokens 1024, MAX_BUNDLE_INPUT_BYTES 1MiB, MAX_JSON_DEPTH 32) + data-model.md (9 entities) + quickstart.md + 6 contracts. Constitution Check PASS (pre+post design, Complexity table empty). Zero conflicts with Q1–Q12/CRL 1–6. G3 PASS (direct verification). estimate-reviewable-loc: `not_estimated` (plan file-table not in greppable format; advisory, continue) — fallback evidence: plan declares slice 1 = 4 NEW src + 2 MODIFIED, slice 2 = 2 NEW src + 3 MODIFIED, within the 2-slice budget. CLAUDE.md SPECKIT block updated (in-flight) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 98 items, 13 gaps → 0 (all 1-loop); 5 consensus items — CRL 7 (2/3 majority, dissent carried), CRL 8 (3/3 + amendment, maintainer-approved), CRL 9 (human fork → maintainer chose response-size ceiling); spec gained FR-009a/FR-015a + extensions to FR-002/005/010a/016a/017/018/026/027/029a/SC-004; G4 PASS (0 [Gap]) |
-| Tasks | `/speckit-tasks` | ⏳ Pending | Slice-aware ordering (Q12) |
+| Tasks | `/speckit-tasks` | ✅ Complete | 33 tasks (T001–T033), 8 phases, 14 [P]; all 38 FR ids mapped (zero orphans, coverage matrix embedded); TDD failing-test-first throughout; slice boundary intact (slice 1 = T001–T017 → PR 1; slice 2 = T018–T031 → PR 2; T032/T033 per-slice finalization); env-clean test rule carried. G5 PASS (33 unchecked, 0 markers, 0 phantoms). Tasks-mode reviewability DEFERRED on installed runner → fallback evidence chain in autopilot-state.json. Atomicity route `one-navigable-PR` (advisory) CONFLICTS with ratified Q12/FR-031 split — surfaced per this file's G5 note, resolved in favor of the ratified decision via pr_marker_plan (2 markers, marker-based PR emission). Layer plan skipped (non-split route) |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
@@ -584,10 +584,12 @@ When checklist identifies `[Gap]` items:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 33 (T001–T033), every acceptance criterion FR-referenced; env-clean test rule in T001/T015/T033 |
+| **Phases** | 8 — Setup (2) · Foundational config/status (4) · US2 endpoint client + guard (4) · US1 seam + status block + dormancy → PR 1 (7) · US3 bundle emitter + redemption + skill (5) · US4 ingest + FR-029a hardening + tasks CLI (6) · US5 research-note spike → PR 2 (3) · Cross-cutting guardrails per slice (2) |
+| **Parallel Opportunities** | 14 [P] — e.g. T007∥T009 (client vs prompt tests), T008∥T010, T003∥T005, T013∥T014, T018∥T22, T023∥T025∥T027 |
+| **User Stories Covered** | All 5 (US1=6, US2=5, US3=5, US4=6, US5=3 labeled tasks; 8 setup/foundational/cross-cutting). All 38 FR ids mapped, zero orphans; SC→task map embedded. MVP = slice 1 (US1+US2) |
+
+**G5:** PASS. **Verify-tasks:** fresh tasks.md, 0 pre-checked (phantom baseline clean). **Reviewability (tasks mode):** DEFERRED (installed runner supports setup mode only) — fallback evidence chain recorded in `autopilot-state.json`: setup-mode **warn** (marker-planning input) + operator-ratified 2-slice split (Q12/FR-031) + plan estimator `not_estimated` advisory. **PR Marker Plan:** persisted (top-level `pr_marker_plan`, tasks.md sha256-fingerprinted): M1-slice1-endpoint (T001–T017, finalization T032/T033) → PR 1; M2-slice2-agent-bundle (T018–T031, finalization T032/T033, depends on M1) → PR 2.
 
 ---
 
@@ -607,10 +609,17 @@ Budget & Split Decision). If the classifier disagrees, surface the conflict at G
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
-| **Signals** | | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
-| **Warnings** | | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+| **Route** | `one-navigable-PR` | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
+| **Releasable** | `true` | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
+| **Signals** | `change-shape:modify-heavy` | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
+| **Warnings** | none | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+
+**Recorded 2026-07-13 by the autopilot orchestrator from the runner classifier's read-only decision.**
+**Conflict surfaced (per this section's scaffold note):** the advisory route disagrees with the ratified two-PR split (design concept Q12; spec FR-031 — a MUST; maintainer-approved at the scaffold gate and again implicitly at CRL 6). Resolution: the ratified decision governs. The split is carried by the **PR Marker Plan** in `autopilot-state.json` (marker-based PR emission at the PR boundary — sanctioned by the setup-mode reviewability `warn` being marker-planning input), not by the split-PR layer planner.
+
+## Layer Plan
+
+`layer_plan.status = skipped` — route is not `split-PR`, so `plan-layers-feature-dir` was not invoked (step 8d). The two-PR delivery is carried by the `pr_marker_plan` (M1-slice1-endpoint → M2-slice2-agent-bundle) recorded in `autopilot-state.json`.
 
 To produce the decision, run the classifier against the feature directory:
 
