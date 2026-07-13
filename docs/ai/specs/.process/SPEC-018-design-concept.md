@@ -225,12 +225,15 @@ stop_reason: "natural"
 - **What:** Stale/abandoned pending bundles — is there a prune surface, or is manual deletion documented?
   **Why deferred:** Low-impact for v1 (small-N directories; `tasks list` makes them visible); not worth an interview question.
   **Suggested next step:** Let /speckit-clarify decide between a `tasks prune` subcommand and documented manual deletion.
+  **RESOLVED (Clarify Session 1, 2026-07-13):** documented manual deletion; no `prune` in v1; `codegraph tasks list` includes age so pending bundles are findable (spec.md Assumptions + FR-026).
 - **What:** Exact CLI naming (`codegraph tasks list|ingest` vs `bundles`, subcommand verb set).
   **Why deferred:** Cosmetic; better decided in /speckit-specify with the full command surface in view.
   **Suggested next step:** Fix names during specify; keep the "explicit user-triggered ingest" semantics from Q4.
+  **RESOLVED (Clarify Session 1, 2026-07-13):** noun `tasks` (matches the `.codegraph/tasks/` dir), verbs `list` + `ingest <id>`, flat `codegraph tasks [action] [id]` positional shape mirroring the existing `telemetry [action]` precedent (spec.md FR-025/FR-026).
 - **What:** Whether the AC-18.4 research-note spike lands inside slice 2's PR or as a separate docs-only follow-up commit.
   **Why deferred:** Depends on slice 2's real diff size, unknown until plan/tasks.
   **Suggested next step:** Decide in /speckit-plan's layer planning; the note needs both paths working, so it can't precede slice 2.
+  **RESOLVED (Clarify Session 3 Consensus, 2026-07-13):** inside slice 2's own PR — never a separate follow-up PR or post-merge commit. Both generative paths and the self-repo UAT exercise (wiki chapter + PR narrative) run against the slice-2 worktree's own build and this repository's live index; neither slice needs prior merge to `main`. The "depends on diff size" deferral reason is moot — the Reviewability Budget already excludes the note's prose from LOC (spec.md FR-031, US5).
 - **What:** The shared `estimate-spec-size` estimator was unavailable in the installed plugin (operation not present in speckit-pro 2.18.1's runner).
   **Why deferred:** Tooling gap, not a design question; the split decision used the roadmap's recorded advisory + the setup gate instead.
   **Suggested next step:** Report upstream to speckit-pro; re-run the estimator on a future version if re-slicing is ever considered.

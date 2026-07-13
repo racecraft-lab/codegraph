@@ -46,7 +46,7 @@ A user who runs a local or hosted OpenAI-compatible endpoint sets `CODEGRAPH_LLM
 1. **Given** a reachable endpoint, **When** a prose task is submitted, **Then** the chat-completion result text is returned.
 2. **Given** a prose task whose context exceeds the token budget, **When** it is submitted, **Then** the context is trimmed to fit, an explicit truncation marker is present, and the same input produces the same trimmed output every time.
 3. **Given** a transient endpoint failure, **When** a prose task is submitted, **Then** the request is retried up to the internal limit before the seam degrades to the consumer fallback.
-4. **Given** a consumer requests streaming, **When** the endpoint supports it, **Then** output streams; **When** the endpoint does not, **Then** a non-streaming completion is used.
+4. **Given** a prose task is submitted, **When** the endpoint supports streaming, **Then** the client internally uses a streaming chat-completions request and assembles the deltas into the returned text; **When** the endpoint does not support streaming, **Then** a non-streaming request is used instead — in either case the seam returns one final Generation Result, with no partial output surfaced to the caller.
 5. **Given** a partial endpoint configuration (for example URL without model), **When** configuration is resolved, **Then** it is reported as a misconfiguration in status and no endpoint call is attempted.
 
 ---
@@ -79,7 +79,7 @@ After the coding agent completes a bundle, the user runs an explicit CLI ingest 
 **Acceptance Scenarios**:
 
 1. **Given** a completed bundle with conforming output, **When** the user runs ingest for that bundle, **Then** the output is validated against the contract, the canonical result is stored in the bundle directory, and the manifest status becomes `completed`.
-2. **Given** a bundle whose output violates the contract, **When** the user runs ingest, **Then** ingest rejects the output, leaves no consumer artifacts, and does not mark the bundle `completed`.
+2. **Given** a bundle whose output violates the contract, **When** the user runs ingest, **Then** ingest rejects the output, leaves no consumer artifacts, and does not mark the bundle `completed` — the manifest status remains `pending` (re-runnable after the agent corrects its output).
 3. **Given** any bundle, **When** no one runs the ingest command, **Then** the bundle is never ingested automatically by the watcher or daemon.
 4. **Given** ingest of any bundle, **When** it completes, **Then** the only files written are inside the bundle directory — never the downstream feature's own output files.
 
@@ -89,7 +89,7 @@ After the coding agent completes a bundle, the user runs an explicit CLI ingest 
 
 The maintainer has a committed research note that compares the endpoint path and the agent-bundle path on cost, quality, and latency, using one wiki chapter and one PR narrative generated against this repository. The same exercise doubles as the spec's self-repo UAT step.
 
-**Why this priority**: This is the evidence-and-validation deliverable of slice 2. It depends on both generative paths existing, so it comes last, and it satisfies the constitution's dogfooding requirement that every spec exercise its capability against this repository.
+**Why this priority**: This is the evidence-and-validation deliverable of slice 2. It depends on both generative paths existing in the slice-2 implementation — not on prior merge to `main` — so it comes last within slice 2 and ships inside slice 2's own PR, satisfying the constitution's dogfooding requirement that every spec exercise its capability against this repository.
 
 **Independent Test**: Confirm a committed note exists that reports cost, quality, and latency for both paths on one generated wiki chapter and one generated PR narrative produced against this repository, and that it contains no cloud-endpoint comparison arm.
 
@@ -107,9 +107,10 @@ The maintainer has a committed research note that compares the endpoint path and
 - **Plaintext remote endpoint**: A remote endpoint configured over an unencrypted connection surfaces a warning while remaining usable; a local loopback endpoint does not warrant the warning.
 - **Oversized prose task**: Context that exceeds the token budget is trimmed deterministically with an explicit truncation marker — the layer never auto-chunks or map-reduces.
 - **Bundle emission failure in agent mode**: If the bundle cannot be written (for example `.codegraph/tasks/` is not writable), the consumer still receives its fallback text; the failure is surfaced through the returned handle/status rather than thrown to the caller.
-- **Ingest of a missing, already-completed, or malformed bundle**: Ingest reports the problem, writes no consumer artifacts, and does not falsely stamp the bundle `completed`.
+- **Ingest of a missing, already-completed, or malformed bundle** (including an output or contract path that resolves outside the bundle directory, a symlink at a path Ingest opens, or output exceeding the size or nesting-depth ceiling — FR-029a): Ingest reports the problem, writes no consumer artifacts, and does not falsely stamp the bundle `completed`.
 - **API key present but mode is dormant or agent**: The key is still never persisted, logged, echoed, or copied into any emitted bundle file.
 - **Concurrent generations in agent mode**: Each call produces a uniquely identified bundle so directories never collide.
+- **Repeat generation of the same task**: A `generate()` call for a prose-task whose prior bundle is still `pending` emits a new, independently-identified bundle and returns a fresh pending handle — the layer performs no task-identity dedup and holds no cross-call state.
 
 ## Requirements *(mandatory)*
 
@@ -122,14 +123,15 @@ The maintainer has a committed research note that compares the endpoint path and
 - **FR-003**: Agent-bundle mode MUST be entered only by explicit configuration (`CODEGRAPH_LLM_PROVIDER=agent`) and MUST NEVER be entered as an implicit fallback.
 - **FR-004**: In the dormant state the layer MUST perform zero network calls and zero filesystem writes (including no bundle emission), keeping behavior byte-identical to an unconfigured install.
 - **FR-005**: The API key MUST be held in memory only — never persisted to disk, written to logs, echoed to output, or included in any emitted bundle file.
-- **FR-006**: Status output MUST report the resolved LLM mode and any misconfiguration with the endpoint URL redacted, and MUST warn when a remote endpoint is configured over an unencrypted connection.
-- **FR-007**: Numeric configuration inputs MUST be clamped to positive integers; retry and timeout values MUST be internal constants with test-only overrides, not user-facing configuration knobs.
+- **FR-006**: Status output MUST report the resolved LLM mode and any misconfiguration with the endpoint URL redacted, and MUST warn when a remote endpoint is configured over an unencrypted connection. Status surfaces the LLM state through a dedicated `LLM:` block, backed by a new status snapshot method mirroring the embeddings status union, rendered without modifying the embeddings status block. Because the plaintext-remote warning must appear in status (unlike the embeddings pass-time-only warning), the LLM status snapshot carries the redaction-safe cleartext advisory.
+- **FR-007**: Numeric configuration inputs MUST be clamped to positive integers; retry and timeout values MUST be internal constants with test-only overrides, not user-facing configuration knobs. The LLM endpoint config exposes no user-facing numeric env tunables (url/model/apiKey only); retry, timeout, token budget, and max-output are internal constants — so the positive-integer clamp requirement governs only any future numeric knob.
 
 **The generate() seam and guaranteed degradation (US1)**
 
-- **FR-008**: The layer MUST expose a single `generate(prose-task)` seam that accepts a consumer-supplied heuristic fallback and MUST return usable text in every mode, never raising an error because configuration is absent or partial.
+- **FR-008**: The layer MUST expose a single `generate(prose-task)` seam that accepts a consumer-supplied precomputed heuristic fallback string and MUST return usable text in every mode, never raising an error because configuration is absent or partial.
 - **FR-009**: When an endpoint is configured, the seam MUST return endpoint-produced text on success and MUST return the consumer's fallback when the endpoint call ultimately fails after retries and timeout.
 - **FR-010**: When agent mode is configured, the seam MUST return the consumer's fallback immediately together with a handle to the pending bundle it emits.
+- **FR-010a**: The layer MUST expose a redemption lookup for the pending-bundle handle FR-010 returns. Given that handle, it MUST return exactly one of: the finalized text once the bundle's manifest is `completed` (read from the canonical result FR-028 stores inside the bundle directory), a `pending` indicator while the manifest remains `pending`, or a `missing` indicator if the bundle directory no longer exists (for example, after the documented manual cleanup of a stale bundle). This lookup MUST read only the handle's own bundle directory and MUST NOT introduce any persistence beyond the existing filesystem manifest (FR-023). The lookup's exact function signature and result-type shape are a plan-time detail.
 - **FR-011**: When dormant, the seam MUST return the consumer's fallback unchanged.
 - **FR-012**: The seam's result MUST let the caller distinguish which source produced the text (endpoint output, consumer fallback, or pending-bundle handle).
 - **FR-013**: The layer MUST NOT own or maintain any heuristic registry — the heuristic fallback is always supplied by the consumer on each call.
@@ -137,10 +139,11 @@ The maintainer has a committed research note that compares the endpoint path and
 
 **Endpoint path (US2)**
 
-- **FR-015**: The endpoint client MUST complete prose tasks via an OpenAI-compatible chat-completions request.
+- **FR-015**: The endpoint client MUST complete prose tasks via an OpenAI-compatible chat-completions request. The request body carries `model`, the composed `messages`, and the per-call `stream` flag; `max_tokens` is set from an internal constant bounding worst-case output; `temperature` is left to the endpoint default.
 - **FR-016**: The endpoint client MUST support both streaming and non-streaming completion, selectable per call.
-- **FR-017**: The endpoint client MUST apply a bounded retry policy and a request timeout (internal constants).
-- **FR-018**: The layer MUST estimate token usage with a characters-per-token heuristic (no external tokenizer) and, when a prose task's context exceeds the token budget, MUST trim the context deterministically and insert an explicit truncation marker, such that identical input yields identical trimmed output.
+- **FR-016a**: Streaming, where used, is an internal request-transport detail of the endpoint client only. The `generate()` seam MUST return exactly one final Generation Result in both streaming and non-streaming request modes; this spec defines no partial-output delivery mechanism (no `onChunk`/delta callback, no streaming return channel) on the prose task or the seam's return type.
+- **FR-017**: The endpoint client MUST apply a bounded retry policy and a request timeout (internal constants). Non-streaming completions MUST enforce a flat total-request deadline; streaming completions MUST instead enforce an inter-chunk idle deadline — elapsed time since the last received chunk, reset on every chunk — rather than a single flat cap over the whole stream.
+- **FR-018**: The layer MUST estimate token usage with a characters-per-token heuristic (no external tokenizer) and, when a prose task's context exceeds the token budget, MUST trim the context deterministically and insert an explicit truncation marker, such that identical input yields identical trimmed output. Per FR-007, the token budget itself is a fixed conservative internal constant — sized for small-context local models rather than derived from the configured `CODEGRAPH_LLM_MODEL`, which the layer has no channel to introspect — with its exact magnitude a plan-time detail.
 - **FR-019**: The layer MUST NOT auto-chunk or map-reduce oversized prompts — deterministic trimming with a marker is the only oversize handling.
 - **FR-020**: The layer MUST NOT add any new runtime dependency for endpoint access — it MUST use the built-in HTTP capability.
 
@@ -150,24 +153,27 @@ The maintainer has a committed research note that compares the endpoint path and
 - **FR-022**: A task bundle MUST be completable by a subscription coding agent using only the contents of the bundle directory, with no external state required.
 - **FR-023**: Bundle state MUST live entirely in the filesystem (`manifest.json`) — the layer MUST NOT introduce or modify any SQLite schema.
 - **FR-024**: Each emitted bundle MUST receive a unique identifier so concurrent generations do not collide or overwrite one another.
-- **FR-025**: The feature MUST include a companion skill describing how a coding agent completes and returns a task bundle; distributing that skill through the plugin channel is out of scope and owned by SPEC-026.
+- **FR-024a**: The layer MUST NOT deduplicate or coalesce bundles across `generate()` calls; every agent-mode call emits its own uniquely-identified bundle regardless of prior pending bundles for a logically-identical task.
+- **FR-025**: The feature MUST include a companion skill describing how a coding agent completes and returns a task bundle, whose final step instructs the agent to run `codegraph tasks ingest <id>`; distributing that skill through the plugin channel is out of scope and owned by SPEC-026.
 
 **CLI ingest (US4)**
 
-- **FR-026**: The layer MUST provide an explicit CLI ingest command that a user runs after their agent completes a bundle.
-- **FR-027**: Ingest MUST validate the agent's output against the bundle's expected-output contract and MUST reject non-conforming output.
+- **FR-026**: The layer MUST provide an explicit `codegraph tasks` CLI command with two user-invoked verbs — `list` (enumerate bundles under `.codegraph/tasks/` with each bundle's id, status, and age) and `ingest <id>` (validate and finalize one completed bundle) — that a user runs after their agent completes a bundle.
+- **FR-027**: Ingest MUST validate the agent's output STRUCTURALLY against the bundle's machine-checkable expected-output contract (required fields present, correct types, non-empty where the contract requires) — a deterministic check, never a semantic or quality judgment — and MUST reject output that fails it. The contract's concrete schema is a plan-time detail.
 - **FR-028**: On successful validation, ingest MUST store the canonical result inside the bundle directory and stamp the `manifest.json` status as `completed`.
+- **FR-028a**: A rejected ingest MUST leave the manifest status unchanged (`pending`) and MUST report the rejection reason to stderr without persisting a failure state.
 - **FR-029**: Ingest MUST NEVER write consumer artifacts (a downstream feature's own output files) and MUST NOT auto-run from the watcher or daemon — it is user-invoked only.
+- **FR-029a**: Ingest MUST treat the bundle directory's contents — the agent's output file(s), any additional file path the contract or output itself names, and `manifest.json` — as untrusted input under a same-user, no-privilege-boundary threat model. Every path Ingest reads or writes MUST resolve, via the project's existing realpath-based containment check (`validatePathWithinRoot`, reused rather than reimplemented), to a location within the bundle directory; Ingest MUST reject any path resolving outside it (including through a symlink), any input over a bounded size ceiling, and any JSON over a bounded nesting-depth ceiling — each checked before the read completes or the parse begins. Parsed output MUST be consumed by reading only the contract's expected fields, never deep-merged into a live object, so attacker-controlled keys cannot pollute a prototype. Every rejection here is FR-028a-shaped (manifest stays `pending`, reason to stderr, never `isError`); residual same-process TOCTOU between check and use is out of scope, consistent with the project's existing same-user write-sink precedent. Exact ceilings and call sites are plan-time detail.
 
 **Research note and delivery (US5, cross-cutting)**
 
 - **FR-030**: The feature MUST include a committed research note comparing the two paths (endpoint versus agent bundle) on cost, quality, and latency, generated from one wiki chapter and one PR narrative produced against this repository; the note MUST serve as the self-repo UAT record and MUST NOT include a cloud-endpoint comparison arm.
-- **FR-031**: The capability MUST live in a new opt-in module and MUST NOT alter behavior for users who have not configured an LLM, and it MUST be delivered as two independently reviewable vertical slices — slice 1 the endpoint path end-to-end; slice 2 the agent-bundle path, companion skill, and research note.
+- **FR-031**: The capability MUST live in a new opt-in module and MUST NOT alter behavior for users who have not configured an LLM, and it MUST be delivered as two independently reviewable vertical slices — slice 1 the endpoint path end-to-end; slice 2 the agent-bundle path, companion skill, and research note. The research note MUST be committed inside slice 2's own PR — never as a separate follow-up PR or post-merge commit — produced by exercising both paths against the slice-2 worktree's own build and this repository's live index; neither slice needs to be merged to `main` first.
 
 ### Reviewability Budget *(mandatory)*
 
 - **Primary surface**: harness/adapter — the LLM configuration resolver, the OpenAI-compatible endpoint client, and the agent-bundle filesystem I/O.
-- **Secondary surfaces, if any**: API (the single `generate()` library seam re-exported through the public surface), scheduler/runtime (the explicit CLI ingest subcommand), docs/process (the companion skill and the committed research note).
+- **Secondary surfaces, if any**: API (the single `generate()` library seam re-exported through the public surface), scheduler/runtime (the explicit `codegraph tasks list|ingest` subcommand), docs/process (the companion skill and the committed research note).
 - **Projected reviewable LOC**: ~900–1300 production LOC across both slices (slice 1 config + endpoint client + seam ≈ 500–700; slice 2 bundle emitter + manifest + CLI ingest ≈ 400–600), excluding tests and the prose research note. Tests are additional and exercise real files and real HTTP behavior (no mocking of the store).
 - **Projected production files**: ~8–12 (config, endpoint client, token-budget guard, seam/orchestration, bundle emitter, manifest handling, CLI ingest command, plus public re-export wiring).
 - **Projected total files**: ~16–24 including test files, the companion skill, and the research note.
@@ -182,11 +188,11 @@ The maintainer has a committed research note that compares the endpoint path and
 
 ### Key Entities *(include if feature involves data)*
 
-- **Prose Task**: A consumer's request for generated prose. Carries task instructions, the graph context, an expected-output contract, and the consumer-supplied heuristic fallback. It is the single input to the `generate()` seam.
+- **Prose Task**: A consumer's request for generated prose. Carries task instructions, the graph context (supplied by the consumer as opaque items the layer embeds verbatim), an expected-output contract, and a consumer-supplied precomputed heuristic fallback string. It is the single input to the `generate()` seam.
 - **LLM Configuration (discriminated result)**: Exactly one of — Endpoint Configuration (endpoint URL, model, in-memory API key, internal retry/timeout constants), Agent Configuration (explicit agent-provider selection), Misconfiguration (partial/invalid settings surfaced in status), or Dormant (nothing configured; the default).
 - **Task Bundle**: The agent-mode work package, a directory under `.codegraph/tasks/<id>/` containing task instructions, graph-context JSON, an expected-output contract, and a manifest.
-- **Bundle Manifest (`manifest.json`)**: The filesystem-only state record for a bundle — its unique identifier, status (`pending` → `completed`), and the reference to its expected-output contract. There is no SQLite representation.
-- **Generation Result**: What the seam returns — the produced or fallback text plus a source indicator (endpoint output, consumer fallback, or a handle to a pending bundle).
+- **Bundle Manifest (`manifest.json`)**: The filesystem-only state record for a bundle — its unique identifier, status — exactly one of `pending` or `completed` (`completed` is set only by a successful ingest; a rejected ingest leaves the bundle `pending`) — and the reference to its expected-output contract. There is no SQLite representation.
+- **Generation Result**: What the seam returns — the produced or fallback text plus a source indicator (endpoint output, consumer fallback, or a handle to a pending bundle). The handle is redeemable through the layer's lookup (FR-010a) once the bundle is ingested.
 - **Research Note**: The committed comparison of the two paths (cost, quality, latency) that also records the self-repo UAT outcome.
 
 ## Success Criteria *(mandatory)*
@@ -205,17 +211,22 @@ The maintainer has a committed research note that compares the endpoint path and
 
 - Environment variable names follow the SPEC-001/002 embeddings precedent: `CODEGRAPH_LLM_URL`, `CODEGRAPH_LLM_MODEL`, `CODEGRAPH_LLM_API_KEY`, and `CODEGRAPH_LLM_PROVIDER`; resolution, redaction, plaintext-remote warning, and positive-integer clamps mirror the established embeddings configuration posture.
 - The characters-per-token estimate is a fixed conservative internal constant; approximate token accounting (no exact tokenizer) is acceptable for the budget guard.
+- The token budget's sizing anchor is evidence-grounded, not derived: no OpenAI-compatible endpoint exposes a portable context-length signal (the `/v1/models` response carries none), so the internal constant assumes a conservative ~4,096-token total operative window — the modal default context size for local model deployments — and budgets the graph-context portion at roughly 2,000 tokens within it; the exact final constant is confirmed at plan time.
 - Bundle identifiers are opaque unique strings; their exact format is an implementation detail decided at plan time.
+- The consumer-supplied fallback is a precomputed string in v1; widening the seam later to also accept a lazy fallback producer would be a non-breaking, additive change (the same SemVer posture as the deferred `onChunk` callback).
 - The expected-output contract is a machine-checkable description carried inside the bundle; its exact schema is an implementation detail decided at plan time.
 - "Consumer artifacts" means a downstream feature's own output files (for example, SPEC-019 wiki pages or SPEC-020 PR narratives); ingest deliberately stops at the bundle directory and leaves artifact writing to the consumer.
 - If bundle emission itself fails in agent mode, the consumer still receives its fallback text and the failure is surfaced through the returned handle/status rather than thrown — preserving the US1 guarantee.
-- Retry count and request timeout default to values consistent with the embeddings client and are overridable only in tests.
+- Retry count and backoff constants mirror the embeddings client; the request timeout is deliberately larger, sized for generation latency rather than the embeddings client's shorter deadline. Non-streaming requests use a generous flat internal-constant timeout; streaming requests are governed by an inter-chunk idle deadline (fails on sustained silence, not on total elapsed time) per FR-017. The exact durations (total timeout, idle window) are an implementation detail decided at plan time, consistent with FR-007's internal-constants, test-only-override posture.
 - The research note is a committed design/research document under the repository's docs area, consistent with prior specs' decision documents.
-- Streaming is offered per call; when an endpoint does not support streaming, the client uses a non-streaming completion.
+- Stale or abandoned `pending` bundles are removed by documented manual deletion (remove the `.codegraph/tasks/<id>/` directory); v1 ships no `prune` command. `codegraph tasks list` surfaces pending bundles (with age) so they are findable; a pruning verb is deferred to a named follow-up if a consumer demonstrates accumulation pain.
+- The pending-bundle handle returned by FR-010 is the same opaque bundle identifier redeemable via FR-010a's lookup — the mechanism Q1's "upgrade-later" decision and downstream consumers (SPEC-011 cluster-label enrichment, SPEC-019 incremental chapter re-render) use to obtain finalized text once ingest completes a bundle. SPEC-020's optional narrative path is unaffected, since its roadmap scope uses endpoint mode only.
+- Streaming is an internal request-transport detail of the endpoint client, selected per call; when an endpoint does not support streaming, the client uses a non-streaming completion instead. Neither mode is exposed to the caller — the seam returns one final Generation Result either way. This keeps the door open for a future spec (for example SPEC-019 terminal UX) to add a partial-output API — such as an optional `onChunk` chunk-sink callback — against a concrete consumer need, without reworking the endpoint client; per SemVer, adding such an optional callback later would be a non-breaking, additive change.
+- For slice 1 the status `LLM:` block renders endpoint-active / misconfigured / dormant; the agent active state's status rendering lands with slice 2 (a `Provider: agent` stub in slice 1 is acceptable).
 
 ## Dependencies
 
 - Mirrors the configuration and client posture established by SPEC-001/002 (the embeddings module) — this spec reuses that shape rather than inventing a new one.
-- Relies on the existing graph/context capability to supply the graph context embedded in prose tasks and bundles.
+- The graph context embedded in prose tasks and bundles originates with the consumer (via the existing graph/context capability); the layer receives it as opaque items and embeds it verbatim — it never invokes the graph/context capability itself.
 - Ships the shared seam consumed by future features SPEC-011 (cluster labels), SPEC-019 (wiki prose), and SPEC-020 (PR narratives); those consumers are out of scope here.
 - Plugin-channel packaging of the companion skill is owned by SPEC-026 and is out of scope for this spec.
