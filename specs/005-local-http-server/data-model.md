@@ -62,10 +62,10 @@ Graph data returned by the read endpoints (FR-004, FR-008 — served from the sh
 daemon index).
 
 - **List results** (`search`, `callers`, `callees`): `{ items: Node[], total,
-  limit, offset }` — `total` is the match count (for `search`, capped at the scan
-  ceiling — `min(matches, 500)`, FR-006); the response echoes the
-  **effective** paging window (`limit` default 100 / **max 500**, clamped not
-  errored; `offset`) (FR-006).
+  limit, offset }` — `total` is the match count; for `search` it is **capped at
+  the scan ceiling (500)**, so clients MUST treat the search total as
+  `min(matches, 500)`; the response echoes the **effective** paging window
+  (`limit` default 100 / **max 500**, clamped not errored; `offset`) (FR-006).
 - **Node detail** (`GET /api/node/:id`): the node's **own fields only** (identity,
   kind, name, location, signature/doc metadata). Callers and callees are the
   separate offset-paged endpoints, and impact the separate subgraph endpoint —

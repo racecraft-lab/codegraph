@@ -9,7 +9,9 @@
   "atomicity_route": {
     "route": "one-navigable-PR",
     "releasable": true,
-    "signals": ["change-shape:modify-heavy"],
+    "signals": [
+      "change-shape:modify-heavy"
+    ],
     "warnings": [],
     "operator_override": "2 sequenced PRs per scaffold-ratified split decision (reviewability warn resolution), re-confirmed by operator at G5 2026-07-11"
   },
@@ -23,30 +25,120 @@
         "review_order": 1,
         "title": "feat(SPEC-005): local HTTP server — read API (slice 1)",
         "tasks": "T001-T032 (Phases 1-5: foundation, US1 read API, US4 bind/auth, US2 multi-repo, contract test + PR close-out)",
-        "user_stories": ["US1", "US4", "US2"],
-        "checkpoint": null
+        "user_stories": [
+          "US1",
+          "US4",
+          "US2"
+        ],
+        "checkpoint": {
+          "head_sha": "17cef94df35b66ede2346e9374e172a517cc30d0",
+          "date": "2026-07-11",
+          "tests": "full suite green (see workflow record); slice suites: read-api 90, auth 55, static 25, contract 35",
+          "warnings": [
+            "actual slice-1 size ~2080 insertions / ~1280 logic LOC — over the ~400 estimate; size-only finding, marker plan proceeds; recorded in slice1-pr-packet.md"
+          ]
+        }
       },
       {
         "id": "slice-2-jobs-sse",
         "review_order": 2,
         "title": "feat(SPEC-005): local HTTP server — re-index jobs & SSE (slice 2)",
         "tasks": "T033-T047 (Phases 6-8: US3 jobs/SSE, contract extension + PR close-out, polish + self-repo UAT)",
-        "user_stories": ["US3"],
+        "user_stories": [
+          "US3"
+        ],
         "fold_target_for": "polish tasks T046-T047 (cross-cutting, validate whole feature)",
-        "checkpoint": null
+        "checkpoint": {
+          "head_sha": "e69f84e4a825538693fb561e1c34269d4296d4d2",
+          "date": "2026-07-11",
+          "tests": "G7 full env-stripped suite: 176 files, 3152 passed / 7 skipped, exit 0; slice suites: reindex-jobs 27, openapi-contract 43 (jobs walk added), read-api 90; T042 retrieval-guardian OVERALL PASS 7/7 zero blocking; T047 self-repo dogfood UAT 7/7 PASS",
+          "warnings": [
+            "actual slice-2 size ~922 src insertions + 117 openapi (~560 logic LOC) — over the ~400 estimate; size-only finding, marker plan proceeds; recorded in slice2-pr-packet.md",
+            "checkpoint advanced 54ab0c2 -> e69f84e: 6-aspect review-panel remediation (F1-F10, 15 guard tests) folds into PR 2 like polish (cross-cutting close-out)"
+          ]
+        }
       }
     ],
-    "review_order": ["slice-1-read-api", "slice-2-jobs-sse"],
-    "checkpoints": [],
+    "review_order": [
+      "slice-1-read-api",
+      "slice-2-jobs-sse"
+    ],
+    "checkpoints": [
+      {
+        "marker": "slice-1-read-api",
+        "head_sha": "17cef94df35b66ede2346e9374e172a517cc30d0",
+        "status": "complete"
+      },
+      {
+        "marker": "slice-2-jobs-sse",
+        "head_sha": "e69f84e4a825538693fb561e1c34269d4296d4d2",
+        "status": "complete"
+      }
+    ],
     "warnings": [],
     "final_marker_split": null,
-    "packet_validation": null,
-    "pr_mappings": null,
+    "packet_validation": {
+      "generate_pr_body": "deferred on installed runner (not in read-only helper registry) — LOUD WARNING per fail-open rule: PR bodies hand-authored from the committed T032/T045 packets at specs/005-local-http-server/.process/emission/pr{1,2}-body.md",
+      "validate_pr_packet_read_only": "not applicable — no generator packet JSON exists; committed packet markdowns are the evidence",
+      "validate_pr_workflow_contract": {
+        "pr1": {
+          "title": "feat(SPEC-005): local HTTP server — read API (slice 1)",
+          "status": "passed",
+          "exit": 0,
+          "changed_files": 42
+        },
+        "pr2": {
+          "title": "feat(SPEC-005): local HTTP server — re-index jobs & SSE (slice 2)",
+          "status": "passed",
+          "exit": 0,
+          "changed_files": 24
+        }
+      },
+      "uat_runbook": "skipped: generate-uat-skeleton deferred; committed quickstart + dogfood evidence stands in",
+      "stack_manager": "detect-stack-manager deferred → explicit gh pr create --base/--head/--title/--body-file fallback (sanctioned path)"
+    },
+    "pr_mappings": {
+      "slice-1-read-api": 41,
+      "slice-2-jobs-sse": 42
+    },
     "reviewability_evidence": {
       "setup_gate": "warn (620 LOC / 7 prod files, greenfield warn line 600) — recorded at scaffold with accepted split",
       "plan_estimator": "not_estimated (no parseable declared-file table)",
       "tasks_mode_gate": "deferred on installed runner — fallback evidence chain per SKILL guidance",
-      "operator_ratification": "2-PR split confirmed at G5 2026-07-11"
+      "operator_ratification": "2-PR split confirmed at G5 2026-07-11",
+      "actual_slice1_size": "2356 ins/9 del/14 files in src/ (2080 excl openapi.yaml; ~1280 logic LOC) — over target, size-only, proceed per marker rules",
+      "pre_pr_gate": "deferred on installed runner — authoritative probe 2026-07-11: runner replied 'reviewability-gate read-only runner supports setup mode only' (exit 2, invalid_input). Fallback evidence chain applied: setup-gate warn (620 LOC est) + operator-ratified 2-PR split (G5) + measured actuals per marker.",
+      "measured_actuals": {
+        "full_branch": "49 files, 12012 ins / 40 del (incl. specs/docs/process artifacts)",
+        "production_src_total": "16 files, 3500 ins / 9 del",
+        "pr1_slice_src (main..17cef94)": "14 files, 2356 ins / 9 del (~1280 logic LOC)",
+        "pr2_slice_src (17cef94..e69f84e)": "9 files, 1195 ins / 51 del (~560 logic LOC + review remediation)",
+        "verdict": "both markers over the ~400 reviewable-LOC target — size-only findings, recorded in both PR packets; marker plan proceeds per rules (no undisclosed scope; PR packets carry review-order and traceability to compensate)"
+      }
     }
+  },
+  "multi_pr_emission": {
+    "status": "complete",
+    "mode": "marker-based, explicit gh fallback (detect-stack-manager + multi-pr-emission helpers deferred on installed runner)",
+    "prs": [
+      {
+        "slice": "slice-1-read-api",
+        "pr": 41,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/41",
+        "branch": "005-local-http-server-s1",
+        "base": "main",
+        "head_sha": "17cef94df35b66ede2346e9374e172a517cc30d0"
+      },
+      {
+        "slice": "slice-2-jobs-sse",
+        "pr": 42,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/42",
+        "branch": "005-local-http-server",
+        "base": "005-local-http-server-s1"
+      }
+    ],
+    "prs_manifest": "specs/005-local-http-server/.process/prs.json",
+    "verification_evidence": "specs/005-local-http-server/.process/emission/full-verify-evidence.md",
+    "date": "2026-07-11"
   }
 }

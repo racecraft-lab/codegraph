@@ -16,7 +16,7 @@ import { findNearestCodeGraphRoot } from '../directory';
 import { watchDisabledReason } from '../sync';
 import { ToolHandler } from './tools';
 import { QueryPool, resolvePoolSize } from './query-pool';
-import { executeReadOp, readOnMissingIndex } from './read-ops';
+import { executeReadOp, readOnMissingIndex, type ReadOp } from './read-ops';
 
 // Lazy-load the heavy CodeGraph chain (sqlite + query/graph/context layers) OFF
 // the MCP startup path. It's only needed once a tool actually opens a project —
@@ -127,17 +127,43 @@ export class MCPEngine {
    * throw. Unknown ops throw {@link import('./read-ops').UnknownReadOpError}.
    */
   async executeRead(op: string, params: Record<string, unknown>): Promise<unknown> {
+    // The wire `op` is arbitrary JSON-RPC input; the ReadOp cast is compile-time
+    // only. An unrecognized value falls through to the dispatcher's `default`
+    // case, which throws UnknownReadOpError at runtime (→ InvalidParams).
+    const readOp = op as ReadOp;
     const cg = this.cg;
-    if (!cg) return readOnMissingIndex(op);
+    if (!cg) return readOnMissingIndex(readOp);
     // Pick up an index replaced on disk (#925) before serving, mirroring the
     // ToolHandler read path's freshen; never fail the read over it.
     try { cg.reopenIfReplaced(); } catch { /* keep the current handle */ }
-    return executeReadOp(cg, op, params);
+    return executeReadOp(cg, readOp, params);
   }
 
   /** Whether the default project's CodeGraph is open. */
   hasDefaultCodeGraph(): boolean {
     return this.toolHandler.hasDefaultCodeGraph();
+  }
+
+  /**
+   * SPEC-005 FR-021a — re-arm the file watcher after a long lock-holding reindex
+   * job (run in the SERVE process, a daemon client) starved this daemon's
+   * watcher into a permanent degrade. Additive, control-plane only — NOT an
+   * indexing RPC, so the daemon's no-indexing invariant holds.
+   *
+   * Gated on `isWatcherDegraded()`, so a healthy watcher is a cheap no-op (the
+   * common short-sync case). When degraded, `unwatch()` drops the latched
+   * FileWatcher and `startWatching()` installs a fresh one whose `start()`
+   * clears the one-way degrade latch (src/sync/watcher.ts). `startWatching`
+   * guards on `watcherStarted` (which stays true after a degrade), so the flag
+   * is reset here first — re-calling `startWatching` alone would be a no-op.
+   */
+  rearmWatcher(): { rearmed: boolean } {
+    const cg = this.cg;
+    if (this.closed || !cg || !cg.isWatcherDegraded()) return { rearmed: false };
+    cg.unwatch();
+    this.watcherStarted = false; // clear the per-engine latch so startWatching re-arms
+    this.startWatching();
+    return { rearmed: true };
   }
 
   /**

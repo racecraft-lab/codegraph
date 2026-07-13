@@ -15,6 +15,8 @@
 
 import { notFound, internalError, apiError, unauthorized, type ApiError } from './errors';
 import { isValidBearer, type BindSecurity } from './auth';
+import { JobConflictError, type JobMode, type JobRegistry } from './jobs';
+import { streamJobToResponse, type SseResponse, type SseRequest } from './sse';
 import {
   daemonUnavailable,
   listRepos,
@@ -40,6 +42,13 @@ export interface HandlerResult {
   status: number;
   headers?: Record<string, string>;
   body: unknown;
+  /**
+   * SPEC-005 Slice-2 SSE (FR-023): the handler has taken over the raw response
+   * and is streaming it directly (headers + frames already written). When set,
+   * the dispatcher MUST NOT serialize `body` over the socket — doing so would
+   * `writeHead` twice. Only the SSE events handler sets this.
+   */
+  hijacked?: boolean;
 }
 
 /**
@@ -52,6 +61,23 @@ export interface RouteContext {
   params: RouteParams;
   query: URLSearchParams;
   headers: Record<string, string | string[] | undefined>;
+  /**
+   * The raw `node:http` response — present only for the SSE endpoint (FR-023),
+   * which streams frames directly rather than returning a JSON body. Every other
+   * handler ignores it and returns a normal {@link HandlerResult}.
+   */
+  res?: SseResponse;
+  /** The raw request — the SSE handler subscribes to its `close` (client disconnect). */
+  req?: SseRequest;
+  /**
+   * LOCAL server-side diagnostic sink (F1). A contained fault becomes the generic
+   * `internal`/`unavailable` envelope on the wire (FR-015/015a) — which hides the
+   * cause from the operator too. When set, the dispatch/handlers log the caught
+   * exception (message + stack) here so an operator can diagnose it. Fed ONLY the
+   * exception, never request headers, so it can never carry a token (FR-014a).
+   * Silent unless `startWebServer` wires it (default `console.error` in CLI mode).
+   */
+  logDiagnostic?(message: string): void;
 }
 
 /** A registered route: an HTTP method, a path pattern, and its handler. */
@@ -167,9 +193,28 @@ export async function handleApiRequest(
     if (!match.matched) return notFound('route');
     ctx.params = match.params;
     return await match.route.handler(ctx);
-  } catch {
+  } catch (err) {
+    // FR-015a: the client gets the generic 500 envelope (no fault detail). Log the
+    // underlying exception LOCALLY so the operator can diagnose it (F1); the sink
+    // only receives the exception, never the request headers/token.
+    safeDiagnostic(ctx.logDiagnostic, diagnosticLine('request handler', err));
     return internalError();
   }
+}
+
+/**
+ * Format a caught exception for the LOCAL diagnostic sink (F1): message + stack
+ * only. Never touches request headers, so it can never carry a token (FR-014a) —
+ * the counterpart to the whitelisted wire envelope (FR-015a).
+ */
+function diagnosticLine(where: string, err: unknown): string {
+  const e = err instanceof Error ? err : new Error(String(err));
+  return `[codegraph:web] ${where}: ${e.message}${e.stack ? `\n${e.stack}` : ''}`;
+}
+
+/** Invoke a diagnostic sink defensively — a throwing sink must never change the wire outcome. */
+function safeDiagnostic(sink: ((message: string) => void) | undefined, message: string): void {
+  try { sink?.(message); } catch { /* a diagnostic sink must never affect the response */ }
 }
 
 // ===========================================================================
@@ -270,6 +315,10 @@ async function withClient(
   try {
     client = await deps.getClient(repo);
   } catch (err) {
+    // The client sees a generic transient 503 (FR-015a); log WHY locally so the
+    // operator can tell a version-mismatch / never-bound / spawn failure apart
+    // (the DaemonUnavailableError message distinguishes them) (F1).
+    safeDiagnostic(ctx.logDiagnostic, diagnosticLine('daemon attach failed', err));
     return daemonUnavailable(err);
   }
   try {
@@ -289,7 +338,7 @@ async function withClient(
 
 /** GET /api/status (T014, FR-005/016) — not repo-scoped; reports the default repo. */
 function statusHandler(deps: ReadApiDeps): RouteHandler {
-  return async (): Promise<HandlerResult> => {
+  return async (ctx): Promise<HandlerResult> => {
     const repo = deps.defaultRepo;
     let client: DaemonReadClient;
     try {
@@ -309,6 +358,8 @@ function statusHandler(deps: ReadApiDeps): RouteHandler {
           },
         };
       }
+      // Indexed but the daemon could not be attached → transient 503; log why (F1).
+      safeDiagnostic(ctx.logDiagnostic, diagnosticLine('daemon attach failed (status)', err));
       return daemonUnavailable(err);
     }
     try {
@@ -424,5 +475,125 @@ export function buildReadRoutes(deps: ReadApiDeps): Route[] {
     { method: 'GET', pattern: '/api/callees/:id', handler: relationHandler(deps, 'callees') },
     { method: 'GET', pattern: '/api/impact/:id', handler: subgraphHandler(deps, 'impact') },
     { method: 'GET', pattern: '/api/graph/:id', handler: subgraphHandler(deps, 'graph') },
+  ];
+}
+
+// ===========================================================================
+// SPEC-005 Slice-2 job routes (T038) — POST/GET /api/reindex/:repo and the SSE
+// stream GET /api/reindex/:repo/events. Kept in a SEPARATE builder from
+// buildReadRoutes so the OpenAPI contract walk's per-builder bijection stays
+// green: buildReadRoutes maps to the 8 read paths, buildJobRoutes to the 2
+// reindex path templates. The shipped openapi.yaml now documents BOTH surfaces
+// (the contract walk asserts read + jobs).
+//
+// The `:repo` is a PATH param resolved against the daemon registry (FR-020);
+// an unregistered repo, or a registered repo with no job on record, → 404
+// `resource: repo` (FR-024, deliberately indistinguishable). A duplicate active
+// job → 409 `conflict` (FR-022). Lock contention is NOT here — it is a terminal
+// job `error`/`lock_unavailable` (FR-021a), and the POST still returns 202.
+// ===========================================================================
+
+/** Collaborators the job routes need, wired by `startWebServer` (index.ts). */
+export interface JobApiDeps {
+  /**
+   * Resolve the `:repo` PATH segment to a registered repo, or `null` when it is
+   * malformed / unregistered (→ 404 `resource: repo`, FR-020/011). Same resolver
+   * the read handlers use for `?repo`.
+   */
+  resolveRepo(repoId: string | undefined): RepoInfo | null;
+  /**
+   * Whether `root` already has an index (`.codegraph/`). A re-index job RECOVERS an
+   * existing index; it never initializes a new project (FR-020, Constitution VII
+   * dormancy). `resolveRepo` returns the startup repo even when its directory has no
+   * index, so the POST path must gate on this to 404 rather than start a doomed job.
+   */
+  isRepoIndexed(root: string): boolean;
+  /** The in-memory latest-job-per-repo registry (jobs.ts). */
+  registry: JobRegistry;
+}
+
+/** POST /api/reindex/:repo (T038, FR-020/021a/022) — URL-only; 202 + descriptor. */
+function reindexPostHandler(deps: JobApiDeps): RouteHandler {
+  return (ctx) => {
+    // An EMPTY path segment (`/api/reindex/`) matches `:repo` = '' but is a MISSING
+    // required id, not the default repo — reject before resolveRepo (which treats
+    // '' as the default `?repo`). 404 `resource: repo` (FR-020/024).
+    if (!ctx.params.repo) return notFound('repo');
+    const repo = deps.resolveRepo(ctx.params.repo);
+    if (!repo) return notFound('repo');
+    // resolveRepo returns the startup repo for its own id even when that directory
+    // has NO index — but re-index recovers an existing index, it never initializes a
+    // new project (FR-020, Constitution VII). An un-indexed target is 404 `repo` here,
+    // not a 202 that spawns a job doomed to terminal `index_failed`.
+    if (!deps.isRepoIndexed(repo.root)) return notFound('repo');
+    // URL-only: mode from `?full=true`; NO request body is read (FR-020, Edge Cases).
+    const mode: JobMode = ctx.query.get('full') === 'true' ? 'full' : 'sync';
+    try {
+      const descriptor = deps.registry.start({ id: repo.id, root: repo.root }, mode);
+      return { status: 202, body: descriptor };
+    } catch (err) {
+      // A duplicate active job in THIS server's registry → 409 (FR-022). Every
+      // other throw propagates to the router's top-level catch → 500 (FR-015a).
+      if (err instanceof JobConflictError) return apiError('conflict');
+      throw err;
+    }
+  };
+}
+
+/** GET /api/reindex/:repo (T038, FR-024) — latest job state; no job → 404 repo. */
+function reindexGetHandler(deps: JobApiDeps): RouteHandler {
+  return (ctx) => {
+    // An EMPTY path segment is a missing required id, not the default repo (FR-024).
+    if (!ctx.params.repo) return notFound('repo');
+    const repo = deps.resolveRepo(ctx.params.repo);
+    if (!repo) return notFound('repo');
+    const latest = deps.registry.latest(repo.id);
+    // Registered-but-no-job is deliberately indistinguishable from unregistered
+    // (FR-024): both are 404 `resource: repo`, no separate "job" discriminator.
+    if (!latest) return notFound('repo');
+    return { status: 200, body: latest };
+  };
+}
+
+/** GET /api/reindex/:repo/events (T038, FR-023) — the SSE stream (hijacks `res`). */
+function reindexEventsHandler(deps: JobApiDeps): RouteHandler {
+  return (ctx) => {
+    // An EMPTY path segment (`/api/reindex//events`) is a missing required id, not
+    // the default repo — reject before resolveRepo (FR-024).
+    if (!ctx.params.repo) return notFound('repo');
+    const repo = deps.resolveRepo(ctx.params.repo);
+    if (!repo) return notFound('repo');
+    const job = deps.registry.get(repo.id);
+    if (!job) return notFound('repo'); // no job on record → 404 repo (FR-024)
+    if (!ctx.res) return internalError(); // defensive — SSE requires the raw response
+    // Hand the raw response to the SSE writer; it owns the socket from here
+    // (headers + snapshot + progress + terminal + heartbeat). `hijacked` tells
+    // the dispatcher NOT to serialize a JSON body over the same response.
+    try {
+      streamJobToResponse(ctx.res as SseResponse, ctx.req as SseRequest | undefined, job);
+    } catch (err) {
+      safeDiagnostic(ctx.logDiagnostic, diagnosticLine('SSE stream failed', err));
+      // If headers never went out (e.g. `writeHead` ITSELF threw), the response is
+      // still pristine — return the normal JSON 500 envelope. Only once ownership
+      // actually transferred (headers sent) must we end + hijack instead, because a
+      // second writeHead would throw ERR_HTTP_HEADERS_SENT → uncaught rejection (F3).
+      if (!(ctx.res as { headersSent?: boolean }).headersSent) return internalError();
+      try { (ctx.res as SseResponse).end(); } catch { /* already ended / gone */ }
+      return { status: 200, body: undefined, hijacked: true };
+    }
+    return { status: 200, body: undefined, hijacked: true };
+  };
+}
+
+/**
+ * Build the Slice-2 job route table (T038). Registered by `startWebServer`
+ * alongside — but separate from — the read routes, so the read-slice contract
+ * walk's bijection over `buildReadRoutes` is unaffected.
+ */
+export function buildJobRoutes(deps: JobApiDeps): Route[] {
+  return [
+    { method: 'POST', pattern: '/api/reindex/:repo', handler: reindexPostHandler(deps) },
+    { method: 'GET', pattern: '/api/reindex/:repo', handler: reindexGetHandler(deps) },
+    { method: 'GET', pattern: '/api/reindex/:repo/events', handler: reindexEventsHandler(deps) },
   ];
 }

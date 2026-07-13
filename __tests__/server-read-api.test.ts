@@ -444,6 +444,21 @@ describe('SPEC-005 request router (T004, FR-004a/FR-015a/FR-018)', () => {
       expect(r!.status).toBe(500);
       expect((r as HandlerResult).body).toMatchObject({ error: { code: 'internal' } });
     });
+
+    it('F1: a throwing handler logs the cause via ctx.logDiagnostic while the body stays generic', async () => {
+      const logs: string[] = [];
+      const c: RouteContext = { ...ctx('GET', '/api/boom'), logDiagnostic: (m) => logs.push(m) };
+      const r = await handleApiRequest(routes, c);
+      // The client body leaks nothing (FR-015a) …
+      expect(r!.status).toBe(500);
+      expect((r as HandlerResult).body).toMatchObject({ error: { code: 'internal' } });
+      expect(JSON.stringify((r as HandlerResult).body)).not.toContain('/Users/abs/path');
+      // … but the operator diagnostic captured the underlying cause (F1).
+      const joined = logs.join('\n');
+      expect(joined).toContain('/Users/abs/path');
+      expect(joined.toLowerCase()).not.toContain('authorization');
+      expect(joined.toLowerCase()).not.toContain('bearer');
+    });
   });
 });
 
@@ -518,6 +533,95 @@ describe('SPEC-005 daemon client (T005, FR-002/008/015a)', () => {
     expect(Number.isInteger(retryAfter)).toBe(true);
     expect(retryAfter).toBeGreaterThan(0);
   }, T(15000));
+
+  it('F2: a rejected initialize handshake closes the socket (no leak) and still maps to 503', async () => {
+    const root = await buildFixture();
+
+    // A fake "daemon" that accepts the connection and answers the FIRST line (the
+    // initialize request) with a JSON-RPC ERROR — so initialize rejects while the
+    // socket stays OPEN. Only makeReadClient's stop() then closes it, so the
+    // socket being destroyed proves the F2 fix ran (without it the socket leaks).
+    const srv = net.createServer((s) => {
+      s.setEncoding('utf8');
+      let buf = '';
+      s.on('data', (d: string) => {
+        buf += d;
+        const nl = buf.indexOf('\n');
+        if (nl === -1) return;
+        let id: unknown = 0;
+        try { id = JSON.parse(buf.slice(0, nl)).id; } catch { /* ignore */ }
+        s.write(`${JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: 'handshake refused' } })}\n`);
+      });
+      s.on('error', () => { /* ignore */ });
+    });
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', () => resolve()));
+    cleanups.push(() => new Promise<void>((r) => srv.close(() => r())));
+    const port = (srv.address() as net.AddressInfo).port;
+
+    let clientSock: net.Socket | null = null;
+    const connect = (): Promise<net.Socket> =>
+      new Promise((resolve) => {
+        const c = net.createConnection(port, '127.0.0.1', () => resolve(c));
+        clientSock = c;
+        c.on('error', () => { /* ignore */ });
+      });
+
+    const rejection = await attachDaemonClient(root, {
+      connect,
+      spawnDaemon: () => { throw new Error('spawn must not run — a socket was reachable'); },
+    }).then(
+      () => { throw new Error('expected attach to reject on a refused handshake'); },
+      (e) => e as unknown,
+    );
+
+    // The handshake error propagates to the 503 mapping …
+    expect(daemonUnavailable(rejection).status).toBe(503);
+    // … and the socket was CLOSED by makeReadClient's stop() (the F2 fix).
+    await waitFor(() => clientSock?.destroyed === true, 5000, 'client socket closed by stop()');
+  }, T(30000));
+
+  it('t3: an injected version-mismatch daemon → DaemonUnavailableError (503 path), no spawn', async () => {
+    const root = await buildFixture();
+    const rejection = await attachDaemonClient(root, {
+      connect: async () => 'version-mismatch',
+      spawnDaemon: () => { throw new Error('spawn must not run for a version-mismatch'); },
+    }).then(
+      () => { throw new Error('expected attach to reject on version-mismatch'); },
+      (e) => e as unknown,
+    );
+    expect(rejection).toBeInstanceOf(DaemonUnavailableError);
+    expect((rejection as DaemonUnavailableError).message).toMatch(/version mismatch/i);
+    expect(daemonUnavailable(rejection).status).toBe(503);
+  }, T(15000));
+
+  it('t5: a spawn that fails once then succeeds → first read 503, a later read 200 (pool eviction retry)', async () => {
+    const root = await buildFixture();
+    let spawnCalls = 0;
+    const spawnDaemon = (r: string): void => {
+      spawnCalls += 1;
+      if (spawnCalls === 1) throw new Error('transient spawn failure');
+      spawnDaemonViaDistBin(r); // a real detached daemon on the retry
+    };
+    const h = await startWebServer({ port: 0, projectPath: root, spawnDaemon });
+    cleanups.push(() => h.close());
+    const baseURL = `http://${h.host}:${h.port}`;
+
+    // First request: the sole spawn attempt throws → attach fails → the indexed
+    // default repo's status maps to 503 (never a crash), and the failed attach is
+    // evicted from the pool so a later request retries.
+    const first = await fetch(`${baseURL}/api/status`);
+    expect(first.status).toBe(503);
+
+    // A later request re-attaches (spawn #2 is the real daemon) → eventually 200.
+    const deadline = Date.now() + T(30000);
+    let ok = false;
+    while (Date.now() < deadline) {
+      if ((await fetch(`${baseURL}/api/status`)).status === 200) { ok = true; break; }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(ok).toBe(true);
+    expect(spawnCalls).toBeGreaterThanOrEqual(2); // the pool evicted + retried the spawn
+  }, T(45000));
 });
 
 // ---------------------------------------------------------------------------
@@ -572,6 +676,41 @@ describe('SPEC-005 web server lifecycle (T006, FR-002/026)', () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/x`);
     expect(res.status).toBe(404);
   });
+
+  // R4-CLOSE-AWAIT (FR-026): close() must await the REAL server.close() callback,
+  // not merely a grace timer — otherwise it can resolve while the listening socket
+  // is still open (a rebind race). With a live keep-alive connection still open,
+  // close() ends the socket, awaits the real listener close (backstop destroys any
+  // straggler), and only then resolves — so the very same port re-binds.
+  it('R4-CLOSE-AWAIT: close() with a live keep-alive connection frees the port to re-bind', async () => {
+    const first = await startWebServer({ port: 0 });
+    const port = first.port;
+
+    // A real, idle keep-alive connection the client does NOT close — so close()
+    // cannot resolve until it awaits the actual listener close.
+    const sock = net.connect(port, '127.0.0.1');
+    await new Promise<void>((resolve, reject) => {
+      sock.once('error', reject);
+      sock.on('data', () => resolve()); // first response bytes → connection established
+      sock.on('connect', () => {
+        sock.write(
+          'GET /api/x HTTP/1.1\r\n' +
+          `Host: 127.0.0.1:${port}\r\n` +
+          'Connection: keep-alive\r\n\r\n',
+        );
+      });
+    });
+
+    await first.close();                 // must resolve despite the live connection
+    try { sock.destroy(); } catch { /* already gone */ }
+
+    // The listening socket is fully closed → the same port re-binds (no race).
+    const second = await startWebServer({ port });
+    handles.push(second);
+    expect(second.port).toBe(port);
+    const res = await fetch(`http://127.0.0.1:${port}/api/x`);
+    expect(res.status).toBe(404);
+  }, 20000);
 
   it('EADDRINUSE → a clear error naming the port, suggesting --port, and no half-open listener', async () => {
     const h = await start();

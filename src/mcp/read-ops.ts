@@ -23,6 +23,15 @@ import { resolveAutoMode } from '../search/hybrid';
 export class UnknownReadOpError extends Error {}
 
 /**
+ * The closed `codegraph/read` op vocabulary (FR-002/004/008). Shared by the
+ * daemon-side dispatcher and the daemon-client's `read()` so the op set is
+ * declared once instead of as a bare string in three places. Compile-time only —
+ * the session wire dispatch still receives arbitrary JSON-RPC input and the
+ * `default` case below rejects an unknown op at runtime.
+ */
+export type ReadOp = 'status' | 'search' | 'node' | 'callers' | 'callees' | 'impact' | 'neighborhood';
+
+/**
  * Bounded scan ceiling used to compute a search `total` (FR-006). Matches the
  * max page size — a local-index convenience surface bounds the reported total at
  * the same 500 the client can page through, keeping every search a single fast
@@ -53,7 +62,7 @@ export interface ReadRequest {
  */
 export async function executeReadOp(
   cg: CodeGraph,
-  op: string,
+  op: ReadOp,
   params: Record<string, unknown>,
 ): Promise<unknown> {
   switch (op) {
@@ -81,7 +90,7 @@ export async function executeReadOp(
  * (defensive — the web server only attaches to indexed roots, so `cg` is
  * normally non-null; the un-indexed *startup* status is synthesized server-side).
  */
-export function readOnMissingIndex(op: string): unknown {
+export function readOnMissingIndex(op: ReadOp): unknown {
   switch (op) {
     case 'status':
       return {

@@ -23,7 +23,19 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { CodeGraph } from '../../src';
 import { startWebServer, type WebServerHandle } from '../../src/server/index';
+import { repoIdForRoot } from '../../src/server/daemon-client';
 import { getDaemonPidPath } from '../../src/mcp/daemon-paths';
+import type { JobDeps } from '../../src/server/jobs';
+
+/**
+ * The 16-hex repo id for a root — re-exported from the single source of this
+ * hashing (`repoIdForRoot`, src/server/daemon-client.ts) so the fixture never
+ * keeps a byte-for-byte twin whose equality FR-010 relies on. The Slice-2 job
+ * tests address the DEFAULT repo by this id (POST/GET /api/reindex/:repo)
+ * without a running daemon: `resolveRepo` returns the default repo for its own
+ * id directly.
+ */
+export { repoIdForRoot };
 
 /** The built CLI a spawned read-forwarding daemon re-invokes (dist must be built). */
 const CLI_BIN = path.resolve(__dirname, '../../dist/bin/codegraph.js');
@@ -51,6 +63,8 @@ export interface FixtureIndex {
   root: string;
   /** The temp dir (pre-realpath) that was created. */
   dir: string;
+  /** 16-hex repo id of `root` (the default-repo id the job routes address). */
+  repoId: string;
   /** Reap any daemon spawned for this fixture and remove the temp dir. */
   cleanup(): void;
 }
@@ -68,6 +82,8 @@ export interface FixtureOptions {
 export interface ServerFixture {
   /** Canonical project root of the fixture index. */
   root: string;
+  /** 16-hex repo id of `root` — the default-repo id the job routes address. */
+  repoId: string;
   /** The running web-server handle. */
   handle: WebServerHandle;
   /** Base URL, e.g. `http://127.0.0.1:<port>`. */
@@ -88,6 +104,12 @@ export interface ServerFixtureOptions extends FixtureOptions {
    * the server's web root, so static-mount tests can exercise the present path.
    */
   withWebRoot?: boolean;
+  /**
+   * Slice-2 job-subsystem seam (FR-020..FR-023) forwarded to `startWebServer` —
+   * override the index runner, lock probe, watcher re-arm sender, or retry
+   * timing so job tests stay deterministic without a real daemon.
+   */
+  jobDeps?: Partial<JobDeps>;
 }
 
 /** Default seed: one beacon source file so the index has real content. */
@@ -139,7 +161,7 @@ export async function buildFixtureIndex(opts: FixtureOptions = {}): Promise<Fixt
     rmDir(dir);
   };
 
-  return { root, dir, cleanup };
+  return { root, dir, repoId: repoIdForRoot(root), cleanup };
 }
 
 /**
@@ -169,6 +191,7 @@ export async function startServerFixture(opts: ServerFixtureOptions = {}): Promi
     projectPath: fixture.root,
     webRoot,
     spawnDaemon: spawnDaemonViaDistBin,
+    jobDeps: opts.jobDeps,
   });
   const baseURL = `http://${handle.host}:${handle.port}`;
 
@@ -178,5 +201,5 @@ export async function startServerFixture(opts: ServerFixtureOptions = {}): Promi
     if (webRootDir) rmDir(webRootDir);
   };
 
-  return { root: fixture.root, handle, baseURL, webRoot, teardown };
+  return { root: fixture.root, repoId: fixture.repoId, handle, baseURL, webRoot, teardown };
 }

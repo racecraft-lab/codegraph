@@ -69,7 +69,7 @@ reviewable-LOC ceiling:
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains, 88 items, 20 gaps all closed; 7 consensus items (2 human security gates); G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 47 tasks / 8 phases / 12 [P]; clean slice partition; G5 pass; 2-PR marker plan persisted (operator override of advisory one-PR route) |
 | Analyze | `/speckit-analyze` | ✅ Complete | 8 findings (0C/0H/3M/5L) all remediated; terminal pass 0 findings; G6 pass; consensus skipped (0 unresolved) |
-| Implement | `/speckit-implement` | ⏳ Pending | |
+| Implement | `/speckit-implement` | ✅ Complete | 47/47 tasks, strict TDD (RED verified per group); ~250 new tests; G7 pass — full suite 3152 green / 7 skipped, build + shipped openapi.yaml, zero new deps, dogfood UAT 7/7; retrieval-guardian PASS 7/7; 2 marker checkpoints (slice-1 17cef94, slice-2 54ab0c2); 1 human-ratified amendment (codegraph/read), 2 orchestrator-ratified deviations (daemon main-thread reads; size overrun both slices — size-only) |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -711,23 +711,35 @@ Before starting any task:
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
 | 1 - Foundation | T001-T010 | ✅ 38d8410 | 66 new tests; full suite 2978 green; CLI diff 18/1; zero new deps verified (T010) |
-| 2 - Slice 1: Read API | T011-T028 | 🔄 US1 done (T011-T020) | codegraph/read daemon RPC (human-ratified amendment); 6 endpoints + static/traversal; 128 tests green across 6 suites. Accepted deviation (orchestrator-ratified): reads on daemon main thread, not query pool — pool is ToolResult-text-only; capped point queries; codegraph_status precedent; flag for PR review |
-| 3 - Slice 2: Jobs/SSE | T033-T045 | ⏳ | |
-| 4 - Polish | T046-T047 | ⏳ | |
+| 2 - Slice 1: Read API | T011-T032 | ✅ 17cef94 | US1 90ef852 / US4 1167d60 / US2 7dd4360 / close-out 17cef94; codegraph/read daemon RPC (human-ratified amendment); full suite 3117 green; quickstart S1-7 PASS; slice1-pr-packet.md; marker checkpoint 2276910. Accepted deviation (orchestrator-ratified): reads on daemon main thread, not query pool — pool is ToolResult-text-only; capped point queries; flagged in PR packet. Size overrun ~2080 ins vs ~400 est — size-only finding |
+| 3 - Slice 2: Jobs/SSE | T033-T045 | ✅ 0f92e03 | US3 b532bdb (27 tests, RED 24-fail verified: JobRegistry/driver/lock-contention/SSE writer+backpressure/rearmWatcher/shutdown-abort); close-out 0f92e03 (openapi jobs contract 43/43, CHANGELOG, quickstart S8-11 — S8/S9/S10 live, watcher-restore + abort-reason unit-grounded honestly, slice2-pr-packet.md). T042 retrieval-guardian: OVERALL PASS 7/7 checks, zero blocking. Regression trio 160 green |
+| 4 - Polish | T046-T047 | ✅ 54ab0c2 | docs/web-server.md + 2-line README pointer (minimal upstream diff); T047 self-repo dogfood UAT 7/7 PASS (built binary on this repo's index: status/repos/search/node/graph + live sync job over SSE + clean SIGTERM). **G7 PASS (direct evidence):** full env-stripped suite 176 files / 3152 passed / 7 skipped exit 0; build green, dist/server/openapi.yaml shipped; zero new deps (package.json dependencies diff empty vs main); 47/47 tasks ticked; 0 markers. Slice-2 marker checkpoint head_sha 54ab0c2 recorded in autopilot-state.json |
+
+---
+
+### Self-Review (auto-generated)
+
+**Tests executed:** BUILD ran at G7 (2026-07-11, `npm run build` exit 0, `dist/server/openapi.yaml` shipped) and again for the F4 dist byte-identity rebuild. TYPECHECK (`npx tsc --noEmit`) ran after every implementation group; latest post-remediation run exit 0 (2026-07-11 19:58 local). LINT: the repo defines no lint script (`package.json` scripts: build/typecheck/test/…) — typecheck is the static gate; noted, not inferred. UNIT+INTEGRATION: full env-stripped `npm test` ran twice this session — G7 (176 files, 3152 passed / 7 skipped, exit 0) and Post: Integration Suite after remediation (2026-07-11 19:59 local, 176 files, **3167 passed / 7 skipped, exit 0**). Nothing inferred from "no errors reported."
+
+**Edge cases:** all acceptance criteria carry non-happy-path tests across the 5 server suites (255 tests): missing/empty `q` and invalid `mode` → 400; unknown/malformed node id, unregistered/malformed repo, registered-no-job, route-miss → 404 with the right `details.resource`; duplicate POST → 409; missing/invalid Bearer → generic 401 (byte-identical bodies); non-loopback-no-token → startup refused; bad Host → 400; daemon unreachable/version-mismatch/never-bound → 503 + Retry-After; traversal probes (encoded separators, double-encoding, NUL) → 404 no file read; lock contention → terminal `lock_unavailable` (sync sentinel + full-mode sentinel + foreign-lock probe branches); shutdown abort → terminal `aborted`; SSE disconnect-doesn't-cancel, mid-job reconnect re-snapshot, backpressure coalescing, throwing-subscriber isolation, post-writeHead fault containment. Two spec edge conditions are unit-grounded rather than end-to-end (watcher-restore true→false; live mid-index abort) — recorded honestly in slice2-quickstart-evidence.md, `[edge-case-gap]` not warranted (the behavior is pinned at unit level by design).
+
+**Requirements matched:** independent post-implementation verification (Post: Verify Implementation) traced **34/34 FRs and 8/8 SCs** to implementation + tests; the fresh-session phantom check returned **47/47 tasks VERIFIED, zero phantom/partial**. One benign task-text drift (T039 names `daemon.ts`; the dispatch case landed in `session.ts`, the daemon's session dispatcher) — documented, not an orphan. No FR without a task, no task without evidence.
+
+**Follow-up & tidiness:** zero `TODO`/`[DEFERRED]`/`[OUT-OF-SCOPE]` markers in spec.md/plan.md/tasks.md (grep-verified). Explicit deferrals, each with a landing place: SPEC-006 (web UI) and SPEC-009 (LSP-over-WebSocket) → named in both PR packets + roadmap; review-panel deferred refactors (JobDescriptor discriminated union, BindSecurity union, rearmWatcher helper consolidation) → recorded in slice2-pr-packet.md §Review-panel remediation for the PR body's follow-up section. No silent deferrals. Diff scanned: no debug logging, no `console.log` in new src (the diagnostics seam is deliberate and injectable, CLI-only stderr), no commented-out code, no temp fixtures, no orphaned files — no `[tidiness]` flags.
 
 ---
 
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in tasks.md
-- [ ] Build succeeds: `npm run build` (openapi.yaml lands in dist/ via copy-assets)
-- [ ] Tests pass: `npm test` (including the openapi contract test)
-- [ ] Zero-dep check: `package.json` dependencies unchanged
-- [ ] Dormancy check: `serve --mcp` behavior unchanged; no HTTP port without `--web`
-- [ ] Self-repo UAT (Dogfooding Protocol): `node dist/bin/codegraph.js serve --web`
+- [x] All tasks marked complete in tasks.md
+- [x] Build succeeds: `npm run build` (openapi.yaml lands in dist/ via copy-assets)
+- [x] Tests pass: `npm test` (including the openapi contract test)
+- [x] Zero-dep check: `package.json` dependencies unchanged
+- [x] Dormancy check: `serve --mcp` behavior unchanged; no HTTP port without `--web`
+- [x] Self-repo UAT (Dogfooding Protocol): `node dist/bin/codegraph.js serve --web`
       against this repo's own index; verify `/api/status`, a search, a node
       detail, a graph neighborhood, and a sync job with SSE progress
-- [ ] CHANGELOG entry under `[Unreleased]`
+- [x] CHANGELOG entry under `[Unreleased]`
 - [ ] PRs created (2, per recorded split) and reviewed — no session URLs in PR
       bodies or commits; PRs target origin (racecraft-lab), never upstream
 - [ ] Merged to main; then `npm run build` + `codegraph sync` (protocol step 1)

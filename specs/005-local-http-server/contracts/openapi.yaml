@@ -179,7 +179,8 @@ components:
         finishedAt: { type: string, format: date-time }
         reason:
           type: string
-          description: 'On error: aborted | lock_unavailable | an extraction failure (open-but-documented, FR-021a/Key Entities).'
+          enum: [aborted, lock_unavailable, index_failed]
+          description: 'On error: the whitelisted terminal reason — aborted | lock_unavailable | index_failed (a contained extraction failure, FR-021/021a/023/Key Entities).'
         result:
           description: Present on terminal done (and a partial full). Discriminated on `mode` (FR-023/024).
           oneOf:
@@ -343,7 +344,9 @@ paths:
         '409':
           description: A job is already active for this repo (FR-022). Not used for lock contention.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
-        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach failure (FR-015a)
+        # No '503': a re-index job runs IN the serve process (FR-021), so there is no daemon
+        # attach to fail; lock contention is a terminal job error (lock_unavailable), never a
+        # 503 (FR-021a). Matches the shipped src/server/openapi.yaml, which omits it.
     get:
       tags: [jobs]
       summary: Latest job state for the repo (terminal outcome readable after finish, FR-024).

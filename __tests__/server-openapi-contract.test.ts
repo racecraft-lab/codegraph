@@ -1,8 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { startWebServer, type WebServerHandle } from '../src/server/index';
-import { buildReadRoutes, type ReadApiDeps } from '../src/server/routes';
+import {
+  buildReadRoutes,
+  buildJobRoutes,
+  type ReadApiDeps,
+  type JobApiDeps,
+} from '../src/server/routes';
+import { JobRegistry, type JobDeps, type JobDescriptor } from '../src/server/jobs';
+import type { SyncResult, IndexResult } from '../src/extraction';
 import {
   buildFixtureIndex,
   startServerFixture,
@@ -39,6 +46,11 @@ const READ_PATHS = [
   '/api/graph/{id}',
 ];
 
+// The two jobs-tagged (Slice 2, T041) path templates this artifact must document.
+// `/api/reindex/{repo}` carries both POST (start) and GET (latest state); the
+// `/events` template is the GET SSE stream.
+const JOB_PATHS = ['/api/reindex/{repo}', '/api/reindex/{repo}/events'];
+
 /**
  * Zero-dep structural read of the `paths:` block's child keys (the path
  * templates indented exactly two spaces under it). Throws on tab indentation
@@ -71,23 +83,36 @@ describe('openapi ship check', () => {
     expect(fs.readFileSync(DIST_SPEC).equals(fs.readFileSync(SRC_SPEC))).toBe(true);
   });
 
-  it('is well-formed YAML documenting exactly the 8 read-tagged paths', () => {
+  it('is well-formed YAML documenting exactly the 8 read + 2 jobs paths', () => {
     expect(fs.existsSync(DIST_SPEC)).toBe(true);
     const yaml = fs.readFileSync(DIST_SPEC, 'utf8');
     expect(yaml).toMatch(/^openapi:\s*3\.1\.0\s*$/m);
     expect(yaml).toMatch(/^components:\s*$/m);
     const keys = pathKeys(yaml);
     for (const p of READ_PATHS) expect(keys).toContain(p);
-    expect(keys).toHaveLength(READ_PATHS.length);
+    for (const p of JOB_PATHS) expect(keys).toContain(p);
+    expect(keys).toHaveLength(READ_PATHS.length + JOB_PATHS.length);
   });
 
-  it('omits the Slice-2 /api/reindex jobs paths', () => {
+  it('constrains Job.reason to the whitelisted enum (R4-REASON-ENUM)', () => {
     expect(fs.existsSync(DIST_SPEC)).toBe(true);
-    // Assert on parsed path keys (not raw substrings): the header comment
-    // deliberately names the excluded jobs surface, so a naive text match
-    // would false-positive on the documentation of the omission itself.
+    // The terminal `reason` must be a CLOSED enum of exactly the three documented,
+    // whitelisted reasons — never an unconstrained string (FR-015a/021/021a/023).
+    const yaml = fs.readFileSync(DIST_SPEC, 'utf8');
+    const m = yaml.match(/reason:\s*\n\s*type: string\s*\n\s*enum:\s*\[([^\]]*)\]/);
+    expect(m, 'Job.reason enum not found in the shipped contract').toBeTruthy();
+    const values = m![1].split(',').map((s) => s.trim()).sort();
+    expect(values).toEqual(['aborted', 'index_failed', 'lock_unavailable']);
+  });
+
+  it('documents the Slice-2 /api/reindex jobs paths (T041)', () => {
+    expect(fs.existsSync(DIST_SPEC)).toBe(true);
+    // Assert on parsed path keys (not raw substrings) — the same no-parser
+    // discipline as the read paths. Both jobs templates must be present, and
+    // exactly those two carry `reindex`.
     const keys = pathKeys(fs.readFileSync(DIST_SPEC, 'utf8'));
-    expect(keys.some((k) => k.includes('reindex'))).toBe(false);
+    for (const p of JOB_PATHS) expect(keys).toContain(p);
+    expect(keys.filter((k) => k.includes('reindex'))).toHaveLength(JOB_PATHS.length);
   });
 });
 
@@ -191,6 +216,32 @@ const ERROR_CODE_ENUM = new Set(parseErrorCodeEnum(CONTRACT_YAML));
 const TUPLES: Array<[string, string, number]> = [];
 for (const [p, methods] of DOCUMENTED)
   for (const [m, statuses] of methods) for (const s of statuses) TUPLES.push([p, m, s]);
+
+// Partition the documented tuples by slice: the read walk (GET-only, JSON body
+// walk against the happy/unavailable fixtures) and the jobs walk (POST/GET +
+// SSE, exercised against a controllable-job fixture). Both are derived from the
+// SAME committed document, so a tuple can never fall through a gap between them.
+const READ_PATH_SET = new Set(READ_PATHS);
+const JOB_PATH_SET = new Set(JOB_PATHS);
+const READ_TUPLES = TUPLES.filter(([p]) => READ_PATH_SET.has(p));
+const JOB_TUPLES = TUPLES.filter(([p]) => JOB_PATH_SET.has(p));
+
+/**
+ * The jobs contract as the implementation actually behaves (T041). Hardcoded so
+ * this fails LOUDLY while the document still omits the jobs surface (RED), and
+ * pins the adaptation from the design source: the jobs POST/GET run wholly in
+ * the serve process against the in-memory registry (no daemon forwarding at
+ * request time), so — unlike every read path — they carry NO 503 `unavailable`.
+ */
+const EXPECTED_JOB_TUPLES = [
+  '/api/reindex/{repo} GET 200',
+  '/api/reindex/{repo} GET 404',
+  '/api/reindex/{repo} POST 202',
+  '/api/reindex/{repo} POST 404',
+  '/api/reindex/{repo} POST 409',
+  '/api/reindex/{repo}/events GET 200',
+  '/api/reindex/{repo}/events GET 404',
+].sort();
 
 /** One fetched response, reduced to what the contract assertions need. */
 interface Fetched {
@@ -426,8 +477,8 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
     if (unavailIndex) unavailIndex.cleanup();
   });
 
-  // ---- forward walk: every documented tuple → correct live status + shape ----
-  it.each(TUPLES)(
+  // ---- forward walk: every documented READ tuple → correct live status + shape ----
+  it.each(READ_TUPLES)(
     'conforms: GET %s → documented %s (live status + response schema)',
     async (pathKey, method, status) => {
       expect(method).toBe('GET'); // the read slice is GET-only
@@ -445,21 +496,22 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
   // ---- completeness: the crafted matrix EQUALS the documented tuple set ----
   // Removing a documented status (or adding an undocumented probe) fails here,
   // so the forward walk can never silently skip a documented behavior.
-  it('crafts exactly the documented tuples — no gap, no undocumented probe', () => {
-    const documentedKeys = TUPLES.map(([p, , s]) => `${p} ${s}`).sort();
+  it('crafts exactly the documented READ tuples — no gap, no undocumented probe', () => {
+    const documentedKeys = READ_TUPLES.map(([p, , s]) => `${p} ${s}`).sort();
     const matrixKeys = [...matrix.keys()].sort();
     expect(matrixKeys).toEqual(documentedKeys);
   });
 
   it('documents every read path as GET-only', () => {
     for (const [p, methods] of DOCUMENTED) {
+      if (!READ_PATH_SET.has(p)) continue; // jobs paths carry POST — asserted below
       expect([...methods.keys()], `methods for ${p}`).toEqual(['GET']);
     }
   });
 
-  // ---- inverse walk: every LIVE /api route is documented (no undocumented routes) ----
-  it('every live /api route is documented, and every documented path is a live route', () => {
-    const stubDeps: ReadApiDeps = {
+  // ---- inverse walk: every LIVE /api route is documented, read + jobs (no undocumented routes) ----
+  it('every live /api route (read + jobs) is documented, and every documented (path,method) is live', () => {
+    const readStub: ReadApiDeps = {
       version: '0.0.0',
       defaultRepo: { id: '0'.repeat(16), root: '/does/not/exist', name: 'x' },
       resolveRepo: () => null,
@@ -467,27 +519,27 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
       evictClient: () => {}, // never invoked by route enumeration
       isRepoIndexed: () => false,
     };
-    const live = buildReadRoutes(stubDeps).map((r) => ({
-      method: r.method,
+    const jobStub: JobApiDeps = { resolveRepo: () => null, isRepoIndexed: () => false, registry: new JobRegistry() };
+    const live = [...buildReadRoutes(readStub), ...buildJobRoutes(jobStub)].map((r) => ({
       // `/api/node/:id` → `/api/node/{id}` (the OpenAPI path-template form).
-      docPath: r.pattern.replace(/:([A-Za-z0-9_]+)/g, '{$1}'),
+      key: `${r.method} ${r.pattern.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`,
     }));
-    const documentedPaths = new Set(DOCUMENTED.keys());
+    const liveKeys = new Set(live.map((r) => r.key));
 
-    // (a) no undocumented live route — and its method is documented for that path.
-    for (const r of live) {
-      expect(documentedPaths.has(r.docPath), `live route ${r.method} ${r.docPath} is undocumented`).toBe(
-        true,
-      );
-      expect([...DOCUMENTED.get(r.docPath)!.keys()]).toContain(r.method);
+    // Every documented (path, method) pair, flattened.
+    const documentedKeys = new Set<string>();
+    for (const [p, methods] of DOCUMENTED) for (const m of methods.keys()) documentedKeys.add(`${m} ${p}`);
+
+    // (a) no undocumented live route.
+    for (const k of liveKeys) {
+      expect(documentedKeys.has(k), `live route ${k} is undocumented`).toBe(true);
     }
-    // (b) no documented-but-unimplemented path.
-    const livePaths = new Set(live.map((r) => r.docPath));
-    for (const dp of documentedPaths) {
-      expect(livePaths.has(dp), `documented ${dp} has no live route`).toBe(true);
+    // (b) no documented-but-unimplemented (path, method).
+    for (const k of documentedKeys) {
+      expect(liveKeys.has(k), `documented ${k} has no live route`).toBe(true);
     }
-    // Bijection: the live route table and the documented path set are the same size.
-    expect(live.length).toBe(documentedPaths.size);
+    // Full (path, method) bijection across read + jobs.
+    expect([...liveKeys].sort()).toEqual([...documentedKeys].sort());
   });
 
   // ---- FR-004a: percent-encoded slash in a file: id round-trips ----
@@ -511,4 +563,173 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
     // A leaked /etc/passwd would contain a `root:` line; the envelope never does.
     expect(JSON.stringify(f.body)).not.toContain('root:');
   }, CT(20000));
+});
+
+// ===========================================================================
+// T041 — jobs (Slice 2) contract walk against a LIVE fixture server.
+//
+// The read walk above proves the running server conforms to the read-tagged
+// paths; this proves it conforms to the jobs-tagged surface the document now
+// documents (POST/GET /api/reindex/{repo}, GET /api/reindex/{repo}/events).
+// Unlike the read paths, the jobs handlers run wholly in the serve process
+// against the in-memory job registry — no daemon forwarding at request time —
+// so there is NO 503 to walk. A controllable `runIndex` seam keeps the job in
+// `running` so 202 / 409 / SSE-200 are all observable deterministically.
+// ===========================================================================
+
+/** A `runIndex` that stays running until released (or the abort signal fires). */
+function controllableJobDeps(): { deps: Partial<JobDeps>; release: () => void } {
+  let releaseFn: (v: SyncResult | IndexResult) => void = () => undefined;
+  const released = new Promise<SyncResult | IndexResult>((res) => { releaseFn = res; });
+  const deps: Partial<JobDeps> = {
+    runIndex: (_root, _mode, _onProgress, signal) =>
+      Promise.race([
+        released,
+        new Promise<SyncResult | IndexResult>((_res, rej) =>
+          signal.addEventListener('abort', () => rej(new Error('aborted')), { once: true }),
+        ),
+      ]),
+    isLockHeld: () => false,
+    rearmWatcher: () => undefined,
+  };
+  const syncResult: SyncResult = {
+    filesChecked: 1, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 5,
+  };
+  return { deps, release: () => releaseFn(syncResult) };
+}
+
+/** Validate a documented job descriptor (Job schema REQUIRED fields). */
+function assertJob(b: any): void {
+  expect(typeof b).toBe('object');
+  expect(b).not.toBeNull();
+  expect(typeof b.id).toBe('string');
+  expect(b.id.length).toBeGreaterThan(0);
+  expect(typeof b.repo).toBe('string');
+  expect(['sync', 'full']).toContain(b.mode);
+  expect(['running', 'done', 'error']).toContain(b.status);
+  expect(typeof b.startedAt).toBe('string');
+  expect(Number.isNaN(Date.parse(b.startedAt))).toBe(false);
+}
+
+const UNREGISTERED_REPO = 'ffffffffffffffff'; // well-formed 16-hex, not in the registry
+
+describe('SPEC-005 OpenAPI jobs contract walk (T041, FR-020/022/023/024)', () => {
+  const jobFixtures: ServerFixture[] = [];
+  async function jobServer(): Promise<{ fx: ServerFixture; release: () => void }> {
+    const ctl = controllableJobDeps();
+    const fx = await startServerFixture({ jobDeps: ctl.deps });
+    jobFixtures.push(fx);
+    return { fx, release: ctl.release };
+  }
+  afterEach(async () => {
+    while (jobFixtures.length) {
+      const fx = jobFixtures.pop()!;
+      try {
+        await fx.teardown();
+      } catch {
+        /* already gone */
+      }
+    }
+  });
+
+  // ---- completeness: the documented jobs tuples EQUAL the adapted design set ----
+  // Fails LOUDLY while the document still omits the jobs surface (RED), and pins
+  // the no-503 adaptation from the design source.
+  it('documents exactly the adapted jobs tuples (no 503 on the in-process jobs surface)', () => {
+    const documentedJobKeys = JOB_TUPLES.map(([p, m, s]) => `${p} ${m} ${s}`).sort();
+    expect(documentedJobKeys).toEqual(EXPECTED_JOB_TUPLES);
+  });
+
+  it('POST /api/reindex/{repo} → 202 running descriptor (default mode sync)', async () => {
+    const { fx, release } = await jobServer();
+    const res = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    expect(res.status).toBe(202);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    const body = (await res.json()) as JobDescriptor;
+    assertJob(body);
+    expect(body.repo).toBe(fx.repoId);
+    expect(body.mode).toBe('sync');
+    expect(body.status).toBe('running');
+    release();
+  }, CT(30000));
+
+  it('POST /api/reindex/{repo} → 409 conflict while a job is active', async () => {
+    const { fx, release } = await jobServer();
+    const first = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    expect(first.status).toBe(202);
+    const second = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    expect(second.status).toBe(409);
+    expect(second.headers.get('content-type')).toContain('application/json');
+    const f: Fetched = {
+      status: second.status,
+      body: await second.json(),
+      ct: second.headers.get('content-type'),
+      retryAfter: second.headers.get('retry-after'),
+    };
+    assertErrorEnvelope(409, f);
+    release();
+  }, CT(30000));
+
+  it('POST /api/reindex/{repo} → 404 not_found (resource:repo) for an unregistered repo', async () => {
+    const { fx } = await jobServer();
+    const res = await fetch(`${fx.baseURL}/api/reindex/${UNREGISTERED_REPO}`, { method: 'POST' });
+    expect(res.status).toBe(404);
+    const f: Fetched = {
+      status: res.status,
+      body: await res.json(),
+      ct: res.headers.get('content-type'),
+      retryAfter: res.headers.get('retry-after'),
+    };
+    assertErrorEnvelope(404, f);
+    expect(f.body.error.details?.resource).toBe('repo');
+  }, CT(30000));
+
+  it('GET /api/reindex/{repo} → 200 latest job state', async () => {
+    const { fx, release } = await jobServer();
+    await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    const res = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    assertJob(await res.json());
+    release();
+  }, CT(30000));
+
+  it('GET /api/reindex/{repo} → 404 for a registered repo with no job, and for an unregistered repo', async () => {
+    const { fx } = await jobServer();
+    // Registered repo, no job on record yet → 404 resource:repo (deliberately
+    // indistinguishable from unregistered, FR-024).
+    const noJob = await httpGet(fx.baseURL, `/api/reindex/${fx.repoId}`);
+    expect(noJob.status).toBe(404);
+    assertErrorEnvelope(404, noJob);
+    expect(noJob.body.error.details?.resource).toBe('repo');
+    // Unregistered repo → the same 404 resource:repo.
+    const unknown = await httpGet(fx.baseURL, `/api/reindex/${UNREGISTERED_REPO}`);
+    expect(unknown.status).toBe(404);
+    assertErrorEnvelope(404, unknown);
+    expect(unknown.body.error.details?.resource).toBe('repo');
+  }, CT(30000));
+
+  it('GET /api/reindex/{repo}/events → 200 with the documented SSE headers', async () => {
+    const { fx, release } = await jobServer();
+    await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    // Read only the headers, then abort the long-lived stream.
+    const ac = new AbortController();
+    const res = await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}/events`, { signal: ac.signal });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    expect(res.headers.get('cache-control')).toContain('no-cache');
+    expect(String(res.headers.get('connection')).toLowerCase()).toContain('keep-alive');
+    expect(res.headers.get('x-accel-buffering')).toBe('no');
+    ac.abort();
+    release();
+  }, CT(30000));
+
+  it('GET /api/reindex/{repo}/events → 404 (resource:repo) for an unregistered repo', async () => {
+    const { fx } = await jobServer();
+    const f = await httpGet(fx.baseURL, `/api/reindex/${UNREGISTERED_REPO}/events`);
+    expect(f.status).toBe(404);
+    expect(f.ct).toContain('application/json');
+    assertErrorEnvelope(404, f);
+    expect(f.body.error.details?.resource).toBe('repo');
+  }, CT(30000));
 });

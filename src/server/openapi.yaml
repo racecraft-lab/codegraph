@@ -1,9 +1,10 @@
-# SPEC-005 Local HTTP Server & REST API — shipped read-slice OpenAPI contract (FR-025).
-# This is the Slice-1 (read) subset of the design source
-# specs/005-local-http-server/contracts/openapi.yaml: only the read-tagged paths
-# and the components they use. The /api/reindex jobs surface (Slice 2, tag "jobs")
-# and its jobs-only schemas (Job/SyncModeResult/FullModeResult) + the RepoId path
-# param are intentionally omitted here and land with Slice 2 (task T041).
+# SPEC-005 Local HTTP Server & REST API — shipped OpenAPI contract (FR-025).
+# Copied/adapted from the design source specs/005-local-http-server/contracts/openapi.yaml.
+# Slice 1 shipped the read-tagged paths; Slice 2 (task T041) adds the /api/reindex
+# jobs surface (tag "jobs") + its jobs-only schemas (Job/SyncModeResult/
+# FullModeResult) and the RepoId path param. The jobs POST/GET run wholly in the
+# serve process against the in-memory job registry (no daemon forwarding at
+# request time), so — unlike the read paths — they carry NO 503 `unavailable`.
 # copy-assets copies this into dist/server/ so it ships (Constitution VII); the
 # contract test walks it against a running fixture server (fails on any
 # undocumented route or mismatched shape).
@@ -22,6 +23,7 @@ servers:
 
 tags:
   - name: read     # Slice 1
+  - name: jobs     # Slice 2
 
 # Bearer auth applies ONLY when a token is configured for a non-loopback bind
 # (FR-014); the loopback-default bind enforces no auth and serves /api/* with no
@@ -38,6 +40,15 @@ components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
   parameters:
+    RepoId:
+      name: repo
+      in: path
+      required: true
+      description: >
+        16-hex repo id (SHA-256 prefix of the realpath'd root, FR-010). A
+        malformed id (fails the pattern) => 404 not_found (details.resource:
+        repo), never 400 (FR-011).
+      schema: { type: string, pattern: '^[0-9a-f]{16}$' }
     NodeId:
       name: id
       in: path
@@ -163,6 +174,47 @@ components:
         nodes: { type: array, items: { $ref: '#/components/schemas/Node' } }
         edges: { type: array, items: { $ref: '#/components/schemas/Edge' } }
         truncated: { type: boolean, description: 'True when the node cap was hit — 2000 nodes for /api/graph (FR-007); /api/impact shares this subgraph shape and flags truncation of its own capped traversal (FR-004).' }
+    Job:
+      type: object
+      required: [id, repo, mode, status, startedAt]
+      properties:
+        id: { type: string, description: crypto.randomUUID(). }
+        repo: { type: string }
+        mode: { type: string, enum: [sync, full] }
+        status: { type: string, enum: [running, done, error] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        reason:
+          type: string
+          enum: [aborted, lock_unavailable, index_failed]
+          description: 'On error: the whitelisted terminal reason — aborted | lock_unavailable | index_failed (a contained extraction failure, never raw text — FR-015a/021/021a/023).'
+        result:
+          description: Present on terminal done (and a partial full). Discriminated on `mode` (FR-023/024).
+          oneOf:
+            - $ref: '#/components/schemas/SyncModeResult'
+            - $ref: '#/components/schemas/FullModeResult'
+    SyncModeResult:   # mode: "sync" (FR-023/024, D3 — changedFilePaths dropped per FR-015a)
+      type: object
+      required: [filesChecked, filesAdded, filesModified, filesRemoved, nodesUpdated, durationMs]
+      properties:
+        filesChecked: { type: integer }
+        filesAdded: { type: integer }
+        filesModified: { type: integer }
+        filesRemoved: { type: integer }
+        nodesUpdated: { type: integer }
+        durationMs: { type: integer }
+    FullModeResult:   # mode: "full" (FR-023/024, D3 — raw errors[] dropped per FR-015a)
+      type: object
+      required: [success, filesIndexed, filesSkipped, filesErrored, nodesCreated, edgesCreated, durationMs]
+      properties:
+        success: { type: boolean }
+        filesIndexed: { type: integer }
+        filesSkipped: { type: integer }
+        filesErrored: { type: integer }
+        filesDiscovered: { type: integer, description: 'Ground-truth scan count; shortfall ⇒ partial index.' }
+        nodesCreated: { type: integer }
+        edgesCreated: { type: integer }
+        durationMs: { type: integer }
   responses:
     NotFound:
       description: Unknown node/repo/route (FR-011/015a); details.resource discriminates.
@@ -277,3 +329,72 @@ paths:
         '400': { description: Malformed/negative depth (FR-015a; over-max clamps, not errors), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
         '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
         '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
+
+  # ---------- Slice 2: re-index jobs (T041) ----------
+  # These handlers run wholly in the serve process against the in-memory job
+  # registry (no daemon forwarding at request time), so — unlike every read path
+  # above — they carry NO 503 `unavailable`.
+  /api/reindex/{repo}:
+    post:
+      tags: [jobs]
+      summary: Start a re-index job — sync default, ?full=true rebuild (FR-020). Registry repos only; never inits.
+      # No requestBody: parameters are URL-only (:repo + ?full, FR-020). The server does not read/require a
+      # request body, so a malformed/oversized body cannot parse-error or stall the handler (spec Edge Cases).
+      parameters:
+        - { $ref: '#/components/parameters/RepoId' }
+        - name: full
+          in: query
+          description: >-
+            Only the literal `?full=true` escalates to a full rebuild; any other
+            value (or omitted) is an incremental sync (FR-020). Coerced, not
+            strictly validated — no 400, unlike the search `mode` enum (FR-006a).
+          schema: { type: boolean, default: false }
+      responses:
+        '202':
+          description: Job started; descriptor for correlating to the SSE stream (FR-023).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # repo not in registry (FR-011/020)
+        '409':
+          description: A job is already active for this repo (FR-022). Not used for lock contention.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    get:
+      tags: [jobs]
+      summary: Latest job state for the repo (terminal outcome readable after finish, FR-024).
+      parameters: [ { $ref: '#/components/parameters/RepoId' } ]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # registered-repo-with-no-job OR unknown/malformed repo => not_found (details.resource: repo), deliberately indistinguishable (FR-024/011)
+  /api/reindex/{repo}/events:
+    get:
+      tags: [jobs]
+      summary: Per-repo SSE progress stream — snapshot, then progress, then one terminal event (FR-023).
+      parameters: [ { $ref: '#/components/parameters/RepoId' } ]
+      responses:
+        '200':
+          description: >
+            text/event-stream. Named events: `snapshot` (every connect),
+            `progress` ({ phase, current, total, currentFile? }), terminal
+            `done`/`error`. A `:`-prefixed comment heartbeat (~15s, ignored by
+            EventSource) keeps quiet jobs alive; under a slow consumer `progress`
+            frames coalesce to the latest (bounded memory) while `snapshot` and
+            the terminal event are always delivered. A client connecting to an
+            already-finished job receives one `snapshot` event carrying the
+            terminal status, then the stream closes — no separate `done`/`error`
+            event follows (the terminal state is collapsed into the snapshot).
+            Multiple concurrent subscribers each snapshot independently, and one
+            slow/disconnected subscriber never stalls the job or the others. No
+            Last-Event-ID replay. Disconnect never cancels the job.
+          headers:
+            Cache-Control:
+              description: No caching of the live stream.
+              schema: { type: string, enum: ['no-cache'] }
+            Connection:
+              description: HTTP/1.1 keep-alive for the long-lived stream.
+              schema: { type: string, enum: ['keep-alive'] }
+            X-Accel-Buffering:
+              description: Disables reverse-proxy (e.g. nginx) response buffering so events are not batched or withheld.
+              schema: { type: string, enum: ['no'] }
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }         # registered-repo-with-no-job OR unknown/malformed repo => not_found (details.resource: repo), deliberately indistinguishable (FR-024/011)
