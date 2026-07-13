@@ -118,7 +118,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-015 | Dataflow Substrate | ⏳ Pending | [SPEC-015-workflow.md](SPEC-015-workflow.md) | Blocked by SPEC-014 |
 | SPEC-016 | Program Dependence Graphs | ⏳ Pending | [SPEC-016-workflow.md](SPEC-016-workflow.md) | Blocked by SPEC-015 |
 | SPEC-017 | Taint Analysis Engine | ⏳ Pending | [SPEC-017-workflow.md](SPEC-017-workflow.md) | Blocked by SPEC-016 |
-| SPEC-018 | LLM Access Layer | ⏳ Pending | [SPEC-018-workflow.md](SPEC-018-workflow.md) | Specify (parallel-safe) |
+| SPEC-018 | LLM Access Layer | 🔄 In Progress | [SPEC-018-workflow.md](.process/SPEC-018-workflow.md) | Scaffolded 2026-07-13 (worktree `018-llm-access-layer`); 2-slice split per design concept |
 | SPEC-019 | Auto-Updating Code Wiki | ⏳ Pending | [SPEC-019-workflow.md](SPEC-019-workflow.md) | Blocked by SPEC-011, SPEC-018 |
 | SPEC-020 | PR Blast-Radius Review Action | ⏳ Pending | [SPEC-020-workflow.md](SPEC-020-workflow.md) | Blocked by SPEC-012 |
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
