@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain — grep-confirmed zero in spec.md (post-Clarify; the one intentional FR-004 marker was resolved in Clarify Session 1; box ticked 2026-07-12 per verify finding G1)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)

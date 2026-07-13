@@ -95,8 +95,9 @@ import {
   LspWatchRestartBudget,
   LspWatchPrecisionPassOptions,
 } from './lsp';
+import { applyRename as deriveApplyRename } from './refactor/apply-engine';
 import { planRename as derivePlanRename } from './refactor/plan-engine';
-import type { RenamePlan, TargetSelector } from './refactor/types';
+import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
 
 // Re-export types for consumers
 export * from './types';
@@ -106,6 +107,11 @@ export * from './types';
 // into dist/ (issue #354).
 export { getDatabasePath, DatabaseConnection } from './db';
 export { QueryBuilder } from './db/queries';
+// SPEC-010 public rename API types — so consumers of the `planRename` /
+// `applyRename` facade methods can type their inputs/outputs without a deep
+// `src/refactor/types` import (rp-review A6). Names are collision-free with the
+// `export * from './types'` surface above.
+export type { TargetSelector, RenamePlan, ApplyResult, RenameEdit, Refusal } from './refactor/types';
 // SPEC-003 degradation surface: the machine-readable reason `searchNodesDetailed`
 // exposes, its result shape, and the verbatim footer strings the MCP/CLI surfaces
 // (T022) render. Re-exported from the package entry so surface + SDK consumers reach
@@ -513,6 +519,14 @@ export class CodeGraph {
 
   // Mutex for preventing concurrent indexing operations (in-process)
   private indexMutex = new Mutex();
+
+  // Mutex serializing SPEC-010 applyRename calls per instance (D5b review
+  // finding): the daemon can dispatch concurrent codegraph_rename calls
+  // against the SAME instance, and the write ladder interleaves at its await
+  // points without one. A SEPARATE instance from indexMutex — the ladder's
+  // injected `sync()` acquires indexMutex itself, so reusing it here would
+  // deadlock (Mutex is non-reentrant).
+  private applyMutex = new Mutex();
 
   // File lock for preventing concurrent writes across processes (CLI, MCP, git hooks)
   private fileLock: FileLock;
@@ -2830,6 +2844,39 @@ export class CodeGraph {
       newName,
       lspConfig: resolveLspConfig({ projectRoot: this.projectRoot }),
     });
+  }
+
+  /**
+   * SPEC-010 FR-014…FR-020 / FR-019a — execute a rename for `selector` → `newName`
+   * through the Slice-2 apply safety ladder. A thin wrapper over the `src/refactor/`
+   * apply engine: it injects this instance's graph queries, project root, and
+   * resolved SPEC-008 LSP config (the recompute fork), plus this instance's own
+   * resolution-complete `sync` as the injected re-sync (FR-018). It recomputes the
+   * plan from the LIVE index (FR-014) — no dry-run artifact is trusted — and resolves
+   * to exactly one {@link ApplyResult} terminal: `applied` (post-check green),
+   * `refused` (a success-shaped pre-write gate refusal, zero writes — FR-023),
+   * `rolled-back` (wrote then restored byte-identically, FR-019), or `rollback-failed`
+   * (the sole error-shaped terminal — a failed restore, FR-019a).
+   */
+  async applyRename(
+    selector: TargetSelector,
+    newName: string,
+    options?: { includeHeuristic?: boolean }
+  ): Promise<ApplyResult> {
+    // D5b review finding: serialize the WHOLE ladder per instance (acquire at
+    // entry, release in finally via Mutex.withLock) — never indexMutex, which
+    // the injected sync() below acquires itself (non-reentrant → deadlock).
+    return this.applyMutex.withLock(() =>
+      deriveApplyRename({
+        queries: this.queries,
+        projectRoot: this.projectRoot,
+        selector,
+        newName,
+        lspConfig: resolveLspConfig({ projectRoot: this.projectRoot }),
+        includeHeuristic: options?.includeHeuristic,
+        sync: this.sync.bind(this),
+      })
+    );
   }
 
   // ===========================================================================

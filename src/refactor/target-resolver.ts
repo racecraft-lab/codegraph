@@ -56,8 +56,11 @@ export type LspPathDisposition =
 /** Kinds excluded from rename on EVERY path (FR-011). */
 const EXCLUDED_KINDS: ReadonlySet<string> = new Set(['file', 'route', 'import', 'export']);
 /** Kinds the graph path cannot cover: locals/parameters carry no tracked
- *  references, so only a language server can rename them (FR-010). */
-const GRAPH_LOCAL_KINDS: ReadonlySet<string> = new Set(['variable', 'parameter']);
+ *  references, so only a language server can rename them (FR-010). Exported so
+ *  the plan engine reuses the SAME set for its runtime-degrade guard (A1): a
+ *  graph-local admitted on an `available` probe but whose LSP rename then fails
+ *  at runtime must not silently fall back to a declaration-only graph plan. */
+export const GRAPH_LOCAL_KINDS: ReadonlySet<string> = new Set(['variable', 'parameter']);
 /** Recognized NodeKinds, for FR-021a `--kind` validation (mirrors the
  *  `query-parser.ts` precedent — derived from the canonical `NODE_KINDS`). */
 const VALID_KINDS: ReadonlySet<string> = new Set<string>(NODE_KINDS);

@@ -11,10 +11,12 @@
  * against the live line (`verifySpan`, FR-005), and assigns a confidence tier
  * (`classifyEdgeConfidence`, FR-004) — emitting `source:'graph'` edits. The
  * declaration edit is ALWAYS included (an empty-reference plan is valid, not an
- * error — FR-002); a framework self-loop sentinel (`source===target`) is dropped
- * before classification (the endpoints are invisible to the tier function); and
- * un-editable occurrences (comments/strings, synthesized dispatch sites) are only
- * tallied in the leftover-mention FYI, never edited (FR-012/FR-013).
+ * error — FR-002); a framework self-loop SENTINEL (`source===target` with
+ * resolvedBy='framework') is dropped before classification (the endpoints are
+ * invisible to the tier function), while every OTHER self-edge — a recursive call
+ * included (R25) — flows through the normal pipeline; and un-editable occurrences
+ * (comments/strings, synthesized dispatch sites) are only tallied in the
+ * leftover-mention FYI, never edited (FR-012/FR-013).
  *
  * Positions are UTF-16 code units end-to-end (SPEC-008 pin); the module reads each
  * touched file once (plan-time span read) and reuses those lines for both the
@@ -25,7 +27,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { QueryBuilder } from '../db/queries';
 import { classifyEdgeConfidence } from './confidence';
-import { verifySpan } from './span-verify';
+import { findDeclarationNameColumn, verifySpan } from './span-verify';
 import { ConfidenceTier, RenameEdit, SourceRange } from './types';
 
 export interface DeriveGraphRenameOptions {
@@ -44,6 +46,19 @@ export interface GraphRenameDerivation {
   edits: RenameEdit[];
   /** Non-gating FYI count of un-edited old-name mentions + synthesized dispatch sites (FR-013). */
   leftoverMentions: number;
+  /**
+   * Every file bearing ≥1 graph-nominated candidate occurrence of the target — a
+   * reference edge with a non-null confidence tier and a recorded (line, col) —
+   * collected BEFORE the per-edge {@link verifySpan} check. A candidate whose span
+   * verification then fails because the FILE ITSELF drifted since indexing
+   * (rather than a genuine shadow/alias/string-similar false positive) still
+   * appears here even though its edit is dropped from {@link edits} — the plan
+   * engine cross-checks this set against each file's indexed vs. live state to
+   * tell the two cases apart and refuse the whole plan on drift (SPEC-010 D4).
+   * Does NOT include the declaration file — the caller (the plan engine already
+   * has `target.file`) adds that separately.
+   */
+  candidateFiles: string[];
 }
 
 /** Identifier-character test for the whole-word leftover tally (ASCII identifiers). */
@@ -57,7 +72,7 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   const { queries, projectRoot, targetId, newName } = options;
 
   const decl = queries.getNodeById(targetId);
-  if (!decl) return { edits: [], leftoverMentions: 0 };
+  if (!decl) return { edits: [], leftoverMentions: 0, candidateFiles: [] };
   const oldName = decl.name;
 
   // One read per touched file; its `.split('\n')` lines back both the `lineText`
@@ -66,7 +81,17 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   const readLines = (relFile: string): string[] => {
     let lines = lineCache.get(relFile);
     if (!lines) {
-      lines = fs.readFileSync(path.join(projectRoot, relFile), 'utf8').split('\n');
+      try {
+        lines = fs.readFileSync(path.join(projectRoot, relFile), 'utf8').split('\n');
+      } catch {
+        // A candidate/declaration file missing since indexing (SPEC-010 D4: index
+        // drift) — no live line to verify against, so every span here drops
+        // exactly like a byte mismatch (FR-005). The plan engine's own
+        // index-freshness check (comparing this file's live state to its `files`
+        // row) is what turns a MISSING file into a whole-plan `stale-span`
+        // refusal instead of a silent drop.
+        lines = [];
+      }
       lineCache.set(relFile, lines);
     }
     return lines;
@@ -76,6 +101,7 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
 
   const edits: RenameEdit[] = [];
   const emitted = new Set<string>(); // `${file}:${line}:${column}` of every emitted edit
+  const candidateFiles = new Set<string>(); // D4: files with ≥1 candidate BEFORE verifySpan
   const push = (file: string, range: SourceRange, lineText: string, confidence: ConfidenceTier): void => {
     edits.push({ file, range, oldText: oldName, newText: newName, lineText, confidence, source: 'graph' });
     emitted.add(`${file}:${range.start.line}:${range.start.column}`);
@@ -84,8 +110,11 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   // Declaration edit — always present (FR-002). The node start column is the
   // declaration keyword, so find the NAME occurrence at/after it (research
   // Decision 8), then span-verify it like any other edit; it is `exact` (FR-004).
+  // R18 (rp-review): a raw indexOf would match an earlier IDENTICAL token — an
+  // accessor/modifier keyword equal to the name (`get get()`) or a same-line
+  // `@name` decorator — so use the whole-word, decorator-aware scan instead.
   const declLine = lineAt(decl.filePath, decl.startLine);
-  const declCol = declLine.indexOf(oldName, decl.startColumn);
+  const declCol = findDeclarationNameColumn(declLine, decl.startColumn, oldName);
   if (declCol >= 0) {
     const range = verifySpan({ lineText: declLine, start: { line: decl.startLine, column: declCol }, oldName });
     if (range) push(decl.filePath, range, declLine, 'exact');
@@ -94,10 +123,21 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   // Reference edits + the synthesized-dispatch leftover count.
   let synthesized = 0;
   for (const ref of queries.getReferencesToNode(targetId)) {
-    // Framework self-loop sentinel (`source===target`): a framework-global marker,
-    // NEVER a candidate at any tier — dropped before classification, which cannot
-    // see the endpoints (FR-004, carried-forward T004 rule).
-    if (ref.sourceId === targetId) continue;
+    // Framework self-loop SENTINEL (`source===target` AND resolvedBy='framework'):
+    // the FR-004 confidence-1.0 framework-global marker — a synthetic self-edge with
+    // no real name occurrence at its recorded position — is NEVER a candidate, so it
+    // is dropped before classification (which sees only resolvedBy/provenance, not the
+    // endpoints, so this endpoint+marker test must live here — carried-forward T004
+    // rule). R25 (rp-review round-4, P0): the drop is now POSITIVE — ONLY the framework
+    // marker is a sentinel. A RECURSIVE reference (a function/method calling itself) is
+    // also a self-loop, but its recorded (line, col) IS a real name occurrence in the
+    // body; it must flow through classifyEdgeConfidence + verifySpan like any other
+    // reference, or the recursive call sites are silently dropped and the plan is
+    // incomplete (an --apply would then rename only the declaration and rely on the
+    // FR-018 post-check to roll back — safe, but the rename is impossible).
+    if (ref.sourceId === targetId && (ref.metadata?.resolvedBy as string | undefined) === 'framework') {
+      continue;
+    }
     const tier = classifyEdgeConfidence({
       resolvedBy: ref.metadata?.resolvedBy as string | undefined,
       provenance: ref.provenance,
@@ -110,9 +150,18 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
       continue;
     }
     if (ref.line == null || ref.column == null) continue;
+    // D4: nominate the file as a candidate BEFORE the live-byte check, so a drop
+    // caused by INDEX DRIFT (not a genuine false positive) is still visible to
+    // the plan engine's index-freshness guard even though the edit itself drops.
+    candidateFiles.add(ref.sourceFilePath);
     const lineText = lineAt(ref.sourceFilePath, ref.line);
     const range = verifySpan({ lineText, start: { line: ref.line, column: ref.column }, oldName });
     if (!range) continue; // FR-005: shadow / alias / string-similar / drift → drop
+    // A4 (rp-review): skip an occurrence already emitted (two edges recording the
+    // SAME occurrence, or an edge landing on the declaration's own position) —
+    // keyed on the verifySpan-returned range start, so the plan preview/JSON never
+    // shows a duplicate edit even though writeEdits would de-dup it at write time.
+    if (emitted.has(`${ref.sourceFilePath}:${range.start.line}:${range.start.column}`)) continue;
     push(ref.sourceFilePath, range, lineText, tier);
   }
 
@@ -122,7 +171,7 @@ export function deriveGraphRename(options: DeriveGraphRenameOptions): GraphRenam
   const touched = [...new Set(edits.map((e) => e.file))].map((file) => ({ file, lines: readLines(file) }));
   const textual = countTextualLeftovers(touched, oldName, emitted);
 
-  return { edits, leftoverMentions: textual + synthesized };
+  return { edits, leftoverMentions: textual + synthesized, candidateFiles: [...candidateFiles] };
 }
 
 /**

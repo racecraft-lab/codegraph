@@ -19,13 +19,13 @@
         "id": "slice-1-plan-engine",
         "tasks": "T001-T027",
         "scope": "plan engine + targeting/refusals + CLI dry-run (read-only; no --apply surface)",
-        "pr_title": "feat(SPEC-010): graph-aware rename \u2014 plan engine + CLI dry-run (Slice 1)"
+        "pr_title": "feat(SPEC-010): graph-aware rename — plan engine + CLI dry-run (Slice 1)"
       },
       {
         "id": "slice-2-apply-mcp",
         "tasks": "T028-T053",
         "scope": "apply safety ladder + MCP tool + server-instructions + polish/validation",
-        "pr_title": "feat(SPEC-010): graph-aware rename \u2014 atomic apply + MCP tool (Slice 2)"
+        "pr_title": "feat(SPEC-010): graph-aware rename — atomic apply + MCP tool (Slice 2)"
       }
     ],
     "review_order": [
@@ -38,19 +38,61 @@
         "tasks": "T001-T027 (+ UAT remediation D1 edge-kind widening, D2 human refusal payloads)",
         "commit_sha": "f911f95beb8c531fa39c4ae5843706dd07c29af7",
         "verification": "full hermetic suite 172/172 (twice: pre- and post-remediation); refactor-plan.test.ts 108/108; tsc clean; quickstart S1-A..S1-F PASS; zero-write verified via shasum",
-        "fingerprint_status": "stale-superseded \u2014 spec/plan/tasks unchanged since fingerprint, but data-model.md corrected during implementation (D1); re-fingerprint at Slice-2 seal",
+        "fingerprint_status": "stale-superseded — spec/plan/tasks unchanged since fingerprint, but data-model.md corrected during implementation (D1); re-fingerprint at Slice-2 seal",
         "warnings": [
-          "UAT surfaced D1 (references-only edge scoping \u2014 would have broken FR-018 premise at apply time) and D2 (human table omitted candidate lists); both remediated with TDD before seal"
+          "UAT surfaced D1 (references-only edge scoping — would have broken FR-018 premise at apply time) and D2 (human table omitted candidate lists); both remediated with TDD before seal"
         ],
         "date": "2026-07-11"
+      },
+      {
+        "marker_id": "slice-2-apply-mcp",
+        "tasks": "T028-T053 (+ gate remediations D3 LSP completeness degrade, D4 plan-time drift refusal)",
+        "commit_sha": "acf1a6034fa5ff1d898911d7cec0b69abb81c847",
+        "verification": "full scrubbed suite 3110/0 (175 files) at the D4 re-gate; tsc + build clean; quickstart S2-A..S2-I all PASS (S2-C post-D4); retrieval-guardian SHIP-WITH-NOTES 6/6; T048 A/B NO-REGRESSION (express@4.21.2, 2 runs/arm, sonnet/high floor); T050 dogfood post-D3 validation PASSED (tsc clean post-apply, 60/60); T051 Docker Linux non-root 182/182 (root DAC artifact documented); live S2-C loop verified (drift refusal exit 2 zero writes -> codegraph sync -> applied exit 0 post-check green)",
+        "fingerprint_status": "stale-superseded - spec.md amended during implementation (FR-003a D3 completeness extension, FR-005 D4 freshness discriminator) and data-model.md extended (lspDegradation row); the amendments are the implemented, gate-verified truth",
+        "warnings": [
+          "T050 dogfood surfaced D3 (ok-status LSP result trusted without graph completeness verification -> silent partial rename breaking tsc); T053 gate S2-C surfaced D4 (pre-existing index drift conflated with the FR-005 false-positive drop -> silent partial apply); both remediated same-session with TDD (RED->GREEN) and re-validated live before seal"
+        ],
+        "date": "2026-07-12"
       }
     ],
     "warnings": [
-      "atomicity-route classifier returned one-navigable-PR (signal: change-shape:modify-heavy, releasable:true) \u2014 advisory dissent from the ratified 2-slice split; ratified split governs PR emission",
-      "tasks-mode reviewability-gate deferred on installed runner \u2014 fallback evidence chain: setup-mode WARN 405>400 pass=true (scaffold 2026-07-10) + estimate-reviewable-loc not_estimated + human-ratified split (Q11, Clarify S3)"
+      "atomicity-route classifier returned one-navigable-PR (signal: change-shape:modify-heavy, releasable:true) — advisory dissent from the ratified 2-slice split; ratified split governs PR emission",
+      "tasks-mode reviewability-gate deferred on installed runner — fallback evidence chain: setup-mode WARN 405>400 pass=true (scaffold 2026-07-10) + estimate-reviewable-loc not_estimated + human-ratified split (Q11, Clarify S3)"
     ],
-    "final_marker_split": null,
-    "packet_validation": null,
-    "pr_mappings": null
+    "final_marker_split": {
+      "slice-1-plan-engine": {
+        "head": "010-graph-aware-rename-slice-1",
+        "tip": "2bb5aa5",
+        "base": "main"
+      },
+      "slice-2-apply-mcp": {
+        "head": "010-graph-aware-rename",
+        "tip": "e4e0818+",
+        "base": "010-graph-aware-rename-slice-1",
+        "note": "stacked; retarget to main after PR 43 merges (GitHub auto-retargets on base-branch delete)"
+      }
+    },
+    "packet_validation": {
+      "status": "ok",
+      "method": "validate-pr-workflow-contract (read_only runner op)",
+      "validated": [
+        "slice-1 title+body",
+        "slice-2 title+body"
+      ],
+      "date": "2026-07-12"
+    },
+    "pr_mappings": [
+      {
+        "marker_id": "slice-1-plan-engine",
+        "pr": 43,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/43"
+      },
+      {
+        "marker_id": "slice-2-apply-mcp",
+        "pr": 44,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/44"
+      }
+    ]
   }
 }

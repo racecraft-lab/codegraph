@@ -337,6 +337,9 @@ class App {
     const res = matchMethodCall(ref, ctx);
     expect(res?.targetNodeId).toBe('m:greet');
     expect(res?.confidence).toBe(0.9);
-    expect(res?.resolvedBy).toBe('instance-method');
+    // R19 (rp-review): a `this->prop.method` shape flows through resolveMethodOnType
+    // (a validated `Type::method`), so it now emits the explicit declaration-recovered
+    // label `instance-method-decl` rather than the shared `instance-method`.
+    expect(res?.resolvedBy).toBe('instance-method-decl');
   });
 });

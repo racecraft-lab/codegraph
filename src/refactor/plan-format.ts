@@ -16,7 +16,7 @@
  * (`lineText` from the plan-time span read, FR-005/SC-001).
  */
 
-import { Candidate, Refusal, RenameEdit, RenamePlan, SourcePosition, SourceRange } from './types';
+import { ApplyResult, Candidate, Refusal, RenameEdit, RenamePlan, SourcePosition, SourceRange } from './types';
 
 // --- Same-line composition (FR-027) ----------------------------------------
 
@@ -68,6 +68,7 @@ export function formatRenamePlanTable(plan: RenamePlan): string {
 
   const footer = [`confidence: ${plan.confidence ?? 'n/a'}`];
   if (plan.leftoverMentions !== undefined) footer.push(`${plan.leftoverMentions} leftover mention(s)`);
+  if (plan.lspDegradation) footer.push(`lsp degraded: ${plan.lspDegradation}`);
   lines.push('', footer.join(' · '));
   return lines.join('\n') + '\n';
 }
@@ -180,8 +181,115 @@ function toSurfacePlan(plan: RenamePlan): Record<string, unknown> {
   if (plan.edits) out.edits = plan.edits.map(toSurfaceEdit);
   if (plan.confidence) out.confidence = plan.confidence;
   if (plan.source) out.source = plan.source;
+  if (plan.lspDegradation) out.lspDegradation = plan.lspDegradation;
   if (plan.leftoverMentions !== undefined) out.leftoverMentions = plan.leftoverMentions;
   out.applied = plan.applied;
   if (plan.refusal) out.refusal = toSurfaceRefusal(plan.refusal);
   return out;
+}
+
+// --- Apply result rendering (Slice 2) --------------------------------------
+
+/**
+ * Render an {@link ApplyResult} for the human surface, consistent with the dry-run
+ * table style. A `refused` terminal reuses the dry-run refusal renderer (so gated
+ * edits / offending files surface identically); the `applied` / `rolled-back` /
+ * `rollback-failed` terminals each render their own machine-actionable payload.
+ */
+export function formatApplyResultTable(result: ApplyResult, newName: string): string {
+  if (result.outcome === 'refused' && result.refusal) {
+    return formatRenamePlanTable({ newName, applied: false, refusal: result.refusal });
+  }
+  const lines: string[] = [];
+  if (result.outcome === 'applied') {
+    lines.push(`applied → ${newName}`);
+    lines.push(`${result.touchedFiles.length} file(s) rewritten · index re-synced · post-check green`);
+    for (const f of result.touchedFiles) lines.push(`  ${f}`);
+  } else if (result.outcome === 'rolled-back') {
+    lines.push('rolled-back → the apply was undone byte-identically');
+    // D5 review finding: the write ladder can now roll back for a Rung-4
+    // write malfunction, not only a post-check dangle — the message must
+    // name the actual cause rather than always blaming the post-check.
+    // Copilot review finding: a THIRD cause exists too — the Rung-5 re-sync
+    // lock-failure path (apply-engine's discriminateSyncResult) also rolls
+    // back, with an EMPTY danglingReferences and no writeFailure, since no
+    // post-check ever ran there either — the old unconditional `else` wrongly
+    // blamed the post-check for that cause too.
+    if (result.writeFailure) {
+      lines.push(`a write to ${result.writeFailure.file} failed (${result.writeFailure.message}); no file was left modified.`);
+    } else if (result.danglingReferences?.length) {
+      lines.push('the post-check found dangling references to the old name; no file was left modified.');
+    } else {
+      lines.push('the post-apply re-sync could not acquire the index lock; no file was left modified.');
+    }
+    if (result.danglingReferences?.length) {
+      lines.push('dangling references:');
+      for (const d of result.danglingReferences) lines.push(`  ${d.file}:${d.range.start.line}  ${d.name}`);
+    }
+    // B2 review finding: the rollback restored the bytes but its own re-sync
+    // failed, so the index no longer matches the restored workspace — tell the
+    // user to re-sync it.
+    if (result.resyncFailed) {
+      lines.push('the index re-sync after the rollback failed; the files are restored but the index is stale — run `codegraph sync`.');
+    }
+  } else if (result.outcome === 'rollback-failed' && result.recovery) {
+    lines.push('rollback-failed → the rollback restore itself failed; the workspace is left partially modified');
+    if (result.writeFailure) {
+      lines.push(`caused by a failed write to ${result.writeFailure.file} (${result.writeFailure.message})`);
+    }
+    if (result.recovery.restoredFiles.length) {
+      lines.push('restored:');
+      for (const f of result.recovery.restoredFiles) lines.push(`  ${f}`);
+    }
+    lines.push('NOT restored:');
+    for (const f of result.recovery.unrestoredFiles) lines.push(`  ${f}`);
+    // C6 review finding: give ACTIONABLE recovery. The old line "Retrying the
+    // restore step alone is safe" instructed the impossible — no CLI command
+    // performs a standalone restore. When the snapshot dump succeeded, its dir
+    // holds the pre-apply bytes of the NOT-restored files mirroring their
+    // relative paths, so the user can copy them back and re-sync.
+    // B5 review finding: the dump can itself fail, leaving no dir — say so and
+    // flag the files for manual attention instead of a bogus "recovery dir: undefined".
+    if (result.recovery.recoveryDir !== undefined) {
+      lines.push(`recovery dir: ${result.recovery.recoveryDir}`);
+      lines.push(
+        'To recover: copy each NOT-restored file back from that directory (it mirrors their relative paths) over the file listed above, then run `codegraph sync`.',
+      );
+    } else {
+      lines.push(
+        'the snapshot dump also failed (no recovery dir); the NOT-restored files above need manual attention — restore their pre-apply contents, then run `codegraph sync`.',
+      );
+    }
+    lines.push('Do NOT re-run the rename.');
+  }
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * Serialize an {@link ApplyResult} to the canonical apply JSON string (`--apply
+ * --json`): `newName`, `applied`, `outcome`, `touchedFiles`, `postCheckPassed`, and
+ * whichever terminal payload it carries (`danglingReferences` / `recovery` /
+ * `refusal`) — ranges converted once to the LSP-style 0-based surface, matching the
+ * dry-run serializer's conventions.
+ */
+export function serializeApplyResultJson(result: ApplyResult, newName: string): string {
+  const out: Record<string, unknown> = {
+    newName,
+    applied: result.outcome === 'applied',
+    outcome: result.outcome,
+    touchedFiles: result.touchedFiles,
+    postCheckPassed: result.postCheckPassed,
+  };
+  if (result.danglingReferences) {
+    out.danglingReferences = result.danglingReferences.map((d) => ({
+      file: d.file,
+      range: toSurfaceRange(d.range),
+      name: d.name,
+    }));
+  }
+  if (result.recovery) out.recovery = result.recovery;
+  if (result.refusal) out.refusal = toSurfaceRefusal(result.refusal);
+  if (result.writeFailure) out.writeFailure = result.writeFailure;
+  if (result.resyncFailed) out.resyncFailed = result.resyncFailed;
+  return JSON.stringify(out);
 }

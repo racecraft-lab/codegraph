@@ -132,6 +132,34 @@ export type ConfidenceTier = 'exact' | 'heuristic';
 export type EditSource = 'lsp' | 'graph';
 
 /**
+ * Why an `ok`-status LSP result was rejected as unusable and the WHOLE rename
+ * degraded to the graph derivation instead — never a per-file merge of the two
+ * sources (FR-003a's unusable-result contract; spec.md's overlapping-range
+ * clause is the precedent this extends — SPEC-010 D3 / D5c). Two values:
+ * - `incomplete-coverage` — the LSP edit set was missing at least one file
+ *   the graph already knows carries a span-verified occurrence of the target
+ *   (observed cause: an ephemeral LSP client issuing `textDocument/rename`
+ *   before the language server finishes project load, so it answers from the
+ *   single open file only).
+ * - `overlapping-edits` — two of the LSP result's own edits genuinely overlap
+ *   within a file (spec.md's overlapping-range clause, applied at PLAN time —
+ *   `writeEdits` keeps its own apply-time check as defense-in-depth). A
+ *   fully-coincident duplicate is NOT an overlap; it still de-duplicates as
+ *   usual at write time.
+ * - `unsupported-edits` — the LSP result carried an edit SHAPE the symbol
+ *   writer cannot honor: a `documentChanges` resource operation (Create/
+ *   Rename/DeleteFile), or an in-root text edit with a multiline range or an
+ *   empty live-derived `oldText` (both of which `writeEdits` would apply as an
+ *   insert-at-start rather than a replace, corrupting the file). SPEC-010 A2 —
+ *   the same "unusable rename result degrades to the graph path" contract as
+ *   the two reasons above.
+ * Distinct from the FR-003a `unavailable`/`failed` degradation routes (a
+ * probe failure or a runtime crash/timeout) — those carry no reason here;
+ * this field is populated ONLY for an ok-but-unusable result.
+ */
+export type LspDegradationReason = 'incomplete-coverage' | 'overlapping-edits' | 'unsupported-edits';
+
+/**
  * Aggregate confidence over a plan's edits, driving the `--apply` gate
  * (FR-015): `contains-heuristic` refuses apply unless heuristics are opted in.
  */
@@ -247,6 +275,10 @@ export interface RenamePlan {
   confidence?: PlanConfidence;
   /** Whole-plan derivation path when uniform; per-edit `source` is authoritative. */
   source?: EditSource;
+  /** Present when an `ok` LSP result was unusable-incomplete and the WHOLE
+   *  rename degraded to the graph derivation instead (D3 / FR-003a extension).
+   *  Never present when `source` is `lsp`. */
+  lspDegradation?: LspDegradationReason;
   /** Optional, non-gating FYI count of un-edited old-name occurrences (FR-013). */
   leftoverMentions?: number;
   /** `false` for every dry-run; `true` only on a post-check-green apply (always present). */
@@ -259,6 +291,12 @@ export interface RenamePlan {
   danglingReferences?: DanglingReference[];
   /** Present on outcome `rollback-failed` (FR-019a) — the sole error-shaped terminal. */
   recovery?: RecoveryInfo;
+  /** Present when a Rung-4 write/rename malfunction forced the rollback
+   *  (`rolled-back` or `rollback-failed`) — D5 review finding. */
+  writeFailure?: WriteFailure;
+  /** Present (`true`) on a `rolled-back` outcome whose own post-restore re-sync
+   *  failed — the bytes are restored but the index is stale (B2 review finding). */
+  resyncFailed?: boolean;
 }
 
 // =============================================================================
@@ -277,7 +315,7 @@ export type RefusalReason =
   | 'excluded-kind' // FR-011: file/route/import/export kinds.
   | 'invalid-argument' // FR-021a: empty/invalid newName, no-op, or unrecognized kind.
   | 'heuristic-gated' // FR-015: below-exact edits block apply; see `gatedEdits`.
-  | 'stale-span' // FR-016: live bytes drifted from the planned span; see `files`.
+  | 'stale-span' // FR-005 plan-time (candidate file drifted from the index, D4) or FR-016 apply-window (live bytes drifted from the planned span); see `files`.
   | 'out-of-root' // FR-017: an edit targets a path outside the workspace root.
   | 'scope-ignored' // FR-017: an edit targets an in-root but scope-ignored file.
   | 'not-indexed' // Project has no `.codegraph/` index.
@@ -343,15 +381,39 @@ export interface RecoveryInfo {
   /** Touched files whose snapshot could NOT be written back (EACCES/ENOSPC/…). */
   unrestoredFiles: string[];
   /** Per-incident dir holding the unrestored snapshots
-   *  (`.codegraph/rename-recovery-<pid>-<hex>/`). */
-  recoveryDir: string;
+   *  (`.codegraph/rename-recovery-<pid>-<hex>/`). Optional (B5 review finding):
+   *  ABSENT when the recovery dump itself also failed (e.g. `.codegraph`
+   *  unwritable) — the unrestored files still need manual attention, but no dump
+   *  was written. */
+  recoveryDir?: string;
 }
 
 /**
- * The full internal result of an apply (data-model ApplyResult). Richer than the
- * serialized {@link RenamePlan} envelope: `touchedFiles` and `postCheckPassed`
- * are internal-only (never surfaced). The serializer folds the rest onto the
- * envelope (`outcome`, `danglingReferences`, `recovery`, `refusal`).
+ * The Rung-4 write-path malfunction that forced a rollback (D5 review finding;
+ * schema `writeFailure`) — the write/rename cause, mirroring how a post-check
+ * dangle carries {@link DanglingReference}s. Orthogonal to `outcome`: it can
+ * accompany EITHER `rolled-back` (the restore itself then succeeded) or
+ * `rollback-failed` (the restore ALSO failed) — whichever the rollback of the
+ * write failure lands on. Absent when the rollback was instead forced by a
+ * post-check dangle or a sync lock-failure (those causes are self-evident from
+ * `danglingReferences`).
+ */
+export interface WriteFailure {
+  /** Workspace-relative path of the file whose write/rename threw. */
+  file: string;
+  /** The underlying error's message (EACCES/ENOSPC/…). */
+  message: string;
+}
+
+/**
+ * The full internal result of an apply (data-model ApplyResult). The serializer
+ * (`serializeApplyResultJson`) folds it onto the {@link RenamePlan} surface
+ * envelope: `outcome`, `touchedFiles`, and `postCheckPassed` on every apply
+ * terminal, plus whichever terminal payload it carries (`danglingReferences` /
+ * `recovery` / `refusal` / `writeFailure` / `resyncFailed`) — every one declared
+ * in `rename-plan.schema.json` (R16 review finding: `touchedFiles` /
+ * `postCheckPassed` were formerly mis-noted here as internal-only, yet the
+ * serializer has always emitted them, so the schema now declares them too).
  */
 export interface ApplyResult {
   outcome: ApplyOutcome;
@@ -366,6 +428,15 @@ export interface ApplyResult {
   recovery?: RecoveryInfo;
   /** Present when `outcome === 'refused'` — the pre-write gate refusal. */
   refusal?: Refusal;
+  /** Present when a Rung-4 write/rename malfunction forced the rollback that
+   *  led to `outcome` `rolled-back` or `rollback-failed` (D5 review finding). */
+  writeFailure?: WriteFailure;
+  /** `true` when the rollback's OWN post-restore re-sync failed (threw, or
+   *  returned the lock-failure zero-shape) AFTER the bytes were restored (B2
+   *  review finding). The workspace IS restored (`rolled-back`), but the index no
+   *  longer matches it — the caller must `codegraph sync`. Only ever set on a
+   *  `rolled-back` outcome. */
+  resyncFailed?: boolean;
 }
 
 // =============================================================================
@@ -395,3 +466,24 @@ export const RENAME_EXIT_CODES = {
 
 /** One of the {@link RENAME_EXIT_CODES} values (`0 | 1 | 2 | 3 | 4`). */
 export type RenameExitCode = (typeof RENAME_EXIT_CODES)[keyof typeof RENAME_EXIT_CODES];
+
+/**
+ * Map an {@link ApplyOutcome} to its {@link RENAME_EXIT_CODES} process code (FR-026):
+ * `applied → 0`, `refused → 2`, `rolled-back → 3`, `rollback-failed → 4`. The one
+ * seam the CLI action uses to turn an apply terminal into an exit code, exported so
+ * the mapping is unit-testable directly (the `rolled-back`/`rollback-failed` codes
+ * are impractical to induce through a CLI subprocess). Exhaustive switch — a future
+ * outcome becomes a compile error, never a silent exit `0`.
+ */
+export function renameApplyExitCode(outcome: ApplyOutcome): RenameExitCode {
+  switch (outcome) {
+    case 'applied':
+      return RENAME_EXIT_CODES.ok;
+    case 'refused':
+      return RENAME_EXIT_CODES.refused;
+    case 'rolled-back':
+      return RENAME_EXIT_CODES.rolledBack;
+    case 'rollback-failed':
+      return RENAME_EXIT_CODES.rollbackFailed;
+  }
+}

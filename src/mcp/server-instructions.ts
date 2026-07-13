@@ -12,8 +12,9 @@
  *   - Anti-patterns (don't re-verify with grep; don't hand-reconstruct flows)
  *
  * Keep it tight. The agent reads this every session — long instructions
- * burn tokens. The DEFAULT MCP surface is `codegraph_explore` ALONE (see
- * DEFAULT_MCP_TOOLS in tools.ts) — reference only that tool here. The other
+ * burn tokens. The DEFAULT MCP surface is `codegraph_explore` (the retrieval
+ * PRIMARY) plus `codegraph_rename` (the SPEC-010 write tool, documented in
+ * its own short section) — see DEFAULT_MCP_TOOLS in tools.ts. The other
  * tools (node/search/callers/…) stay defined and are re-enablable via
  * CODEGRAPH_MCP_TOOLS, but they are NOT listed to agents, so don't name them.
  */
@@ -29,9 +30,9 @@ verbatim source PLUS who calls it and what it affects, so you edit with the
 blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
-## One tool: codegraph_explore — use it instead of reading files
+## The primary tool: codegraph_explore — use it instead of reading files
 
-There is a single tool, \`codegraph_explore\`, and it is Read-equivalent. It
+The primary tool is \`codegraph_explore\`, and it is Read-equivalent. It
 takes either a natural-language question or a bag of symbol/file names and
 returns the **verbatim, line-numbered source** of the relevant symbols
 grouped by file — the same \`<n>\\t<line>\` shape \`Read\` gives you, safe to
@@ -46,6 +47,20 @@ so running your own grep + read loop, or delegating the lookup to a separate
 file-reading sub-task/agent, repeats work codegraph already did and costs more
 for the same answer. A direct codegraph answer is typically one to a few
 calls; a grep/read exploration is dozens.
+
+## codegraph_rename — the write tool (dry-run by default)
+
+\`codegraph_rename\` renames a symbol across every file that references it —
+reach for it instead of hand-editing each call site. DRY-RUN BY DEFAULT:
+called without \`apply\` it returns a plan (every affected file, a
+before/after preview, and a confidence tier per edit) and writes nothing;
+pass \`apply: true\` to execute it, with safety checks and a byte-identical
+rollback if anything would be left dangling. It's the one WRITE tool on this
+surface (\`readOnlyHint: false\`), so a read-only client mode (e.g. Cursor's
+Ask mode) will gate or hide it — even for a dry-run call. That's expected:
+switch to an agent / write-enabled mode to use it. \`codegraph_explore\`
+stays the PRIMARY tool for reading and understanding code; reach for
+\`codegraph_rename\` only to actually rename a symbol.
 
 ## How to query
 
@@ -100,4 +115,9 @@ default project — but the tools are available and work **per project**:
   for that project. Indexing is the user's decision — don't run it yourself, but
   if it comes up they can run \`codegraph init\` in a project to enable codegraph
   there (a new index is picked up live, no restart).
+
+\`codegraph_rename\` (the one WRITE tool) works the same per-project way: pass the
+\`projectPath\` of a project that HAS a \`.codegraph/\` index. It is dry-run by
+default — it returns a plan and writes nothing — and writes files only when you
+pass \`apply: true\`.
 `;

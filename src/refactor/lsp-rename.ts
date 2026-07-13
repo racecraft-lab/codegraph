@@ -28,6 +28,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { LspClientError, LspJsonRpcClient } from '../lsp/client';
 import { probeLspServerCommand } from '../lsp/prereqs';
 import { EffectiveLspConfig, LspLanguage, LspReasonCode } from '../lsp/types';
+import { normalizePath, validatePathWithinRoot } from '../utils';
 import { RenameEdit, SourcePosition, TextEdit, WorkspaceEdit } from './types';
 
 /** LSP `languageId` values that differ from our Language tokens (didOpen). */
@@ -35,6 +36,27 @@ const LSP_LANGUAGE_IDS: Partial<Record<LspLanguage, string>> = {
   tsx: 'typescriptreact',
   jsx: 'javascriptreact',
 };
+
+/** Identifier-character class (mirrors span-verify.ts's IDENT_CHAR) for the R23
+ *  whole-word containment check on an in-root LSP edit's replacement text. */
+const IDENT_CHAR = /[A-Za-z0-9_$]/;
+
+/**
+ * True when `needle` occurs in `haystack` as a whole identifier word (identifier
+ * boundary on both sides). R23 (rp-review): confirms an LSP edit's `newText`
+ * actually carries the requested new name, tolerating a server that expands the
+ * replacement around it (`foo: newName`, `foo as newName`) — only a `newText` with
+ * the name entirely absent is bogus.
+ */
+function containsWholeWord(haystack: string, needle: string): boolean {
+  if (needle.length === 0) return false;
+  for (let idx = haystack.indexOf(needle); idx >= 0; idx = haystack.indexOf(needle, idx + 1)) {
+    const before = haystack[idx - 1] ?? '';
+    const after = haystack[idx + needle.length] ?? '';
+    if (!IDENT_CHAR.test(before) && !IDENT_CHAR.test(after)) return true;
+  }
+  return false;
+}
 
 export interface DeriveLspRenameOptions {
   /** Absolute workspace root. */
@@ -48,8 +70,16 @@ export interface DeriveLspRenameOptions {
   /** The rename cursor position — 1-indexed line, 0-indexed UTF-16 column; the
    *  caller supplies a position that lands on the target identifier. */
   position: SourcePosition;
-  /** The new name handed to the server. */
+  /** The new name handed to the server. Also the R23 replacement-guard reference:
+   *  an in-root edit whose `newText` does not contain it as a whole word is a buggy
+   *  server edit and marks the WHOLE result unusable (see {@link translateWorkspaceEdit}). */
   newName: string;
+  /** The target's CURRENT (old) name (R20, rp-review). When provided, an in-root
+   *  edit whose live-derived `oldText` differs from it marks the WHOLE result
+   *  unusable — a buggy server range over an unrelated token degrades to the graph
+   *  path instead of being applied verbatim. Optional so translation-only callers
+   *  (tests) compile without it; the plan engine always threads `target.name`. */
+  oldName?: string;
   /** Env override for the probe + spawned server (defaults to `process.env`). */
   env?: Record<string, string | undefined>;
 }
@@ -63,12 +93,12 @@ export interface DeriveLspRenameOptions {
  * reason and NO edits, so it can route to the graph path (FR-003a).
  */
 export type LspRenameResult =
-  | { status: 'ok'; edits: RenameEdit[] }
+  | { status: 'ok'; edits: RenameEdit[]; unusable: boolean }
   | { status: 'unavailable'; reason: LspReasonCode }
   | { status: 'failed'; reason: LspReasonCode };
 
 export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<LspRenameResult> {
-  const { projectRoot, config, language, file, position, newName, env } = options;
+  const { projectRoot, config, language, file, position, newName, oldName, env } = options;
 
   const server = config.servers[language];
   const probe = probeLspServerCommand(server, { cwd: projectRoot, env });
@@ -104,7 +134,8 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
     });
     client.notify('textDocument/didClose', { textDocument: { uri } });
     await client.shutdown();
-    return { status: 'ok', edits: translateWorkspaceEdit(projectRoot, workspaceEdit) };
+    const translated = translateWorkspaceEdit(projectRoot, workspaceEdit, oldName, newName);
+    return { status: 'ok', edits: translated.edits, unusable: translated.unusable };
   } catch (error) {
     await client.dispose().catch(() => undefined);
     return { status: 'failed', reason: error instanceof LspClientError ? error.reasonCode : 'server-crash' };
@@ -113,19 +144,53 @@ export async function deriveLspRename(options: DeriveLspRenameOptions): Promise<
 
 /**
  * Translate a `textDocument/rename` workspace edit into `RenameEdit[]`. The
- * server sends only `newText` + range, so each edited file is read once to
- * recover `oldText` (the live bytes the range replaces) and `lineText` (the full
- * pre-edit source line for the before/after preview, FR-027). LSP ranges are
- * 0-indexed UTF-16; the line converts once to graph-native 1-indexed and the
- * column passes through verbatim (research Decision 2).
+ * server sends only `newText` + range, so each IN-ROOT edited file is read
+ * once to recover `oldText` (the live bytes the range replaces) and
+ * `lineText` (the full pre-edit source line for the before/after preview,
+ * FR-027). LSP ranges are 0-indexed UTF-16; the line converts once to
+ * graph-native 1-indexed and the column passes through verbatim (research
+ * Decision 2).
+ *
+ * FR-017 refuse-before-read (Copilot review finding): an out-of-root file's
+ * bytes are NEVER read here — reusing the SAME containment check jail.ts
+ * uses ({@link validatePathWithinRoot}), not a new one. Its edits still carry
+ * the correct (escaping) `file` path with empty `oldText`/`lineText`
+ * placeholders, so the file still lands in the edit set `checkPlanJail`
+ * (called later by planRename/applyRename) refuses the WHOLE plan over —
+ * only the read is skipped, never the file's presence in that check.
+ * Placeholders are never surfaced: the whole plan is replaced by the
+ * out-of-root Refusal before any edit here would be rendered.
  */
-function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdit[] {
+function translateWorkspaceEdit(
+  projectRoot: string,
+  result: unknown,
+  oldName: string | undefined,
+  newName: string,
+): { edits: RenameEdit[]; unusable: boolean } {
   const edit = result as WorkspaceEdit | null | undefined;
   const perFile: Array<{ uri: string; edits: TextEdit[] }> = [];
+  // A2 (rp-review): the WHOLE result is unusable if it carries an edit shape the
+  // symbol writer cannot honor — a documentChanges resource operation (below),
+  // or an in-root text edit with a multiline range / empty live-derived oldText
+  // (in the in-root branch). R20 (rp-review) extends this to WHERE an in-root edit
+  // lands: a live-derived oldText that is NOT the rename target's old name (a buggy
+  // server range over an unrelated token) is unusable. R23 (rp-review round-3)
+  // extends it to WHAT an in-root edit writes: a `newText` that does not contain
+  // the requested new name as a whole word (a correctly-positioned edit replacing
+  // with unrelated text) is likewise unusable. Resource-op detection is INDEPENDENT
+  // of containment; the content checks are in-root ONLY, so the out-of-root
+  // refuse-before-read placeholder (deliberately empty oldText) never trips any of
+  // them — its whole-plan out-of-root refusal keeps winning.
+  let unusable = false;
   if (edit && Array.isArray(edit.documentChanges)) {
     for (const change of edit.documentChanges) {
       if (change?.textDocument?.uri && Array.isArray(change.edits)) {
         perFile.push({ uri: change.textDocument.uri, edits: change.edits });
+      } else if (isResourceOperation(change)) {
+        // A CreateFile / RenameFile / DeleteFile entry — a symbol rename edits
+        // occurrences in place (FR-011 excludes the `file` kind), so a workspace
+        // edit that also moves files on disk is unusable as a whole.
+        unusable = true;
       }
     }
   } else if (edit && edit.changes) {
@@ -137,12 +202,56 @@ function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdi
   const out: RenameEdit[] = [];
   for (const { uri, edits } of perFile) {
     const absPath = fileURLToPath(uri);
+    // Normalize to the graph's forward-slash path convention: `path.relative`
+    // uses the CURRENT PLATFORM's separator, which is `\` on win32 — the same
+    // normalization precision-pass.ts's uriToProjectPath already applies
+    // (D5-win review finding). Pure path math — no I/O — so it's safe to
+    // compute before the containment check below.
+    const relFile = normalizePath(path.relative(projectRoot, absPath));
+
+    if (validatePathWithinRoot(projectRoot, absPath) === null) {
+      for (const textEdit of edits) {
+        const { start, end } = textEdit.range;
+        out.push({
+          file: relFile,
+          range: {
+            start: { line: start.line + 1, column: start.character },
+            end: { line: end.line + 1, column: end.character },
+          },
+          oldText: '',
+          newText: textEdit.newText,
+          lineText: '',
+          confidence: 'exact',
+          source: 'lsp',
+        });
+      }
+      continue;
+    }
+
     const lines = fs.readFileSync(absPath, 'utf8').split('\n');
-    const relFile = path.relative(projectRoot, absPath);
     for (const textEdit of edits) {
       const { start, end } = textEdit.range;
       const lineText = (lines[start.line] ?? '').replace(/\r$/, '');
       const oldText = start.line === end.line ? lineText.slice(start.character, end.character) : '';
+      // A2: an in-root multiline range (start.line !== end.line) or an empty
+      // live-derived oldText both make writeEdits derive the end offset from
+      // oldText.length and INSERT at start instead of replacing — file
+      // corruption. Flag the whole result unusable so the rename degrades.
+      if (start.line !== end.line || oldText === '') unusable = true;
+      // R20 (rp-review): the range replaces a DIFFERENT token than the target — the
+      // server pointed at the wrong identifier. Applying it verbatim would rename an
+      // unrelated symbol, so the whole result is unusable (degrade to the graph
+      // path). Only when the caller threaded the target's old name (the plan engine
+      // always does); translation-only callers skip this comparison.
+      if (oldName !== undefined && oldText !== oldName) unusable = true;
+      // R23 (rp-review round-3): the R20 guard checks only WHERE the edit lands;
+      // this checks WHAT it writes. A correctly-positioned edit whose `newText` does
+      // not carry the requested new name as a whole word is a buggy server edit that
+      // would rename the symbol to unrelated text — mark the whole result unusable so
+      // it degrades to the graph path. Containment (not equality) tolerates a server
+      // that expands the replacement (`old as newName`); in-root ONLY, like the
+      // oldName guard, so the out-of-root placeholder stays exempt.
+      if (!containsWholeWord(textEdit.newText, newName)) unusable = true;
       out.push({
         file: relFile,
         range: {
@@ -157,5 +266,16 @@ function translateWorkspaceEdit(projectRoot: string, result: unknown): RenameEdi
       });
     }
   }
-  return out;
+  return { edits: out, unusable };
+}
+
+/**
+ * True when a `documentChanges` entry is an LSP resource operation
+ * (CreateFile / RenameFile / DeleteFile) rather than a {@link TextDocumentEdit}
+ * — detected structurally by its string `kind` of `create` / `rename` /
+ * `delete` (these entries carry a `kind` and NO `textDocument.edits` array).
+ */
+function isResourceOperation(change: unknown): boolean {
+  const kind = (change as { kind?: unknown } | null | undefined)?.kind;
+  return kind === 'create' || kind === 'rename' || kind === 'delete';
 }

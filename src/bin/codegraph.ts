@@ -48,9 +48,9 @@ import { relaunchWithWasmRuntimeFlagsIfNeeded } from '../extraction/wasm-runtime
 import { installCommandSupervision } from './command-supervision';
 import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
-import { RENAME_EXIT_CODES } from '../refactor/types';
-import type { RenamePlan } from '../refactor/types';
-import { formatRenamePlanTable, serializeRenamePlanJson } from '../refactor/plan-format';
+import { RENAME_EXIT_CODES, renameApplyExitCode } from '../refactor/types';
+import type { ApplyResult, RenamePlan } from '../refactor/types';
+import { formatApplyResultTable, formatRenamePlanTable, serializeApplyResultJson, serializeRenamePlanJson } from '../refactor/plan-format';
 
 // Lazy-load heavy modules (CodeGraph, runInstaller) to keep CLI startup fast.
 async function loadCodeGraph(): Promise<typeof import('../index')> {
@@ -1430,30 +1430,44 @@ function printRenamePlan(plan: RenamePlan, json?: boolean): void {
 }
 
 /**
- * codegraph rename <target> <new-name>
+ * Print an apply {@link ApplyResult} to stdout in the same two encodings as
+ * {@link printRenamePlan}: the stable apply JSON (`-j/--json`) or the human summary
+ * (applied files / rolled-back dangles / rollback-failed recovery). SPEC-010 Slice 2.
+ */
+function printApplyResult(result: ApplyResult, newName: string, json?: boolean): void {
+  console.log(json ? serializeApplyResultJson(result, newName) : formatApplyResultTable(result, newName));
+}
+
+/**
+ * codegraph rename <target> <new-name> [--apply] [--include-heuristic]
  *
- * SPEC-010 Slice 1 — the dry-run face of the graph-aware rename engine. Prints a
- * plan (every file/range it would touch, a before/after preview, a per-edit
- * confidence tier) and writes NOTHING (FR-001). Human table by default; `-j/--json`
- * emits the stable schema object, byte-identical to the codegraph_rename MCP
- * result (FR-027/SC-005). Targeting is name-based with `--file`/`--kind` qualifiers
- * (FR-006). The apply path (`--apply`) arrives in Slice 2 — a Slice-1 binary
- * rejects it with commander's standard unknown-option error.
+ * SPEC-010 — the graph-aware rename engine's CLI face. Without `--apply` it prints a
+ * dry-run plan (every file/range it would touch, a before/after preview, a per-edit
+ * confidence tier) and writes NOTHING (FR-001). `--apply` recomputes the plan from
+ * the live index and executes the apply safety ladder in one invocation (FR-014);
+ * `--include-heuristic` opts below-`exact` edits past the confidence gate (FR-015).
+ * Human table/summary by default; `-j/--json` emits the stable schema object,
+ * byte-identical to the codegraph_rename MCP result (FR-027/SC-005). Targeting is
+ * name-based with `--file`/`--kind` qualifiers (FR-006).
  *
  * Exit taxonomy (FR-026), deliberately NOT the read-only commands' generic
- * error→exit-1 mapping: 0 = a plan was produced; 2 = a recoverable, success-shaped
- * refusal with zero writes (not-indexed, target-not-found, …); 1 = an unexpected
- * internal error. The not-indexed check runs BEFORE target resolution so its
- * guidance points at indexing.
+ * error→exit-1 mapping: 0 = a dry-run plan was produced OR an `--apply` reached
+ * post-check-green; 2 = a recoverable, success-shaped refusal with zero writes
+ * (not-indexed, target-not-found, heuristic-gated, out-of-root, …); 3 = an apply
+ * that wrote then rolled back byte-identically (FR-019); 4 = a failed rollback
+ * restore (FR-019a); 1 = an unexpected internal error. The not-indexed check runs
+ * BEFORE target resolution so its guidance points at indexing.
  */
 program
   .command('rename <target> <new-name>')
-  .description('Preview a graph-aware rename as a dry-run plan (no files are written)')
+  .description('Preview a graph-aware rename as a dry-run plan; pass --apply to execute it')
   .option('-p, --path <path>', 'Project path')
   .option('--file <file>', 'Narrow the target to a declaration in this file (qualifier)')
   .option('--kind <kind>', 'Narrow the target to this NodeKind — function, method, class, … (qualifier)')
   .option('-j, --json', 'Emit the plan as the stable JSON schema (identical to the codegraph_rename MCP result)')
-  .action(async (target: string, newName: string, options: { path?: string; file?: string; kind?: string; json?: boolean }) => {
+  .option('--apply', 'Recompute the plan from the live index and execute the apply safety ladder (writes files)')
+  .option('--include-heuristic', 'Permit apply when the plan contains heuristic-tier edits (no effect on a dry-run)')
+  .action(async (target: string, newName: string, options: { path?: string; file?: string; kind?: string; json?: boolean; apply?: boolean; includeHeuristic?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
     try {
       // A project with no index is a success-shaped refusal (exit 2), NOT the
@@ -1478,9 +1492,22 @@ program
       const { default: CodeGraph } = await loadCodeGraph();
       const cg = await CodeGraph.open(projectPath);
       try {
-        const plan = await cg.planRename({ name: target, file: options.file, kind: options.kind }, newName);
-        printRenamePlan(plan, options.json);
-        process.exitCode = plan.refusal ? RENAME_EXIT_CODES.refused : RENAME_EXIT_CODES.ok;
+        if (options.apply) {
+          // Slice 2: recompute the plan from the live index and walk the apply
+          // safety ladder (FR-014), mapping each terminal to its own exit code
+          // (FR-026) — never the read-only commands' generic error→exit-1.
+          const result = await cg.applyRename(
+            { name: target, file: options.file, kind: options.kind },
+            newName,
+            { includeHeuristic: options.includeHeuristic },
+          );
+          printApplyResult(result, newName, options.json);
+          process.exitCode = renameApplyExitCode(result.outcome);
+        } else {
+          const plan = await cg.planRename({ name: target, file: options.file, kind: options.kind }, newName);
+          printRenamePlan(plan, options.json);
+          process.exitCode = plan.refusal ? RENAME_EXIT_CODES.refused : RENAME_EXIT_CODES.ok;
+        }
       } finally {
         cg.destroy();
       }

@@ -515,6 +515,12 @@ export function resolveMethodOnType(
   /** Recursion guard for the supertype/conformance walk. */
   depth = 0,
 ): ResolvedRef | null {
+  // SPEC-010 FR-004 (rp-review): every declaration-recovered site flows through here
+  // (a VALIDATED `Type::method`), so emit the explicit `instance-method-decl` label
+  // that classifies `exact` — distinct from the shared `instance-method` the
+  // capitalization/word-overlap guesses (Strategy 2/3) emit directly. Reassigned once
+  // (idempotent through the supertype recursion below, which forwards this value).
+  if (resolvedBy === 'instance-method') resolvedBy = 'instance-method-decl';
   // Look up methods by name and match by qualifiedName ending in
   // `<typeName>::<methodName>`. This works whether the method is defined
   // in-class (`class Foo { int bar() { ... } }`) or out-of-line in a separate
