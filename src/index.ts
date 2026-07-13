@@ -95,6 +95,8 @@ import {
   LspWatchRestartBudget,
   LspWatchPrecisionPassOptions,
 } from './lsp';
+import { planRename as derivePlanRename } from './refactor/plan-engine';
+import type { RenamePlan, TargetSelector } from './refactor/types';
 
 // Re-export types for consumers
 export * from './types';
@@ -2818,6 +2820,31 @@ export class CodeGraph {
     options?: BuildContextOptions
   ): Promise<TaskContext | string> {
     return this.contextBuilder.buildContext(input, options);
+  }
+
+  // ===========================================================================
+  // Rename (SPEC-010)
+  // ===========================================================================
+
+  /**
+   * SPEC-010 FR-001/FR-006/FR-027 — produce a dry-run rename plan for `selector`
+   * (a bare name or a qualified `Class.method`, optionally narrowed by
+   * `file`/`kind`) → `newName`. A thin, read-only wrapper over the `src/refactor/`
+   * plan engine: it injects this instance's graph queries, project root, and
+   * resolved SPEC-008 LSP config, and never writes — the returned plan's `applied`
+   * is always false. Slice 1 exposes the plan only; the apply path arrives in
+   * Slice 2. Every recoverable condition (ambiguity, an unsupported/excluded kind,
+   * an invalid argument, a target that matched nothing) comes back as a
+   * success-shaped `refusal` on the plan, never a throw (FR-023).
+   */
+  async planRename(selector: TargetSelector, newName: string): Promise<RenamePlan> {
+    return derivePlanRename({
+      queries: this.queries,
+      projectRoot: this.projectRoot,
+      selector,
+      newName,
+      lspConfig: resolveLspConfig({ projectRoot: this.projectRoot }),
+    });
   }
 
   // ===========================================================================

@@ -48,6 +48,9 @@ import { relaunchWithWasmRuntimeFlagsIfNeeded } from '../extraction/wasm-runtime
 import { installCommandSupervision } from './command-supervision';
 import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
+import { RENAME_EXIT_CODES } from '../refactor/types';
+import type { RenamePlan } from '../refactor/types';
+import { formatRenamePlanTable, serializeRenamePlanJson } from '../refactor/plan-format';
 
 // Lazy-load heavy modules (CodeGraph, runInstaller) to keep CLI startup fast.
 async function loadCodeGraph(): Promise<typeof import('../index')> {
@@ -1413,6 +1416,78 @@ program
     } catch (err) {
       error(`Explore failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
+    }
+  });
+
+/**
+ * Print a rename {@link RenamePlan} to stdout: the stable JSON schema (`-j/--json`,
+ * byte-identical to the codegraph_rename MCP result, SC-005) or the default human
+ * table grouped by file (FR-027). Shared by the plan and the success-shaped
+ * refusal paths so both render through one seam.
+ */
+function printRenamePlan(plan: RenamePlan, json?: boolean): void {
+  console.log(json ? serializeRenamePlanJson(plan) : formatRenamePlanTable(plan));
+}
+
+/**
+ * codegraph rename <target> <new-name>
+ *
+ * SPEC-010 Slice 1 — the dry-run face of the graph-aware rename engine. Prints a
+ * plan (every file/range it would touch, a before/after preview, a per-edit
+ * confidence tier) and writes NOTHING (FR-001). Human table by default; `-j/--json`
+ * emits the stable schema object, byte-identical to the codegraph_rename MCP
+ * result (FR-027/SC-005). Targeting is name-based with `--file`/`--kind` qualifiers
+ * (FR-006). The apply path (`--apply`) arrives in Slice 2 — a Slice-1 binary
+ * rejects it with commander's standard unknown-option error.
+ *
+ * Exit taxonomy (FR-026), deliberately NOT the read-only commands' generic
+ * error→exit-1 mapping: 0 = a plan was produced; 2 = a recoverable, success-shaped
+ * refusal with zero writes (not-indexed, target-not-found, …); 1 = an unexpected
+ * internal error. The not-indexed check runs BEFORE target resolution so its
+ * guidance points at indexing.
+ */
+program
+  .command('rename <target> <new-name>')
+  .description('Preview a graph-aware rename as a dry-run plan (no files are written)')
+  .option('-p, --path <path>', 'Project path')
+  .option('--file <file>', 'Narrow the target to a declaration in this file (qualifier)')
+  .option('--kind <kind>', 'Narrow the target to this NodeKind — function, method, class, … (qualifier)')
+  .option('-j, --json', 'Emit the plan as the stable JSON schema (identical to the codegraph_rename MCP result)')
+  .action(async (target: string, newName: string, options: { path?: string; file?: string; kind?: string; json?: boolean }) => {
+    const projectPath = resolveProjectPath(options.path);
+    try {
+      // A project with no index is a success-shaped refusal (exit 2), NOT the
+      // generic exit-1 — decided BEFORE target resolution so the guidance points
+      // at indexing (FR-023/FR-026).
+      if (!isInitialized(projectPath)) {
+        printRenamePlan(
+          {
+            newName,
+            applied: false,
+            refusal: {
+              reason: 'not-indexed',
+              message: `No CodeGraph index in ${projectPath}. Run 'codegraph init' (or 'codegraph index') to build it, then retry.`,
+            },
+          },
+          options.json,
+        );
+        process.exitCode = RENAME_EXIT_CODES.refused;
+        return;
+      }
+
+      const { default: CodeGraph } = await loadCodeGraph();
+      const cg = await CodeGraph.open(projectPath);
+      try {
+        const plan = await cg.planRename({ name: target, file: options.file, kind: options.kind }, newName);
+        printRenamePlan(plan, options.json);
+        process.exitCode = plan.refusal ? RENAME_EXIT_CODES.refused : RENAME_EXIT_CODES.ok;
+      } finally {
+        cg.destroy();
+      }
+    } catch (err) {
+      // An unexpected internal error — distinct from the exit-2 refusals (FR-026).
+      error(`Rename failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = RENAME_EXIT_CODES.error;
     }
   });
 

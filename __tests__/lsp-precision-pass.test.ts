@@ -243,6 +243,75 @@ describe('LSP precision provenance foundation', () => {
     }
   });
 
+  // Graph columns come from web-tree-sitter, which reports UTF-16 code units —
+  // the same unit LSP positions use. Pins that request positions on lines with
+  // non-ASCII text stay correct as-is (no byte↔UTF-16 translation in either
+  // direction; a byte-based column source would fail this).
+  it('sends UTF-16 definition request positions for lines with non-ASCII text', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
+    dirs.push(dir);
+    const callLine = 'export const café = target();';
+    fs.writeFileSync(path.join(dir, 'a.ts'), 'export function target(): number { return 1; }\n');
+    fs.writeFileSync(path.join(dir, 'b.ts'), `import { target } from './a';\n${callLine}\n`);
+    const fakeServer = makeExecutable(dir, 'typescript-language-server');
+
+    const utf16Character = callLine.indexOf('target');
+    const byteColumn = Buffer.byteLength(callLine.slice(0, utf16Character), 'utf8');
+    const observed: Array<{ uri: string; line: number; character: number }> = [];
+
+    const cg = await CodeGraph.init(dir);
+    try {
+      await cg.indexAll();
+      const db = DatabaseConnection.open(getDatabasePath(dir));
+      try {
+        const queries = new QueryBuilder(db.getDb());
+        const config = resolveLspConfig({
+          projectRoot: dir,
+          cliActivation: 'enable',
+          env: {
+            CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([fakeServer, '--stdio']),
+          },
+        });
+
+        const status = await runLspPrecisionPass({
+          projectRoot: dir,
+          queries,
+          config,
+          clientFactory: {
+            create: () => ({
+              initialize: async () => ({ serverInfo: { name: 'utf16-source-ts-lsp' } }),
+              request: async (_method, params: any) => {
+                observed.push({
+                  uri: params.textDocument.uri,
+                  line: params.position.line,
+                  character: params.position.character,
+                });
+                return {
+                  uri: pathToFileURL(path.join(dir, 'a.ts')).href,
+                  range: { start: { line: 0, character: 16 }, end: { line: 0, character: 22 } },
+                };
+              },
+              shutdown: async () => undefined,
+            }),
+          },
+        });
+
+        expect(byteColumn).toBeGreaterThan(utf16Character);
+        const bUri = pathToFileURL(path.join(dir, 'b.ts')).href;
+        const callLinePositions = observed
+          .filter((request) => request.uri === bUri && request.line === 1)
+          .map((request) => request.character);
+        expect(callLinePositions).toContain(utf16Character);
+        expect(callLinePositions).not.toContain(byteColumn);
+        expect(status.edgeCounts.verified).toBeGreaterThan(0);
+      } finally {
+        db.close();
+      }
+    } finally {
+      cg.close();
+    }
+  });
+
   it('runs precision validation for TSX and JSX source files in Slice 1', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-precision-'));
     dirs.push(dir);
