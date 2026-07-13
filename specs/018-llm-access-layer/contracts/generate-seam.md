@@ -38,5 +38,10 @@ request (FR-018) — see `endpoint-wire.md`; holds no cross-call state (FR-024a)
 function redeemHandle(root: string, handle: string): RedeemResult; // data-model §7
 ```
 
-Reads only the handle's own bundle dir; `{status:'completed', text}` once the manifest is `completed`,
-`{status:'pending'}` while pending, `{status:'missing'}` if the dir is gone. No new persistence.
+The handle is first validated as a single contained segment resolving to a direct child of
+`.codegraph/tasks/` (FR-029a anchor containment) before the bundle dir is opened; a handle carrying a
+path separator or escaping the tasks root resolves as `{status:'missing'}` (no valid contained bundle),
+without any read — never throws. Otherwise reads only the handle's own bundle dir:
+`{status:'completed', text}` once the manifest is `completed`, `{status:'pending'}` while pending,
+`{status:'missing'}` if the dir is gone. No new persistence. A present-but-unreadable manifest (fails the
+D9 bounded safe-read) surfaces `{status:'pending'}` — never throws, never a false `completed` (FR-010a).

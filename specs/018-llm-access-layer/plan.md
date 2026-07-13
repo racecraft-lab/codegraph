@@ -161,8 +161,8 @@ specs/018-llm-access-layer/
 ```text
 src/llm/                         # NEW leaf module (Constitution III lists src/llm explicitly)
 ├── config.ts                    # [S1 NEW] loadLlmConfig(env) → LlmConfigResult union; redaction + plaintext-remote warning (LLM-worded); resolveLlmStatus(env)
-├── client.ts                    # [S1 NEW] LlmEndpointClient: streaming + non-streaming complete(); retry/timeout; LlmEndpointClientOverrides; LlmEndpointError (redaction-safe)
-├── prompt.ts                    # [S1 NEW] composePrompt (priority order); estimateTokens (chars/4); trimToBudget + "[context truncated: N of M]"; token constants
+├── client.ts                    # [S1 NEW] LlmEndpointClient: streaming + non-streaming complete(); vendor-neutral OpenAI-standard fields only (FR-015a); stream assembled on [DONE] OR clean EOF (FR-016a); empty/whitespace completion → fail (FR-009a); retry/timeout; LlmEndpointClientOverrides; LlmEndpointError (redaction-safe)
+├── prompt.ts                    # [S1 NEW] composePrompt (priority order: instructions > output contract > graph context; only graph-context trimmed, instructions + contract never truncated — FR-018); estimateTokens (chars/4); trimToBudget + "[context truncated: N of M]"; token constants
 ├── generate.ts                  # [S1 NEW] generate(root, task) seam; ProseTask / GenerationResult; endpoint + dormant + fallback in S1; agent branch = fallback stub in S1
 ├── agent-bundle.ts              # [S2 NEW] emitBundle (randomUUID + exclusive dir create); manifest read/write; listBundles; redeemHandle (FR-010a); bounded safe-read helper
 └── ingest.ts                    # [S2 NEW] ingestBundle: structural contract validation (FR-027); store result + stamp completed (FR-028); rejection semantics (FR-028a); FR-029a hardening

@@ -34,7 +34,16 @@ deterministic, never a semantic/quality judgment. First-consumer shape:
 
 ## FR-029a hardening (every bundle-file read, by ingest AND redeem)
 
-`readBundleFileSafely(root, bundleDir, relPath)` enforces, before the read/parse completes:
+**Anchor containment (before any bundle-file read)** — the bundle-selecting id/handle is untrusted where
+it is input (`tasks ingest <id>`, `redeemHandle(handle)`): validate it as a **single path segment**
+resolving via `validatePathWithinRoot(<.codegraph/tasks root>, id)` to a **direct child** of
+`.codegraph/tasks/`. Reject (FR-028a-shaped) any id/handle carrying a path separator or resolving outside
+the tasks root **before** `bundleDir` is trusted as the anchor below — a crafted id (e.g. `../../src`)
+must not relocate the anchor. Emit-side ids (`crypto.randomUUID()`) are inherently single-segment.
+
+`readBundleFileSafely(root, bundleDir, relPath)` then enforces, before the read/parse completes — and is
+the reader for EVERY named path, including `manifest.json`'s `contract` pointer (so a tampered
+`contract` value cannot escape the bundle dir):
 
 1. **Containment** — `validatePathWithinRoot(bundleDir, relPath)` (reused, not reimplemented); reject
    any path resolving outside the bundle dir, including via symlink realpath escape.
