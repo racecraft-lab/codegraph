@@ -95,6 +95,7 @@ these are the planned values grounded in the Clarify consensus (CRL 2–4) and A
 | `MAX_TOTAL_TIMEOUT_MS` (clamp ceiling) | 600_000 | mirrors embeddings `MAX_TIMEOUT_MS` |
 | `DEFAULT_IDLE_TIMEOUT_MS` (streaming inter-chunk deadline) | 45_000 | FR-017 + Assumptions (30–60 s silence; CRL 4) |
 | `DEFAULT_MAX_RETRIES` / `BASE_DELAY_MS` / `MAX_DELAY_MS` / `RETRY_AFTER_CAP_MS` | 3 / 1000 / 8000 / 30_000 | mirror `EndpointProviderOverrides` exactly (Assumptions: retry/backoff mirror embeddings) |
+| `MAX_RESPONSE_BYTES` (endpoint hard total-response-size ceiling) | 33_554_432 (32 MiB) | FR-017 + Assumptions (streamed byte-counting read, abort-on-exceed → consumer fallback; maintainer security-consensus decision CRL 9, 2026-07-13; model-fetch download-budget precedent; test-overridable via `maxResponseBytes?`, never user-facing per FR-007) |
 | `MAX_BUNDLE_INPUT_BYTES` (ingest size ceiling) | 1_048_576 (1 MiB) | FR-029a (stat-then-cap before read; adapts the `MAX_HELLO_LINE_BYTES` stream precedent to a file read) |
 | `MAX_JSON_DEPTH` (ingest nesting-depth ceiling) | 32 | FR-029a (Node stack-exhaustion guidance; a manifest/output is shallow) |
 
@@ -120,7 +121,7 @@ Complexity Tracking table empty.*
 
 | Principle | Verdict | Evidence |
 |---|---|---|
-| **I. Think Before Coding** | PASS | Every ambiguity resolved before plan: 12 design-concept questions (Q1–Q12), 3 Clarify sessions, 6 consensus resolutions (CRL 1–6). Zero `[NEEDS CLARIFICATION]` remain in spec.md; research.md records each plan-time decision with rationale + rejected alternatives. |
+| **I. Think Before Coding** | PASS | Every ambiguity resolved before plan: 12 design-concept questions (Q1–Q12), 3 Clarify sessions, 6 consensus resolutions (CRL 1–6) — this table records the plan-phase state; the later Checklist phase added CRL 7–9 (FR-009a/FR-015a plus the FR-017 response-size ceiling, the FR-029a id/handle anchor-containment amendment, and the FR-010a corrupt-manifest/invalid-handle clarifications), all still PASS and reflected in this plan's constants table and file map. Zero `[NEEDS CLARIFICATION]` remain in spec.md; research.md records each plan-time decision with rationale + rejected alternatives. |
 | **II. Simplicity First** | PASS | Minimum surface: filesystem manifest not a DB table (Q5); no auto-chunk/map-reduce (Q6/FR-019); no layer-owned heuristic registry (Q2/FR-013); no permanent `codegraph llm generate` surface (Q8); consumer-supplied fallback is a plain string, not a producer (Assumptions, SemVer-additive later). Streaming is kept (Q7) — a recorded maintainer deviation per the roadmap, not speculative scope. |
 | **III. Surgical Changes** | PASS | New capability in a new opt-in module `src/llm/` behind `CODEGRAPH_LLM_*` (the fork-discipline corollary explicitly lists `src/llm`). Upstream-owned diffs are minimal and additive: `src/index.ts` gains re-exports + `getLlmStatus()`; `src/bin/codegraph.ts` gains an `LLM:` status block (Embeddings block untouched) + a `tasks` command; no other upstream file changes. |
 | **IV. Goal-Driven Execution** | PASS | Verifiable goals per FR with TDD (codegraph-project-overrides preset: bug fixes start from a failing test). Determinism (SC-003), dormancy (SC-002), rejection/hardening (SC-006/FR-029a) each have explicit failing-test-first goals; quickstart.md is the runnable evidence guide. |
@@ -161,7 +162,7 @@ specs/018-llm-access-layer/
 ```text
 src/llm/                         # NEW leaf module (Constitution III lists src/llm explicitly)
 ├── config.ts                    # [S1 NEW] loadLlmConfig(env) → LlmConfigResult union; redaction + plaintext-remote warning (LLM-worded); resolveLlmStatus(env)
-├── client.ts                    # [S1 NEW] LlmEndpointClient: streaming + non-streaming complete(); vendor-neutral OpenAI-standard fields only (FR-015a); stream assembled on [DONE] OR clean EOF (FR-016a); empty/whitespace completion → fail (FR-009a); retry/timeout; LlmEndpointClientOverrides; LlmEndpointError (redaction-safe)
+├── client.ts                    # [S1 NEW] LlmEndpointClient: streaming + non-streaming complete(); vendor-neutral OpenAI-standard fields only (FR-015a); stream assembled on [DONE] OR clean EOF (FR-016a); empty/whitespace completion → fail (FR-009a); retry/timeout; hard total-response-size ceiling via a streamed byte-counting read that aborts on exceed → fallback (`MAX_RESPONSE_BYTES`, FR-017); LlmEndpointClientOverrides (incl. `maxResponseBytes?`); LlmEndpointError (redaction-safe)
 ├── prompt.ts                    # [S1 NEW] composePrompt (priority order: instructions > output contract > graph context; only graph-context trimmed, instructions + contract never truncated — FR-018); estimateTokens (chars/4); trimToBudget + "[context truncated: N of M]"; token constants
 ├── generate.ts                  # [S1 NEW] generate(root, task) seam; ProseTask / GenerationResult; endpoint + dormant + fallback in S1; agent branch = fallback stub in S1
 ├── agent-bundle.ts              # [S2 NEW] emitBundle (randomUUID + exclusive dir create); manifest read/write; listBundles; redeemHandle (FR-010a); bounded safe-read helper

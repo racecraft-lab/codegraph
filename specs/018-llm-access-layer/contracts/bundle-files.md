@@ -37,9 +37,13 @@ deterministic, never a semantic/quality judgment. First-consumer shape:
 **Anchor containment (before any bundle-file read)** — the bundle-selecting id/handle is untrusted where
 it is input (`tasks ingest <id>`, `redeemHandle(handle)`): validate it as a **single path segment**
 resolving via `validatePathWithinRoot(<.codegraph/tasks root>, id)` to a **direct child** of
-`.codegraph/tasks/`. Reject (FR-028a-shaped) any id/handle carrying a path separator or resolving outside
-the tasks root **before** `bundleDir` is trusted as the anchor below — a crafted id (e.g. `../../src`)
-must not relocate the anchor. Emit-side ids (`crypto.randomUUID()`) are inherently single-segment.
+`.codegraph/tasks/`. Reject any id/handle carrying a path separator or resolving outside the tasks root
+**before** `bundleDir` is trusted as the anchor below — a crafted id (e.g. `../../src`) must not relocate
+the anchor. The rejection **disposition is entry-point-specific** (spec FR-029a / FR-010a, CRL 8): at
+`tasks ingest <id>` it is FR-028a-shaped (manifest untouched, reason → stderr, no consumer artifact); at
+`redeemHandle` — which returns only its closed `RedeemResult` (no stderr/manifest channel) — it resolves
+to `{status:'missing'}` with no read (see `generate-seam.md`). Emit-side ids (`crypto.randomUUID()`) are
+inherently single-segment.
 
 `readBundleFileSafely(root, bundleDir, relPath)` then enforces, before the read/parse completes — and is
 the reader for EVERY named path, including `manifest.json`'s `contract` pointer (so a tampered
@@ -53,8 +57,11 @@ the reader for EVERY named path, including `manifest.json`'s `contract` pointer 
 5. **Read-expected-fields-only** — consume by reading only the contract's declared fields; never
    deep-merge/`Object.assign` the parsed object (prototype-pollution safe).
 
-Every rejection is **FR-028a-shaped**: manifest stays `pending`, reason → stderr, no consumer
-artifact, never `isError`. Same-user threat model; residual same-process TOCTOU accepted (research D9).
+At the **ingest** entry point every rejection is **FR-028a-shaped**: manifest stays `pending`, reason →
+stderr, no consumer artifact, never `isError`. At the **redeem** entry point the same safe-read failures
+map into FR-010a's closed `RedeemResult` instead — a present-but-unreadable manifest → `{status:'pending'}`
+(CRL 7), an anchor-containment failure → `{status:'missing'}` (CRL 8) — since `redeemHandle` has no
+stderr/manifest channel. Same-user threat model; residual same-process TOCTOU accepted (research D9).
 
 ## Identity / concurrency
 

@@ -76,7 +76,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Plan | `/speckit-plan` | ✅ Complete | plan.md + research.md (14 decisions D1–D14, all clarify-pinned constants set: budget 2000tok/8000chars, total timeout 300s, idle 45s, max_tokens 1024, MAX_BUNDLE_INPUT_BYTES 1MiB, MAX_JSON_DEPTH 32) + data-model.md (9 entities) + quickstart.md + 6 contracts. Constitution Check PASS (pre+post design, Complexity table empty). Zero conflicts with Q1–Q12/CRL 1–6. G3 PASS (direct verification). estimate-reviewable-loc: `not_estimated` (plan file-table not in greppable format; advisory, continue) — fallback evidence: plan declares slice 1 = 4 NEW src + 2 MODIFIED, slice 2 = 2 NEW src + 3 MODIFIED, within the 2-slice budget. CLAUDE.md SPECKIT block updated (in-flight) |
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 98 items, 13 gaps → 0 (all 1-loop); 5 consensus items — CRL 7 (2/3 majority, dissent carried), CRL 8 (3/3 + amendment, maintainer-approved), CRL 9 (human fork → maintainer chose response-size ceiling); spec gained FR-009a/FR-015a + extensions to FR-002/005/010a/016a/017/018/026/027/029a/SC-004; G4 PASS (0 [Gap]) |
 | Tasks | `/speckit-tasks` | ✅ Complete | 33 tasks (T001–T033), 8 phases, 14 [P]; all 38 FR ids mapped (zero orphans, coverage matrix embedded); TDD failing-test-first throughout; slice boundary intact (slice 1 = T001–T017 → PR 1; slice 2 = T018–T031 → PR 2; T032/T033 per-slice finalization); env-clean test rule carried. G5 PASS (33 unchecked, 0 markers, 0 phantoms). Tasks-mode reviewability DEFERRED on installed runner → fallback evidence chain in autopilot-state.json. Atomicity route `one-navigable-PR` (advisory) CONFLICTS with ratified Q12/FR-031 split — surfaced per this file's G5 note, resolved in favor of the ratified decision via pr_marker_plan (2 markers, marker-based PR emission). Layer plan skipped (non-split route) |
-| Analyze | `/speckit-analyze` | ⏳ Pending | |
+| Analyze | `/speckit-analyze` | ✅ Complete | 5 findings (0C/0H/3M/2L) all resolved in 1 loop — every one a downstream doc lagging ratified CRL 8/9 decisions (spec.md + tasks.md already correct); 0 unresolved → consensus skipped; G6 PASS. 📊 Confidence 0.97 (G6.5 advisory PASS, threshold 0.90, runner-verified) |
 | Implement | `/speckit-implement` | ⏳ Pending | |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -664,9 +664,27 @@ Focus on:
 
 ### Analysis Results
 
+5 findings, all resolved in 1 remediation loop (+1 verification pass); 0 unresolved → consensus skipped; G6 PASS (0 CRITICAL/HIGH). Every finding was a downstream doc lagging the ratified late spec changes (CRL 8/9) — spec.md and tasks.md were already correct.
+
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| A1 | MEDIUM | FR-017 response-size ceiling absent from plan.md constants/client desc, research.md D4, quickstart S1.5 | MAX_RESPONSE_BYTES (~32 MiB) propagated to all three; S1.5 renamed "Timeouts + response-size ceiling" with a size-abort scenario |
+| A2 | LOW | `maxResponseBytes?` missing from the overrides listings (endpoint-wire Test seam, research D4) | Added to both |
+| A3 | MEDIUM | research.md D9 omitted the CRL-8 id/handle anchor-containment + entry-point disposition; D7 omitted corrupt-manifest/escaping-handle dispositions | Both decision records extended |
+| A4 | LOW | plan.md/research.md cite "CRL 1–6"; nine rows now exist | Additive annotations (point-in-time record preserved; CRL 7–9 noted, all gates still PASS) |
+| A5 | MEDIUM | bundle-files.md labeled anchor-containment rejections uniformly FR-028a-shaped for ingest AND redeem, contradicting the ratified entry-point split | Qualified both statements; all three redemption docs now agree |
+
+**Pre-Implement Confidence Emit** (consensus-synthesizer, clean-pass path — every artifact claim independently re-verified against the worktree):
+
+📊 Confidence: 0.97
+
+- Task understanding: 0.98
+- Approach clarity: 0.97
+- Requirements alignment: 0.98
+- Risk assessment: 1.00
+- Completeness: 0.94
+
+Rationale highlights: all artifacts verified directly and internally consistent; CRL 7–9 decisions traceably synced across every downstream doc; risk = 1.00 (0 open CRITICAL/HIGH). Completeness 0.94 reflected the then-blank Analysis Results table above (fixed by this very edit). Residuals carried into Phase 7: follow the PR Marker Plan mechanism (not the split-PR layer planner) for the two-PR delivery; the waived plan estimator remains advisory-only fallback evidence.
 
 ---
 

@@ -64,11 +64,14 @@ Expect: an over-budget task trims only graph-context items to the 8000-char budg
 `[context truncated: N of M]`, and produces **identical** trimmed output for identical input across
 runs; no auto-chunking occurs.
 
-### S1.5 Timeouts (US2 / FR-017)
+### S1.5 Timeouts + response-size ceiling (US2 / FR-017)
 
-Within `llm-client.test.ts` (overrides shrink the deadlines to ms): a non-streaming request past the
-flat total deadline aborts and degrades; a streaming request with a chunk gap past the inter-chunk
-idle deadline aborts, while a slow-but-steady stream (gaps under the idle deadline) completes.
+Within `llm-client.test.ts` (overrides shrink the deadlines to ms and `maxResponseBytes` to a small
+cap): a non-streaming request past the flat total deadline aborts and degrades; a streaming request
+with a chunk gap past the inter-chunk idle deadline aborts, while a slow-but-steady stream (gaps under
+the idle deadline) completes; and a response body that exceeds the hard total-response-size ceiling
+(`MAX_RESPONSE_BYTES`, streamed byte-counting read) is aborted mid-read and degrades to the consumer
+fallback — never returned as `endpoint` output (maintainer security-consensus decision, CRL 9).
 
 ### S1.6 Status `LLM:` block + redaction (US2 / FR-006, SC-004)
 

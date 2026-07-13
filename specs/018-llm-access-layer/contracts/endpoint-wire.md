@@ -79,5 +79,7 @@ precedent.
 ## Test seam
 
 `LlmEndpointClientOverrides { maxRetries?, baseDelayMs?, maxDelayMs?, retryAfterCapMs?,
-totalTimeoutMs?, idleTimeoutMs?, maxOutputTokens? }` — mirrors `EndpointProviderOverrides`. Tests
-drive a local `http.createServer` fake (embeddings-endpoint precedent), never a live endpoint.
+totalTimeoutMs?, idleTimeoutMs?, maxOutputTokens?, maxResponseBytes? }` — mirrors
+`EndpointProviderOverrides` plus the FR-017 response-size ceiling (`maxResponseBytes?` shrinks
+`MAX_RESPONSE_BYTES` so the abort-on-exceed path is testable). Tests drive a local `http.createServer`
+fake (embeddings-endpoint precedent), never a live endpoint.

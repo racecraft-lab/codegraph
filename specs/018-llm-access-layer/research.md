@@ -6,6 +6,13 @@ This document records the **plan-time detail** decisions the spec explicitly def
 with rationale and rejected alternatives, plus the concrete values for the clarify-pinned
 constants. Nothing below contradicts spec.md, the design concept, or CRL 1–6.
 
+> **Post-authoring sync (Checklist phase, CRL 7–9):** the domain checklists added three security/
+> reliability refinements after this document was first written — the FR-017 hard total-response-size
+> ceiling (`MAX_RESPONSE_BYTES`, CRL 9), the FR-029a id/handle single-segment anchor-containment guard
+> with its entry-point-specific disposition (CRL 8), and the FR-010a corrupt-manifest→`pending` /
+> invalid-handle→`missing` dispositions (CRL 7–8). The decisions below (D4, D7, D9) and the constants
+> summary are updated to carry them; they extend, and do not contradict, CRL 1–6.
+
 ## D1 — Module shape and public seam
 
 **Decision**: `src/llm/` is a leaf module of six production files: `config.ts`, `client.ts`,
@@ -93,6 +100,15 @@ as the pattern of record for any *future* numeric knob, but no such knob ships i
   (`DEFAULT_TOTAL_TIMEOUT_MS` = 300_000, `AbortSignal.timeout`). Streaming enforces an **inter-chunk
   idle deadline** (`DEFAULT_IDLE_TIMEOUT_MS` = 45_000) — a timer reset on every received chunk,
   aborting only on sustained silence, never a single flat cap over the whole stream.
+- **Response-size ceiling** (FR-017, added at Checklist / CRL 9 — maintainer security-consensus
+  decision 2026-07-13): in BOTH modes the client reads the response body as a stream with a byte
+  counter and aborts (the existing `AbortController`) the moment `MAX_RESPONSE_BYTES` = 33_554_432
+  (32 MiB) is crossed; a ceiling-exceeded response is an ultimate failure that degrades to the consumer
+  fallback (FR-009). This mirrors the in-repo model-fetch download budget (streamed read + byte counter
+  + abort-on-exceed) and deliberately hardens beyond the embeddings client's unbounded `response.text()`
+  read (`max_tokens` is only an ignorable request-side hint, and neither deadline bounds volume). The
+  ceiling is a generous internal constant, test-overridable via `maxResponseBytes?`, never user-facing
+  (FR-007).
 - **Retry** mirrors `EndpointProvider` exactly: retry 5xx/429/timeout/network with exponential
   backoff + full jitter honoring `Retry-After`; fast-abort 4xx; `DEFAULT_MAX_RETRIES` = 3.
 - **Errors**: the only error type leaving the module is `LlmEndpointError` — message + own props are
@@ -100,8 +116,9 @@ as the pattern of record for any *future* numeric knob, but no such knob ships i
   integer). The raw transport error is read for `.name` only, never chained as `cause`; no response
   body text is ever surfaced (FR-005, `EmbeddingEndpointError` precedent).
 - **Test seams**: `LlmEndpointClientOverrides { maxRetries?, baseDelayMs?, maxDelayMs?,
-  retryAfterCapMs?, totalTimeoutMs?, idleTimeoutMs?, maxOutputTokens? }` — mirrors
-  `EndpointProviderOverrides`, so retry/timeout paths run in milliseconds under test.
+  retryAfterCapMs?, totalTimeoutMs?, idleTimeoutMs?, maxOutputTokens?, maxResponseBytes? }` — mirrors
+  `EndpointProviderOverrides` plus the FR-017 response-size ceiling, so retry/timeout/size-abort paths
+  run in milliseconds and small byte-caps under test.
 
 **Rationale**: The endpoint arm is deliberately the embeddings client re-shaped from "batch embed"
 to "one chat completion." CRL 4 grounds the larger timeout (embeddings' 30 s is generation-inadequate;
@@ -182,7 +199,14 @@ type RedeemResult =
 The handle IS the opaque bundle id. The lookup reads **only** the handle's own bundle directory,
 introduces **no** persistence beyond the existing filesystem manifest (FR-023), and reuses D9's
 bounded safe-read for the manifest + canonical result. Every path it opens is validated with
-`validatePathWithinRoot` (FR-029a applies to redemption too).
+`validatePathWithinRoot` (FR-029a applies to redemption too). Because `redeemHandle` returns only its
+closed three-way `RedeemResult` (no stderr/manifest channel), the safe-read failures resolve inside that
+enumeration (CRL 7–8, added at Checklist): a present-but-unreadable manifest surfaces `pending` (never a
+false `missing` — the directory's own existence is the sole definition of `missing`, and a torn read
+that in fact completed must not be reported gone), while a handle that fails D9's single-segment
+anchor-containment check (a path separator, or any resolution outside `.codegraph/tasks/`) resolves to
+`missing` without any read — such a handle never designates a location under the tasks root, so no bundle
+directory exists there from this lookup's jurisdiction.
 
 **Rationale**: CRL 5 (2/3 consensus, incl. a domain round) — an async-handle contract is incomplete
 without its redemption accessor; SPEC-011/019 structurally require retrieving finalized text. The
@@ -235,9 +259,28 @@ in order, **before** the read completes or a parse begins:
 5. **Read-expected-fields-only**: consume the parsed object by reading only the contract's declared
    fields; never deep-merge/`Object.assign` attacker JSON into a live object, so `__proto__`/
    `constructor`/`prototype` keys cannot pollute a prototype.
-Every rejection here is **FR-028a-shaped**: the manifest stays `pending`, the reason goes to stderr,
-no consumer artifact is written, and it is never surfaced as `isError`. Residual same-process TOCTOU
-between check and use is out of scope (consistent with the project's same-user write-sink precedent).
+
+**Anchor containment on the bundle-selecting id/handle (CRL 8 amendment, added at Checklist)**: the
+per-path checks above anchor at `bundleDir`, so the id/handle that *selects* that dir is itself
+untrusted wherever it arrives as input — the `codegraph tasks ingest <id>` argument and the FR-010a
+redemption handle. BEFORE `bundleDir` is trusted as the containment anchor, validate the id/handle as a
+single path segment resolving — via the same `validatePathWithinRoot` anchored at the `.codegraph/tasks/`
+root — to a direct child of that root; reject any id/handle carrying a path separator or resolving
+outside the tasks root before any bundle directory is opened (otherwise a crafted id like `../../src`
+would relocate the anchor and a write could still pass the per-path check against the relocated anchor).
+Emit-side ids are `crypto.randomUUID()` — inherently single-segment — so this guard governs only the
+read/ingest/redeem side. The **disposition is entry-point-specific**: at the `tasks ingest <id>` CLI it
+is FR-028a-shaped (manifest untouched, reason → stderr, no consumer artifact); at the FR-010a
+`redeemHandle` lookup — which has no ingest-style rejection channel — it instead resolves to FR-010a's
+`missing` result (see D7).
+
+Every rejection at the **ingest** entry point is **FR-028a-shaped**: the manifest stays `pending`, the
+reason goes to stderr, no consumer artifact is written, and it is never surfaced as `isError`. At the
+**redeem** entry point the same safe-read failures map to FR-010a's closed three-way result instead — a
+present-but-unreadable manifest → `pending` (CRL 7), an anchor-containment failure → `missing` (CRL 8) —
+never a stderr/leave-`pending` shape, because `redeemHandle` returns only its `RedeemResult` (D7).
+Residual same-process TOCTOU between check and use is out of scope (consistent with the project's
+same-user write-sink precedent).
 
 **Rationale**: CRL 1 — 3/3 unanimous security consensus, maintainer-APPROVED 2026-07-13. Precedent
 verified in-repo (SPEC-010 FR-017, SPEC-005 FR-017b, SPEC-002 FR-017a); domain additions: depth-bound
@@ -351,6 +394,7 @@ See plan.md §Technical Context for the table. Values: `CHARS_PER_TOKEN=4`;
 `GRAPH_CONTEXT_TOKEN_BUDGET=2000` (→ 8000 chars); marker `[context truncated: N of M]`;
 `DEFAULT_MAX_OUTPUT_TOKENS=1024`; `DEFAULT_TOTAL_TIMEOUT_MS=300_000` (ceiling 600_000);
 `DEFAULT_IDLE_TIMEOUT_MS=45_000`; retry `3 / 1000 / 8000 / 30_000`;
+`MAX_RESPONSE_BYTES=33_554_432` (FR-017 endpoint response-size ceiling, CRL 9);
 `MAX_BUNDLE_INPUT_BYTES=1_048_576`; `MAX_JSON_DEPTH=32`. Each is confirmable at implement time and
 overridable only through the test-only override interface.
 
