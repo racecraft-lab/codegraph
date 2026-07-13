@@ -73,7 +73,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 5 US (P1–P5, mapped to 2-slice split) / 31 FR / 19 acceptance scenarios / 7 SC / 8 edge cases / 6 key entities; 0 markers; G1 PASS (direct verification — gate-validator agent terminated early, logged). spec.md + checklists/requirements.md + feature.json created. Spec's own budget declaration (~900–1300 LOC total) exceeds the roadmap 405 projection — flagged for the plan-phase estimator |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions, 14 questions (9 accepted directly, 6 consensus items incl. 1 Round-2 escape and 1 mandatory security human-gate — maintainer approved FR-029a); 11 analyst runs + 6 syntheses; spec gained FR-010a/016a/024a/028a/029a + CLI naming, manifest enum, budget anchor, timeout semantics, note-in-slice-2-PR; 2 executor recommendations reversed by consensus evidence (8K budget → ~2K anchor; note follow-up → in-PR); G2 PASS (0 markers) |
-| Plan | `/speckit-plan` | ⏳ Pending | |
+| Plan | `/speckit-plan` | ✅ Complete | plan.md + research.md (14 decisions D1–D14, all clarify-pinned constants set: budget 2000tok/8000chars, total timeout 300s, idle 45s, max_tokens 1024, MAX_BUNDLE_INPUT_BYTES 1MiB, MAX_JSON_DEPTH 32) + data-model.md (9 entities) + quickstart.md + 6 contracts. Constitution Check PASS (pre+post design, Complexity table empty). Zero conflicts with Q1–Q12/CRL 1–6. G3 PASS (direct verification). estimate-reviewable-loc: `not_estimated` (plan file-table not in greppable format; advisory, continue) — fallback evidence: plan declares slice 1 = 4 NEW src + 2 MODIFIED, slice 2 = 2 NEW src + 3 MODIFIED, within the 2-slice budget. CLAUDE.md SPECKIT block updated (in-flight) |
 | Checklist | `/speckit-checklist` | ⏳ Pending | llm-integration, error-handling, security |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Slice-aware ordering (Q12) |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
@@ -429,11 +429,11 @@ spike lands inside slice 2's PR or as a docs-only follow-up — Open Question).
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, execution flow, slice boundary |
-| `research.md` | ⏳ | Decision rationales (if needed) |
-| `data-model.md` | ⏳ | Prose-task / result-union / manifest schema entities |
-| `contracts/` | ⏳ | generate() seam + bundle manifest contract |
-| `quickstart.md` | ⏳ | Developer onboarding (if needed) |
+| `plan.md` | ✅ | Summary, Technical Context (constants table), Constitution Check PASS ×2, Project Structure (per-slice NEW/MODIFIED file list), empty Complexity table |
+| `research.md` | ✅ | 14 plan-time decisions D1–D14 with rationale + rejected alternatives (module shape, config union, client wire/timeouts, prompt guard, 3-kind result union + slice seam, redeemHandle, bundle layout, FR-029a hardening mechanics, output-contract schema, tasks CLI, LLM: status block, note-in-PR, companion skill) |
+| `data-model.md` | ✅ | 9 entities with FR traceability table |
+| `contracts/` | ✅ | 6: generate-seam, llm-config-resolution, endpoint-wire, tasks-cli, bundle-files, status-llm-json |
+| `quickstart.md` | ✅ | 6 slice-1 + 7 slice-2 validation scenarios + full gate; carries the env-clean test rule forward for CODEGRAPH_LLM_* |
 
 ---
 
