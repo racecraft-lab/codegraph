@@ -110,7 +110,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
 | SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Blocked by SPEC-005 |
-| SPEC-010 | Graph-Aware Rename | ⏳ Pending | [SPEC-010-workflow.md](SPEC-010-workflow.md) | Ready (SPEC-008 complete) |
+| SPEC-010 | Graph-Aware Rename | 🔄 In Progress | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Scaffolded 2026-07-10 on `010-graph-aware-rename`; split: 2 vertical slices (plan engine + CLI dry-run; apply + MCP) |
 | SPEC-011 | Execution Flows & Clusters | ⏳ Pending | [SPEC-011-workflow.md](SPEC-011-workflow.md) | Specify (parallel-safe) |
 | SPEC-012 | Change Impact Detection | ⏳ Pending | [SPEC-012-workflow.md](SPEC-012-workflow.md) | Prefers SPEC-011 |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
