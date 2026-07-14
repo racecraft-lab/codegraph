@@ -118,7 +118,7 @@ src/db/
 src/index.ts                        # + one hook call at end of indexAll()/sync() (maybeRunEmbeddingPass site)
 src/mcp/tools.ts                    # + codegraph_list_flows / codegraph_get_flow / codegraph_list_clusters
                                     #   (thin handlers → catalog-store; existing tools + explore untouched)
-src/server/                         # + GET /api/flows, GET /api/clusters (thin handlers → catalog-store)
+src/server/                         # + GET /api/flows, GET /api/clusters (thin handlers → daemon-client → daemon's catalog-store read; web serve holds no DB connection, SPEC-005 FR-002)
 src/server/openapi.yaml             # + the two paths + Flow/Cluster schemas (mirrors MCP field names)
 codegraph.json + config loader      # + per-catalog opt-in flags (SPEC-008 lsp precedent)
 
@@ -127,7 +127,7 @@ __tests__/analysis/fixtures/        # commander-CLI + event/queue registrar fixt
 scripts/                            # ≥3-run paired full-index benchmark harness (SC-006 evidence)
 ```
 
-**Structure Decision**: Single-project layered pipeline. All new logic is isolated in the new `src/analysis/` tree (flows + clusters + shared catalog store), keeping the primary review surface in one place and holding upstream-owned-file diffs to additive hooks/wiring. The catalog **read** helpers live in `src/analysis/catalog-store.ts` and are called by both `src/mcp/tools.ts` and `src/server/` so the two surfaces cannot drift (FR-028) and the `src/mcp/` diff stays thin for retrieval-guardian review.
+**Structure Decision**: Single-project layered pipeline. All new logic is isolated in the new `src/analysis/` tree (flows + clusters + shared catalog store), keeping the primary review surface in one place and holding upstream-owned-file diffs to additive hooks/wiring. The catalog **read** helpers live in `src/analysis/catalog-store.ts` and run inside the per-project daemon: `src/mcp/tools.ts` calls them directly, and the REST endpoints reach the SAME helpers by forwarding to that daemon via `src/server/daemon-client.ts` (the web `serve` process is a daemon *client* with no DB connection of its own — SPEC-005 FR-002), so the two surfaces share one read path and cannot drift (FR-028) and the `src/mcp/` diff stays thin for retrieval-guardian review.
 
 ## Complexity Tracking
 

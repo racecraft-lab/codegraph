@@ -84,7 +84,7 @@ Resolved from this worktree on 2026-07-14:
 | Plan | `/speckit-plan` | ✅ Complete | plan+research+data-model+2 contracts+quickstart; G3 pass; Constitution I–VII pass; 5 tables + graph_write_version |
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains (~121 items); 36 gaps consolidated & applied (+6 FRs, +2 SCs across 7 artifacts); G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 68 tasks (T001–T068), 38 [P]; by user story; all required tasks present; G5 pass |
-| Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check spec, plan, tasks, constitution, design concept |
+| Analyze | `/speckit-analyze` | ✅ Complete | 2 findings (1 HIGH, 1 LOW) remediated; 0 CRITICAL; G6 pass; REST-topology premise corrected |
 | Implement | `/speckit-implement` | ⏳ Pending | TDD, dogfood UAT, paired benchmark |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -639,7 +639,21 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| F1 | HIGH | REST read-path topology mischaracterized (a "shared-writer connection" premise originating in checklist CHK007, adopted into FR-021a) — would misdirect REST wiring to add a forbidden DB connection to the web `serve` process (SPEC-005 FR-002, Constitution III) | Corrected across spec FR-021a / plan / tasks (T025/T037/T043) / data-model: web `serve` is a daemon *client* (`src/server/daemon-client.ts`) with no DB handle; both surfaces read on the daemon's worker connections (one topology). Single-fetch mandate preserved. |
+| F2 | LOW | `contracts/rest-api.md` openapi-additions list omitted the `minSize` query param for `/api/clusters` (specified elsewhere) | Added `MinSize` query param (integer, default 1, min 1) to the additions list (FR-029) |
+| — | — | **G6: 0 CRITICAL / 0 HIGH remain** (verified over 2 remediation loops + a forked re-run) | — |
+
+### Pre-Implement Confidence (G6.5)
+
+📊 Confidence: 0.96
+
+- Task understanding: 0.95
+- Approach clarity: 0.92
+- Requirements alignment: 0.95
+- Risk assessment: 1.00
+- Completeness: 0.98
+
+Basis: spec (39 FR / 12 SC / 5 US, 0 markers); plan + data-model + contracts coherent and adversarially verified; tasks.md (68) trace every FR/SC with all required tasks present; 0 open CRITICAL/HIGH after Analyze. Approach-clarity carries a mild deduction for the REST-topology premise that survived Clarify + Checklist before Analyze corrected it against ground truth (now fixed). Gate mode: advisory, threshold 0.90 → PASS.
 
 ---
 

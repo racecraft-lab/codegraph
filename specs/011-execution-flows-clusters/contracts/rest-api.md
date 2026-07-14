@@ -33,7 +33,7 @@ Two new **unprefixed** endpoints (like existing `/api/*` routes), added to the c
 ## openapi.yaml additions
 
 - Paths: `/api/flows`, `/api/flows/{id}`, `/api/clusters`.
-- Schemas: `FlowSummary`, `FlowDetail`, `FlowStep`, `FlowTruncation`, `ClusterSummary` — field names shared with the MCP items. Reuse the existing `Limit`, `Offset` components; `ListResult` is reused via `allOf` extension (below).
+- Schemas: `FlowSummary`, `FlowDetail`, `FlowStep`, `FlowTruncation`, `ClusterSummary` — field names shared with the MCP items. Reuse the existing `Limit`, `Offset` components; add a `MinSize` query parameter (integer, default 1, minimum 1) on `/api/clusters` (FR-029); `ListResult` is reused via `allOf` extension (below).
 - **`FlowStep.provenance`**: `{ type: string, enum: [static, lsp, heuristic], nullable: true }` (null only for the root step). It MUST NOT `$ref` the existing `Edge.provenance` schema — that 2-value enum (`[static, heuristic]`) has no `lsp` value, so reusing it would collapse LSP-corrected steps to `static` and silently drop the LSP provenance FR-008/FR-009 require.
 - **`FlowListResult` / `ClusterListResult`**: the list envelopes, each `allOf`-extending the shared `ListResult` and overriding its Node-typed `items` — the existing `SearchResult`-extends-`ListResult` precedent:
 
