@@ -1,0 +1,25 @@
+**Exploration: target caller useTarget**
+
+Found 4 symbols across 2 files.
+
+**Blast radius — what depends on these (update/verify before editing)**
+
+- `target` (src/feature.ts:1) — 3 callers in `src/feature.ts`, `src/helper.ts`; ⚠️ no covering tests found
+
+**Source Code**
+
+> The code below is the **verbatim, current on-disk source** of these files — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.
+
+**`src/feature.ts`** — caller(function), target(function)
+
+```typescript
+1	export function target() { return 1; }
+2	export function caller() { return target(); }
+```
+
+**`src/helper.ts`** — useTarget(function), helper.ts(file)
+
+```typescript
+1	import { target } from './feature';
+2	export function useTarget() { return target() + 1; }
+```

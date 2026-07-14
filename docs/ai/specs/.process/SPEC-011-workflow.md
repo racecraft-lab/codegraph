@@ -720,7 +720,7 @@ For each task:
 - **Concurrency-timeout flakes**: a shifting subset of parse-heavy suites (`refactor-apply`, `graph-traversal`, `backend-delegation`, …) intermittently time out at 5000ms under full-suite load; all pass in isolation. Known repo characteristic, not regressions.
 - **Fixed v10 schema-version test-debt**: the v10 migration (T005) bumped the DB schema version; `pr19-improvements.test.ts` (Group A), `embeddings-index.test.ts:114`, and `foundation.test.ts:399` all asserted `9` → corrected to `10`.
 | 5 - Activation (US5) | T051–T057 | ✅ 7/7 | opt-in flags (T054 via US1) + dormancy gating (T055 via US4) verified byte-identical; LLM display-label advisory dormant + credential-redaction-safe, no client added (T056); `codegraph.json` enables both catalogs for dogfood (T057); 16 activation tests green; full suite 3618 passed / 0 failed |
-| 6 - Polish (parity/benchmark/UAT) | T058–T068 | ⏳ | |
+| 6 - Polish | T058–062, 064, 065 | ✅ | cross-surface parity + explore-unchanged golden (do-not-regress) + end-to-end determinism fixture + paired benchmark harness (median B/A ≈ 1.01–1.06, ≤1.20 **PASS**) + zero-overhead evidence + CHANGELOG (3 [Unreleased] bullets); full suite 3626 passed / 0 failed. T063 UAT · T066 guardian · T067 PR-packet · T068 LOC-remeasure → post-implementation |
 
 ---
 
