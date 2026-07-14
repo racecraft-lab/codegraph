@@ -103,11 +103,32 @@ function tasksRootDir(root: string): string {
  * inherently single-segment; this guard governs the untrusted read/redeem side.
  */
 export function resolveBundleDir(root: string, handle: string): string | null {
-  if (typeof handle !== 'string' || handle === '' || handle === '.' || handle === '..') return null;
+  if (typeof handle !== 'string' || handle === '') return null;
+  // Reject any dot-prefixed handle — `.`, `..`, a `.tmp-<id>` staging dir, or any
+  // dotfile. Emit-side bundle ids are `crypto.randomUUID()`s and never dot-prefixed, so a
+  // staging/hidden entry can never be redeemed or ingested (staging dirs stay invisible to
+  // the untrusted read/redeem side, mirroring listBundles' dot-skip below).
+  if (handle.startsWith('.')) return null;
   if (handle.includes('/') || handle.includes('\\') || handle.includes(path.sep)) return null;
   // A single segment resolving within the tasks root is, by construction, a direct
   // child; validatePathWithinRoot additionally rejects any realpath/symlink escape.
-  return validatePathWithinRoot(tasksRootDir(root), handle);
+  const validated = validatePathWithinRoot(tasksRootDir(root), handle);
+  if (validated === null) return null;
+  // Direct-child invariant (FR-029a): the bundle entry `tasks/<id>` must be a REAL
+  // directory that is a direct child of the tasks root — never a symlink. A symlinked entry
+  // whose realpath happens to stay inside the tasks root passes validatePathWithinRoot
+  // (which returns the in-root realpath of the target), so lstat the addressed entry ITSELF
+  // and reject a symlink here. A not-yet-existent entry (ENOENT) is fine — the caller's own
+  // existence check handles absence; any other lstat error is treated conservatively as a
+  // rejection. (On Windows O_NOFOLLOW is a no-op and symlink/junction creation is
+  // privileged; realpath containment still holds — an accepted parity gap.)
+  const addressed = path.join(tasksRootDir(root), handle);
+  try {
+    if (fs.lstatSync(addressed).isSymbolicLink()) return null;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return null;
+  }
+  return validated;
 }
 
 /**
@@ -152,6 +173,52 @@ function readOwnStringField(obj: unknown, name: string): string | null {
   if (!Object.prototype.hasOwnProperty.call(obj, name)) return null;
   const value = (obj as Record<string, unknown>)[name];
   return typeof value === 'string' ? value : null;
+}
+
+/**
+ * Validate the OPEN descriptor's type + size and read its bounded content, returning a
+ * {@link SafeReadResult}. Split out so {@link readBundleFileSafely} can run every
+ * descriptor operation that MIGHT raise (`fstatSync`/`readSync`, e.g. EIO) inside a single
+ * try/catch and still guarantee it never throws. Every check touches only `fd`, never the
+ * path again — the check-then-use file-system race is already closed by the caller's single
+ * `openSync`:
+ *  - reject a non-regular file, or a size > {@link MAX_BUNDLE_INPUT_BYTES} (an early cheap
+ *    reject) via `fstatSync`.
+ *  - read at most `MAX_BUNDLE_INPUT_BYTES + 1` bytes from the descriptor: fstat's size is
+ *    only advisory (an untrusted writer can APPEND after the stat), so reject when the
+ *    bytes actually read exceed the ceiling — the oversized content is never decoded or
+ *    parsed. `readSync` may return short, so loop until the buffer fills or EOF.
+ *  - reject nesting > {@link MAX_JSON_DEPTH} with a bounded-depth scan BEFORE `JSON.parse`.
+ */
+function readValidatedDescriptor(fd: number, relPath: string): SafeReadResult {
+  const stat = fs.fstatSync(fd);
+  if (!stat.isFile()) {
+    return { ok: false, reason: `not a regular file: ${relPath}` };
+  }
+  if (stat.size > MAX_BUNDLE_INPUT_BYTES) {
+    return { ok: false, reason: `file exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes: ${relPath}` };
+  }
+  const buf = Buffer.alloc(MAX_BUNDLE_INPUT_BYTES + 1);
+  let total = 0;
+  while (total < buf.length) {
+    const n = fs.readSync(fd, buf, total, buf.length - total, total);
+    if (n === 0) break; // EOF
+    total += n;
+  }
+  if (total > MAX_BUNDLE_INPUT_BYTES) {
+    return { ok: false, reason: `file exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes: ${relPath}` };
+  }
+  const raw = buf.toString('utf8', 0, total);
+  if (exceedsJsonDepth(raw, MAX_JSON_DEPTH)) {
+    return { ok: false, reason: `JSON nesting exceeds ${MAX_JSON_DEPTH}: ${relPath}` };
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return { ok: false, reason: `malformed JSON: ${relPath}` };
+  }
+  return { ok: true, value };
 }
 
 /**
@@ -200,42 +267,34 @@ export function readBundleFileSafely(root: string, bundleDir: string, relPath: s
   try {
     fd = fs.openSync(addressed, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
-      return { ok: false, reason: `refusing to read a symlink: ${relPath}` };
-    }
-    return { ok: false, reason: `file not found: ${relPath}` };
+    // Classify the open failure so a real permission / I/O error is not hidden as a
+    // spurious "file not found". All reasons stay bounded (relPath only) — no raw errno
+    // text or absolute path is embedded.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ELOOP') return { ok: false, reason: `refusing to read a symlink: ${relPath}` };
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { ok: false, reason: `file not found: ${relPath}` };
+    if (code === 'EACCES') return { ok: false, reason: `permission denied: ${relPath}` };
+    return { ok: false, reason: `cannot open file: ${relPath}` };
   }
 
+  // 3+4. Compute the SafeReadResult FIRST — ANY descriptor-operation error (fstat/read
+  // raising, e.g. EIO) becomes a bounded ok:false, never a throw — THEN close the fd
+  // best-effort, THEN return. readBundleFileSafely MUST NEVER throw: listBundles /
+  // redeemHandle / ingestBundle / status all rely on the closed SafeReadResult contract. A
+  // closeSync error can neither escape nor MASK the read result (the result is fixed before
+  // the close runs).
+  let result: SafeReadResult;
   try {
-    // 3. Type + size bound on the OPEN descriptor (never the path again), before reading.
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile()) {
-      return { ok: false, reason: `not a regular file: ${relPath}` };
-    }
-    if (stat.size > MAX_BUNDLE_INPUT_BYTES) {
-      return { ok: false, reason: `file exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes: ${relPath}` };
-    }
-    // Read the content FROM THE SAME fd — the exact inode validated above.
-    let raw: string;
-    try {
-      raw = fs.readFileSync(fd, 'utf8');
-    } catch {
-      return { ok: false, reason: `unreadable file: ${relPath}` };
-    }
-    // 4. Depth bound (before parse).
-    if (exceedsJsonDepth(raw, MAX_JSON_DEPTH)) {
-      return { ok: false, reason: `JSON nesting exceeds ${MAX_JSON_DEPTH}: ${relPath}` };
-    }
-    let value: unknown;
-    try {
-      value = JSON.parse(raw);
-    } catch {
-      return { ok: false, reason: `malformed JSON: ${relPath}` };
-    }
-    return { ok: true, value };
-  } finally {
-    fs.closeSync(fd);
+    result = readValidatedDescriptor(fd, relPath);
+  } catch {
+    result = { ok: false, reason: `unreadable file: ${relPath}` };
   }
+  try {
+    fs.closeSync(fd);
+  } catch {
+    /* best-effort: a close failure must neither escape nor mask the read result */
+  }
+  return result;
 }
 
 /**
@@ -339,10 +398,16 @@ export function emitBundle(root: string, task: ProseTask): EmitResult {
     // Atomic publish: the complete staging dir becomes `<id>/` in a single rename.
     fs.renameSync(stagingDir, finalDir);
   } catch (err) {
-    // Any failure before the rename: best-effort remove the staging dir so no
-    // partial bundle (`<id>/` or `.tmp-<id>/`) is ever visible (FR-024). rmSync is
-    // force:true so an already-vanished staging dir is not itself an error.
-    fs.rmSync(stagingDir, { recursive: true, force: true });
+    // Any failure before the rename: best-effort remove the staging dir so no partial
+    // bundle (`<id>/` or `.tmp-<id>/`) is ever visible (FR-024). The cleanup is itself
+    // wrapped so a cleanup failure (e.g. rmSync raising EPERM) can never REPLACE the
+    // original emit error that generate() needs to see. rmSync is force:true so an
+    // already-vanished staging dir is not itself an error.
+    try {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort: never mask the original emit error */
+    }
     throw err; // surfaces to generate(), which degrades to the consumer fallback
   }
 
@@ -369,6 +434,10 @@ export function listBundles(root: string): BundleListing[] {
   const out: BundleListing[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue; // stray files are not bundles
+    // Skip any dot-prefixed entry — a `.tmp-<id>` staging dir (mid-emit, or a crashed
+    // cleanup) or any dotfile. Bundle ids are UUIDs, never dot-prefixed, so a staging dir
+    // must never surface as a spurious unreadable/pending row.
+    if (entry.name.startsWith('.')) continue;
     const id = entry.name;
     const read = readBundleFileSafely(root, path.join(tasksRoot, id), 'manifest.json');
     if (!read.ok) {

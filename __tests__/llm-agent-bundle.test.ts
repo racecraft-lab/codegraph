@@ -35,6 +35,7 @@ import {
   emitBundle,
   listBundles,
   redeemHandle,
+  resolveBundleDir,
   readBundleFileSafely,
   countPendingBundles,
   MAX_BUNDLE_INPUT_BYTES,
@@ -513,5 +514,98 @@ describe('getLlmStatus — agent branch composes pendingBundles (T021, network-f
     } finally {
       cg.close();
     }
+  });
+});
+
+// --------------------------------------------------------------------------
+// Round-2 review fixes (agent-bundle.ts hardening).
+//
+// The fault-path assertions that cannot be reproduced with real fs — Fix A
+// (fstat/read raising e.g. EIO on the open fd), Fix B (an untrusted writer
+// appending AFTER the fstat size check), and Fix C's cleanup-rmSync-must-not-mask —
+// live in `llm-agent-bundle-faults.test.ts`, which fault-injects `node:fs` (the
+// only way, since real fs can't deterministically produce those errors and this
+// vitest/ESM setup can't spy on the frozen `node:fs` namespace). The real-fs
+// assertions below (Fix C staging visibility, Fix D open classification, Fix E
+// symlinked bundle entry) stay here.
+// --------------------------------------------------------------------------
+
+describe('agent-bundle — staging dirs are invisible to enumeration/redemption (Fix C)', () => {
+  it('listBundles skips a .tmp-<id> staging dir (and any dot-prefixed entry)', () => {
+    const root = makeRoot();
+    const { id } = emitBundle(root, makeTask()); // a real, published bundle
+    // A `.tmp-<id>` staging dir (mid-emit residue, or a crashed cleanup) is a directory
+    // under tasksRoot; it must not surface as a spurious unreadable/pending row.
+    fs.mkdirSync(path.join(tasksDir(root), `.tmp-${'a'.repeat(8)}`), { recursive: true });
+    const ids = listBundles(root).map((b) => b.id);
+    expect(ids).toContain(id);
+    expect(ids.some((x) => x.startsWith('.'))).toBe(false);
+    expect(ids).not.toContain(`.tmp-${'a'.repeat(8)}`);
+  });
+
+  it('resolveBundleDir / redeemHandle reject a dot-prefixed handle even when the dir exists and is completable', () => {
+    const root = makeRoot();
+    fs.mkdirSync(tasksDir(root), { recursive: true });
+    // Plant a fully-completable bundle under a `.tmp-*` name — a dot-prefixed handle must
+    // still designate nothing (a staging dir can never be redeemed/ingested).
+    const staging = path.join(tasksDir(root), '.tmp-evil');
+    fs.mkdirSync(staging, { recursive: true });
+    fs.writeFileSync(
+      path.join(staging, 'manifest.json'),
+      JSON.stringify({ id: '.tmp-evil', status: 'completed', contract: 'output-contract.json', createdAt: new Date().toISOString() }),
+      'utf8',
+    );
+    fs.writeFileSync(path.join(staging, 'result.json'), JSON.stringify({ text: 'LEAKED' }), 'utf8');
+
+    expect(resolveBundleDir(root, '.tmp-evil')).toBeNull();
+    expect(redeemHandle(root, '.tmp-evil')).toEqual({ status: 'missing' });
+  });
+});
+
+describe('readBundleFileSafely — classifies open failures (Fix D)', () => {
+  function seedBundle(root: string): string {
+    const { id } = emitBundle(root, makeTask());
+    return bundleDirOf(root, id);
+  }
+
+  it.runIf(process.platform !== 'win32')('maps an EACCES open to a permission-denied reason, not file-not-found', () => {
+    const root = makeRoot();
+    const dir = seedBundle(root);
+    const p = path.join(dir, 'locked.json');
+    fs.writeFileSync(p, JSON.stringify({ x: 1 }), 'utf8');
+    fs.chmodSync(p, 0o000); // open(O_RDONLY) → EACCES
+    try {
+      const res = readBundleFileSafely(root, dir, 'locked.json');
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.reason).toBe('permission denied: locked.json');
+    } finally {
+      fs.chmodSync(p, 0o644); // restore so afterEach cleanup can remove the tree
+    }
+  });
+
+  it('keeps the preserved not-found reason for a genuinely absent file (ENOENT)', () => {
+    const root = makeRoot();
+    const dir = seedBundle(root);
+    const res = readBundleFileSafely(root, dir, 'nope.json');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe('file not found: nope.json');
+  });
+});
+
+describe('resolveBundleDir — the bundle entry must be a real direct child, never a symlink (Fix E, FR-029a)', () => {
+  it.runIf(process.platform !== 'win32')('rejects a tasks/<id> symlink to a nested in-tasks dir, while a real bundle still resolves', () => {
+    const root = makeRoot();
+    const { id } = emitBundle(root, makeTask()); // a real bundle, a direct child
+    // A symlink ENTRY tasks/alias -> tasks/<id>: its realpath stays INSIDE the tasks root,
+    // so validatePathWithinRoot accepts it — only the direct-child (non-symlink) invariant
+    // rejects a non-direct-child that a plain containment check would let through.
+    fs.symlinkSync(bundleDirOf(root, id), bundleDirOf(root, 'alias'), 'dir');
+
+    expect(resolveBundleDir(root, 'alias')).toBeNull();
+    expect(redeemHandle(root, 'alias')).toEqual({ status: 'missing' });
+
+    // A normal real bundle dir is unaffected.
+    expect(resolveBundleDir(root, id)).not.toBeNull();
+    expect(redeemHandle(root, id)).toEqual({ status: 'pending' });
   });
 });
