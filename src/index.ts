@@ -83,6 +83,9 @@ import type { LocalProviderOverrides } from './embeddings/local-provider';
 import { runEmbeddingPass } from './embeddings/indexer-hook';
 import { probeLocalModelCache } from './embeddings/model-fetch';
 import type { ProbeLocalModelCacheOverrides } from './embeddings/model-fetch';
+// SPEC-018 LLM access layer (slice 1): the network-free status snapshot that `getLlmStatus()` below
+// delegates to (mirrors the embeddings status method); dormant with no `CODEGRAPH_LLM_*` set.
+import { resolveLlmStatus, type LlmStatus } from './llm/config';
 import {
   CliLspActivation,
   createInitialLspStatus,
@@ -121,6 +124,13 @@ export {
   type DegradationCondition,
   type SearchNodesDetailed,
 } from './search/hybrid';
+// SPEC-018 LLM access layer (slice 1): the `generate()` seam + its public types, and the
+// network-free `LlmStatus` snapshot `getLlmStatus()` returns. Re-exported from the package entry so
+// library/CLI consumers reach them without a deep `src/llm/*` import (mirrors the embeddings status
+// surface). Dormant with no `CODEGRAPH_LLM_*` set.
+export { generate } from './llm/generate';
+export type { ProseTask, GenerationResult, OutputContract } from './llm/generate';
+export type { LlmStatus } from './llm/config';
 export {
   getCodeGraphDir,
   isInitialized,
@@ -1851,6 +1861,17 @@ export class CodeGraph {
       }
     }
     return dormant;
+  }
+
+  /**
+   * LLM access-layer status snapshot for `codegraph status` (SPEC-018 / data-model §8). Pure and
+   * network-free: delegates to `resolveLlmStatus(process.env)`, mirroring {@link getEmbeddingStatus}
+   * for CLI symmetry. Computing it never opens a socket or writes a file, so dormancy is never
+   * broken to produce it (SC-002/SC-004). See {@link LlmStatus} for the four variants
+   * (endpoint-active / agent / dormant / misconfigured).
+   */
+  getLlmStatus(): LlmStatus {
+    return resolveLlmStatus(process.env);
   }
 
   /**

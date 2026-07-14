@@ -337,7 +337,12 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-No spec is currently in flight.
+SPEC-018 (LLM Access Layer) is in flight on branch `018-llm-access-layer` — plan at
+`specs/018-llm-access-layer/plan.md`. Two-slice delivery off one branch: slice 1 is the
+OpenAI-compatible endpoint path end-to-end (`src/llm/{config,client,prompt,generate}.ts` +
+`getLlmStatus()` + the status `LLM:` block); slice 2 is the agent-bundle path
+(`src/llm/{agent-bundle,ingest}.ts` + `codegraph tasks list|ingest` + companion skill + the committed
+research note). Dormant with no `CODEGRAPH_LLM_*` set.
 
 SPEC-001, SPEC-002, SPEC-003, SPEC-004, SPEC-005, SPEC-008, SPEC-010, SPEC-023,
 and SPEC-025 are complete and archived; provenance and recovery commands live in

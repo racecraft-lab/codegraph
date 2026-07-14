@@ -1,83 +1,35 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-003-workflow.md",
-  "spec_id": "SPEC-003",
-  "feature_dir": "specs/003-hybrid-semantic-search",
-  "updated_at": "2026-07-10T22:30:00Z",
-  "active_step": "Archived",
-  "status": "archived",
-  "archive_sweep": {
-    "cleanup_mode": "apply-eligibility (feature branch)",
-    "current_target_excluded": "specs/003-hybrid-semantic-search",
-    "eligible_previous_specs": [],
-    "actions_taken": [],
-    "safeToApplyCleanup": false,
-    "notes": "origin/main specs/ tree empty; SPEC-001/002/004/008/023 already archived"
-  },
-  "project_commands": {
-    "BUILD": "npm run build",
-    "TYPECHECK": "npm run typecheck",
-    "LINT": "N/A",
-    "LINT_FIX": "N/A",
-    "UNIT_TEST": "npm test",
-    "INTEGRATION_TEST": "N/A",
-    "SINGLE_FILE_TEST": "npx vitest run __tests__/<file>.test.ts",
-    "SINGLE_FILE_INTEGRATION": "N/A",
-    "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
-  },
-  "preset_conventions": {
-    "has_presets": true,
-    "presets": [
-      "claude-ask-questions",
-      "codegraph-project-overrides",
-      "speckit-pro-reviewability"
-    ]
-  },
+  "workflow_file": "docs/ai/specs/.process/SPEC-018-workflow.md",
+  "spec_id": "SPEC-018",
+  "feature_dir": "specs/018-llm-access-layer",
+  "updated_at": "2026-07-13T22:15:00Z",
+  "note": "Overwrites stale SPEC-003 state (that spec is archived; staleness of this file was a recorded SPEC-025 review finding).",
   "confidence_gate_mode": "advisory",
-  "agent_teams_available": true,
   "reviewability": {
-    "setup_gate": {
-      "status": "pass",
-      "warnings": [],
-      "evidence": "SPEC-003-scoped scaffold run: 195 reviewable LOC, ~4 production files, ~10 total files, 1 primary surface (committed 7a4d398; recorded in SPEC-003-workflow.md)"
+    "setup_mode": {
+      "status": "warn",
+      "pass": true,
+      "reviewable_loc": 405,
+      "warnings": [
+        "reviewable LOC 405 exceeds warn threshold 400"
+      ],
+      "recorded_at_scaffold": "2026-07-13"
     },
-    "plan_estimate": {
+    "plan_estimator": {
       "status": "not_estimated",
       "projected": null,
-      "note": "plan.md declares no machine-parseable production-file table; advisory, not treated as pass"
+      "note": "plan.md file table not in greppable declared-entries format; fallback evidence: slice1=4 NEW src+2 MODIFIED, slice2=2 NEW src+3 MODIFIED"
     },
-    "tasks_gate": {
+    "tasks_mode": {
       "status": "deferred",
       "helper_id": "reviewability-gate",
       "requested_mode": "tasks",
-      "deferral_reason": "tasks mode not supported on the installed runner (setup mode only)",
-      "fallback_evidence_chain": [
-        "setup gate pass (scaffold)",
-        "plan estimate not_estimated (advisory)",
-        "no operator split decision",
-        "tasks.md T005 reviewability checkpoint task carries the budget"
-      ],
-      "decision": "proceed"
-    },
-    "final_diff_gate": {
-      "status": "warn",
-      "helper_id": "final-reviewability-backstop",
-      "requested_mode": "dry_run",
-      "deferral_reason": "helper is a deferred mutation stub on the installed runner (promotion_status: deferred; dry_run returns a command plan, no gate evaluation)",
-      "measured": {
-        "raw_added_production_loc": 1830,
-        "code_only_added_production_loc": 743,
-        "production_files": 6,
-        "comment_doc_share": "~59% of added lines",
-        "budget_projection": "195 LOC / ~4 files (setup gate)"
-      },
-      "decision": "WARN - proceed as one navigable PR",
-      "justification": [
-        "atomicity_route already recorded as one-navigable-PR; feature is a single vertical slice (dormant-by-default, no partial merge point that stays releasable)",
-        "PR review packet (T033) provides review order + full FR/SC traceability to mitigate reviewer load",
-        "four independent post-impl review passes completed green (verify ext 0 findings; verify-tasks 0 phantoms; retrieval-guardian 6/6; opus code review approve-with-comments, all findings remediated)",
-        "re-slicing a completed gate-green implementation post-hoc would cost more review risk than it removes; overage recorded honestly in the T033 findings ledger (commit 2bca035) and the PR packet scope-budget section"
-      ],
-      "evidence": "T033 findings ledger item 4 in SPEC-003-workflow.md; pr-review-packet.md scope-budget section"
+      "deferral_reason": "installed runner supports setup mode only",
+      "fallback_evidence": [
+        "setup-mode warn (marker-planning input)",
+        "operator-ratified 2-slice split (design concept Q12; spec FR-031; scaffold gate proceed-condition)",
+        "plan estimator not_estimated advisory"
+      ]
     }
   },
   "atomicity_route": {
@@ -86,24 +38,92 @@
     "signals": [
       "change-shape:modify-heavy"
     ],
-    "warnings": []
+    "warnings": [],
+    "hints": [],
+    "recorded_by": "orchestrator",
+    "conflict_note": "Advisory route conflicts with the ratified two-PR split (Q12/FR-031, maintainer-approved). Conflict surfaced at G5 per the workflow's Atomicity Route note and resolved in favor of the ratified decision; split carried by pr_marker_plan (marker-based PR emission), not by the layer planner."
   },
   "layer_plan": {
     "status": "skipped",
-    "reason": "route is one-navigable-PR, not split-PR; layer planner runs only for split routes"
+    "reason": "route is not split-PR; plan-layers-feature-dir not invoked per step 8d. The two-PR delivery is carried by pr_marker_plan instead."
   },
   "pr_marker_plan": {
-    "status": "not_required",
-    "reason": "no size-only reviewability block exists; setup gate passed and tasks-mode gate deferred with proceed decision"
-  },
-  "archive": {
-    "archived_at": "2026-07-10",
-    "merged_pr": 36,
-    "merge_commit": "2c6c6434068dbb9b076cabd1a0de9889dfe294fa",
-    "archive_report": ".specify/memory/archive-reports/2026-07-10-SPEC-003.md",
-    "spec_dir_removed": "specs/003-hybrid-semantic-search",
-    "post_merge_dogfood": "build + sync + status healthy on main (Hybrid search available: yes); semantic smoke green",
-    "cleanup_branch": "archive/spec-003-025-cleanup-2026-07-10",
-    "note": "SPEC-025 archived in the same cleanup (PR #35, 62693fb); see 2026-07-10-SPEC-025.md"
+    "schema_version": 1,
+    "source_fingerprint": {
+      "tasks_md_sha256": "34a3c8559f06d93b2754287682e28cc9bb753b40098b94f7e8205826ea834b51"
+    },
+    "derived_from": [
+      "tasks.md phase structure",
+      "setup-mode reviewability warn",
+      "FR-031/Q12 ratified split",
+      "atomicity route context"
+    ],
+    "markers": [
+      {
+        "id": "M1-slice1-endpoint",
+        "tasks": [
+          "T001",
+          "T002",
+          "T003",
+          "T004",
+          "T005",
+          "T006",
+          "T007",
+          "T008",
+          "T009",
+          "T010",
+          "T011",
+          "T012",
+          "T013",
+          "T014",
+          "T015",
+          "T016",
+          "T017"
+        ],
+        "finalization": [
+          "T032",
+          "T033"
+        ],
+        "pr_title": "feat(SPEC-018): LLM access layer slice 1 \u2014 endpoint path, generate() seam, status block",
+        "review_order": 1
+      },
+      {
+        "id": "M2-slice2-agent-bundle",
+        "tasks": [
+          "T018",
+          "T019",
+          "T020",
+          "T021",
+          "T022",
+          "T023",
+          "T024",
+          "T025",
+          "T026",
+          "T027",
+          "T028",
+          "T029",
+          "T030",
+          "T031"
+        ],
+        "finalization": [
+          "T032",
+          "T033"
+        ],
+        "pr_title": "feat(SPEC-018): LLM access layer slice 2 \u2014 agent bundles, tasks CLI, research note",
+        "review_order": 2,
+        "depends_on": "M1-slice1-endpoint"
+      }
+    ],
+    "review_order": [
+      "M1-slice1-endpoint",
+      "M2-slice2-agent-bundle"
+    ],
+    "checkpoints": [],
+    "warnings": [
+      "atomicity classifier advisory route one-navigable-PR recorded; ratified split governs"
+    ],
+    "final_marker_split": null,
+    "packet_validation": null,
+    "pr_mappings": null
   }
 }
