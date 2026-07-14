@@ -85,7 +85,7 @@ Resolved from this worktree on 2026-07-14:
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains (~121 items); 36 gaps consolidated & applied (+6 FRs, +2 SCs across 7 artifacts); G4 pass |
 | Tasks | `/speckit-tasks` | ✅ Complete | 68 tasks (T001–T068), 38 [P]; by user story; all required tasks present; G5 pass |
 | Analyze | `/speckit-analyze` | ✅ Complete | 2 findings (1 HIGH, 1 LOW) remediated; 0 CRITICAL; G6 pass; REST-topology premise corrected |
-| Implement | `/speckit-implement` | ⏳ Pending | TDD, dogfood UAT, paired benchmark |
+| Implement | `/speckit-implement` | ✅ Complete | 6 groups, 64 code tasks (TDD); G7 code-gate green — 2 clean-env full-suite runs (213 files / 3626 tests / 0 fail); a 3rd run under CPU load flaked with vitest-worker timeouts (known parse-heavy flakiness, not regressions). ~2673 reviewable LOC (≈4× est.) — split re-surface pending at PR time |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
