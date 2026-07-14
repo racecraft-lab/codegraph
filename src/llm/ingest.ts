@@ -119,6 +119,31 @@ function deriveText(output: unknown, contract: { requiredFields: RequiredField[]
 }
 
 /**
+ * FR-029a write-side containment: reject a write target that already exists as a symlink
+ * or any other non-regular file. A bundle-dir entry is attacker-controllable (the coding
+ * agent that fills `output.json` has full write access to the dir), so a pre-planted
+ * `result.json`/`manifest.json` symlink would otherwise make {@link fs.writeFileSync}
+ * FOLLOW it and overwrite a file OUTSIDE the bundle (arbitrary-file-overwrite). `lstat`
+ * the addressed target — never its realpath — so a symlink final component is seen as a
+ * symlink, mirroring {@link readBundleFileSafely}'s read-side rejection. A not-yet-existing
+ * target (the normal `result.json` case) is safe to create; an existing regular file (the
+ * emitted `manifest.json`) is safe to overwrite. Returns a rejection reason, or `null`
+ * when the write may proceed; never throws. Residual same-process TOCTOU is out of scope
+ * (research D9).
+ */
+function rejectNonRegularWriteTarget(target: string, name: string): string | null {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(target);
+  } catch {
+    return null; // absent → safe to create
+  }
+  if (stat.isSymbolicLink()) return `refusing to write ${name}: it is a symlink`;
+  if (!stat.isFile()) return `refusing to write ${name}: it is not a regular file`;
+  return null;
+}
+
+/**
  * Validate + finalize one completed bundle (FR-026/FR-027/FR-028). Reads the bundle's
  * `output.json` and `OutputContract`, structurally validates the former against the
  * latter, and on success stores the canonical `result.json = { text }` inside the bundle
@@ -174,12 +199,22 @@ export function ingestBundle(root: string, id: string): IngestResult {
   }
 
   // PASS (FR-028): store the canonical result INSIDE the bundle dir, then stamp completed.
-  // The write targets are fixed literals within the already-resolved bundle dir; the
-  // untrusted inputs (id, contract pointer, output) were the ones routed through the
-  // containment checks above.
+  // The write paths are fixed literals, but a bundle-dir ENTRY is attacker-controllable
+  // (the coding agent has full write access): a pre-planted `result.json`/`manifest.json`
+  // symlink would make fs.writeFileSync FOLLOW it and overwrite a file OUTSIDE the bundle
+  // (arbitrary-file-overwrite, FR-029a). Guard BOTH targets against a symlink/non-regular
+  // file BEFORE writing either — mirroring readBundleFileSafely's lstat rejection — so a
+  // rejection leaves the manifest `pending` and installs no consumer artifact (FR-028a).
+  const resultPath = path.join(bundleDir, 'result.json');
+  const manifestPath = path.join(bundleDir, 'manifest.json');
+  const resultGuard = rejectNonRegularWriteTarget(resultPath, 'result.json');
+  if (resultGuard !== null) return { ok: false, reason: resultGuard };
+  const manifestGuard = rejectNonRegularWriteTarget(manifestPath, 'manifest.json');
+  if (manifestGuard !== null) return { ok: false, reason: manifestGuard };
+
   const text = deriveText(outputRead.value, contract);
-  fs.writeFileSync(path.join(bundleDir, 'result.json'), JSON.stringify({ text }), 'utf8');
+  fs.writeFileSync(resultPath, JSON.stringify({ text }), 'utf8');
   const completedManifest = { ...(manifestRead.value as Record<string, unknown>), status: 'completed' };
-  fs.writeFileSync(path.join(bundleDir, 'manifest.json'), JSON.stringify(completedManifest, null, 2), 'utf8');
+  fs.writeFileSync(manifestPath, JSON.stringify(completedManifest, null, 2), 'utf8');
   return { ok: true, text };
 }

@@ -210,3 +210,37 @@ describe('FR-029a — read-expected-fields-only: no prototype pollution from out
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });
+
+describe('FR-029a — write targets are symlink-guarded (no arbitrary-file overwrite)', () => {
+  it.runIf(POSIX)(
+    'refuses to follow a pre-planted result.json symlink and leaves the out-of-bundle victim untouched',
+    () => {
+      const root = makeRoot();
+      const { id } = emitBundle(root, makeTask());
+      // A conforming answer — structural validation PASSES, so ingest reaches the write step.
+      writeOutput(root, id, { prose: 'attacker-controlled prose' });
+
+      // A victim file OUTSIDE the bundle dir, with known content.
+      const victim = path.join(root, 'victim.txt');
+      const ORIGINAL = 'ORIGINAL VICTIM CONTENTS - DO NOT OVERWRITE';
+      fs.writeFileSync(victim, ORIGINAL, 'utf8');
+
+      // Pre-plant result.json inside the bundle dir as a SYMLINK -> the victim. A naive
+      // fs.writeFileSync(result.json, …) FOLLOWS this and overwrites the victim with
+      // {"text":"attacker-controlled prose"} — the arbitrary-file-overwrite primitive.
+      const resultPath = path.join(bundleDirOf(root, id), 'result.json');
+      fs.symlinkSync(victim, resultPath);
+
+      const result = ingestBundle(root, id);
+
+      // (b) The victim is byte-for-byte unchanged — the write must never follow the symlink.
+      expect(fs.readFileSync(victim, 'utf8')).toBe(ORIGINAL);
+      // (a) FR-028a-shaped rejection: no completion, no valid result installed.
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain('result.json');
+      expect(manifestStatus(root, id)).toBe('pending');
+      // The planted symlink was NOT replaced by a real result file — nothing was installed.
+      expect(fs.lstatSync(resultPath).isSymbolicLink()).toBe(true);
+    },
+  );
+});
