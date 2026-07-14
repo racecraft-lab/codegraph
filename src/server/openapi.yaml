@@ -67,6 +67,11 @@ components:
       name: offset
       in: query
       schema: { type: integer, default: 0, minimum: 0 }
+    MinSize:
+      name: minSize
+      in: query
+      schema: { type: integer, default: 1, minimum: 1 }
+      description: 'SPEC-011 (FR-029) — minimum member-file count; default 1, values <1 clamp to 1 (coerced, never a 4xx). minSize>=2 suppresses singleton clusters.'
     RepoQuery:
       name: repo
       in: query
@@ -277,6 +282,25 @@ components:
             items: { type: array, items: { $ref: '#/components/schemas/FlowSummary' } }
             sourceVersion: { type: integer }
             state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+    # ---------- SPEC-011: functional-cluster catalog (FR-028/028a/029) ----------
+    ClusterSummary:   # field names IDENTICAL to the codegraph_list_clusters MCP item (FR-028a)
+      type: object
+      required: [id, canonicalLabel, displayLabel, memberCount, isSingleton]
+      properties:
+        id: { type: string, description: 'Opaque, deterministic, stable cluster id (FR-017a).' }
+        canonicalLabel: { type: string, description: 'Deterministic label from dominant directory + name tokens (FR-018).' }
+        displayLabel: { type: ['string', 'null'], description: 'Optional LLM label, presentation-only; null when unconfigured (FR-019).' }
+        memberCount: { type: integer }
+        isSingleton: { type: boolean, description: 'True for a single-file cluster (FR-014).' }
+    ClusterListResult:   # ListResult extended with cluster items + sourceVersion/state (the SearchResult allOf precedent)
+      allOf:
+        - $ref: '#/components/schemas/ListResult'
+        - type: object
+          required: [items, sourceVersion, state]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/ClusterSummary' } }
+            sourceVersion: { type: integer }
+            state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
   responses:
     NotFound:
       description: Unknown node/repo/route (FR-011/015a); details.resource discriminates.
@@ -419,6 +443,20 @@ paths:
       responses:
         '200': { description: 'OK — the flow detail, or success-shaped guidance for an unknown id / disabled / not-computed catalog (FR-030).', content: { application/json: { schema: { $ref: '#/components/schemas/FlowDetail' } } } }
         '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011) — NOT unknown flow id
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
+  /api/clusters:
+    get:
+      tags: [read]
+      summary: Paged functional-cluster catalog with read-time state (SPEC-011, FR-028/029/030).
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+        - { $ref: '#/components/parameters/MinSize' }
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ClusterListResult' } } } }
+        '400': { description: Malformed/negative limit or offset (FR-015a; over-cap clamps, not errors), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011)
         '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
 
   # ---------- Slice 2: re-index jobs (T041) ----------

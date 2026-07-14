@@ -384,6 +384,39 @@ export function pageClusters(
   return { items, total: rows.length, limit, offset, sourceVersion: first ? first.source_version : 0 };
 }
 
+/** A committed cluster's id + its sorted member file paths (prior-membership read). */
+export interface ClusterMembership {
+  id: string;
+  members: string[];
+}
+
+/**
+ * Read the CURRENTLY-committed clusters + their members, for the identity
+ * transfer's pre-swap prior-membership read (T042, FR-017a). One LEFT JOIN
+ * (single snapshot), ordered so each cluster's members come back sorted. Returns
+ * an empty array when no clusters catalog has been committed yet (first run).
+ */
+export function readClusterMembership(db: SqliteDatabase): ClusterMembership[] {
+  const rows = db
+    .prepare(
+      `SELECT c.id AS id, m.file_path AS file_path
+         FROM clusters c
+         LEFT JOIN cluster_members m ON m.cluster_id = c.id
+        ORDER BY c.id, m.file_path`,
+    )
+    .all() as Array<{ id: string; file_path: string | null }>;
+  const byId = new Map<string, string[]>();
+  for (const r of rows) {
+    let members = byId.get(r.id);
+    if (!members) {
+      members = [];
+      byId.set(r.id, members);
+    }
+    if (r.file_path !== null) members.push(r.file_path);
+  }
+  return [...byId.entries()].map(([id, members]) => ({ id, members }));
+}
+
 // ── T011 — read-time 6-value state resolution (FR-022/023/025/030) ────────────
 
 /**

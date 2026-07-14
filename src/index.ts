@@ -100,8 +100,10 @@ import { planRename as derivePlanRename } from './refactor/plan-engine';
 import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
 import { loadAnalysisConfig } from './project-config';
 import {
+  readClusterList,
   readFlowDetail,
   readFlowList,
+  type ClusterListResult,
   type FlowDetailRead,
   type FlowListResult,
 } from './analysis';
@@ -1930,6 +1932,18 @@ export class CodeGraph {
   getFlowById(id: string): FlowDetailRead {
     const enabled = loadAnalysisConfig(this.projectRoot).flows;
     return readFlowDetail(this.queries.getDb(), enabled, id);
+  }
+
+  /**
+   * SPEC-011 — the paged functional-cluster catalog with its read-time state
+   * (FR-027/029/030). Thin pass through the shared `src/analysis` read facade;
+   * the live `analysis.clusters` opt-in flag is consulted FIRST (FR-025), and the
+   * `minSize` filter (≥1) suppresses singletons at `minSize` ≥ 2 (FR-029). Both
+   * the MCP tool and the daemon-served REST endpoint render from this one method.
+   */
+  listClusters(minSize: number, limit: number, offset: number): ClusterListResult {
+    const enabled = loadAnalysisConfig(this.projectRoot).clusters;
+    return readClusterList(this.queries.getDb(), enabled, minSize, limit, offset);
   }
 
   /**

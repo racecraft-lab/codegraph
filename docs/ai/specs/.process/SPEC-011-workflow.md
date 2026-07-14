@@ -712,7 +712,7 @@ For each task:
 |-------|-------|-----------|-------|
 | 1 - Foundation (schema/persistence) | T001–T012 | ✅ 12/12 | 5 tables + v10 migration + `graph_write_version` + catalog-store (atomic swap / single-fetch reads / 6-state) + shared wire types; 32 TDD tests green; build+typecheck pass |
 | 2 - Flows end-to-end (US1) | T013–T026 | ✅ 14/14 | entry-points (routes + commander CLI recognizer + event/queue registrars + exposed exports) + deterministic DFS tracer (caps 12/20/200, calls+references, per-axis truncation) + naming + `runFlowAnalysis` + 2 MCP tools + 2 REST endpoints (daemon-forwarded) + openapi; 31 flow tests green; `explore`/`server-instructions` untouched |
-| 3 - Clusters + identity (US2/US3) | T027–T042 | ⏳ | |
+| 3 - Clusters + identity (US2/US3) | T027–T042 | ✅ 16/16 | file-graph + pure-TS deterministic Louvain (no new dep) + labels + Jaccard identity (content-hash mint, best-descendant, deterministic tie-break) + `runClusterAnalysis` + `list_clusters` MCP + `/api/clusters` REST + openapi; 38 tests green; full analysis suite 101/101 |
 | 4 - Lifecycle wiring (US4) | T043–T050 | ⏳ | |
 | 5 - Activation (US5) | T051–T057 | ⏳ | |
 | 6 - Polish (parity/benchmark/UAT) | T058–T068 | ⏳ | |

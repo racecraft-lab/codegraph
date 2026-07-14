@@ -2191,6 +2191,37 @@ export class QueryBuilder {
     }));
   }
 
+  /**
+   * SPEC-011 T032 (FR-011/012) — count-aggregated reference evidence per file
+   * pair, for the functional-cluster file graph. One row per DIRECTED
+   * (source file, target file) pair over ACTIVE `calls`/`imports` edges, where
+   * `weight` is the number of such edges between those files. Same-file pairs
+   * (source == target) are returned too; the undirected fold and self-loop drop
+   * happen in the analysis layer (`src/analysis/clusters/file-graph.ts`, FR-012).
+   * Rows come back in a stable order so the downstream aggregation is
+   * deterministic (FR-013). A read-only scan — never mutates the graph.
+   */
+  getFilePairEdgeWeights(): Array<{ sourceFile: string; targetFile: string; weight: number }> {
+    const sql = `SELECT src.file_path AS source_file, tgt.file_path AS target_file, COUNT(*) AS weight
+      FROM edges e
+      JOIN nodes src ON src.id = e.source
+      JOIN nodes tgt ON tgt.id = e.target
+      WHERE e.kind IN ('calls', 'imports')
+        AND ${activeEdgePredicate('e')}
+      GROUP BY src.file_path, tgt.file_path
+      ORDER BY src.file_path, tgt.file_path`;
+    const rows = this.db.prepare(sql).all() as Array<{
+      source_file: string;
+      target_file: string;
+      weight: number;
+    }>;
+    return rows.map((r) => ({
+      sourceFile: r.source_file,
+      targetFile: r.target_file,
+      weight: Number(r.weight),
+    }));
+  }
+
   // ===========================================================================
   // File Operations
   // ===========================================================================

@@ -54,6 +54,9 @@ const JOB_PATHS = ['/api/reindex/{repo}', '/api/reindex/{repo}/events'];
 // The two SPEC-011 execution-flow catalog paths (read-tagged, daemon-forwarding).
 const FLOW_PATHS = ['/api/flows', '/api/flows/{id}'];
 
+// The SPEC-011 functional-cluster catalog path (read-tagged, daemon-forwarding).
+const CLUSTER_PATHS = ['/api/clusters'];
+
 /**
  * Zero-dep structural read of the `paths:` block's child keys (the path
  * templates indented exactly two spaces under it). Throws on tab indentation
@@ -86,7 +89,7 @@ describe('openapi ship check', () => {
     expect(fs.readFileSync(DIST_SPEC).equals(fs.readFileSync(SRC_SPEC))).toBe(true);
   });
 
-  it('is well-formed YAML documenting exactly the 8 read + 2 jobs + 2 flow paths', () => {
+  it('is well-formed YAML documenting exactly the 8 read + 2 jobs + 2 flow + 1 cluster paths', () => {
     expect(fs.existsSync(DIST_SPEC)).toBe(true);
     const yaml = fs.readFileSync(DIST_SPEC, 'utf8');
     expect(yaml).toMatch(/^openapi:\s*3\.1\.0\s*$/m);
@@ -95,7 +98,10 @@ describe('openapi ship check', () => {
     for (const p of READ_PATHS) expect(keys).toContain(p);
     for (const p of JOB_PATHS) expect(keys).toContain(p);
     for (const p of FLOW_PATHS) expect(keys).toContain(p);
-    expect(keys).toHaveLength(READ_PATHS.length + JOB_PATHS.length + FLOW_PATHS.length);
+    for (const p of CLUSTER_PATHS) expect(keys).toContain(p);
+    expect(keys).toHaveLength(
+      READ_PATHS.length + JOB_PATHS.length + FLOW_PATHS.length + CLUSTER_PATHS.length,
+    );
   });
 
   it('constrains Job.reason to the whitelisted enum (R4-REASON-ENUM)', () => {

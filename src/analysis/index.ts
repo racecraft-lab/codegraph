@@ -12,18 +12,27 @@
 import type { SqliteDatabase } from '../db/sqlite-adapter';
 import {
   getFlowDetail,
+  pageClusters,
   pageFlows,
   probeCatalog,
+  readClusterMembership,
   resolveState,
+  swapClusters,
   swapFlows,
+  type ClusterMemberRow,
+  type ClusterRow,
   type FlowRow,
   type FlowStepRow,
 } from './catalog-store';
-import type { CatalogState, FlowDetail, FlowListResult } from './types';
+import type { CatalogState, ClusterListResult, FlowDetail, FlowListResult } from './types';
 import { detectEntryPoints, type FlowAnalysisGraph } from './flows/entry-points';
 import { nameFlow } from './flows/naming';
 import { traceFlow } from './flows/tracer';
 import { computeFlowId } from './flows/identity';
+import { buildFileGraph } from './clusters/file-graph';
+import { louvain } from './clusters/louvain';
+import { canonicalLabel } from './clusters/labels';
+import { assignClusterIdentity } from './clusters/identity';
 
 export * from './types';
 export * from './catalog-store';
@@ -31,6 +40,10 @@ export * from './flows/entry-points';
 export * from './flows/tracer';
 export * from './flows/naming';
 export * from './flows/identity';
+export * from './clusters/file-graph';
+export * from './clusters/louvain';
+export * from './clusters/labels';
+export * from './clusters/identity';
 
 /**
  * States whose retained rows are INERT — the surface returns an empty page and
@@ -131,4 +144,94 @@ export function runFlowAnalysis(graph: FlowAnalysisGraph, store: SqliteDatabase)
   }
 
   swapFlows(store, version, flows, steps);
+}
+
+/**
+ * Read the paged cluster list WITH its read-time state attached (T036/T037
+ * shared facade), mirroring {@link readFlowList}. Single-snapshot composite read
+ * (FR-021a): probe + `minSize`-filtered slice come from the catalog-store
+ * single-fetch primitives. `minSize` is clamped to ≥1 by the caller (FR-029).
+ */
+export function readClusterList(
+  db: SqliteDatabase,
+  enabled: boolean,
+  minSize: number,
+  limit: number,
+  offset: number,
+): ClusterListResult {
+  const state = resolveState(enabled, probeCatalog(db, 'clusters'));
+  if (INERT_STATES.has(state)) {
+    return { items: [], total: 0, limit, offset, sourceVersion: 0, state };
+  }
+  return { ...pageClusters(db, minSize, limit, offset), state };
+}
+
+/**
+ * A freshly computed cluster before its identity is assigned: its sorted member
+ * file paths and its deterministic canonical label (FR-018). The stable id is
+ * attached separately — a raw content hash here (T035), replaced by the
+ * transfer-or-mint identity assignment in T042.
+ */
+export interface ComputedCluster {
+  members: string[];
+  canonicalLabel: string;
+}
+
+/**
+ * Compute the functional clusters of the graph as sorted-member groups with
+ * canonical labels (T035). Louvain over the undirected weighted file graph;
+ * every indexed file lands in exactly one group (FR-014). Groups are returned in
+ * a deterministic order (by first member path).
+ */
+export function computeClusters(graph: FlowAnalysisGraph): ComputedCluster[] {
+  const fileGraph = buildFileGraph(graph.queries);
+  const labels = louvain(fileGraph);
+  const groups = new Map<number, string[]>();
+  fileGraph.files.forEach((file, i) => {
+    const c = labels[i]!;
+    const g = groups.get(c);
+    if (g) g.push(file);
+    else groups.set(c, [file]);
+  });
+  return [...groups.values()]
+    .map((members) => {
+      const sorted = [...members].sort();
+      return { members: sorted, canonicalLabel: canonicalLabel(sorted) };
+    })
+    .sort((a, b) => (a.members[0]! < b.members[0]! ? -1 : a.members[0]! > b.members[0]! ? 1 : 0));
+}
+
+/**
+ * Analyze the graph's functional clusters and atomically swap them into the
+ * catalog (T035/T042). Composes file-graph → Louvain → labels → identity → the
+ * catalog-store swap; persists `clusters` (is_singleton, member_count, the
+ * transferred-or-minted stable id) + `cluster_members` (by-value file_path, no
+ * denormalization — paths are position-independent, FR-021/022a).
+ *
+ * Identity (FR-015/016/017/017a): the prior committed membership is read BEFORE
+ * the swap deletes it, so a cluster that stays >= 0.5-overlapping keeps its id
+ * across a re-index and a genuine split transfers to only the best descendant;
+ * a no-prior-match cluster mints a deterministic content-hash id.
+ */
+export function runClusterAnalysis(graph: FlowAnalysisGraph, store: SqliteDatabase): void {
+  const version = graph.queries.getGraphWriteVersion();
+  const prior = readClusterMembership(store); // pre-swap prior-membership read (FR-017a)
+  const computed = computeClusters(graph);
+  const ids = assignClusterIdentity(computed, prior); // transfer-or-mint
+
+  const clusters: ClusterRow[] = [];
+  const members: ClusterMemberRow[] = [];
+  computed.forEach((c, i) => {
+    const id = ids[i]!;
+    clusters.push({
+      id,
+      canonicalLabel: c.canonicalLabel,
+      displayLabel: null,
+      memberCount: c.members.length,
+      isSingleton: c.members.length === 1,
+    });
+    for (const fp of c.members) members.push({ clusterId: id, filePath: fp });
+  });
+
+  swapClusters(store, version, clusters, members);
 }

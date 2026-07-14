@@ -871,6 +871,21 @@ export const tools: ToolDefinition[] = [
     },
     annotations: READ_ONLY_ANNOTATIONS,
   },
+  {
+    name: 'codegraph_list_clusters',
+    description:
+      'List the functional clusters of the indexed project — files grouped by their cross-file call/import structure (deterministic community detection). Returns paged summaries (id, canonicalLabel, displayLabel, memberCount, isSingleton) sorted by member count descending, then canonical label, then id, plus a machine-readable state. Every indexed file belongs to exactly one cluster; single-file clusters are flagged isSingleton. Use `minSize` (default 1) to suppress singletons: minSize=2 returns only multi-file clusters. Requires the clusters catalog to be enabled in codegraph.json ("analysis": { "clusters": true }).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Page size (default 20, clamped to 1–100).' },
+        offset: { type: 'number', description: 'Zero-based page offset (default 0).' },
+        minSize: { type: 'number', description: 'Minimum member-file count (default 1; values <1 clamp to 1; ≥2 suppresses singletons).' },
+        projectPath: projectPathProperty,
+      },
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
 ];
 
 /**
@@ -1632,6 +1647,7 @@ export class ToolHandler {
       case 'codegraph_files': return await this.handleFiles(args);
       case 'codegraph_list_flows': return this.handleListFlows(args);
       case 'codegraph_get_flow': return this.handleGetFlow(args);
+      case 'codegraph_list_clusters': return this.handleListClusters(args);
       default: return this.errorResult(`Unknown tool: ${toolName}`);
     }
   }
@@ -1693,6 +1709,30 @@ export class ToolHandler {
     const live = result.state === 'available' || result.state === 'stale' || result.state === 'empty';
     const message = live ? 'unknown flow id' : `flows catalog ${result.state}`;
     return this.textResult(JSON.stringify({ found: false, state: result.state, message }, null, 2));
+  }
+
+  /**
+   * Handle codegraph_list_clusters (SPEC-011, FR-027/029/030). Thin pass through
+   * the catalog-store single-fetch read; `minSize` defaults to 1 and clamps
+   * below-1 to 1 (FR-029). Success-shaped for not-indexed / disabled / empty (the
+   * `state` field carries the machine-readable condition).
+   */
+  private handleListClusters(args: Record<string, unknown>): ToolResult {
+    const limit = clamp(this.coerceCatalogInt(args.limit, 20), 1, 100);
+    const offset = Math.max(0, this.coerceCatalogInt(args.offset, 0));
+    const minSize = Math.max(1, this.coerceCatalogInt(args.minSize, 1));
+    let cg: CodeGraph;
+    try {
+      cg = this.getCodeGraph(args.projectPath as string | undefined);
+    } catch (err) {
+      if (err instanceof NotIndexedError) {
+        return this.textResult(
+          JSON.stringify({ items: [], total: 0, limit, offset, sourceVersion: 0, state: 'not_indexed' }, null, 2),
+        );
+      }
+      throw err;
+    }
+    return this.textResult(JSON.stringify(cg.listClusters(minSize, limit, offset), null, 2));
   }
 
   /**

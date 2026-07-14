@@ -38,7 +38,8 @@ export type ReadOp =
   | 'impact'
   | 'neighborhood'
   | 'listFlows'
-  | 'getFlow';
+  | 'getFlow'
+  | 'listClusters';
 
 /**
  * Bounded scan ceiling used to compute a search `total` (FR-006). Matches the
@@ -93,6 +94,8 @@ export async function executeReadOp(
       return flowListOp(cg, params);
     case 'getFlow':
       return cg.getFlowById(idParam(params));
+    case 'listClusters':
+      return clusterListOp(cg, params);
     default:
       throw new UnknownReadOpError(`unknown read op: ${op}`);
   }
@@ -107,6 +110,18 @@ function flowListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
   const limit = Math.min(MAX_LIMIT, Math.max(1, Number(params.limit) || 100));
   const offset = Math.max(0, Number(params.offset) || 0);
   return cg.listFlows(limit, offset);
+}
+
+/**
+ * SPEC-011 — the paged cluster catalog (FR-027/029/030). Re-clamps
+ * `limit`/`offset`/`minSize` defensively at the daemon boundary (the HTTP routes
+ * already coerce); `minSize` defaults to 1 and clamps below-1 to 1 (FR-029).
+ */
+function clusterListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(params.limit) || 100));
+  const offset = Math.max(0, Number(params.offset) || 0);
+  const minSize = Math.max(1, Math.floor(Number(params.minSize) || 1));
+  return cg.listClusters(minSize, limit, offset);
 }
 
 /**
@@ -132,6 +147,7 @@ export function readOnMissingIndex(op: ReadOp): unknown {
     case 'neighborhood':
       return { found: false };
     case 'listFlows':
+    case 'listClusters':
       return { items: [], total: 0, limit: 0, offset: 0, sourceVersion: 0, state: 'not_indexed' };
     case 'getFlow':
       return { found: false, state: 'not_indexed' };

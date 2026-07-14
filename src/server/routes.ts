@@ -29,6 +29,7 @@ import {
   readNeighborhood,
   readFlows,
   readFlow,
+  readClusters,
   type DaemonReadClient,
 } from './daemon-client';
 
@@ -297,6 +298,19 @@ function parsePaging(q: URLSearchParams): { limit: number; offset: number } | Ap
   return { limit, offset };
 }
 
+/**
+ * Parse the SPEC-011 `minSize` cluster filter (FR-029): coerce like the read-ops
+ * `Number(x)||default` precedent — missing/non-numeric → default 1, values < 1
+ * clamp to 1 — never a 4xx (an ordinary catalog filter, not a validation error).
+ */
+function parseMinSize(q: URLSearchParams): number {
+  const raw = q.get('minSize');
+  if (raw === null || raw === '') return 1;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(1, Math.floor(n));
+}
+
 /** `depth` with a per-endpoint default, clamped to max 3; malformed/negative → 400. */
 function parseDepth(q: URLSearchParams, def: number): number | ApiError {
   return parseBoundedInt(q.get('depth'), def, 1, MAX_DEPTH, 'depth');
@@ -479,6 +493,25 @@ function flowDetailHandler(deps: ReadApiDeps): RouteHandler {
     });
 }
 
+/**
+ * GET /api/clusters (SPEC-011 T037, FR-028/029) — the paged functional-cluster
+ * catalog. A thin daemon-forwarding handler (the serve process holds no DB
+ * connection); the same catalog-store read runs in the daemon (FR-021a). SPEC-005
+ * Limit (default 100 / max 500) / Offset, plus the `minSize` filter (default 1,
+ * `<1`→1; coerced, never 4xx).
+ */
+function clustersListHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) => {
+    const paging = parsePaging(ctx.query);
+    if ('status' in paging) return paging;
+    const minSize = parseMinSize(ctx.query);
+    return withClient(deps, ctx, async (client) => {
+      const result = await readClusters(client, minSize, paging.limit, paging.offset);
+      return { status: 200, body: result };
+    });
+  };
+}
+
 /** GET /api/impact|graph/:id (T018, FR-004/007) — shared subgraph, divergent depth. */
 function subgraphHandler(deps: ReadApiDeps, which: 'impact' | 'graph'): RouteHandler {
   return (ctx) => {
@@ -512,6 +545,7 @@ export function buildReadRoutes(deps: ReadApiDeps): Route[] {
     { method: 'GET', pattern: '/api/graph/:id', handler: subgraphHandler(deps, 'graph') },
     { method: 'GET', pattern: '/api/flows', handler: flowsListHandler(deps) },
     { method: 'GET', pattern: '/api/flows/:id', handler: flowDetailHandler(deps) },
+    { method: 'GET', pattern: '/api/clusters', handler: clustersListHandler(deps) },
   ];
 }
 
