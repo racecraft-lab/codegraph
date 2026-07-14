@@ -5,7 +5,11 @@
 > the BYO OpenAI-compatible **endpoint** path and the **agent-bundle** path — on
 > cost, quality, and latency, exercised against this repository's own slice-2
 > build. Per FR-030 it deliberately contains **no cloud-endpoint comparison
-> arm**: the only endpoint contemplated is a local/self-hosted one.
+> arm**: the only endpoint contemplated is a local/self-hosted one. The
+> **agent-bundle arm is measured live** below; the **endpoint arm's live
+> quality/latency is a formally accepted deviation from SC-007** (see *Endpoint
+> arm — accepted deviation from SC-007*), because no local chat-completions
+> model is available in this environment and FR-030 bars a cloud stand-in.
 
 ## What was exercised
 
@@ -36,7 +40,7 @@ The produced artifacts are reproduced in the appendix.
 | Axis | Endpoint path | Agent-bundle path |
 |---|---|---|
 | **Cost** | Marginal per-call cost of the configured endpoint. For a local/self-hosted model (Ollama, LM Studio, vLLM) this is **$0 marginal** (compute you already run); a hosted OpenAI-compatible API bills per token. | **$0 marginal** — the answer is produced by a subscription coding agent the user already pays a flat rate for (Claude Code, Cursor, …). No per-token metering; cost is amortized into the existing subscription. |
-| **Quality** | Bounded by the configured model. A small local model is fast but weaker; a large hosted model is stronger but metered. Deterministic prompt composition (instructions > contract > trimmed graph context) is identical to the agent path. | Bounded by the coding agent completing the bundle — typically a frontier model already driving the user's IDE, so **quality tracks the best model the user has on hand**. The output contract enforces *structure* (required fields, non-empty), not semantic quality. Judged quality of the two artifacts below: coherent, on-topic, correctly grounded in the supplied graph context. |
+| **Quality** | Bounded by the configured model. A small local model is fast but weaker; a large hosted model is stronger but metered. Deterministic prompt composition follows a fixed priority — instructions > contract > graph context — and, because the endpoint model has a hard token window, **only the lowest-priority graph-context tier is trimmed**, to the FR-007 conservative token budget sized for small-context local models (FR-018). The instructions and output contract are never truncated. (The agent-bundle path composes the same instructions and contract but hands the graph context *verbatim* — see the read below.) | Bounded by the coding agent completing the bundle — typically a frontier model already driving the user's IDE, so **quality tracks the best model the user has on hand**. The output contract enforces *structure* (required fields, non-empty), not semantic quality. Judged quality of the two artifacts below: coherent, on-topic, correctly grounded in the supplied graph context. |
 | **Latency** | One synchronous round-trip: prompt compose + a single non-streaming completion (streaming also supported), bounded by a total-request deadline (default 300s) with bounded retries and a response-size ceiling. Wall-clock is dominated by model inference time. | **Two phases.** Emit is effectively instant — **~1 ms/bundle** measured (`emitMs: 2` for two bundles). Completion is asynchronous (human-in-the-loop or an agent turn), so end-to-end latency is unbounded by design — the caller is never blocked and gets usable fallback text immediately. Ingestion + structural validation of a completed bundle is **~150 ms/bundle** measured (`315 ms` for two `codegraph tasks ingest` invocations, including Node process startup). |
 | **Blocking** | Blocks the caller until the deadline; on failure degrades to the consumer fallback string, never throws. | Never blocks — returns a handle plus fallback text at once; the result is redeemed later. |
 | **Config needed** | A running chat endpoint. | None beyond opting into agent mode — no endpoint to host. |
@@ -60,24 +64,41 @@ Ran fully end-to-end against the slice-2 build:
   `redeemHandle(root, handle)` returned `{ status: "completed", text }` with
   1721- and 718-character results respectively.
 
-## Endpoint arm — deferred (why, and to what)
+## Endpoint arm — accepted deviation from SC-007 (deferred, not measured)
 
-The live endpoint arm was **not** run in this autonomous session: the repo's
-dogfood `.envrc.local` configures an **embeddings** endpoint only
-(`CODEGRAPH_EMBEDDING_*`) — there is no `CODEGRAPH_LLM_*` **chat-completions**
-endpoint available here, and FR-030 forbids introducing a cloud arm to stand in
-for one. The endpoint path's behavior is nonetheless fully verified by the
-slice-1 automated suite (78 tests across `__tests__/llm-config.test.ts` and
-`__tests__/llm-client.test.ts`): request shape and vendor-neutrality, keyed vs
-keyless auth, streaming and non-streaming assembly, the empty-completion gate,
-flat total-request and inter-chunk idle deadlines, the response-size ceiling,
-exponential-backoff retry with `Retry-After`, redaction-safe errors, and
-cross-origin `Authorization` stripping — all against a local `http` fake.
+The live endpoint arm's cost/quality/latency numbers are **not** reported here.
+This is a **formally accepted deviation** from SC-007's endpoint-arm
+quality/latency measurement, decided at review time — **not an oversight**.
 
-**Follow-up for the maintainer:** point `CODEGRAPH_LLM_URL` / `_MODEL` at a local
-chat model (e.g. an Ollama/LM Studio server) and re-run the same two tasks
-through the endpoint path to fill in live local cost/quality/latency here. This
-is a local-endpoint measurement only — no hosted/cloud arm.
+**Why the deferral is accepted, not a coverage gap:**
+
+- **FR-030 forbids a cloud-endpoint comparison arm** — the only endpoint
+  SPEC-018 contemplates is a local/self-hosted one, so a hosted model cannot be
+  substituted to produce numbers.
+- This repo's dogfood `.envrc.local` configures an **embeddings** endpoint only
+  (`CODEGRAPH_EMBEDDING_*`); there is **no `CODEGRAPH_LLM_*` chat-completions
+  model** available in this environment. With no local chat model and no
+  permitted cloud arm, **no honest real-model quality or latency can be measured
+  here**, and fabricating numbers is not acceptable.
+
+**What IS proven — the endpoint code path itself is validated.** The endpoint
+**transport** is exercised end-to-end by the client test suite
+(`__tests__/llm-client.test.ts`, 31 tests) against a local OpenAI-compatible
+HTTP stub: streaming and non-streaming assembly, exponential-backoff retry with
+`Retry-After`, the flat total-request deadline and the streaming inter-chunk
+idle deadline, the total-response-size ceiling, and redaction-safe
+(secret-free) errors. So the code that would carry a real model's output is
+proven end-to-end; **only the model-quality comparison is deferred.** (Counting
+the slice-1 config suite too, the endpoint path is covered by 78 tests across
+`__tests__/llm-config.test.ts` and `__tests__/llm-client.test.ts` — request
+shape and vendor-neutrality, keyed vs keyless auth, the empty-completion gate,
+and cross-origin `Authorization` stripping.)
+
+**Maintainer follow-up to close the deferral:** point `CODEGRAPH_LLM_URL` /
+`CODEGRAPH_LLM_MODEL` at a local chat model (e.g. an Ollama or LM Studio server)
+and re-run the same two prose tasks through the endpoint path to fill in the
+endpoint-arm cost/quality/latency here. This is a local-endpoint measurement
+only — no hosted/cloud arm (FR-030).
 
 ## Read of the comparison
 
@@ -91,10 +112,26 @@ narratives), the two paths are complementary rather than competing:
 - The **endpoint path** is the better fit for unattended/batch generation where
   a synchronous answer is required and a (local) model is available to serve it.
 
-Both share the same `generate()` seam, the same deterministic prompt
-composition, and the same dormancy guarantee: with no `CODEGRAPH_LLM_*` set, the
-layer performs zero network calls and zero filesystem writes and returns the
-consumer's fallback — behavior byte-identical to an unconfigured install.
+Both share the same `generate()` seam and the same dormancy guarantee: with no
+`CODEGRAPH_LLM_*` set, the layer performs zero network calls and zero filesystem
+writes and returns the consumer's fallback — behavior byte-identical to an
+unconfigured install.
+
+They **deliberately differ in how the graph context is delivered**, and this is
+by design — not an inconsistency:
+
+- The **endpoint path trims** the lowest-priority graph-context tier to the
+  FR-007 conservative token budget (sized for small-context local models),
+  because the endpoint model has a hard token window (FR-018).
+- The **agent-bundle path writes the graph context verbatim** — per the
+  `contracts/bundle-files.md` contract — because the subscription coding agent
+  completing the bundle has a large context window, so trimming it down to a
+  small-local-model budget would degrade the handoff for no benefit.
+
+What **is** invariant across both paths is the guarantee that matters: the task
+**instructions and the output contract are always delivered intact — never
+trimmed**, so the endpoint model and the bundle-completing agent each receive
+them in full.
 
 ## Appendix — produced artifacts (agent arm)
 
