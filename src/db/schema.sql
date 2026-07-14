@@ -216,3 +216,95 @@ CREATE TABLE IF NOT EXISTS project_metadata (
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- =============================================================================
+-- SPEC-011 — Execution Flows & Clusters catalogs
+-- =============================================================================
+-- Two opt-in, deterministically-computed, atomically-swapped catalogs over the
+-- graph: named execution flows and functional clusters. Empty by default — a
+-- not-opted-in project writes zero rows here (FR-025/SC-007), exactly as
+-- node_vectors sits empty until embeddings run.
+--
+-- Deliberately NO foreign keys and NO `ON DELETE CASCADE` on ANY of these five
+-- tables (FR-022a). A cascade plus the per-file `deleteNodesByFile` of a
+-- subsequent index/sync would shred a retained-stale catalog (FR-022) BEFORE its
+-- replacement is even computed. Catalog rows reference graph rows BY VALUE
+-- (node_id / file_path); the atomic swap deletes + re-inserts every row of a
+-- kind inside one transaction (FR-021). Node ids are line-position-dependent, so
+-- node-bearing rows also denormalize name/kind to stay displayable when the id
+-- no longer resolves (a file path is position-independent, so cluster_members
+-- needs no such denormalization). Keep every definition here in lockstep with
+-- the v10 migration in migrations.ts.
+
+-- One row per detected execution flow (FR-001/FR-003 — exactly one per entry
+-- point). `id` is a deterministic root-derived natural key. The `truncated_*`
+-- axis flags are set independently; the contract's `truncated` disjunction is
+-- DERIVED at read time, never stored.
+CREATE TABLE IF NOT EXISTS flows (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    entry_kind TEXT NOT NULL,
+    root_node_id TEXT NOT NULL,
+    root_name TEXT NOT NULL,
+    root_kind TEXT NOT NULL,
+    truncated_depth INTEGER NOT NULL DEFAULT 0,
+    truncated_width INTEGER NOT NULL DEFAULT 0,
+    truncated_steps INTEGER NOT NULL DEFAULT 0,
+    source_version INTEGER NOT NULL
+);
+
+-- One row per node in a flow's bounded branching graph (FR-004 — cycle-safe:
+-- the (flow_id, node_id) PK makes a symbol reached via multiple parents appear
+-- once). `provenance`/`edge_kind`/`parent_node_id` are NULL for the root step
+-- (depth 0); every non-root step carries a 3-value provenance (FR-009).
+CREATE TABLE IF NOT EXISTS flow_steps (
+    flow_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    symbol_name TEXT NOT NULL,
+    symbol_kind TEXT NOT NULL,
+    depth INTEGER NOT NULL,
+    parent_node_id TEXT,
+    edge_kind TEXT,
+    provenance TEXT,
+    PRIMARY KEY (flow_id, node_id)
+);
+
+-- One row per functional cluster (FR-011/FR-014). `id` is an opaque DETERMINISTIC
+-- token (content hash of sorted member paths), transferred across re-index per
+-- FR-015/016 — never a rowid/positional index (those churn on the swap).
+-- `display_label` is the optional presentation-only LLM label (NULL when no LLM
+-- configured); it never affects membership/identity/canonical label.
+CREATE TABLE IF NOT EXISTS clusters (
+    id TEXT PRIMARY KEY,
+    canonical_label TEXT NOT NULL,
+    display_label TEXT,
+    member_count INTEGER NOT NULL,
+    is_singleton INTEGER NOT NULL DEFAULT 0,
+    source_version INTEGER NOT NULL
+);
+
+-- One row per (cluster, file). Every indexed file appears in exactly one cluster
+-- (FR-014/SC-003). file_path is position-independent, so no name/kind
+-- denormalization is needed.
+CREATE TABLE IF NOT EXISTS cluster_members (
+    cluster_id TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    PRIMARY KEY (cluster_id, file_path)
+);
+
+-- Per-catalog header, present even when a catalog has zero content rows — this
+-- is what distinguishes the read-time states (FR-022/FR-023). `first_run_failed`
+-- = 1 with a NULL `computed_from_version` is the explicit "unavailable" marker.
+-- Staleness is DERIVED (`computed_from_version < graph_write_version`), never
+-- stored as a mutable flag.
+CREATE TABLE IF NOT EXISTS catalog_meta (
+    kind TEXT PRIMARY KEY,
+    computed_from_version INTEGER,
+    first_run_failed INTEGER NOT NULL DEFAULT 0
+);
+
+-- Deterministic-sort indexes for the paged list surfaces.
+CREATE INDEX IF NOT EXISTS idx_flows_name ON flows(name, id);
+CREATE INDEX IF NOT EXISTS idx_flow_steps_flow ON flow_steps(flow_id);
+CREATE INDEX IF NOT EXISTS idx_clusters_sort ON clusters(member_count DESC, canonical_label, id);
+CREATE INDEX IF NOT EXISTS idx_cluster_members_cluster ON cluster_members(cluster_id);

@@ -299,7 +299,7 @@ describe('Best-Candidate Resolution', () => {
 describe('Schema v2 Migration', () => {
   it.skipIf(!HAS_SQLITE)('should have correct current schema version', async () => {
     const { CURRENT_SCHEMA_VERSION } = await import('../src/db/migrations');
-    expect(CURRENT_SCHEMA_VERSION).toBe(9); // v9 = fork node_vectors (renumbered at the upstream v1.4.0 sync; upstream owns v8)
+    expect(CURRENT_SCHEMA_VERSION).toBe(10); // v9 = fork node_vectors (renumbered at the upstream v1.4.0 sync; upstream owns v8); v10 = SPEC-011 catalog tables
   });
 
   it.skipIf(!HAS_SQLITE)('should have migration for version 2', async () => {

@@ -369,6 +369,7 @@ export class QueryBuilder {
     deleteRemovedVectors?: SqliteStatement;
     embeddingCoverage?: SqliteStatement;
     bumpVectorsWriteVersion?: SqliteStatement;
+    advanceGraphWriteVersion?: SqliteStatement;
     getReferencesToNode?: SqliteStatement;
   } = {};
 
@@ -2806,6 +2807,42 @@ export class QueryBuilder {
       `);
     }
     this.stmts.bumpVectorsWriteVersion.run({ updatedAt: Date.now() });
+  }
+
+  /**
+   * Read the monotonic `graph_write_version` metadata token (SPEC-011,
+   * data-model.md). This is the LIVE graph version; a catalog is stale when the
+   * version it recorded is strictly less than this (staleness is DERIVED, never
+   * stored). Absent (dormant/never-advanced project) or malformed ⇒ 0. A pure
+   * read — it MUST NOT create the scalar, so a not-opted-in project stays
+   * byte-identical to the pre-feature state (FR-025/SC-007).
+   */
+  getGraphWriteVersion(): number {
+    const raw = this.getMetadata('graph_write_version');
+    const parsed = raw === null ? NaN : Number(raw);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+  }
+
+  /**
+   * Advance `graph_write_version` by 1 (SPEC-011). Called once per successful
+   * index/sync when ≥1 catalog is enabled (the dormancy gate lives in the
+   * analysis orchestrator, FR-025), as part of the graph-update commit BEFORE
+   * catalog analysis runs, so a post-update analysis failure leaves the retained
+   * catalog's recorded version strictly less than live — deriving as stale
+   * (FR-022). Mirrors `bumpVectorsWriteVersion`: a single atomic CAST-arithmetic
+   * increment, monotonic and cheap.
+   */
+  advanceGraphWriteVersion(): void {
+    if (!this.stmts.advanceGraphWriteVersion) {
+      this.stmts.advanceGraphWriteVersion = this.db.prepare(`
+        INSERT INTO project_metadata (key, value, updated_at)
+        VALUES ('graph_write_version', '1', @updatedAt)
+        ON CONFLICT(key) DO UPDATE SET
+          value = CAST(CAST(value AS INTEGER) + 1 AS TEXT),
+          updated_at = @updatedAt
+      `);
+    }
+    this.stmts.advanceGraphWriteVersion.run({ updatedAt: Date.now() });
   }
 
   /**

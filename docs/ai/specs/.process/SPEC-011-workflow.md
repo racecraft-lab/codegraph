@@ -710,11 +710,12 @@ For each task:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| 1 - Foundation (schema/persistence) | | | |
-| 2 - Flows end-to-end | | | |
-| 3 - Clusters end-to-end | | | |
-| 4 - MCP + REST surfaces | | | |
-| 5 - Lifecycle + dogfood + benchmark | | | |
+| 1 - Foundation (schema/persistence) | T001–T012 | ✅ 12/12 | 5 tables + v10 migration + `graph_write_version` + catalog-store (atomic swap / single-fetch reads / 6-state) + shared wire types; 32 TDD tests green; build+typecheck pass |
+| 2 - Flows end-to-end (US1) | T013–T026 | ⏳ | |
+| 3 - Clusters + identity (US2/US3) | T027–T042 | ⏳ | |
+| 4 - Lifecycle wiring (US4) | T043–T050 | ⏳ | |
+| 5 - Activation (US5) | T051–T057 | ⏳ | |
+| 6 - Polish (parity/benchmark/UAT) | T058–T068 | ⏳ | |
 
 ---
 
