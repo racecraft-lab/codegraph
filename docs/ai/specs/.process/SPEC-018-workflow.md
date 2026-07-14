@@ -77,7 +77,7 @@ decisions captured during setup. The load-bearing decisions (by Q-number):
 | Checklist | `/speckit-checklist` | ✅ Complete | 3 domains, 98 items, 13 gaps → 0 (all 1-loop); 5 consensus items — CRL 7 (2/3 majority, dissent carried), CRL 8 (3/3 + amendment, maintainer-approved), CRL 9 (human fork → maintainer chose response-size ceiling); spec gained FR-009a/FR-015a + extensions to FR-002/005/010a/016a/017/018/026/027/029a/SC-004; G4 PASS (0 [Gap]) |
 | Tasks | `/speckit-tasks` | ✅ Complete | 33 tasks (T001–T033), 8 phases, 14 [P]; all 38 FR ids mapped (zero orphans, coverage matrix embedded); TDD failing-test-first throughout; slice boundary intact (slice 1 = T001–T017 → PR 1; slice 2 = T018–T031 → PR 2; T032/T033 per-slice finalization); env-clean test rule carried. G5 PASS (33 unchecked, 0 markers, 0 phantoms). Tasks-mode reviewability DEFERRED on installed runner → fallback evidence chain in autopilot-state.json. Atomicity route `one-navigable-PR` (advisory) CONFLICTS with ratified Q12/FR-031 split — surfaced per this file's G5 note, resolved in favor of the ratified decision via pr_marker_plan (2 markers, marker-based PR emission). Layer plan skipped (non-split route) |
 | Analyze | `/speckit-analyze` | ✅ Complete | 5 findings (0C/0H/3M/2L) all resolved in 1 loop — every one a downstream doc lagging ratified CRL 8/9 decisions (spec.md + tasks.md already correct); 0 unresolved → consensus skipped; G6 PASS. 📊 Confidence 0.97 (G6.5 advisory PASS, threshold 0.90, runner-verified) |
-| Implement | `/speckit-implement` | ⏳ Pending | |
+| Implement | `/speckit-implement` | ✅ Complete | T001–T033 via 8 implement-executor groups (A–H) under strict TDD (RED counts verified real per group). Slice 1 = commit 3b73575 (config/client/prompt/generate + getLlmStatus + LLM: status block + dormancy gate); Slice 2 = commit 0611665 (agent-bundle/ingest + `codegraph tasks list\|ingest` + companion skill + research note). Slice boundary honored (all T001–T017 done + committed before any T018+). Full env-clean repo gate: **194 files / 3692 passed / 7 skipped / 0 failed**; `npm run build` clean; `tsc --noEmit` exit 0. Guardrails: no `src/db/schema.sql` / `src/mcp/tools.ts` diff, no new deps, Embeddings status block untouched, upstream-owned files (index.ts/bin/CHANGELOG) additive-only. T029 research-note spike: agent arm exercised end-to-end against the slice-2 build (2 bundles emit→complete→`tasks ingest`→redeem, all `completed`); endpoint arm deferred (dogfood `.envrc.local` has embeddings endpoint only, no `CODEGRAPH_LLM_*` chat endpoint; FR-030 forbids a cloud arm) with behavior test-verified (78 config/client tests). Note committed inside slice 2 at `docs/design/llm-paths-note.md`. G7 PASS |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -802,3 +802,29 @@ codegraph/
 ---
 
 Template based on SpecKit best practices. Prompts populated from `docs/ai/specs/.process/SPEC-018-design-concept.md` (grill-me, 2026-07-13) and the technical roadmap § SPEC-018.
+
+---
+
+## Autopilot Retrospective (2026-07-13)
+
+**Outcome:** SPEC-018 delivered as two stacked PRs to origin (racecraft-lab):
+- **PR #48** — Slice 1 (endpoint path), base `main` ← `018-llm-access-layer-slice1` @ 3b73575.
+- **PR #49** — Slice 2 (agent-bundle path + tasks CLI + companion skill + research note + FR-029a fix), base `018-llm-access-layer-slice1` ← `018-llm-access-layer` @ 70cbd2c (stacked; merge #48 first, then #49 retargets to `main`).
+
+**Delivery:** commits `3b73575` (slice 1), `0611665` (slice 2), `70cbd2c` (security fix). Implementation ran as 8 TDD implement-executor groups (A–H) + 1 remediation, all orchestrated (operator directive: orchestrate-and-advise, delegate implementation). Every group verified RED failures were real before GREEN.
+
+**Gates:** G0–G7 all PASS. Final full env-clean repo gate: **194 files / 3693 passed / 7 skipped / 0 failed**; `npm run build` clean; `tsc --noEmit` exit 0. 202 LLM-suite tests across 11 files.
+
+**What went well:**
+- Two-layer consensus + the strict env-clean test rule held through all 33 tasks; zero cross-suite flake.
+- The pre-PR code review earned its keep: it found a **confirmed, exploitable BLOCKER** (FR-029a write-side — `ingestBundle` followed a pre-planted `result.json` symlink to overwrite files outside the bundle dir). Fixed with a reproducing exploit test before any PR was opened.
+- Agent-arm self-repo UAT ran fully end-to-end (emit → complete → `tasks ingest` → redeem, both bundles `completed`).
+
+**Key lessons:**
+- **Read-side hardening ≠ write-side hardening.** FR-029a said "reads *or writes*"; the implementation contained every read but left `result.json`/`manifest.json` writes uncontained. Class-of-bug worth a standing check whenever a module hardens one direction of I/O.
+- **Endpoint arm was honestly deferrable.** The dogfood `.envrc.local` exposes an *embeddings* endpoint only — no `CODEGRAPH_LLM_*` chat endpoint — and FR-030 forbids a cloud arm, so live endpoint cost/quality/latency is a maintainer follow-up rather than fabricated numbers.
+- **2-slice-off-one-branch → stacked PRs.** Slice 2 imports slice-1 modules, so non-stacked PRs off `main` can't compile; stacked is the faithful realization of the ratified 2-PR split.
+
+**Deferred (tracked):** companion-skill plugin packaging → SPEC-026; live endpoint-arm measurement in the research note → maintainer; tasks-mode reviewability gate → deferred on the installed runner (2-slice split is the recorded mitigation for the over-ceiling LOC).
+
+**Autopilot status: COMPLETE.** Awaiting maintainer review on #48/#49.

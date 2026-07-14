@@ -86,6 +86,9 @@ import type { ProbeLocalModelCacheOverrides } from './embeddings/model-fetch';
 // SPEC-018 LLM access layer (slice 1): the network-free status snapshot that `getLlmStatus()` below
 // delegates to (mirrors the embeddings status method); dormant with no `CODEGRAPH_LLM_*` set.
 import { resolveLlmStatus, type LlmStatus } from './llm/config';
+// SPEC-018 LLM access layer (slice 2): the network-free pending-bundle count that `getLlmStatus()`
+// composes onto the agent-mode snapshot (data-model §8) — `resolveLlmStatus` stays pure over env.
+import { countPendingBundles } from './llm/agent-bundle';
 import {
   CliLspActivation,
   createInitialLspStatus,
@@ -131,6 +134,29 @@ export {
 export { generate } from './llm/generate';
 export type { ProseTask, GenerationResult, OutputContract } from './llm/generate';
 export type { LlmStatus } from './llm/config';
+// SPEC-018 LLM access layer (slice 2): the agent-bundle surface — the emitter, the resilient lister,
+// the FR-010a redemption lookup, the shared FR-029a bounded safe-read (reused by ingest), and the
+// pending-bundle count — plus their public types. Additive; dormant unless `CODEGRAPH_LLM_PROVIDER=agent`.
+export {
+  emitBundle,
+  listBundles,
+  redeemHandle,
+  readBundleFileSafely,
+  countPendingBundles,
+} from './llm/agent-bundle';
+export type {
+  RedeemResult,
+  BundleManifest,
+  BundleListing,
+  BundleListStatus,
+  EmitResult,
+  SafeReadResult,
+} from './llm/agent-bundle';
+// SPEC-018 LLM access layer (slice 2): the user-invoked ingest step — validate a completed
+// agent bundle against its output contract, store the canonical result, stamp it completed.
+// Additive; drives `codegraph tasks ingest <id>`.
+export { ingestBundle } from './llm/ingest';
+export type { IngestResult } from './llm/ingest';
 export {
   getCodeGraphDir,
   isInitialized,
@@ -1871,7 +1897,14 @@ export class CodeGraph {
    * (endpoint-active / agent / dormant / misconfigured).
    */
   getLlmStatus(): LlmStatus {
-    return resolveLlmStatus(process.env);
+    const status = resolveLlmStatus(process.env);
+    // Agent mode gains the network-free pending-bundle count (SPEC-018 slice 2 / data-model §8).
+    // `resolveLlmStatus` stays pure over `env`; the count reads only `.codegraph/tasks/` under this
+    // root — still no socket, no DB, so dormancy is never broken (SC-002/SC-004).
+    if (status.active && status.mode === 'agent') {
+      return { ...status, pendingBundles: countPendingBundles(this.projectRoot) };
+    }
+    return status;
   }
 
   /**

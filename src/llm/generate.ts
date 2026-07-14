@@ -14,6 +14,7 @@ import { loadLlmConfig } from './config';
 import { composePrompt } from './prompt';
 import { LlmEndpointClient } from './client';
 import type { LlmEndpointClientOverrides } from './client';
+import { emitBundle } from './agent-bundle';
 
 /**
  * Machine-checkable expected-output contract carried verbatim into an agent-mode
@@ -91,24 +92,26 @@ export interface GenerateOverrides {
  *    text }` (FR-009); ANY ultimate failure the client raises after its bounded retries / timeout /
  *    response-size ceiling — INCLUDING the FR-009a empty-completion gate — is caught and degraded to
  *    `{ source:'fallback', text: task.fallback }`, never rethrown (FR-009, US1 AS-2).
- *  - agent → a documented slice-1 stub returning `{ source:'fallback', text: task.fallback }`; the
- *    bundle emitter is a slice-2 module, so slice 1 imports nothing from it and emits no bundle
- *    while still honoring US1's always-usable-text guarantee (research D6). Slice 2 flips this one
- *    branch to emit a bundle and return `{ source:'pending-bundle', … }`.
+ *  - agent → emit a self-describing task bundle under `.codegraph/tasks/<id>/` via `emitBundle` and
+ *    return `{ source:'pending-bundle', text: task.fallback, handle }` — usable fallback text NOW
+ *    plus a handle the consumer later redeems with `redeemHandle` (FR-010/FR-010a). If emission
+ *    itself fails (a genuinely unwritable root), the throw is caught and degraded to
+ *    `{ source:'fallback', text: task.fallback }` — the seam never throws and always returns usable
+ *    text (US1). The emit failure is NOT separately recorded in status: there is no status field for
+ *    it — the consumer simply receives the fallback (`source:'fallback'`) instead of a handle (Edge Case).
  *
- * `root` is a stable slice-1 parameter (agent mode places `.codegraph/tasks/<id>/` under it in
- * slice 2); slice 1's dispatch ignores it. The seam never opens the graph DB nor writes LLM text
- * into graph structure (FR-014), and holds no cross-call state — each call resolves config afresh
- * (FR-024a). `result.source` always lets the caller tell endpoint output from fallback (FR-012).
+ * `root` anchors the agent-mode bundle directory (`.codegraph/tasks/<id>/`); the dormant/endpoint
+ * branches ignore it. The seam never opens the graph DB nor writes LLM text into graph structure
+ * (FR-014) — the agent bundle is plain filesystem state, never SQLite (FR-023) — and holds no
+ * cross-call state: each call resolves config afresh and (in agent mode) emits its own fresh bundle
+ * with no dedup (FR-024a). `result.source` always lets the caller tell endpoint / fallback /
+ * pending-bundle apart (FR-012).
  */
 export async function generate(
   root: string,
   task: ProseTask,
   overrides?: GenerateOverrides,
 ): Promise<GenerationResult> {
-  // `root` is a stable slice-1 parameter (agent mode places `.codegraph/tasks/<id>/` under it in
-  // slice 2); slice 1's dispatch ignores it. Referenced here so the stable signature keeps the name.
-  void root;
   const env = overrides?.env ?? process.env;
   const config = loadLlmConfig(env);
 
@@ -117,10 +120,16 @@ export async function generate(
     return { source: 'fallback', text: task.fallback };
   }
 
-  // Agent: slice-1 documented stub. The bundle emitter is a slice-2 module, never imported here, so
-  // this path performs zero fs writes and still returns usable text (US1 preserved).
+  // Agent: emit a self-describing task bundle under `root/.codegraph/tasks/<id>/` and hand back the
+  // fallback text NOW plus a redeemable handle (FR-010/FR-010a). A genuinely unwritable root makes
+  // emitBundle throw; that degrades to the consumer fallback so the seam never throws (Edge Case; US1).
   if (config.mode === 'agent') {
-    return { source: 'fallback', text: task.fallback };
+    try {
+      const { handle } = emitBundle(root, task);
+      return { source: 'pending-bundle', text: task.fallback, handle };
+    } catch {
+      return { source: 'fallback', text: task.fallback };
+    }
   }
 
   // Endpoint: compose the prompt once, then one non-streaming completion. Every LlmEndpointError the
