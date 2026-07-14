@@ -802,3 +802,29 @@ codegraph/
 ---
 
 Template based on SpecKit best practices. Prompts populated from `docs/ai/specs/.process/SPEC-018-design-concept.md` (grill-me, 2026-07-13) and the technical roadmap § SPEC-018.
+
+---
+
+## Autopilot Retrospective (2026-07-13)
+
+**Outcome:** SPEC-018 delivered as two stacked PRs to origin (racecraft-lab):
+- **PR #48** — Slice 1 (endpoint path), base `main` ← `018-llm-access-layer-slice1` @ 3b73575.
+- **PR #49** — Slice 2 (agent-bundle path + tasks CLI + companion skill + research note + FR-029a fix), base `018-llm-access-layer-slice1` ← `018-llm-access-layer` @ 70cbd2c (stacked; merge #48 first, then #49 retargets to `main`).
+
+**Delivery:** commits `3b73575` (slice 1), `0611665` (slice 2), `70cbd2c` (security fix). Implementation ran as 8 TDD implement-executor groups (A–H) + 1 remediation, all orchestrated (operator directive: orchestrate-and-advise, delegate implementation). Every group verified RED failures were real before GREEN.
+
+**Gates:** G0–G7 all PASS. Final full env-clean repo gate: **194 files / 3693 passed / 7 skipped / 0 failed**; `npm run build` clean; `tsc --noEmit` exit 0. 202 LLM-suite tests across 11 files.
+
+**What went well:**
+- Two-layer consensus + the strict env-clean test rule held through all 33 tasks; zero cross-suite flake.
+- The pre-PR code review earned its keep: it found a **confirmed, exploitable BLOCKER** (FR-029a write-side — `ingestBundle` followed a pre-planted `result.json` symlink to overwrite files outside the bundle dir). Fixed with a reproducing exploit test before any PR was opened.
+- Agent-arm self-repo UAT ran fully end-to-end (emit → complete → `tasks ingest` → redeem, both bundles `completed`).
+
+**Key lessons:**
+- **Read-side hardening ≠ write-side hardening.** FR-029a said "reads *or writes*"; the implementation contained every read but left `result.json`/`manifest.json` writes uncontained. Class-of-bug worth a standing check whenever a module hardens one direction of I/O.
+- **Endpoint arm was honestly deferrable.** The dogfood `.envrc.local` exposes an *embeddings* endpoint only — no `CODEGRAPH_LLM_*` chat endpoint — and FR-030 forbids a cloud arm, so live endpoint cost/quality/latency is a maintainer follow-up rather than fabricated numbers.
+- **2-slice-off-one-branch → stacked PRs.** Slice 2 imports slice-1 modules, so non-stacked PRs off `main` can't compile; stacked is the faithful realization of the ratified 2-PR split.
+
+**Deferred (tracked):** companion-skill plugin packaging → SPEC-026; live endpoint-arm measurement in the research note → maintainer; tasks-mode reviewability gate → deferred on the installed runner (2-slice split is the recorded mitigation for the over-ceiling LOC).
+
+**Autopilot status: COMPLETE.** Awaiting maintainer review on #48/#49.
