@@ -241,10 +241,10 @@ describe('generate — agent mode (slice 2: emits a pending bundle)', () => {
       const handle = pendingHandle(result);
       expect(handle.length).toBeGreaterThan(0);
 
-      // The bundle dir has the four self-describing files + a pending manifest.
+      // The bundle dir has the self-describing files (incl. the FR-022 README) + a pending manifest.
       const dir = path.join(getCodeGraphDir(root), 'tasks', handle);
       expect(fs.readdirSync(dir).sort()).toEqual(
-        ['graph-context.json', 'instructions.md', 'manifest.json', 'output-contract.json'].sort(),
+        ['README.md', 'graph-context.json', 'instructions.md', 'manifest.json', 'output-contract.json'].sort(),
       );
       expect(JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')).status).toBe('pending');
 

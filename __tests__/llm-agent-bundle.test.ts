@@ -102,7 +102,7 @@ describe('emitBundle — self-describing work package (data-model §3/§4, FR-02
     const dir = bundleDirOf(root, id);
     expect(fs.existsSync(dir)).toBe(true);
     expect(fs.readdirSync(dir).sort()).toEqual(
-      ['graph-context.json', 'instructions.md', 'manifest.json', 'output-contract.json'].sort(),
+      ['README.md', 'graph-context.json', 'instructions.md', 'manifest.json', 'output-contract.json'].sort(),
     );
 
     // instructions.md carries the prose verbatim.
@@ -150,6 +150,62 @@ describe('emitBundle — self-describing work package (data-model §3/§4, FR-02
     // Plant a regular FILE where .codegraph/ must be a directory → mkdir of tasks/ fails (ENOTDIR).
     fs.writeFileSync(getCodeGraphDir(root), 'not a directory', 'utf8');
     expect(() => emitBundle(root, makeTask())).toThrow();
+  });
+});
+
+describe('emitBundle — atomic stage-then-rename (Finding B: no orphaned partial bundle)', () => {
+  it('leaves NO bundle directory when a write fails mid-emit (never a partial <id>/ or .tmp-<id>/)', () => {
+    const root = makeRoot();
+    // A circular graphContext makes `JSON.stringify` throw DURING emit — a deterministic,
+    // mock-free mid-emit failure (after the staging dir + the first file already exist).
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const task = makeTask({ graphContext: circular as unknown as string[] });
+
+    // The failure propagates so generate() can degrade to the consumer fallback.
+    expect(() => emitBundle(root, task)).toThrow();
+
+    // Atomicity: no partial bundle is ever visible under the tasks root — no `<id>/`,
+    // no `.tmp-<id>/` staging residue — and the resilient lister surfaces nothing.
+    const leftovers = fs.existsSync(tasksDir(root)) ? fs.readdirSync(tasksDir(root)) : [];
+    expect(leftovers).toEqual([]);
+    expect(listBundles(root)).toEqual([]);
+  });
+
+  it('happy path publishes the bundle atomically (no .tmp- residue) and returns a redeemable handle', () => {
+    const root = makeRoot();
+    const { id, handle } = emitBundle(root, makeTask());
+    expect(handle).toBe(id);
+    // Exactly the one bundle dir is published — no leftover `.tmp-<id>` staging entry.
+    expect(fs.readdirSync(tasksDir(root))).toEqual([id]);
+    // And the handle redeems as pending (a complete, readable manifest was published).
+    expect(redeemHandle(root, handle)).toEqual({ status: 'pending' });
+  });
+});
+
+describe('emitBundle — bundle-local completion protocol (Finding C: FR-022 self-describing)', () => {
+  it('writes a protocol file naming output.json + `codegraph tasks ingest`, keeping instructions.md verbatim', () => {
+    const root = makeRoot();
+    const task = makeTask({ instructions: 'THE EXACT CONSUMER TASK TEXT — DO NOT ALTER' });
+    const { id } = emitBundle(root, task);
+    const dir = bundleDirOf(root, id);
+
+    // A bundle-local protocol file exists so the bundle is completable using ONLY
+    // its own contents (FR-022) — no external companion skill required.
+    const protocolPath = path.join(dir, 'README.md');
+    expect(fs.existsSync(protocolPath)).toBe(true);
+    const protocol = fs.readFileSync(protocolPath, 'utf8');
+    // It tells the agent WHERE to write its answer, WHICH schema governs it, and
+    // HOW the user finalizes — naming THIS bundle's id in the ingest command.
+    expect(protocol).toContain('output.json');
+    expect(protocol).toContain('output-contract.json');
+    expect(protocol).toContain('codegraph tasks ingest');
+    expect(protocol).toContain(id);
+
+    // The consumer's task text stays verbatim and separate in instructions.md.
+    expect(fs.readFileSync(path.join(dir, 'instructions.md'), 'utf8')).toBe(
+      'THE EXACT CONSUMER TASK TEXT — DO NOT ALTER',
+    );
   });
 });
 
@@ -358,6 +414,55 @@ describe('readBundleFileSafely — FR-029a bounded safe-read (research D9)', () 
     expect(res.ok).toBe(true);
     // No global prototype pollution occurred.
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe('readBundleFileSafely — fd-bound validate+read (Finding A: CodeQL js/file-system-race)', () => {
+  // The fix binds the symlink/type/size validation AND the read to ONE descriptor, so
+  // no path-based stat is followed by a path-based read of a swapped inode. The observable
+  // contract is unchanged (behavior-preserving refactor); the definitive acceptance is the
+  // CodeQL alert clearing in CI post-push. These pin the contract the fd path must uphold,
+  // with the EXACT preserved reason strings that ingest.ts / redeemHandle depend on.
+  function seedBundle(root: string): string {
+    const { id } = emitBundle(root, makeTask());
+    return bundleDirOf(root, id);
+  }
+
+  it('reads and parses a normal contained JSON file via the single descriptor', () => {
+    const root = makeRoot();
+    const dir = seedBundle(root);
+    const res = readBundleFileSafely(root, dir, 'manifest.json');
+    expect(res.ok).toBe(true);
+    expect(res.ok && (res.value as { status: string }).status).toBe('pending');
+  });
+
+  it('rejects a symlinked final component with the preserved symlink reason (O_NOFOLLOW → ELOOP)', () => {
+    if (process.platform === 'win32') return; // symlink creation needs privileges on Windows
+    const root = makeRoot();
+    const dir = seedBundle(root);
+    // A symlink to an in-bundle regular file: containment passes, the fd open still refuses it.
+    fs.symlinkSync(path.join(dir, 'manifest.json'), path.join(dir, 'link.json'));
+    const res = readBundleFileSafely(root, dir, 'link.json');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe('refusing to read a symlink: link.json');
+  });
+
+  it('rejects an oversized file via the fstat size check with the preserved size reason', () => {
+    const root = makeRoot();
+    const dir = seedBundle(root);
+    const huge = '"' + 'A'.repeat(MAX_BUNDLE_INPUT_BYTES + 16) + '"';
+    fs.writeFileSync(path.join(dir, 'big.json'), huge, 'utf8');
+    const res = readBundleFileSafely(root, dir, 'big.json');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe(`file exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes: big.json`);
+  });
+
+  it('maps an absent file to the preserved not-found reason (fd open fails, non-ELOOP)', () => {
+    const root = makeRoot();
+    const dir = seedBundle(root);
+    const res = readBundleFileSafely(root, dir, 'nope.json');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe('file not found: nope.json');
   });
 });
 

@@ -11,7 +11,12 @@ completes the bundle using only these files (FR-022). No SQLite (FR-023).
 | `instructions.md` | emitter | prose task instructions |
 | `graph-context.json` | emitter | the consumer-supplied opaque items, verbatim |
 | `output-contract.json` | emitter | `OutputContract` (below) |
+| `README.md` | emitter | fixed, deterministic bundle-local completion protocol (FR-022): read `instructions.md`, honor `output-contract.json`, write the answer as `output.json`, then `codegraph tasks ingest <id>` — so the bundle is completable with no external companion skill |
 | `manifest.json` | emitter | `{ id, status:'pending', contract:'output-contract.json', createdAt }` — `status` ∈ `{pending, completed}` only (CRL 1) |
+
+Emit is **atomic** (FR-024): all files are staged in a sibling `.tmp-<id>/` (outside the enumerated
+bundle namespace) and `rename`d onto `<id>/` in one step; any mid-emit error removes the staging dir,
+so a partial bundle is never visible under a bundle id.
 
 ## Files (agent + ingest)
 
@@ -50,9 +55,15 @@ the reader for EVERY named path, including `manifest.json`'s `contract` pointer 
 `contract` value cannot escape the bundle dir):
 
 1. **Containment** — `validatePathWithinRoot(bundleDir, relPath)` (reused, not reimplemented); reject
-   any path resolving outside the bundle dir, including via symlink realpath escape.
-2. **Symlink rejection** — `fs.lstatSync`; reject if the path is a symlink.
-3. **Size bound** — `fs.statSync`; reject if size > `MAX_BUNDLE_INPUT_BYTES` (1 MiB) before reading.
+   any path resolving outside the bundle dir, including via symlink realpath escape. This is the ONLY
+   path-based operation.
+2. **Single-descriptor bind** — `fs.openSync(addressed, O_RDONLY | O_NOFOLLOW)`; symlink rejection is
+   `ELOOP` on the open (O_NOFOLLOW is a no-op on Windows, where the realpath containment above still
+   rejects an escaping symlink). The type/size check and the read then use that SAME descriptor, never
+   the path again — closing the read-side check-then-use file-system race (CodeQL js/file-system-race):
+   no path-based stat can be followed by a path-based read of a swapped inode.
+3. **Type + size bound** — `fs.fstatSync(fd)`; reject a non-regular file, or size >
+   `MAX_BUNDLE_INPUT_BYTES` (1 MiB), before reading the content from the same fd.
 4. **Depth bound** — bounded-depth JSON parse; reject if nesting depth > `MAX_JSON_DEPTH` (32).
 5. **Read-expected-fields-only** — consume by reading only the contract's declared fields; never
    deep-merge/`Object.assign` the parsed object (prototype-pollution safe).
@@ -61,7 +72,8 @@ At the **ingest** entry point every rejection is **FR-028a-shaped**: manifest st
 stderr, no consumer artifact, never `isError`. At the **redeem** entry point the same safe-read failures
 map into FR-010a's closed `RedeemResult` instead — a present-but-unreadable manifest → `{status:'pending'}`
 (CRL 7), an anchor-containment failure → `{status:'missing'}` (CRL 8) — since `redeemHandle` has no
-stderr/manifest channel. Same-user threat model; residual same-process TOCTOU accepted (research D9).
+stderr/manifest channel. Same-user threat model; the read binds validation + read to one descriptor
+(step 2 above), so residual same-process TOCTOU is confined to the write path (research D9).
 
 ## Identity / concurrency
 

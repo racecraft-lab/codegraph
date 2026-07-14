@@ -164,10 +164,16 @@ function readOwnStringField(obj: unknown, name: string): string | null {
  * Enforced in order, before the read/parse completes:
  *  1. Containment — {@link validatePathWithinRoot} against `bundleDir` (reused, not
  *     reimplemented); reject any path resolving outside it, incl. a symlink realpath
- *     escape.
- *  2. Symlink rejection — `lstat` the addressed path (not its realpath) and reject a
- *     symlink where a regular file is expected, independent of where it points.
- *  3. Size bound — reject size > {@link MAX_BUNDLE_INPUT_BYTES} BEFORE reading.
+ *     escape. This is the ONLY path-based operation.
+ *  2. Single-descriptor bind — `openSync` the addressed path with `O_NOFOLLOW`, so
+ *     opening a symlink final component fails (`ELOOP` → symlink rejection) and the
+ *     symlink/type/size validation AND the read all touch the SAME descriptor, never
+ *     the path again. This closes the check-then-use file-system race (CodeQL
+ *     js/file-system-race): no path-based stat can be followed by a path-based read of
+ *     a swapped inode. `O_NOFOLLOW` is undefined on Windows, where it degrades to a
+ *     no-op — the realpath containment above still rejects an escaping symlink.
+ *  3. Type + size bound — `fstatSync` the descriptor; reject a non-regular file, or
+ *     size > {@link MAX_BUNDLE_INPUT_BYTES}, BEFORE reading its content from the same fd.
  *  4. Depth bound — reject nesting > {@link MAX_JSON_DEPTH} with a bounded-depth scan
  *     BEFORE `JSON.parse`.
  * The parsed value is returned as-is; callers consume it via own-field reads only
@@ -183,51 +189,99 @@ export function readBundleFileSafely(root: string, bundleDir: string, relPath: s
   if (validatePathWithinRoot(bundleDir, relPath) === null) {
     return { ok: false, reason: `path escapes the bundle directory: ${relPath}` };
   }
-  // lstat the addressed path (NOT its realpath) so a symlink final component is
-  // seen as a symlink rather than resolved to its target.
+  // 2. Bind validation AND the read to a SINGLE descriptor so no path-based stat can be
+  // followed by a path-based read of a swapped inode (CodeQL js/file-system-race). Only
+  // this openSync touches the path; the type/size check (fstat) and the read use the fd.
+  // O_NOFOLLOW makes opening a symlink final component fail (ELOOP on POSIX); it is
+  // undefined on Windows, where `?? 0` degrades it to a no-op (the realpath containment
+  // above still rejects a symlink that escapes the bundle dir).
   const addressed = path.resolve(bundleDir, relPath);
-  let stat: fs.Stats;
+  let fd: number;
   try {
-    stat = fs.lstatSync(addressed);
-  } catch {
+    fd = fs.openSync(addressed, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
+      return { ok: false, reason: `refusing to read a symlink: ${relPath}` };
+    }
     return { ok: false, reason: `file not found: ${relPath}` };
   }
-  // 2. Symlink rejection.
-  if (stat.isSymbolicLink()) {
-    return { ok: false, reason: `refusing to read a symlink: ${relPath}` };
-  }
-  if (!stat.isFile()) {
-    return { ok: false, reason: `not a regular file: ${relPath}` };
-  }
-  // 3. Size bound (stat-then-cap, before reading).
-  if (stat.size > MAX_BUNDLE_INPUT_BYTES) {
-    return { ok: false, reason: `file exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes: ${relPath}` };
-  }
-  let raw: string;
+
   try {
-    raw = fs.readFileSync(addressed, 'utf8');
-  } catch {
-    return { ok: false, reason: `unreadable file: ${relPath}` };
+    // 3. Type + size bound on the OPEN descriptor (never the path again), before reading.
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) {
+      return { ok: false, reason: `not a regular file: ${relPath}` };
+    }
+    if (stat.size > MAX_BUNDLE_INPUT_BYTES) {
+      return { ok: false, reason: `file exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes: ${relPath}` };
+    }
+    // Read the content FROM THE SAME fd — the exact inode validated above.
+    let raw: string;
+    try {
+      raw = fs.readFileSync(fd, 'utf8');
+    } catch {
+      return { ok: false, reason: `unreadable file: ${relPath}` };
+    }
+    // 4. Depth bound (before parse).
+    if (exceedsJsonDepth(raw, MAX_JSON_DEPTH)) {
+      return { ok: false, reason: `JSON nesting exceeds ${MAX_JSON_DEPTH}: ${relPath}` };
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return { ok: false, reason: `malformed JSON: ${relPath}` };
+    }
+    return { ok: true, value };
+  } finally {
+    fs.closeSync(fd);
   }
-  // 4. Depth bound (before parse).
-  if (exceedsJsonDepth(raw, MAX_JSON_DEPTH)) {
-    return { ok: false, reason: `JSON nesting exceeds ${MAX_JSON_DEPTH}: ${relPath}` };
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return { ok: false, reason: `malformed JSON: ${relPath}` };
-  }
-  return { ok: true, value };
+}
+
+/**
+ * The bundle-local completion protocol (FR-022). A FIXED, deterministic README — no
+ * randomness, no timestamp — that makes a bundle completable using ONLY its own
+ * contents, with no external companion skill: it tells the coding agent to read
+ * `instructions.md` for the task, honor the schema in `output-contract.json`, write its
+ * answer as `output.json` in the bundle dir, and how the user then finalizes the bundle
+ * (`codegraph tasks ingest <id>`). The consumer's task text stays verbatim and separate
+ * in `instructions.md`; this file is bundle-local scaffolding, so naming the
+ * `codegraph tasks ingest` command here is intentional.
+ */
+function bundleReadme(id: string): string {
+  return [
+    '# CodeGraph agent task bundle',
+    '',
+    'This directory is a self-contained work package. Complete it using ONLY the files',
+    'in this directory — no external state or tooling is required.',
+    '',
+    '## Steps',
+    '',
+    '1. Read `instructions.md` — the task to perform.',
+    '2. Read `output-contract.json` — the machine-checkable schema your answer must',
+    '   satisfy: each required field, its type, and whether it must be non-empty.',
+    '3. Read `graph-context.json` — supporting code-graph context for the task.',
+    '4. Write your completed answer to `output.json` in THIS directory, as a single JSON',
+    '   object containing EXACTLY the fields required by `output-contract.json`.',
+    '',
+    '## Finalize',
+    '',
+    'After `output.json` is written, the user finalizes this bundle by running:',
+    '',
+    `    codegraph tasks ingest ${id}`,
+    '',
+    'That command structurally validates `output.json` against `output-contract.json`',
+    'and, on success, records the canonical result for the original requester.',
+    '',
+  ].join('\n');
 }
 
 /**
  * Emit a self-describing agent-mode task bundle under `.codegraph/tasks/<id>/` and
- * return its opaque `{ id, handle }` (data-model §3/§4, research D8). Writes exactly
- * four files — `instructions.md`, `graph-context.json`, `output-contract.json`, and
- * `manifest.json` (`status:'pending'`) — carrying the consumer's task parts verbatim
- * (FR-021/FR-022). No SQLite (FR-023).
+ * return its opaque `{ id, handle }` (data-model §3/§4, research D8). Writes five files
+ * — `instructions.md`, `graph-context.json`, `output-contract.json`, `README.md` (the
+ * FR-022 bundle-local completion protocol), and `manifest.json` (`status:'pending'`) —
+ * carrying the consumer's task parts verbatim (FR-021/FR-022). No SQLite (FR-023).
  *
  * Identity is `crypto.randomUUID()`; the directory is created with an EXCLUSIVE
  * `mkdir` (`recursive:false`), regenerating the id on the astronomically-unlikely
@@ -243,34 +297,54 @@ export function emitBundle(root: string, task: ProseTask): EmitResult {
   // exists. A genuinely unwritable root throws here (ENOTDIR/EACCES) → propagates.
   fs.mkdirSync(tasksRoot, { recursive: true });
 
+  // Emit atomically: stage every file in a sibling `.tmp-<id>` dir — OUTSIDE the
+  // enumerated bundle namespace — then `rename` it onto `<id>` in one step. A
+  // mid-emit fs error therefore never publishes a partial bundle under a bundle id
+  // (only the complete file set is ever visible to listBundles/resolveBundleDir).
+  // The exclusive staging `mkdir` keeps the `jobs.ts` EEXIST-retry discipline so
+  // concurrent emits never collide or overwrite (FR-024/FR-024a).
   let id = randomUUID();
-  let dir = path.join(tasksRoot, id);
+  let stagingDir = path.join(tasksRoot, `.tmp-${id}`);
   for (let attempt = 0; ; attempt++) {
     try {
-      fs.mkdirSync(dir, { recursive: false }); // exclusive create: EEXIST if the id already exists
+      fs.mkdirSync(stagingDir, { recursive: false }); // exclusive create: EEXIST if the id already exists
       break;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'EEXIST' && attempt < 8) {
         id = randomUUID();
-        dir = path.join(tasksRoot, id);
+        stagingDir = path.join(tasksRoot, `.tmp-${id}`);
         continue;
       }
       throw err; // any other fs failure (or exhausted UUID retries) surfaces to generate()
     }
   }
 
-  const manifest: BundleManifest = {
-    id,
-    status: 'pending',
-    contract: 'output-contract.json',
-    createdAt: new Date().toISOString(),
-  };
-  // The four self-describing files (Q10 / FR-021, FR-022). graphContext + the
-  // OutputContract are embedded verbatim; the layer never parses or enriches them.
-  fs.writeFileSync(path.join(dir, 'instructions.md'), task.instructions, 'utf8');
-  fs.writeFileSync(path.join(dir, 'graph-context.json'), JSON.stringify(task.graphContext, null, 2), 'utf8');
-  fs.writeFileSync(path.join(dir, 'output-contract.json'), JSON.stringify(task.outputContract, null, 2), 'utf8');
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+  const finalDir = path.join(tasksRoot, id);
+  try {
+    const manifest: BundleManifest = {
+      id,
+      status: 'pending',
+      contract: 'output-contract.json',
+      createdAt: new Date().toISOString(),
+    };
+    // The five self-describing files (Q10 / FR-021, FR-022). graphContext + the
+    // OutputContract are embedded verbatim; the layer never parses or enriches them.
+    // README.md is the bundle-local completion protocol so the bundle is completable
+    // using ONLY its own contents (FR-022), with no external companion skill.
+    fs.writeFileSync(path.join(stagingDir, 'instructions.md'), task.instructions, 'utf8');
+    fs.writeFileSync(path.join(stagingDir, 'graph-context.json'), JSON.stringify(task.graphContext, null, 2), 'utf8');
+    fs.writeFileSync(path.join(stagingDir, 'output-contract.json'), JSON.stringify(task.outputContract, null, 2), 'utf8');
+    fs.writeFileSync(path.join(stagingDir, 'README.md'), bundleReadme(id), 'utf8');
+    fs.writeFileSync(path.join(stagingDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+    // Atomic publish: the complete staging dir becomes `<id>/` in a single rename.
+    fs.renameSync(stagingDir, finalDir);
+  } catch (err) {
+    // Any failure before the rename: best-effort remove the staging dir so no
+    // partial bundle (`<id>/` or `.tmp-<id>/`) is ever visible (FR-024). rmSync is
+    // force:true so an already-vanished staging dir is not itself an error.
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw err; // surfaces to generate(), which degrades to the consumer fallback
+  }
 
   return { id, handle: id };
 }
