@@ -118,7 +118,7 @@ A maintainer turns each catalog on independently in the project configuration. A
 
 **Entry-point detection**
 
-- **FR-001**: System MUST detect execution-flow entry points using static registration evidence only: existing route nodes, AST-resolved CLI/event/queue handler registrations, and externally-exposed exports (exports with zero project-internal callers).
+- **FR-001**: System MUST detect execution-flow entry points using static registration evidence only: existing `route` nodes; AST-resolved CLI command registrations (e.g. commander `.command('<name>').action(<handler>)`, detected by a new minimal AST recognizer that reuses the existing inline-handler body-attribution technique) and event/queue handler registrations (recognized by re-applying the existing callback/observer registration recognizers to mark the *registered* handler node as a root, not inferred from unlabeled synthesized edges); and externally-exposed exports — `isExported` callable nodes (`function`/`method`) with zero inbound `calls` or `references` edges of any provenance. There is no `export` node kind or `exports` edge emitted today; `isExported` is the live signal.
 - **FR-002**: System MUST NOT use name-based heuristics (for example, symbol-name patterns) to identify entry points.
 - **FR-003**: System MUST root exactly one flow per detected entry point, deduplicating an entry point that qualifies through more than one form of evidence.
 
@@ -128,7 +128,7 @@ A maintainer turns each catalog on independently in the project configuration. A
 - **FR-005**: System MUST bound every flow trace with fixed caps of 12 hops of depth, 20 outgoing edges per step, and 200 unique steps per flow.
 - **FR-006**: The caps in FR-005 MUST be fixed in the delivered code and versioned with it — changeable only by a code change, never configurable per project.
 - **FR-007**: System MUST persist truncation state for a flow whenever any cap is reached, distinguishing depth, width, and total-step truncation, so a bounded flow is never presented as complete.
-- **FR-008**: Flow tracing MUST traverse all resolved call-edge provenance classes — static, LSP-corrected, and heuristic/synthesized (callback, EventEmitter, react-render, jsx-child, and equivalents).
+- **FR-008**: Flow tracing MUST traverse all resolved call-edge provenance classes — static, LSP-corrected, and heuristic/synthesized (callback, EventEmitter, react-render, jsx-child, and equivalents). Tracing MUST follow both `calls` and `references` edges out of a flow root and its steps, because a route/handler root connects to its handler via a `references` edge in some frameworks (C#, NestJS) and a `calls` edge in others (Express); for a route entry point the flow root is the `route` node itself.
 - **FR-009**: Every persisted flow step MUST carry the provenance of the call edge that produced it.
 
 **Flow naming**
@@ -147,6 +147,7 @@ A maintainer turns each catalog on independently in the project configuration. A
 - **FR-015**: Across re-indexes, System MUST assign cluster identifiers by greedy one-to-one overlap matching against the prior catalog, transferring a prior identifier to a new cluster only when their membership overlap (Jaccard) is at least 0.5.
 - **FR-016**: When a prior cluster splits, System MUST transfer its identifier to only the single best-matching descendant; all other descendants MUST receive new identifiers.
 - **FR-017**: Identity matching ties MUST be broken deterministically so the same assignment is produced on every run.
+- **FR-017a**: A cluster's stable identifier MUST be an opaque token minted on first appearance and transferred per FR-015/FR-016; it MUST NOT be a positional index or storage rowid (which churn on the swap). Identity matching reads prior membership from the last successfully-committed clusters catalog (a pre-swap read); a first successful analysis with no prior catalog mints all-new identifiers. Flow identity needs no analogous mechanism — a flow's natural key is its deterministic root entry point (FR-001/FR-003).
 
 **Labels**
 
@@ -156,21 +157,23 @@ A maintainer turns each catalog on independently in the project configuration. A
 **Lifecycle**
 
 - **FR-020**: System MUST fully recompute both catalogs after every successful index and after every successful sync (no incremental catalog maintenance).
-- **FR-021**: System MUST update catalogs atomically so that a reader never observes a partially-written catalog.
-- **FR-022**: If catalog analysis fails after the graph updated successfully, System MUST still report the index or sync as successful and MUST retain the prior catalog as readable, marked stale and tagged with the graph version it was computed from.
+- **FR-021**: System MUST update catalogs atomically so that a reader never observes a partially-written catalog. The full recomputed catalog MUST replace the prior one inside a single SQLite write transaction over the existing WAL-mode store, so a reader — including a concurrent daemon query connection under WAL snapshot isolation — observes either the complete prior catalog or the complete new one. No generation-tagged rows or multi-generation retention are used; the only versioning state is the computed-from token (FR-022).
+- **FR-021a**: Any catalog read that composes more than one SQL statement — notably a `total` count alongside a paged slice (FR-027/FR-028) — MUST derive both from a single consistent snapshot (a single query or full-fetch-then-slice per the existing read-ops precedent, or a read transaction wrapping the statements), so a concurrent atomic swap cannot yield a torn cross-generation response. Reads run in autocommit by default (each *statement* gets its own snapshot), so multi-statement composition is where torn reads can arise; where WAL is unavailable (some virtualized/network mounts silently retain the prior journal mode) the store degrades to writer-blocks-reader, preserving the same all-or-nothing guarantee.
+- **FR-022**: If catalog analysis fails after the graph updated successfully, System MUST still report the index or sync as successful and MUST retain the prior catalog as readable, marked stale and tagged with the graph version it was computed from. The "graph version" MUST be a monotonic, project-scoped write-version token advanced on each successful index and sync (analogous to the existing vectors write-version), persisted in project metadata; each catalog records the token it was computed from, and staleness MUST be *derived* by comparing a catalog's recorded token against the live token (recorded < live ⇒ stale), not stored as a mutable flag.
+- **FR-022a**: Persisted catalog rows (flow steps, cluster members) MUST reference graph nodes and files *by value* (node id, file path) WITHOUT an `ON DELETE CASCADE` foreign key to `nodes`/`files`, so a prior catalog retained as stale (FR-022) survives the per-file node deletion and re-insertion of a subsequent index or sync until a new catalog atomically replaces it. A cascading FK would silently shred the retained-stale catalog before its replacement is even computed. Because node IDs are position-dependent (they change when a symbol's line shifts, so by-value references dangle after ordinary edits), persisted catalog rows MUST also denormalize enough identity — symbol name and kind alongside the node id and file path — to stay meaningfully displayable when a node id no longer resolves; unresolvable fields render as an explicit placeholder rather than an error.
 - **FR-023**: If catalog analysis fails on the first run with no prior catalog, System MUST expose an explicit "unavailable" state and MUST NOT expose partial or empty-looking data.
 
 **Activation**
 
 - **FR-024**: System MUST make flow analysis and cluster analysis each independently opt-in via a per-catalog flag in the project configuration (`codegraph.json`).
-- **FR-025**: A project that has not opted in MUST run no catalog analysis, write no catalog data, and behave identically to the pre-feature state (zero added cost, no schema writes).
+- **FR-025**: A project that has not opted in MUST run no catalog analysis and write no catalog rows and no catalog metadata; behavior is byte-identical to the pre-feature state with respect to catalog *data*. Empty catalog table definitions MAY exist in the shared schema (as `node_vectors` does today) and are not considered added cost.
 - **FR-026**: This repository MUST enable both catalogs to satisfy the binding Dogfooding Protocol.
 
 **Surfaces and contracts**
 
-- **FR-027**: System MUST expose MCP tools `list_flows`, `get_flow`, and `list_clusters`; the list tools MUST return stable-sorted, paged, bounded summaries, and `get_flow` MUST return a single flow's bounded graph plus its truncation metadata.
-- **FR-028**: System MUST expose REST endpoints `/api/flows` and `/api/clusters` that mirror the MCP tools' field names and semantics so the two surfaces cannot drift.
-- **FR-029**: `list_clusters` (and its REST mirror) MUST accept a minimum-size filter parameter.
+- **FR-027**: System MUST expose MCP tools `codegraph_list_flows`, `codegraph_get_flow`, and `codegraph_list_clusters` (the `codegraph_` prefix every existing MCP tool carries). The list tools MUST return bounded summaries paged by `limit` (default 20, clamped 1–100; over-cap clamps, not errors) and a zero-based `offset` (default 0), reporting the total match count and the effective `limit`/`offset`; results MUST use a totally-ordered deterministic sort ending in the stable identifier — `codegraph_list_flows` by flow name ascending then flow id, `codegraph_list_clusters` by member-file count descending then canonical label ascending then cluster id. `codegraph_get_flow` MUST return a single flow's bounded graph plus truncation metadata shaped `{ truncated, truncation: { depth, width, totalSteps } }`, where `truncated` is the disjunction of the three axis flags and each axis flag is set independently.
+- **FR-028**: System MUST expose REST endpoints `/api/flows` and `/api/clusters` (unprefixed, like existing `/api/*` routes) that mirror the MCP tools' field names and offset/limit pagination semantics so the two surfaces cannot drift. The REST mirrors reuse SPEC-005's existing `Limit` (default 100, max 500) and `Offset` parameters and the `ListResult` envelope (`items`, `total`, `limit`, `offset`); both surfaces share field names and offset-pagination semantics while each keeps its own page-size ceiling.
+- **FR-029**: `codegraph_list_clusters` (and its REST mirror `/api/clusters`) MUST accept a minimum-size filter named `minSize` (integer, default 1; values < 1 clamp to 1). A cluster is returned when its member-file count is ≥ `minSize`; default 1 returns the full total-coverage catalog including singletons, and `minSize` ≥ 2 suppresses singletons.
 - **FR-030**: For expected conditions — project not indexed, analysis disabled, catalog stale, or unknown flow/cluster identifier — every surface MUST return success-shaped guidance and MUST NOT return an error-shaped (`isError`) response.
 - **FR-031**: System MUST NOT modify `codegraph_explore`'s behavior or output.
 
@@ -198,8 +201,8 @@ A maintainer turns each catalog on independently in the project configuration. A
 
 ### Key Entities *(include if feature involves data)*
 
-- **Catalog**: The versioned, atomically-swapped collection of flows or clusters for one project. Attributes: catalog kind (flows or clusters), state (available, stale, or unavailable), the graph version it was computed from, and a staleness marker.
-- **Execution Flow**: A named, bounded call graph rooted at one entry point. Attributes: identifier, name (per FR-010), root entry point, ordered/branching steps, truncation state (per boundary), and source graph version.
+- **Catalog**: The versioned, atomically-swapped collection of flows or clusters for one project. Attributes: catalog kind (flows or clusters); the monotonic graph write-version token it was computed from; state ∈ {available, stale, unavailable}, where **stale** is derived (recorded token < live token), **unavailable** is an explicit first-run-failure marker, and an **available-but-empty** catalog (tokens equal, zero entries — e.g. no detectable entry points) is distinct from both and from a disabled/never-computed catalog.
+- **Execution Flow**: A named, bounded call graph rooted at one entry point. Attributes: identifier (derived from its deterministic root entry point), name (per FR-010), root entry point (for a route-rooted flow the root is the `route` node, named `<METHOD> <path>`), ordered/branching steps, truncation state shaped `{ truncated, truncation: { depth, width, totalSteps } }`, and source graph version.
 - **Flow Step**: One node within a flow's graph. Attributes: the referenced symbol, the provenance of the incoming call edge (static, LSP, or heuristic/synthesized), and its depth from the root.
 - **Entry Point**: A statically detected flow root. Attributes: kind (route, CLI command, event/queue handler, or externally-exposed export) and the evidence that qualified it.
 - **Functional Cluster**: A group of files forming a functional unit. Attributes: stable identifier, canonical label, optional LLM display label (presentation-only), member files, size, singleton flag, and source graph version.
@@ -214,20 +217,20 @@ A maintainer turns each catalog on independently in the project configuration. A
 - **SC-004**: Re-analyzing an unchanged graph produces identical flow and cluster catalogs on every run (full determinism).
 - **SC-005**: A change that leaves a cluster at least half-overlapping preserves that cluster's identifier across the re-index; a genuine split transfers the identifier to only the best-matching descendant.
 - **SC-006**: Enabling both catalogs increases full-index wall-clock time by no more than 20% at the median across at least three paired runs on the fixture monorepo, with embedding and LSP configuration held constant.
-- **SC-007**: A project that has not opted in adds zero measurable analysis overhead and writes no catalog data — behavior is byte-identical to the pre-feature state.
+- **SC-007**: A project that has not opted in adds zero measurable analysis overhead and writes no catalog rows or metadata — behavior is byte-identical to the pre-feature state with respect to catalog data (empty table definitions in the shared schema, as with `node_vectors`, are not counted).
 - **SC-008**: When analysis fails after a successful graph update, the index still completes successfully and the prior catalog remains readable and marked stale; a first-run analysis failure surfaces an explicit "unavailable" state 100% of the time.
 - **SC-009**: The MCP and REST surfaces return the same field semantics for the same catalog data, and expected conditions (not indexed, disabled, stale, unknown identifier) return success-shaped guidance in 100% of cases — never an error-shaped response.
 - **SC-010**: The self-repo dogfood UAT confirms the `codegraph index` CLI entry point's flow reaches the extraction → resolution → (LSP) → embedding stages with correct per-step provenance and truncation state, and that this repository's source modules land in coherent clusters whose identifiers stay stable across two consecutive re-indexes.
 
 ## Assumptions
 
-- The set of frameworks whose registrations qualify as entry points is bounded by CodeGraph's existing route and handler extraction/resolution; adding new framework coverage is out of scope for this feature.
-- Paged list surfaces reuse the project's existing REST/MCP paging conventions (page size and cursor semantics established by the prior local-server/API work); no new paging model is introduced.
+- Route and event/queue registrations qualifying as entry points are bounded by CodeGraph's existing route/handler extraction and callback/observer registration recognizers. CLI-command detection is delivered as a new minimal AST recognizer (commander `.command().action()` in v1, reusing the existing inline-handler body-attribution technique); adding *further* framework or CLI coverage is out of scope for this feature.
+- Paged list surfaces reuse SPEC-005's existing **offset/limit** pagination (a `limit` page size and a zero-based `offset`, returning `{ items, total, limit, offset }`); there is no cursor model. No new paging model is introduced.
 - The "fixture monorepo" used for the performance benchmark is the repository's existing benchmark fixture used for prior performance validation; embedding and LSP configuration are held constant across the paired runs.
 - Cluster canonical labels derive only from directory and symbol-name tokens already present in the graph; no external taxonomy or naming service is used.
-- Catalogs persist in the existing per-project local SQLite store through the existing schema and asset-copy build wiring; no new native store or dependency is added.
+- Catalogs persist in the existing per-project local SQLite store; new catalog DDL ships in the existing `src/db/schema.sql` (copied to `dist/db/schema.sql` by `copy-assets`) PLUS a lockstep `src/db/migrations.ts` entry (the `node_vectors` v9 pattern) so already-initialized projects gain the tables on open; no new native store or dependency is added. Catalog rows follow the `node_vectors` precedent of derived data held without a cascading FK to graph rows (FR-022a).
 - The optional LLM display label (from the separate LLM-access capability) is dormant in this repository's environment (embeddings configured, no LLM endpoint), so its non-interference is validated by dormancy tests rather than a live model call.
-- "Externally-exposed export" means an export with zero project-internal callers, computed from the existing resolved call/reference edges.
+- "Externally-exposed export" means an `isExported` callable node with zero inbound `calls`/`references` edges (all provenance), computed from the existing resolved edges — there is no `export` node kind or `exports` edge to key off.
 
 ## Out of Scope
 

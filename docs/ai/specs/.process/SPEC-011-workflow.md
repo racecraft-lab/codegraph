@@ -80,7 +80,7 @@ Resolved from this worktree on 2026-07-14:
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 33 FR, 5 US, 21 AC, 10 SC, 5 entities; 0 [NEEDS CLARIFICATION] (G1 pass) |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Confirm no drift from the 21 resolved setup decisions |
+| Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions → 16 spec contract-refinements; G2 pass; 2 persistence decisions adversarially verified |
 | Plan | `/speckit-plan` | ⏳ Pending | Schema, analysis lifecycle, shared API contracts |
 | Checklist | `/speckit-checklist` | ⏳ Pending | data-integrity, api-contracts, performance, error-handling |
 | Tasks | `/speckit-tasks` | ⏳ Pending | One PR; organize by user story, not layer |
@@ -324,9 +324,16 @@ exist (empty catalog is valid, success-shaped).
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
+| 1 | Contract & Naming | 5 | `codegraph_`-prefixed tool names; shared offset/limit paging (MCP 20/100, REST 100/500, `{items,total,limit,offset}`); `minSize` (default 1); truncation `{truncated,{depth,width,totalSteps}}`; deterministic sorts (flows: name,id / clusters: count desc,label,id) |
+| 2 | Persistence & Lifecycle | 5 | monotonic `graph_write_version` + derived staleness (FR-022); no-CASCADE by-value rows +denormalized name/kind (FR-022a); single-WAL-txn swap +single-snapshot composite reads (FR-021/021a); opaque cluster id (FR-017a); schema.sql + lockstep migration |
+| 3 | Entry-Point Evidence | 5 | CLI commander AST recognizer (FR-001); event/queue via callback registrars (fixture-validated); exposed-export = `isExported` + 0 inbound `calls`/`references`; traverse `calls`+`references` (FR-008); empty entry-point set → available-empty |
+
+### Consensus Resolution Log
+
+| # | Type | Question/Gap/Finding | Categories | Round | Outcome | Resolution | Analysts Used |
+|---|------|----------------------|------------|-------|---------|------------|---------------|
+| 1 | Clarify | FR-022a: no `ON DELETE CASCADE` on catalog rows | [codebase] | 1 | survives (+refined) | By-value refs, no cascade (confirmed *necessary* — line-dependent node ids dangle on any edit); added denormalized `name`/`kind` so stale rows stay displayable | codebase-analyst (adversarial) |
+| 2 | Clarify | FR-021: single-WAL-txn swap, no generation rows | [codebase, domain] | 1 | partial→refined | Write-side confirmed; added FR-021a requiring single-snapshot composite reads (`total`+page) to close the `queryPool:true` daemon torn-read gap | codebase-analyst (adversarial) |
 
 ---
 
