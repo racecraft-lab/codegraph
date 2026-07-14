@@ -843,6 +843,34 @@ export const tools: ToolDefinition[] = [
     },
     annotations: RENAME_ANNOTATIONS,
   },
+  {
+    name: 'codegraph_list_flows',
+    description:
+      'List the named execution flows detected in the indexed project. Each flow is a bounded call graph rooted at a static entry point (a route, a CLI command, an event/queue handler, or an externally-exposed export). Returns paged summaries (id, name, entryKind, stepCount, truncated) sorted by name then id, plus a machine-readable state. Requires the flows catalog to be enabled in codegraph.json ("analysis": { "flows": true }).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Page size (default 20, clamped to 1–100).' },
+        offset: { type: 'number', description: 'Zero-based page offset (default 0).' },
+        projectPath: projectPathProperty,
+      },
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
+    name: 'codegraph_get_flow',
+    description:
+      "Return one execution flow's bounded call graph by id: the root entry point, every step (its depth, parent, edge kind, and 3-value provenance static/lsp/heuristic), and truncation metadata shaped { truncated, truncation: { depth, width, totalSteps } }. Discover flow ids with codegraph_list_flows.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The flow id returned by codegraph_list_flows.' },
+        projectPath: projectPathProperty,
+      },
+      required: ['id'],
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
 ];
 
 /**
@@ -1602,8 +1630,69 @@ export class ToolHandler {
       case 'codegraph_explore': return await this.handleExplore(args);
       case 'codegraph_node': return await this.handleNode(args);
       case 'codegraph_files': return await this.handleFiles(args);
+      case 'codegraph_list_flows': return this.handleListFlows(args);
+      case 'codegraph_get_flow': return this.handleGetFlow(args);
       default: return this.errorResult(`Unknown tool: ${toolName}`);
     }
+  }
+
+  /**
+   * Coerce a numeric catalog arg: floor a finite number, else the default
+   * (missing/non-numeric → default). Clamping is applied by the caller. Mirrors
+   * the read-ops coercion contract — never a 4xx.
+   */
+  private coerceCatalogInt(raw: unknown, def: number): number {
+    if (raw === undefined || raw === null) return def;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.floor(n) : def;
+  }
+
+  /**
+   * Handle codegraph_list_flows (SPEC-011, FR-027/030). Thin pass through the
+   * catalog-store single-fetch read; success-shaped for not-indexed / disabled /
+   * empty (the `state` field carries the machine-readable condition).
+   */
+  private handleListFlows(args: Record<string, unknown>): ToolResult {
+    const limit = clamp(this.coerceCatalogInt(args.limit, 20), 1, 100);
+    const offset = Math.max(0, this.coerceCatalogInt(args.offset, 0));
+    let cg: CodeGraph;
+    try {
+      cg = this.getCodeGraph(args.projectPath as string | undefined);
+    } catch (err) {
+      if (err instanceof NotIndexedError) {
+        return this.textResult(
+          JSON.stringify({ items: [], total: 0, limit, offset, sourceVersion: 0, state: 'not_indexed' }, null, 2),
+        );
+      }
+      throw err;
+    }
+    return this.textResult(JSON.stringify(cg.listFlows(limit, offset), null, 2));
+  }
+
+  /**
+   * Handle codegraph_get_flow (SPEC-011, FR-027/030). Unknown id / disabled /
+   * not-indexed return success-shaped guidance carrying the `state`, never
+   * `isError`.
+   */
+  private handleGetFlow(args: Record<string, unknown>): ToolResult {
+    const id = this.validateString(args.id, 'id');
+    if (typeof id !== 'string') return id;
+    let cg: CodeGraph;
+    try {
+      cg = this.getCodeGraph(args.projectPath as string | undefined);
+    } catch (err) {
+      if (err instanceof NotIndexedError) {
+        return this.textResult(
+          JSON.stringify({ found: false, state: 'not_indexed', message: 'project not indexed' }, null, 2),
+        );
+      }
+      throw err;
+    }
+    const result = cg.getFlowById(id);
+    if (result.found) return this.textResult(JSON.stringify(result.flow, null, 2));
+    const live = result.state === 'available' || result.state === 'stale' || result.state === 'empty';
+    const message = live ? 'unknown flow id' : `flows catalog ${result.state}`;
+    return this.textResult(JSON.stringify({ found: false, state: result.state, message }, null, 2));
   }
 
   /**

@@ -27,6 +27,8 @@ import {
   readCallees,
   readImpact,
   readNeighborhood,
+  readFlows,
+  readFlow,
   type DaemonReadClient,
 } from './daemon-client';
 
@@ -444,6 +446,39 @@ function relationHandler(deps: ReadApiDeps, which: 'callers' | 'callees'): Route
   };
 }
 
+/**
+ * GET /api/flows (SPEC-011 T025, FR-028/030) — the paged execution-flow catalog.
+ * A thin daemon-forwarding handler (the serve process holds no DB connection);
+ * the same catalog-store read runs in the daemon (FR-021a). SPEC-005 Limit
+ * (default 100 / max 500) / Offset.
+ */
+function flowsListHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) => {
+    const paging = parsePaging(ctx.query);
+    if ('status' in paging) return paging;
+    return withClient(deps, ctx, async (client) => {
+      const result = await readFlows(client, paging.limit, paging.offset);
+      return { status: 200, body: result };
+    });
+  };
+}
+
+/**
+ * GET /api/flows/:id (SPEC-011 T025, FR-028/030) — one flow's bounded graph. An
+ * unknown flow id returns a success-shaped 200 (NOT 404) to keep this surface's
+ * condition-handling identical to the MCP contract (the intentional divergence).
+ */
+function flowDetailHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) =>
+    withClient(deps, ctx, async (client) => {
+      const r = await readFlow(client, ctx.params.id ?? '');
+      if (r.found) return { status: 200, body: r.flow };
+      const live = r.state === 'available' || r.state === 'stale' || r.state === 'empty';
+      const message = live ? 'unknown flow id' : `flows catalog ${r.state}`;
+      return { status: 200, body: { found: false, state: r.state, message } };
+    });
+}
+
 /** GET /api/impact|graph/:id (T018, FR-004/007) — shared subgraph, divergent depth. */
 function subgraphHandler(deps: ReadApiDeps, which: 'impact' | 'graph'): RouteHandler {
   return (ctx) => {
@@ -475,6 +510,8 @@ export function buildReadRoutes(deps: ReadApiDeps): Route[] {
     { method: 'GET', pattern: '/api/callees/:id', handler: relationHandler(deps, 'callees') },
     { method: 'GET', pattern: '/api/impact/:id', handler: subgraphHandler(deps, 'impact') },
     { method: 'GET', pattern: '/api/graph/:id', handler: subgraphHandler(deps, 'graph') },
+    { method: 'GET', pattern: '/api/flows', handler: flowsListHandler(deps) },
+    { method: 'GET', pattern: '/api/flows/:id', handler: flowDetailHandler(deps) },
   ];
 }
 

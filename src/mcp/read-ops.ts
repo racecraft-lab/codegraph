@@ -29,7 +29,16 @@ export class UnknownReadOpError extends Error {}
  * the session wire dispatch still receives arbitrary JSON-RPC input and the
  * `default` case below rejects an unknown op at runtime.
  */
-export type ReadOp = 'status' | 'search' | 'node' | 'callers' | 'callees' | 'impact' | 'neighborhood';
+export type ReadOp =
+  | 'status'
+  | 'search'
+  | 'node'
+  | 'callers'
+  | 'callees'
+  | 'impact'
+  | 'neighborhood'
+  | 'listFlows'
+  | 'getFlow';
 
 /**
  * Bounded scan ceiling used to compute a search `total` (FR-006). Matches the
@@ -80,9 +89,24 @@ export async function executeReadOp(
       return subgraphOp(cg, params, 'impact');
     case 'neighborhood':
       return subgraphOp(cg, params, 'neighborhood');
+    case 'listFlows':
+      return flowListOp(cg, params);
+    case 'getFlow':
+      return cg.getFlowById(idParam(params));
     default:
       throw new UnknownReadOpError(`unknown read op: ${op}`);
   }
+}
+
+/**
+ * SPEC-011 — the paged flow catalog (FR-027/030). Re-clamps `limit`/`offset`
+ * defensively at the daemon boundary (the HTTP routes already clamp); the
+ * catalog-store read attaches the read-time state.
+ */
+function flowListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(params.limit) || 100));
+  const offset = Math.max(0, Number(params.offset) || 0);
+  return cg.listFlows(limit, offset);
 }
 
 /**
@@ -107,6 +131,10 @@ export function readOnMissingIndex(op: ReadOp): unknown {
     case 'impact':
     case 'neighborhood':
       return { found: false };
+    case 'listFlows':
+      return { items: [], total: 0, limit: 0, offset: 0, sourceVersion: 0, state: 'not_indexed' };
+    case 'getFlow':
+      return { found: false, state: 'not_indexed' };
     default:
       throw new UnknownReadOpError(`unknown read op: ${op}`);
   }

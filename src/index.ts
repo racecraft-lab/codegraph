@@ -98,6 +98,13 @@ import {
 import { applyRename as deriveApplyRename } from './refactor/apply-engine';
 import { planRename as derivePlanRename } from './refactor/plan-engine';
 import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
+import { loadAnalysisConfig } from './project-config';
+import {
+  readFlowDetail,
+  readFlowList,
+  type FlowDetailRead,
+  type FlowListResult,
+} from './analysis';
 
 // Re-export types for consumers
 export * from './types';
@@ -1900,6 +1907,29 @@ export class CodeGraph {
    */
   getNode(id: string): Node | null {
     return this.queries.getNodeById(id);
+  }
+
+  /**
+   * SPEC-011 — the paged execution-flow catalog with its read-time state
+   * (FR-027/030). A thin pass through the shared `src/analysis` read facade over
+   * this project's warm connection; the live `analysis.flows` opt-in flag is
+   * consulted FIRST so a disabled catalog reads `disabled` regardless of any
+   * retained rows (FR-025). Both the MCP tool and the daemon-served REST endpoint
+   * render from this one method (FR-028a).
+   */
+  listFlows(limit: number, offset: number): FlowListResult {
+    const enabled = loadAnalysisConfig(this.projectRoot).flows;
+    return readFlowList(this.queries.getDb(), enabled, limit, offset);
+  }
+
+  /**
+   * SPEC-011 — one flow's bounded graph + truncation metadata with its read-time
+   * state, or a stateful miss (unknown id / disabled / not-computed) rendered as
+   * success-shaped guidance by the surfaces (FR-027/030). Shared by MCP + REST.
+   */
+  getFlowById(id: string): FlowDetailRead {
+    const enabled = loadAnalysisConfig(this.projectRoot).flows;
+    return readFlowDetail(this.queries.getDb(), enabled, id);
   }
 
   /**

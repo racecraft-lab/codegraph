@@ -60,6 +60,12 @@ export interface ProjectConfig {
    */
   lsp?: unknown;
   /**
+   * SPEC-011 per-catalog opt-in flags. Each catalog (execution flows, functional
+   * clusters) is independently enabled here; absent/omitted is the default-off
+   * dormant state (FR-024/025). A not-opted-in project pays nothing.
+   */
+  analysis?: { flows?: boolean; clusters?: boolean };
+  /**
    * Gitignore-style patterns for first-party source to force INTO the index even
    * when `.gitignore` would drop it — the general whitelist `includeIgnored`
    * never was (that one only revives *embedded git repos* inside ignored dirs).
@@ -75,6 +81,12 @@ export interface ProjectConfig {
   include?: string[];
 }
 
+/** SPEC-011 per-catalog opt-in flags (resolved view). */
+export interface AnalysisConfig {
+  flows: boolean;
+  clusters: boolean;
+}
+
 /** Parsed, validated view of a project's `codegraph.json`. */
 interface ParsedConfig {
   extensions: Record<string, Language>;
@@ -82,6 +94,7 @@ interface ParsedConfig {
   exclude: string[];
   lsp?: unknown;
   include: string[];
+  analysis: AnalysisConfig;
 }
 
 interface CacheEntry {
@@ -99,12 +112,14 @@ const cache = new Map<string, CacheEntry>();
 
 /** Shared frozen empties so the no-config path allocates nothing. */
 const EMPTY_EXTENSIONS: Record<string, Language> = Object.freeze({});
+const EMPTY_ANALYSIS: AnalysisConfig = Object.freeze({ flows: false, clusters: false });
 const EMPTY_CONFIG: ParsedConfig = Object.freeze({
   extensions: EMPTY_EXTENSIONS,
   includeIgnored: Object.freeze([]) as unknown as string[],
   exclude: Object.freeze([]) as unknown as string[],
   lsp: undefined,
   include: Object.freeze([]) as unknown as string[],
+  analysis: EMPTY_ANALYSIS,
 });
 
 /**
@@ -158,16 +173,31 @@ function parseConfig(file: string): ParsedConfig {
   const exclude = extractExclude(parsed, file);
   const lsp = extractLspConfig(parsed);
   const include = extractInclude(parsed, file);
+  const analysis = extractAnalysis(parsed);
   if (
     extensions === EMPTY_EXTENSIONS &&
     includeIgnored.length === 0 &&
     exclude.length === 0 &&
     include.length === 0 &&
-    lsp === undefined
+    lsp === undefined &&
+    analysis === EMPTY_ANALYSIS
   ) {
     return EMPTY_CONFIG;
   }
-  return { extensions, includeIgnored, exclude, include, lsp };
+  return { extensions, includeIgnored, exclude, include, lsp, analysis };
+}
+
+/**
+ * Validate the SPEC-011 `analysis` opt-in flags. Only a literal `true` enables a
+ * catalog; any other value (absent, false, non-boolean) is default-off (FR-024).
+ * Never throws — a malformed value degrades to disabled.
+ */
+function extractAnalysis(parsed: object): AnalysisConfig {
+  const raw = (parsed as ProjectConfig).analysis;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return EMPTY_ANALYSIS;
+  const flows = (raw as { flows?: unknown }).flows === true;
+  const clusters = (raw as { clusters?: unknown }).clusters === true;
+  return flows || clusters ? { flows, clusters } : EMPTY_ANALYSIS;
 }
 
 /**
@@ -342,6 +372,15 @@ export function loadExcludePatterns(rootDir: string): string[] {
 
 export function loadLspProjectConfig(rootDir: string): unknown {
   return loadParsedConfig(rootDir).lsp;
+}
+
+/**
+ * Load the SPEC-011 per-catalog opt-in flags for a project, mtime-cached. Both
+ * default to `false` (dormant) when there is no `codegraph.json` or no `analysis`
+ * block (FR-024/025).
+ */
+export function loadAnalysisConfig(rootDir: string): AnalysisConfig {
+  return loadParsedConfig(rootDir).analysis;
 }
 
 /**

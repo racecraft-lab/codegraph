@@ -384,6 +384,15 @@ export class QueryBuilder {
     this.db = db;
   }
 
+  /**
+   * The underlying SqliteDatabase handle. The SPEC-011 catalog-store reads/writes
+   * operate directly on this connection so both catalog surfaces share the
+   * daemon's warm WAL connection (FR-021a).
+   */
+  getDb(): SqliteDatabase {
+    return this.db;
+  }
+
   /** Set the normalized project-name tokens used to down-weight non-discriminative
    * query words in path scoring (#720). Called once when the project opens. */
   setProjectNameTokens(tokens: Set<string>): void {
