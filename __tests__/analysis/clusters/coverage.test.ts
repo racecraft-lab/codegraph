@@ -21,7 +21,7 @@ function readClusters(h: SeedHandle): { clusters: ClusterRow[]; members: Array<{
 }
 
 describe('runClusterAnalysis coverage (FR-014, SC-003)', () => {
-  it('assigns every indexed file to exactly one cluster', () => {
+  it('assigns every indexed file to exactly one cluster', async () => {
     const h = freshSeed();
     setVersion(h, 1);
     // Two connected files + one isolated file.
@@ -30,7 +30,7 @@ describe('runClusterAnalysis coverage (FR-014, SC-003)', () => {
     node(h, { id: 'fb', name: 'b', kind: 'function', filePath: 'src/b.ts' });
     edge(h, 'fa', 'fb', 'calls');
 
-    runClusterAnalysis(h.graph, h.db);
+    await runClusterAnalysis(h.graph, h.db);
     const { clusters, members } = readClusters(h);
 
     // Exactly-one-cluster coverage: the member set equals the indexed file set,
@@ -44,7 +44,7 @@ describe('runClusterAnalysis coverage (FR-014, SC-003)', () => {
     for (const c of clusters) expect(c.member_count).toBe(counts.get(c.id));
   });
 
-  it('persists a single-file community as an explicit flagged singleton', () => {
+  it('persists a single-file community as an explicit flagged singleton', async () => {
     const h = freshSeed();
     setVersion(h, 1);
     for (const p of ['src/a.ts', 'src/b.ts', 'src/lonely.ts']) file(h, p, 'x');
@@ -52,7 +52,7 @@ describe('runClusterAnalysis coverage (FR-014, SC-003)', () => {
     node(h, { id: 'fb', name: 'b', kind: 'function', filePath: 'src/b.ts' });
     edge(h, 'fa', 'fb', 'calls');
 
-    runClusterAnalysis(h.graph, h.db);
+    await runClusterAnalysis(h.graph, h.db);
     const { clusters, members } = readClusters(h);
 
     // The lonely file is its own singleton cluster, flagged.
@@ -66,11 +66,11 @@ describe('runClusterAnalysis coverage (FR-014, SC-003)', () => {
     expect(abCluster!.is_singleton).toBe(0);
   });
 
-  it('flags every file as its own singleton when there are no cross-file edges', () => {
+  it('flags every file as its own singleton when there are no cross-file edges', async () => {
     const h = freshSeed();
     setVersion(h, 1);
     for (const p of ['src/a.ts', 'src/b.ts', 'src/c.ts']) file(h, p, 'x');
-    runClusterAnalysis(h.graph, h.db);
+    await runClusterAnalysis(h.graph, h.db);
     const { clusters } = readClusters(h);
     expect(clusters.length).toBe(3);
     expect(clusters.every((c) => c.is_singleton === 1 && c.member_count === 1)).toBe(true);

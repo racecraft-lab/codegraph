@@ -22,9 +22,13 @@
 
 import type { FileGraph } from './file-graph';
 
-/** Optional cooperative-yield seam at Louvain pass boundaries (wired in T050). */
+/**
+ * Optional cooperative-yield seam at Louvain pass boundaries (wired in T050).
+ * `onPassBoundary` may be async (the yielder awaits `setImmediate`), so `louvain`
+ * awaits it at each aggregation-level boundary; a sync callback is equally valid.
+ */
 export interface LouvainHooks {
-  onPassBoundary?: () => void;
+  onPassBoundary?: () => void | Promise<void>;
 }
 
 /**
@@ -49,7 +53,7 @@ interface Level {
  * graph. Returns a community label per `graph.files[i]`, canonically numbered
  * from 0 by first appearance (FR-011/013).
  */
-export function louvain(graph: FileGraph, hooks?: LouvainHooks): number[] {
+export async function louvain(graph: FileGraph, hooks?: LouvainHooks): Promise<number[]> {
   const n = graph.files.length;
   if (n === 0) return [];
 
@@ -78,7 +82,7 @@ export function louvain(graph: FileGraph, hooks?: LouvainHooks): number[] {
   let level = level0;
 
   for (;;) {
-    hooks?.onPassBoundary?.();
+    await hooks?.onPassBoundary?.();
     const { comm, numComms, moved } = localMoving(level, m2);
     // Fold the level's assignment into the global membership.
     for (let i = 0; i < n; i++) origToLevel[i] = comm[origToLevel[i]!]!;

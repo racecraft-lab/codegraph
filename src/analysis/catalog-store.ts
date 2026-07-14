@@ -181,6 +181,23 @@ export function swapClusters(
   })();
 }
 
+/**
+ * Record an explicit FIRST-RUN analysis failure for `kind` (FR-023): a
+ * `catalog_meta` row with a NULL `computed_from_version` and `first_run_failed=1`.
+ * The read-state resolver maps this to `unavailable` — never partial/empty-looking.
+ *
+ * Called by the lifecycle ONLY when a kind's analysis fails with NO prior
+ * successfully-committed catalog (T048); a failure WITH a prior instead leaves
+ * the prior untouched so it derives as stale (FR-022b). `INSERT OR REPLACE`
+ * makes a repeated first-run failure idempotent.
+ */
+export function markFirstRunFailed(db: SqliteDatabase, kind: CatalogKind): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO catalog_meta (kind, computed_from_version, first_run_failed)
+     VALUES (?, NULL, 1)`,
+  ).run(kind);
+}
+
 // ── T010 — single-snapshot composite reads (FR-021a) ──────────────────────────
 
 /**

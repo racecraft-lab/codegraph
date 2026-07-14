@@ -10,8 +10,12 @@
  */
 
 import type { SqliteDatabase } from '../db/sqlite-adapter';
+import { createYielder, type MaybeYield } from '../resolution/cooperative-yield';
+import { logWarn } from '../errors';
+import type { AnalysisConfig } from '../project-config';
 import {
   getFlowDetail,
+  markFirstRunFailed,
   pageClusters,
   pageFlows,
   probeCatalog,
@@ -24,7 +28,7 @@ import {
   type FlowRow,
   type FlowStepRow,
 } from './catalog-store';
-import type { CatalogState, ClusterListResult, FlowDetail, FlowListResult } from './types';
+import type { CatalogKind, CatalogState, ClusterListResult, FlowDetail, FlowListResult } from './types';
 import { detectEntryPoints, type FlowAnalysisGraph } from './flows/entry-points';
 import { nameFlow } from './flows/naming';
 import { traceFlow } from './flows/tracer';
@@ -106,13 +110,26 @@ export function readFlowDetail(db: SqliteDatabase, enabled: boolean, id: string)
  * non-root step carries a 3-value provenance (FR-009); node-bearing rows
  * denormalize name/kind by value (FR-021/022a).
  */
-export function runFlowAnalysis(graph: FlowAnalysisGraph, store: SqliteDatabase): void {
+export async function runFlowAnalysis(
+  graph: FlowAnalysisGraph,
+  store: SqliteDatabase,
+  signal?: AbortSignal,
+): Promise<void> {
   const version = graph.queries.getGraphWriteVersion();
   const flows: FlowRow[] = [];
   const steps: FlowStepRow[] = [];
   const seen = new Set<string>();
+  // Cooperative yield at flow-root boundaries (T050): tracing many entry points
+  // is a synchronous main-thread span, so hand the event loop back between roots
+  // to keep the daemon query loop + liveness heartbeat responsive on large repos
+  // (Constitution VI). Fast repos pay essentially nothing (budgeted yielder).
+  const maybeYield = createYielder();
 
   for (const entry of detectEntryPoints(graph)) {
+    // An abort before the swap is a catalog no-op — discard partial work, leave
+    // the prior catalog untouched (edge case: cancellation is not a failure).
+    if (signal?.aborted) return;
+    await maybeYield();
     const flowId = computeFlowId(entry);
     if (seen.has(flowId)) continue; // belt-and-braces over the entry-point dedupe
     seen.add(flowId);
@@ -143,6 +160,7 @@ export function runFlowAnalysis(graph: FlowAnalysisGraph, store: SqliteDatabase)
     }
   }
 
+  if (signal?.aborted) return; // final pre-swap guard: no partial write on abort
   swapFlows(store, version, flows, steps);
 }
 
@@ -183,9 +201,13 @@ export interface ComputedCluster {
  * every indexed file lands in exactly one group (FR-014). Groups are returned in
  * a deterministic order (by first member path).
  */
-export function computeClusters(graph: FlowAnalysisGraph): ComputedCluster[] {
+export async function computeClusters(
+  graph: FlowAnalysisGraph,
+  maybeYield?: MaybeYield,
+): Promise<ComputedCluster[]> {
   const fileGraph = buildFileGraph(graph.queries);
-  const labels = louvain(fileGraph);
+  // Yield at each Louvain aggregation-level boundary (T050) via the T033 hook.
+  const labels = await louvain(fileGraph, maybeYield ? { onPassBoundary: maybeYield } : undefined);
   const groups = new Map<number, string[]>();
   fileGraph.files.forEach((file, i) => {
     const c = labels[i]!;
@@ -213,10 +235,18 @@ export function computeClusters(graph: FlowAnalysisGraph): ComputedCluster[] {
  * across a re-index and a genuine split transfers to only the best descendant;
  * a no-prior-match cluster mints a deterministic content-hash id.
  */
-export function runClusterAnalysis(graph: FlowAnalysisGraph, store: SqliteDatabase): void {
+export async function runClusterAnalysis(
+  graph: FlowAnalysisGraph,
+  store: SqliteDatabase,
+  signal?: AbortSignal,
+): Promise<void> {
+  // Cooperative yield at Louvain pass boundaries (T050), threaded into
+  // computeClusters -> louvain's onPassBoundary hook (Constitution VI).
+  const maybeYield = createYielder();
   const version = graph.queries.getGraphWriteVersion();
   const prior = readClusterMembership(store); // pre-swap prior-membership read (FR-017a)
-  const computed = computeClusters(graph);
+  const computed = await computeClusters(graph, maybeYield);
+  if (signal?.aborted) return; // abort before the swap is a no-op (prior untouched)
   const ids = assignClusterIdentity(computed, prior); // transfer-or-mint
 
   const clusters: ClusterRow[] = [];
@@ -233,5 +263,124 @@ export function runClusterAnalysis(graph: FlowAnalysisGraph, store: SqliteDataba
     for (const fp of c.members) members.push({ clusterId: id, filePath: fp });
   });
 
+  if (signal?.aborted) return; // final pre-swap guard: no partial write on abort
   swapClusters(store, version, clusters, members);
+}
+
+// ── T047/T048 — lifecycle recompute orchestrator + failure taxonomy ───────────
+
+/** Signature of a per-kind analyzer (the real ones, or a test-injected stub). */
+type CatalogAnalyzer = (
+  graph: FlowAnalysisGraph,
+  store: SqliteDatabase,
+  signal?: AbortSignal,
+) => Promise<void>;
+
+/**
+ * Test seams for {@link maybeRunCatalogAnalysis}: inject a throwing analyzer to
+ * exercise the failure taxonomy (FR-022b/023) deterministically without
+ * corrupting real graph data. Default to the real analyzers.
+ */
+export interface CatalogAnalysisHooks {
+  runFlows?: CatalogAnalyzer;
+  runClusters?: CatalogAnalyzer;
+}
+
+/**
+ * A kind has a VALID prior committed catalog when its `catalog_meta` row exists,
+ * is not a first-run-failure marker, and records a concrete version. Only then
+ * does a failure retain-and-stale (FR-022b); otherwise a first-run failure marks
+ * `unavailable` (FR-023).
+ */
+function hasValidPriorCatalog(store: SqliteDatabase, kind: CatalogKind): boolean {
+  const probe = probeCatalog(store, kind);
+  return probe.hasMeta && !probe.firstRunFailed && probe.computedFromVersion !== null;
+}
+
+/**
+ * Run ONE catalog kind's analysis with the bounded failure taxonomy (T048,
+ * FR-022b/023): every failure mode analysis can raise — compute/traversal
+ * exceptions, resource exhaustion, a failed atomic-swap commit — is caught here
+ * so NONE propagates to fail `indexAll`/`sync`. Outcomes:
+ *   - success              → the analyzer swapped a fresh catalog (available);
+ *   - failure, prior valid → prior retained (swap rolled back / never ran) and,
+ *     because `graph_write_version` already advanced, derives as stale (FR-022b);
+ *   - failure, no prior    → an explicit `unavailable` marker (FR-023);
+ *   - caller cancellation  → a no-op (no marker) — the prior is untouched, and if
+ *     the version already advanced it derives as stale (edge case).
+ * Per-kind, so one kind's failure never affects the other (FR-020 independence).
+ */
+async function runCatalogKind(
+  store: SqliteDatabase,
+  kind: CatalogKind,
+  signal: AbortSignal | undefined,
+  analyze: () => Promise<void>,
+): Promise<void> {
+  if (signal?.aborted) return; // abort before this kind starts — a catalog no-op
+  const hadValidPrior = hasValidPriorCatalog(store, kind);
+  try {
+    await analyze();
+  } catch (err) {
+    // A caller-requested cancellation is not a failure: leave the prior untouched
+    // (it derives as stale if the version already advanced) and mark nothing.
+    if (signal?.aborted) return;
+    if (!hadValidPrior) {
+      // First-run failure, no prior to retain → explicit unavailable (FR-023).
+      try {
+        markFirstRunFailed(store, kind);
+      } catch {
+        /* marker write is best-effort — never re-raise into the index */
+      }
+    }
+    // With a valid prior we write nothing: the retained catalog derives stale
+    // (FR-022b), since graph_write_version advanced before analysis ran.
+    // Only the error's NAME is surfaced — never its message/cause (Constitution V).
+    logWarn(
+      `Catalog analysis (${kind}) skipped after a ${err instanceof Error ? err.name : 'error'} ` +
+        '— the enclosing index/sync operation is unaffected.',
+    );
+  }
+}
+
+/**
+ * Recompute both catalogs after a successful index/sync (T047, FR-020). The
+ * lifecycle entry point wired into `indexAll`/`sync` (T049), mirroring the
+ * advisory embedding pass:
+ *   - honors the caller's `AbortSignal` (an aborted pass is a full no-op — no
+ *     version advance, no writes);
+ *   - fully DORMANT unless ≥1 catalog is opted in — neither enabled ⇒ zero writes,
+ *     `graph_write_version` untouched, byte-identical to the pre-feature state
+ *     (FR-025/SC-007);
+ *   - advances `graph_write_version` as part of the successful graph-update commit
+ *     BEFORE analysis runs (R2), so a post-update failure leaves the retained
+ *     catalog behind the live token → stale (FR-022);
+ *   - dispatches each enabled kind independently through {@link runCatalogKind},
+ *     which swallows every failure so analysis can NEVER fail the index (FR-022b).
+ *
+ * A partial index (`index_state='partial'`) counts as successful — the caller
+ * runs this over the committed graph exactly as it does the embedding pass.
+ */
+export async function maybeRunCatalogAnalysis(
+  graph: FlowAnalysisGraph,
+  store: SqliteDatabase,
+  config: AnalysisConfig,
+  signal?: AbortSignal,
+  hooks: CatalogAnalysisHooks = {},
+): Promise<void> {
+  if (signal?.aborted) return; // cancelled before any work — no advance, no writes
+  if (!config.flows && !config.clusters) return; // dormancy: nothing opted in
+
+  // Advance the live token BEFORE analysis (R2). Maintained ONLY here, gated on
+  // ≥1 enabled catalog above, so a not-opted-in project never advances it.
+  graph.queries.advanceGraphWriteVersion();
+
+  const runFlows = hooks.runFlows ?? runFlowAnalysis;
+  const runClusters = hooks.runClusters ?? runClusterAnalysis;
+
+  if (config.flows) {
+    await runCatalogKind(store, 'flows', signal, () => runFlows(graph, store, signal));
+  }
+  if (config.clusters) {
+    await runCatalogKind(store, 'clusters', signal, () => runClusters(graph, store, signal));
+  }
 }

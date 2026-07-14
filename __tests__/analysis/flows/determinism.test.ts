@@ -42,25 +42,25 @@ function snapshot(h: SeedHandle): { flows: unknown[]; steps: unknown[] } {
 }
 
 describe('flow-catalog determinism', () => {
-  it('produces byte-identical rows when re-analyzing the same unchanged graph', () => {
+  it('produces byte-identical rows when re-analyzing the same unchanged graph', async () => {
     const h = freshSeed();
     seedGraph(h);
-    runFlowAnalysis(h.graph, h.db);
+    await runFlowAnalysis(h.graph, h.db);
     const first = snapshot(h);
-    runFlowAnalysis(h.graph, h.db);
+    await runFlowAnalysis(h.graph, h.db);
     const second = snapshot(h);
 
     expect(first.flows.length).toBeGreaterThan(0);
     expect(second).toEqual(first);
   });
 
-  it('produces identical rows across two independently-seeded databases (SC-004)', () => {
+  it('produces identical rows across two independently-seeded databases (SC-004)', async () => {
     const a = freshSeed();
     const b = freshSeed();
     seedGraph(a);
     seedGraph(b);
-    runFlowAnalysis(a.graph, a.db);
-    runFlowAnalysis(b.graph, b.db);
+    await runFlowAnalysis(a.graph, a.db);
+    await runFlowAnalysis(b.graph, b.db);
 
     expect(snapshot(a)).toEqual(snapshot(b));
     expect(snapshot(a).flows.length).toBeGreaterThan(0);

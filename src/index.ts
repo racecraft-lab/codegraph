@@ -100,10 +100,12 @@ import { planRename as derivePlanRename } from './refactor/plan-engine';
 import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
 import { loadAnalysisConfig } from './project-config';
 import {
+  maybeRunCatalogAnalysis,
   readClusterList,
   readFlowDetail,
   readFlowList,
   type ClusterListResult,
+  type FlowAnalysisGraph,
   type FlowDetailRead,
   type FlowListResult,
 } from './analysis';
@@ -1035,6 +1037,27 @@ export class CodeGraph {
               '— the enclosing index/sync operation is unaffected.'
             );
           }
+
+          // Optional catalog analysis (SPEC-011): execution flows + functional
+          // clusters over the resolved graph — the SAME advisory discipline as
+          // the embedding pass above. Opt-in per catalog (fully dormant, and no
+          // graph_write_version advance, when neither is enabled), honors the
+          // caller's AbortSignal, and every failure is swallowed internally so a
+          // broken analysis can never fail an index (FR-020/022b). The wrapping
+          // try/catch is belt-and-braces over that internal swallow.
+          try {
+            await maybeRunCatalogAnalysis(
+              this.catalogAnalysisGraph(),
+              this.db.getDb(),
+              loadAnalysisConfig(this.projectRoot),
+              options.signal,
+            );
+          } catch (err) {
+            logWarn(
+              `Catalog analysis skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+              '— the enclosing index/sync operation is unaffected.'
+            );
+          }
         }
 
         return result;
@@ -1265,6 +1288,26 @@ export class CodeGraph {
   }
 
   /**
+   * SPEC-011: the graph surface catalog analysis reads from — the live query
+   * layer plus a project-root-relative source reader for the flow entry-point
+   * scanners (CLI/event registrations). Path-validated within the root; an
+   * unreadable file resolves to null, never throws.
+   */
+  private catalogAnalysisGraph(): FlowAnalysisGraph {
+    return {
+      queries: this.queries,
+      readFile: (relPath: string): string | null => {
+        try {
+          const abs = validatePathWithinRoot(this.projectRoot, relPath);
+          return abs ? fs.readFileSync(abs, 'utf-8') : null;
+        } catch {
+          return null;
+        }
+      },
+    };
+  }
+
+  /**
    * Index specific files
    *
    * Uses a mutex to prevent concurrent indexing operations.
@@ -1479,6 +1522,29 @@ export class CodeGraph {
           // message or cause), keeping endpoint/key redaction total (FR-023).
           logWarn(
             `Embedding pass skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+            '— the sync is unaffected.'
+          );
+        }
+
+        // Optional catalog analysis (SPEC-011): the SAME advisory pass indexAll
+        // runs, in sync()'s post-resolution slot. Reaching here IS a successful
+        // sync (the only earlier exit is the lock-acquisition failure), so this
+        // runs on every successful sync (FR-020) — full recompute, no incremental,
+        // exactly like the embedding pass above. Opt-in per catalog (dormant + no
+        // graph_write_version advance when neither is enabled), honors the
+        // AbortSignal, failures swallowed internally so a broken analysis can never
+        // fail a sync. The watcher and daemon drive this same sync(), inheriting the
+        // pass with no extra wiring. The wrapping try/catch is belt-and-braces.
+        try {
+          await maybeRunCatalogAnalysis(
+            this.catalogAnalysisGraph(),
+            this.db.getDb(),
+            loadAnalysisConfig(this.projectRoot),
+            options.signal,
+          );
+        } catch (err) {
+          logWarn(
+            `Catalog analysis skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
             '— the sync is unaffected.'
           );
         }

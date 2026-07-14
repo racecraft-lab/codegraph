@@ -103,14 +103,14 @@ function clusterIdOfFile(h: SeedHandle, filePath: string): string {
 }
 
 describe('runClusterAnalysis identity transfer (T042, SC-005)', () => {
-  it('keeps a cluster id across a re-index that leaves it >= 0.5 overlapping', () => {
+  it('keeps a cluster id across a re-index that leaves it >= 0.5 overlapping', async () => {
     const h = freshSeed();
     setVersion(h, 1);
     const clique = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts'];
     seedClique(h, clique);
     file(h, 'src/e.ts', 'x'); // isolated singleton
 
-    runClusterAnalysis(h.graph, h.db);
+    await runClusterAnalysis(h.graph, h.db);
     const idBefore = clusterIdOfFile(h, 'src/a.ts');
     // First run with no prior mints the content hash of the sorted members.
     expect(idBefore).toBe(mintClusterId([...clique].sort()));
@@ -120,7 +120,7 @@ describe('runClusterAnalysis identity transfer (T042, SC-005)', () => {
     node(h, { id: 'n:src/f.ts', name: 'f', kind: 'function', filePath: 'src/f.ts' });
     for (const p of clique) edge(h, 'n:src/f.ts', `n:${p}`, 'calls');
 
-    runClusterAnalysis(h.graph, h.db);
+    await runClusterAnalysis(h.graph, h.db);
     const idAfter = clusterIdOfFile(h, 'src/a.ts');
 
     // The overlapping cluster keeps its identifier (transferred, not re-minted).
