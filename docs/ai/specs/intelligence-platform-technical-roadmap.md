@@ -111,7 +111,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Ready (SPEC-005 shipped the serve daemon + WebSocket hook) |
 | SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
-| SPEC-011 | Execution Flows & Clusters | ⏳ Pending | [SPEC-011-workflow.md](SPEC-011-workflow.md) | Specify (parallel-safe) |
+| SPEC-011 | Execution Flows & Clusters | 🔄 In Progress | [SPEC-011-workflow.md](.process/SPEC-011-workflow.md) | Scaffolded 2026-07-14; worktree `.worktrees/011-execution-flows-clusters`; one-PR delivery per design concept Q21 |
 | SPEC-012 | Change Impact Detection | ⏳ Pending | [SPEC-012-workflow.md](SPEC-012-workflow.md) | Prefers SPEC-011 |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
 | SPEC-014 | Control-Flow Graphs | ⏳ Pending | [SPEC-014-workflow.md](SPEC-014-workflow.md) | Specify |
