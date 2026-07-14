@@ -26,7 +26,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ingestBundle } from '../src/llm/ingest';
-import { emitBundle, redeemHandle, MAX_BUNDLE_INPUT_BYTES, MAX_JSON_DEPTH } from '../src/llm/agent-bundle';
+import { emitBundle, redeemHandle, listBundles, MAX_BUNDLE_INPUT_BYTES, MAX_JSON_DEPTH } from '../src/llm/agent-bundle';
 import type { ProseTask, OutputContract } from '../src/llm/generate';
 import { getCodeGraphDir } from '../src/directory';
 
@@ -383,5 +383,94 @@ describe('FR-028a — a tampered contract cannot amplify bounded input into an u
     expect(manifestStatus(root, id)).toBe('pending');
     // The bundle is never left written-but-un-redeemable — it stays pending / re-ingestable.
     expect(redeemHandle(root, handle)).toEqual({ status: 'pending' });
+  });
+});
+
+// --------------------------------------------------------------------------
+// Round-3 P0: the completed manifest must be built from CANONICAL, already-validated fields
+// only — NEVER by spreading the untrusted pending manifest. The coding agent controls
+// manifest.json, and can pad it (e.g. a large numeric array field) so it stays < the reader's
+// 1 MiB ceiling when COMPACT yet expands PAST it once `writeManifestViaRename` pretty-prints
+// it (JSON.stringify(m, null, 2)). Pre-fix, finalization spreads every field
+// (`{ ...manifest, status:'completed' }`), writes that oversized completed manifest, and
+// returns { ok:true } — but readBundleFileSafely then rejects the > 1 MiB manifest, so
+// `redeemHandle` is wedged at `pending` and `tasks list`/`listBundles` at `unreadable`
+// forever: a successfully finalized bundle becomes permanently un-redeemable. The fix rebuilds
+// the manifest from KNOWN fields only ({ id, status:'completed', contract, createdAt? }),
+// dropping any agent padding, and keeps a byte-length invariant so the written manifest always
+// stays within the reader's ceiling.
+describe('FR-028a — a padded pending manifest cannot pretty-print past the reader ceiling on finalize (round-3 P0)', () => {
+  it('finalizes to a CANONICAL, redeemable manifest (drops agent padding) instead of an oversized un-redeemable one', () => {
+    const root = makeRoot();
+    const { id, handle } = emitBundle(root, makeTask());
+    writeOutput(root, id, { prose: 'valid answer' });
+
+    // Overwrite manifest.json with a COMPACT pending manifest padded by a large numeric array:
+    // < 1 MiB compact (so the pending safe-read accepts it) but > 1 MiB once pretty-printed (so
+    // a spread-then-pretty-printed completed manifest would exceed the reader ceiling). Valid
+    // status:"pending" + contract pointer so structural validation passes and finalization runs.
+    const padded = {
+      id,
+      status: 'pending',
+      contract: 'output-contract.json',
+      createdAt: new Date().toISOString(),
+      pad: new Array(250_000).fill(0),
+    };
+    const compact = JSON.stringify(padded);
+    // Precondition: compact fits the reader, pretty-printed does not (this IS the attack).
+    expect(Buffer.byteLength(compact, 'utf8')).toBeLessThan(MAX_BUNDLE_INPUT_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(padded, null, 2), 'utf8')).toBeGreaterThan(MAX_BUNDLE_INPUT_BYTES);
+    const manifestPath = path.join(bundleDirOf(root, id), 'manifest.json');
+    fs.writeFileSync(manifestPath, compact, 'utf8');
+
+    const result = ingestBundle(root, id);
+    // Structural validation still passes — the padding does not change the answer.
+    expect(result).toEqual({ ok: true, text: 'valid answer' });
+
+    // The completed manifest is CANONICAL and small: agent padding dropped, size within the
+    // reader ceiling (pre-fix it is the ~1.75 MiB spread-and-pretty-printed manifest).
+    const written = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    expect(written.status).toBe('completed');
+    expect(written.id).toBe(id);
+    expect(written.contract).toBe('output-contract.json');
+    expect(typeof written.createdAt).toBe('string'); // carried through so age still works
+    expect('pad' in written).toBe(false); // agent padding is NOT carried into the completed manifest
+    expect(fs.statSync(manifestPath).size).toBeLessThanOrEqual(MAX_BUNDLE_INPUT_BYTES);
+
+    // The finalized bundle is redeemable (pre-fix: wedged at `pending` because the oversized
+    // completed manifest fails the bounded safe-read).
+    expect(redeemHandle(root, handle)).toEqual({ status: 'completed', text: 'valid answer' });
+    // And `tasks list` shows it completed, not `unreadable`.
+    expect(listBundles(root).find((b) => b.id === id)?.status).toBe('completed');
+  });
+
+  it('omits createdAt from the canonical manifest when the pending manifest lacks a string createdAt (still redeemable)', () => {
+    const root = makeRoot();
+    const { id, handle } = emitBundle(root, makeTask());
+    writeOutput(root, id, { prose: 'valid answer' });
+
+    // A padded pending manifest with NO createdAt: the canonical manifest omits createdAt
+    // entirely (the BundleManifest reader tolerates its absence), still small and redeemable.
+    const padded = {
+      id,
+      status: 'pending',
+      contract: 'output-contract.json',
+      pad: new Array(250_000).fill(0),
+    };
+    const manifestPath = path.join(bundleDirOf(root, id), 'manifest.json');
+    fs.writeFileSync(manifestPath, JSON.stringify(padded), 'utf8');
+
+    expect(ingestBundle(root, id)).toEqual({ ok: true, text: 'valid answer' });
+
+    const written = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    expect(written.status).toBe('completed');
+    expect('createdAt' in written).toBe(false); // omitted — not a string in the pending manifest
+    expect('pad' in written).toBe(false);
+    expect(fs.statSync(manifestPath).size).toBeLessThanOrEqual(MAX_BUNDLE_INPUT_BYTES);
+
+    expect(redeemHandle(root, handle)).toEqual({ status: 'completed', text: 'valid answer' });
+    const listed = listBundles(root).find((b) => b.id === id);
+    expect(listed?.status).toBe('completed');
+    expect(listed?.createdAt).toBeNull(); // tolerated: absent createdAt → null, no age
   });
 });

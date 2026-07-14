@@ -141,10 +141,15 @@ function deriveText(output: unknown, contract: { requiredFields: RequiredField[]
  * (e.g. the temp path is a directory), the throw propagates to the caller's finalization
  * catch and becomes an FR-028a-shaped rejection. Throws on any fs error; the sole caller
  * wraps finalization in a try/catch so `ingestBundle` never throws.
+ *
+ * `json` is the ALREADY-serialized completed manifest: the caller builds a CANONICAL
+ * manifest from known fields and serializes + size-checks it ONCE (see {@link ingestBundle}),
+ * then passes that exact string through here so the bytes size-checked are the bytes written
+ * — this helper never re-serializes and so cannot re-expand the payload past the reader's
+ * ceiling.
  */
-function writeManifestViaRename(tmpPath: string, manifestPath: string, manifest: Record<string, unknown>): void {
+function writeManifestViaRename(tmpPath: string, manifestPath: string, json: string): void {
   const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0);
-  const json = JSON.stringify(manifest, null, 2);
   let fd: number;
   try {
     fd = fs.openSync(tmpPath, flags, 0o600);
@@ -248,6 +253,31 @@ export function ingestBundle(root: string, id: string): IngestResult {
   if (Buffer.byteLength(serializedResult, 'utf8') > MAX_BUNDLE_INPUT_BYTES) {
     return { ok: false, reason: `finalized result for ${id} exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes` };
   }
+  // Completed manifest — built as a CANONICAL object from KNOWN, already-validated fields
+  // only (mirroring emitBundle's BundleManifest shape): the bundle `id`, `status:'completed'`,
+  // the already-validated `contractPointer`, and `createdAt` carried through ONLY when the
+  // pending manifest holds a string (otherwise omitted — listBundles tolerates an absent
+  // createdAt). NEVER spread the untrusted pending manifest: the coding agent can pad it (a
+  // large extra field) so it stays < MAX_BUNDLE_INPUT_BYTES when COMPACT yet expands PAST it
+  // once serialized pretty-printed — which would write an { ok:true } completion whose manifest
+  // readBundleFileSafely then rejects, wedging redeemHandle at `pending` and tasks-list at
+  // `unreadable` forever. Serialize ONCE, with the exact `JSON.stringify(m, null, 2)` formatting
+  // writeManifestViaRename writes, and reuse that string below so the size checked here is the
+  // size written. Canonical fields keep this inherently tiny; the byte-length guard is a
+  // defensive invariant mirroring the result.json ceiling above (FR-028a-shaped on the
+  // astronomically-unlikely overflow) — and, unlike the pre-fix spread, no agent-supplied
+  // padding can reach it.
+  const createdAt = ownField(manifestRead.value, 'createdAt');
+  const completedManifest: Record<string, unknown> = {
+    id,
+    status: 'completed',
+    contract: contractPointer,
+    ...(typeof createdAt === 'string' ? { createdAt } : {}),
+  };
+  const serializedManifest = JSON.stringify(completedManifest, null, 2);
+  if (Buffer.byteLength(serializedManifest, 'utf8') > MAX_BUNDLE_INPUT_BYTES) {
+    return { ok: false, reason: `finalized manifest for ${id} exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes` };
+  }
   const resultFlags =
     fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0);
 
@@ -274,9 +304,10 @@ export function ingestBundle(root: string, id: string): IngestResult {
       fs.closeSync(resultFd);
     }
 
-    // manifest.json — install the completed manifest atomically over the pending one.
-    const completedManifest = { ...(manifestRead.value as Record<string, unknown>), status: 'completed' };
-    writeManifestViaRename(tmpManifestPath, manifestPath, completedManifest);
+    // manifest.json — install the CANONICAL completed manifest (built + size-checked above)
+    // atomically over the pending one, passing the exact serialized string so no re-serialize
+    // can re-expand it past the reader's ceiling.
+    writeManifestViaRename(tmpManifestPath, manifestPath, serializedManifest);
 
     return { ok: true, text };
   } catch (err) {
