@@ -215,6 +215,23 @@ describe('redactEndpoint (FR-006 — own copy, not imported from embeddings)', (
     expect(redactEndpoint('http://localhost:11434/v1/chat/completions')).toBe('http://localhost:11434');
   });
 
+  it('preserves the brackets of an IPv6 host WITH a port (never the ambiguous ::1:port)', () => {
+    expect(redactEndpoint('http://[::1]:11434/v1/chat/completions')).toBe('http://[::1]:11434');
+  });
+
+  it('preserves the brackets of an IPv6 host WITHOUT a port', () => {
+    expect(redactEndpoint('http://[::1]/v1')).toBe('http://[::1]');
+    expect(redactEndpoint('http://[2001:db8::1]/v1/chat')).toBe('http://[2001:db8::1]');
+  });
+
+  it('still strips userinfo, path, and query for an IPv6 endpoint', () => {
+    const out = redactEndpoint('http://user:secret@[::1]:11434/v1/chat?token=abc');
+    expect(out).toBe('http://[::1]:11434');
+    for (const leak of ['user', 'secret', 'token', 'abc', 'v1', 'chat']) {
+      expect(out).not.toContain(leak);
+    }
+  });
+
   it('renders an unparseable URL as a safe placeholder — never the raw string', () => {
     const out = redactEndpoint('::://not-a-real-url');
     expect(out).not.toContain('not-a-real-url');

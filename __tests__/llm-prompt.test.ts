@@ -86,8 +86,10 @@ describe('trimToBudget — deterministic whole-item graph-context trim (FR-018)'
     expect(r.marker).toBeUndefined();
   });
 
-  it('treats a tier summing to EXACTLY the budget as fitting (inclusive)', () => {
-    const items = ['a'.repeat(4000), 'b'.repeat(4000)]; // sum 8000 == budget
+  it('treats a tier whose SERIALIZED length is EXACTLY the budget as fitting (inclusive of \\n\\n separators)', () => {
+    // 3999 + 2 (the \n\n join separator) + 3999 = 8000 == budget once the separator is counted.
+    // (The naive char sum is 7998; the guard must measure the real serialized length.)
+    const items = ['a'.repeat(3999), 'b'.repeat(3999)];
     const r = trimToBudget(items);
     expect(r.kept).toEqual(items);
     expect(r.truncated).toBe(false);
@@ -196,5 +198,56 @@ describe('composePrompt — fixed priority order, only graph context trimmed (FR
     expect(a).toEqual(b);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     expect(contentOf(a, 'user')).toContain('[context truncated: 1 of 2]'); // concrete pin
+  });
+});
+
+describe('composePrompt — user-message length never exceeds the budget (FR-018: \\n\\n separators + marker)', () => {
+  // The guard operates on the graph-context tier's chars, and the user message is
+  // `parts.join('\n\n')` — so the budget MUST account for the 2-char separators between
+  // kept items and, on truncation, for the appended marker (+ its own separator). The
+  // invariant across ALL inputs: the user-message content.length <= GRAPH_CONTEXT_CHAR_BUDGET.
+  const userLen = (task: ProseTask): number => contentOf(composePrompt(task), 'user').length;
+
+  it('(a) many empty-string items — separators alone must not overflow the budget', () => {
+    // 10000 '' items each measure 0 chars, but the join inserts 2*(N-1) separator chars.
+    const task = makeTask({ graphContext: Array<string>(10000).fill('') });
+    expect(userLen(task)).toBeLessThanOrEqual(GRAPH_CONTEXT_CHAR_BUDGET);
+  });
+
+  it('(b) many 1-char items — item chars plus separators must not overflow the budget', () => {
+    const task = makeTask({ graphContext: Array<string>(10000).fill('a') });
+    expect(userLen(task)).toBeLessThanOrEqual(GRAPH_CONTEXT_CHAR_BUDGET);
+  });
+
+  it('(c) mid-size items whose inter-item separators + marker would overflow the raw-sum budget', () => {
+    // Raw sum 3999+3999 = 7998 <= 8000, so a length-only guard keeps both; but the real
+    // user message is 3999 + 2 + 3999 + 2 + len(marker) = 8029 > budget. Fix must trim more.
+    const task = makeTask({ graphContext: ['a'.repeat(3999), 'b'.repeat(3999), 'c'.repeat(500)] });
+    const user = contentOf(composePrompt(task), 'user');
+    expect(user).toContain('context truncated'); // still truncated (a trailing item was dropped)
+    expect(user.length).toBeLessThanOrEqual(GRAPH_CONTEXT_CHAR_BUDGET);
+  });
+
+  it('(boundary) a kept prefix filling the budget exactly still leaves room for the marker', () => {
+    // item0 (7971) + \n\n (2) + marker `[context truncated: 1 of 2]` (27) = 8000 == budget.
+    const task = makeTask({ graphContext: ['a'.repeat(7971), 'b'.repeat(500)] });
+    const user = contentOf(composePrompt(task), 'user');
+    expect(user).toContain('[context truncated: 1 of 2]');
+    expect(user.length).toBe(GRAPH_CONTEXT_CHAR_BUDGET); // exactly at, never over
+  });
+
+  it('the budget invariant holds across a spread of item counts and sizes', () => {
+    const cases: string[][] = [
+      [],
+      [''],
+      ['a'.repeat(9000)], // single over-budget item -> kept 0, marker only
+      Array<string>(5000).fill(''),
+      Array<string>(5000).fill('ab'),
+      ['x'.repeat(4000), 'y'.repeat(4000)],
+      ['x'.repeat(2000), 'y'.repeat(2000), 'z'.repeat(2000), 'w'.repeat(2000), 'v'.repeat(2000)],
+    ];
+    for (const graphContext of cases) {
+      expect(userLen(makeTask({ graphContext }))).toBeLessThanOrEqual(GRAPH_CONTEXT_CHAR_BUDGET);
+    }
   });
 });

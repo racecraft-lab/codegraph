@@ -186,8 +186,10 @@ export function loadLlmConfig(env: NodeJS.ProcessEnv): LlmConfigResult {
 export function redactEndpoint(url: string): string {
   try {
     const u = new URL(url);
-    const port = u.port ? `:${u.port}` : '';
-    return `${u.protocol}//${u.hostname}${port}`;
+    // `host` is scheme-authority host+port with NO userinfo/path/query/fragment, and it
+    // preserves IPv6 brackets (e.g. `[::1]:11434`) — unlike a manual `hostname` + `:port`,
+    // which for an IPv6 host would emit the ambiguous `::1:11434`.
+    return `${u.protocol}//${u.host}`;
   } catch {
     // Deliberately reference nothing off the caught error — its `.input` carries the raw URL.
     return INVALID_ENDPOINT_PLACEHOLDER;

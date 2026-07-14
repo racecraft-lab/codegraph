@@ -63,30 +63,59 @@ export function estimateTokens(s: string): number {
 }
 
 /**
+ * The 2-char `\n\n` that {@link composePrompt} joins successive user-message parts with.
+ * The guard MUST count it, or the serialized message can exceed the budget on many items.
+ */
+const PART_SEPARATOR_LEN = 2;
+
+/**
  * Deterministically trim the graph-context tier to {@link GRAPH_CONTEXT_CHAR_BUDGET}
- * (FR-018). Keeps the longest leading prefix of WHOLE items whose cumulative char
- * length fits the budget (inclusive), dropping every trailing item that would push it
- * over — never mid-item byte truncation, so each surviving item stays well-formed. When
- * anything is dropped, {@link TrimResult.marker} is `[context truncated: N of M]` (N kept
- * of M total); when nothing is dropped there is no marker. Never auto-chunks (FR-019).
+ * (FR-018). Keeps the longest leading prefix of WHOLE items whose SERIALIZED length — the
+ * items joined by the 2-char `\n\n` separator exactly as {@link composePrompt} joins them —
+ * fits the budget (inclusive), dropping every trailing item that would push it over. Never
+ * mid-item byte truncation, so each surviving item stays well-formed. When anything is
+ * dropped, {@link TrimResult.marker} is `[context truncated: N of M]` (N kept of M total)
+ * and is itself accounted for (plus its own `\n\n` separator) so the final user message —
+ * kept items AND the marker — never exceeds the budget. When nothing is dropped there is no
+ * marker. Never auto-chunks (FR-019). Deterministic — no randomness/Date/locale (SC-003).
  */
 export function trimToBudget(items: string[]): TrimResult {
   const total = items.length;
+
+  // Greedily keep the longest leading prefix whose serialized length (items + the `\n\n`
+  // separators between them) fits the budget — this mirrors composePrompt's `join('\n\n')`,
+  // so the accounting reflects the REAL user-message size, not the naive char sum.
   const kept: string[] = [];
-  let usedChars = 0;
+  let used = 0; // serialized length of `kept` so far: item chars + inter-item separators
   for (const item of items) {
-    if (usedChars + item.length <= GRAPH_CONTEXT_CHAR_BUDGET) {
+    const add = (kept.length === 0 ? 0 : PART_SEPARATOR_LEN) + item.length;
+    if (used + add <= GRAPH_CONTEXT_CHAR_BUDGET) {
+      used += add;
       kept.push(item);
-      usedChars += item.length;
     } else {
       // Drop this item and ALL trailing ones: whole-item, prefix-keeping trim.
       break;
     }
   }
-  const truncated = kept.length < total;
-  return truncated
-    ? { kept, total, truncated, marker: `[context truncated: ${kept.length} of ${total}]` }
-    : { kept, total, truncated };
+
+  if (kept.length === total) {
+    return { kept, total, truncated: false };
+  }
+
+  // Truncation: the marker (and its own `\n\n` separator) must ALSO fit within the budget,
+  // since composePrompt appends it as a final part. Drop trailing kept items until the
+  // marker-inclusive serialization fits. The marker's length only shrinks (or holds) as N
+  // falls (fewer digits), so this converges; when no items remain the message is the marker
+  // alone (always < budget), so the loop is guarded on a non-empty kept prefix.
+  let marker = `[context truncated: ${kept.length} of ${total}]`;
+  while (kept.length > 0 && used + PART_SEPARATOR_LEN + marker.length > GRAPH_CONTEXT_CHAR_BUDGET) {
+    const removed = kept.pop();
+    if (removed === undefined) break; // unreachable given the guard; satisfies strict null checks
+    used -= removed.length + (kept.length === 0 ? 0 : PART_SEPARATOR_LEN);
+    marker = `[context truncated: ${kept.length} of ${total}]`;
+  }
+
+  return { kept, total, truncated: true, marker };
 }
 
 /**
