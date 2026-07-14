@@ -211,7 +211,7 @@ describe('FR-029a — read-expected-fields-only: no prototype pollution from out
   });
 });
 
-describe('FR-029a — write targets are symlink-guarded (no arbitrary-file overwrite)', () => {
+describe('FR-029a — write targets refuse a pre-planted link (no arbitrary-file overwrite)', () => {
   it.runIf(POSIX)(
     'refuses to follow a pre-planted result.json symlink and leaves the out-of-bundle victim untouched',
     () => {
@@ -227,7 +227,9 @@ describe('FR-029a — write targets are symlink-guarded (no arbitrary-file overw
 
       // Pre-plant result.json inside the bundle dir as a SYMLINK -> the victim. A naive
       // fs.writeFileSync(result.json, …) FOLLOWS this and overwrites the victim with
-      // {"text":"attacker-controlled prose"} — the arbitrary-file-overwrite primitive.
+      // {"text":"attacker-controlled prose"} — the arbitrary-file-overwrite primitive. The
+      // exclusive create (O_CREAT|O_EXCL|O_NOFOLLOW) refuses the pre-existing symlink with
+      // EEXIST, so the victim is never opened and the symlink is left in place untouched.
       const resultPath = path.join(bundleDirOf(root, id), 'result.json');
       fs.symlinkSync(victim, resultPath);
 
@@ -243,4 +245,86 @@ describe('FR-029a — write targets are symlink-guarded (no arbitrary-file overw
       expect(fs.lstatSync(resultPath).isSymbolicLink()).toBe(true);
     },
   );
+
+  it.runIf(POSIX)(
+    'refuses to follow a pre-planted result.json HARD LINK and leaves the out-of-bundle victim untouched',
+    () => {
+      const root = makeRoot();
+      const { id } = emitBundle(root, makeTask());
+      // A conforming answer — structural validation PASSES, so ingest reaches the write step.
+      writeOutput(root, id, { prose: 'attacker-controlled prose' });
+
+      // A victim file OUTSIDE the bundle dir, with known content.
+      const victim = path.join(root, 'victim.txt');
+      const ORIGINAL = 'ORIGINAL VICTIM CONTENTS - DO NOT OVERWRITE';
+      fs.writeFileSync(victim, ORIGINAL, 'utf8');
+
+      // Pre-plant result.json inside the bundle dir as a HARD LINK -> the victim. A hard link
+      // IS a regular file, so a symlink/lstat guard passes it; a naive fs.writeFileSync then
+      // TRUNCATES the victim through the shared inode — the arbitrary-file-overwrite primitive
+      // a symlink guard CANNOT catch (the link's own path is inside the bundle, so
+      // validatePathWithinRoot sees only a contained path). Exclusive create (O_CREAT|O_EXCL)
+      // fails with EEXIST because the path already exists at all, so the victim is never opened.
+      const resultPath = path.join(bundleDirOf(root, id), 'result.json');
+      fs.linkSync(victim, resultPath);
+
+      const result = ingestBundle(root, id);
+
+      // The victim is byte-for-byte unchanged — the exclusive create refuses the existing entry.
+      expect(fs.readFileSync(victim, 'utf8')).toBe(ORIGINAL);
+      // FR-028a-shaped rejection: no completion.
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain('result.json');
+      expect(manifestStatus(root, id)).toBe('pending');
+    },
+  );
+});
+
+describe('FR-029a / FR-028a — finalization is atomic and never throws (no partial consumer artifact)', () => {
+  it.runIf(POSIX)(
+    'returns { ok:false } (never throws) and installs no result.json when the bundle dir is unwritable',
+    () => {
+      const root = makeRoot();
+      const { id } = emitBundle(root, makeTask());
+      writeOutput(root, id, { prose: 'valid answer' });
+      const bundleDir = bundleDirOf(root, id);
+      // Make the bundle dir read-only so every finalization write (creating result.json or the
+      // temp manifest) fails with EACCES. A naive unguarded writeFileSync THROWS here —
+      // violating ingestBundle's documented never-throws contract. Reads (manifest / output /
+      // contract) still succeed on an r-x dir, so validation passes and finalization is reached.
+      fs.chmodSync(bundleDir, 0o555);
+      try {
+        let result: ReturnType<typeof ingestBundle> | undefined;
+        expect(() => {
+          result = ingestBundle(root, id);
+        }).not.toThrow();
+        expect(result && result.ok).toBe(false);
+        expect(fs.existsSync(path.join(bundleDir, 'result.json'))).toBe(false);
+      } finally {
+        fs.chmodSync(bundleDir, 0o755); // restore so afterEach cleanup can remove the tree
+      }
+      // The manifest was never stamped — the bundle stays re-ingestable.
+      expect(manifestStatus(root, id)).toBe('pending');
+    },
+  );
+
+  it('rolls back result.json and leaves the manifest pending when the manifest step cannot complete', () => {
+    const root = makeRoot();
+    const { id } = emitBundle(root, makeTask());
+    writeOutput(root, id, { prose: 'valid answer' });
+    const bundleDir = bundleDirOf(root, id);
+    // Pre-plant the manifest temp path as a DIRECTORY so the exclusive temp-file create (and
+    // its single unlink+retry) cannot succeed — finalization fails AFTER result.json is
+    // written but BEFORE the manifest is stamped. The rollback must remove the just-written
+    // result.json so no consumer artifact is left beside a still-`pending` manifest (FR-028a).
+    fs.mkdirSync(path.join(bundleDir, 'manifest.json.ingest-tmp'));
+
+    let result: ReturnType<typeof ingestBundle> | undefined;
+    expect(() => {
+      result = ingestBundle(root, id);
+    }).not.toThrow();
+    expect(result && result.ok).toBe(false);
+    expect(resultExists(root, id)).toBe(false); // rolled back — no orphaned consumer artifact
+    expect(manifestStatus(root, id)).toBe('pending'); // re-ingestable
+  });
 });

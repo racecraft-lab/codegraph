@@ -119,28 +119,39 @@ function deriveText(output: unknown, contract: { requiredFields: RequiredField[]
 }
 
 /**
- * FR-029a write-side containment: reject a write target that already exists as a symlink
- * or any other non-regular file. A bundle-dir entry is attacker-controllable (the coding
- * agent that fills `output.json` has full write access to the dir), so a pre-planted
- * `result.json`/`manifest.json` symlink would otherwise make {@link fs.writeFileSync}
- * FOLLOW it and overwrite a file OUTSIDE the bundle (arbitrary-file-overwrite). `lstat`
- * the addressed target — never its realpath — so a symlink final component is seen as a
- * symlink, mirroring {@link readBundleFileSafely}'s read-side rejection. A not-yet-existing
- * target (the normal `result.json` case) is safe to create; an existing regular file (the
- * emitted `manifest.json`) is safe to overwrite. Returns a rejection reason, or `null`
- * when the write may proceed; never throws. Residual same-process TOCTOU is out of scope
- * (research D9).
+ * Atomically install the completed manifest over the bundle's existing `pending` manifest
+ * WITHOUT following or truncating a pre-planted link (FR-029a). A bundle-dir entry is
+ * attacker-controllable (the coding agent that fills `output.json` has full write access),
+ * so writing the finalized manifest through {@link fs.writeFileSync} directly would FOLLOW a
+ * pre-planted `manifest.json` symlink, or TRUNCATE a hard-linked victim, OUTSIDE the bundle.
+ * Instead: write the completed manifest to a fresh temp file created EXCLUSIVELY
+ * (`O_CREAT|O_EXCL`, `+O_NOFOLLOW` where available) in the bundle dir, then {@link fs.renameSync}
+ * it over `manifestPath`. `rename` swaps the directory entry atomically — it breaks any hard
+ * link and replaces any symlink at `manifestPath` WITHOUT touching a victim, and overwrites
+ * the existing file on both POSIX and Windows (libuv `MOVEFILE_REPLACE_EXISTING`). `O_TRUNC`
+ * on the live path is never used (it would truncate a hard-linked victim). A stale temp from
+ * an interrupted prior ingest is unlinked and the create retried ONCE; if that still fails
+ * (e.g. the temp path is a directory), the throw propagates to the caller's finalization
+ * catch and becomes an FR-028a-shaped rejection. Throws on any fs error; the sole caller
+ * wraps finalization in a try/catch so `ingestBundle` never throws.
  */
-function rejectNonRegularWriteTarget(target: string, name: string): string | null {
-  let stat: fs.Stats;
+function writeManifestViaRename(tmpPath: string, manifestPath: string, manifest: Record<string, unknown>): void {
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0);
+  const json = JSON.stringify(manifest, null, 2);
+  let fd: number;
   try {
-    stat = fs.lstatSync(target);
-  } catch {
-    return null; // absent → safe to create
+    fd = fs.openSync(tmpPath, flags, 0o600);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    fs.unlinkSync(tmpPath); // clear a stale temp (or fail on a non-file), then retry once
+    fd = fs.openSync(tmpPath, flags, 0o600);
   }
-  if (stat.isSymbolicLink()) return `refusing to write ${name}: it is a symlink`;
-  if (!stat.isFile()) return `refusing to write ${name}: it is not a regular file`;
-  return null;
+  try {
+    fs.writeFileSync(fd, json, 'utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmpPath, manifestPath);
 }
 
 /**
@@ -198,23 +209,70 @@ export function ingestBundle(root: string, id: string): IngestResult {
     if (reason !== null) return { ok: false, reason };
   }
 
-  // PASS (FR-028): store the canonical result INSIDE the bundle dir, then stamp completed.
-  // The write paths are fixed literals, but a bundle-dir ENTRY is attacker-controllable
-  // (the coding agent has full write access): a pre-planted `result.json`/`manifest.json`
-  // symlink would make fs.writeFileSync FOLLOW it and overwrite a file OUTSIDE the bundle
-  // (arbitrary-file-overwrite, FR-029a). Guard BOTH targets against a symlink/non-regular
-  // file BEFORE writing either — mirroring readBundleFileSafely's lstat rejection — so a
-  // rejection leaves the manifest `pending` and installs no consumer artifact (FR-028a).
+  // PASS (FR-028): store the canonical result INSIDE the bundle dir, then stamp the manifest
+  // `completed`. The write paths are fixed literals, but a bundle-dir ENTRY is attacker-
+  // controllable (the coding agent has full write access): a pre-planted `result.json`/
+  // `manifest.json` HARD LINK or SYMLINK would make a naive fs.writeFileSync FOLLOW/truncate a
+  // file OUTSIDE the bundle (arbitrary-file-overwrite, FR-029a) — and an lstat-then-write guard
+  // cannot stop a hard link (it is a regular file whose own path is contained) and TOCTOU-races
+  // a symlink. So:
+  //   - result.json is created EXCLUSIVELY (O_CREAT|O_EXCL, +O_NOFOLLOW where available): a
+  //     pre-existing entry of ANY kind (hard link, symlink, regular file) fails with EEXIST, so
+  //     the victim is never opened. In normal flow result.json never pre-exists (an already-
+  //     completed bundle returns early above), so EEXIST is a genuine refusal.
+  //   - the completed manifest is installed via a fresh exclusive temp file + rename (see
+  //     writeManifestViaRename): rename breaks a link / replaces a symlink without truncation.
+  // The whole finalization runs under ONE try/catch so ANY fs error (EACCES on a read-only dir,
+  // ENOSPC, a blocked temp, …) becomes an FR-028a-shaped rejection — ingestBundle NEVER throws.
+  // On a post-result failure the just-written result.json is rolled back so no consumer artifact
+  // is left beside a still-`pending` manifest (re-ingestable). Same-process TOCTOU is out of
+  // scope (research D9).
   const resultPath = path.join(bundleDir, 'result.json');
   const manifestPath = path.join(bundleDir, 'manifest.json');
-  const resultGuard = rejectNonRegularWriteTarget(resultPath, 'result.json');
-  if (resultGuard !== null) return { ok: false, reason: resultGuard };
-  const manifestGuard = rejectNonRegularWriteTarget(manifestPath, 'manifest.json');
-  if (manifestGuard !== null) return { ok: false, reason: manifestGuard };
-
+  const tmpManifestPath = path.join(bundleDir, 'manifest.json.ingest-tmp');
   const text = deriveText(outputRead.value, contract);
-  fs.writeFileSync(resultPath, JSON.stringify({ text }), 'utf8');
-  const completedManifest = { ...(manifestRead.value as Record<string, unknown>), status: 'completed' };
-  fs.writeFileSync(manifestPath, JSON.stringify(completedManifest, null, 2), 'utf8');
-  return { ok: true, text };
+  const resultFlags =
+    fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0);
+
+  let resultCreated = false;
+  try {
+    // result.json — exclusive create refuses a pre-planted link/file instead of following it.
+    let resultFd: number;
+    try {
+      resultFd = fs.openSync(resultPath, resultFlags);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        return { ok: false, reason: `refusing to write result.json: it already exists` };
+      }
+      throw err;
+    }
+    try {
+      fs.writeFileSync(resultFd, JSON.stringify({ text }), 'utf8');
+    } finally {
+      fs.closeSync(resultFd);
+    }
+    resultCreated = true;
+
+    // manifest.json — install the completed manifest atomically over the pending one.
+    const completedManifest = { ...(manifestRead.value as Record<string, unknown>), status: 'completed' };
+    writeManifestViaRename(tmpManifestPath, manifestPath, completedManifest);
+
+    return { ok: true, text };
+  } catch (err) {
+    // Rollback (FR-028a): drop any partial consumer artifact + temp file so no result.json is
+    // left beside a still-`pending` manifest. Best-effort; the rollback itself never throws.
+    if (resultCreated) {
+      try {
+        fs.rmSync(resultPath, { force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
+    try {
+      fs.rmSync(tmpManifestPath, { force: true });
+    } catch {
+      /* best-effort */
+    }
+    return { ok: false, reason: `failed to finalize bundle ${id}: ${(err as Error).message}` };
+  }
 }
