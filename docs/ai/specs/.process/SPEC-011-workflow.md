@@ -79,7 +79,7 @@ Resolved from this worktree on 2026-07-14:
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | Bounded requirements for both catalogs, one-PR delivery |
+| Specify | `/speckit-specify` | ✅ Complete | 33 FR, 5 US, 21 AC, 10 SC, 5 entities; 0 [NEEDS CLARIFICATION] (G1 pass) |
 | Clarify | `/speckit-clarify` | ⏳ Pending | Confirm no drift from the 21 resolved setup decisions |
 | Plan | `/speckit-plan` | ⏳ Pending | Schema, analysis lifecycle, shared API contracts |
 | Checklist | `/speckit-checklist` | ⏳ Pending | data-integrity, api-contracts, performance, error-handling |
@@ -257,13 +257,16 @@ nodes/edges per query.
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | |
-| User Stories | |
-| Acceptance Criteria | |
+| Functional Requirements | 33 (FR-001–FR-033) |
+| User Stories | 5 (US1 flows P1; US2 clusters, US3 identity, US4 lifecycle P2; US5 opt-in P3) |
+| Acceptance Criteria | 21 scenarios + 9 edge cases |
+| Success Criteria | 10 (SC-001–SC-010, measurable) |
+| Gate G1 | ✅ pass — spec.md exists, 0 [NEEDS CLARIFICATION] |
 
 ### Files Generated
 
-- [ ] `specs/011-execution-flows-clusters/spec.md`
+- [x] `specs/011-execution-flows-clusters/spec.md`
+- [x] `specs/011-execution-flows-clusters/checklists/requirements.md` (spec-quality, 16/16 pass)
 
 ### SpecKit Traceability Markers
 
