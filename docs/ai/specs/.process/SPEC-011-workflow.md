@@ -83,7 +83,7 @@ Resolved from this worktree on 2026-07-14:
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions → 16 spec contract-refinements; G2 pass; 2 persistence decisions adversarially verified |
 | Plan | `/speckit-plan` | ✅ Complete | plan+research+data-model+2 contracts+quickstart; G3 pass; Constitution I–VII pass; 5 tables + graph_write_version |
 | Checklist | `/speckit-checklist` | ✅ Complete | 4 domains (~121 items); 36 gaps consolidated & applied (+6 FRs, +2 SCs across 7 artifacts); G4 pass |
-| Tasks | `/speckit-tasks` | ⏳ Pending | One PR; organize by user story, not layer |
+| Tasks | `/speckit-tasks` | ✅ Complete | 68 tasks (T001–T068), 38 [P]; by user story; all required tasks present; G5 pass |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check spec, plan, tasks, constitution, design concept |
 | Implement | `/speckit-implement` | ⏳ Pending | TDD, dogfood UAT, paired benchmark |
 
@@ -559,10 +559,12 @@ Focus on Execution Flows & Clusters requirements:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 68 (T001–T068) |
+| **Phases** | 8 (Setup, Foundational, US1 flows/MVP, US2 clusters, US3 identity, US4 lifecycle, US5 activation, Polish) |
+| **Parallel Opportunities** | 38 `[P]` |
+| **User Stories Covered** | US1=14, US2=12, US3=4, US4=8, US5=7; all FRs (39) + SCs (12) cited |
+
+**Verify-tasks (phantom check):** trivially clean — 0 tasks marked `[X]` pre-implementation (nothing to phantom-verify yet). **Reviewability tasks-mode gate:** deferred on the installed runner (per skill); falling back to the committed evidence chain — setup-gate WARN (525, accepted Q21), plan-phase estimate ~620 (advisory, under 800 block), and the ratified one-PR decision. Hard re-check deferred to PR time (measure actual diff; >~700 → re-surface split).
 
 ---
 
@@ -584,10 +586,13 @@ that to the maintainer at G5 rather than acting on it.
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
-| **Signals** | | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
-| **Warnings** | | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+| **Route** | `single-atomic-PR` | Recorded from the read-only classifier 2026-07-14. NOT `split-PR` → aligns with the ratified Q21 one-PR delivery; no split to surface. |
+| **Releasable** | `false` (keyword false-positive — see assessment) | Classifier flag on a `destructive-migration` keyword match. |
+| **Signals** | `hard-atomic:destructive-migration`, `change-shape:modify-heavy`, `releasability:destructive-migration` | Triggered by `DELETE FROM` near a `.sql`/`schema` token in the corpus. |
+| **Warnings** | `destructive migration: CI-green ≠ releasable` | Carried forward as a PR-verification caution (see assessment). |
+
+**Assessment (advisory route; does not block — layer_plan: skipped, non-split route).**
+The `destructive-migration` / `releasable:false` reading is a **keyword false-positive**. The matched `DELETE FROM` statements are the catalog **atomic-swap** mechanism (delete-all + insert-all inside one transaction, FR-021) operating on THIS feature's OWN new tables (`flows`/`flow_steps`/`clusters`/`cluster_members`/`catalog_meta`); migration **v10 is purely additive** (`CREATE TABLE`, the `node_vectors` v9 pattern) and drops/alters no existing table or user data. No existing schema or data is destroyed. The `CI-green ≠ releasable` caution is nonetheless honored: PR verification MUST include the self-repo dogfood sync + UAT (SC-010, T063) proving the migration and swap behave correctly on a real already-initialized project — not passing unit tests alone.
 
 To produce the decision, run the classifier against the feature directory:
 
