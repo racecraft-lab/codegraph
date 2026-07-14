@@ -82,7 +82,7 @@ Resolved from this worktree on 2026-07-14:
 | Specify | `/speckit-specify` | ✅ Complete | 33 FR, 5 US, 21 AC, 10 SC, 5 entities; 0 [NEEDS CLARIFICATION] (G1 pass) |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions → 16 spec contract-refinements; G2 pass; 2 persistence decisions adversarially verified |
 | Plan | `/speckit-plan` | ✅ Complete | plan+research+data-model+2 contracts+quickstart; G3 pass; Constitution I–VII pass; 5 tables + graph_write_version |
-| Checklist | `/speckit-checklist` | ⏳ Pending | data-integrity, api-contracts, performance, error-handling |
+| Checklist | `/speckit-checklist` | ✅ Complete | 4 domains (~121 items); 36 gaps consolidated & applied (+6 FRs, +2 SCs across 7 artifacts); G4 pass |
 | Tasks | `/speckit-tasks` | ⏳ Pending | One PR; organize by user story, not layer |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check spec, plan, tasks, constitution, design concept |
 | Implement | `/speckit-implement` | ⏳ Pending | TDD, dogfood UAT, paired benchmark |
@@ -498,13 +498,15 @@ Focus on Execution Flows & Clusters requirements:
 
 ### Checklist Results
 
-| Checklist | Items | Gaps | Spec References |
-|-----------|-------|------|-----------------|
-| data-integrity | | | |
-| api-contracts | | | |
-| performance | | | |
-| error-handling | | | |
-| **Total** | | | |
+| Checklist | Items | Gaps | Key remediations applied |
+|-----------|-------|------|--------------------------|
+| data-integrity | 33 | 8 | FR-008a (deterministic tracing order), FR-017a (content-hash cluster-id mint), FR-021a (composite-read completeness + REST topology), FR-022a (denormalized display), FR-025 (enabled→disabled flag-first) |
+| api-contracts | 32 | 8 | FR-009/data-model (3-value provenance enum, root=null, MUST NOT reuse Edge.provenance), FR-028a (drift parity test), FR-030 (state enum), SC-012 (explore golden test), REST envelopes + BINARY collation |
+| performance | 27 | 11 | FR-005 (unbounded-flows note), SC-006/007 (benchmark fixture + method + zero-overhead def), plan (cooperative-yield), research R1 (Louvain large-repo) |
+| error-handling | 29 | 13→9 | FR-019 (LLM credential redaction), FR-020 (partial-index + serialization), FR-022b (failure taxonomy), FR-030/SC-009 (unavailable+empty, isError boundary), SC-011 (dormancy), edge cases (mixed-outcome, cancellation) |
+| **Total** | ~121 | 36 | Report-only parallel domains → orchestrator-consolidated & applied by one writer; 0 [Gap]/[NEEDS CLARIFICATION] (G4 pass) |
+
+**Approach:** the 4 domains ran read-only in parallel; the orchestrator deduplicated ~36 gaps (3 domains independently flagged the provenance/root defect; 2 flagged the state enum; 2 flagged tracing determinism), decided each faithfully to the ratified design, and delegated application to one writer to avoid contention. Correctness-critical fixes prevented real defects: silent LSP-provenance drop, non-deterministic cluster-id minting, torn composite reads on the REST shared-writer connection.
 
 ### Addressing Gaps
 

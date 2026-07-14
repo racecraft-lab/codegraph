@@ -45,11 +45,15 @@ node dist/bin/codegraph.js index .
 
 ## Performance benchmark (SC-006, Q19)
 
-Run the ≥3-run **paired** full-index benchmark on the fixture monorepo, embeddings/LSP held constant:
+**Fixture**: a committed, deterministically-generated multi-language fixture at `__tests__/analysis/fixtures/benchmark-monorepo/` (≥3 languages/frameworks, including a god-function fan-out plus a route and a CLI entry point), materialized by the test harness. The identical fixture is used for both arms.
+
+Run the **paired** full-index benchmark, embeddings/LSP held constant:
 
 - Arm A: `analysis.flows=false, analysis.clusters=false`.
 - Arm B: `analysis.flows=true, analysis.clusters=true`.
-- Record wall-clock per run; assert **median(B) ≤ 1.20 × median(A)**. Recorded as PR/UAT evidence (not a CI timing gate).
+- **Identical env across arms**: same `codegraph.json` `lsp` setting, same embedding env (or both off), and same warm daemon state; assert the two arms received **identical embedding/LSP inputs** — identical `vectors_write_version` progression and identical LSP-provenance edge counts.
+- **Method**: ≥5 timed iterations per arm after ≥1 discarded warmup; **interleave** the arms (A,B,A,B,…); exclude fixture-generation and process startup from the timed window; run on a quiescent machine.
+- Record wall-clock per run; report **per-arm median + spread**; assert **median(B) ≤ 1.20 × median(A)**. Recorded as PR/UAT evidence (not a CI timing gate).
 
 ## Self-repo dogfood UAT (SC-010, Q20 — binding Dogfooding Protocol)
 

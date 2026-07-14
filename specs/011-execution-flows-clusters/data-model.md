@@ -52,8 +52,8 @@ One row per node in a flow's bounded branching graph (FR-004 — cycle-safe, eac
 | `depth` | INTEGER NOT NULL | Hops from the root (0 = root). Bounded by the depth cap (Flow Step entity). |
 | `parent_node_id` | TEXT | The step's parent in the branching graph (edge source); NULL for the root step. Reconstructs the DAG. |
 | `edge_kind` | TEXT | `'calls' \| 'references'` — the edge class that produced this step (FR-008); NULL for the root. |
-| `provenance` | TEXT NOT NULL | `'static' \| 'lsp' \| 'heuristic'` — provenance of the incoming call edge (FR-008/FR-009). Every step carries one (SC-001). |
-| PRIMARY KEY | `(flow_id, node_id)` | Enforces cycle-safety: a symbol reached via multiple parents appears **once** (first deterministic visit records its parent). |
+| `provenance` | TEXT | `'static' \| 'lsp' \| 'heuristic'` — provenance of the incoming call edge (FR-008/FR-009). NULL for the root step (depth 0); else `static`/`lsp`/`heuristic`. Every non-root step carries one (SC-001). |
+| PRIMARY KEY | `(flow_id, node_id)` | Enforces cycle-safety: a symbol reached via multiple parents appears **once** (first deterministic visit under the FR-008a total order records its parent). |
 
 ## Table: `clusters`
 
@@ -61,7 +61,7 @@ One row per functional cluster (FR-011/FR-014 — total file coverage, explicit 
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | TEXT PRIMARY KEY | **Opaque minted stable token** (FR-017a) — NOT a rowid or positional index (those churn on the swap). Minted on first appearance; transferred across re-index per FR-015/016. |
+| `id` | TEXT PRIMARY KEY | **Opaque DETERMINISTIC token** (FR-017a) — a content hash of the cluster's sorted member file paths, minted on first appearance and transferred across re-index per FR-015/016; NOT a rowid or positional index (those churn on the swap). |
 | `canonical_label` | TEXT NOT NULL | FR-018: deterministic, from the cluster's dominant directory + name tokens. |
 | `display_label` | TEXT | FR-019: optional LLM display label, **presentation-only**; NULL when no LLM configured (dormant here). Never affects membership/identity/canonical label. |
 | `member_count` | INTEGER NOT NULL | Size (member file count). Sort + `minSize` filter key. |
@@ -96,6 +96,7 @@ Per-catalog header, present even when a catalog has zero content rows. This is w
 
 | Condition | State |
 |---|---|
+| Live per-catalog opt-in flag OFF (regardless of any retained `catalog_meta` row) | **disabled** — resolved FIRST; retained rows/metadata are inert, never available or stale |
 | No `catalog_meta` row for `kind` | **disabled / never-computed** (feature off) — distinct from unavailable |
 | Row, `computed_from_version IS NULL`, `first_run_failed = 1` | **unavailable** (explicit; never partial/empty-looking, FR-023) |
 | Row, `computed_from_version = v`, `v = graph_write_version`, content rows present | **available** (fresh) |
@@ -117,7 +118,7 @@ COMMIT;
 
 - No generation-tagged rows, no multi-generation retention (FR-021). A concurrent reader — including a daemon query connection under WAL snapshot isolation — observes either the complete prior catalog or the complete new one.
 - On analysis failure: the swap does **not** run; the prior rows + prior `catalog_meta` remain; the live `graph_write_version` has already advanced, so the retained catalog derives as stale. First-run failure writes only `catalog_meta(kind, NULL, first_run_failed=1)`.
-- **Composite reads** (FR-021a): any read that composes >1 statement — notably `total` count + paged slice (`list_flows`/`list_clusters`) — derives both from a **single consistent snapshot**: a read transaction wrapping the statements, or full-fetch-then-slice per the `src/mcp/read-ops.ts` precedent. Autocommit gives each *statement* its own snapshot, so multi-statement composition is where torn cross-generation reads would arise. Where WAL is unavailable (some virtualized/network mounts), the store degrades to writer-blocks-reader, preserving the same all-or-nothing guarantee.
+- **Composite reads** (FR-021a): any read that composes >1 statement — notably `total` count + paged slice (`list_flows`/`list_clusters`), the `get_flow` detail read (a flow header row + its `flow_steps` rows), and the read-state probe (a `catalog_meta` row + the content-row count distinguishing available from available-but-empty) — derives its rows from a **single consistent snapshot**: a read transaction wrapping the statements, or full-fetch-then-slice per the `src/mcp/read-ops.ts` precedent. Autocommit gives each *statement* its own snapshot, so multi-statement composition is where torn cross-generation reads would arise. This holds on BOTH surfaces regardless of connection topology: MCP tools read on separate daemon worker connections (WAL cross-connection snapshot isolation), while the REST endpoints read on the web server's own shared writer connection where that isolation does NOT apply — so every composite read on either surface MUST derive its rows from a single statement or a single full-fetch-then-slice, never two separately-issued statements (the connection-topology-independent mechanism). Where WAL is unavailable (some virtualized/network mounts), the store degrades to writer-blocks-reader, preserving the same all-or-nothing guarantee.
 
 ## Entity → table map
 
