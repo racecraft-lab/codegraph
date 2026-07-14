@@ -81,7 +81,7 @@ Resolved from this worktree on 2026-07-14:
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | 33 FR, 5 US, 21 AC, 10 SC, 5 entities; 0 [NEEDS CLARIFICATION] (G1 pass) |
 | Clarify | `/speckit-clarify` | ✅ Complete | 3 sessions → 16 spec contract-refinements; G2 pass; 2 persistence decisions adversarially verified |
-| Plan | `/speckit-plan` | ⏳ Pending | Schema, analysis lifecycle, shared API contracts |
+| Plan | `/speckit-plan` | ✅ Complete | plan+research+data-model+2 contracts+quickstart; G3 pass; Constitution I–VII pass; 5 tables + graph_write_version |
 | Checklist | `/speckit-checklist` | ⏳ Pending | data-integrity, api-contracts, performance, error-handling |
 | Tasks | `/speckit-tasks` | ⏳ Pending | One PR; organize by user story, not layer |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check spec, plan, tasks, constitution, design concept |
@@ -394,11 +394,22 @@ exist (empty catalog is valid, success-shaped).
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, execution flow |
-| `research.md` | ⏳ | Decision rationales (if needed) |
-| `data-model.md` | ⏳ | flows/flow_steps/clusters entities |
-| `contracts/` | ⏳ | MCP + REST field semantics (shared) |
-| `quickstart.md` | ⏳ | Developer onboarding |
+| `plan.md` | ✅ | Technical context + execution flow; Constitution I–VII PASS (re-checked post-design); complexity table empty |
+| `research.md` | ✅ | R1–R6 implementation-research decisions resolved |
+| `data-model.md` | ✅ | 5 tables (flows, flow_steps, clusters, cluster_members, catalog_meta) + `graph_write_version` metadata; no-cascade by-value + denormalized name/kind; opaque cluster id |
+| `contracts/` | ✅ | `mcp-tools.md` (3 tools) + `rest-api.md` (2 endpoints + `/api/flows/{id}`); shared field semantics |
+| `quickstart.md` | ✅ | Developer onboarding |
+
+**G3 reviewability update (Plan phase, 2026-07-14):** plan-time grounded
+re-estimate ≈ **620 reviewable LOC central** (range ~525–720; upper-bound
+~865), ~18% above the accepted 525 but under the 800 block. The deterministic
+`estimate-reviewable-loc` helper returned `not_estimated` (plan.md's template
+format carries no machine-parseable NEW/MODIFIED file declarations), so the
+plan agent's grounded estimate is operative. Per the advisory rule this does
+NOT block the autonomous run; the ratified Q21 one-PR decision covers this warn
+(still under block). **Hard checkpoint:** at PR time, measure the ACTUAL
+reviewable diff — if it exceeds ~700 (approaching the 800 block), STOP and
+re-surface the flows/clusters split to the maintainer before opening the PR.
 
 ---
 
