@@ -33,6 +33,14 @@ import * as os from 'node:os';
 import { generate } from '../src/llm/generate';
 import type { ProseTask, GenerationResult } from '../src/llm/generate';
 import type { LlmEndpointClientOverrides } from '../src/llm/client';
+import { redeemHandle } from '../src/llm/agent-bundle';
+import { getCodeGraphDir } from '../src/directory';
+
+/** Narrow a result to a pending-bundle and return its handle (fails loudly otherwise). */
+function pendingHandle(result: GenerationResult): string {
+  if (result.source !== 'pending-bundle') throw new Error(`expected pending-bundle, got ${result.source}`);
+  return result.handle;
+}
 
 // --- mock endpoint --------------------------------------------------------
 interface MockServer {
@@ -219,18 +227,46 @@ describe('generate — endpoint mode (FR-009 / FR-009a)', () => {
   });
 });
 
-describe('generate — agent mode (slice-1 documented stub)', () => {
-  it('returns { source:"fallback" } WITHOUT emitting a bundle (zero fs) or reaching the network (zero fetch)', async () => {
+describe('generate — agent mode (slice 2: emits a pending bundle)', () => {
+  it('returns { source:"pending-bundle", text: fallback, handle } and emits a self-describing bundle (zero fetch)', async () => {
     const guard = installFetchGuard();
     try {
       const root = makeRoot();
-      const task = makeTask('AGENT-STUB FALLBACK');
+      const task = makeTask('AGENT FALLBACK');
       const result = await generate(root, task, { env: { CODEGRAPH_LLM_PROVIDER: 'agent' } });
-      // Slice 1 has no bundle emitter, so agent mode degrades to the consumer fallback (US1 preserved).
-      expect(result).toEqual({ source: 'fallback', text: 'AGENT-STUB FALLBACK' });
+
+      // Usable text NOW (US1 preserved) plus a redeemable handle (FR-010/FR-010a).
+      expect(result.source).toBe('pending-bundle');
+      expect(result.text).toBe('AGENT FALLBACK');
+      const handle = pendingHandle(result);
+      expect(handle.length).toBeGreaterThan(0);
+
+      // The bundle dir has the four self-describing files + a pending manifest.
+      const dir = path.join(getCodeGraphDir(root), 'tasks', handle);
+      expect(fs.readdirSync(dir).sort()).toEqual(
+        ['graph-context.json', 'instructions.md', 'manifest.json', 'output-contract.json'].sort(),
+      );
+      expect(JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')).status).toBe('pending');
+
+      // Zero network, and the handle redeems as pending until an agent completes + ingests it.
       expect(guard.calls()).toBe(0);
-      // No `.codegraph/tasks/<id>/` bundle directory is created in slice 1.
-      expect(fs.readdirSync(root)).toEqual([]);
+      expect(redeemHandle(root, handle)).toEqual({ status: 'pending' });
+    } finally {
+      guard.restore();
+    }
+  });
+
+  it('degrades to { source:"fallback" } WITHOUT throwing when bundle emission fails (Edge Case; US1)', async () => {
+    const guard = installFetchGuard();
+    try {
+      const root = makeRoot();
+      // Plant a FILE where `.codegraph/` must be a directory → emitBundle throws (ENOTDIR).
+      fs.writeFileSync(getCodeGraphDir(root), 'not a directory', 'utf8');
+      const task = makeTask('EMIT-FAIL FALLBACK');
+      const result = await generate(root, task, { env: { CODEGRAPH_LLM_PROVIDER: 'agent' } });
+      // The seam converts the emit failure into usable fallback text — never a throw (US1 preserved).
+      expect(result).toEqual({ source: 'fallback', text: 'EMIT-FAIL FALLBACK' });
+      expect(guard.calls()).toBe(0);
     } finally {
       guard.restore();
     }
@@ -263,33 +299,46 @@ describe('generate — seam invariants (FR-012 / FR-013 / FR-014 / FR-024a)', ()
     expect(endpointResult.source).not.toBe(dormantResult.source);
   });
 
-  it('never opens the graph DB or writes graph structure — a fresh root has no .codegraph after dormant + agent calls (FR-014)', async () => {
+  it('never opens the graph DB or writes graph structure — dormant leaves no .codegraph; agent emits a bundle but no graph DB (FR-014/FR-023)', async () => {
     const guard = installFetchGuard();
     try {
-      const root = makeRoot();
-      await generate(root, makeTask(), { env: {} });
-      await generate(root, makeTask(), { env: { CODEGRAPH_LLM_PROVIDER: 'agent' } });
-      expect(fs.existsSync(path.join(root, '.codegraph'))).toBe(false);
-      expect(fs.readdirSync(root)).toEqual([]);
+      // Dormant writes nothing at all.
+      const dormantRoot = makeRoot();
+      await generate(dormantRoot, makeTask(), { env: {} });
+      expect(fs.existsSync(path.join(dormantRoot, '.codegraph'))).toBe(false);
+      expect(fs.readdirSync(dormantRoot)).toEqual([]);
+
+      // Agent mode writes a filesystem bundle, but NEVER the graph DB / SQLite (FR-014/FR-023).
+      const agentRoot = makeRoot();
+      const result = await generate(agentRoot, makeTask(), { env: { CODEGRAPH_LLM_PROVIDER: 'agent' } });
+      expect(result.source).toBe('pending-bundle');
+      expect(fs.existsSync(path.join(getCodeGraphDir(agentRoot), 'tasks'))).toBe(true);
+      expect(fs.existsSync(path.join(getCodeGraphDir(agentRoot), 'codegraph.db'))).toBe(false);
+      expect(guard.calls()).toBe(0);
     } finally {
       guard.restore();
     }
   });
 
-  it('holds no cross-call state — repeated agent-mode calls each return the fallback independently with no accumulation (FR-024a)', async () => {
+  it('holds no cross-call state — repeated agent-mode calls each emit a DISTINCT bundle with a fresh handle, no dedup (FR-024a)', async () => {
     const guard = installFetchGuard();
     try {
       const root = makeRoot();
       const task = makeTask('NO-STATE FALLBACK');
       const env = { CODEGRAPH_LLM_PROVIDER: 'agent' };
-      const first = await generate(root, task, { env });
-      const second = await generate(root, task, { env });
-      const third = await generate(root, task, { env });
-      for (const r of [first, second, third]) {
-        expect(r).toEqual({ source: 'fallback', text: 'NO-STATE FALLBACK' });
+      const results = [
+        await generate(root, task, { env }),
+        await generate(root, task, { env }),
+        await generate(root, task, { env }),
+      ];
+      for (const r of results) {
+        expect(r.source).toBe('pending-bundle');
+        expect(r.text).toBe('NO-STATE FALLBACK');
       }
-      // No dedup/coalesce store and no emitted bundles accreted across calls.
-      expect(fs.readdirSync(root)).toEqual([]);
+      // No coalescing/dedup: three logically-identical tasks → three distinct handles + dirs.
+      const handles = results.map(pendingHandle);
+      expect(new Set(handles).size).toBe(3);
+      expect(fs.readdirSync(path.join(getCodeGraphDir(root), 'tasks')).sort()).toEqual([...handles].sort());
       expect(guard.calls()).toBe(0);
     } finally {
       guard.restore();

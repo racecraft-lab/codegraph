@@ -41,6 +41,8 @@ import type { EmbeddingStatus, LocalEmbeddingSkipReason } from '../index';
 import type { SearchMode } from '../types';
 import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine, withJsonTiming, resolveAutoMode } from '../search/hybrid';
 import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
+import { listBundles } from '../llm/agent-bundle';
+import { ingestBundle } from '../llm/ingest';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
 import { installFatalHandlers } from './fatal-handler';
@@ -1197,15 +1199,20 @@ program
       const llm = cg.getLlmStatus();
       console.log(chalk.bold('LLM:'));
       if (llm.active) {
-        console.log(`  Provider:  ${llm.mode}`);
         if (llm.mode === 'endpoint') {
+          console.log(`  Provider:  ${llm.mode}`);
           console.log(`  Endpoint:  ${llm.endpoint}`);
           console.log(`  Model:     ${llm.model}`);
           if (llm.plaintextWarning) {
             console.log('  ' + chalk.yellow(`${getGlyphs().warn} ${llm.plaintextWarning}`));
           }
+        } else {
+          // agent (slice 2): the bare provider plus the network-free pending-bundle count under
+          // .codegraph/tasks/ (data-model §8) — so stale bundles awaiting `codegraph tasks ingest`
+          // are visible at a glance. Absent count (defensive) reads as 0.
+          const pending = llm.pendingBundles ?? 0;
+          console.log(`  Provider:  agent ${getGlyphs().dash} ${pending} pending bundle${pending === 1 ? '' : 's'}`);
         }
-        // agent (slice 1): the bare `Provider: agent` stub above — no endpoint/model lines.
       } else if ('misconfigured' in llm) {
         if (llm.invalidValue !== undefined) {
           // Unrecognized CODEGRAPH_LLM_PROVIDER: the variable IS set, just not to a valid
@@ -2774,6 +2781,62 @@ program
     console.log(`Machine ID: ${s.machineId ?? chalk.dim('(random UUID, created on first use)')}`);
     console.log(`Config:     ${s.configPath}`);
     console.log(chalk.dim(`\nExactly what is collected (and never collected): ${TELEMETRY_DOCS}\n`));
+  });
+
+/**
+ * codegraph tasks [list|ingest] [id]
+ *
+ * Agent-mode task bundles under `.codegraph/tasks/` (SPEC-018 slice 2, FR-026/FR-028).
+ * Flat positional shape mirroring `telemetry [action]` (minimal upstream diff). Two
+ * user-invoked verbs — never auto-run from the watcher or daemon (FR-029):
+ *  - `list` (or a bare `tasks`): resiliently enumerate every bundle's id / status / age;
+ *    a missing/malformed/unreadable manifest surfaces as `unreadable`/`unknown` rather
+ *    than aborting, and an empty/absent tasks dir prints an empty listing and still
+ *    exits 0 (FR-026).
+ *  - `ingest <id>`: validate + finalize one completed bundle; a success prints a
+ *    confirmation and exits 0, any rejection prints the reason to stderr and exits
+ *    non-zero while leaving the manifest `pending` (FR-028/FR-028a). The `<id>` is
+ *    untrusted — `ingestBundle` anchor-contains it before opening the bundle dir (FR-029a).
+ */
+program
+  .command('tasks [action] [id]')
+  .description('List or ingest agent-mode task bundles (list, ingest <id>)')
+  .action((action: string | undefined, id: string | undefined) => {
+    const projectPath = resolveProjectPath();
+
+    // Default (and `list`): resilient enumeration. Never gated on `isInitialized` — agent
+    // bundles are filesystem-only (FR-023), so a project can carry `.codegraph/tasks/`
+    // without a graph DB.
+    if (action === undefined || action === 'list') {
+      const bundles = listBundles(projectPath);
+      if (bundles.length === 0) {
+        console.log(chalk.dim('No task bundles under .codegraph/tasks/.'));
+        return;
+      }
+      for (const b of bundles) {
+        const age = b.ageMs === null ? 'unknown age' : `${formatDuration(b.ageMs)} old`;
+        console.log(`  ${b.id}  ${b.status}  ${chalk.dim(age)}`);
+      }
+      return;
+    }
+
+    if (action === 'ingest') {
+      if (!id) {
+        error('Usage: codegraph tasks ingest <id>');
+        process.exit(1);
+      }
+      const result = ingestBundle(projectPath, id);
+      if (result.ok) {
+        success(`Ingested task ${id} ${getGlyphs().dash} result stored; manifest marked completed.`);
+        return;
+      }
+      // FR-028a: reason to stderr, non-zero exit, manifest left pending by ingestBundle.
+      error(result.reason);
+      process.exit(1);
+    }
+
+    error(`Unknown action: ${action} (expected list or ingest)`);
+    process.exit(1);
   });
 
 /**
