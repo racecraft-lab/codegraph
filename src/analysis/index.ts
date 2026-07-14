@@ -35,7 +35,7 @@ import { traceFlow } from './flows/tracer';
 import { computeFlowId } from './flows/identity';
 import { buildFileGraph } from './clusters/file-graph';
 import { louvain } from './clusters/louvain';
-import { canonicalLabel } from './clusters/labels';
+import { canonicalLabel, resolveDisplayLabel } from './clusters/labels';
 import { assignClusterIdentity } from './clusters/identity';
 
 export * from './types';
@@ -251,17 +251,23 @@ export async function runClusterAnalysis(
 
   const clusters: ClusterRow[] = [];
   const members: ClusterMemberRow[] = [];
-  computed.forEach((c, i) => {
+  for (let i = 0; i < computed.length; i++) {
+    const c = computed[i]!;
     const id = ids[i]!;
+    // Optional, presentation-only LLM display label (FR-019, T056). Fully dormant
+    // here — the orchestrator wires NO capability, so this returns null with zero
+    // model calls; a configured capability's failure is swallowed inside the
+    // advisory (canonical label kept, display slot null, analysis never failed).
+    const displayLabel = await resolveDisplayLabel(c.canonicalLabel, c.members);
     clusters.push({
       id,
       canonicalLabel: c.canonicalLabel,
-      displayLabel: null,
+      displayLabel,
       memberCount: c.members.length,
       isSingleton: c.members.length === 1,
     });
     for (const fp of c.members) members.push({ clusterId: id, filePath: fp });
-  });
+  }
 
   if (signal?.aborted) return; // final pre-swap guard: no partial write on abort
   swapClusters(store, version, clusters, members);

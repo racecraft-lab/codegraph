@@ -713,8 +713,13 @@ For each task:
 | 1 - Foundation (schema/persistence) | T001–T012 | ✅ 12/12 | 5 tables + v10 migration + `graph_write_version` + catalog-store (atomic swap / single-fetch reads / 6-state) + shared wire types; 32 TDD tests green; build+typecheck pass |
 | 2 - Flows end-to-end (US1) | T013–T026 | ✅ 14/14 | entry-points (routes + commander CLI recognizer + event/queue registrars + exposed exports) + deterministic DFS tracer (caps 12/20/200, calls+references, per-axis truncation) + naming + `runFlowAnalysis` + 2 MCP tools + 2 REST endpoints (daemon-forwarded) + openapi; 31 flow tests green; `explore`/`server-instructions` untouched |
 | 3 - Clusters + identity (US2/US3) | T027–T042 | ✅ 16/16 | file-graph + pure-TS deterministic Louvain (no new dep) + labels + Jaccard identity (content-hash mint, best-descendant, deterministic tie-break) + `runClusterAnalysis` + `list_clusters` MCP + `/api/clusters` REST + openapi; 38 tests green; full analysis suite 101/101 |
-| 4 - Lifecycle wiring (US4) | T043–T050 | ⏳ | |
-| 5 - Activation (US5) | T051–T057 | ⏳ | |
+| 4 - Lifecycle wiring (US4) | T043–T050 | ✅ 8/8 | surgical additive `indexAll`/`sync` recompute hook (AbortSignal-honored) + `maybeRunCatalogAnalysis` + bounded failure taxonomy (index never fails on analysis error) + per-catalog independence + cooperative-yield; 10 lifecycle tests green; sync(30)/index-command(6) isolation green |
+
+**Phase 7 test-environment notes (for G7 + PR verification):**
+- **Run regressions with `CODEGRAPH_EMBEDDING_*` cleared and capture vitest's real exit (`PIPESTATUS[0]`, not `tail`'s).** This worktree's direnv sets `CODEGRAPH_EMBEDDING_URL=http://hal:1234`; with it set, 3 tests fail because they assume an embeddings-stripped env — `server-read-api.test.ts` (`/api/status` hybrid, `/api/search` degradation) and `mcp-staleness-banner.test.ts` (banner↔footer). All pass with the vars cleared — **env-driven, NOT SPEC-011 regressions** (no group modified those code paths).
+- **Concurrency-timeout flakes**: a shifting subset of parse-heavy suites (`refactor-apply`, `graph-traversal`, `backend-delegation`, …) intermittently time out at 5000ms under full-suite load; all pass in isolation. Known repo characteristic, not regressions.
+- **Fixed v10 schema-version test-debt**: the v10 migration (T005) bumped the DB schema version; `pr19-improvements.test.ts` (Group A), `embeddings-index.test.ts:114`, and `foundation.test.ts:399` all asserted `9` → corrected to `10`.
+| 5 - Activation (US5) | T051–T057 | ✅ 7/7 | opt-in flags (T054 via US1) + dormancy gating (T055 via US4) verified byte-identical; LLM display-label advisory dormant + credential-redaction-safe, no client added (T056); `codegraph.json` enables both catalogs for dogfood (T057); 16 activation tests green; full suite 3618 passed / 0 failed |
 | 6 - Polish (parity/benchmark/UAT) | T058–T068 | ⏳ | |
 
 ---
