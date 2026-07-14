@@ -41,8 +41,11 @@ import type { EmbeddingStatus, LocalEmbeddingSkipReason } from '../index';
 import type { SearchMode } from '../types';
 import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine, withJsonTiming, resolveAutoMode } from '../search/hybrid';
 import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
-import { listBundles } from '../llm/agent-bundle';
+import { listBundles, countPendingBundles } from '../llm/agent-bundle';
 import { ingestBundle } from '../llm/ingest';
+// SPEC-018: the network-free LLM status snapshot, resolved directly for the CLI's
+// uninitialized-project path (no CodeGraph instance) — mirrors `CodeGraph.getLlmStatus()`.
+import { resolveLlmStatus, type LlmStatus } from '../llm/config';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
 import { installFatalHandlers } from './fatal-handler';
@@ -981,6 +984,85 @@ function deriveHybridSearchAvailability(
 }
 
 /**
+ * Escape terminal control characters in an untrusted string for safe HUMAN-readable
+ * output. Bundle ids are directory names, and ingest rejection reasons embed
+ * attacker-controllable strings (e.g. a hand-crafted `.codegraph/tasks/<id>/` name, or a
+ * tampered `manifest.contract` pointer echoed in a reason). Printed raw to a terminal an
+ * embedded ANSI/OSC/ESC sequence could forge output or trigger terminal features
+ * (clipboard, cursor moves), so every C0 control (0x00–0x1F, incl. ESC 0x1B), DEL (0x7F),
+ * and C1 control (0x80–0x9F) is rendered as a visible `\xNN` token — nothing reaches the
+ * terminal as an executable control byte. Only the human surface is escaped; structured
+ * `--json` output stays RAW (JSON.stringify already escapes control chars, so it is not a
+ * terminal-injection vector).
+ */
+function escapeControlChars(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\x00-\x1f\x7f-\x9f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
+}
+
+/**
+ * The composed LLM status snapshot for the CLI, resolved WITHOUT a CodeGraph instance so
+ * the uninitialized-project `status` path can report it too (SPEC-018 / Finding 2: agent
+ * mode is filesystem-only — a project may carry pending bundles or have `CODEGRAPH_LLM_*`
+ * set with no graph DB). Mirrors `CodeGraph.getLlmStatus()`: pure `resolveLlmStatus(env)`
+ * plus, for agent mode, the network-free pending-bundle count under `.codegraph/tasks/`.
+ * Never opens a socket or the graph DB, so dormancy is never broken (SC-002/SC-004).
+ */
+function resolveLlmStatusForCli(projectPath: string): LlmStatus {
+  const status = resolveLlmStatus(process.env);
+  if (status.active && status.mode === 'agent') {
+    return { ...status, pendingBundles: countPendingBundles(projectPath) };
+  }
+  return status;
+}
+
+/**
+ * Render the human-readable `LLM:` block for `codegraph status` (SPEC-018 FR-006). Shared
+ * by the initialized and uninitialized paths so the two never diverge. endpoint-active
+ * shows provider / redacted endpoint / model + the in-status plaintext advisory; agent is
+ * the provider plus the pending-bundle count; misconfigured names the missing var (or the
+ * invalid provider value, escaped as untrusted); dormant is neutral (never warn-styled —
+ * dormancy is not an error).
+ */
+function printLlmStatusBlock(llm: LlmStatus): void {
+  console.log(chalk.bold('LLM:'));
+  if (llm.active) {
+    if (llm.mode === 'endpoint') {
+      console.log(`  Provider:  ${llm.mode}`);
+      console.log(`  Endpoint:  ${llm.endpoint}`);
+      console.log(`  Model:     ${llm.model}`);
+      if (llm.plaintextWarning) {
+        console.log('  ' + chalk.yellow(`${getGlyphs().warn} ${llm.plaintextWarning}`));
+      }
+    } else {
+      // agent (slice 2): the bare provider plus the network-free pending-bundle count under
+      // .codegraph/tasks/ (data-model §8) — so stale bundles awaiting `codegraph tasks ingest`
+      // are visible at a glance. Absent count (defensive) reads as 0.
+      const pending = llm.pendingBundles ?? 0;
+      console.log(`  Provider:  agent ${getGlyphs().dash} ${pending} pending bundle${pending === 1 ? '' : 's'}`);
+    }
+  } else if ('misconfigured' in llm) {
+    if (llm.invalidValue !== undefined) {
+      // Unrecognized CODEGRAPH_LLM_PROVIDER: the variable IS set, just not to a valid
+      // provider — name the value + the allowed set, not the "X set but Y missing" phrasing.
+      // The provider value is user/untrusted input, so escape control chars before echoing.
+      warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_LLM_PROVIDER="${escapeControlChars(llm.invalidValue)}" is not a valid provider ${getGlyphs().dash} must be one of: ${(llm.allowedValues ?? []).join(', ')}.`);
+    } else if (llm.missingVariables !== undefined && llm.missingVariables.length > 1) {
+      // Explicit endpoint selection with BOTH URL and MODEL unset: name both, never claim the counterpart is set.
+      warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_LLM_PROVIDER=endpoint but ${llm.missingVariables.join(' and ')} are not set. Set both to activate the LLM endpoint.`);
+    } else {
+      const setVar = llm.missingVariable === 'CODEGRAPH_LLM_MODEL'
+        ? 'CODEGRAPH_LLM_URL'
+        : 'CODEGRAPH_LLM_MODEL';
+      warn(`Misconfigured ${getGlyphs().dash} ${setVar} is set but ${llm.missingVariable} is missing. Set ${llm.missingVariable} to activate the LLM endpoint.`);
+    }
+  } else {
+    console.log('  ' + chalk.dim(`Dormant ${getGlyphs().dash} set ${llm.activationVars[0]} and ${llm.activationVars[1]} for an OpenAI-compatible endpoint to enable.`));
+  }
+  console.log();
+}
+
+/**
  * codegraph status [path]
  */
 program
@@ -997,6 +1079,11 @@ program
 
     try {
       if (!isInitialized(projectPath)) {
+        // SPEC-018 Finding 2: agent mode is filesystem-only, so an uninitialized project
+        // (no graph DB) may still carry pending task bundles or have CODEGRAPH_LLM_* set.
+        // Report the network-free, DB-free LLM snapshot here too, mirroring the initialized
+        // path's `LLM:` block — resolved without opening the graph DB.
+        const llm = resolveLlmStatusForCli(projectPath);
         if (options.json) {
           console.log(JSON.stringify({
             initialized: false,
@@ -1004,6 +1091,7 @@ program
             projectPath,
             indexPath: getCodeGraphDir(projectPath),
             lastIndexed: null,
+            llm,
           }));
           return;
         }
@@ -1011,6 +1099,8 @@ program
         info(`Project: ${projectPath}`);
         warn('Not initialized');
         info('Run "codegraph init" to initialize');
+        console.log();
+        printLlmStatusBlock(llm);
         return;
       }
 
@@ -1190,47 +1280,11 @@ program
       console.log();
 
       // LLM (SPEC-018 FR-006): a dedicated block AFTER Embeddings, rendered
-      // without touching the embeddings block above. endpoint-active shows
-      // provider / redacted endpoint / model + the in-status plaintext advisory;
-      // agent is a slice-1 `Provider: agent` stub; misconfigured names the
-      // missing var (or the invalid provider value); dormant is neutral (never
-      // warn-styled — dormancy is not an error). Network-free: getLlmStatus()
-      // reads only the environment.
-      const llm = cg.getLlmStatus();
-      console.log(chalk.bold('LLM:'));
-      if (llm.active) {
-        if (llm.mode === 'endpoint') {
-          console.log(`  Provider:  ${llm.mode}`);
-          console.log(`  Endpoint:  ${llm.endpoint}`);
-          console.log(`  Model:     ${llm.model}`);
-          if (llm.plaintextWarning) {
-            console.log('  ' + chalk.yellow(`${getGlyphs().warn} ${llm.plaintextWarning}`));
-          }
-        } else {
-          // agent (slice 2): the bare provider plus the network-free pending-bundle count under
-          // .codegraph/tasks/ (data-model §8) — so stale bundles awaiting `codegraph tasks ingest`
-          // are visible at a glance. Absent count (defensive) reads as 0.
-          const pending = llm.pendingBundles ?? 0;
-          console.log(`  Provider:  agent ${getGlyphs().dash} ${pending} pending bundle${pending === 1 ? '' : 's'}`);
-        }
-      } else if ('misconfigured' in llm) {
-        if (llm.invalidValue !== undefined) {
-          // Unrecognized CODEGRAPH_LLM_PROVIDER: the variable IS set, just not to a valid
-          // provider — name the value + the allowed set, not the "X set but Y missing" phrasing.
-          warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_LLM_PROVIDER="${llm.invalidValue}" is not a valid provider ${getGlyphs().dash} must be one of: ${(llm.allowedValues ?? []).join(', ')}.`);
-        } else if (llm.missingVariables !== undefined && llm.missingVariables.length > 1) {
-          // Explicit endpoint selection with BOTH URL and MODEL unset: name both, never claim the counterpart is set.
-          warn(`Misconfigured ${getGlyphs().dash} CODEGRAPH_LLM_PROVIDER=endpoint but ${llm.missingVariables.join(' and ')} are not set. Set both to activate the LLM endpoint.`);
-        } else {
-          const setVar = llm.missingVariable === 'CODEGRAPH_LLM_MODEL'
-            ? 'CODEGRAPH_LLM_URL'
-            : 'CODEGRAPH_LLM_MODEL';
-          warn(`Misconfigured ${getGlyphs().dash} ${setVar} is set but ${llm.missingVariable} is missing. Set ${llm.missingVariable} to activate the LLM endpoint.`);
-        }
-      } else {
-        console.log('  ' + chalk.dim(`Dormant ${getGlyphs().dash} set ${llm.activationVars[0]} and ${llm.activationVars[1]} for an OpenAI-compatible endpoint to enable.`));
-      }
-      console.log();
+      // without touching the embeddings block above. Shared with the uninitialized
+      // path via printLlmStatusBlock so the two renderings never diverge (Finding 2).
+      // Network-free: getLlmStatus() reads only the environment (+ the pending-bundle
+      // count under .codegraph/tasks/ for agent mode).
+      printLlmStatusBlock(cg.getLlmStatus());
 
       // LSP precision. Reading status never starts language servers; this is
       // either the last persisted LSP run or the current config context.
@@ -2808,6 +2862,14 @@ program
     // bundles are filesystem-only (FR-023), so a project can carry `.codegraph/tasks/`
     // without a graph DB.
     if (action === undefined || action === 'list') {
+      // Finding 3: `list` takes NO id (only `ingest <id>` does). The flat
+      // `tasks [action] [id]` shape would otherwise silently accept and ignore a stray
+      // id (`tasks list some-id` looked like it did something) — reject it explicitly.
+      // The id is untrusted, so escape control chars before echoing it.
+      if (id !== undefined) {
+        error(`Usage: codegraph tasks list (takes no id) ${getGlyphs().dash} did you mean "codegraph tasks ingest ${escapeControlChars(id)}"?`);
+        process.exit(1);
+      }
       const bundles = listBundles(projectPath);
       if (bundles.length === 0) {
         console.log(chalk.dim('No task bundles under .codegraph/tasks/.'));
@@ -2815,7 +2877,10 @@ program
       }
       for (const b of bundles) {
         const age = b.ageMs === null ? 'unknown age' : `${formatDuration(b.ageMs)} old`;
-        console.log(`  ${b.id}  ${b.status}  ${chalk.dim(age)}`);
+        // Finding 1: a bundle id is a directory name — attacker-craftable to carry ANSI/OSC/ESC
+        // control sequences. Escape them for the human terminal (the id is untrusted); status is
+        // from a closed enum and age is numeric, so neither needs escaping.
+        console.log(`  ${escapeControlChars(b.id)}  ${b.status}  ${chalk.dim(age)}`);
       }
       return;
     }
@@ -2831,7 +2896,9 @@ program
         return;
       }
       // FR-028a: reason to stderr, non-zero exit, manifest left pending by ingestBundle.
-      error(result.reason);
+      // Finding 1: the reason embeds attacker-controlled strings (e.g. a tampered
+      // `manifest.contract` pointer / bad id) — escape control chars before printing.
+      error(escapeControlChars(result.reason));
       process.exit(1);
     }
 

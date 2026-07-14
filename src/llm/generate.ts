@@ -96,8 +96,9 @@ export interface GenerateOverrides {
  *    return `{ source:'pending-bundle', text: task.fallback, handle }` — usable fallback text NOW
  *    plus a handle the consumer later redeems with `redeemHandle` (FR-010/FR-010a). If emission
  *    itself fails (a genuinely unwritable root), the throw is caught and degraded to
- *    `{ source:'fallback', text: task.fallback }` — the seam never throws, US1's always-usable-text
- *    guarantee is preserved, and the emit failure surfaces through status, not an exception (Edge Case).
+ *    `{ source:'fallback', text: task.fallback }` — the seam never throws and always returns usable
+ *    text (US1). The emit failure is NOT separately recorded in status: there is no status field for
+ *    it — the consumer simply receives the fallback (`source:'fallback'`) instead of a handle (Edge Case).
  *
  * `root` anchors the agent-mode bundle directory (`.codegraph/tasks/<id>/`); the dormant/endpoint
  * branches ignore it. The seam never opens the graph DB nor writes LLM text into graph structure

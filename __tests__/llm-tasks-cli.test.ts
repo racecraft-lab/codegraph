@@ -189,3 +189,55 @@ describe('codegraph tasks <unknown>', () => {
     expect(r.stderr.trim().length).toBeGreaterThan(0);
   });
 });
+
+// --------------------------------------------------------------------------
+// Finding 1 (rp-review): a bundle id is a directory name — attacker-craftable to
+// carry ANSI/OSC/ESC control sequences. `tasks list` prints ids to a terminal, so a
+// raw ESC byte could forge output or trigger terminal features. The HUMAN rendering
+// must escape control characters into a visible form; structured/JSON output stays raw.
+describe('codegraph tasks list — escapes control characters in untrusted bundle ids (terminal injection)', () => {
+  it('renders an ESC/ANSI-bearing bundle id escaped, with NO raw ESC byte in stdout', () => {
+    const root = makeRoot();
+    // A manually-created bundle dir whose NAME carries an ANSI color sequence (valid on
+    // POSIX — any byte but '/' and NUL is a legal filename byte).
+    const evilId = 'evil\x1b[31mRED\x1b[0m';
+    const dir = bundleDirOf(root, evilId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'manifest.json'),
+      JSON.stringify({ id: evilId, status: 'pending', contract: 'output-contract.json', createdAt: new Date().toISOString() }),
+      'utf8',
+    );
+
+    const r = runTasks(root, ['list']);
+    expect(r.status).toBe(0);
+    // The untrusted id is rendered fully ESCAPED — its ESC (0x1B) bytes become the literal
+    // token `\x1b`, so the injected ANSI sequence reaches the terminal as inert text.
+    expect(r.stdout).toContain('evil\\x1b[31mRED\\x1b[0m');
+    // The injected raw red-ANSI sequence (real ESC + "[31m") NEVER reaches the terminal.
+    // (chalk.dim on the numeric age field emits only `\x1b[2m`/reset — trusted, not `[31m` —
+    // so this assertion isolates the untrusted-id terminal-injection property.)
+    expect(r.stdout).not.toContain('\x1b[31m');
+  });
+});
+
+// --------------------------------------------------------------------------
+// Finding 3 (rp-review): `list` takes no id (only `ingest <id>` does), but the flat
+// `tasks [action] [id]` shape silently accepts and ignores a stray id. That is a
+// foot-gun (`tasks list some-id` looked like it did something). Reject it.
+describe('codegraph tasks list — rejects an unexpected id argument', () => {
+  it('exits non-zero with a usage error when given an id (list takes none)', () => {
+    const root = makeRoot();
+    const r = runTasks(root, ['list', 'extra-arg']);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr.trim().length).toBeGreaterThan(0);
+    expect(r.stderr.toLowerCase()).toContain('usage');
+  });
+
+  it('still lists normally with no id (regression guard for the accepted shape)', () => {
+    const root = makeRoot();
+    emitBundle(root, makeTask());
+    const r = runTasks(root, ['list']);
+    expect(r.status).toBe(0);
+  });
+});

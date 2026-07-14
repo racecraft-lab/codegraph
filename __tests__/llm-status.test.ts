@@ -16,8 +16,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 // Default import (NOT `import * as fs`): vitest cannot spy on a frozen ESM namespace object.
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { resolveLlmStatus } from '../src/llm/config';
 import type { LlmStatusActive } from '../src/llm/config';
+import { emitBundle } from '../src/llm/agent-bundle';
+import type { ProseTask, OutputContract } from '../src/llm/generate';
 
 const ENDPOINT_URL = 'https://api.example.com';
 const ENDPOINT_MODEL = 'gpt-4o-mini';
@@ -183,5 +188,84 @@ describe('resolveLlmStatus — hermetic: network-free, fs-free, never exposes th
     for (const status of statuses) {
       expect(JSON.stringify(status)).not.toContain(SECRET);
     }
+  });
+});
+
+// --------------------------------------------------------------------------
+// Finding 2 (rp-review): `codegraph status` has an early return for an UNINITIALIZED
+// project (no graph DB). Agent mode is filesystem-only — a project can carry pending
+// task bundles (or have CODEGRAPH_LLM_* set) with no DB — so the uninitialized path
+// must STILL report the network-free, DB-free LLM snapshot in both --json and human
+// output, mirroring the initialized path's `LLM:` block. Unlike the unit tests above,
+// this block exercises the built binary end-to-end (a real temp root, no graph DB).
+const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
+const PROSE_CONTRACT: OutputContract = { requiredFields: [{ name: 'prose', type: 'string', nonEmpty: true }] };
+function makeTask(): ProseTask {
+  return { instructions: 'Summarize.', graphContext: [], outputContract: PROSE_CONTRACT, fallback: 'FB' };
+}
+
+interface StatusRun {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+function runStatus(cwd: string, args: string[], extraEnv: Record<string, string> = {}): StatusRun {
+  const env = { ...process.env };
+  for (const k of [
+    'CODEGRAPH_LLM_URL', 'CODEGRAPH_LLM_MODEL', 'CODEGRAPH_LLM_API_KEY', 'CODEGRAPH_LLM_PROVIDER',
+    'CODEGRAPH_EMBEDDING_URL', 'CODEGRAPH_EMBEDDING_MODEL', 'CODEGRAPH_EMBEDDING_API_KEY', 'CODEGRAPH_EMBEDDING_PROVIDER',
+  ]) delete env[k];
+  const r = spawnSync(process.execPath, [BIN, 'status', ...args], {
+    cwd,
+    encoding: 'utf-8',
+    env: { ...env, CODEGRAPH_NO_DAEMON: '1', CODEGRAPH_WASM_RELAUNCHED: '1', DO_NOT_TRACK: '1', ...extraEnv },
+  });
+  return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+}
+function parseJsonLine(stdout: string): Record<string, unknown> {
+  return JSON.parse(stdout.trim().split('\n').filter(Boolean).pop()!);
+}
+
+describe('codegraph status — uninitialized project still reports the LLM snapshot (Finding 2)', () => {
+  const roots: string[] = [];
+  function makeRoot(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-llm-status-uninit-'));
+    roots.push(dir);
+    return dir;
+  }
+  afterEach(() => {
+    while (roots.length) {
+      const dir = roots.pop()!;
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--json on an uninitialized project includes the dormant `llm` snapshot', () => {
+    const root = makeRoot();
+    const r = runStatus(root, ['--json']);
+    expect(r.status).toBe(0);
+    const out = parseJsonLine(r.stdout);
+    expect(out.initialized).toBe(false);
+    expect(out.llm).toEqual({ active: false, activationVars: ['CODEGRAPH_LLM_URL', 'CODEGRAPH_LLM_MODEL'] });
+  });
+
+  it('--json on an uninitialized project with agent bundles reports agent mode + pending count', () => {
+    const root = makeRoot();
+    emitBundle(root, makeTask()); // one pending bundle, NO graph DB → still uninitialized
+    const r = runStatus(root, ['--json'], { CODEGRAPH_LLM_PROVIDER: 'agent' });
+    expect(r.status).toBe(0);
+    const out = parseJsonLine(r.stdout);
+    expect(out.initialized).toBe(false);
+    expect(out.llm).toEqual({ active: true, mode: 'agent', pendingBundles: 1 });
+  });
+
+  it('human status on an uninitialized project renders the LLM block (agent + pending)', () => {
+    const root = makeRoot();
+    emitBundle(root, makeTask());
+    const r = runStatus(root, [], { CODEGRAPH_LLM_PROVIDER: 'agent' });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('LLM:');
+    expect(r.stdout).toContain('agent');
+    expect(r.stdout).toContain('1 pending bundle');
   });
 });
