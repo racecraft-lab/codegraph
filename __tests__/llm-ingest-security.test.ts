@@ -26,7 +26,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ingestBundle } from '../src/llm/ingest';
-import { emitBundle, MAX_BUNDLE_INPUT_BYTES, MAX_JSON_DEPTH } from '../src/llm/agent-bundle';
+import { emitBundle, redeemHandle, MAX_BUNDLE_INPUT_BYTES, MAX_JSON_DEPTH } from '../src/llm/agent-bundle';
 import type { ProseTask, OutputContract } from '../src/llm/generate';
 import { getCodeGraphDir } from '../src/directory';
 
@@ -326,5 +326,62 @@ describe('FR-029a / FR-028a — finalization is atomic and never throws (no part
     expect(result && result.ok).toBe(false);
     expect(resultExists(root, id)).toBe(false); // rolled back — no orphaned consumer artifact
     expect(manifestStatus(root, id)).toBe('pending'); // re-ingestable
+  });
+});
+
+// --------------------------------------------------------------------------
+// Fix G (rp-review round 2): a tampered OutputContract must not amplify bounded input
+// into an unbounded result. `parseContract` accepted DUPLICATE required-field names, and
+// `deriveText` emits each declared field's value once PER declaration — so a contract
+// repeating the same field name, over a single large-but-valid `output.json`, produced a
+// result.json far larger than any input file. That result then also failed the 1 MiB
+// bounded safe-read, so `redeemHandle` could never hand it back — a written-but-un-redeemable
+// bundle. The fix rejects duplicate field names at parse time (the operative guard) and, as
+// defense-in-depth, refuses to write any serialized result that exceeds the safe reader's
+// ceiling — so every written result.json stays redeemable.
+describe('FR-028a — a tampered contract cannot amplify bounded input into an un-redeemable result (Fix G)', () => {
+  it('rejects a contract with DUPLICATE required-field names as malformed (no artifact, manifest pending)', () => {
+    const root = makeRoot();
+    const dupContract = {
+      requiredFields: [
+        { name: 'prose', type: 'string', nonEmpty: true },
+        { name: 'prose', type: 'string', nonEmpty: true },
+      ],
+    } as OutputContract;
+    const { id } = emitBundle(root, makeTask({ outputContract: dupContract }));
+    writeOutput(root, id, { prose: 'small' });
+
+    const result = ingestBundle(root, id);
+    expect(result.ok).toBe(false); // pre-fix: ACCEPTED (deriveText emits "small\n\nsmall")
+    if (!result.ok) expect(result.reason).toContain('malformed output contract');
+    expect(manifestStatus(root, id)).toBe('pending');
+    expect(resultExists(root, id)).toBe(false);
+  });
+
+  it('rejects an amplifying contract before writing an oversized, un-redeemable result.json (result stays redeemable)', () => {
+    const root = makeRoot();
+    // Three declarations of the SAME field: each bundle file stays < MAX_BUNDLE_INPUT_BYTES,
+    // but a naive deriveText concatenates the (large, valid) value 3× into a > 1 MiB result —
+    // which the 1 MiB bounded safe-reader could then NEVER redeem. It must be rejected before
+    // any result.json is written, leaving the bundle pending and redeemable.
+    const ampContract = {
+      requiredFields: [
+        { name: 'prose', type: 'string', nonEmpty: true },
+        { name: 'prose', type: 'string', nonEmpty: true },
+        { name: 'prose', type: 'string', nonEmpty: true },
+      ],
+    } as OutputContract;
+    const { id, handle } = emitBundle(root, makeTask({ outputContract: ampContract }));
+    const big = 'a'.repeat(400 * 1024); // one 400 KiB value → output.json < 1 MiB, but 3× derived > 1 MiB
+    writeOutput(root, id, { prose: big });
+
+    const result = ingestBundle(root, id);
+    // Pre-fix: ingest ACCEPTS, writes a ~1.2 MiB result.json, and stamps completed — but
+    // redeemHandle can never read it back (> 1 MiB), so the finalized text is silently lost.
+    expect(result.ok).toBe(false);
+    expect(resultExists(root, id)).toBe(false);
+    expect(manifestStatus(root, id)).toBe('pending');
+    // The bundle is never left written-but-un-redeemable — it stays pending / re-ingestable.
+    expect(redeemHandle(root, handle)).toEqual({ status: 'pending' });
   });
 });

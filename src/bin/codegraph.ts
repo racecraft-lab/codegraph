@@ -1030,7 +1030,9 @@ function printLlmStatusBlock(llm: LlmStatus): void {
     if (llm.mode === 'endpoint') {
       console.log(`  Provider:  ${llm.mode}`);
       console.log(`  Endpoint:  ${llm.endpoint}`);
-      console.log(`  Model:     ${llm.model}`);
+      // llm.model is env-controlled (CODEGRAPH_LLM_MODEL) → untrusted; escape control chars
+      // for the human terminal. (endpoint is already redacted; --json output stays raw.)
+      console.log(`  Model:     ${escapeControlChars(llm.model)}`);
       if (llm.plaintextWarning) {
         console.log('  ' + chalk.yellow(`${getGlyphs().warn} ${llm.plaintextWarning}`));
       }
@@ -2892,7 +2894,9 @@ program
       }
       const result = ingestBundle(projectPath, id);
       if (result.ok) {
-        success(`Ingested task ${id} ${getGlyphs().dash} result stored; manifest marked completed.`);
+        // The id is untrusted (a directory name) — escape control chars before echoing it in
+        // the human confirmation, matching the `list` / rejection-reason paths.
+        success(`Ingested task ${escapeControlChars(id)} ${getGlyphs().dash} result stored; manifest marked completed.`);
         return;
       }
       // FR-028a: reason to stderr, non-zero exit, manifest left pending by ingestBundle.
@@ -2902,7 +2906,8 @@ program
       process.exit(1);
     }
 
-    error(`Unknown action: ${action} (expected list or ingest)`);
+    // The action positional is untrusted argv — escape control chars before echoing it back.
+    error(`Unknown action: ${escapeControlChars(action)} (expected list or ingest)`);
     process.exit(1);
   });
 

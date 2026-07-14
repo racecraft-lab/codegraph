@@ -269,3 +269,42 @@ describe('codegraph status — uninitialized project still reports the LLM snaps
     expect(r.stdout).toContain('1 pending bundle');
   });
 });
+
+// --------------------------------------------------------------------------
+// Fix H(b) (rp-review round 2): the human `status` LLM block prints `llm.model` — an
+// env-controlled (CODEGRAPH_LLM_MODEL), therefore untrusted, value — into the terminal raw.
+// Escape control characters in the human render (the `--json` snapshot stays raw, since
+// JSON.stringify already neutralizes control bytes). Unlike the env-clean unit tests above,
+// this SETS CODEGRAPH_LLM_MODEL (to a control-char value) for the spawned process only, while
+// the other CODEGRAPH_LLM_* vars stay unset.
+describe('codegraph status — escapes control characters in the human LLM model line (Fix H(b))', () => {
+  const roots: string[] = [];
+  function makeRoot(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-llm-status-model-esc-'));
+    roots.push(dir);
+    return dir;
+  }
+  afterEach(() => {
+    while (roots.length) {
+      const dir = roots.pop()!;
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders an ESC/ANSI-bearing CODEGRAPH_LLM_MODEL escaped in the human status LLM block, with NO raw injected ANSI', () => {
+    const root = makeRoot();
+    // Both endpoint activation vars set for THIS spawn only: an https URL (no plaintext warning)
+    // and a model carrying an ANSI sequence. The other CODEGRAPH_LLM_* vars stay unset.
+    const r = runStatus(root, [], {
+      CODEGRAPH_LLM_URL: 'https://api.example.com',
+      CODEGRAPH_LLM_MODEL: 'zz\x1b[31mRED\x1b[0m',
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('Model:');
+    // The env-controlled model value is rendered fully ESCAPED …
+    expect(r.stdout).toContain('zz\\x1b[31mRED\\x1b[0m');
+    // … so the injected RAW ANSI never reaches the terminal. Nothing on this path emits
+    // `\x1b[31mRED` (the block's chalk.bold/yellow/blue glyphs use other codes).
+    expect(r.stdout).not.toContain('\x1b[31mRED');
+  });
+});

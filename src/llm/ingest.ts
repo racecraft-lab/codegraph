@@ -32,7 +32,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readBundleFileSafely, resolveBundleDir } from './agent-bundle';
+import { readBundleFileSafely, resolveBundleDir, MAX_BUNDLE_INPUT_BYTES } from './agent-bundle';
 
 /**
  * {@link ingestBundle} outcome — a closed union the CLI maps to an exit code: `ok:true`
@@ -65,16 +65,23 @@ interface RequiredField {
 /**
  * Parse the bundle's `OutputContract` from its safe-read value by reading only its own
  * declared fields. Returns `null` for a structurally-malformed contract (missing/invalid
- * `requiredFields`, or a field with a non-string name or an out-of-enum type).
+ * `requiredFields`, a field with a non-string name or an out-of-enum type, or a DUPLICATE
+ * field name). Duplicate names are rejected because {@link deriveText} emits each declared
+ * field's value once PER declaration, so a contract repeating a name would amplify a single
+ * bounded `output.json` value into an unbounded `result.json` (Fix G / round-2 review) — the
+ * operative guard against that amplification.
  */
 function parseContract(value: unknown): { requiredFields: RequiredField[] } | null {
   const fields = ownField(value, 'requiredFields');
   if (!Array.isArray(fields)) return null;
   const out: RequiredField[] = [];
+  const seen = new Set<string>();
   for (const f of fields) {
     const name = ownField(f, 'name');
     const type = ownField(f, 'type');
     if (typeof name !== 'string' || (type !== 'string' && type !== 'string[]')) return null;
+    if (seen.has(name)) return null; // duplicate field name → malformed (amplification guard)
+    seen.add(name);
     out.push({ name, type, nonEmpty: ownField(f, 'nonEmpty') === true });
   }
   return { requiredFields: out };
@@ -231,6 +238,16 @@ export function ingestBundle(root: string, id: string): IngestResult {
   const manifestPath = path.join(bundleDir, 'manifest.json');
   const tmpManifestPath = path.join(bundleDir, 'manifest.json.ingest-tmp');
   const text = deriveText(outputRead.value, contract);
+  // Canonical-result size ceiling (Fix G, defense-in-depth): `redeemHandle` reads result.json
+  // back through the SAME 1 MiB bounded safe-read, so a serialized result larger than that
+  // would be written yet never redeemable. Refuse to write it (FR-028a-shaped) — the manifest
+  // stays pending and the bundle re-ingestable. parseContract already rejects the known
+  // amplification vector (duplicate field names), so this is a belt-and-suspenders invariant on
+  // the write itself. Serialize once and reuse the value for the write below.
+  const serializedResult = JSON.stringify({ text });
+  if (Buffer.byteLength(serializedResult, 'utf8') > MAX_BUNDLE_INPUT_BYTES) {
+    return { ok: false, reason: `finalized result for ${id} exceeds ${MAX_BUNDLE_INPUT_BYTES} bytes` };
+  }
   const resultFlags =
     fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0);
 
@@ -246,12 +263,16 @@ export function ingestBundle(root: string, id: string): IngestResult {
       }
       throw err;
     }
+    // The exclusive create SUCCEEDED — result.json now exists on disk (empty). Mark it created
+    // BEFORE the write so a failed write (ENOSPC/EIO) still triggers the rollback below. Setting
+    // this only AFTER the write would leave an orphan EMPTY result.json on a write failure, which
+    // then permanently wedges every re-ingest via the O_EXCL EEXIST refusal above.
+    resultCreated = true;
     try {
-      fs.writeFileSync(resultFd, JSON.stringify({ text }), 'utf8');
+      fs.writeFileSync(resultFd, serializedResult, 'utf8');
     } finally {
       fs.closeSync(resultFd);
     }
-    resultCreated = true;
 
     // manifest.json — install the completed manifest atomically over the pending one.
     const completedManifest = { ...(manifestRead.value as Record<string, unknown>), status: 'completed' };

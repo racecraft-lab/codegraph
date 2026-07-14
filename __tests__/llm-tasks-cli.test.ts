@@ -241,3 +241,54 @@ describe('codegraph tasks list — rejects an unexpected id argument', () => {
     expect(r.status).toBe(0);
   });
 });
+
+// --------------------------------------------------------------------------
+// Fix H (rp-review round 2): control-character escaping coverage gaps. `escapeControlChars`
+// was applied to `tasks list` ids and ingest rejection reasons, but NOT to the SUCCESSFUL
+// ingest confirmation (which echoes the untrusted bundle id) or to the unknown-action echo.
+// Both interpolate attacker-controllable strings into the terminal raw. The HUMAN surface
+// must escape control characters into a visible form; structured output stays raw.
+describe('codegraph tasks ingest <id> — escapes control characters in the success confirmation (Fix H(a))', () => {
+  // POSIX-gated: the bundle id is a real directory name, and control bytes (ESC 0x1b) are
+  // illegal in Windows filenames, so the ESC-named bundle dir can only be created on POSIX.
+  it.runIf(process.platform !== 'win32')('renders an ESC/ANSI-bearing bundle id escaped on the success path, with NO raw injected ANSI', () => {
+    const root = makeRoot();
+    // A manually-created bundle whose NAME carries an ANSI sequence (valid on POSIX).
+    const evilId = 'zz\x1b[31mRED\x1b[0m';
+    const dir = bundleDirOf(root, evilId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'manifest.json'),
+      JSON.stringify({ id: evilId, status: 'pending', contract: 'output-contract.json', createdAt: new Date().toISOString() }),
+      'utf8',
+    );
+    fs.writeFileSync(path.join(dir, 'output-contract.json'), JSON.stringify(PROSE_CONTRACT), 'utf8');
+    fs.writeFileSync(path.join(dir, 'output.json'), JSON.stringify({ prose: 'ok' }), 'utf8');
+
+    const r = runTasks(root, ['ingest', evilId]);
+    expect(r.status).toBe(0); // conforming output → success confirmation
+    expect(manifestStatus(root, evilId)).toBe('completed'); // the effect landed on disk
+    // The untrusted id in the confirmation is rendered fully ESCAPED — its ESC (0x1b) bytes
+    // become the literal token `\x1b`, so the injected ANSI reaches the terminal as inert text.
+    expect(r.stdout).toContain('zz\\x1b[31mRED\\x1b[0m');
+    // The injected RAW ANSI sequence never reaches the terminal. (chalk.green on the success
+    // glyph emits only `\x1b[32m`, never `\x1b[31mRED`, so this isolates the untrusted-id
+    // terminal-injection property.)
+    expect(r.stdout).not.toContain('\x1b[31mRED');
+  });
+});
+
+describe('codegraph tasks <unknown> — escapes control characters in the unknown-action echo (Fix H(c))', () => {
+  it('renders an ESC/ANSI-bearing unknown action escaped in the error echo, with NO raw injected ANSI', () => {
+    const root = makeRoot();
+    // The action positional is untrusted argv — an unknown value is echoed back; escape it.
+    const evilAction = 'zz\x1b[31mRED\x1b[0m';
+    const r = runTasks(root, [evilAction]);
+    expect(r.status).not.toBe(0);
+    // The unknown action is echoed ESCAPED …
+    expect(r.stderr).toContain('zz\\x1b[31mRED\\x1b[0m');
+    // … so the injected RAW ANSI never reaches the terminal. (error() wraps only the glyph in
+    // chalk.red → `\x1b[31m<glyph>`, never `\x1b[31mRED`, so this isolates the injection.)
+    expect(r.stderr).not.toContain('\x1b[31mRED');
+  });
+});
