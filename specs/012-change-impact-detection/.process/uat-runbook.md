@@ -26,7 +26,7 @@ controlled diff:
 ## Scenario A — clean diff
 
 1. Ensure the worktree is clean.
-2. Run `node dist/bin/codegraph.js detect-changes --json`.
+2. Run `node dist/bin/codegraph.js detect-changes --format json`.
 3. Expected result:
    - exit code `0`,
    - no changed symbols,
@@ -37,8 +37,8 @@ controlled diff:
 
 1. Make a small reversible edit to a source fixture or test helper selected
    during implementation.
-2. Run `node dist/bin/codegraph.js detect-changes --all --json`.
-3. Run `node dist/bin/codegraph.js detect-changes --all --format markdown`.
+2. Run `node dist/bin/codegraph.js detect-changes --mode all --format json`.
+3. Run `node dist/bin/codegraph.js detect-changes --mode all --format markdown`.
 4. Expected result:
    - exit code `1`,
    - at least one changed symbol maps to the edited hunk,
@@ -60,7 +60,7 @@ controlled diff:
 ## Scenario D — rename without semantic impact
 
 1. Rename or move a selected fixture file without editing its contents.
-2. Run `node dist/bin/codegraph.js detect-changes --all --json`.
+2. Run `node dist/bin/codegraph.js detect-changes --mode all --format json`.
 3. Expected result:
    - rename/move is detected,
    - pure move does not fabricate changed-symbol impacts,
