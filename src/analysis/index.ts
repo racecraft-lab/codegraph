@@ -368,18 +368,26 @@ async function runCatalogKind(
 ): Promise<void> {
   if (signal?.aborted) return; // abort before this kind starts — a catalog no-op
   // `hasValidPriorCatalog` probes catalog_meta; keep it INSIDE the try so a probe
-  // SQLite error is contained to THIS kind (treated as a first-run failure) and
-  // never propagates to skip the other kind — per-kind independence (FR-020).
+  // SQLite error is contained to THIS kind (never propagates to skip the other —
+  // per-kind independence, FR-020). But track whether the probe COMPLETED: only a
+  // conclusive "no valid prior" may write a first-run marker. If the probe itself
+  // threw, the prior state is UNKNOWN — a marker would `INSERT OR REPLACE` a
+  // possibly-valid prior into NULL/first_run_failed, turning a servable `stale`
+  // catalog into `unavailable` and suppressing its retained rows. So on a probe
+  // failure we log and leave the metadata untouched (FR-022/022b).
+  let priorKnown = false;
   let hadValidPrior = false;
   try {
     hadValidPrior = hasValidPriorCatalog(store, kind);
+    priorKnown = true; // the probe returned — its verdict is trustworthy
     await analyze();
   } catch (err) {
     // A caller-requested cancellation is not a failure: leave the prior untouched
     // (it derives as stale if the version already advanced) and mark nothing.
     if (signal?.aborted) return;
-    if (!hadValidPrior) {
+    if (priorKnown && !hadValidPrior) {
       // First-run failure, no prior to retain → explicit unavailable (FR-023).
+      // Skipped when the probe threw (prior unknown → never destroy metadata).
       try {
         markFirstRunFailed(store, kind);
       } catch {

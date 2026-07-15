@@ -10,8 +10,8 @@
  * raises "no such table". Real SQLite, no mocking.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { maybeRunCatalogAnalysis } from '../../../src/analysis';
-import { cleanupSeeds, edge, freshSeed, node, type SeedHandle } from '../flows/helpers';
+import { maybeRunCatalogAnalysis, swapFlows } from '../../../src/analysis';
+import { cleanupSeeds, edge, freshSeed, node, setVersion, type SeedHandle } from '../flows/helpers';
 
 afterEach(cleanupSeeds);
 
@@ -42,5 +42,35 @@ describe('catalog bookkeeping failure containment (PR #50 review, FR-022b/020)',
     await expect(
       maybeRunCatalogAnalysis(h.graph, h.db, { flows: true, clusters: true }),
     ).resolves.toBeUndefined();
+  });
+
+  it('a transient probe failure retains a VALID prior catalog, never overwriting it (FR-022)', async () => {
+    const h = freshSeed();
+    seedGraph(h);
+    setVersion(h, 1);
+    // Commit a valid v1 flows catalog (catalog_meta computed_from_version=1).
+    swapFlows(
+      h.db,
+      1,
+      [{ id: 'flow:x', name: 'GET /x', entryKind: 'route', rootNodeId: 'r', rootName: 'GET /x', rootKind: 'route', truncatedDepth: false, truncatedWidth: false, truncatedSteps: false }],
+      [],
+    );
+    // Drop ONLY the flows content table: hasValidPriorCatalog's `COUNT(*) FROM
+    // flows` probe now throws, but the marker write (INSERT OR REPLACE catalog_meta)
+    // would still SUCCEED — the exact transient-probe-error path the round-3 fix
+    // otherwise mishandled.
+    h.db.exec('DROP TABLE flows');
+
+    await expect(
+      maybeRunCatalogAnalysis(h.graph, h.db, { flows: true, clusters: false }),
+    ).resolves.toBeUndefined();
+
+    // The valid v1 metadata MUST survive — NOT be overwritten to
+    // NULL/first_run_failed (which would flip a servable `stale` catalog to
+    // `unavailable` and suppress its retained rows).
+    const meta = h.db
+      .prepare(`SELECT computed_from_version AS v, first_run_failed AS f FROM catalog_meta WHERE kind='flows'`)
+      .get() as { v: number; f: number };
+    expect(meta).toEqual({ v: 1, f: 0 });
   });
 });
