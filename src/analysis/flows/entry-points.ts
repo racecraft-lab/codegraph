@@ -47,6 +47,13 @@ export interface EntryPoint {
   routeName?: string;
   /** Command name — the flow name for a CLI root (FR-010). */
   commandName?: string;
+  /**
+   * The root's project-relative file — a clone-stable discriminator folded into
+   * the flow id (FR-017a) so two DISTINCT roots that share a public name (two
+   * `GET /health` routes, two `sync` CLI commands in different files) get
+   * DISTINCT ids instead of colliding and being dropped (FR-003/SC-001).
+   */
+  filePath?: string;
   /** Present ONLY for a synthetic inline-CLI root: its seeded out-edges. */
   virtualRootEdges?: VirtualRootEdge[];
 }
@@ -136,6 +143,7 @@ export function detectEntryPoints(graph: FlowAnalysisGraph): EntryPoint[] {
       rootKind: 'route',
       routeName: route.name,
       rootQualifiedName: route.qualifiedName,
+      filePath: route.filePath,
     });
   }
 
@@ -162,6 +170,7 @@ export function detectEntryPoints(graph: FlowAnalysisGraph): EntryPoint[] {
         rootName: n.name,
         rootKind: n.kind,
         rootQualifiedName: n.qualifiedName,
+        filePath: n.filePath,
       });
     }
   }
@@ -218,6 +227,7 @@ function collectCliEntries(src: string, filePath: string, queries: QueryBuilder,
           rootKind: handler.kind,
           rootQualifiedName: handler.qualifiedName,
           commandName,
+          filePath: handler.filePath,
         });
       }
       continue;
@@ -233,6 +243,7 @@ function collectCliEntries(src: string, filePath: string, queries: QueryBuilder,
         rootKind: 'function',
         commandName,
         virtualRootEdges: seeds,
+        filePath,
       });
     }
   }
@@ -283,6 +294,7 @@ function collectEventEntries(src: string, filePath: string, queries: QueryBuilde
       rootName: handler.name,
       rootKind: handler.kind,
       rootQualifiedName: handler.qualifiedName,
+      filePath: handler.filePath,
     });
   }
 }

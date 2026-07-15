@@ -131,7 +131,11 @@ export async function runFlowAnalysis(
     if (signal?.aborted) return;
     await maybeYield();
     const flowId = computeFlowId(entry);
-    if (seen.has(flowId)) continue; // belt-and-braces over the entry-point dedupe
+    // The flow id folds in the root's file (FR-017a), so distinct roots no longer
+    // collide across files. A residual same-file same-identity collision (a
+    // genuine duplicate registration) is dropped here rather than left to fail
+    // swapFlows on a duplicate PRIMARY KEY (which would roll the whole swap back).
+    if (seen.has(flowId)) continue;
     seen.add(flowId);
 
     const trace = traceFlow(entry, graph.queries);
