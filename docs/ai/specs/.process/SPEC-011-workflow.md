@@ -744,17 +744,26 @@ For each task:
 
 ## Lessons Learned
 
+**PR:** https://github.com/racecraft-lab/codegraph/pull/50 (origin, base `main`) — one PR, 15 commits, ~2,673 reviewable LOC (one-PR delivery re-confirmed by the maintainer at the measured size).
+
 ### What Worked Well
 
--
+- The layered adversarial process each caught a real defect the prior layer missed: Clarify's adversarial-refutation hardened the read-side atomicity (single-snapshot composite reads); the 4 parallel Checklist domains surfaced the provenance-enum + tracing-determinism + cluster-id-mint defects; Analyze corrected a REST-connection-topology premise against `daemon-client.ts` ground truth (a wrong premise that had propagated through Clarify + Checklist); the retrieval-guardian caught a NUL-byte delimiter shipping a source file as an unreviewable binary blob.
+- Sequential per-story-group TDD in the main worktree (foundation → flows → clusters → lifecycle → activation → polish) with a commit + clean-env verification between groups — clean history, isolatable regressions.
+- The self-repo dogfood UAT validated the whole feature on real code (95 flows incl. the CLI recognizer, 89 coherent clusters, `lsp` provenance preserved).
 
 ### Challenges Encountered
 
--
+- **Verification-method bug:** `npm test | tail` reported *tail's* exit code, masking latent failures (three stale v10 schema-version assertions + three env-driven tests). Corrected mid-run to `PIPESTATUS[0]` + reading the summary + running with `CODEGRAPH_EMBEDDING_*` cleared.
+- **Concurrency-timeout flakiness** under the autopilot's own CPU load — a shifting subset of parse-heavy suites time out at 5000ms; all pass in isolation. Established truth via multiple clean-env runs + per-file isolation.
+- **Cross-worktree IDE diagnostics** (from sibling worktrees' `src/llm`, `initSync` arity) were persistent noise; the authoritative signal is *this* worktree's `tsc --noEmit`.
+- The scoping reviewability heuristic (`production_files × 40`) under-counted ~4× vs the actual large modules (`catalog-store` 460 LOC, etc.) — re-surfaced the split decision at PR time per the plan's checkpoint.
 
 ### Patterns to Reuse
 
--
+- Report-only parallel Checklist domains → orchestrator-consolidated, de-duplicated remediation applied by one writer (parallel analysis, zero write contention on shared spec/plan).
+- Adversarial-refutation subagents on high-stakes, hard-to-reverse decisions before committing them.
+- Clean-env full-suite verification reading the real vitest summary; per-group commits for incremental review of a large feature.
 
 ---
 
