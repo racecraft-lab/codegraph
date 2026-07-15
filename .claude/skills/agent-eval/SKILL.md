@@ -73,7 +73,7 @@ codegraph reduced effort and whether both arms reached a correct answer.
 - Add or edit repos in `corpus.json` (fields: `name`, `repo`, `size`, `files`,
   `question`).
 
-## Invariants (from CLAUDE.md validation methodology)
+## Invariants (from AGENTS.md validation methodology)
 
 - **Model floor**: the harness defaults both arms to `--model sonnet --effort
   high` (`run-all.sh`). Never raise `MODEL`/`EFFORT` — Sonnet is the deliberate

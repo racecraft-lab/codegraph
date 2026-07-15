@@ -2,7 +2,7 @@
  * A validated, writable parent directory for a model-cache test fixture.
  *
  * `os.homedir()` suits a normal user, but is `/root` when the suite runs as root
- * (the Docker image CLAUDE.md mandates for Linux validation) — a `SENSITIVE_PATHS`
+ * (the Docker image AGENTS.md mandates for Linux validation) — a `SENSITIVE_PATHS`
  * entry — and a checkout under `/tmp` is sensitive too. `validateModelCacheDir()`
  * would reject either, making valid-cache status tests wrongly resolve to `cache`
  * instead of `offline`/`session-init-timeout`. Pick the first candidate that BOTH

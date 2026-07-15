@@ -14,7 +14,7 @@ Review ONLY the diff in scope (default `git diff main...HEAD`, or the range you 
 given). Do not audit unrelated code — note out-of-scope smells in one sentence and move
 on. Every verdict carries file:line evidence. Evidence, not vibes.
 
-Authorities: `.specify/memory/constitution.md` Principles V–VI, and root CLAUDE.md
+Authorities: `.specify/memory/constitution.md` Principles V–VI, and root AGENTS.md
 sections "Retrieval performance & dynamic-dispatch coverage" and "Explore budget".
 
 ## Checklist
