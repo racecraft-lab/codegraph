@@ -43,7 +43,7 @@ The platform is decomposed into **27 specifications** across **7 dependency tier
 - SPEC-009 requires SPEC-005 (WebSocket transport on the serve daemon); SPEC-010 requires SPEC-008 (LSP rename path).
 - SPEC-012 prefers SPEC-011 (flow impact enrichment) but can ship with symbol/caller impact only.
 - SPEC-015 → 014, SPEC-016 → 015, SPEC-017 → 016 (strict analysis chain).
-- SPEC-027 requires SPEC-001 + SPEC-003; SPEC-019 requires SPEC-011 + SPEC-018 + SPEC-027; SPEC-020 requires SPEC-012 (SPEC-018 optional); SPEC-022 requires SPEC-021.
+- SPEC-027 requires SPEC-001 + SPEC-003 and keeps code/prose vector namespaces separate unless model research proves shared-space comparability; SPEC-019 requires SPEC-011 + SPEC-018 + SPEC-027; SPEC-020 requires SPEC-012 (SPEC-018 optional); SPEC-022 requires SPEC-021.
 - SPEC-013, SPEC-023, SPEC-025 have no dependencies and can fill parallel capacity at any point.
 - SPEC-024 is mandatory if SPEC-008 planning identifies any language, feature, or capability parity gap from the internal baseline that cannot be safely closed inside SPEC-008. It is not a backlog bucket; it is the no-waiver closure spec.
 - SPEC-026 requires SPEC-025 (plugin platform mechanics decision — launcher contract, coexistence rules, artifact tier plan).
@@ -127,9 +127,9 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | ✅ Complete | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Merged (#21); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-023.md` |
 | SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Dormant; SPEC-008 parity gate closed with 0 unowned rows |
+| SPEC-027 | Markdown / OKF Knowledge Bundle Indexing | ⏳ Pending | [SPEC-027-workflow.md](SPEC-027-workflow.md) | Ready (SPEC-001 and SPEC-003 complete; gates SPEC-019) |
 | SPEC-025 | Plugin Platform Mechanics Spike | ✅ Complete | [SPEC-025-workflow.md](.process/SPEC-025-workflow.md) | Merged (#35); decision doc at `docs/design/plugin-channel-decision.md`; archived in `.specify/memory/archive-reports/2026-07-10-SPEC-025.md` |
 | SPEC-026 | Plugin-Channel Distribution | ⏳ Pending | [SPEC-026-workflow.md](SPEC-026-workflow.md) | Ready (SPEC-025 complete; implements `docs/design/plugin-channel-decision.md`) |
-| SPEC-027 | OKF Knowledge Ingestion and Code Linkage | ⏳ Pending | [SPEC-027-workflow.md](SPEC-027-workflow.md) | Ready (SPEC-001 and SPEC-003 complete) |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked
 
@@ -835,6 +835,59 @@ Budget result: must decompose into numbered child specs before implementation if
 
 ---
 
+### SPEC-027: Markdown / OKF Knowledge Bundle Indexing
+
+**Priority:** P1 | **Depends On:** SPEC-001, SPEC-003 | **Enables:** SPEC-019, agent-readable repository knowledge, richer wiki/group context
+
+**Goal:** Index generic Markdown and committed Open Knowledge Format v0.1 bundles as deterministic first-class knowledge beside code, preserve cited code/evidence links, and support typed keyword plus optional hybrid retrieval without writing canonical knowledge or mixing incompatible embedding spaces.
+
+**Reviewability Budget:** Primary surfaces: schema/migration + harness/adapter + API |
+Projected reviewable LOC: 560 (net-new) |
+Production files: ~7 |
+Total files: ~16 |
+Budget result: warning accepted for multiple surfaces and file counts; estimator suggested 2 slices. Re-run at scaffold time and decompose if the plan exceeds the greenfield allowance.
+
+**Scope:**
+- Recognize `.md` and `.markdown` inside the existing include/ignore boundary as a `markdown` corpus. Identify OKF bundles through explicit configuration first, then the default candidate `docs/ai/knowledge/`; do not depend on SpecKit Pro or producer-specific state.
+- Parse UTF-8 Markdown headings, bounded section chunks, local links, and YAML frontmatter with a standards-compliant permissively licensed pure-JS parser. Generic Markdown gets document/section metadata; OKF accepts `type`-only concepts and preserves known fields, unknown concept types, and extension fields.
+- Represent knowledge documents, OKF concepts, and heading sections as stable graph nodes keyed by repository-relative path and heading anchor. Store links and optional justified relations with file:line provenance, resolve source/citation references to code files or symbols when possible, and retain explicit unresolved references rather than inventing edges.
+- Add knowledge content to FTS5 with typed result metadata. Preserve path/heading, concept type, title, description, tags, status/freshness, provenance, source snippets, and score components through keyword, semantic, hybrid, CLI, MCP, and REST surfaces.
+- Namespace vectors by corpus, model, and dimensions. Keep the existing code profile, add an optional prose profile for Markdown/OKF chunks, reuse content hashes for incremental embedding, and fuse per-namespace rankings with RRF instead of directly comparing incompatible vectors unless research validates a shared space.
+- Keep `index.md` and `log.md` available as navigation/audit nodes while excluding them from semantic embeddings by default to avoid duplicate and operational noise.
+- Hook the existing sync/watch pipeline for add/update/move/delete of derived nodes, edges, FTS rows, and vectors without writing source Markdown.
+- Keep `.codegraph/` ignored, local, model-scoped, and fully regenerable. Malformed frontmatter, broken links, partial bundles, and unsupported fields emit bounded path-located diagnostics without executing content, escaping workspace scope, or blocking code indexing.
+- `docs/design/embedding-model-routing-for-knowledge.md` evaluates code-optimized and prose-optimized profiles, including Nomic code/text, bundled alternatives, dimensions/context windows, and OpenAI-compatible request shapes while keeping committed requirements provider-neutral and free of private endpoint details.
+- Add generic-Markdown and OKF fixtures covering concept links, code linkage, `index.md`/`log.md`, dual-model retrieval, malformed-input tolerance, incremental updates/deletes, and full regeneration. Regression tests prove code-only behavior is unchanged when no knowledge corpus or prose model is configured.
+
+**Out of Scope:**
+- Authoring, synthesizing, reconciling, committing, or governing canonical Markdown/OKF; CodeGraph is a read-only consumer.
+- Network crawling, citation fetching, or syncing third-party documentation systems.
+- Treating Markdown as a programming language for refactor, rename, or LSP operations.
+- UI/wiki rendering or automatic proposal promotion; SPEC-019 owns generated views and may export producer-owned proposals.
+- Direct cross-model vector comparison without empirical validation.
+
+**Key Decisions:**
+- **Producer-neutral ownership:** committed knowledge is read-only input; CodeGraph owns only derived graph, search, vector, and render state.
+- **Namespace first:** code and prose embeddings use separate corpus/model/dimension namespaces, and mixed retrieval merges ranked lists rather than assuming vector compatibility.
+- **Useful without vectors:** FTS5 and graph traversal remain the baseline; embedding providers are optional and are the only knowledge-indexing path permitted to make a configured network call.
+
+**Key Files:**
+- `src/knowledge/{discovery,markdown,okf,store}.ts` — scope-aware discovery, parsing, OKF adaptation, persistence, and diagnostics
+- `src/types.ts`, `src/db/schema.sql`, `src/db/queries.ts` — knowledge node kinds, metadata/provenance tables, FTS, and vector namespace support (modify)
+- `src/embeddings/{config,provider,indexer-hook}.ts` — corpus-aware model profiles and heading-aware incremental inputs (modify)
+- `src/search/hybrid.ts`, `src/sync/` — per-corpus fan-out, RRF fusion, and incremental lifecycle (modify)
+- `src/mcp/tools.ts`, `src/server/routes.ts`, `src/bin/codegraph.ts` — typed search/index surface additions (modify)
+- `docs/design/embedding-model-routing-for-knowledge.md` — provider-neutral model-routing research note
+- `__tests__/fixtures/{markdown,okf-project}/`, `__tests__/knowledge-*.test.ts`, `__tests__/hybrid-search.test.ts` — fixtures and regression coverage
+
+**Done When:**
+- Generic Markdown and a conformant OKF bundle yield typed document/concept/section nodes, justified links to code/evidence, FTS results, and optional namespaced vectors while source files remain byte-identical.
+- A repository without a knowledge corpus preserves existing code-only behavior and makes no new network calls.
+- Changes and deletions update only affected derived rows/vectors, and deleting `.codegraph/` followed by reindex reproduces the code-plus-knowledge graph.
+- Mixed-fixture tests prove keyword fallback, typed hybrid results, provenance, unknown-field preservation, malformed-input diagnostics, dual-model separation, and no source writes.
+
+---
+
 ### SPEC-025: Plugin Platform Mechanics Spike (Claude Code + Codex)
 
 **Priority:** P1 | **Depends On:** None | **Enables:** SPEC-026
@@ -893,89 +946,6 @@ Budget result: within budget (mostly net-new; greenfield allowance applies)
 
 ---
 
-### SPEC-027: OKF Knowledge Ingestion and Code Linkage
-
-**Priority:** P1 | **Depends On:** SPEC-001, SPEC-003 | **Enables:** SPEC-019
-
-**Goal:** Ingest a committed Open Knowledge Format v0.1 bundle as first-class
-concept and section nodes, link cited project knowledge to code, and make both
-available through keyword and optional hybrid retrieval without writing the
-source bundle.
-
-**Reviewability Budget:** Primary surface: schema/migration + harness/adapter |
-Projected reviewable LOC: ~390 |
-Production files: ~7 |
-Total files: ~16 |
-Budget result: warning at total-file threshold; keep the implementation to one
-consumer slice and split UI rendering into SPEC-019
-
-**Estimate Basis:** Pre-scaffold estimate from 14 acceptance criteria and the
-existing schema, sync, search, and embedding integration points. Re-run the
-roadmap estimator after planning fixes exact files and migrations.
-
-**Scope:**
-- Discover an explicitly configured OKF bundle or the default candidate
-  `docs/ai/knowledge/`; repositories without a bundle retain byte-compatible
-  code-only behavior and need no SpecKit Pro dependency.
-- Parse UTF-8 OKF Markdown and YAML frontmatter with a standards-compliant,
-  permissively licensed pure-JS parser, accept `type`-only concepts, and retain
-  unknown types/fields as metadata for retrieval/display; do not hand-roll YAML.
-- Add deterministic `Concept` and `Section` graph node kinds with stable
-  repository-relative path/heading identities and provenance back to the source
-  file.
-- Convert OKF links to graph edges and resolve source/citation references to
-  files/symbols when possible, preserving explicit unresolved references rather
-  than inventing graph relationships.
-- Support optional knowledge relations including `REFERENCES`, `DERIVED_FROM`,
-  `DESCRIBES`, `IMPLEMENTS`, `VERIFIED_BY`, `SUPERSEDES`, and `CONTRADICTS` only
-  when source metadata/links justify them.
-- Add concept/section content to FTS5 with typed result metadata. When embeddings
-  are configured, create heading-aware inputs from body plus title, description,
-  type, and tags; reuse SPEC-001 input hashes for incremental re-embedding.
-- Keep `index.md` and `log.md` available as navigation/audit nodes but exclude
-  them from semantic embeddings by default.
-- Hook the existing sync/watch pipeline for add/update/move/delete of derived
-  nodes, edges, FTS rows, and vectors without writing source Markdown.
-- Preserve result type, path/heading, provenance, freshness/status, and score
-  components through keyword, semantic, hybrid, CLI, MCP, and API surfaces.
-- Keep `.codegraph/` ignored, model-scoped, local-first, and fully regenerable;
-  malformed knowledge emits bounded path-located diagnostics and cannot execute
-  content, escape workspace scope, or block code indexing.
-- Add one mixed code-plus-OKF fixture proving linked traversal, FTS fallback,
-  optional vectors, incremental updates/deletes, unknown-field preservation,
-  and full regeneration.
-
-**Out of Scope:**
-- Authoring, synthesizing, reconciling, committing, or governing canonical OKF;
-  CodeGraph is a read-only consumer.
-- Requiring an LLM, embedding endpoint, SpecKit Pro, network call, or generated
-  wiki for baseline ingestion/search.
-- Indexing arbitrary Markdown trees as project knowledge or treating malformed
-  external content as instructions.
-- UI/wiki rendering; handled by SPEC-019.
-
-**Key Files:**
-- `src/knowledge/{discovery,okf-parser,indexer}.ts` — bundle discovery,
-  producer-neutral parse model, node/edge projection, and diagnostics
-- `src/types.ts`, `src/db/schema.sql`, `src/db/queries.ts` — concept/section node
-  kinds, metadata/provenance storage, FTS, and vector selection (modify)
-- `src/embeddings/indexer-hook.ts`, `src/search/`, `src/sync/` — heading-aware
-  inputs, typed results, and incremental lifecycle (modify)
-- `__tests__/fixtures/okf-project/` plus focused ingestion/search/sync tests
-
-**Done When:**
-- A repository with a conformant OKF bundle yields typed concept/section nodes,
-  justified links to code/evidence, FTS results, and optional vectors while the
-  source files remain byte-identical.
-- A repository without OKF preserves existing behavior and makes no new network
-  calls or unexpected schema writes beyond the normal derived-index migration.
-- Changes and deletions update only affected derived rows/vectors, and deleting
-  `.codegraph/` followed by reindex reproduces the code-plus-knowledge graph.
-- Mixed-fixture tests prove keyword fallback, typed hybrid results, provenance,
-  unknown-field preservation, malformed-input diagnostics, and no source writes.
-
----
-
 ## Decomposition Principles
 
 When breaking a feature into specs:
@@ -1013,9 +983,10 @@ builds on top of live, real-scale instances of everything before it.
    edits) · SPEC-002 switch this repo's embedding model to the bundled one and watch
    single-model convergence at scale · SPEC-003 point this repo's MCP config at the dev
    build so agents developing later specs semantically search codegraph's own code ·
-   SPEC-027 indexes a reviewed OKF fixture and this repo's producer-owned bundle
-   when available, proving code/knowledge linkage without source writes ·
    SPEC-011/019 run labels/wiki on this repo and review our own output as first users ·
+   SPEC-027 index this repo's own Markdown specs/MOC files, a reviewed OKF fixture,
+   and any producer-owned bundle available here, proving code/knowledge linkage,
+   code-profile versus prose-profile separation, and no source writes ·
    web/LSP specs (SPEC-004+) browse and serve this repo first.
 5. **Dormancy discipline:** dogfood config must never be required — every capability
    stays opt-in/dormant-by-default so an unconfigured clone behaves identically. A
@@ -1055,8 +1026,8 @@ builds on top of live, real-scale instances of everything before it.
 
 | Change | Where | Detail |
 |--------|-------|--------|
-| New env vars | shell / CI secrets | `CODEGRAPH_EMBEDDING_*` (SPEC-001/002), `CODEGRAPH_LLM_*` (SPEC-018), `CODEGRAPH_SERVER_TOKEN` (SPEC-005) |
-| Schema migrations | `src/db/schema.sql` | vectors (001), edge provenance (008), flows/clusters (011), CFG/dataflow/PDG (014–016), group store (021), OKF concept/section metadata and edges (027) |
+| New env vars | shell / CI secrets | `CODEGRAPH_EMBEDDING_*` (SPEC-001/002), corpus-aware embedding profile vars for code/prose (027), `CODEGRAPH_LLM_*` (SPEC-018), `CODEGRAPH_SERVER_TOKEN` (SPEC-005) |
+| Schema migrations | `src/db/schema.sql` | vectors (001), vector namespace support + knowledge docs/chunks/links (027), edge provenance (008), flows/clusters (011), CFG/dataflow/PDG (014–016), group store (021) |
 | Build wiring | `package.json` copy-assets | web static assets (006), OCaml wasm (023), model cache path docs (002) |
 | CI | `.github/workflows/` | PR impact dogfood workflow (020); eval-harness gates (003, 017) |
 
@@ -1064,7 +1035,7 @@ builds on top of live, real-scale instances of everything before it.
 
 | Requirement | How |
 |-------------|-----|
-| Embedding endpoint (optional) | Any OpenAI-compatible `/v1/embeddings` server (self-hosted or cloud); set `CODEGRAPH_EMBEDDING_{URL,MODEL,DIMS}` |
+| Embedding endpoint (optional) | Any OpenAI-compatible `/v1/embeddings` server (self-hosted or cloud); set `CODEGRAPH_EMBEDDING_{URL,MODEL,DIMS}` for the default code profile, with SPEC-027 adding separate prose-profile configuration for markdown/OKF chunks |
 | LLM endpoint (optional) | Any OpenAI-compatible chat server; set `CODEGRAPH_LLM_{URL,MODEL}` |
 | Language servers (optional) | Install per language on PATH (typescript-language-server, pyright, gopls, rust-analyzer, …) — SPEC-008 auto-detects |
 | Web dev | `cd web && npm install` after SPEC-004 fixes the stack |

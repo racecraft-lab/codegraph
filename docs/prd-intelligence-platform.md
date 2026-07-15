@@ -12,19 +12,19 @@
 
 > "Our AI agents and engineers need code intelligence that is semantically searchable, compiler-accurate, visually explorable, and CI-integrated — across every racecraft repository, on a permissively licensed foundation we can self-host and build on commercially."
 
-CodeGraph today gives agents a deterministic structural knowledge graph over MCP — symbols, call edges, impact radius — but retrieval is keyword-only (SQLite FTS5), reference resolution is heuristic (import-tracing + name-matching), and there is no human-facing surface at all: no web UI, no generated documentation, no CI change reports. It also cannot represent durable repository knowledge such as architecture, decisions, requirements, workflows, or cited project concepts as first-class graph/vector nodes alongside code. Deeper analysis capabilities that mature code-intelligence platforms provide — dataflow/taint analysis, execution-flow catalogs, graph query languages, cross-repository impact — are absent, and OCaml is not among the supported languages. racecraft is consolidating its code-intelligence stack onto this MIT-licensed fork (`racecraft-lab/codegraph`), tracking upstream; every capability below must be built as additive modules that survive routine upstream merges.
+CodeGraph today gives agents a deterministic structural knowledge graph over MCP — symbols, call edges, impact radius — but retrieval is keyword-only (SQLite FTS5), reference resolution is heuristic (import-tracing + name-matching), and there is no human-facing surface at all: no web UI, no generated documentation, no CI change reports. It also ignores committed repository-local knowledge that agents need alongside code: architecture, decisions, requirements, specs, runbooks, concept catalogs, and emerging markdown+frontmatter knowledge-bundle formats. Deeper analysis capabilities that mature code-intelligence platforms provide — dataflow/taint analysis, execution-flow catalogs, graph query languages, cross-repository impact — are absent, and OCaml is not among the supported languages. racecraft is consolidating its code-intelligence stack onto this MIT-licensed fork (`racecraft-lab/codegraph`), tracking upstream; every capability below must be built as additive modules that survive routine upstream merges.
 
 ## 2. Goals & Non-goals
 
 ### 2.1 Goals
 
 - Agents retrieve code **by meaning**: hybrid vector + keyword search measurably outperforms keyword-only on the existing evaluation harness, with embeddings from a self-hosted endpoint or a bundled local model.
-- Agents retrieve **project knowledge alongside code**: committed OKF concepts and sections participate in typed keyword, graph, and optional vector retrieval with citations and code-evidence links preserved.
+- Agents retrieve **repository knowledge alongside code**: Markdown sections and committed OKF concepts participate in typed keyword, graph, and optional vector retrieval with citations and code-evidence links preserved.
 - Humans get a **self-hosted web application** — graph browsing, search, impact visualization, re-index control, and drag-a-repo in-browser indexing — deployable anywhere with minimal effort.
 - References and definitions become **compiler-accurate** wherever a language server is available, and the graph powers a safe, verified symbol rename.
 - **Change safety is automated**: diff→impact mapping in CLI/MCP, and a GitHub Action that posts blast-radius reports on every PR.
 - **Research-grade dataflow analysis**: per-function CFG → def-use → PDG → taint findings (source→sink) exposed to agents.
-- **Team-scale features**: first-class Open Knowledge Format (OKF) indexing, an auto-updating generated wiki, cross-repository groups with contract-based impact analysis, and OCaml language coverage.
+- **Team-scale features**: first-class Markdown/OKF knowledge indexing, an auto-updating generated wiki, cross-repository groups with contract-based impact analysis, and OCaml language coverage.
 - Everything ships **additive-first** (new modules, opt-in flags), keeping upstream tracking merges routine, with telemetry hard-disabled by default in this fork.
 
 ### 2.2 Non-goals (out of scope)
@@ -197,37 +197,38 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 - **AC-23.2**: Reference resolution handles module paths and open/include scoping heuristics, with dune project awareness for multi-package repos.
 - **AC-23.3**: A fixture repo and extraction tests meet the same coverage bar as existing language suites, and OCaml appears in docs and `codegraph status`.
 
-### 3.24 Plugin Platform Mechanics Spike *(→ SPEC-025)*
+### 3.24 Markdown / OKF Knowledge Bundle Indexing *(→ SPEC-027)*
+
+- **AC-27.1**: `codegraph index` recognizes `.md` and `.markdown` files as first-class knowledge inputs while preserving existing ignore/include behavior; OKF bundle identity is explicit configuration first, then the default candidate `docs/ai/knowledge/`, without requiring SpecKit Pro or another producer.
+- **AC-27.2**: Generic Markdown is tracked with file-level metadata, heading-aware sections, and bounded snippets without dumping whole files into agent responses by default.
+- **AC-27.3**: OKF-compatible bundles are parsed deterministically: the minimum `type`-only concept is accepted; `title`, `description`, `resource`, `tags`, `timestamp`, unknown concept types, and extension fields are preserved; and `index.md`/`log.md` reserved-file semantics are represented.
+- **AC-27.4**: OKF concepts and Markdown sections become first-class typed graph nodes with stable identities tied to repository-relative paths and heading anchors.
+- **AC-27.5**: Local Markdown/OKF links become directed knowledge edges with file:line provenance; source and citation references resolve to indexed files or symbols when possible, remain explicit unresolved references otherwise, and external citations are retained as metadata with no network fetch.
+- **AC-27.6**: The graph represents optional `REFERENCES`, `DERIVED_FROM`, `DESCRIBES`, `IMPLEMENTS`, `VERIFIED_BY`, `SUPERSEDES`, and `CONTRADICTS` relations only when source metadata or links justify them.
+- **AC-27.7**: Knowledge documents, concepts, and sections participate in FTS5 keyword search with result type, path, heading, concept metadata, provenance, and freshness retained.
+- **AC-27.8**: Embedding support routes by corpus kind: code symbols retain a code-oriented profile; Markdown/OKF chunks can use a prose-oriented profile; vectors are namespaced by corpus, model, and dimensions; and mixed search fuses per-namespace rankings rather than directly comparing incompatible vectors unless a shared space is validated.
+- **AC-27.9**: Heading-aware embedding inputs include body text plus evidence-backed title, description, type, and tags; input hashes prevent unchanged sections from re-embedding, while `index.md` and `log.md` are excluded from semantic embeddings by default.
+- **AC-27.10**: Watch/sync incrementally adds, updates, moves, and removes derived knowledge nodes, edges, FTS rows, and vectors without writing Markdown or OKF source files.
+- **AC-27.11**: CLI, MCP, and REST search expose corpus/type filters and mixed code/knowledge results while preserving source snippets, path/heading, concept metadata, provenance, freshness, and score components.
+- **AC-27.12**: `.codegraph/` remains ignored, local, model-scoped, and fully regenerable from code plus committed knowledge; deleting it loses no canonical project knowledge.
+- **AC-27.13**: Knowledge indexing makes no network calls unless an operator configures an embedding provider, and repositories without a knowledge corpus preserve existing code-only behavior.
+- **AC-27.14**: Malformed or unsupported knowledge produces bounded path-located diagnostics, is skipped safely, and cannot execute content, expand workspace scope, or block code indexing.
+- **AC-27.15**: Evaluation fixtures cover generic Markdown plus OKF concept links, code linkage, keyword fallback, dual-model retrieval, incremental updates/deletes, unknown-field preservation, malformed-input tolerance, and full derived-index regeneration.
+
+### 3.25 Plugin Platform Mechanics Spike *(→ SPEC-025)*
 
 - **AC-25.1**: A spike report, grounded with citations in the official Claude Code plugin documentation (plugin manifest and component pointers, plugin-scoped `mcpServers`, `hooks`, `skills`, `agents`, `${CLAUDE_PLUGIN_ROOT}`, marketplace and trust model), the official Codex plugin documentation (`.codex-plugin/plugin.json`, bundled skills/agents/hooks, MCP registration, project- and hook-level trust gating), and each vendor's official skill-authoring guidance (Anthropic's skill-building guide and skills best-practices documentation; OpenAI's Codex skills documentation and examples — both implementing the shared agent-skills open standard), records how each host loads every component the plugin will carry.
 - **AC-25.2**: The report decides the MCP launcher contract — how the plugin-registered server resolves the user-installed CodeGraph binary, and what happens when it is absent (success-shaped setup guidance, never a hard error) — and the coexistence rules with the npm installer: no double MCP registration, no double prompt-hook injection, and safe uninstall interplay in both directions.
 - **AC-25.3**: The report enumerates the shipped skill and agent set with a per-artifact tier decision (fully open vs focus-constrained via built-in-only denials) and the validation bar each artifact must pass before merge — retrieval A/B on the standard evaluation floor showing no regression against the MCP-only baseline, plus the vendors' published skill success criteria (trigger rate on relevant queries including should/should-NOT trigger tests, workflow tool-call count, zero failed tool calls, with/without-skill comparison) — while agent-facing tool guidance remains single-sourced in the MCP `initialize` instructions.
 - **AC-25.4**: The report states what the plugin channel does not change: the npm installer remains the primary path for all existing agent targets, and no plugin artifact restates or forks the MCP-served guidance.
 
-### 3.25 Plugin-Channel Distribution *(→ SPEC-026)*
+### 3.26 Plugin-Channel Distribution *(→ SPEC-026)*
 
 - **AC-26.1**: One plugin source tree builds installable Claude Code and Codex plugin payloads carrying the MCP server registration (per the SPEC-025 launcher contract), the prompt front-load hook, user-invocable skills, and explicitly-dispatched agents.
 - **AC-26.2**: Shipped agents inherit the operator's tool surface (no `tools:` allowlists) with built-in-only role denials per their tier decision; shipped skills and agents reference tool guidance rather than restating it.
 - **AC-26.3**: Installing the plugin alongside an existing npm install produces no duplicate MCP server and no duplicate hook injection, and uninstalling either channel leaves the other fully functional — covered by contract tests at the same bar as the installer target suite.
 - **AC-26.4**: Plugin payloads are versioned and published by the release workflow and installable from the racecraft plugin marketplace; this repository dogfoods its own plugin build per the Dogfooding Protocol.
 - **AC-26.5**: Every shipped skill and agent carries recorded validation evidence per AC-25.3 before its first release.
-
-### 3.26 OKF Knowledge Ingestion and Code Linkage *(→ SPEC-027)*
-
-- **AC-27.1**: CodeGraph discovers a configured OKF v0.1 bundle, using `docs/ai/knowledge/` as the default candidate, without requiring SpecKit Pro or modifying repositories that have no bundle.
-- **AC-27.2**: Ingestion parses OKF Markdown and YAML frontmatter, accepts the minimum `type`-only concept, and preserves unknown concept types and extension fields for retrieval/display.
-- **AC-27.3**: Concepts and heading-aware sections become first-class typed graph nodes with stable identities tied to repository-relative paths and heading anchors.
-- **AC-27.4**: Internal OKF links become graph edges; source/citation references resolve to repository files and symbols when possible and remain explicit unresolved references otherwise.
-- **AC-27.5**: The graph can represent optional `REFERENCES`, `DERIVED_FROM`, `DESCRIBES`, `IMPLEMENTS`, `VERIFIED_BY`, `SUPERSEDES`, and `CONTRADICTS` relations without inventing unsupported edges.
-- **AC-27.6**: Concept and section semantic content participates in FTS5 keyword search with result type, path, heading, concept metadata, provenance, and freshness retained.
-- **AC-27.7**: When embeddings are enabled, heading-aware chunks embed body text plus evidence-backed title, description, type, and tags; input hashes prevent unchanged sections from re-embedding.
-- **AC-27.8**: `index.md` and `log.md` remain available for navigation/audit but are excluded from semantic embeddings by default to avoid duplicate and operational noise.
-- **AC-27.9**: Watch/sync incrementally adds, updates, moves, and removes derived knowledge nodes, edges, FTS rows, and vectors without writing the OKF source files.
-- **AC-27.10**: Hybrid search preserves code-versus-knowledge result type, provenance, freshness, and score components instead of flattening every result into a code symbol.
-- **AC-27.11**: `.codegraph/` remains ignored, local, model-scoped, and fully regenerable from code plus committed OKF; deleting it loses no project knowledge.
-- **AC-27.12**: OKF support makes no network calls unless the operator has configured an embedding provider, and unconfigured repositories preserve existing code-only behavior.
-- **AC-27.13**: Malformed or unsupported knowledge files produce bounded path-located diagnostics, are skipped safely, and cannot execute content, expand workspace scope, or block code indexing.
-- **AC-27.14**: A mixed code-plus-OKF fixture proves linked concept/code traversal, keyword fallback, optional vectors, incremental updates/deletes, unknown-field preservation, and generated-index reproducibility.
 
 ## 4. Migration Path (phased — one phase per tier)
 
@@ -236,12 +237,12 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 - **Phase 2 (SPEC-008…010) — LSP precision**: consume language servers → expose the LSP facade (web viewer consumer) → graph-aware rename (builds on both).
 - **Phase 3 (SPEC-011…013) — Analysis breadth**: flows/clusters, change detection, Cypher access. Independent of each other; all P1.
 - **Phase 4 (SPEC-014…017) — Dataflow depth**: CFG → dataflow → PDG → taint, a strict chain.
-- **Phase 5 (SPEC-018…023 + SPEC-027) — Team & enterprise capabilities**: LLM layer and OKF ingestion first (wiki consumes both), then wiki, PR Action, groups (contracts → bridge), OCaml (anytime).
+- **Phase 5 (SPEC-018…024, SPEC-027) — Team & enterprise capabilities**: LLM and Markdown/OKF ingestion first (the wiki consumes both), then wiki, PR Action, groups (contracts → bridge), OCaml, and any required parity closure.
 - **Phase 6 (SPEC-025…026) — Plugin-channel distribution**: platform-mechanics spike → dual-host plugins (Claude Code + Codex) carrying the MCP server, prompt hook, skills, and agents — alongside, never replacing, the npm installer. Spike gates shipping; parallel-safe with every other phase.
 
 ## 5. Constraints
 
-- **Additive-first tracking fork**: new capabilities live in new modules (`src/embeddings`, `src/server`, `web/`, `src/lsp`, `src/analysis`, `src/query`, `src/llm`, `src/wiki`, `src/group`) behind opt-in flags; diffs to upstream-owned files stay minimal so upstream merges remain routine.
+- **Additive-first tracking fork**: new capabilities live in new modules (`src/embeddings`, `src/server`, `web/`, `src/lsp`, `src/analysis`, `src/query`, `src/llm`, `src/wiki`, `src/group`, `src/knowledge`) behind opt-in flags; diffs to upstream-owned files stay minimal so upstream merges remain routine.
 - **Zero native dependencies** in the core package: `node:sqlite` is the only store; new runtime deps must be pure-JS/WASM; the npm engines range `>=20 <25` must be preserved (it gates the thin-installer shim — the effective from-source floor is Node 22.5+ for `node:sqlite`, which the bundled runtime satisfies); any new SQL/WASM/static asset must be wired into the `copy-assets` build step or it will not ship.
 - **Local-first & private**: telemetry **must be** hard-disabled by default in this fork — upstream currently defaults it to enabled (`src/telemetry/index.ts`), so flipping that default is fork work, not current state; no network calls except user-configured endpoints (embedding/LLM) and locally spawned language servers; the web app makes no external requests.
 - **Deterministic extraction stays LLM-free**: LLM output is confined to prose layers (wiki text, labels, narratives) — never to graph structure.
@@ -260,8 +261,9 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 - **OQ-6 (SPEC-005)**: LAN self-host auth — recommendation: bearer token via env; TLS terminates at a reverse proxy (out of scope).
 - **OQ-7 (SPEC-011)**: Flow naming heuristics — recommendation: route method+path where available, else entry symbol qualified name.
 - **OQ-8 (SPEC-025)**: MCP launcher resolution for the plugin channel (PATH-resolved installed binary vs npx thin-installer vs install-on-first-use prompt) and npm-installer coexistence mechanics — recommendation: PATH-resolved binary with an npx fallback and success-shaped guidance when absent; decide in the spike.
-- **OQ-9 (SPEC-027)**: OKF bundle discovery — recommendation: explicit config first, then repository-local `docs/ai/knowledge/`; do not scan arbitrary Markdown trees or depend on producer-specific state.
+- **OQ-9 (SPEC-027)**: OKF bundle discovery — recommendation: explicit config first, then repository-local `docs/ai/knowledge/`; generic Markdown remains governed by normal include/ignore scope, while OKF identity never depends on producer-specific state.
 - **OQ-10 (SPEC-027)**: Embedding granularity — recommendation: one node per concept plus heading-aware section chunks, with `index.md` and `log.md` excluded from semantic embeddings by default.
+- **OQ-11 (SPEC-027)**: Dual embedding model strategy for code plus prose knowledge — recommendation: route code and Markdown/OKF chunks through separately configured model profiles, persist corpus/model/dimension namespaces, and merge result rankings at query time; validate any same-space comparison before allowing direct vector mixing.
 
 ## 7. SPEC Catalog Crosswalk
 
@@ -292,11 +294,11 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 | OCaml Language Support | AC-23.* | SPEC-023 | — | P2 |
 | Plugin Platform Mechanics Spike | AC-25.* | SPEC-025 | — | P1 |
 | Plugin-Channel Distribution | AC-26.* | SPEC-026 | SPEC-025 | P1 |
-| OKF Knowledge Ingestion and Code Linkage | AC-27.* | SPEC-027 | SPEC-001, SPEC-003 | P1 |
+| Markdown / OKF Knowledge Bundle Indexing | AC-27.* | SPEC-027 | SPEC-001, SPEC-003 | P1 |
 
 ## 8. Success Criteria
 
-1. All acceptance criteria (AC-1.1 … AC-27.14) pass with tests or documented evidence.
+1. All acceptance criteria in §3 pass with tests or documented evidence.
 2. Every SPEC merges within its reviewability budget or with a recorded advisory/exception.
 3. racecraft agents use hybrid search daily; the web app is self-hosted and in use; the PR Action runs green on this fork's own PRs.
 4. A committed OKF bundle is searchable and linked to code without source writes, remains useful without vectors, and fully reconstructs after `.codegraph/` is deleted.
