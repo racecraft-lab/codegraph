@@ -23,7 +23,7 @@ This document defines the **SPEC catalog** for the Intelligence Platform: an ord
 
 ## Roadmap Overview
 
-The platform is decomposed into **26 specifications** across **7 dependency tiers** (phases):
+The platform is decomposed into **27 specifications** across **7 dependency tiers** (phases):
 
 | Tier | Specs | Purpose | Parallelization |
 |------|-------|---------|-----------------|
@@ -32,10 +32,10 @@ The platform is decomposed into **26 specifications** across **7 dependency tier
 | **2** | SPEC-008, SPEC-009, SPEC-010 | LSP precision & rename | 008 ∥ 009 (009 needs 005); 010 after 008 |
 | **3** | SPEC-011, SPEC-012, SPEC-013 | Analysis breadth | All three parallelizable (012 prefers 011) |
 | **4** | SPEC-014, SPEC-015, SPEC-016, SPEC-017 | Dataflow depth (CFG→PDG→taint) | Strict chain |
-| **5** | SPEC-018 … SPEC-024 | Team, enterprise, and language parity closure | 018 first; 019/020 consume it; 021→022; 023 anytime; 024 after 008 baseline findings |
+| **5** | SPEC-018 … SPEC-024, SPEC-027 | Team, enterprise, repository knowledge, and language parity closure | 018 and 027 first; 019 consumes both; 020 consumes 018; 021→022; 023 anytime; 024 after 008 baseline findings |
 | **6** | SPEC-025, SPEC-026 | Plugin-channel distribution (Claude Code + Codex) | 025 gates 026; 025 is parallel-safe anytime |
 
-**Execution Order:** SPEC-001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017 → 018 → 019 → 020 → 021 → 022 → 023 → 024 → 025 → 026
+**Execution Order:** SPEC-001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017 → 018 → 027 → 019 → 020 → 021 → 022 → 023 → 024 → 025 → 026
 
 **Dependency Constraints:**
 - SPEC-002/003 require SPEC-001 (provider interface + vector store).
@@ -43,7 +43,7 @@ The platform is decomposed into **26 specifications** across **7 dependency tier
 - SPEC-009 requires SPEC-005 (WebSocket transport on the serve daemon); SPEC-010 requires SPEC-008 (LSP rename path).
 - SPEC-012 prefers SPEC-011 (flow impact enrichment) but can ship with symbol/caller impact only.
 - SPEC-015 → 014, SPEC-016 → 015, SPEC-017 → 016 (strict analysis chain).
-- SPEC-019 requires SPEC-011 + SPEC-018; SPEC-020 requires SPEC-012 (SPEC-018 optional); SPEC-022 requires SPEC-021.
+- SPEC-027 requires SPEC-001 + SPEC-003; SPEC-019 requires SPEC-011 + SPEC-018 + SPEC-027; SPEC-020 requires SPEC-012 (SPEC-018 optional); SPEC-022 requires SPEC-021.
 - SPEC-013, SPEC-023, SPEC-025 have no dependencies and can fill parallel capacity at any point.
 - SPEC-024 is mandatory if SPEC-008 planning identifies any language, feature, or capability parity gap from the internal baseline that cannot be safely closed inside SPEC-008. It is not a backlog bucket; it is the no-waiver closure spec.
 - SPEC-026 requires SPEC-025 (plugin platform mechanics decision — launcher contract, coexistence rules, artifact tier plan).
@@ -87,6 +87,8 @@ SPEC-001 (embed infra) SPEC-004 (web spike)     SPEC-008 (LSP client) SPEC-011 (
 Tier 4 (strict chain)                       Tier 5
 SPEC-014 (CFG) ─► SPEC-015 (dataflow)       SPEC-018 (LLM layer) ─► SPEC-019 (wiki)
    ─► SPEC-016 (PDG) ─► SPEC-017 (taint)      └──────────────────► SPEC-020 (PR action) ◄─ SPEC-012
+                                            SPEC-001 + 003 ─► SPEC-027 (OKF) ─► SPEC-019
+                                            SPEC-011 (catalogs) ───────────────► SPEC-019
                                             SPEC-021 (contracts) ─► SPEC-022 (bridge/impact)
                                             SPEC-023 (OCaml) [independent]
                                             SPEC-024 (parity closure) ◄─ SPEC-008
@@ -119,7 +121,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-016 | Program Dependence Graphs | ⏳ Pending | [SPEC-016-workflow.md](SPEC-016-workflow.md) | Blocked by SPEC-015 |
 | SPEC-017 | Taint Analysis Engine | ⏳ Pending | [SPEC-017-workflow.md](SPEC-017-workflow.md) | Blocked by SPEC-016 |
 | SPEC-018 | LLM Access Layer | ✅ Complete | [SPEC-018-workflow.md](.process/SPEC-018-workflow.md) | Merged (#48, #49); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-018.md` |
-| SPEC-019 | Auto-Updating Code Wiki | ⏳ Pending | [SPEC-019-workflow.md](SPEC-019-workflow.md) | Ready (SPEC-011 catalogs + SPEC-018 LLM layer are merged) |
+| SPEC-019 | Auto-Updating Project Knowledge Wiki | ⏳ Pending | [SPEC-019-workflow.md](SPEC-019-workflow.md) | Blocked by SPEC-027; SPEC-011 catalogs and SPEC-018 LLM layer are merged |
 | SPEC-020 | PR Blast-Radius Review Action | ⏳ Pending | [SPEC-020-workflow.md](SPEC-020-workflow.md) | Blocked by SPEC-012; optional SPEC-018 narrative path is available |
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
@@ -127,6 +129,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Dormant; SPEC-008 parity gate closed with 0 unowned rows |
 | SPEC-025 | Plugin Platform Mechanics Spike | ✅ Complete | [SPEC-025-workflow.md](.process/SPEC-025-workflow.md) | Merged (#35); decision doc at `docs/design/plugin-channel-decision.md`; archived in `.specify/memory/archive-reports/2026-07-10-SPEC-025.md` |
 | SPEC-026 | Plugin-Channel Distribution | ⏳ Pending | [SPEC-026-workflow.md](SPEC-026-workflow.md) | Ready (SPEC-025 complete; implements `docs/design/plugin-channel-decision.md`) |
+| SPEC-027 | OKF Knowledge Ingestion and Code Linkage | ⏳ Pending | [SPEC-027-workflow.md](SPEC-027-workflow.md) | Ready (SPEC-001 and SPEC-003 complete) |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress/Under Review | ✅ Complete | ⚠️ Blocked
 
@@ -136,7 +139,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 
 ### SPEC-001: Embedding Infrastructure & Endpoint Provider
 
-**Priority:** P0 | **Depends On:** None | **Enables:** SPEC-002, SPEC-003, SPEC-011 (labels), SPEC-019
+**Priority:** P0 | **Depends On:** None | **Enables:** SPEC-002, SPEC-003, SPEC-011 (labels), SPEC-019, SPEC-027
 
 **Goal:** Every indexed symbol gets a persisted embedding vector computed through an OpenAI-compatible endpoint, incrementally and resiliently, with the feature fully dormant when unconfigured.
 
@@ -208,7 +211,7 @@ report became the durable record.
 
 ### SPEC-003: Hybrid Semantic Search
 
-**Priority:** P0 | **Depends On:** SPEC-001 (vectors present; can develop against fixture vectors) | **Enables:** better retrieval everywhere (MCP search, web UI, wiki)
+**Priority:** P0 | **Depends On:** SPEC-001 (vectors present; can develop against fixture vectors) | **Enables:** better retrieval everywhere (MCP search, web UI, wiki, OKF knowledge)
 
 **Goal:** Search fuses FTS5 keyword hits and vector KNN via reciprocal-rank fusion, beating keyword-only on the eval harness with graceful degradation when vectors are absent.
 
@@ -659,11 +662,11 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 
 ---
 
-### SPEC-019: Auto-Updating Code Wiki
+### SPEC-019: Auto-Updating Project Knowledge Wiki
 
-**Priority:** P1 | **Depends On:** SPEC-011, SPEC-018 | **Enables:** living docs in the web app + repo
+**Priority:** P1 | **Depends On:** SPEC-011, SPEC-018, SPEC-027 | **Enables:** living project-knowledge views in the web app
 
-**Goal:** A generated markdown wiki — overview, cluster chapters, flow walkthroughs, hub pages — that regenerates incrementally and updates itself from watch events.
+**Goal:** A generated markdown view over the unified code and OKF knowledge graph — overview, concept pages, cluster chapters, flow walkthroughs, and hub pages — that regenerates incrementally without owning canonical knowledge writes.
 
 **Reviewability Budget:** Primary surface: harness/adapter + UI route |
 Projected reviewable LOC: 525 (net-new) |
@@ -672,12 +675,14 @@ Total files: ~13 |
 Budget result: within greenfield allowance (estimator suggested 2 slices — advisory)
 
 **Scope:**
-- `src/wiki/generator.ts`: deterministic structure from the graph (overview from repo stats/clusters; per-cluster chapters from SPEC-011 membership; per-flow walkthroughs from flow steps; hub-symbol pages by centrality) with prose filled via SPEC-018 (endpoint, agent bundle, or heuristic skeleton).
-- `incremental.ts`: chapter-level content hashing over underlying node sets; only changed chapters re-render; `--watch` subscribes to sync events for automatic updates.
-- Outputs: `.codegraph/wiki/**.md` (committable) + `/wiki` route in the web app (rendered from the same files); build-time budget gates (fixture: <5 min local-LLM, <30 s skeleton).
+- `src/wiki/generator.ts`: deterministic structure from the unified graph (overview from repo stats/clusters and OKF indexes; concept views from SPEC-027; per-cluster chapters from SPEC-011 membership; per-flow walkthroughs from flow steps; hub-symbol pages by centrality) with optional prose filled via SPEC-018 (endpoint, agent bundle, or heuristic skeleton).
+- `incremental.ts`: view-level content hashing over underlying code nodes and OKF concept/section hashes; only changed views re-render; `--watch` subscribes to sync events for automatic updates.
+- Preserve OKF type, status/freshness, citations, internal links, and code-evidence edges in rendered pages so generated prose cannot flatten trust boundaries.
+- Outputs: `.codegraph/wiki/**.md` as ignored, fully reproducible render state + `/wiki` route in the web app from the same files; build-time budget gates (fixture plus OKF bundle: <5 min local LLM, <30 s skeleton).
+- Never write the discovered OKF bundle. Code-derived prose intended for durable knowledge exports only as a provenance-bearing proposal for the repository's producer workflow.
 
 **Out of Scope:**
-- Hand-authored doc merging; publishing pipelines (static export is enough).
+- Canonical OKF authoring, hand-authored merge policy, or automatic proposal promotion; publishing pipelines beyond the local generated render.
 
 **Key Files:**
 - `src/wiki/{generator,chapters,incremental}.ts`
@@ -888,6 +893,89 @@ Budget result: within budget (mostly net-new; greenfield allowance applies)
 
 ---
 
+### SPEC-027: OKF Knowledge Ingestion and Code Linkage
+
+**Priority:** P1 | **Depends On:** SPEC-001, SPEC-003 | **Enables:** SPEC-019
+
+**Goal:** Ingest a committed Open Knowledge Format v0.1 bundle as first-class
+concept and section nodes, link cited project knowledge to code, and make both
+available through keyword and optional hybrid retrieval without writing the
+source bundle.
+
+**Reviewability Budget:** Primary surface: schema/migration + harness/adapter |
+Projected reviewable LOC: ~390 |
+Production files: ~7 |
+Total files: ~16 |
+Budget result: warning at total-file threshold; keep the implementation to one
+consumer slice and split UI rendering into SPEC-019
+
+**Estimate Basis:** Pre-scaffold estimate from 14 acceptance criteria and the
+existing schema, sync, search, and embedding integration points. Re-run the
+roadmap estimator after planning fixes exact files and migrations.
+
+**Scope:**
+- Discover an explicitly configured OKF bundle or the default candidate
+  `docs/ai/knowledge/`; repositories without a bundle retain byte-compatible
+  code-only behavior and need no SpecKit Pro dependency.
+- Parse UTF-8 OKF Markdown and YAML frontmatter with a standards-compliant,
+  permissively licensed pure-JS parser, accept `type`-only concepts, and retain
+  unknown types/fields as metadata for retrieval/display; do not hand-roll YAML.
+- Add deterministic `Concept` and `Section` graph node kinds with stable
+  repository-relative path/heading identities and provenance back to the source
+  file.
+- Convert OKF links to graph edges and resolve source/citation references to
+  files/symbols when possible, preserving explicit unresolved references rather
+  than inventing graph relationships.
+- Support optional knowledge relations including `REFERENCES`, `DERIVED_FROM`,
+  `DESCRIBES`, `IMPLEMENTS`, `VERIFIED_BY`, `SUPERSEDES`, and `CONTRADICTS` only
+  when source metadata/links justify them.
+- Add concept/section content to FTS5 with typed result metadata. When embeddings
+  are configured, create heading-aware inputs from body plus title, description,
+  type, and tags; reuse SPEC-001 input hashes for incremental re-embedding.
+- Keep `index.md` and `log.md` available as navigation/audit nodes but exclude
+  them from semantic embeddings by default.
+- Hook the existing sync/watch pipeline for add/update/move/delete of derived
+  nodes, edges, FTS rows, and vectors without writing source Markdown.
+- Preserve result type, path/heading, provenance, freshness/status, and score
+  components through keyword, semantic, hybrid, CLI, MCP, and API surfaces.
+- Keep `.codegraph/` ignored, model-scoped, local-first, and fully regenerable;
+  malformed knowledge emits bounded path-located diagnostics and cannot execute
+  content, escape workspace scope, or block code indexing.
+- Add one mixed code-plus-OKF fixture proving linked traversal, FTS fallback,
+  optional vectors, incremental updates/deletes, unknown-field preservation,
+  and full regeneration.
+
+**Out of Scope:**
+- Authoring, synthesizing, reconciling, committing, or governing canonical OKF;
+  CodeGraph is a read-only consumer.
+- Requiring an LLM, embedding endpoint, SpecKit Pro, network call, or generated
+  wiki for baseline ingestion/search.
+- Indexing arbitrary Markdown trees as project knowledge or treating malformed
+  external content as instructions.
+- UI/wiki rendering; handled by SPEC-019.
+
+**Key Files:**
+- `src/knowledge/{discovery,okf-parser,indexer}.ts` — bundle discovery,
+  producer-neutral parse model, node/edge projection, and diagnostics
+- `src/types.ts`, `src/db/schema.sql`, `src/db/queries.ts` — concept/section node
+  kinds, metadata/provenance storage, FTS, and vector selection (modify)
+- `src/embeddings/indexer-hook.ts`, `src/search/`, `src/sync/` — heading-aware
+  inputs, typed results, and incremental lifecycle (modify)
+- `__tests__/fixtures/okf-project/` plus focused ingestion/search/sync tests
+
+**Done When:**
+- A repository with a conformant OKF bundle yields typed concept/section nodes,
+  justified links to code/evidence, FTS results, and optional vectors while the
+  source files remain byte-identical.
+- A repository without OKF preserves existing behavior and makes no new network
+  calls or unexpected schema writes beyond the normal derived-index migration.
+- Changes and deletions update only affected derived rows/vectors, and deleting
+  `.codegraph/` followed by reindex reproduces the code-plus-knowledge graph.
+- Mixed-fixture tests prove keyword fallback, typed hybrid results, provenance,
+  unknown-field preservation, malformed-input diagnostics, and no source writes.
+
+---
+
 ## Decomposition Principles
 
 When breaking a feature into specs:
@@ -925,6 +1013,8 @@ builds on top of live, real-scale instances of everything before it.
    edits) · SPEC-002 switch this repo's embedding model to the bundled one and watch
    single-model convergence at scale · SPEC-003 point this repo's MCP config at the dev
    build so agents developing later specs semantically search codegraph's own code ·
+   SPEC-027 indexes a reviewed OKF fixture and this repo's producer-owned bundle
+   when available, proving code/knowledge linkage without source writes ·
    SPEC-011/019 run labels/wiki on this repo and review our own output as first users ·
    web/LSP specs (SPEC-004+) browse and serve this repo first.
 5. **Dormancy discipline:** dogfood config must never be required — every capability
@@ -958,7 +1048,7 @@ builds on top of live, real-scale instances of everything before it.
 | Runtime | Node `>=20 <25` npm engines range (hard check in `src/bin/node-version-check.ts`); effective from-source floor is Node 22.5+ for `node:sqlite` — self-contained releases bundle a ≥22.5 runtime; `node:sqlite` DatabaseSync (WAL + FTS5), zero native deps |
 | Parsing | tree-sitter WASM grammars shipped in `src/extraction/wasm/`, copied by `copy-assets` |
 | MCP daemon | `src/mcp/` daemon + query-pool/workers — the substrate the HTTP server and LSP facade ride |
-| Watch/sync | `src/sync/` FileWatcher (FSEvents/inotify/RDCW) — hooks for auto re-embed, wiki auto-update, LSP incremental passes |
+| Watch/sync | `src/sync/` FileWatcher (FSEvents/inotify/RDCW) — hooks for auto re-embed, OKF derived-index refresh, wiki auto-update, LSP incremental passes |
 | Tests | vitest; evaluation harness under `__tests__/evaluation/` (extended by SPEC-003) |
 
 ### Changes Required
@@ -966,7 +1056,7 @@ builds on top of live, real-scale instances of everything before it.
 | Change | Where | Detail |
 |--------|-------|--------|
 | New env vars | shell / CI secrets | `CODEGRAPH_EMBEDDING_*` (SPEC-001/002), `CODEGRAPH_LLM_*` (SPEC-018), `CODEGRAPH_SERVER_TOKEN` (SPEC-005) |
-| Schema migrations | `src/db/schema.sql` | vectors (001), edge provenance (008), flows/clusters (011), CFG/dataflow/PDG (014–016), group store (021) |
+| Schema migrations | `src/db/schema.sql` | vectors (001), edge provenance (008), flows/clusters (011), CFG/dataflow/PDG (014–016), group store (021), OKF concept/section metadata and edges (027) |
 | Build wiring | `package.json` copy-assets | web static assets (006), OCaml wasm (023), model cache path docs (002) |
 | CI | `.github/workflows/` | PR impact dogfood workflow (020); eval-harness gates (003, 017) |
 
@@ -987,3 +1077,5 @@ builds on top of live, real-scale instances of everything before it.
 - **Home note (roadmap MOC):** [intelligence-platform-roadmap-MOC.md](intelligence-platform-roadmap-MOC.md)
 - **Project Standards:** [AGENTS.md](../../../AGENTS.md) — architecture, build rules (`copy-assets`), engines, module layout
 - **Design docs:** `docs/design/` — SPEC-004 framework decision and SPEC-018 LLM-paths note land here
+- **Normative OKF v0.1 specification:** https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/d44368c15e38e7c92481c5992e4f9b5b421a801d/okf/SPEC.md
+- **Persistent knowledge architecture:** https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
