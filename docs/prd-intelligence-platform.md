@@ -280,7 +280,7 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 
 ## 8. Success Criteria
 
-1. All acceptance criteria (AC-1.1 … AC-27.5) pass with tests or documented evidence.
+1. All acceptance criteria in §3 pass with tests or documented evidence.
 2. Every SPEC merges within its reviewability budget or with a recorded advisory/exception.
 3. racecraft agents use hybrid search daily; the web app is self-hosted and in use; the PR Action runs green on this fork's own PRs.
 4. An upstream merge performed after Phase 2 completes without structural conflicts in the new modules — proof the additive-first constraint held.
