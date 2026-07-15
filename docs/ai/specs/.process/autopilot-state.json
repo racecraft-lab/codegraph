@@ -2,9 +2,9 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-012-workflow.md",
   "spec_id": "SPEC-012",
   "feature_dir": "specs/012-change-impact-detection",
-  "status": "awaiting_review",
-  "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-15T19:49:16Z",
+  "status": "completed_archived",
+  "active_step": "Archived",
+  "updated_at": "2026-07-15T21:52:03Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -45,22 +45,28 @@
     {"step": "Post: PR Packet/Body Generation", "status": "completed"},
     {"step": "Post: PR Body Generation", "status": "completed"},
     {"step": "Post: PR Creation", "status": "completed"},
-    {"step": "Post: Review Remediation", "status": "in_progress"},
-    {"step": "Post: Retrospective", "status": "pending"}
+    {"step": "Post: Review Remediation", "status": "completed"},
+    {"step": "Post: Retrospective", "status": "not_run_before_merge"},
+    {"step": "Post: Archive Cleanup", "status": "completed"}
   ],
   "archive_sweep": {
-    "status": "no_candidates",
+    "status": "applied",
     "execution_path": "extension_contract",
     "invocation_available": true,
     "prerequisite_available": true,
     "prerequisite_mode": "codex_native_worktree_binding",
     "archive_extension_installed": true,
     "archive_extension_version": "1.1.0",
-    "cleanup_mode": "apply-on-feature-branch",
+    "cleanup_mode": "post-merge-active-spec-archive",
     "eligible_previous_specs": [],
-    "excluded_current_spec": "specs/012-change-impact-detection",
-    "safeToApplyCleanup": false,
-    "worktree_status": "dirty: autopilot state/workflow bootstrap edits only",
+    "archived_spec": "specs/012-change-impact-detection",
+    "excluded_current_spec": null,
+    "safeToApplyCleanup": true,
+    "cleanupApplied": true,
+    "archive_report": ".specify/memory/archive-reports/2026-07-15-SPEC-012.md",
+    "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/55",
+    "merge_commit": "d14e9d6eaf26de124dcfdc3ae95c619628d8ce6f",
+    "worktree_status": "cleanup branch codex/archive-spec-012",
     "remotes": {
       "origin": "https://github.com/racecraft-lab/codegraph.git",
       "upstream": "https://github.com/colbymchenry/codegraph.git"
@@ -363,23 +369,27 @@
     }
   },
   "post": {
-    "status": "awaiting_review",
+    "status": "completed_archived",
     "completed": [
       "Integration Suite",
       "UAT Runbook Generation",
-      "PR Packet/Body Generation"
+      "PR Packet/Body Generation",
+      "Review Remediation",
+      "Archive Cleanup"
     ],
     "draft_pr": {
       "number": 55,
       "url": "https://github.com/racecraft-lab/codegraph/pull/55",
-      "state": "draft"
+      "state": "merged",
+      "merged_at": "2026-07-15T21:46:54Z",
+      "merge_commit": "d14e9d6eaf26de124dcfdc3ae95c619628d8ce6f"
     },
     "reviewability_diff_gate": {
       "status": "completed",
       "reason": "Production diff is 1418 additions across 8 files, exceeding the ratified 800 LOC stop condition.",
       "decision": "Maintainer accepted a one-PR reviewability exception on 2026-07-15."
     },
-    "active": "Review Remediation",
+    "active": "Archived",
     "pending": [
       "Doctor Extension Check",
       "Verify Implementation",
@@ -388,6 +398,7 @@
       "Self-Review",
       "Final Reviewability Backstop",
       "Retrospective"
-    ]
+    ],
+    "pending_note": "These post-implement advisory gates were not run before the PR merged; archive cleanup records the final merged state without claiming those gates completed."
   }
 }
