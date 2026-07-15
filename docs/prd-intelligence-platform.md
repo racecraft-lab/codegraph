@@ -222,7 +222,7 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 - **Phase 2 (SPEC-008…010) — LSP precision**: consume language servers → expose the LSP facade (web viewer consumer) → graph-aware rename (builds on both).
 - **Phase 3 (SPEC-011…013) — Analysis breadth**: flows/clusters, change detection, Cypher access. Independent of each other; all P1.
 - **Phase 4 (SPEC-014…017) — Dataflow depth**: CFG → dataflow → PDG → taint, a strict chain.
-- **Phase 5 (SPEC-018…023, SPEC-027) — Team & enterprise capabilities**: LLM layer first (wiki/PR consume it), then wiki, markdown/OKF knowledge ingestion, PR Action, groups (contracts → bridge), OCaml (anytime).
+- **Phase 5 (SPEC-018…024, SPEC-027) — Team & enterprise capabilities**: LLM layer first (wiki/PR consume it), then wiki, markdown/OKF knowledge ingestion, PR Action, groups (contracts → bridge), OCaml (anytime).
 - **Phase 6 (SPEC-025…026) — Plugin-channel distribution**: platform-mechanics spike → dual-host plugins (Claude Code + Codex) carrying the MCP server, prompt hook, skills, and agents — alongside, never replacing, the npm installer. Spike gates shipping; parallel-safe with every other phase.
 
 ## 5. Constraints
