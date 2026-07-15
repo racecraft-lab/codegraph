@@ -5,6 +5,7 @@
 - Node version accepted by the repo engine range: `>=20.0.0 <25.0.0`.
 - Existing CodeGraph build and test prerequisites.
 - At least one local repository initialized/indexed by CodeGraph for manual UAT.
+- For final SPEC-006 dogfood UAT, run at least one full pass against this CodeGraph repository as the indexed self-repo fixture.
 - Optional SPEC-018 endpoint config for configured-chat UAT:
   - `CODEGRAPH_LLM_PROVIDER=endpoint`
   - `CODEGRAPH_LLM_URL`
@@ -160,3 +161,16 @@ Before PR:
 Expected outcome:
 
 - PR evidence can trace clean-room parity only to allowed README/license URLs and original CodeGraph implementation files.
+
+## Self-Repo Dogfood UAT
+
+Run one final UAT pass with this repository as the indexed target:
+
+```bash
+node dist/bin/codegraph.js serve --web --path .
+```
+
+Expected outcome:
+
+- Repository selection, search, symbol detail, graph, impact, re-analysis, chat state handling, package/offline behavior, accessibility, and performance checks run against the CodeGraph repository itself.
+- Results are recorded in `specs/006-web-ui-graph-browser/review-packet.md`.

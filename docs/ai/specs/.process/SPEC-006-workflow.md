@@ -32,10 +32,10 @@ decisions captured during scaffold.
 | Clarify | `/speckit-clarify` | Complete | Resolved UX, API, chat, and clean-room ambiguity. |
 | Plan | `/speckit-plan` | Complete | Selected renderer, shadcn style, API contracts, and slices. |
 | Checklist | `/speckit-checklist` | Complete | UX, accessibility, API-contracts, llm-integration, and performance complete with 0 remaining gaps. |
-| Tasks | `/speckit-tasks` | Complete | Generated 94 tasks across setup, foundation, seven user stories, and polish. |
-| Analyze | `/speckit-analyze` | Pending | Fix consistency gaps before implementation. |
-| Confidence Gate | G6.5 | Pending | Run advisory confidence gate before implementation. |
-| Implement | `/speckit-implement` | Pending | Execute with tests and UAT evidence. |
+| Tasks | `/speckit-tasks` | Complete | Generated 96 tasks across setup, foundation, seven user stories, and polish. |
+| Analyze | `/speckit-analyze` | Complete | Resolved chat OpenAPI and self-repo UAT coverage gaps before implementation. |
+| Confidence Gate | G6.5 | Complete | Advisory soft-skip: no confidence emit found. |
+| Implement | `/speckit-implement` | In Progress | Execute with tests and UAT evidence. |
 | Post | Post | Pending | Complete canonical post-implementation gates before handoff. |
 
 ### Canonical Post Gates
@@ -419,12 +419,12 @@ Focus on SPEC-006 requirements:
 
 | Metric | Value |
 |---|---|
-| Total Tasks | 94 |
+| Total Tasks | 96 |
 | Phases | 10 |
 | Parallel Opportunities | Setup T003-T005/T007; foundation T011-T013/T016-T017; story test groups; US1-US4 after foundation; US5-US7 after foundation; polish T085-T088 |
 | User Stories Covered | 7/7 |
 
-**G5 Gate:** PASS - runner `validate-gate` reported `94 tasks found`.
+**G5 Gate:** PASS - runner `validate-gate` reported `96 tasks found`.
 
 ## Atomicity Route
 
@@ -449,14 +449,14 @@ runner helper atomicity-route specs/006-web-ui-graph-browser
 
 ## Phase 5.2: Tasks to Issues
 
-**Result:** Created 94 GitHub issues in `racecraft-lab/codegraph` for T001 through T094.
+**Result:** Created 96 GitHub issues in `racecraft-lab/codegraph` for T001 through T096.
 
 | Metric | Value |
 |---|---|
-| Created | 94 |
+| Created | 96 |
 | Skipped Existing | 0 |
 | First Issue | https://github.com/racecraft-lab/codegraph/issues/57 |
-| Last Issue | https://github.com/racecraft-lab/codegraph/issues/150 |
+| Last Issue | https://github.com/racecraft-lab/codegraph/issues/152 |
 
 ## Phase 6: Analyze
 
@@ -481,7 +481,8 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |---|---|---|---|
-| Pending | Pending | Pending | Pending |
+| A1 | HIGH | Chat adapter tasks added `/api/chat/*` routes without an explicit `src/server/openapi.yaml` update task, conflicting with server-local API sync guidance. | Added T095 to update `src/server/openapi.yaml`. |
+| A2 | CRITICAL | Constitution dogfooding requires a self-repo UAT step, but quickstart/tasks only used generic `<indexed-repo>` language. | Added quickstart self-repo UAT guidance and T096 to record the result. |
 
 ## Phase 6.5: Confidence Gate
 
@@ -490,6 +491,8 @@ Focus on:
 Run the runner confidence gate in advisory mode for SPEC-006 and record the
 composite score, recommendation, and any non-blocking warnings in
 `autopilot-state.json`.
+
+**Result:** Advisory soft-skip. Runner reported no synthesizer confidence emit in `docs/ai/specs/.process/SPEC-006-workflow.md`; `recommended_action=soft_skip`.
 
 ## Phase 7: Implement
 

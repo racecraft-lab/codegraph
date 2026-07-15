@@ -246,6 +246,8 @@
 - [ ] T092 Create PR review packet with review order, scope budget, traceability, verification evidence, known gaps, rollback notes, and clean-room ledger in `specs/006-web-ui-graph-browser/review-packet.md`
 - [ ] T093 Run full verification commands and record results in `specs/006-web-ui-graph-browser/review-packet.md`
 - [ ] T094 Run `codegraph serve --web` packaged UAT and record local/package results in `specs/006-web-ui-graph-browser/review-packet.md`
+- [ ] T095 Update chat adapter OpenAPI route documentation in `src/server/openapi.yaml`
+- [ ] T096 Record self-repo dogfood UAT results in `specs/006-web-ui-graph-browser/review-packet.md`
 
 ---
 
@@ -327,4 +329,5 @@ Task: "T074 [US7] Add server chat adapter contract tests in __tests__/server-cha
 3. Run `npm test`.
 4. Run web test and Playwright commands added under `web/package.json`.
 5. Run packaged `codegraph serve --web` UAT from `quickstart.md`.
-6. Record evidence in `specs/006-web-ui-graph-browser/review-packet.md`.
+6. Run the self-repo dogfood UAT from `quickstart.md`.
+7. Record evidence in `specs/006-web-ui-graph-browser/review-packet.md`.
