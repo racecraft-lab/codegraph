@@ -106,7 +106,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-003 | Hybrid Semantic Search | ✅ Complete | [SPEC-003-workflow.md](.process/SPEC-003-workflow.md) | Merged (#36); archived in `.specify/memory/archive-reports/2026-07-10-SPEC-003.md` |
 | SPEC-004 | Web Framework Research Spike | ✅ Complete | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Merged (#19); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-004.md` |
 | SPEC-005 | Local HTTP Server & REST API | ✅ Complete | [SPEC-005-workflow.md](.process/SPEC-005-workflow.md) | Merged (#41, #42); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-005.md` |
-| SPEC-006 | Web UI: Graph Browser | ⏳ Pending | [SPEC-006-workflow.md](SPEC-006-workflow.md) | Ready (SPEC-005 shipped the API + static-asset mount) |
+| SPEC-006 | Web UI: Graph Browser | 🔄 In Progress | [SPEC-006-workflow.md](.process/SPEC-006-workflow.md) | Scaffolded on `006-web-ui-graph-browser`; shadcn/Tailwind and clean-room GitNexus parity captured |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
 | SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Ready (SPEC-005 shipped the serve daemon + WebSocket hook) |
