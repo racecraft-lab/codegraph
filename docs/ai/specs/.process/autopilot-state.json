@@ -1,165 +1,441 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-018-workflow.md",
-  "spec_id": "SPEC-018",
-  "feature_dir": "specs/018-llm-access-layer",
-  "status": "completed_archived",
-  "active_step": "archived",
-  "updated_at": "2026-07-15T14:49:46Z",
-  "note": "Overwrites stale SPEC-003 state (that spec is archived; staleness of this file was a recorded SPEC-025 review finding).",
-  "archive_cleanup": {
-    "applied": true,
-    "applied_at": "2026-07-15T14:49:46Z",
-    "cleanup_branch": "codex/archive-spec-011-018-2026-07-15",
-    "cleanup_command": "speckit-pro:speckit-archive-cleanup all merged specs",
-    "archived_specs": [
-      {
-        "spec_id": "SPEC-018",
-        "feature_dir": "specs/018-llm-access-layer",
-        "archive_report": ".specify/memory/archive-reports/2026-07-15-SPEC-018.md",
-        "merged_prs": [
-          "https://github.com/racecraft-lab/codegraph/pull/48",
-          "https://github.com/racecraft-lab/codegraph/pull/49"
-        ],
-        "merge_commits": [
-          "2cd10a7af9c07ecda30459336e4dce77458109f6",
-          "4acfa1b47c9e20b08ed3654fbc67e9c523a07477"
-        ]
-      },
-      {
-        "spec_id": "SPEC-011",
-        "feature_dir": "specs/011-execution-flows-clusters",
-        "archive_report": ".specify/memory/archive-reports/2026-07-15-SPEC-011.md",
-        "merged_prs": [
-          "https://github.com/racecraft-lab/codegraph/pull/50"
-        ],
-        "merge_commits": [
-          "ecb5d83dd3a8048dcc770aa91425f82e5c876572"
-        ]
-      }
-    ],
-    "feature_json_removed": true,
-    "process_evidence_preserved": true
-  },
+  "workflow_file": "docs/ai/specs/.process/SPEC-006-workflow.md",
+  "spec_id": "SPEC-006",
+  "feature_dir": "specs/006-web-ui-graph-browser",
+  "branch": "006-web-ui-graph-browser",
+  "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/006-web-ui-graph-browser",
+  "status": "in_progress",
+  "active_step": "phase_3_plan",
+  "plan": [
+    {
+      "step": "Archive Sweep: merged spec cleanup",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 0: Prerequisites",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 1: Specify",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - UX and Navigation",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - UX and Navigation Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - API and Chat",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - API and Chat Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Clean-Room Parity",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 2: Clarify - Clean-Room Parity Consensus",
+      "status": "completed"
+    },
+    {
+      "step": "Phase 3: Plan",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - UX",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - UX Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Accessibility",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Accessibility Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - API Contracts",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - API Contracts Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - LLM Integration",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - LLM Integration Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Performance",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 4: Checklist - Performance Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 5: Tasks",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 5: Verify Tasks",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 5: Tasks to Issues",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 5: Tasks - Atomicity and Reviewability Routing",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6: Analyze",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6: Analyze Consensus",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 6.5: Confidence Gate",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Doctor Extension Check",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Verify Implementation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Verify Tasks Phantom Check",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Code Review",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Integration Suite",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Reviewability Diff Gate",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Self-Review",
+      "status": "pending"
+    },
+    {
+      "step": "Post: UAT Runbook Generation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: PR Body Generation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: PR Creation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Review Remediation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Retrospective",
+      "status": "pending"
+    }
+  ],
+  "updated_at": "2026-07-15T20:56:18Z",
   "confidence_gate_mode": "advisory",
-  "reviewability": {
-    "setup_mode": {
-      "status": "warn",
-      "pass": true,
-      "reviewable_loc": 405,
-      "warnings": [
-        "reviewable LOC 405 exceeds warn threshold 400"
+  "preflight": {
+    "archive_sweep": {
+      "status": "completed",
+      "current_spec_excluded": true,
+      "candidate_active_specs": [],
+      "archived_specs_present": [
+        "SPEC-001",
+        "SPEC-002",
+        "SPEC-003",
+        "SPEC-004",
+        "SPEC-005",
+        "SPEC-008",
+        "SPEC-010",
+        "SPEC-011",
+        "SPEC-018",
+        "SPEC-023",
+        "SPEC-025"
       ],
-      "recorded_at_scaffold": "2026-07-13"
+      "cleanup_applied": false,
+      "notes": "No prior active spec directories were present under specs/; current SPEC-006 was excluded from cleanup."
     },
-    "plan_estimator": {
-      "status": "not_estimated",
-      "projected": null,
-      "note": "plan.md file table not in greppable declared-entries format; fallback evidence: slice1=4 NEW src+2 MODIFIED, slice2=2 NEW src+3 MODIFIED"
+    "worktree_binding": {
+      "status": "verified",
+      "shell_branch": "006-web-ui-graph-browser",
+      "workflow_present": true,
+      "runner_marker": {
+        "status": "temporary",
+        "path": "speckit-pro/speckit_pro_runner",
+        "reason": "Nested .worktrees checkout otherwise lets the read-only runner discover the parent checkout first.",
+        "cleanup_required": true
+      },
+      "runner_check_prerequisites": {
+        "status": "ok",
+        "all_pass": true,
+        "reported_branch": "",
+        "reported_worktree": true,
+        "note": "Runner branch parsing is empty because the worktree .git dir is outside the temporary trust boundary; shell git branch is authoritative."
+      }
     },
-    "tasks_mode": {
-      "status": "deferred",
-      "helper_id": "reviewability-gate",
-      "requested_mode": "tasks",
-      "deferral_reason": "installed runner supports setup mode only",
-      "fallback_evidence": [
-        "setup-mode warn (marker-planning input)",
-        "operator-ratified 2-slice split (design concept Q12; spec FR-031; scaffold gate proceed-condition)",
-        "plan estimator not_estimated advisory"
-      ]
+    "runner": {
+      "preflight": "ok",
+      "confidence_mode": "advisory",
+      "codex_agents_dry_run": "no_op",
+      "detected_stack": "nodejs",
+      "detected_package_manager": "npm",
+      "command_override": {
+        "BUILD": "npm run build",
+        "TYPECHECK": "npm run typecheck",
+        "UNIT_TEST": "npm test",
+        "FULL_VERIFY": "npm run build && npm run typecheck && npm test",
+        "reason": "Runner command discovery emits npm script names without 'run' for non-lifecycle scripts."
+      }
+    },
+    "presets": {
+      "runner_detect_presets": "ok",
+      "authoritative_resolution": {
+        "spec-template": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
+        "plan-template": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
+        "tasks-template": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
+      }
+    },
+    "baseline_verification": {
+      "node_path": "/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin",
+      "build": {
+        "command": "npm run build",
+        "status": "passed"
+      },
+      "typecheck": {
+        "command": "npm run typecheck",
+        "status": "passed"
+      },
+      "test": {
+        "command": "npm test",
+        "status": "environment_failed",
+        "summary": "Full unsandboxed suite passed 230 files and failed 1 file because an inherited local Git GPG signing setting made a temporary git commit fail.",
+        "follow_up": {
+          "command": "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false npx vitest run __tests__/exclude-config.test.ts",
+          "status": "passed",
+          "summary": "The failed suite passed with Git commit signing disabled through temporary environment config."
+        }
+      }
+    },
+    "grounding": {
+      "design_concept": "docs/ai/specs/.process/SPEC-006-design-concept.md",
+      "shadcn_skill": "/Users/fredrickgabelmann/.agents/skills/shadcn/SKILL.md",
+      "gitnexus_sources": [
+        "https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/README.md",
+        "https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/LICENSE"
+      ],
+      "clean_room_rule": "Use public behavior inventory only; do not copy GitNexus source code, assets, CSS, UI text, visual design, or implementation structure."
     }
   },
-  "atomicity_route": {
-    "route": "one-navigable-PR",
-    "releasable": true,
-    "signals": [
-      "change-shape:modify-heavy"
-    ],
-    "warnings": [],
-    "hints": [],
-    "recorded_by": "orchestrator",
-    "conflict_note": "Advisory route conflicts with the ratified two-PR split (Q12/FR-031, maintainer-approved). Conflict surfaced at G5 per the workflow's Atomicity Route note and resolved in favor of the ratified decision; split carried by pr_marker_plan (marker-based PR emission), not by the layer planner."
-  },
-  "layer_plan": {
-    "status": "skipped",
-    "reason": "route is not split-PR; plan-layers-feature-dir not invoked per step 8d. The two-PR delivery is carried by pr_marker_plan instead."
-  },
-  "pr_marker_plan": {
-    "schema_version": 1,
-    "source_fingerprint": {
-      "tasks_md_sha256": "34a3c8559f06d93b2754287682e28cc9bb753b40098b94f7e8205826ea834b51"
+  "phases": [
+    {
+      "id": "archive_sweep",
+      "title": "Archive Sweep",
+      "status": "completed"
     },
-    "derived_from": [
-      "tasks.md phase structure",
-      "setup-mode reviewability warn",
-      "FR-031/Q12 ratified split",
-      "atomicity route context"
-    ],
-    "markers": [
-      {
-        "id": "M1-slice1-endpoint",
-        "tasks": [
-          "T001",
-          "T002",
-          "T003",
-          "T004",
-          "T005",
-          "T006",
-          "T007",
-          "T008",
-          "T009",
-          "T010",
-          "T011",
-          "T012",
-          "T013",
-          "T014",
-          "T015",
-          "T016",
-          "T017"
-        ],
-        "finalization": [
-          "T032",
-          "T033"
-        ],
-        "pr_title": "feat(SPEC-018): LLM access layer slice 1 \u2014 endpoint path, generate() seam, status block",
-        "review_order": 1
+    {
+      "id": "phase_0_prerequisites",
+      "title": "Prerequisites",
+      "status": "completed"
+    },
+    {
+      "id": "phase_1_specify",
+      "title": "Specify",
+      "status": "completed",
+      "agent": "phase-executor",
+      "gate": {
+        "id": "G1",
+        "status": "passed",
+        "reason": "spec.md exists with 0 markers"
       },
-      {
-        "id": "M2-slice2-agent-bundle",
-        "tasks": [
-          "T018",
-          "T019",
-          "T020",
-          "T021",
-          "T022",
-          "T023",
-          "T024",
-          "T025",
-          "T026",
-          "T027",
-          "T028",
-          "T029",
-          "T030",
-          "T031"
-        ],
-        "finalization": [
-          "T032",
-          "T033"
-        ],
-        "pr_title": "feat(SPEC-018): LLM access layer slice 2 \u2014 agent bundles, tasks CLI, research note",
-        "review_order": 2,
-        "depends_on": "M1-slice1-endpoint"
+      "outputs": {
+        "spec": "specs/006-web-ui-graph-browser/spec.md",
+        "requirements_checklist": "specs/006-web-ui-graph-browser/checklists/requirements.md",
+        "functional_requirements": 30,
+        "user_stories": 7,
+        "acceptance_scenarios": 15
       }
-    ],
-    "review_order": [
-      "M1-slice1-endpoint",
-      "M2-slice2-agent-bundle"
-    ],
-    "checkpoints": [],
-    "warnings": [
-      "atomicity classifier advisory route one-navigable-PR recorded; ratified split governs"
-    ],
-    "final_marker_split": null,
-    "packet_validation": null,
-    "pr_mappings": null
-  }
+    },
+    {
+      "id": "phase_2_clarify_ux",
+      "title": "Clarify - UX and Navigation",
+      "status": "completed",
+      "agent": "clarify-executor",
+      "questions": 5,
+      "outputs": {
+        "spec_clarifications": "specs/006-web-ui-graph-browser/spec.md",
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md",
+        "functional_requirements_after": 38
+      }
+    },
+    {
+      "id": "phase_2_clarify_ux_consensus",
+      "title": "Clarify - UX and Navigation Consensus",
+      "status": "completed",
+      "agents": [
+        "clarify-executor",
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ],
+      "result": "Consensus supported persistent repo-aware shell, safe repo switching, symbol-detail anchor, bounded keyboard-accessible graph controls with non-canvas mirror, explicit state taxonomy, mobile behavior, and WCAG 2.2 AA target."
+    },
+    {
+      "id": "phase_2_clarify_api_chat",
+      "title": "Clarify - API and Chat",
+      "status": "completed",
+      "agent": "clarify-executor",
+      "questions": 5,
+      "outputs": {
+        "spec_clarifications": "specs/006-web-ui-graph-browser/spec.md",
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md",
+        "functional_requirements_after": 48
+      }
+    },
+    {
+      "id": "phase_2_clarify_api_chat_consensus",
+      "title": "Clarify - API and Chat Consensus",
+      "status": "completed",
+      "agents": [
+        "clarify-executor",
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ],
+      "result": "Consensus supported live OpenAPI as authoritative, same-origin thin chat adapter over SPEC-018, backend-owned graph context/truncation, backend-only provider secrets, existing reanalysis SSE, and existing CodeGraph ErrorEnvelope."
+    },
+    {
+      "id": "phase_2_clarify_clean_room",
+      "title": "Clarify - Clean-Room Parity",
+      "status": "completed",
+      "agent": "clarify-executor",
+      "questions": 5,
+      "outputs": {
+        "spec_clarifications": "specs/006-web-ui-graph-browser/spec.md",
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md",
+        "functional_requirements_after": 53
+      }
+    },
+    {
+      "id": "phase_2_clarify_clean_room_consensus",
+      "title": "Clarify - Clean-Room Parity Consensus",
+      "status": "completed",
+      "agents": [
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ],
+      "result": "Security consensus selected option A for local/package serving plus docs/container recipe: validate codegraph serve --web, package assets, offline/no-CDN behavior, and existing host/port/CODEGRAPH_SERVER_TOKEN guidance; no full production Dockerfile or hosted demo path required."
+    }
+  ],
+  "post_implementation": [
+    {
+      "id": "post_runner_marker_cleanup",
+      "title": "Temporary runner marker removed before commit",
+      "status": "pending"
+    }
+  ],
+  "phase_outputs": {
+    "phase_1_specify": {
+      "spec": "specs/006-web-ui-graph-browser/spec.md",
+      "requirements_checklist": "specs/006-web-ui-graph-browser/checklists/requirements.md",
+      "gate": "G1 passed"
+    },
+    "phase_2_clarify_ux": {
+      "questions": 5,
+      "requirements_added": [
+        "FR-031",
+        "FR-032",
+        "FR-033",
+        "FR-034",
+        "FR-035",
+        "FR-036",
+        "FR-037",
+        "FR-038"
+      ],
+      "consensus_agents": [
+        "clarify-executor",
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ]
+    },
+    "phase_2_clarify_api_chat": {
+      "questions": 5,
+      "requirements_added": [
+        "FR-039",
+        "FR-040",
+        "FR-041",
+        "FR-042",
+        "FR-043",
+        "FR-044",
+        "FR-045",
+        "FR-046",
+        "FR-047",
+        "FR-048"
+      ],
+      "consensus_agents": [
+        "clarify-executor",
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ]
+    },
+    "phase_2_clarify_clean_room": {
+      "questions": 5,
+      "requirements_added": [
+        "FR-049",
+        "FR-050",
+        "FR-051",
+        "FR-052",
+        "FR-053"
+      ],
+      "consensus_agents": [
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ],
+      "security_consensus": {
+        "question": "What local/Docker serving expectation should SPEC-006 commit to?",
+        "selected_answer": "option_a_local_package_serve_docs_container_recipe",
+        "result": "3-of-3 consensus, high confidence"
+      }
+    }
+  },
+  "blockers": []
 }

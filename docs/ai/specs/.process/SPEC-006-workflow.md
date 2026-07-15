@@ -28,13 +28,33 @@ decisions captured during scaffold.
 
 | Phase | Command | Status | Notes |
 |---|---|---|---|
-| Specify | `/speckit-specify` | Pending | Create `specs/006-web-ui-graph-browser/spec.md`. |
-| Clarify | `/speckit-clarify` | Pending | Resolve UX, API, chat, and clean-room ambiguity. |
-| Plan | `/speckit-plan` | Pending | Select renderer, shadcn style, API contracts, and slices. |
+| Specify | `/speckit-specify` | Complete | Created `specs/006-web-ui-graph-browser/spec.md`. |
+| Clarify | `/speckit-clarify` | Complete | Resolved UX, API, chat, and clean-room ambiguity. |
+| Plan | `/speckit-plan` | In Progress | Select renderer, shadcn style, API contracts, and slices. |
 | Checklist | `/speckit-checklist` | Pending | Run UX, accessibility, API-contracts, llm-integration, performance. |
 | Tasks | `/speckit-tasks` | Pending | Generate small vertical-slice tasks. |
 | Analyze | `/speckit-analyze` | Pending | Fix consistency gaps before implementation. |
+| Confidence Gate | G6.5 | Pending | Run advisory confidence gate before implementation. |
 | Implement | `/speckit-implement` | Pending | Execute with tests and UAT evidence. |
+| Post | Post | Pending | Complete canonical post-implementation gates before handoff. |
+
+### Canonical Post Gates
+
+Autopilot must keep these post steps visible in durable state and complete or
+explicitly skip each one before final handoff:
+
+- Post: Doctor Extension Check
+- Post: Verify Implementation
+- Post: Verify Tasks Phantom Check
+- Post: Code Review
+- Post: Integration Suite
+- Post: Reviewability Diff Gate
+- Post: Self-Review
+- Post: UAT Runbook Generation
+- Post: PR Body Generation
+- Post: PR Creation
+- Post: Review Remediation
+- Post: Retrospective
 
 ## Prerequisites
 
@@ -174,9 +194,9 @@ local UI.
 
 | Metric | Value |
 |---|---|
-| Functional Requirements | Pending |
-| User Stories | Pending |
-| Acceptance Criteria | Pending |
+| Functional Requirements | 30 |
+| User Stories | 7 |
+| Acceptance Criteria | 15 |
 
 ### Files Generated
 
@@ -210,9 +230,9 @@ local UI.
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---|---|---|---|
-| 1 | UX and navigation | Pending | Pending |
-| 2 | API and chat | Pending | Pending |
-| 3 | Clean-room parity | Pending | Pending |
+| 1 | UX and navigation | 5 | Persistent repo-aware shell; safe repo switching; symbol-detail anchor; bounded keyboard-accessible graph interactions with non-canvas mirror; explicit state taxonomy and mobile/WCAG expectations. |
+| 2 | API and chat | 5 | Live OpenAPI is authoritative; repo-scoped read and reindex contracts preserved; chat is same-origin backend adapter over SPEC-018; backend owns graph context/truncation; provider secrets stay backend-only; reanalysis uses existing SSE/ErrorEnvelope behavior. |
+| 3 | Clean-room parity | 5 | Clean-room parity matrix required in `research.md`; unsupported capabilities labeled deferred/backend-blocked/out of scope; Cypher-style UI limited to existing-API presets until SPEC-013; local/package serve plus container docs selected by 3-of-3 security consensus; README/LICENSE-only source ledger required. |
 
 ## Phase 3: Plan
 
@@ -433,6 +453,14 @@ Focus on:
 | ID | Severity | Issue | Resolution |
 |---|---|---|---|
 | Pending | Pending | Pending | Pending |
+
+## Phase 6.5: Confidence Gate
+
+**When to run:** After Analyze is clean and before implementation starts.
+
+Run the runner confidence gate in advisory mode for SPEC-006 and record the
+composite score, recommendation, and any non-blocking warnings in
+`autopilot-state.json`.
 
 ## Phase 7: Implement
 
