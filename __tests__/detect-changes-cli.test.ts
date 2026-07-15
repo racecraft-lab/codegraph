@@ -41,6 +41,32 @@ describe('detect-changes CLI', () => {
     expect(JSON.parse(res.stdout).summary.status).toBe('threshold_breach');
   });
 
+  it('prints complete large JSON reports before returning non-zero', async () => {
+    fixture = createDetectChangesFixture();
+    const source = Array.from({ length: 700 }, (_, index) => [
+      `export function changedFunction${index}(value: number) {`,
+      '  return value + 1;',
+      '}',
+      '',
+    ].join('\n')).join('');
+    fixture.write('src/many-functions.ts', source);
+    fixture.git(['add', '.']);
+    fixture.git([
+      '-c', 'user.email=test@example.com',
+      '-c', 'user.name=Test User',
+      '-c', 'commit.gpgsign=false',
+      'commit', '-m', 'add many functions', '-q',
+    ]);
+    await indexFixture(fixture);
+
+    fixture.write('src/many-functions.ts', source.replaceAll('value + 1', 'value + 2'));
+    const res = run(['--path', fixture.dir, '--mode', 'all', '--format', 'json']);
+
+    expect(res.status).toBe(1);
+    expect(res.stdout.length).toBeGreaterThan(65_536);
+    expect(JSON.parse(res.stdout).summary.status).toBe('impact');
+  });
+
   it('prints markdown and returns unavailable exit code for missing index', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-detect-missing-'));
     try {

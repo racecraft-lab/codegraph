@@ -2311,8 +2311,8 @@ program
               cg.close();
             }
           })();
-      console.log(normalized.format === 'markdown' ? renderMarkdownReport(report) : renderJsonReport(report));
-      process.exit(report.exitCode);
+      process.stdout.write(`${normalized.format === 'markdown' ? renderMarkdownReport(report) : renderJsonReport(report)}\n`);
+      process.exitCode = report.exitCode;
     } catch (err) {
       error(`detect-changes failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(3);
