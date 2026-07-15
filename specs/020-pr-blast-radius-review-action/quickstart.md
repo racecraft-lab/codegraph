@@ -14,6 +14,22 @@ npm run typecheck
 npm test
 ```
 
+### Pre-implementation baseline evidence
+
+Recorded on 2026-07-15 before SPEC-020 implementation edits.
+
+Runtime:
+
+- Node: `v24.11.1` from `/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin/node`
+- npm: pinned npm CLI from `/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/lib/node_modules/npm/bin/npm-cli.js`
+
+Results:
+
+- `npm ci`: PASS. Installed 83 packages; audit reported 0 vulnerabilities.
+- `npm run build`: PASS.
+- `npm run typecheck`: PASS.
+- `npm test`: BASELINE FAIL before implementation edits. Vitest reported 22 failed test files, 209 failed tests, and 91 errors. The dominant failures were local execution constraints (`listen EPERM` on loopback or Unix sockets), sandboxed temp-git/GPG behavior, local endpoint/embedding/LLM timeout paths, and watcher timeout behavior. This is recorded as an environmental baseline, not a SPEC-020 regression.
+
 ## Focused validation scenarios
 
 ### 1. Action contract

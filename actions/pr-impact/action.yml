@@ -1,0 +1,101 @@
+name: CodeGraph PR Impact
+description: Publish a deterministic CodeGraph blast-radius report for pull requests.
+
+inputs:
+  codegraph-version:
+    description: Reproducible @colbymchenry/codegraph CLI/runtime version used for analysis.
+    required: false
+    default: ""
+  base-ref:
+    description: Comparison target for detect-changes --mode base-ref.
+    required: false
+    default: ""
+  fail-on-callers:
+    description: Optional integer caller threshold. Empty means advisory.
+    required: false
+    default: ""
+  fail-on-hubs:
+    description: Whether hub threshold breaches should fail the action.
+    required: false
+    default: "false"
+  caller-depth:
+    description: Caller traversal depth.
+    required: false
+    default: "1"
+  max-callers:
+    description: Maximum caller rows.
+    required: false
+    default: "20"
+  narrative:
+    description: Optional prose narrative mode. Use off or trusted.
+    required: false
+    default: "off"
+
+outputs:
+  summary-status:
+    description: Detector summary status.
+    value: ${{ steps.pr-impact.outputs.summary-status }}
+  detector-exit-code:
+    description: Raw detector exit code captured by the helper.
+    value: ${{ steps.pr-impact.outputs.detector-exit-code }}
+  conclusion:
+    description: Final action conclusion after SPEC-020 policy mapping.
+    value: ${{ steps.pr-impact.outputs.conclusion }}
+  threshold-breached:
+    description: Whether configured policy was breached.
+    value: ${{ steps.pr-impact.outputs.threshold-breached }}
+  cache-status:
+    description: Cache path taken before analysis.
+    value: ${{ steps.pr-impact.outputs.cache-status }}
+  delivery-status:
+    description: Durable delivery path.
+    value: ${{ steps.pr-impact.outputs.delivery-status }}
+  comment-url:
+    description: Current action-owned comment when available.
+    value: ${{ steps.pr-impact.outputs.comment-url }}
+  report-path:
+    description: Deterministic markdown report path.
+    value: ${{ steps.pr-impact.outputs.report-path }}
+  artifact-name:
+    description: Uploaded report artifact name.
+    value: ${{ steps.pr-impact.outputs.artifact-name }}
+  narrative-status:
+    description: Optional narrative outcome.
+    value: ${{ steps.pr-impact.outputs.narrative-status }}
+  codegraph-version:
+    description: Resolved CodeGraph runtime version.
+    value: ${{ steps.pr-impact.outputs.codegraph-version }}
+  helper-version:
+    description: Resolved action helper version.
+    value: ${{ steps.pr-impact.outputs.helper-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Run PR impact helper
+      id: pr-impact
+      shell: bash
+      env:
+        INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}
+        INPUT_BASE_REF: ${{ inputs.base-ref }}
+        INPUT_FAIL_ON_CALLERS: ${{ inputs.fail-on-callers }}
+        INPUT_FAIL_ON_HUBS: ${{ inputs.fail-on-hubs }}
+        INPUT_CALLER_DEPTH: ${{ inputs.caller-depth }}
+        INPUT_MAX_CALLERS: ${{ inputs.max-callers }}
+        INPUT_NARRATIVE: ${{ inputs.narrative }}
+      run: node "${{ github.action_path }}/dist/run.mjs"
+
+    - name: Upload PR impact report
+      if: always() && steps.pr-impact.outputs.report-path != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.pr-impact.outputs.artifact-name }}
+        path: ${{ steps.pr-impact.outputs.report-path }}
+        if-no-files-found: error
+
+    - name: Enforce PR impact conclusion
+      if: always() && steps.pr-impact.outputs.conclusion != 'pass'
+      shell: bash
+      run: |
+        echo "CodeGraph PR impact conclusion: ${{ steps.pr-impact.outputs.conclusion }}" >&2
+        exit 1

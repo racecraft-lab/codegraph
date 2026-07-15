@@ -18,13 +18,13 @@
 
 **Purpose**: Confirm the implementation boundary, baseline commands, and generated-runtime path before behavior work starts.
 
-- [ ] T001 Verify Node 24.11.1 and record pre-implementation baseline command results in `specs/020-pr-blast-radius-review-action/quickstart.md`
-- [ ] T002 Create the reusable action directory skeleton in `actions/pr-impact/action.yml`
-- [ ] T003 Create the action helper source skeleton and dependency-injection seam in `actions/pr-impact/run.ts`
-- [ ] T004 Add the generated action runtime target placeholder in `actions/pr-impact/dist/run.mjs`
-- [ ] T005 Add the action runtime build command and package visibility plan in `package.json`
-- [ ] T006 Add shared deterministic detector, GitHub event, and delivery fixtures in `__tests__/fixtures/pr-impact.ts`
-- [ ] T007 Verify the reviewability budget against the planned task/file scope and record the one-spec Q9 decision in `specs/020-pr-blast-radius-review-action/plan.md`
+- [X] T001 Verify Node 24.11.1 and record pre-implementation baseline command results in `specs/020-pr-blast-radius-review-action/quickstart.md`
+- [X] T002 Create the reusable action directory skeleton in `actions/pr-impact/action.yml`
+- [X] T003 Create the action helper source skeleton and dependency-injection seam in `actions/pr-impact/run.ts`
+- [X] T004 Add the generated action runtime target placeholder in `actions/pr-impact/dist/run.mjs`
+- [X] T005 Add the action runtime build command and package visibility plan in `package.json`
+- [X] T006 Add shared deterministic detector, GitHub event, and delivery fixtures in `__tests__/fixtures/pr-impact.ts`
+- [X] T007 Verify the reviewability budget against the planned task/file scope and record the one-spec Q9 decision in `specs/020-pr-blast-radius-review-action/plan.md`
 
 ---
 

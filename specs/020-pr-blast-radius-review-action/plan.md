@@ -122,3 +122,12 @@ Projected production files: 4
 Projected total files: 11
 
 Budget result: warning accepted; no blocker.
+
+## Implementation Setup Reviewability Check
+
+T007 setup verification keeps the one-spec Q9 decision intact:
+
+- Primary production surface remains `actions/pr-impact/`.
+- Package visibility is limited to exposing the existing package plus the new `actions` directory.
+- Initial setup files match the planned scaffold: `actions/pr-impact/action.yml`, `actions/pr-impact/run.ts`, `actions/pr-impact/dist/run.mjs`, `__tests__/fixtures/pr-impact.ts`, and `package.json`.
+- The accepted reviewability warning remains 455 projected reviewable LOC, 4 production files, and 11 total files. No blocker has been introduced during setup.

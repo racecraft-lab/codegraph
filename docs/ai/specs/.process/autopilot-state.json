@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 7: Implement - T001",
-  "updated_at": "2026-07-15T23:45:37Z",
+  "active_step": "Phase 7: Implement - T008",
+  "updated_at": "2026-07-15T23:58:00Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -443,5 +443,24 @@
       "completeness": 1.0
     },
     "iterations": 0
+  },
+  "phase7": {
+    "status": "in_progress",
+    "current_task": "T008",
+    "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007"],
+    "baseline": {
+      "recorded_at": "2026-07-15T23:54:02Z",
+      "node": "v24.11.1",
+      "npm_ci": "passed",
+      "build": "passed",
+      "typecheck": "passed",
+      "test": {
+        "status": "baseline_environmental_failure",
+        "failed_test_files": 22,
+        "failed_tests": 209,
+        "errors": 91,
+        "note": "Full suite failed before SPEC-020 implementation edits due local socket/listen EPERM, sandboxed temp-git/GPG behavior, local endpoint/LLM/embedding timeouts, and watcher timeout behavior."
+      }
+    }
   }
 }
