@@ -367,8 +367,12 @@ async function runCatalogKind(
   analyze: () => Promise<void>,
 ): Promise<void> {
   if (signal?.aborted) return; // abort before this kind starts — a catalog no-op
-  const hadValidPrior = hasValidPriorCatalog(store, kind);
+  // `hasValidPriorCatalog` probes catalog_meta; keep it INSIDE the try so a probe
+  // SQLite error is contained to THIS kind (treated as a first-run failure) and
+  // never propagates to skip the other kind — per-kind independence (FR-020).
+  let hadValidPrior = false;
   try {
+    hadValidPrior = hasValidPriorCatalog(store, kind);
     await analyze();
   } catch (err) {
     // A caller-requested cancellation is not a failure: leave the prior untouched
@@ -420,18 +424,30 @@ export async function maybeRunCatalogAnalysis(
 ): Promise<void> {
   if (signal?.aborted) return; // cancelled before any work — no advance, no writes
   const anyEnabled = config.flows || config.clusters;
-  // Dormancy (FR-025/SC-007): a project that has NEVER opted in writes nothing —
-  // not even a version advance — so it stays byte-identical to the pre-feature
-  // state. But a project that has ALREADY computed a catalog (even one now
-  // disabled) MUST still advance the token on each successful index/sync, or a
-  // graph mutated across a disabled window would let a later re-enable read the
-  // retained catalog as fresh when it is really stale (FR-022).
-  if (!anyEnabled && !hasAnyCatalogMeta(store)) return;
-
-  // Advance the live token BEFORE analysis (R2), so a post-update failure — or a
-  // graph mutated while a catalog was disabled — leaves the retained catalog
-  // behind the live token → stale (FR-022/022b).
-  graph.queries.advanceGraphWriteVersion();
+  // The pre-analyzer bookkeeping (state probe + version advance) runs OUTSIDE
+  // runCatalogKind's per-kind catch, so guard it here too: a SQLite error from
+  // the probe or the version advance must be contained exactly like an analyzer
+  // failure — advisory analysis must NEVER fail an otherwise-successful index or
+  // sync (FR-022b). On such a failure, skip analysis entirely and return.
+  try {
+    // Dormancy (FR-025/SC-007): a project that has NEVER opted in writes nothing —
+    // not even a version advance — so it stays byte-identical to the pre-feature
+    // state. But a project that has ALREADY computed a catalog (even one now
+    // disabled) MUST still advance the token on each successful index/sync, or a
+    // graph mutated across a disabled window would let a later re-enable read the
+    // retained catalog as fresh when it is really stale (FR-022).
+    if (!anyEnabled && !hasAnyCatalogMeta(store)) return;
+    // Advance the live token BEFORE analysis (R2), so a post-update failure — or a
+    // graph mutated while a catalog was disabled — leaves the retained catalog
+    // behind the live token → stale (FR-022/022b).
+    graph.queries.advanceGraphWriteVersion();
+  } catch (err) {
+    logWarn(
+      `Catalog analysis skipped after a ${err instanceof Error ? err.name : 'error'} in the ` +
+        'pre-analysis bookkeeping — the enclosing index/sync operation is unaffected.',
+    );
+    return;
+  }
   // Previously computed but now fully disabled: advance the token only, recompute
   // nothing (its retained rows stay inert and read `disabled`, FR-025).
   if (!anyEnabled) return;
