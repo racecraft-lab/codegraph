@@ -68,6 +68,9 @@ describe('detect changes', () => {
     fx.git(['mv', 'src/rename-me.ts', 'src/renamed.ts']);
     let report = await detectChanges(fx.cg, { mode: 'all' });
     expect(report.changedSymbols.some((s) => s.name === 'movedOnly')).toBe(false);
+    expect(report.callers).toHaveLength(0);
+    expect(report.affectedFlows.items).toHaveLength(0);
+    expect(report.risks).toHaveLength(0);
     expect(report.unmappedHunks).toContainEqual(expect.objectContaining({
       oldPath: 'src/rename-me.ts',
       newPath: 'src/renamed.ts',

@@ -15,6 +15,14 @@ interface FlowDetailShape {
 }
 
 export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void {
+  if (report.changedSymbols.length === 0) {
+    report.callers = [];
+    report.limits.truncatedCallers = false;
+    report.affectedFlows = { state: 'empty', items: [], sourceVersion: 0, truncated: false };
+    report.limits.truncatedFlows = false;
+    return;
+  }
+
   const { callers, directCallerCounts } = collectCallers(cg, report);
   report.callers = callers;
   report.limits.truncatedCallers = callers.length > report.limits.maxCallers;
