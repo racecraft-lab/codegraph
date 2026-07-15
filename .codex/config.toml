@@ -8,10 +8,6 @@
 # environment (spec worktrees fall back to the main checkout's copy) so
 # daemons carry the dogfood embedding env.
 
-# Root project doc (AGENTS.md -> CLAUDE.md symlink) is ~37 KB; raise the cap so
-# Codex reads the whole manual instead of truncating at the 32 KiB default.
-project_doc_max_bytes = 65536
-
 [mcp_servers.codegraph]
 command = "node"
 args = ["-e", "let d=process.cwd();const p=require(`path`),f=require(`fs`);while(!f.existsSync(p.join(d,`scripts`,`mcp-dogfood.mjs`))&&d!==p.dirname(d))d=p.dirname(d);const s=p.join(d,`scripts`,`mcp-dogfood.mjs`);if(!f.existsSync(s)){console.error(`mcp-dogfood.mjs not found above `+process.cwd());process.exit(1)}import(require(`url`).pathToFileURL(s).href)"]

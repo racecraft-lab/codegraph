@@ -847,7 +847,7 @@ Budget result: within budget (spike)
 - Skill-authoring grounding — both vendors implement the same agent-skills open standard (`SKILL.md` + optional `scripts/`/`references/`/`assets/`), so one skill source tree serves both hosts. Anthropic's official skill-building guide ("The Complete Guide to Building Skills for Claude" + the skills best-practices docs and `anthropics/skills` examples): progressive disclosure (frontmatter → body → linked references), the MCP-enhancement skill category (skills as the workflow layer over an MCP server — "MCP provides the kitchen, skills provide the recipes"), what/when trigger-phrase description discipline, kebab-case + exact-`SKILL.md` structural rules, no-XML/reserved-name security restrictions, optional `allowed-tools` and `metadata.mcp-server` fields, and published success criteria (trigger rate on relevant queries, workflow tool-call count, zero failed tool calls, with/without-skill comparison). OpenAI's Codex skills documentation (`developers.openai.com/codex/skills` + `openai/skills` examples): `.agents/skills` scan order, explicit (`$skill-name`) vs implicit description-match invocation, the `agents/openai.yaml` sidecar (`allow_implicit_invocation`, display metadata, MCP tool dependencies), and its authoring best practices (one focused job per skill, imperative steps with explicit inputs/outputs, front-loaded use cases, trigger testing, instructions-over-scripts unless determinism is needed).
 - MCP launcher contract (OQ-8): how the plugin-registered server resolves the user-installed CodeGraph binary — the plugin cannot bundle the per-platform runtime — and the absent-binary path (success-shaped setup guidance, never a hard error, per the errors-teach-abandonment doctrine).
 - npm-installer coexistence rules: detection and dedupe of MCP registration and the Claude `UserPromptSubmit` hook in both directions; uninstall interplay; who wins when both channels are present.
-- Shipped-artifact plan: enumerate the candidate skill and agent set with a per-artifact tier decision (fully open vs focus-constrained via built-in-only denials — the operator-owned tool-surface doctrine) and the validation bar each must pass (retrieval A/B per the CLAUDE.md agent-eval methodology on the Sonnet floor; no regression vs the MCP-only baseline; `server-instructions.ts` stays the single source of agent-facing tool guidance — plugin artifacts reference, never restate, per issue #529).
+- Shipped-artifact plan: enumerate the candidate skill and agent set with a per-artifact tier decision (fully open vs focus-constrained via built-in-only denials — the operator-owned tool-surface doctrine) and the validation bar each must pass (retrieval A/B per the AGENTS.md agent-eval methodology on the Sonnet floor; no regression vs the MCP-only baseline; `server-instructions.ts` stays the single source of agent-facing tool guidance — plugin artifacts reference, never restate, per issue #529).
 
 **Out of Scope:**
 - Shipping anything (SPEC-026 implements the decisions); replacing or deprecating the npm installer; upstream marketplace listing decisions beyond the racecraft channel.
@@ -943,7 +943,7 @@ builds on top of live, real-scale instances of everything before it.
    `export`ed (worktrees fall back to the main checkout's copy) — so every
    agent session serves the HEAD build with live embeddings, and query-time
    semantic search is live (SPEC-003 merged 2026-07-10). Sessions in this repo treat `codegraph_explore` as the primary
-   retrieval tool (steering lives in CLAUDE.md § Dogfooding). Out-of-repo
+   retrieval tool (steering lives in AGENTS.md). Out-of-repo
    enablement is owned in racecraft-plugins-public (PR #298): speckit-pro's
    subagents inherit the operator's full tool surface — no per-vendor
    allowlists to maintain — and speckit-scaffold-spec runs this bootstrap
@@ -985,5 +985,5 @@ builds on top of live, real-scale instances of everything before it.
 
 - **Source PRD:** [docs/prd-intelligence-platform.md](../../prd-intelligence-platform.md) — the SPEC catalog above is derived from its Features / Acceptance Criteria
 - **Home note (roadmap MOC):** [intelligence-platform-roadmap-MOC.md](intelligence-platform-roadmap-MOC.md)
-- **Project Standards:** [CLAUDE.md](../../../CLAUDE.md) — architecture, build rules (`copy-assets`), engines, module layout
+- **Project Standards:** [AGENTS.md](../../../AGENTS.md) — architecture, build rules (`copy-assets`), engines, module layout
 - **Design docs:** `docs/design/` — SPEC-004 framework decision and SPEC-018 LLM-paths note land here

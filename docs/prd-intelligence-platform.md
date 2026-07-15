@@ -278,5 +278,5 @@ CodeGraph today gives agents a deterministic structural knowledge graph over MCP
 ## 9. References
 
 - **Technical roadmap:** `docs/ai/specs/intelligence-platform-technical-roadmap.md`
-- **Project standards:** `CLAUDE.md` (architecture, build rules, `copy-assets`, engines)
+- **Project standards:** `AGENTS.md` (architecture, build rules, `copy-assets`, engines)
 - **Discovery / source:** racecraft platform-requirements interview, 2026-07-03; framework spike output will land in `docs/design/`

@@ -8,8 +8,8 @@ below is the officially documented one (developers.openai.com/codex).
 
 | Capability | Claude Code | Codex | Notes |
 |---|---|---|---|
-| Repo instructions | `CLAUDE.md` (loaded automatically) | `AGENTS.md` → `CLAUDE.md` symlink; `.codex/config.toml` sets `project_doc_max_bytes = 65536` (CLAUDE.md is ~37 KB, over Codex's 32 KiB default cap) | Codex concatenates docs root→cwd ([agents-md guide](https://developers.openai.com/codex/guides/agents-md)) |
-| Area tripwires (7 dirs) | Subdirectory `CLAUDE.md` — injected when Claude reads files there | Subdirectory `AGENTS.md` → `CLAUDE.md` symlinks — loaded when the Codex session's cwd is inside that dir | Same content via symlink (single source). Trigger differs by host design: on-read vs on-launch-path |
+| Repo instructions | `CLAUDE.md` imports root `AGENTS.md` | Root `AGENTS.md` is canonical; `CLAUDE.md` and `GEMINI.md` are exact `@AGENTS.md` wrappers | Codex concatenates docs root→cwd ([agents-md guide](https://developers.openai.com/codex/guides/agents-md)); Claude and Gemini import the same source |
+| Area tripwires (14 dirs) | Subdirectory `CLAUDE.md` imports local `AGENTS.md` | Subdirectory `AGENTS.md` is loaded when the Codex session's cwd is inside that dir | Same content via import wrappers. Trigger differs by host design: on-read vs on-launch-path |
 | MCP dogfooding (HEAD build) | `.mcp.json` | `.codex/config.toml` `[mcp_servers.codegraph]` — project-scoped MCP is official, trusted projects only ([mcp docs](https://developers.openai.com/codex/mcp)) | Both launch via **`scripts/mcp-dogfood.mjs`** — a cross-platform Node launcher (`command: "node"`, no POSIX `sh`, so Windows clones work) reached through a `node -e` walk-up locator that finds the checkout root from any cwd inside the repo; it applies the untracked `.envrc.local` to the daemon env whether or not values are `export`ed (spec worktrees fall back to the main checkout's copy via `git rev-parse --git-common-dir`), then spawns `node dist/bin/codegraph.js serve --mcp`. Per clone: `npm run build && node dist/bin/codegraph.js init .`; Codex asks to trust the project on first run |
 | Command guardrails | `.claude/hooks/origin-guard.mjs` (PreToolUse, blocks with exit 2) | `.codex/hooks/origin-guard.mjs` — tokenizing PreToolUse hook wired by `.codex/hooks.json`, byte-identical to the Claude hook ([hooks docs](https://developers.openai.com/codex/hooks)) — **plus** `.codex/rules/origin-guard.rules` (execpolicy `prefix_rule`, `forbidden`/`prompt`; [rules docs](https://developers.openai.com/codex/rules)) | The tokenizing hook now runs on **both** hosts and catches flag-shuffled forms (`git -C . push upstream`); execpolicy `prefix_rule` is the secondary layer but matches literal token prefixes only, so those forms slip past it. Verify rules: `codex execpolicy check --pretty --rules .codex/rules/origin-guard.rules -- <cmd>` |
 | Turn-end coverage sentinel | `.claude/hooks/ship-coverage.mjs` (Stop hook: installer coverage + copy-assets checks) | `.codex/hooks/ship-coverage.mjs` — the same Stop hook, wired by `.codex/hooks.json` ([hooks docs](https://developers.openai.com/codex/hooks)) | Parity — Codex CLI supports project-level lifecycle hooks (`Stop` among them), so both hosts run the sentinel as a real hook. Codex trusts a non-managed command hook only after you review it via `/hooks` on first run |
@@ -25,8 +25,8 @@ below is the officially documented one (developers.openai.com/codex).
   `.claude/skills/`, e.g. `agent-eval`, `validate-linux`, `add-lang`, and the `speckit-*`
   family, plus `retrieval-guardian` which mirrors `.claude/agents/`) carries an HTML comment
   naming its `.claude/` counterpart — **edit both or neither**.
-- Instruction content needs no syncing: every `AGENTS.md` is a symlink to the
-  `CLAUDE.md` beside it.
+- Instruction content syncs by policy: edit `AGENTS.md` only. `CLAUDE.md` and
+  `GEMINI.md` stay one-line `@AGENTS.md` wrappers in every approved scope.
 - Guardrail changes land in **three** files: `.claude/hooks/origin-guard.mjs` and
   `.codex/hooks/origin-guard.mjs` (byte-identical tokenizing hooks — the Codex one wired by
   `.codex/hooks.json`, its path resolved from the git root via `$(git rev-parse --show-toplevel)`;

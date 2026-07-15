@@ -1,4 +1,16 @@
 <!--
+Sync Impact Report - 2026-07-15
+- Version change: 1.1.0 -> 1.1.1 (PATCH: canonical instruction-file clarification)
+- Modified principles: none
+- Added sections: none
+- Removed sections: none
+- Template propagation:
+  - AGENTS.md is now the operational manual; CLAUDE.md and GEMINI.md are import wrappers.
+  - Agent instruction files no longer receive generated workflow status blocks.
+- Follow-up TODOs: none
+-->
+
+<!--
 Sync Impact Report — 2026-07-05
 - Version change: 1.0.0 → 1.1.0 (MINOR: materially expanded guidance)
 - Modified principles: none
@@ -13,7 +25,7 @@ Sync Impact Report — 2026-07-05
   - ✅ .specify/templates/*.md — no edit needed: the per-spec self-repo UAT step enters each
     workflow file via /speckit-pro:speckit-scaffold-spec reading the roadmap, whose
     Dogfooding Protocol section is the operational source of truth
-  - ✅ CLAUDE.md — no edit needed: operational mechanics stay in the roadmap section
+  - AGENTS.md — no edit needed: operational mechanics stay in the roadmap section
 - Follow-up TODOs: none
 -->
 
@@ -24,7 +36,7 @@ Sync Impact Report — 2026-07-03
 - Added sections:
   - Core Principles I–VII (I–IV adopt the four Karpathy guidelines from
     https://github.com/fgabelmannjr/andrej-karpathy-skills; V–VII encode CodeGraph
-    non-negotiables from CLAUDE.md house rules and the Intelligence Platform PRD §5)
+    non-negotiables from AGENTS.md house rules and the Intelligence Platform PRD §5)
   - Fork & Ecosystem Constraints
   - Quality Gates & Development Workflow
   - Governance
@@ -37,7 +49,7 @@ Sync Impact Report — 2026-07-03
   - ✅ .specify/templates/tasks-template.md — updated: "Tests are OPTIONAL" qualified with
     the Principle IV bug-fix (failing-test-first) and installer contract-suite exceptions
   - n/a .specify/templates/commands/*.md — directory does not exist (skills-based install)
-  - ✅ CLAUDE.md — no edit needed: it remains the operational manual; this constitution
+  - AGENTS.md — no edit needed: it remains the operational manual; this constitution
     formalizes its house rules rather than replacing them
 - Follow-up TODOs: none
 -->
@@ -47,7 +59,7 @@ Sync Impact Report — 2026-07-03
 Governs the racecraft fork of CodeGraph (racecraft-lab/codegraph) and all Intelligence
 Platform work executed through the SpecKit workflow. Principles I–IV adopt the four
 Karpathy guidelines (fgabelmannjr/andrej-karpathy-skills) as binding engineering law;
-Principles V–VII bind the project-specific invariants that CLAUDE.md and the Intelligence
+Principles V–VII bind the project-specific invariants that AGENTS.md and the Intelligence
 Platform PRD already treat as non-negotiable.
 
 ## Core Principles
@@ -200,7 +212,7 @@ binding here:
 
 ## Governance
 
-- This constitution supersedes other practice documents where they conflict. `CLAUDE.md`
+- This constitution supersedes other practice documents where they conflict. `AGENTS.md`
   remains the operational manual for day-to-day mechanics; this document is the law the
   plan-phase Constitution Check enforces.
 - Every plan MUST pass a Constitution Check against Principles I–VII before Phase 0
@@ -213,4 +225,4 @@ binding here:
 - The constitution is committed to git. Back it up before any SpecKit upgrade or
   `specify init --force` — upgrades overwrite `.specify/memory/`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-07-03 | **Last Amended**: 2026-07-05
+**Version**: 1.1.1 | **Ratified**: 2026-07-03 | **Last Amended**: 2026-07-15
