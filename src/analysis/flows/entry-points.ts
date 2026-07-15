@@ -1,0 +1,348 @@
+/**
+ * SPEC-011 — Execution Flows: static entry-point detection (T020).
+ *
+ * Four static-registration sources (FR-001, research R5), deduplicated to ONE
+ * flow root each (FR-003), with NO name-based heuristics (FR-002):
+ *
+ *   (a) `route` nodes — the framework resolvers already emit them; a route-rooted
+ *       flow roots at the `route` node itself (FR-008).
+ *   (b) commander CLI command registrations — a minimal `.command('<name>')
+ *       …​.action(<handler>)` recognizer reusing the express inline-handler
+ *       body-attribution technique; roots at the named handler, or a synthetic
+ *       command node seeded with the inline body's calls.
+ *   (c) event/queue handler registrations — the callback/observer registrars
+ *       (`.on('e', handler)` / `onX(handler)`) re-applied to mark the REGISTERED
+ *       handler node as a root.
+ *   (d) externally-exposed exports — `isExported` callable (`function`/`method`)
+ *       nodes with ZERO inbound `calls`/`references` edges of any provenance.
+ */
+
+import type { Node } from '../../types';
+import type { QueryBuilder } from '../../db/queries';
+import type { CatalogProvenance, EntryKind, FlowStepEdgeKind } from '../types';
+import { stripCommentsForRegex } from '../../resolution/strip-comments';
+
+/** A seed edge out of a SYNTHETIC root (an inline CLI command) into the graph. */
+export interface VirtualRootEdge {
+  targetNodeId: string;
+  edgeKind: FlowStepEdgeKind;
+  provenance: CatalogProvenance;
+}
+
+/**
+ * A detected flow root. `rootNodeId` is a by-value reference — usually a real
+ * graph node id, but a synthetic `cli:<file>:<line>:<name>` id for an inline
+ * commander action (mirroring the express `route:` node id), in which case the
+ * root's out-edges are supplied as {@link virtualRootEdges} rather than read from
+ * the graph.
+ */
+export interface EntryPoint {
+  entryKind: EntryKind;
+  rootNodeId: string;
+  rootName: string;
+  rootKind: string;
+  /** Fully-qualified root symbol — the flow name for event/export roots (FR-010). */
+  rootQualifiedName?: string;
+  /** Route method+path — the flow name for a route root (FR-010). */
+  routeName?: string;
+  /** Command name — the flow name for a CLI root (FR-010). */
+  commandName?: string;
+  /**
+   * The root's project-relative file — a clone-stable discriminator folded into
+   * the flow id (FR-017a) so two DISTINCT roots that share a public name (two
+   * `GET /health` routes, two `sync` CLI commands in different files) get
+   * DISTINCT ids instead of colliding and being dropped (FR-003/SC-001).
+   */
+  filePath?: string;
+  /** Present ONLY for a synthetic inline-CLI root: its seeded out-edges. */
+  virtualRootEdges?: VirtualRootEdge[];
+}
+
+/** The graph surface flow analysis reads from: node/edge queries + file source. */
+export interface FlowAnalysisGraph {
+  queries: QueryBuilder;
+  /** Read a project-root-relative source file, or null when unavailable. */
+  readFile(relPath: string): string | null;
+}
+
+/** Detection precedence when one node qualifies through multiple sources (FR-003). */
+const ENTRY_PRECEDENCE: Record<EntryKind, number> = { route: 0, cli: 1, event: 2, export: 3 };
+
+// Every JS/TS source variant the CLI/event scanners understand: .js .cjs .mjs
+// .jsx and .ts .cts .mts .tsx. (The bare `m?js|cjs|tsx?` form skipped .jsx/.mts/
+// .cts, so registrations in those files were invisible to the flow catalog.)
+const JS_TS_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+const CALLABLE_KINDS = new Set(['function', 'method']);
+
+/** `.on('e', fn)` / `.once('e', fn)` / `.addListener/addEventListener('e', fn)`. */
+const EVENT_ON_RE =
+  /\.(?:on|once|addListener|addEventListener)\(\s*['"][^'"]+['"]\s*,\s*(?:function\s+(\w+)|(?:this\.)?(\w+))/g;
+/** Field-backed observer registration: `scene.onUpdate(this.triggerRender)`. */
+const EVENT_REGISTRAR_RE =
+  /\.(?:on[A-Z]\w*|subscribe|addListener|addEventListener|register|watch|listen|addCallback)\(\s*(?:this\.)?(\w+)\s*\)/g;
+/** commander `.command('<name> …')`. */
+const CMD_RE = /\.command\(\s*['"]([^'"]+)['"]/g;
+
+/** Builtins/noise NOT attributed as an inline CLI command's flow (mirrors express). */
+const RESERVED_CALLS = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'return', 'await', 'typeof', 'new',
+  'console', 'log', 'error', 'warn', 'info', 'JSON', 'parse', 'stringify',
+  'Promise', 'resolve', 'reject', 'then', 'catch', 'require', 'String', 'Number',
+  'Boolean', 'Array', 'Object', 'Date', 'Math', 'map', 'filter', 'forEach',
+]);
+
+/** Balanced close index for the delimiter opened at `open`, skipping strings. */
+function matchDelim(s: string, open: number, oc: string, cc: string): number {
+  let depth = 0;
+  for (let i = open; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const q = ch;
+      i++;
+      while (i < s.length && s[i] !== q) {
+        if (s[i] === '\\') i++;
+        i++;
+      }
+      continue;
+    }
+    if (ch === oc) depth++;
+    else if (ch === cc) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function lineOf(src: string, index: number): number {
+  let line = 1;
+  for (let i = 0; i < index && i < src.length; i++) if (src[i] === '\n') line++;
+  return line;
+}
+
+function langOf(filePath: string): 'typescript' | 'javascript' {
+  // .ts/.tsx AND the .mts/.cts TypeScript variants classify as TypeScript.
+  return /\.[cm]?tsx?$/.test(filePath) ? 'typescript' : 'javascript';
+}
+
+/**
+ * Detect and dedupe every static entry point in the graph (FR-001/003). One flow
+ * per root node id; when a node qualifies through more than one source the
+ * highest-precedence kind wins (route > cli > event > export).
+ */
+export function detectEntryPoints(graph: FlowAnalysisGraph): EntryPoint[] {
+  const { queries } = graph;
+  const collected: EntryPoint[] = [];
+
+  // (a) Route nodes — the framework resolvers already emit them.
+  for (const route of queries.getNodesByKind('route')) {
+    collected.push({
+      entryKind: 'route',
+      rootNodeId: route.id,
+      rootName: route.name,
+      rootKind: 'route',
+      routeName: route.name,
+      rootQualifiedName: route.qualifiedName,
+      filePath: route.filePath,
+    });
+  }
+
+  // (b) + (c) Source-scan sources: commander CLI and event/queue handlers.
+  for (const f of queries.getAllFiles() as Array<{ path: string }>) {
+    const filePath = f.path;
+    if (!JS_TS_RE.test(filePath)) continue;
+    const raw = graph.readFile(filePath);
+    if (!raw) continue;
+    const src = stripCommentsForRegex(raw, langOf(filePath));
+    collectCliEntries(src, filePath, queries, collected);
+    collectEventEntries(src, filePath, queries, collected);
+  }
+
+  // (d) Externally-exposed exports — isExported callables with zero inbound
+  // calls/references of any provenance (the live signal; there is no export kind).
+  for (const kind of ['function', 'method'] as const) {
+    for (const n of queries.iterateNodesByKind(kind)) {
+      if (!n.isExported) continue;
+      if (queries.getIncomingEdges(n.id, ['calls', 'references']).length > 0) continue;
+      collected.push({
+        entryKind: 'export',
+        rootNodeId: n.id,
+        rootName: n.name,
+        rootKind: n.kind,
+        rootQualifiedName: n.qualifiedName,
+        filePath: n.filePath,
+      });
+    }
+  }
+
+  return dedupe(collected);
+}
+
+/** Resolve a handler NAME to a callable node, preferring the same file (FR-001). */
+function resolveHandler(name: string, filePath: string, queries: QueryBuilder): Node | null {
+  const candidates = queries.getNodesByName(name).filter((n) => CALLABLE_KINDS.has(n.kind));
+  if (candidates.length === 0) return null;
+  // Deterministic total order (FR-008a): same-file first, then file path,
+  // qualified name, id. `getNodesByName` row order is not a guaranteed tiebreak,
+  // so `find(same-file) ?? candidates[0]` could pick a different root across
+  // otherwise-identical builds when several same-name callables exist.
+  return [...candidates].sort((a, b) => {
+    const sa = a.filePath === filePath ? 0 : 1;
+    const sb = b.filePath === filePath ? 0 : 1;
+    if (sa !== sb) return sa - sb;
+    if (a.filePath !== b.filePath) return a.filePath < b.filePath ? -1 : 1;
+    if (a.qualifiedName !== b.qualifiedName) return a.qualifiedName < b.qualifiedName ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  })[0]!;
+}
+
+/** commander `.command('<name>').action(<handler>)` → one CLI entry per command. */
+function collectCliEntries(src: string, filePath: string, queries: QueryBuilder, out: EntryPoint[]): void {
+  CMD_RE.lastIndex = 0;
+  const cmdMatches: Array<{ index: number; name: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = CMD_RE.exec(src))) {
+    cmdMatches.push({ index: m.index, name: m[1]!.trim().split(/\s+/)[0]! });
+  }
+  for (let i = 0; i < cmdMatches.length; i++) {
+    const { index, name: commandName } = cmdMatches[i]!;
+    if (!commandName) continue;
+    const segEnd = i + 1 < cmdMatches.length ? cmdMatches[i + 1]!.index : src.length;
+    const actionAt = src.indexOf('.action(', index);
+    if (actionAt < 0 || actionAt >= segEnd) continue;
+    const open = src.indexOf('(', actionAt);
+    const close = open >= 0 ? matchDelim(src, open, '(', ')') : -1;
+    if (close <= open) continue;
+    const arg = src.slice(open + 1, close).trim();
+    const line = lineOf(src, index);
+
+    const named = arg.match(/^([A-Za-z_$][\w$]*)\s*$/);
+    if (named) {
+      const handler = resolveHandler(named[1]!, filePath, queries);
+      if (handler) {
+        out.push({
+          entryKind: 'cli',
+          rootNodeId: handler.id,
+          rootName: handler.name,
+          rootKind: handler.kind,
+          rootQualifiedName: handler.qualifiedName,
+          commandName,
+          // The REGISTRATION file (where `.command(...)` is), NOT the handler's
+          // file: two CLIs' `sync` in different files can share one handler node,
+          // so the registration site is what distinguishes the entry points and
+          // gives them distinct flow ids (FR-003/SC-001, FR-017a).
+          filePath,
+        });
+      }
+      continue;
+    }
+    // Inline handler (`.action(async (opts) => {…})`): synthesize a command root
+    // and attribute the body's calls to it (the express inline-handler technique).
+    if (arg.includes('=>') || /^(?:async\s+)?function\b/.test(arg)) {
+      const seeds = inlineBodyEdges(arg, filePath, queries);
+      out.push({
+        entryKind: 'cli',
+        rootNodeId: `cli:${filePath}:${line}:${commandName}`,
+        rootName: commandName,
+        rootKind: 'function',
+        commandName,
+        virtualRootEdges: seeds,
+        filePath,
+      });
+    }
+  }
+}
+
+/** Resolve the non-reserved calls in an inline action body to seed edges. */
+function inlineBodyEdges(arg: string, filePath: string, queries: QueryBuilder): VirtualRootEdge[] {
+  const arrowAt = arg.indexOf('=>');
+  let body = arrowAt >= 0 ? arg.slice(arrowAt + 2) : arg;
+  const braceAt = body.indexOf('{');
+  if (braceAt >= 0) {
+    const end = matchDelim(body, braceAt, '{', '}');
+    if (end > braceAt) body = body.slice(braceAt + 1, end);
+  }
+  const callRe = /\b([A-Za-z_$][\w$]*)\s*\(/g;
+  const seen = new Set<string>();
+  const edges: VirtualRootEdge[] = [];
+  let cm: RegExpExecArray | null;
+  while ((cm = callRe.exec(body))) {
+    const name = cm[1]!;
+    if (seen.has(name) || RESERVED_CALLS.has(name)) continue;
+    seen.add(name);
+    const handler = resolveHandler(name, filePath, queries);
+    if (handler) edges.push({ targetNodeId: handler.id, edgeKind: 'calls', provenance: 'heuristic' });
+  }
+  return edges;
+}
+
+/** `.on('e', handler)` / `onX(handler)` → mark the REGISTERED handler a root. */
+function collectEventEntries(src: string, filePath: string, queries: QueryBuilder, out: EntryPoint[]): void {
+  const names = new Set<string>();
+  EVENT_ON_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = EVENT_ON_RE.exec(src))) {
+    const name = m[1] || m[2];
+    if (name) names.add(name);
+  }
+  EVENT_REGISTRAR_RE.lastIndex = 0;
+  while ((m = EVENT_REGISTRAR_RE.exec(src))) {
+    if (m[1]) names.add(m[1]);
+  }
+  for (const name of names) {
+    const handler = resolveHandler(name, filePath, queries);
+    if (!handler) continue;
+    out.push({
+      entryKind: 'event',
+      rootNodeId: handler.id,
+      rootName: handler.name,
+      rootKind: handler.kind,
+      rootQualifiedName: handler.qualifiedName,
+      filePath: handler.filePath,
+    });
+  }
+}
+
+/**
+ * Reduce to the flows a root should produce (FR-003). The highest-precedence kind
+ * wins PER ROOT NODE (route > cli > event > export) — a node detected through more
+ * than one form of evidence roots ONE flow of the winning kind. BUT two CLI
+ * commands that share a handler (`.command('start').action(run)` +
+ * `.command('stop').action(run)` both root at `run`) are DISTINCT entry points
+ * that must EACH yield a flow (FR-003/SC-001), so within the winning kind, CLI
+ * entries are kept per command name; every other kind is one-per-root.
+ * Deterministically ordered (precedence, root id, then command name).
+ */
+function dedupe(entries: EntryPoint[]): EntryPoint[] {
+  // 1. The winning (lowest-value) precedence for each root node.
+  const winning = new Map<string, number>();
+  for (const e of entries) {
+    const p = ENTRY_PRECEDENCE[e.entryKind];
+    const cur = winning.get(e.rootNodeId);
+    if (cur === undefined || p < cur) winning.set(e.rootNodeId, p);
+  }
+  // 2. Keep entries of the winning kind, deduped by their DISTINGUISHING identity:
+  //    a CLI command by (root, command name) so sibling commands survive; every
+  //    other kind collapses to one per root.
+  const seen = new Set<string>();
+  const kept: EntryPoint[] = [];
+  for (const e of entries) {
+    if (ENTRY_PRECEDENCE[e.entryKind] !== winning.get(e.rootNodeId)) continue; // lower precedence → suppressed
+    // A CLI command is distinguished by (root, command name, REGISTRATION file) —
+    // two CLIs' `sync` sharing a handler live in different files and are distinct
+    // entry points; every other kind is one-per-root.
+    const key = e.entryKind === 'cli' ? `${e.rootNodeId}\n${e.commandName ?? ''}\n${e.filePath ?? ''}` : e.rootNodeId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(e);
+  }
+  return kept.sort((a, b) => {
+    const pa = ENTRY_PRECEDENCE[a.entryKind];
+    const pb = ENTRY_PRECEDENCE[b.entryKind];
+    if (pa !== pb) return pa - pb;
+    if (a.rootNodeId !== b.rootNodeId) return a.rootNodeId < b.rootNodeId ? -1 : 1;
+    const ca = a.commandName ?? '';
+    const cb = b.commandName ?? '';
+    return ca < cb ? -1 : ca > cb ? 1 : 0;
+  });
+}

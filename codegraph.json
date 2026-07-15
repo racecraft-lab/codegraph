@@ -4,5 +4,9 @@
     "caps": {
       "fullIndexWorkItemsPerLanguage": 1000000000
     }
+  },
+  "analysis": {
+    "flows": true,
+    "clusters": true
   }
 }

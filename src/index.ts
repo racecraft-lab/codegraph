@@ -104,6 +104,17 @@ import {
 import { applyRename as deriveApplyRename } from './refactor/apply-engine';
 import { planRename as derivePlanRename } from './refactor/plan-engine';
 import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
+import { loadAnalysisConfig } from './project-config';
+import {
+  maybeRunCatalogAnalysis,
+  readClusterList,
+  readFlowDetail,
+  readFlowList,
+  type ClusterListResult,
+  type FlowAnalysisGraph,
+  type FlowDetailRead,
+  type FlowListResult,
+} from './analysis';
 
 // Re-export types for consumers
 export * from './types';
@@ -1064,6 +1075,33 @@ export class CodeGraph {
           }
         }
 
+        // Optional catalog analysis (SPEC-011): execution flows + functional
+        // clusters over the resolved graph — the SAME advisory discipline as the
+        // embedding pass above. Runs on EVERY successful index (NOT gated on
+        // filesIndexed, unlike embedding) so an enabled-but-empty project computes
+        // an available-but-empty catalog (never 'disabled') and a removal-only
+        // index still recomputes — FR-020's recompute-after-every-successful-index,
+        // matching sync(). Opt-in per catalog (fully dormant, and no
+        // graph_write_version advance, for a never-opted-in project), honors the
+        // caller's AbortSignal, and every failure is swallowed internally so a
+        // broken analysis can never fail an index (FR-020/022b). The wrapping
+        // try/catch is belt-and-braces over that internal swallow.
+        if (result.success) {
+          try {
+            await maybeRunCatalogAnalysis(
+              this.catalogAnalysisGraph(),
+              this.db.getDb(),
+              loadAnalysisConfig(this.projectRoot),
+              options.signal,
+            );
+          } catch (err) {
+            logWarn(
+              `Catalog analysis skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+              '— the enclosing index/sync operation is unaffected.'
+            );
+          }
+        }
+
         return result;
       } finally {
         // Restore the auto-checkpoint interval AFTER the fold-up above so the
@@ -1292,6 +1330,26 @@ export class CodeGraph {
   }
 
   /**
+   * SPEC-011: the graph surface catalog analysis reads from — the live query
+   * layer plus a project-root-relative source reader for the flow entry-point
+   * scanners (CLI/event registrations). Path-validated within the root; an
+   * unreadable file resolves to null, never throws.
+   */
+  private catalogAnalysisGraph(): FlowAnalysisGraph {
+    return {
+      queries: this.queries,
+      readFile: (relPath: string): string | null => {
+        try {
+          const abs = validatePathWithinRoot(this.projectRoot, relPath);
+          return abs ? fs.readFileSync(abs, 'utf-8') : null;
+        } catch {
+          return null;
+        }
+      },
+    };
+  }
+
+  /**
    * Index specific files
    *
    * Uses a mutex to prevent concurrent indexing operations.
@@ -1506,6 +1564,29 @@ export class CodeGraph {
           // message or cause), keeping endpoint/key redaction total (FR-023).
           logWarn(
             `Embedding pass skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
+            '— the sync is unaffected.'
+          );
+        }
+
+        // Optional catalog analysis (SPEC-011): the SAME advisory pass indexAll
+        // runs, in sync()'s post-resolution slot. Reaching here IS a successful
+        // sync (the only earlier exit is the lock-acquisition failure), so this
+        // runs on every successful sync (FR-020) — full recompute, no incremental,
+        // exactly like the embedding pass above. Opt-in per catalog (dormant + no
+        // graph_write_version advance when neither is enabled), honors the
+        // AbortSignal, failures swallowed internally so a broken analysis can never
+        // fail a sync. The watcher and daemon drive this same sync(), inheriting the
+        // pass with no extra wiring. The wrapping try/catch is belt-and-braces.
+        try {
+          await maybeRunCatalogAnalysis(
+            this.catalogAnalysisGraph(),
+            this.db.getDb(),
+            loadAnalysisConfig(this.projectRoot),
+            options.signal,
+          );
+        } catch (err) {
+          logWarn(
+            `Catalog analysis skipped after an unexpected ${err instanceof Error ? err.name : 'error'} ` +
             '— the sync is unaffected.'
           );
         }
@@ -1954,6 +2035,41 @@ export class CodeGraph {
    */
   getNode(id: string): Node | null {
     return this.queries.getNodeById(id);
+  }
+
+  /**
+   * SPEC-011 — the paged execution-flow catalog with its read-time state
+   * (FR-027/030). A thin pass through the shared `src/analysis` read facade over
+   * this project's warm connection; the live `analysis.flows` opt-in flag is
+   * consulted FIRST so a disabled catalog reads `disabled` regardless of any
+   * retained rows (FR-025). Both the MCP tool and the daemon-served REST endpoint
+   * render from this one method (FR-028a).
+   */
+  listFlows(limit: number, offset: number): FlowListResult {
+    const enabled = loadAnalysisConfig(this.projectRoot).flows;
+    return readFlowList(this.queries.getDb(), enabled, limit, offset);
+  }
+
+  /**
+   * SPEC-011 — one flow's bounded graph + truncation metadata with its read-time
+   * state, or a stateful miss (unknown id / disabled / not-computed) rendered as
+   * success-shaped guidance by the surfaces (FR-027/030). Shared by MCP + REST.
+   */
+  getFlowById(id: string): FlowDetailRead {
+    const enabled = loadAnalysisConfig(this.projectRoot).flows;
+    return readFlowDetail(this.queries.getDb(), enabled, id);
+  }
+
+  /**
+   * SPEC-011 — the paged functional-cluster catalog with its read-time state
+   * (FR-027/029/030). Thin pass through the shared `src/analysis` read facade;
+   * the live `analysis.clusters` opt-in flag is consulted FIRST (FR-025), and the
+   * `minSize` filter (≥1) suppresses singletons at `minSize` ≥ 2 (FR-029). Both
+   * the MCP tool and the daemon-served REST endpoint render from this one method.
+   */
+  listClusters(minSize: number, limit: number, offset: number): ClusterListResult {
+    const enabled = loadAnalysisConfig(this.projectRoot).clusters;
+    return readClusterList(this.queries.getDb(), enabled, minSize, limit, offset);
   }
 
   /**

@@ -67,6 +67,11 @@ components:
       name: offset
       in: query
       schema: { type: integer, default: 0, minimum: 0 }
+    MinSize:
+      name: minSize
+      in: query
+      schema: { type: integer, default: 1, minimum: 1 }
+      description: 'SPEC-011 (FR-029) — minimum member-file count; default 1, values <1 clamp to 1 (coerced, never a 4xx). minSize>=2 suppresses singleton clusters.'
     RepoQuery:
       name: repo
       in: query
@@ -215,6 +220,96 @@ components:
         nodesCreated: { type: integer }
         edgesCreated: { type: integer }
         durationMs: { type: integer }
+    # ---------- SPEC-011: execution-flow catalog (FR-028/028a) ----------
+    FlowTruncation:   # the FR-027 axis-flag shape; each axis independent
+      type: object
+      required: [depth, width, totalSteps]
+      properties:
+        depth: { type: boolean }
+        width: { type: boolean }
+        totalSteps: { type: boolean }
+    FlowStep:
+      type: object
+      required: [nodeId, name, kind, depth, parentNodeId, edgeKind, provenance]
+      properties:
+        nodeId: { type: string }
+        name: { type: string, description: 'Denormalized symbol name (FR-022a); an explicit placeholder if the node id no longer resolves.' }
+        kind: { type: string }
+        depth: { type: integer, description: 'Hops from the root (0 = root).' }
+        parentNodeId: { type: ['string', 'null'], description: 'Edge source in the branching graph; null for the root step.' }
+        edgeKind: { type: ['string', 'null'], enum: [calls, references, null], description: 'null for the root step.' }
+        # STANDALONE 3-value enum — MUST NOT $ref Edge.provenance, whose 2-value
+        # [static, heuristic] would collapse lsp→static and drop the LSP provenance
+        # FR-008/FR-009 require. Nullable ONLY for the root step (3.1 type union).
+        provenance:
+          type: ['string', 'null']
+          enum: [static, lsp, heuristic, null]
+          description: 'Provenance of the incoming call edge (static | lsp | heuristic); null ONLY for the root step (FR-009).'
+    FlowSummary:
+      type: object
+      required: [id, name, entryKind, stepCount, truncated]
+      properties:
+        id: { type: string, description: 'Deterministic, root-derived flow id (FR-017a).' }
+        name: { type: string, description: '"<METHOD> <path>" | CLI command | qualified root symbol (FR-010).' }
+        entryKind: { type: string, enum: [route, cli, event, export] }
+        stepCount: { type: integer }
+        truncated: { type: boolean, description: 'depth OR width OR totalSteps (FR-027).' }
+    FlowDetail:
+      type: object
+      required: [id, name, entryKind, root, steps, truncated, truncation, sourceVersion, state]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        entryKind: { type: string, enum: [route, cli, event, export] }
+        root:
+          type: object
+          required: [nodeId, name, kind]
+          properties:
+            nodeId: { type: string }
+            name: { type: string }
+            kind: { type: string }
+        steps: { type: array, items: { $ref: '#/components/schemas/FlowStep' } }
+        truncated: { type: boolean, description: 'Disjunction of the three axis flags (FR-027).' }
+        truncation: { $ref: '#/components/schemas/FlowTruncation' }
+        sourceVersion: { type: integer, description: 'graph_write_version the catalog was computed from.' }
+        state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+    FlowListResult:   # a paged flow catalog defined DIRECTLY — NOT `allOf ListResult`, whose items are Node[]: a catalog item is a FlowSummary, so `allOf` forced items to satisfy BOTH shapes and validated nothing real.
+      type: object
+      required: [items, total, limit, offset, sourceVersion, state]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/FlowSummary' } }
+        total: { type: integer, description: Match count. }
+        limit: { type: integer, description: Effective (coerced) page size. }
+        offset: { type: integer, description: Effective (coerced) offset. }
+        sourceVersion: { type: integer, description: 'graph_write_version the catalog was computed from (0 when not_indexed).' }
+        state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+    # ---------- SPEC-011: functional-cluster catalog (FR-028/028a/029) ----------
+    ClusterSummary:   # field names IDENTICAL to the codegraph_list_clusters MCP item (FR-028a)
+      type: object
+      required: [id, canonicalLabel, displayLabel, memberCount, isSingleton]
+      properties:
+        id: { type: string, description: 'Opaque, deterministic, stable cluster id (FR-017a).' }
+        canonicalLabel: { type: string, description: 'Deterministic label from dominant directory + name tokens (FR-018).' }
+        displayLabel: { type: ['string', 'null'], description: 'Optional LLM label, presentation-only; null when unconfigured (FR-019).' }
+        memberCount: { type: integer }
+        isSingleton: { type: boolean, description: 'True for a single-file cluster (FR-014).' }
+    ClusterListResult:   # a paged cluster catalog defined DIRECTLY — NOT `allOf ListResult` (whose items are Node[]); see FlowListResult.
+      type: object
+      required: [items, total, limit, offset, sourceVersion, state]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ClusterSummary' } }
+        total: { type: integer, description: Post-minSize-filter match count. }
+        limit: { type: integer, description: Effective (coerced) page size. }
+        offset: { type: integer, description: Effective (coerced) offset. }
+        sourceVersion: { type: integer, description: 'graph_write_version the catalog was computed from (0 when not_indexed).' }
+        state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+    CatalogMiss:   # success-shaped guidance for /api/flows/{id}: an unknown id within a live catalog, or an inert (disabled/unavailable/not_indexed) catalog (FR-030).
+      type: object
+      required: [found, state, message]
+      properties:
+        found: { type: boolean, enum: [false] }
+        state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+        message: { type: string }
   responses:
     NotFound:
       description: Unknown node/repo/route (FR-011/015a); details.resource discriminates.
@@ -328,6 +423,53 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/GraphResult' } } } }
         '400': { description: Malformed/negative depth (FR-015a; over-max clamps, not errors), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
         '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed node id or ?repo (FR-004a/010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
+
+  # ---------- SPEC-011: execution-flow catalog (FR-027/028/030) ----------
+  # Daemon-forwarding reads (like the Slice-1 reads above), so they carry the
+  # same 503. An unknown FLOW id is NOT a 404 — it returns a success-shaped 200
+  # to keep this surface's condition-handling identical to the MCP tools (FR-030).
+  /api/flows:
+    get:
+      tags: [read]
+      summary: Paged execution-flow catalog with read-time state (SPEC-011, FR-027/028/030).
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        # No 400 on paging: `limit`/`offset` are COERCED (floor + clamp; malformed/
+        # missing → default), never a 4xx (FR-030) — matching the MCP tool, unlike
+        # the SPEC-005 reads. Only a bad ?repo (404) or a daemon fault (503) is non-2xx.
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/FlowListResult' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
+  /api/flows/{id}:
+    get:
+      tags: [read]
+      summary: One flow's bounded graph + truncation. Unknown flow id ⇒ success-shaped 200 (not 404), matching the MCP contract (FR-030).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: 'The deterministic flow id from /api/flows.' }
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        '200': { description: 'OK — the flow detail, or success-shaped guidance (found:false) for an unknown id / disabled / unavailable / not-indexed catalog (FR-030).', content: { application/json: { schema: { oneOf: [{ $ref: '#/components/schemas/FlowDetail' }, { $ref: '#/components/schemas/CatalogMiss' }] } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011) — NOT unknown flow id
+        '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
+  /api/clusters:
+    get:
+      tags: [read]
+      summary: Paged functional-cluster catalog with read-time state (SPEC-011, FR-028/029/030).
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+        - { $ref: '#/components/parameters/MinSize' }
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        # No 400 on paging: `limit`/`offset`/`minSize` are COERCED (floor + clamp;
+        # malformed/missing → default), never a 4xx (FR-029/030) — matching the MCP
+        # tool. Only a bad ?repo (404) or a daemon fault (503) is non-2xx.
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ClusterListResult' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011)
         '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
 
   # ---------- Slice 2: re-index jobs (T041) ----------

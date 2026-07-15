@@ -27,6 +27,9 @@ import {
   readCallees,
   readImpact,
   readNeighborhood,
+  readFlows,
+  readFlow,
+  readClusters,
   type DaemonReadClient,
 } from './daemon-client';
 
@@ -295,6 +298,45 @@ function parsePaging(q: URLSearchParams): { limit: number; offset: number } | Ap
   return { limit, offset };
 }
 
+/**
+ * Coerce a SPEC-011 catalog numeric query param (FR-028/029/030): a finite value is
+ * floored then clamped to [min,max]; missing/empty/non-numeric → `def`. Floor +
+ * clamp, **never a 4xx** — the catalog paging/`minSize` params degrade to the
+ * default instead of erroring, unlike the SPEC-005 `parseBoundedInt` (which 400s).
+ * Mirrors the daemon read-ops boundary coercion so the REST and `codegraph/read`
+ * surfaces agree (cross-surface parity, FR-028a).
+ */
+function coerceCatalogInt(raw: string | null, def: number, min: number, max: number): number {
+  if (raw === null || raw === '') return def;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+/**
+ * SPEC-011 catalog paging (FR-030): `limit` (default 100, clamp 1–500) + `offset`
+ * (default 0, ≥ 0), coerced — a malformed/negative page param floors + clamps to a
+ * valid value, never a 4xx (unlike SPEC-005 `parsePaging`). The catalog surfaces are
+ * success-shaped: a bad page param degrades to the default, it does not fail the
+ * request. This shares the MCP tool's coercion *semantics* (`coerceCatalogInt`+
+ * `clamp`: floor + clamp, missing/non-numeric → default, never error); the bound
+ * VALUES stay per-surface (MCP default 20 / cap 100, REST default 100 / cap 500).
+ */
+function parseCatalogPaging(q: URLSearchParams): { limit: number; offset: number } {
+  return {
+    limit: coerceCatalogInt(q.get('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT),
+    offset: coerceCatalogInt(q.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER),
+  };
+}
+
+/**
+ * The SPEC-011 `minSize` cluster filter (FR-029): default 1, values < 1 clamp to 1,
+ * coerced never a 4xx — the same catalog coercion as the paging params.
+ */
+function parseMinSize(q: URLSearchParams): number {
+  return coerceCatalogInt(q.get('minSize'), 1, 1, Number.MAX_SAFE_INTEGER);
+}
+
 /** `depth` with a per-endpoint default, clamped to max 3; malformed/negative → 400. */
 function parseDepth(q: URLSearchParams, def: number): number | ApiError {
   return parseBoundedInt(q.get('depth'), def, 1, MAX_DEPTH, 'depth');
@@ -334,6 +376,27 @@ async function withClient(
     deps.evictClient(repo, client);
     return daemonUnavailable(err);
   }
+}
+
+/**
+ * Like {@link withClient}, but for the SPEC-011 catalog endpoints: a resolved-but-
+ * UNINDEXED repo has no daemon to attach to, so `getClient` would throw and
+ * `withClient` would map it to a transient 503 — and the daemon-side
+ * `readOnMissingIndex` never runs because the request never reaches a daemon. An
+ * expected condition (project not indexed) MUST stay success-shaped (FR-030), so
+ * check `isRepoIndexed` BEFORE the attach and return the caller's `not_indexed`
+ * envelope — exactly as {@link statusHandler} reports an un-indexed startup repo.
+ */
+async function withCatalogClient(
+  deps: ReadApiDeps,
+  ctx: RouteContext,
+  notIndexed: () => HandlerResult,
+  fn: (client: DaemonReadClient) => Promise<HandlerResult>,
+): Promise<HandlerResult> {
+  const repo = deps.resolveRepo(ctx.query.get('repo') ?? undefined);
+  if (!repo) return notFound('repo');
+  if (!deps.isRepoIndexed(repo.root)) return notIndexed();
+  return withClient(deps, ctx, fn);
 }
 
 /** GET /api/status (T014, FR-005/016) — not repo-scoped; reports the default repo. */
@@ -444,6 +507,78 @@ function relationHandler(deps: ReadApiDeps, which: 'callers' | 'callees'): Route
   };
 }
 
+/**
+ * GET /api/flows (SPEC-011 T025, FR-028/030) — the paged execution-flow catalog.
+ * A thin daemon-forwarding handler (the serve process holds no DB connection);
+ * the same catalog-store read runs in the daemon (FR-021a). Limit (default 100 /
+ * max 500) / Offset are COERCED (floor + clamp, never a 4xx — FR-030), matching
+ * the MCP tool, not the SPEC-005 `parsePaging` 400.
+ */
+function flowsListHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) => {
+    const paging = parseCatalogPaging(ctx.query);
+    return withCatalogClient(
+      deps,
+      ctx,
+      () => ({
+        status: 200,
+        body: { items: [], total: 0, limit: paging.limit, offset: paging.offset, sourceVersion: 0, state: 'not_indexed' },
+      }),
+      async (client) => {
+        const result = await readFlows(client, paging.limit, paging.offset);
+        return { status: 200, body: result };
+      },
+    );
+  };
+}
+
+/**
+ * GET /api/flows/:id (SPEC-011 T025, FR-028/030) — one flow's bounded graph. An
+ * unknown flow id returns a success-shaped 200 (NOT 404) to keep this surface's
+ * condition-handling identical to the MCP contract (the intentional divergence).
+ */
+function flowDetailHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) =>
+    withCatalogClient(
+      deps,
+      ctx,
+      () => ({ status: 200, body: { found: false, state: 'not_indexed', message: 'flows catalog not_indexed' } }),
+      async (client) => {
+        const r = await readFlow(client, ctx.params.id ?? '');
+        if (r.found) return { status: 200, body: r.flow };
+        const live = r.state === 'available' || r.state === 'stale' || r.state === 'empty';
+        const message = live ? 'unknown flow id' : `flows catalog ${r.state}`;
+        return { status: 200, body: { found: false, state: r.state, message } };
+      },
+    );
+}
+
+/**
+ * GET /api/clusters (SPEC-011 T037, FR-028/029) — the paged functional-cluster
+ * catalog. A thin daemon-forwarding handler (the serve process holds no DB
+ * connection); the same catalog-store read runs in the daemon (FR-021a). Limit
+ * (default 100 / max 500) / Offset and the `minSize` filter (default 1, `<1`→1)
+ * are all COERCED (floor + clamp, never a 4xx — FR-030), matching the MCP tool.
+ */
+function clustersListHandler(deps: ReadApiDeps): RouteHandler {
+  return (ctx) => {
+    const paging = parseCatalogPaging(ctx.query);
+    const minSize = parseMinSize(ctx.query);
+    return withCatalogClient(
+      deps,
+      ctx,
+      () => ({
+        status: 200,
+        body: { items: [], total: 0, limit: paging.limit, offset: paging.offset, sourceVersion: 0, state: 'not_indexed' },
+      }),
+      async (client) => {
+        const result = await readClusters(client, minSize, paging.limit, paging.offset);
+        return { status: 200, body: result };
+      },
+    );
+  };
+}
+
 /** GET /api/impact|graph/:id (T018, FR-004/007) — shared subgraph, divergent depth. */
 function subgraphHandler(deps: ReadApiDeps, which: 'impact' | 'graph'): RouteHandler {
   return (ctx) => {
@@ -475,6 +610,9 @@ export function buildReadRoutes(deps: ReadApiDeps): Route[] {
     { method: 'GET', pattern: '/api/callees/:id', handler: relationHandler(deps, 'callees') },
     { method: 'GET', pattern: '/api/impact/:id', handler: subgraphHandler(deps, 'impact') },
     { method: 'GET', pattern: '/api/graph/:id', handler: subgraphHandler(deps, 'graph') },
+    { method: 'GET', pattern: '/api/flows', handler: flowsListHandler(deps) },
+    { method: 'GET', pattern: '/api/flows/:id', handler: flowDetailHandler(deps) },
+    { method: 'GET', pattern: '/api/clusters', handler: clustersListHandler(deps) },
   ];
 }
 

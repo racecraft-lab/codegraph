@@ -369,6 +369,7 @@ export class QueryBuilder {
     deleteRemovedVectors?: SqliteStatement;
     embeddingCoverage?: SqliteStatement;
     bumpVectorsWriteVersion?: SqliteStatement;
+    advanceGraphWriteVersion?: SqliteStatement;
     getReferencesToNode?: SqliteStatement;
   } = {};
 
@@ -381,6 +382,15 @@ export class QueryBuilder {
 
   constructor(db: SqliteDatabase) {
     this.db = db;
+  }
+
+  /**
+   * The underlying SqliteDatabase handle. The SPEC-011 catalog-store reads/writes
+   * operate directly on this connection so both catalog surfaces share the
+   * daemon's warm WAL connection (FR-021a).
+   */
+  getDb(): SqliteDatabase {
+    return this.db;
   }
 
   /** Set the normalized project-name tokens used to down-weight non-discriminative
@@ -2181,6 +2191,37 @@ export class QueryBuilder {
     }));
   }
 
+  /**
+   * SPEC-011 T032 (FR-011/012) — count-aggregated reference evidence per file
+   * pair, for the functional-cluster file graph. One row per DIRECTED
+   * (source file, target file) pair over ACTIVE `calls`/`imports` edges, where
+   * `weight` is the number of such edges between those files. Same-file pairs
+   * (source == target) are returned too; the undirected fold and self-loop drop
+   * happen in the analysis layer (`src/analysis/clusters/file-graph.ts`, FR-012).
+   * Rows come back in a stable order so the downstream aggregation is
+   * deterministic (FR-013). A read-only scan — never mutates the graph.
+   */
+  getFilePairEdgeWeights(): Array<{ sourceFile: string; targetFile: string; weight: number }> {
+    const sql = `SELECT src.file_path AS source_file, tgt.file_path AS target_file, COUNT(*) AS weight
+      FROM edges e
+      JOIN nodes src ON src.id = e.source
+      JOIN nodes tgt ON tgt.id = e.target
+      WHERE e.kind IN ('calls', 'imports')
+        AND ${activeEdgePredicate('e')}
+      GROUP BY src.file_path, tgt.file_path
+      ORDER BY src.file_path, tgt.file_path`;
+    const rows = this.db.prepare(sql).all() as Array<{
+      source_file: string;
+      target_file: string;
+      weight: number;
+    }>;
+    return rows.map((r) => ({
+      sourceFile: r.source_file,
+      targetFile: r.target_file,
+      weight: Number(r.weight),
+    }));
+  }
+
   // ===========================================================================
   // File Operations
   // ===========================================================================
@@ -2806,6 +2847,42 @@ export class QueryBuilder {
       `);
     }
     this.stmts.bumpVectorsWriteVersion.run({ updatedAt: Date.now() });
+  }
+
+  /**
+   * Read the monotonic `graph_write_version` metadata token (SPEC-011,
+   * data-model.md). This is the LIVE graph version; a catalog is stale when the
+   * version it recorded is strictly less than this (staleness is DERIVED, never
+   * stored). Absent (dormant/never-advanced project) or malformed ⇒ 0. A pure
+   * read — it MUST NOT create the scalar, so a not-opted-in project stays
+   * byte-identical to the pre-feature state (FR-025/SC-007).
+   */
+  getGraphWriteVersion(): number {
+    const raw = this.getMetadata('graph_write_version');
+    const parsed = raw === null ? NaN : Number(raw);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+  }
+
+  /**
+   * Advance `graph_write_version` by 1 (SPEC-011). Called once per successful
+   * index/sync when ≥1 catalog is enabled (the dormancy gate lives in the
+   * analysis orchestrator, FR-025), as part of the graph-update commit BEFORE
+   * catalog analysis runs, so a post-update analysis failure leaves the retained
+   * catalog's recorded version strictly less than live — deriving as stale
+   * (FR-022). Mirrors `bumpVectorsWriteVersion`: a single atomic CAST-arithmetic
+   * increment, monotonic and cheap.
+   */
+  advanceGraphWriteVersion(): void {
+    if (!this.stmts.advanceGraphWriteVersion) {
+      this.stmts.advanceGraphWriteVersion = this.db.prepare(`
+        INSERT INTO project_metadata (key, value, updated_at)
+        VALUES ('graph_write_version', '1', @updatedAt)
+        ON CONFLICT(key) DO UPDATE SET
+          value = CAST(CAST(value AS INTEGER) + 1 AS TEXT),
+          updated_at = @updatedAt
+      `);
+    }
+    this.stmts.advanceGraphWriteVersion.run({ updatedAt: Date.now() });
   }
 
   /**

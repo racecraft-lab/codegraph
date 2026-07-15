@@ -20,7 +20,7 @@ import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { serveStatic, placeholderPage } from '../src/server/static';
 import { startWebServer } from '../src/server/index';
-import { executeReadOp } from '../src/mcp/read-ops';
+import { executeReadOp, readOnMissingIndex } from '../src/mcp/read-ops';
 import {
   buildReadRoutes,
   handleApiRequest,
@@ -164,6 +164,89 @@ describe('SPEC-005 R2-DEPTH: read-ops defensively clamp over-cap depth/limit', (
     };
     expect(res.items.length).toBe(500);
     expect(res.total).toBe(600);
+  });
+});
+
+// SPEC-011 (PR #50 review): the catalog read-ops coerce `limit`/`offset`/`minSize`
+// like the MCP tool (floor + clamp, never an error) so a directly dispatched
+// `codegraph/read` renders the SAME page as the HTTP route and the MCP tool
+// (FR-028a). The earlier `Number(x)||default` mis-mapped an explicit `limit=0` to
+// the default (100) instead of clamping to 1, and never floored non-integers.
+describe('SPEC-011: catalog read-ops coerce paging (floor + clamp, never error)', () => {
+  /** A stub CodeGraph whose list methods record the (coerced) args they receive. */
+  function captureCg(): { cg: CodeGraph; seen: () => Record<string, number> } {
+    let seen: Record<string, number> = {};
+    const cg = {
+      listFlows: (limit: number, offset: number) => {
+        seen = { limit, offset };
+        return { items: [], total: 0, limit, offset, sourceVersion: 1, state: 'available' };
+      },
+      listClusters: (minSize: number, limit: number, offset: number) => {
+        seen = { minSize, limit, offset };
+        return { items: [], total: 0, limit, offset, sourceVersion: 1, state: 'available' };
+      },
+    } as unknown as CodeGraph;
+    return { cg, seen: () => seen };
+  }
+
+  it('listFlows: limit=0→1, 1.9→1 (floor), abc→100 (default), 9999→500 (cap); offset floors and clamps ≥0', async () => {
+    const { cg, seen } = captureCg();
+    await executeReadOp(cg, 'listFlows', { limit: 0 });
+    expect(seen().limit).toBe(1); // explicit 0 clamps to min, NOT the default
+    await executeReadOp(cg, 'listFlows', { limit: 1.9 });
+    expect(seen().limit).toBe(1); // floored, not passed through as 1.9
+    await executeReadOp(cg, 'listFlows', { limit: 'abc' });
+    expect(seen().limit).toBe(100); // non-numeric → default
+    await executeReadOp(cg, 'listFlows', {});
+    expect(seen().limit).toBe(100); // missing → default
+    await executeReadOp(cg, 'listFlows', { limit: 9999 });
+    expect(seen().limit).toBe(500); // over-cap clamps
+    await executeReadOp(cg, 'listFlows', { offset: 2.9 });
+    expect(seen().offset).toBe(2); // floored
+    await executeReadOp(cg, 'listFlows', { offset: -5 });
+    expect(seen().offset).toBe(0); // negative clamps to 0
+  });
+
+  it('listClusters: same limit/offset coercion, plus minSize floors and clamps ≥1', async () => {
+    const { cg, seen } = captureCg();
+    await executeReadOp(cg, 'listClusters', { limit: 0 });
+    expect(seen().limit).toBe(1);
+    await executeReadOp(cg, 'listClusters', { minSize: 0 });
+    expect(seen().minSize).toBe(1); // <1 clamps to 1 (FR-029)
+    await executeReadOp(cg, 'listClusters', { minSize: 2.9 });
+    expect(seen().minSize).toBe(2); // floored
+    await executeReadOp(cg, 'listClusters', { minSize: 'x' });
+    expect(seen().minSize).toBe(1); // non-numeric → default 1
+  });
+
+  it('readOnMissingIndex reports the effective default page (limit 100 / offset 0), not limit 0', () => {
+    for (const op of ['listFlows', 'listClusters'] as const) {
+      const r = readOnMissingIndex(op) as {
+        items: unknown[];
+        total: number;
+        limit: number;
+        offset: number;
+        state: string;
+      };
+      expect(r.limit).toBe(100);
+      expect(r.offset).toBe(0);
+      expect(r.items).toEqual([]);
+      expect(r.total).toBe(0);
+      expect(r.state).toBe('not_indexed');
+    }
+  });
+
+  it('readOnMissingIndex echoes the requested (coerced) paging for catalog ops', () => {
+    // A directly dispatched codegraph/read carries its own limit/offset — the
+    // missing-index envelope must echo the EFFECTIVE (coerced) page, not a fixed
+    // 100/0 that ignores the caller (same coercion as flowListOp/clusterListOp).
+    const echoed = readOnMissingIndex('listFlows', { limit: 5, offset: 10 }) as { limit: number; offset: number };
+    expect(echoed.limit).toBe(5);
+    expect(echoed.offset).toBe(10);
+    // Coercion still applies: 0 → clamp 1, over-cap → 500, non-numeric → default.
+    expect((readOnMissingIndex('listClusters', { limit: 0 }) as { limit: number }).limit).toBe(1);
+    expect((readOnMissingIndex('listFlows', { limit: 9999 }) as { limit: number }).limit).toBe(500);
+    expect((readOnMissingIndex('listFlows', { limit: 'abc' }) as { limit: number }).limit).toBe(100);
   });
 });
 

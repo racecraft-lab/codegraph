@@ -33,6 +33,7 @@ import { findNearestCodeGraphRoot, getCodeGraphDir } from '../directory';
 import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
 import { unavailable, DEFAULT_RETRY_AFTER_SECONDS, type ApiError } from './errors';
 import type { ReadOp } from '../mcp/read-ops';
+import type { ClusterListResult, FlowDetailRead, FlowListResult } from '../analysis';
 
 /**
  * The `/api/repos` wire shape (FR-010, data-model "Repo"). `id` is the 16-hex
@@ -470,6 +471,36 @@ export function readNeighborhood(
   depth: number,
 ): Promise<WireGraphResult | null> {
   return readSubgraph(client, 'neighborhood', id, depth);
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-011 catalog reads (T025) — the daemon runs the SAME `src/analysis` read
+// facade the MCP tools use, so the wire shapes are already the shared catalog
+// types (FR-028a). No mapping here — the daemon returns the wire shape directly.
+// ---------------------------------------------------------------------------
+
+/** The paged execution-flow catalog with its read-time state (FR-027/030). */
+export async function readFlows(
+  client: DaemonReadClient,
+  limit: number,
+  offset: number,
+): Promise<FlowListResult> {
+  return (await client.read('listFlows', { limit, offset })) as FlowListResult;
+}
+
+/** One flow's detail (found) or a stateful miss — success-shaped either way (FR-030). */
+export async function readFlow(client: DaemonReadClient, id: string): Promise<FlowDetailRead> {
+  return (await client.read('getFlow', { id })) as FlowDetailRead;
+}
+
+/** The paged functional-cluster catalog with its read-time state (FR-027/029/030). */
+export async function readClusters(
+  client: DaemonReadClient,
+  minSize: number,
+  limit: number,
+  offset: number,
+): Promise<ClusterListResult> {
+  return (await client.read('listClusters', { minSize, limit, offset })) as ClusterListResult;
 }
 
 /**

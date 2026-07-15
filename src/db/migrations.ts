@@ -199,6 +199,72 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 10,
+    description:
+      'Add SPEC-011 catalog tables (flows, flow_steps, clusters, cluster_members, catalog_meta) + sort indexes for execution-flow and functional-cluster catalogs',
+    up: (db) => {
+      // DDL only — instant on any size database. All five tables start EMPTY on
+      // migrated databases; the opt-in index-time analysis pass populates them
+      // later (never this migration), and a full re-index writes them from
+      // scratch via the atomic swap. A not-opted-in project keeps them empty
+      // (FR-025/SC-007), exactly as node_vectors sits empty until embeddings run.
+      //
+      // NO foreign key and NO `ON DELETE CASCADE` on ANY of these tables ON
+      // PURPOSE (FR-022a): a cascade plus the per-file `deleteNodesByFile` of a
+      // later index/sync would shred a retained-stale catalog (FR-022) before its
+      // replacement is computed. Catalog rows reference graph rows by value
+      // (node_id / file_path) with denormalized name/kind on node-bearing rows.
+      // Keep these definitions byte-equivalent to schema.sql.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS flows (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          entry_kind TEXT NOT NULL,
+          root_node_id TEXT NOT NULL,
+          root_name TEXT NOT NULL,
+          root_kind TEXT NOT NULL,
+          truncated_depth INTEGER NOT NULL DEFAULT 0,
+          truncated_width INTEGER NOT NULL DEFAULT 0,
+          truncated_steps INTEGER NOT NULL DEFAULT 0,
+          source_version INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS flow_steps (
+          flow_id TEXT NOT NULL,
+          node_id TEXT NOT NULL,
+          symbol_name TEXT NOT NULL,
+          symbol_kind TEXT NOT NULL,
+          depth INTEGER NOT NULL,
+          parent_node_id TEXT,
+          edge_kind TEXT,
+          provenance TEXT,
+          PRIMARY KEY (flow_id, node_id)
+        );
+        CREATE TABLE IF NOT EXISTS clusters (
+          id TEXT PRIMARY KEY,
+          canonical_label TEXT NOT NULL,
+          display_label TEXT,
+          member_count INTEGER NOT NULL,
+          is_singleton INTEGER NOT NULL DEFAULT 0,
+          source_version INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS cluster_members (
+          cluster_id TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          PRIMARY KEY (cluster_id, file_path)
+        );
+        CREATE TABLE IF NOT EXISTS catalog_meta (
+          kind TEXT PRIMARY KEY,
+          computed_from_version INTEGER,
+          first_run_failed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_flows_name ON flows(name, id);
+        CREATE INDEX IF NOT EXISTS idx_flow_steps_flow ON flow_steps(flow_id);
+        CREATE INDEX IF NOT EXISTS idx_clusters_sort ON clusters(member_count DESC, canonical_label, id);
+        CREATE INDEX IF NOT EXISTS idx_cluster_members_cluster ON cluster_members(cluster_id);
+      `);
+    },
+  },
 ];
 
 /**

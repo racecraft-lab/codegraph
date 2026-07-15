@@ -110,8 +110,8 @@ describe.skipIf(!HAS_SQLITE)('node_vectors schema convergence (FR-012)', () => {
     }
   });
 
-  it('CURRENT_SCHEMA_VERSION is 9 (the node_vectors migration, renumbered at the upstream v1.4.0 sync — upstream owns v8)', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(9);
+  it('CURRENT_SCHEMA_VERSION is 10 (v9 = node_vectors, renumbered at the upstream v1.4.0 sync — upstream owns v8; v10 = SPEC-011 catalog tables)', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(10);
   });
 
   it('a fresh schema.sql DB and a v7→current upgraded DB yield an identical node_vectors shape', () => {
