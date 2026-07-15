@@ -235,6 +235,19 @@ describe('SPEC-011: catalog read-ops coerce paging (floor + clamp, never error)'
       expect(r.state).toBe('not_indexed');
     }
   });
+
+  it('readOnMissingIndex echoes the requested (coerced) paging for catalog ops', () => {
+    // A directly dispatched codegraph/read carries its own limit/offset — the
+    // missing-index envelope must echo the EFFECTIVE (coerced) page, not a fixed
+    // 100/0 that ignores the caller (same coercion as flowListOp/clusterListOp).
+    const echoed = readOnMissingIndex('listFlows', { limit: 5, offset: 10 }) as { limit: number; offset: number };
+    expect(echoed.limit).toBe(5);
+    expect(echoed.offset).toBe(10);
+    // Coercion still applies: 0 → clamp 1, over-cap → 500, non-numeric → default.
+    expect((readOnMissingIndex('listClusters', { limit: 0 }) as { limit: number }).limit).toBe(1);
+    expect((readOnMissingIndex('listFlows', { limit: 9999 }) as { limit: number }).limit).toBe(500);
+    expect((readOnMissingIndex('listFlows', { limit: 'abc' }) as { limit: number }).limit).toBe(100);
+  });
 });
 
 // R3-LOG (FR-014a): the redacted request-log line must never contain the

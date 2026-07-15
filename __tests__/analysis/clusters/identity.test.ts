@@ -79,6 +79,13 @@ describe('assignClusterIdentity (FR-015/016/017)', () => {
     ]);
   });
 
+  it('serializes membership unambiguously — a newline in a path does not alias (P2 review)', () => {
+    // A single file literally named "a\nb" must NOT mint the same id as the two
+    // files "a" and "b": the old '\n' join made both hash "a\nb" identically. The
+    // '\0' separator (a NUL can't appear in a path) disambiguates them.
+    expect(mintClusterId(['a\nb'])).not.toBe(mintClusterId(['a', 'b']));
+  });
+
   it('never mints an id equal to a transferred id (swap-safe on a split, FR-017a)', () => {
     // {c,d} originally minted H; it grew to {a,b,c,d} and kept H; now it splits so
     // {a,b} inherits H by tie-break while {c,d} re-forms. A naïve re-mint of {c,d}

@@ -146,7 +146,7 @@ function clusterListOp(cg: CodeGraph, params: Record<string, unknown>): unknown 
  * (defensive — the web server only attaches to indexed roots, so `cg` is
  * normally non-null; the un-indexed *startup* status is synthesized server-side).
  */
-export function readOnMissingIndex(op: ReadOp): unknown {
+export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> = {}): unknown {
   switch (op) {
     case 'status':
       return {
@@ -164,11 +164,15 @@ export function readOnMissingIndex(op: ReadOp): unknown {
     case 'neighborhood':
       return { found: false };
     case 'listFlows':
-    case 'listClusters':
-      // Report the effective default page envelope (limit 100 / offset 0), not
-      // limit 0 — a client must not read this defensive miss as an explicit
-      // empty-page choice (the list envelope's limit is the effective page size).
-      return { items: [], total: 0, limit: 100, offset: 0, sourceVersion: 0, state: 'not_indexed' };
+    case 'listClusters': {
+      // Echo the request's EFFECTIVE (coerced) page so a directly dispatched
+      // codegraph/read gets a consistent envelope — not a fixed limit 0 (which a
+      // client would misread as an explicit empty page) nor a fixed 100 that
+      // ignores the caller's paging. Same coercion as flowListOp/clusterListOp.
+      const limit = coerceCatalogInt(params.limit, 100, 1, MAX_LIMIT);
+      const offset = coerceCatalogInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+      return { items: [], total: 0, limit, offset, sourceVersion: 0, state: 'not_indexed' };
+    }
     case 'getFlow':
       return { found: false, state: 'not_indexed' };
     default:

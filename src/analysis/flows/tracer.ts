@@ -91,6 +91,11 @@ function compareCandidates(a: Candidate, b: Candidate): number {
   const rb = EDGE_KIND_RANK[b.edgeKind];
   if (ra !== rb) return ra - rb;
   if (a.qualifiedName !== b.qualifiedName) return a.qualifiedName < b.qualifiedName ? -1 : 1;
+  // `edgeKey` (source|target|kind|line|column) is a UNIQUE edge identity — the
+  // `idx_edges_identity` unique index + INSERT OR IGNORE guarantee at most one
+  // edge per that tuple — so it is a total order over distinct candidates and no
+  // earlier field can leave an unresolved tie (provenance can never be the
+  // deciding factor because two edges can't share this key, FR-008a).
   if (a.edgeKey !== b.edgeKey) return a.edgeKey < b.edgeKey ? -1 : 1;
   return 0;
 }

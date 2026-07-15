@@ -1037,14 +1037,20 @@ export class CodeGraph {
               '— the enclosing index/sync operation is unaffected.'
             );
           }
+        }
 
-          // Optional catalog analysis (SPEC-011): execution flows + functional
-          // clusters over the resolved graph — the SAME advisory discipline as
-          // the embedding pass above. Opt-in per catalog (fully dormant, and no
-          // graph_write_version advance, when neither is enabled), honors the
-          // caller's AbortSignal, and every failure is swallowed internally so a
-          // broken analysis can never fail an index (FR-020/022b). The wrapping
-          // try/catch is belt-and-braces over that internal swallow.
+        // Optional catalog analysis (SPEC-011): execution flows + functional
+        // clusters over the resolved graph — the SAME advisory discipline as the
+        // embedding pass above. Runs on EVERY successful index (NOT gated on
+        // filesIndexed, unlike embedding) so an enabled-but-empty project computes
+        // an available-but-empty catalog (never 'disabled') and a removal-only
+        // index still recomputes — FR-020's recompute-after-every-successful-index,
+        // matching sync(). Opt-in per catalog (fully dormant, and no
+        // graph_write_version advance, for a never-opted-in project), honors the
+        // caller's AbortSignal, and every failure is swallowed internally so a
+        // broken analysis can never fail an index (FR-020/022b). The wrapping
+        // try/catch is belt-and-braces over that internal swallow.
+        if (result.success) {
           try {
             await maybeRunCatalogAnalysis(
               this.catalogAnalysisGraph(),

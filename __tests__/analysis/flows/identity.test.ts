@@ -59,4 +59,22 @@ describe('runFlowAnalysis one-flow-per-root (FR-003, SC-001)', () => {
       'route:src/svc-b.ts:1:GET:/health',
     ]);
   });
+
+  it('keeps BOTH flows when two same-name roots share a file (salted, not dropped)', async () => {
+    const h = freshSeed();
+    setVersion(h, 1);
+    // Two DISTINCT route nodes with the same method+path in the SAME file (a
+    // genuine duplicate registration) compute the same flow id — the residual
+    // collision must be salted so both persist, not silently dropped (FR-003).
+    node(h, { id: 'route:src/api.ts:1:GET:/health', name: 'GET /health', kind: 'route', filePath: 'src/api.ts' });
+    node(h, { id: 'route:src/api.ts:9:GET:/health', name: 'GET /health', kind: 'route', filePath: 'src/api.ts' });
+
+    await runFlowAnalysis(h.graph, h.db);
+
+    const rows = h.db
+      .prepare('SELECT id, root_node_id FROM flows ORDER BY root_node_id')
+      .all() as Array<{ id: string; root_node_id: string }>;
+    expect(rows).toHaveLength(2); // was 1 before the fix (second silently dropped)
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2); // distinct ids → swap-safe
+  });
 });

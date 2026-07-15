@@ -146,12 +146,18 @@ export async function runFlowAnalysis(
     // the prior catalog untouched (edge case: cancellation is not a failure).
     if (signal?.aborted) return;
     await maybeYield();
-    const flowId = computeFlowId(entry);
-    // The flow id folds in the root's file (FR-017a), so distinct roots no longer
-    // collide across files. A residual same-file same-identity collision (a
-    // genuine duplicate registration) is dropped here rather than left to fail
-    // swapFlows on a duplicate PRIMARY KEY (which would roll the whole swap back).
-    if (seen.has(flowId)) continue;
+    let flowId = computeFlowId(entry);
+    // The flow id folds in the root's file (FR-017a), so distinct roots collide
+    // only when two share BOTH a file and a public identity (a genuine duplicate
+    // registration). Deterministically salt such a collision — entries arrive in a
+    // stable dedupe order (by precedence, then root node id) — so BOTH roots
+    // persist as distinct flows (FR-003/SC-001) instead of one being dropped or
+    // swapFlows failing on a duplicate PRIMARY KEY.
+    if (seen.has(flowId)) {
+      let salt = 1;
+      while (seen.has(`${flowId}#${salt}`)) salt++;
+      flowId = `${flowId}#${salt}`;
+    }
     seen.add(flowId);
 
     const trace = traceFlow(entry, graph.queries);
