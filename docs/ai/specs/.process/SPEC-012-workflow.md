@@ -75,7 +75,7 @@ Resolved from this worktree on 2026-07-15:
 | Analyze | `/speckit-analyze` | ✅ Complete | 0 critical/high findings; 2 medium advisory findings carried into confidence gate |
 | Confidence Gate | G6.5 | ✅ Complete | Advisory pre-Implement confidence score 0.82; proceed with medium advisories visible |
 | Implement | `/speckit-implement` | ✅ Complete | Core engine, CLI, MCP, tests, UAT, and verification completed |
-| Post | Post-Implementation | 🔄 In Progress | One-PR reviewability exception accepted by the maintainer on 2026-07-15; draft PR creation authorized |
+| Post | Post-Implementation | 🔄 In Progress | Draft PR #55 opened; awaiting review feedback/remediation |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -631,6 +631,8 @@ Detailed command evidence is recorded in
 
 ### PR Review Packet
 
+Draft PR: https://github.com/racecraft-lab/codegraph/pull/55
+
 Recommended review order:
 
 1. Spec and contracts: `specs/012-change-impact-detection/spec.md`,
@@ -689,8 +691,8 @@ Rollback notes:
 - [ ] Post: Final Reviewability Backstop
 - [x] Post: PR Packet/Body Generation
 - [x] Post: PR Body Generation
-- [ ] Post: PR Creation — in progress
-- [ ] Post: Review Remediation
+- [x] Post: PR Creation — https://github.com/racecraft-lab/codegraph/pull/55
+- [ ] Post: Review Remediation — awaiting review feedback
 - [ ] Post: Retrospective
 - [x] All tasks marked complete in `tasks.md`.
 - [x] Reviewability LOC re-measured and compared to setup warning.

@@ -2,8 +2,8 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-012-workflow.md",
   "spec_id": "SPEC-012",
   "feature_dir": "specs/012-change-impact-detection",
-  "status": "running",
-  "active_step": "Post: PR Creation",
+  "status": "awaiting_review",
+  "active_step": "Post: Review Remediation",
   "updated_at": "2026-07-15T19:49:16Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
@@ -44,8 +44,8 @@
     {"step": "Post: Final Reviewability Backstop", "status": "pending"},
     {"step": "Post: PR Packet/Body Generation", "status": "completed"},
     {"step": "Post: PR Body Generation", "status": "completed"},
-    {"step": "Post: PR Creation", "status": "in_progress"},
-    {"step": "Post: Review Remediation", "status": "pending"},
+    {"step": "Post: PR Creation", "status": "completed"},
+    {"step": "Post: Review Remediation", "status": "in_progress"},
     {"step": "Post: Retrospective", "status": "pending"}
   ],
   "archive_sweep": {
@@ -363,18 +363,23 @@
     }
   },
   "post": {
-    "status": "running",
+    "status": "awaiting_review",
     "completed": [
       "Integration Suite",
       "UAT Runbook Generation",
       "PR Packet/Body Generation"
     ],
+    "draft_pr": {
+      "number": 55,
+      "url": "https://github.com/racecraft-lab/codegraph/pull/55",
+      "state": "draft"
+    },
     "reviewability_diff_gate": {
       "status": "completed",
       "reason": "Production diff is 1418 additions across 8 files, exceeding the ratified 800 LOC stop condition.",
       "decision": "Maintainer accepted a one-PR reviewability exception on 2026-07-15."
     },
-    "active": "PR Creation",
+    "active": "Review Remediation",
     "pending": [
       "Doctor Extension Check",
       "Verify Implementation",
@@ -382,7 +387,6 @@
       "Code Review",
       "Self-Review",
       "Final Reviewability Backstop",
-      "Review Remediation",
       "Retrospective"
     ]
   }
