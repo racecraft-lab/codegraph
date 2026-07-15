@@ -10,7 +10,9 @@
  * scheme+host+port, status a bare integer). The raw transport error is read for its `.name` alone
  * and discarded; it is never chained as `cause`, and no response-body text is ever surfaced (FR-005).
  *
- * Two shapes diverge from the embeddings client, both per `contracts/endpoint-wire.md` / research D4:
+ * Two shapes diverge from the embeddings client, both per the archived endpoint-wire contract
+ * recoverable from `git show 4acfa1b:specs/018-llm-access-layer/contracts/endpoint-wire.md`
+ * and research D4:
  *  - Generation-sized deadlines (FR-017): a flat total-request deadline for non-streaming, an
  *    inter-chunk IDLE deadline (reset on every received chunk) for streaming — a slow-but-alive
  *    stream is never killed by a flat whole-stream cap.
