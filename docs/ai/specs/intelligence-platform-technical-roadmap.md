@@ -114,7 +114,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Ready (SPEC-005 shipped the serve daemon + WebSocket hook) |
 | SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
 | SPEC-011 | Execution Flows & Clusters | ✅ Complete | [SPEC-011-workflow.md](.process/SPEC-011-workflow.md) | Merged (#50); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-011.md` |
-| SPEC-012 | Change Impact Detection | ⏳ Pending | [SPEC-012-workflow.md](SPEC-012-workflow.md) | Ready (SPEC-011 shipped flow impact enrichment input) |
+| SPEC-012 | Change Impact Detection | 🔄 In Progress | [SPEC-012-workflow.md](.process/SPEC-012-workflow.md) | Scaffolded 2026-07-15 on `012-change-impact-detection`; SPEC-011 shipped flow impact enrichment input |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
 | SPEC-014 | Control-Flow Graphs | ⏳ Pending | [SPEC-014-workflow.md](SPEC-014-workflow.md) | Specify |
 | SPEC-015 | Dataflow Substrate | ⏳ Pending | [SPEC-015-workflow.md](SPEC-015-workflow.md) | Blocked by SPEC-014 |

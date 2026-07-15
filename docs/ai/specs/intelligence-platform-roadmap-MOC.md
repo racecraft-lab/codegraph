@@ -40,7 +40,7 @@ Navigation map for the CodeGraph Intelligence Platform roadmap. This home note c
 
 ### Phase 3 — Analysis Breadth
 - [SPEC-011 Execution Flows & Clusters](.process/SPEC-011-workflow.md)
-- [SPEC-012 Change Impact Detection](SPEC-012-workflow.md)
+- [SPEC-012 Change Impact Detection](.process/SPEC-012-workflow.md)
 - [SPEC-013 Cypher Query Access](SPEC-013-workflow.md)
 
 **Why:** Navigable flow/cluster catalogs, diff→impact mapping, and an expressive read-only query language — largely independent, all high value.

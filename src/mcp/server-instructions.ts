@@ -13,8 +13,9 @@
  *
  * Keep it tight. The agent reads this every session — long instructions
  * burn tokens. The DEFAULT MCP surface is `codegraph_explore` (the retrieval
- * PRIMARY) plus `codegraph_rename` (the SPEC-010 write tool, documented in
- * its own short section) — see DEFAULT_MCP_TOOLS in tools.ts. The other
+ * PRIMARY), `codegraph_detect_changes` (SPEC-012 local diff impact), plus
+ * `codegraph_rename` (the SPEC-010 write tool, documented in its own short
+ * section) — see DEFAULT_MCP_TOOLS in tools.ts. The other
  * tools (node/search/callers/…) stay defined and are re-enablable via
  * CODEGRAPH_MCP_TOOLS, but they are NOT listed to agents, so don't name them.
  */
@@ -61,6 +62,16 @@ Ask mode) will gate or hide it — even for a dry-run call. That's expected:
 switch to an agent / write-enabled mode to use it. \`codegraph_explore\`
 stays the PRIMARY tool for reading and understanding code; reach for
 \`codegraph_rename\` only to actually rename a symbol.
+
+## codegraph_detect_changes — local diff impact
+
+\`codegraph_detect_changes\` reports the current git diff's changed symbols,
+unmapped hunks, bounded callers, affected flows, risks, warnings, limits, and
+exitCode. Use it before committing, when reviewing your own local changes, or
+when you need an agent-readable impact packet for \`unstaged\`, \`staged\`,
+\`all\`, or \`base-ref\` diffs. Expected states such as missing indexes,
+stale indexes, unmapped hunks, unavailable flow enrichment, or threshold breaches
+return a normal text payload; check \`summary.status\` and \`exitCode\`.
 
 ## How to query
 
@@ -120,4 +131,9 @@ default project — but the tools are available and work **per project**:
 \`projectPath\` of a project that HAS a \`.codegraph/\` index. It is dry-run by
 default — it returns a plan and writes nothing — and writes files only when you
 pass \`apply: true\`.
+
+\`codegraph_detect_changes\` also works per-project: pass the indexed project's
+\`projectPath\` to get a normal JSON or markdown impact report for local git
+diffs. If that project has no index, the tool returns an unavailable report
+instead of hiding the tool.
 `;
