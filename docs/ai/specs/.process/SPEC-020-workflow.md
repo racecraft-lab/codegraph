@@ -52,8 +52,8 @@ decisions:
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | G1 passed with 0 clarification markers |
-| Clarify | `/speckit-clarify` | 🔄 In Progress | Optional but recommended |
-| Plan | `/speckit-plan` | ⏳ Pending | |
+| Clarify | `/speckit-clarify` | ✅ Complete | G2 passed with 0 clarification markers |
+| Plan | `/speckit-plan` | 🔄 In Progress | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
@@ -224,7 +224,7 @@ SPEC-020 turns that existing detector into a safe, reusable GitHub Action.
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | FR-001 through FR-021 |
+| Functional Requirements | FR-001 through FR-049 after clarify |
 | User Stories | 4 |
 | Acceptance Criteria | 13 |
 | Quality Checklist | 16/16 complete |
@@ -295,9 +295,9 @@ Q4 "Prose only", and Q8 "Advisory first".
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
+| 1 | Action Runtime and Cache Contract | 3 | Added clarifications for packaged pinned runtime, minimum action input/output contract, detector policy mapping, and cache freshness proof. G2 marker check passed. Consensus checkpoint: no unresolved items. |
+| 2 | Trust Boundary and Report Delivery | 3 | Added clarifications for pull-request trust boundary, least-privilege comment/narrative eligibility, sticky-comment recovery, duplicate handling, rerun identity, and summary/artifact fallback. G2 marker check passed. Consensus checkpoint: no unresolved items. |
+| 3 | Check Conclusion, Narrative, and Performance | 3 | Added clarifications for detector-result to check-conclusion mapping, narrative degradation/status, and the five-run warm-cache measurement protocol. G2 marker check passed. Consensus checkpoint: no unresolved items. |
 
 ---
 

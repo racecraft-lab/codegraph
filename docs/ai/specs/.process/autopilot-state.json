@@ -3,19 +3,19 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 2: Clarify - Action Runtime and Cache Contract",
-  "updated_at": "2026-07-15T23:18:57Z",
+  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-15T23:26:26Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
     {"step": "Phase 1: Specify", "status": "completed"},
-    {"step": "Phase 2: Clarify - Action Runtime and Cache Contract", "status": "in_progress"},
-    {"step": "Phase 2: Clarify - Action Runtime and Cache Contract Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Trust Boundary and Report Delivery", "status": "pending"},
-    {"step": "Phase 2: Clarify - Trust Boundary and Report Delivery Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance", "status": "pending"},
-    {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance Consensus", "status": "pending"},
-    {"step": "Phase 3: Plan", "status": "pending"},
+    {"step": "Phase 2: Clarify - Action Runtime and Cache Contract", "status": "completed"},
+    {"step": "Phase 2: Clarify - Action Runtime and Cache Contract Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Trust Boundary and Report Delivery", "status": "completed"},
+    {"step": "Phase 2: Clarify - Trust Boundary and Report Delivery Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance", "status": "completed"},
+    {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance Consensus", "status": "completed"},
+    {"step": "Phase 3: Plan", "status": "in_progress"},
     {"step": "Phase 4: Checklist - api-contracts", "status": "pending"},
     {"step": "Phase 4: Checklist - api-contracts Consensus", "status": "pending"},
     {"step": "Phase 4: Checklist - security", "status": "pending"},
@@ -143,5 +143,102 @@
       "Delegated phase executor produced no files before timeout and was interrupted.",
       "Mandatory branch hook was treated as pre-satisfied by the scaffolded SPEC-020 branch/worktree; no new branch was created."
     ]
+  },
+  "phase2": {
+    "status": "completed",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "sessions": {
+      "action_runtime_and_cache_contract": {
+        "status": "completed",
+        "questions_answered": 3,
+        "spec_updates": [
+          "Clarifications section added for packaged pinned runtime, minimum action contract, and cache freshness proof.",
+          "Functional requirements FR-022 through FR-029 added.",
+          "Action Contract entity, cache validation details, and success criteria SC-010 through SC-011 added."
+        ],
+        "evidence": [
+          "src/analysis/detect-changes/index.ts exposes base-ref mode, json/markdown formats, summary statuses, report fields, and exit codes.",
+          "src/analysis/detect-changes/report.ts exposes exit codes 0 clean, 1 impact, 2 threshold breach, 3 unavailable and fail-on callers>N/hub policies.",
+          "src/bin/codegraph.ts exposes detect-changes CLI options for base-ref, format, fail-on, caller-depth, and max-callers."
+        ],
+        "gate": {
+          "id": "G2",
+          "status": "passed",
+          "reason": "0 [NEEDS CLARIFICATION] markers",
+          "clarification_markers": 0
+        },
+        "consensus": {
+          "status": "completed",
+          "unresolved_items": 0,
+          "action": "skipped; no consensus routing required"
+        }
+      },
+      "trust_boundary_and_report_delivery": {
+        "status": "completed",
+        "questions_answered": 3,
+        "spec_updates": [
+          "Clarifications added for pull-request trust boundary, sticky-comment recovery, and durable fallback delivery.",
+          "Functional requirements FR-030 through FR-039 added.",
+          "Trust Boundary entity and success criteria SC-012 through SC-013 added."
+        ],
+        "evidence": [
+          "GitHub Actions GITHUB_TOKEN docs require least required permissions for token access.",
+          "GitHub Actions workflow syntax docs state forked pull-request workflows typically cannot grant write access and write permissions are adjusted to read-only unless the repository explicitly opts into write tokens.",
+          "Design concept Q1, Q5, and Q7 require safe fork support, one sticky comment, and summary plus artifact fallback."
+        ],
+        "gate": {
+          "id": "G2",
+          "status": "passed",
+          "reason": "0 [NEEDS CLARIFICATION] markers",
+          "clarification_markers": 0
+        },
+        "consensus": {
+          "status": "completed",
+          "unresolved_items": 0,
+          "action": "skipped; no consensus routing required"
+        }
+      },
+      "check_conclusion_narrative_and_performance": {
+        "status": "completed",
+        "questions_answered": 3,
+        "spec_updates": [
+          "Clarifications added for result-to-conclusion mapping, narrative degradation/status, and warm-cache measurement.",
+          "Functional requirements FR-040 through FR-049 added.",
+          "Conclusion Matrix and Performance Sample entities plus success criteria SC-014 through SC-016 added."
+        ],
+        "evidence": [
+          "src/analysis/detect-changes/report.ts maps clean to exit 0, impact to exit 1, threshold_breach to exit 2, and unavailable to exit 3.",
+          "src/llm/generate.ts defines endpoint, pending-bundle, and fallback generation results and degrades dormant/misconfigured states to fallback.",
+          "src/llm/config.ts exposes network-free LLM status with dormant, endpoint, agent, and misconfigured states."
+        ],
+        "gate": {
+          "id": "G2",
+          "status": "passed",
+          "reason": "0 [NEEDS CLARIFICATION] markers",
+          "clarification_markers": 0
+        },
+        "consensus": {
+          "status": "completed",
+          "unresolved_items": 0,
+          "action": "skipped; no consensus routing required"
+        }
+      }
+    },
+    "final_gate": {
+      "id": "G2",
+      "status": "passed",
+      "reason": "0 [NEEDS CLARIFICATION] markers",
+      "marker_counts": {
+        "gaps": 0,
+        "clarifications": 0,
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      }
+    },
+    "after_clarify_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
+    }
   }
 }

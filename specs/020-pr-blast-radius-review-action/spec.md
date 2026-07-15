@@ -8,6 +8,20 @@
 
 **Input**: User description: "Create a reusable GitHub Action that reports deterministic pull-request blast radius, enforces opt-in thresholds, degrades safely for forks, and keeps optional LLM narrative prose-only."
 
+## Clarifications
+
+### Session 2026-07-15
+
+- Q: How must the reusable action execute its helper without depending on uncompiled repository source? → A: Use a packaged, reproducibly pinned action runtime.
+- Q: What is the minimum v1 action contract for deterministic analysis and policy control? → A: Expose comparison, caller threshold, hub threshold, traversal, row-limit, report, delivery, and conclusion fields.
+- Q: What proof is required before a restored graph cache may be used? → A: Validate version, extraction, complete index state, repository identity, comparison identity, and clean freshness before analysis.
+- Q: What trust boundary controls comment writing and narrative secrets? → A: Run deterministic analysis on pull-request events; permit comment writes and secret-backed narrative only when token permissions and event trust allow them.
+- Q: What is the sticky-comment recovery policy for deleted comments, duplicates, and reruns? → A: Create when missing, update the newest action-owned comment, retire older action-owned duplicates when permitted, and record degraded delivery when not permitted.
+- Q: What fallback is required when privileged delivery is unavailable? → A: Publish the exact deterministic markdown to the workflow summary and artifact regardless of comment or narrative eligibility.
+- Q: How does the action map detector results to final check conclusions? → A: Clean and ordinary impact pass, threshold breach fails, and unavailable analysis fails.
+- Q: What happens when optional narrative is disabled, misconfigured, or unavailable? → A: Preserve deterministic report and conclusion, record narrative status, and omit or degrade prose.
+- Q: How is the three-minute warm-cache target measured? → A: Median of at least five successful self-repository warm-cache pull-request runs with narrative disabled.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Current PR impact report (Priority: P1)
@@ -79,11 +93,13 @@ As a maintainer, I want cached graph state to speed up PR runs without changing 
 
 - Fork pull requests can be analyzed but cannot use privileged comment or narrative credentials.
 - Comment publishing may be denied, the prior sticky comment may have been deleted, or duplicate action-owned markers may exist.
+- Reruns or synchronize events may overlap; the report must identify the run and comparison it represents so the newest completed report remains distinguishable.
 - A cache entry may be missing, stale, corrupt, or incompatible with the pull-request checkout or comparison target.
 - Analysis may produce clean results, ordinary impact, caller threshold breach, hub threshold breach, warnings, limits, or an unavailable state.
 - Optional narrative may be disabled, misconfigured, unavailable, rate-limited, or unsafe for the current event trust boundary.
 - Artifact or summary delivery may fail after deterministic analysis succeeds.
 - Reruns and synchronize events may occur close together and must not rewrite unrelated comments or present stale analysis as current.
+- The detector may return an ordinary-impact nonzero exit code that the action must capture and interpret rather than letting the shell fail the job before policy mapping.
 
 ## Requirements *(mandatory)*
 
@@ -110,6 +126,34 @@ As a maintainer, I want cached graph state to speed up PR runs without changing 
 - **FR-019**: The action MUST expose an observable result matrix covering clean analysis, ordinary impact, caller threshold breach, hub threshold breach, analysis unavailable, comment unavailable, artifact unavailable, and narrative unavailable. `[US2]` `[US3]` `[US4]`
 - **FR-020**: The repository MUST dogfood the action automatically on CodeGraph pull requests in advisory mode before blocking thresholds are enabled. `[US3]` `[US4]`
 - **FR-021**: The feature MUST include reviewer-facing documentation that explains setup, inputs, outputs, fallback behavior, threshold policy, cache behavior, fork behavior, and narrative authority. `[US1]` `[US2]` `[US3]` `[US4]`
+- **FR-022**: The reusable action MUST execute through a packaged, reproducibly pinned runtime/helper and MUST NOT require consuming repositories to execute uncompiled TypeScript source directly. `[US1]` `[US4]`
+- **FR-023**: The action MUST publish the resolved CodeGraph runtime version and helper version used for the analysis in machine-readable output or report metadata. `[US1]` `[US4]`
+- **FR-024**: The minimum v1 action inputs MUST cover comparison target, caller threshold, hub threshold enablement, caller traversal depth, maximum caller rows, and narrative enablement. `[US3]` `[US4]`
+- **FR-025**: The minimum v1 action outputs MUST cover detector summary status, detector exit code, deterministic report location, delivery status, cache status, threshold breach status, narrative status, and final check conclusion. `[US1]` `[US2]` `[US3]` `[US4]`
+- **FR-026**: Caller-threshold input MUST map to the detector's caller threshold policy, and hub-threshold enablement MUST map to the detector's hub threshold policy without creating a second policy engine. `[US3]`
+- **FR-027**: Cache identity MUST include the dependency lockfile identity, merge base, base ref, pull-request head, and CodeGraph runtime identity. `[US4]`
+- **FR-028**: A restored cache MUST be accepted only when validation proves matching repository identity, matching comparison identity, compatible CodeGraph version, compatible extraction version, complete index state, no worktree mismatch, and no stale or pending indexed changes. `[US4]`
+- **FR-029**: If cache validation fails, the action MUST rebuild before analysis and MUST record whether the final analysis used a warm cache, rebuilt cache, or unavailable cache path. `[US4]`
+- **FR-030**: Deterministic analysis MUST run from the pull-request event context without requiring `pull_request_target` execution of untrusted pull-request code. `[US2]`
+- **FR-031**: The workflow MUST request the least token permissions needed for each delivery path, and comment writing MUST require pull-request write permission in a trusted context. `[US2]`
+- **FR-032**: Fork, Dependabot-like, or otherwise untrusted runs MUST treat write permissions and normal repository secrets as unavailable unless the platform explicitly provides them safely. `[US2]`
+- **FR-033**: Secret-backed narrative MUST be disabled for untrusted or read-only-token runs even when deterministic analysis and fallback delivery continue. `[US2]` `[US4]`
+- **FR-034**: If no action-owned report comment exists and comment write permission is available, the action MUST create one with the stable hidden marker. `[US1]` `[US2]`
+- **FR-035**: If exactly one action-owned report comment exists, the action MUST update that comment in place. `[US1]`
+- **FR-036**: If multiple action-owned report comments exist, the action MUST update the newest action-owned comment, retire older action-owned duplicates when write permission allows, and record a duplicate-comment warning when cleanup cannot complete. `[US1]` `[US2]`
+- **FR-037**: If the prior action-owned comment was deleted, the action MUST create a replacement when write permission allows and otherwise use fallback delivery. `[US1]` `[US2]`
+- **FR-038**: Every report delivery surface MUST identify the action run and comparison target it represents so reruns and synchronize events can be distinguished. `[US1]` `[US2]`
+- **FR-039**: Delivery degradation MUST NOT change deterministic analysis status, threshold status, or final check conclusion except when all durable report delivery surfaces fail. `[US2]` `[US3]`
+- **FR-040**: The action MUST capture and interpret the detector's structured result and exit code so ordinary impact does not fail the job merely because the detector exits nonzero for impact. `[US3]`
+- **FR-041**: Detector status `clean` with exit code 0 MUST produce a passing final check conclusion. `[US3]`
+- **FR-042**: Detector status `impact` with exit code 1 MUST produce a passing final check conclusion unless a configured threshold policy is breached. `[US3]`
+- **FR-043**: Detector status `threshold_breach` with exit code 2 MUST produce a failing final check conclusion. `[US3]`
+- **FR-044**: Detector status `unavailable` with exit code 3 MUST produce a failing final check conclusion after cache validation and rebuild fallback are exhausted. `[US3]`
+- **FR-045**: If deterministic analysis succeeds but every durable delivery surface fails, the action MUST fail explicitly with a report-delivery-unavailable conclusion. `[US2]` `[US3]`
+- **FR-046**: Optional narrative MUST expose a narrative status of disabled, suppressed, unavailable, fallback, pending, or appended without changing detector status, threshold status, or final check conclusion. `[US4]`
+- **FR-047**: Narrative misconfiguration, endpoint failure, agent-bundle pending state, or fallback prose MUST NOT fail the action when deterministic analysis and durable report delivery are otherwise successful. `[US4]`
+- **FR-048**: Warm-cache performance measurement MUST use at least five successful CodeGraph self-repository pull-request runs with cache validation accepted, thresholds unset, and narrative disabled. `[US4]`
+- **FR-049**: Warm-cache duration MUST be measured from action start through durable deterministic report delivery, and each measurement MUST record cache status, run identity, comparison identity, and whether the run was excluded from the warm-cache sample. `[US4]`
 
 ### Reviewability Budget *(mandatory)*
 
@@ -131,11 +175,15 @@ As a maintainer, I want cached graph state to speed up PR runs without changing 
 
 - **Pull Request**: The review event being analyzed; key attributes include base ref, head ref, trust boundary, and delivery permissions.
 - **Analysis Run**: One action execution for a pull request; key attributes include comparison target, analysis availability, detector result, threshold outcome, delivery outcome, and final conclusion.
+- **Conclusion Matrix**: The mapping from deterministic detector status, threshold policy, delivery availability, and narrative availability to the final check conclusion.
+- **Action Contract**: The reusable action's public input/output surface; key attributes include comparison target, threshold policy inputs, traversal controls, report locations, cache status, narrative status, detector exit code, and final conclusion.
 - **Deterministic Report**: The authoritative markdown review artifact; key attributes include changed symbols, callers, affected flows, risks, warnings, limits, hidden ownership marker, and optional narrative appendix.
 - **Threshold Policy**: The maintainer-configured caller and hub limits; key attributes include unset advisory defaults, caller limit, hub limit, and breach status.
-- **Cache Validation Result**: The decision about restored graph state; key attributes include hit or miss, freshness status, rebuild requirement, and unrecoverable failure reason.
+- **Cache Validation Result**: The decision about restored graph state; key attributes include cache identity, hit or miss, version compatibility, extraction compatibility, repository and comparison identity, index completeness, freshness status, rebuild requirement, and unrecoverable failure reason.
 - **Report Delivery**: The publication outcome for comments, workflow summary, and artifact; key attributes include success, fallback, permission denial, and durable report location.
+- **Trust Boundary**: The classification of the pull-request run for privileged operations; key attributes include same-repository versus fork-like origin, token permission level, secret availability, comment eligibility, and narrative eligibility.
 - **Narrative Appendix**: Optional prose explanation of deterministic findings; key attributes include enabled state, trust eligibility, availability, and confirmation that it has no machine authority.
+- **Performance Sample**: One dogfood action run included in or excluded from the warm-cache target; key attributes include run identity, comparison identity, cache status, narrative status, threshold configuration, duration, and exclusion reason.
 
 ## Success Criteria *(mandatory)*
 
@@ -150,6 +198,13 @@ As a maintainer, I want cached graph state to speed up PR runs without changing 
 - **SC-007**: The median warm-cache completion time for CodeGraph's self-repository dogfood workflow is no more than three minutes. `[US4]`
 - **SC-008**: Narrative-disabled, narrative-unavailable, and untrusted-fork runs produce the same deterministic facts and check conclusion they would produce without narrative support. `[US2]` `[US4]`
 - **SC-009**: Repeated runs update the action-owned report without modifying unrelated pull-request comments. `[US1]`
+- **SC-010**: A consuming repository can identify the exact CodeGraph runtime/helper version, detector summary status, detector exit code, report location, delivery status, cache status, threshold status, narrative status, and final conclusion from one action run. `[US1]` `[US3]` `[US4]`
+- **SC-011**: For cache-hit, cache-miss, stale-cache, corrupt-cache, and incompatible-version scenarios, the action records the cache path taken and never uses invalid restored state as current analysis. `[US4]`
+- **SC-012**: Fork-like or read-only-token pull-request runs complete deterministic analysis without write credentials or secret-backed narrative and still preserve successful reports in summary and artifact surfaces. `[US2]`
+- **SC-013**: Deleted, missing, single, and duplicate action-owned comment scenarios each produce one current report when write permission allows, or a recorded fallback outcome when it does not. `[US1]` `[US2]`
+- **SC-014**: Clean, ordinary-impact, threshold-breach, analysis-unavailable, and report-delivery-unavailable fixtures each produce the expected final check conclusion from the documented result matrix. `[US3]`
+- **SC-015**: Disabled, suppressed, misconfigured, endpoint-failure, pending-agent, and appended narrative scenarios preserve the same deterministic facts and final conclusion as the no-narrative baseline. `[US4]`
+- **SC-016**: The warm-cache performance report includes at least five eligible self-repository pull-request samples and shows a median duration of no more than three minutes. `[US4]`
 
 ## Assumptions
 
