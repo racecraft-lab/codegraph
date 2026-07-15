@@ -59,6 +59,22 @@ const SUBGRAPH_NODE_CAP = 2000;
 const MAX_LIMIT = 500;
 const MAX_DEPTH = 3;
 
+/**
+ * Coerce a SPEC-011 catalog paging param at the daemon read boundary (FR-027/029):
+ * a finite value is floored then clamped to [min,max]; missing/non-numeric → `def`.
+ * Floor + clamp, never an error — the same coercion the MCP tool applies
+ * (`coerceCatalogInt`+`clamp`), so a directly dispatched `codegraph/read` degrades a
+ * bad page param exactly as the HTTP route does (both default 100 / cap 500 here).
+ * An explicit `limit=0` clamps to `min` (1) — NOT the default — and a non-integer
+ * (`1.5`) floors, unlike the earlier `Number(x)||default`.
+ */
+function coerceCatalogInt(raw: unknown, def: number, min: number, max: number): number {
+  if (raw === undefined || raw === null || raw === '') return def;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
 /** `codegraph/read` request payload: an op discriminator + its params. */
 export interface ReadRequest {
   op: string;
@@ -102,25 +118,26 @@ export async function executeReadOp(
 }
 
 /**
- * SPEC-011 — the paged flow catalog (FR-027/030). Re-clamps `limit`/`offset`
- * defensively at the daemon boundary (the HTTP routes already clamp); the
+ * SPEC-011 — the paged flow catalog (FR-027/030). Coerces `limit`/`offset`
+ * defensively at the daemon boundary (floor + clamp, never an error) so a directly
+ * dispatched `codegraph/read` matches the HTTP route and MCP tool; the
  * catalog-store read attaches the read-time state.
  */
 function flowListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
-  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(params.limit) || 100));
-  const offset = Math.max(0, Number(params.offset) || 0);
+  const limit = coerceCatalogInt(params.limit, 100, 1, MAX_LIMIT);
+  const offset = coerceCatalogInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
   return cg.listFlows(limit, offset);
 }
 
 /**
- * SPEC-011 — the paged cluster catalog (FR-027/029/030). Re-clamps
- * `limit`/`offset`/`minSize` defensively at the daemon boundary (the HTTP routes
- * already coerce); `minSize` defaults to 1 and clamps below-1 to 1 (FR-029).
+ * SPEC-011 — the paged cluster catalog (FR-027/029/030). Coerces
+ * `limit`/`offset`/`minSize` defensively at the daemon boundary (floor + clamp,
+ * never an error); `minSize` defaults to 1 and clamps below-1 to 1 (FR-029).
  */
 function clusterListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
-  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(params.limit) || 100));
-  const offset = Math.max(0, Number(params.offset) || 0);
-  const minSize = Math.max(1, Math.floor(Number(params.minSize) || 1));
+  const limit = coerceCatalogInt(params.limit, 100, 1, MAX_LIMIT);
+  const offset = coerceCatalogInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+  const minSize = coerceCatalogInt(params.minSize, 1, 1, Number.MAX_SAFE_INTEGER);
   return cg.listClusters(minSize, limit, offset);
 }
 
@@ -148,7 +165,10 @@ export function readOnMissingIndex(op: ReadOp): unknown {
       return { found: false };
     case 'listFlows':
     case 'listClusters':
-      return { items: [], total: 0, limit: 0, offset: 0, sourceVersion: 0, state: 'not_indexed' };
+      // Report the effective default page envelope (limit 100 / offset 0), not
+      // limit 0 — a client must not read this defensive miss as an explicit
+      // empty-page choice (the list envelope's limit is the effective page size).
+      return { items: [], total: 0, limit: 100, offset: 0, sourceVersion: 0, state: 'not_indexed' };
     case 'getFlow':
       return { found: false, state: 'not_indexed' };
     default:

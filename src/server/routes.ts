@@ -299,16 +299,42 @@ function parsePaging(q: URLSearchParams): { limit: number; offset: number } | Ap
 }
 
 /**
- * Parse the SPEC-011 `minSize` cluster filter (FR-029): coerce like the read-ops
- * `Number(x)||default` precedent — missing/non-numeric → default 1, values < 1
- * clamp to 1 — never a 4xx (an ordinary catalog filter, not a validation error).
+ * Coerce a SPEC-011 catalog numeric query param (FR-028/029/030): a finite value is
+ * floored then clamped to [min,max]; missing/empty/non-numeric → `def`. Floor +
+ * clamp, **never a 4xx** — the catalog paging/`minSize` params degrade to the
+ * default instead of erroring, unlike the SPEC-005 `parseBoundedInt` (which 400s).
+ * Mirrors the daemon read-ops boundary coercion so the REST and `codegraph/read`
+ * surfaces agree (cross-surface parity, FR-028a).
+ */
+function coerceCatalogInt(raw: string | null, def: number, min: number, max: number): number {
+  if (raw === null || raw === '') return def;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+/**
+ * SPEC-011 catalog paging (FR-030): `limit` (default 100, clamp 1–500) + `offset`
+ * (default 0, ≥ 0), coerced — a malformed/negative page param floors + clamps to a
+ * valid value, never a 4xx (unlike SPEC-005 `parsePaging`). The catalog surfaces are
+ * success-shaped: a bad page param degrades to the default, it does not fail the
+ * request. This shares the MCP tool's coercion *semantics* (`coerceCatalogInt`+
+ * `clamp`: floor + clamp, missing/non-numeric → default, never error); the bound
+ * VALUES stay per-surface (MCP default 20 / cap 100, REST default 100 / cap 500).
+ */
+function parseCatalogPaging(q: URLSearchParams): { limit: number; offset: number } {
+  return {
+    limit: coerceCatalogInt(q.get('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT),
+    offset: coerceCatalogInt(q.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER),
+  };
+}
+
+/**
+ * The SPEC-011 `minSize` cluster filter (FR-029): default 1, values < 1 clamp to 1,
+ * coerced never a 4xx — the same catalog coercion as the paging params.
  */
 function parseMinSize(q: URLSearchParams): number {
-  const raw = q.get('minSize');
-  if (raw === null || raw === '') return 1;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return 1;
-  return Math.max(1, Math.floor(n));
+  return coerceCatalogInt(q.get('minSize'), 1, 1, Number.MAX_SAFE_INTEGER);
 }
 
 /** `depth` with a per-endpoint default, clamped to max 3; malformed/negative → 400. */
@@ -463,13 +489,13 @@ function relationHandler(deps: ReadApiDeps, which: 'callers' | 'callees'): Route
 /**
  * GET /api/flows (SPEC-011 T025, FR-028/030) — the paged execution-flow catalog.
  * A thin daemon-forwarding handler (the serve process holds no DB connection);
- * the same catalog-store read runs in the daemon (FR-021a). SPEC-005 Limit
- * (default 100 / max 500) / Offset.
+ * the same catalog-store read runs in the daemon (FR-021a). Limit (default 100 /
+ * max 500) / Offset are COERCED (floor + clamp, never a 4xx — FR-030), matching
+ * the MCP tool, not the SPEC-005 `parsePaging` 400.
  */
 function flowsListHandler(deps: ReadApiDeps): RouteHandler {
   return (ctx) => {
-    const paging = parsePaging(ctx.query);
-    if ('status' in paging) return paging;
+    const paging = parseCatalogPaging(ctx.query);
     return withClient(deps, ctx, async (client) => {
       const result = await readFlows(client, paging.limit, paging.offset);
       return { status: 200, body: result };
@@ -496,14 +522,13 @@ function flowDetailHandler(deps: ReadApiDeps): RouteHandler {
 /**
  * GET /api/clusters (SPEC-011 T037, FR-028/029) — the paged functional-cluster
  * catalog. A thin daemon-forwarding handler (the serve process holds no DB
- * connection); the same catalog-store read runs in the daemon (FR-021a). SPEC-005
- * Limit (default 100 / max 500) / Offset, plus the `minSize` filter (default 1,
- * `<1`→1; coerced, never 4xx).
+ * connection); the same catalog-store read runs in the daemon (FR-021a). Limit
+ * (default 100 / max 500) / Offset and the `minSize` filter (default 1, `<1`→1)
+ * are all COERCED (floor + clamp, never a 4xx — FR-030), matching the MCP tool.
  */
 function clustersListHandler(deps: ReadApiDeps): RouteHandler {
   return (ctx) => {
-    const paging = parsePaging(ctx.query);
-    if ('status' in paging) return paging;
+    const paging = parseCatalogPaging(ctx.query);
     const minSize = parseMinSize(ctx.query);
     return withClient(deps, ctx, async (client) => {
       const result = await readClusters(client, minSize, paging.limit, paging.offset);
