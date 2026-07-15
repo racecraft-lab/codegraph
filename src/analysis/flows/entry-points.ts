@@ -61,7 +61,10 @@ export interface FlowAnalysisGraph {
 /** Detection precedence when one node qualifies through multiple sources (FR-003). */
 const ENTRY_PRECEDENCE: Record<EntryKind, number> = { route: 0, cli: 1, event: 2, export: 3 };
 
-const JS_TS_RE = /\.(m?js|cjs|tsx?)$/;
+// Every JS/TS source variant the CLI/event scanners understand: .js .cjs .mjs
+// .jsx and .ts .cts .mts .tsx. (The bare `m?js|cjs|tsx?` form skipped .jsx/.mts/
+// .cts, so registrations in those files were invisible to the flow catalog.)
+const JS_TS_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const CALLABLE_KINDS = new Set(['function', 'method']);
 
 /** `.on('e', fn)` / `.once('e', fn)` / `.addListener/addEventListener('e', fn)`. */
@@ -111,7 +114,8 @@ function lineOf(src: string, index: number): number {
 }
 
 function langOf(filePath: string): 'typescript' | 'javascript' {
-  return /\.tsx?$/.test(filePath) ? 'typescript' : 'javascript';
+  // .ts/.tsx AND the .mts/.cts TypeScript variants classify as TypeScript.
+  return /\.[cm]?tsx?$/.test(filePath) ? 'typescript' : 'javascript';
 }
 
 /**
@@ -169,7 +173,18 @@ export function detectEntryPoints(graph: FlowAnalysisGraph): EntryPoint[] {
 function resolveHandler(name: string, filePath: string, queries: QueryBuilder): Node | null {
   const candidates = queries.getNodesByName(name).filter((n) => CALLABLE_KINDS.has(n.kind));
   if (candidates.length === 0) return null;
-  return candidates.find((n) => n.filePath === filePath) ?? candidates[0]!;
+  // Deterministic total order (FR-008a): same-file first, then file path,
+  // qualified name, id. `getNodesByName` row order is not a guaranteed tiebreak,
+  // so `find(same-file) ?? candidates[0]` could pick a different root across
+  // otherwise-identical builds when several same-name callables exist.
+  return [...candidates].sort((a, b) => {
+    const sa = a.filePath === filePath ? 0 : 1;
+    const sb = b.filePath === filePath ? 0 : 1;
+    if (sa !== sb) return sa - sb;
+    if (a.filePath !== b.filePath) return a.filePath < b.filePath ? -1 : 1;
+    if (a.qualifiedName !== b.qualifiedName) return a.qualifiedName < b.qualifiedName ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  })[0]!;
 }
 
 /** commander `.command('<name>').action(<handler>)` → one CLI entry per command. */

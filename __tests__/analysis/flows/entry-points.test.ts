@@ -103,4 +103,41 @@ describe('entry-point detection', () => {
     // Named "handler" but not exported and has an inbound call → not an entry.
     expect(roots.get(handler.id)).toBeUndefined();
   });
+
+  it('resolves a same-name handler deterministically, not by SQLite row order (FR-008a)', () => {
+    const h = freshSeed();
+    // Registration lives in a file with NO local `handler` def, so the same-file
+    // preference does not apply and the deterministic total order must decide.
+    // Insert the src/b.ts def FIRST so an insertion-ordered `candidates[0]` (the
+    // pre-fix behavior) would wrongly pick it over the lexicographically-first one.
+    file(h, 'src/z.ts', `emitter.on('evt', handler);\n`);
+    node(h, { name: 'handler', kind: 'function', filePath: 'src/b.ts' });
+    const inA = node(h, { name: 'handler', kind: 'function', filePath: 'src/a.ts' });
+
+    const ev = detectEntryPoints(h.graph).find((e) => e.entryKind === 'event');
+    expect(ev).toBeDefined();
+    expect(ev!.rootNodeId).toBe(inA.id); // src/a.ts wins the total order, every run
+  });
+
+  it('still prefers the same-file handler over a lexicographically-earlier one', () => {
+    const h = freshSeed();
+    file(h, 'src/here.ts', `emitter.on('evt', handler);\n`);
+    node(h, { name: 'handler', kind: 'function', filePath: 'src/aaa.ts' }); // sorts first…
+    const here = node(h, { name: 'handler', kind: 'function', filePath: 'src/here.ts' });
+
+    const ev = detectEntryPoints(h.graph).find((e) => e.entryKind === 'event');
+    expect(ev!.rootNodeId).toBe(here.id); // …but same-file preference wins (FR-001)
+  });
+
+  it('detects registrations in .mts and .jsx variants, not just .ts/.js (FR-001)', () => {
+    const h = freshSeed();
+    file(h, 'src/ev.mts', `emitter.on('data', onData);\n`);
+    const onData = node(h, { name: 'onData', kind: 'function', filePath: 'src/ev.mts' });
+    file(h, 'src/cli.jsx', `program.command('build').action(buildHandler);\n`);
+    const buildHandler = node(h, { name: 'buildHandler', kind: 'function', filePath: 'src/cli.jsx' });
+
+    const roots = kindsByRoot(h);
+    expect(roots.get(onData.id)).toBe('event'); // .mts scanned (was skipped pre-fix)
+    expect(roots.get(buildHandler.id)).toBe('cli'); // .jsx scanned (was skipped pre-fix)
+  });
 });
