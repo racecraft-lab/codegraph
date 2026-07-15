@@ -129,6 +129,20 @@ describe('flow truncation flags', () => {
     expect(anyTrunc(r)).toBe(false);
   });
 
+  it('does NOT set truncatedDepth when the depth-cap node only cycles back to a visited node', () => {
+    // A chain reaching exactly the depth cap whose last node's ONLY out-edge is a
+    // back-edge to the already-visited root — a cycle, not a truncation. The
+    // uncapped trace would skip that edge (visited), so nothing is omitted.
+    const h = freshSeed();
+    const rootId = chain(h, FLOW_CAP_DEPTH); // c0(root) … c12 at depth 12
+    edge(h, `c${FLOW_CAP_DEPTH}`, rootId, 'calls'); // c12 → root (already visited)
+    const r = traceFlow(rootAt(rootId), h.queries);
+
+    expect(r.truncatedDepth).toBe(false); // was true before the fix (false positive)
+    expect(anyTrunc(r)).toBe(false); // a fully-explored cycle is a COMPLETE flow
+    expect(r.steps).toHaveLength(FLOW_CAP_DEPTH + 1); // root + c1..c12, nothing dropped
+  });
+
   it('sets truncatedSteps when the 200th node is a last child with an unvisited edge', () => {
     // Regression (FR-007): the 200th step is pushed as the LAST child in DFS
     // pre-order, then we recurse into it. A top-of-dfs `steps.length >= cap`

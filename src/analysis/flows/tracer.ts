@@ -144,12 +144,6 @@ function sortedCandidates(nodeId: string, entry: EntryPoint, queries: QueryBuild
   return out;
 }
 
-/** Whether `nodeId` has any traceable out-edge (used for the depth-cut flag). */
-function hasOutEdges(nodeId: string, entry: EntryPoint, queries: QueryBuilder): boolean {
-  if (nodeId === entry.rootNodeId && entry.virtualRootEdges) return entry.virtualRootEdges.length > 0;
-  return queries.getOutgoingEdges(nodeId, FLOW_EDGE_KINDS).length > 0;
-}
-
 /**
  * Trace one flow rooted at `entry`. Deterministic pre-order DFS, cycle-safe (a
  * global visited set gives each symbol exactly one step), bounded by the three
@@ -180,7 +174,14 @@ export function traceFlow(entry: EntryPoint, queries: QueryBuilder): TraceResult
     // per-candidate `visited` skip means a node whose successors are all already
     // visited (exactly-200-explored) correctly leaves the flag unset.
     if (depth >= FLOW_CAP_DEPTH) {
-      if (hasOutEdges(nodeId, entry, queries)) flags.depth = true;
+      // Set the depth flag only if a resolvable, NOT-yet-visited target remains.
+      // A node whose only out-edges point at already-visited nodes (e.g. a cycle
+      // back to the root) or at dangling ids added nothing the uncapped trace
+      // would have kept — flagging it would falsely present a complete flow as
+      // depth-truncated (FR-007). sortedCandidates already drops dangling targets.
+      if (sortedCandidates(nodeId, entry, queries).some((c) => !visited.has(c.targetId))) {
+        flags.depth = true;
+      }
       return;
     }
     const candidates = sortedCandidates(nodeId, entry, queries);
