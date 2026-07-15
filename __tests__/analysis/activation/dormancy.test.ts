@@ -13,7 +13,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { maybeRunCatalogAnalysis } from '../../../src/analysis';
+import { maybeRunCatalogAnalysis, readFlowList } from '../../../src/analysis';
 import {
   clearProjectConfigCache,
   loadAnalysisConfig,
@@ -131,5 +131,41 @@ describe('catalog dormancy — both flags off (T051, FR-025/SC-007)', () => {
     fs.writeFileSync(cfg, JSON.stringify({ analysis: { flows: true, clusters: true } }));
     clearProjectConfigCache();
     expect(loadAnalysisConfig(dir)).toEqual({ flows: true, clusters: true });
+  });
+});
+
+describe('a previously-computed catalog keeps advancing the token when disabled (FR-022)', () => {
+  it('a graph change across a disabled window reads STALE on re-enable, not fresh', async () => {
+    const h = freshSeed();
+    seed(h);
+
+    // Opt in and compute → flows available at v1.
+    await maybeRunCatalogAnalysis(h.graph, h.db, { flows: true, clusters: false });
+    expect(readFlowList(h.db, true, 20, 0).state).toBe('available');
+    expect(h.queries.getGraphWriteVersion()).toBe(1);
+
+    // Disable, then re-index (the graph mutated in this disabled window). Because a
+    // catalog was already computed, the token MUST still advance — otherwise a
+    // later re-enable can't derive that the retained catalog is stale.
+    await maybeRunCatalogAnalysis(h.graph, h.db, OFF);
+    expect(h.queries.getGraphWriteVersion()).toBe(2);
+    // While disabled the catalog reads `disabled`, its rows inert (FR-025)…
+    expect(readFlowList(h.db, false, 20, 0).state).toBe('disabled');
+    // …and NO recompute happened — the flows catalog_meta still records v1.
+    const meta = h.db
+      .prepare(`SELECT computed_from_version AS v FROM catalog_meta WHERE kind='flows'`)
+      .get() as { v: number };
+    expect(meta.v).toBe(1);
+
+    // Re-enable and read: recorded v1 < live v2 → STALE (was 'available' pre-fix).
+    expect(readFlowList(h.db, true, 20, 0).state).toBe('stale');
+  });
+
+  it('a never-computed project with both flags off still never advances the token', async () => {
+    const h = freshSeed();
+    seed(h);
+    // No catalog was ever computed → strict dormancy: the token stays uncreated.
+    await maybeRunCatalogAnalysis(h.graph, h.db, OFF);
+    expect(h.queries.getMetadata('graph_write_version')).toBeNull();
   });
 });

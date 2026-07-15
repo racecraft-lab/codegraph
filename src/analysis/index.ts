@@ -332,6 +332,16 @@ function hasValidPriorCatalog(store: SqliteDatabase, kind: CatalogKind): boolean
 }
 
 /**
+ * Whether EITHER catalog kind has ever been computed (a `catalog_meta` row
+ * exists — success marker or first-run-failure marker). Distinguishes a project
+ * that has opted in at least once (so the version token must keep advancing per
+ * FR-022) from a never-opted-in one (which stays byte-identical, FR-025/SC-007).
+ */
+function hasAnyCatalogMeta(store: SqliteDatabase): boolean {
+  return probeCatalog(store, 'flows').hasMeta || probeCatalog(store, 'clusters').hasMeta;
+}
+
+/**
  * Run ONE catalog kind's analysis with the bounded failure taxonomy (T048,
  * FR-022b/023): every failure mode analysis can raise — compute/traversal
  * exceptions, resource exhaustion, a failed atomic-swap commit — is caught here
@@ -382,12 +392,13 @@ async function runCatalogKind(
  * advisory embedding pass:
  *   - honors the caller's `AbortSignal` (an aborted pass is a full no-op — no
  *     version advance, no writes);
- *   - fully DORMANT unless ≥1 catalog is opted in — neither enabled ⇒ zero writes,
- *     `graph_write_version` untouched, byte-identical to the pre-feature state
- *     (FR-025/SC-007);
- *   - advances `graph_write_version` as part of the successful graph-update commit
- *     BEFORE analysis runs (R2), so a post-update failure leaves the retained
- *     catalog behind the live token → stale (FR-022);
+ *   - fully DORMANT for a NEVER-opted-in project (no catalog ever computed) —
+ *     zero writes, `graph_write_version` untouched, byte-identical to the
+ *     pre-feature state (FR-025/SC-007);
+ *   - advances `graph_write_version` on each successful index/sync once a catalog
+ *     has EVER been computed — even a now-disabled one — BEFORE analysis runs
+ *     (R2), so a post-update failure OR a graph mutated across a disabled window
+ *     leaves the retained catalog behind the live token → stale (FR-022);
  *   - dispatches each enabled kind independently through {@link runCatalogKind},
  *     which swallows every failure so analysis can NEVER fail the index (FR-022b).
  *
@@ -402,11 +413,22 @@ export async function maybeRunCatalogAnalysis(
   hooks: CatalogAnalysisHooks = {},
 ): Promise<void> {
   if (signal?.aborted) return; // cancelled before any work — no advance, no writes
-  if (!config.flows && !config.clusters) return; // dormancy: nothing opted in
+  const anyEnabled = config.flows || config.clusters;
+  // Dormancy (FR-025/SC-007): a project that has NEVER opted in writes nothing —
+  // not even a version advance — so it stays byte-identical to the pre-feature
+  // state. But a project that has ALREADY computed a catalog (even one now
+  // disabled) MUST still advance the token on each successful index/sync, or a
+  // graph mutated across a disabled window would let a later re-enable read the
+  // retained catalog as fresh when it is really stale (FR-022).
+  if (!anyEnabled && !hasAnyCatalogMeta(store)) return;
 
-  // Advance the live token BEFORE analysis (R2). Maintained ONLY here, gated on
-  // ≥1 enabled catalog above, so a not-opted-in project never advances it.
+  // Advance the live token BEFORE analysis (R2), so a post-update failure — or a
+  // graph mutated while a catalog was disabled — leaves the retained catalog
+  // behind the live token → stale (FR-022/022b).
   graph.queries.advanceGraphWriteVersion();
+  // Previously computed but now fully disabled: advance the token only, recompute
+  // nothing (its retained rows stay inert and read `disabled`, FR-025).
+  if (!anyEnabled) return;
 
   const runFlows = hooks.runFlows ?? runFlowAnalysis;
   const runClusters = hooks.runClusters ?? runClusterAnalysis;
