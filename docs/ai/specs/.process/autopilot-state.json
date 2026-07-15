@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 6: Analyze",
-  "updated_at": "2026-07-15T23:42:29Z",
+  "active_step": "Phase 7: Implement - T001",
+  "updated_at": "2026-07-15T23:45:37Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -25,10 +25,10 @@
     {"step": "Phase 4: Checklist - performance", "status": "completed"},
     {"step": "Phase 4: Checklist - performance Consensus", "status": "completed"},
     {"step": "Phase 5: Tasks", "status": "completed"},
-    {"step": "Phase 6: Analyze", "status": "in_progress"},
-    {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
-    {"step": "Phase 6.5: Confidence Gate", "status": "pending"},
-    {"step": "Phase 7: Implement - Pending task decomposition", "status": "pending"},
+    {"step": "Phase 6: Analyze", "status": "completed"},
+    {"step": "Phase 6: Analyze - Consensus", "status": "completed"},
+    {"step": "Phase 6.5: Confidence Gate", "status": "completed"},
+    {"step": "Phase 7: Implement - Pending task decomposition", "status": "in_progress"},
     {"step": "Post: Doctor Extension Check", "status": "pending"},
     {"step": "Post: Verify Implementation", "status": "pending"},
     {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
@@ -388,5 +388,60 @@
     "after_tasks_hooks": {
       "git_commit": "deferred_to_autopilot_phase_commit"
     }
+  },
+  "phase6": {
+    "status": "completed",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-analyze",
+    "findings": [],
+    "gate": {
+      "id": "G6",
+      "status": "passed",
+      "reason": "0 CRITICAL/HIGH findings",
+      "markers": 0
+    },
+    "coverage_summary": {
+      "design_questions_covered": 9,
+      "user_stories_covered": 4,
+      "core_artifacts_present": ["spec.md", "plan.md", "tasks.md", "research.md", "data-model.md", "quickstart.md", "contracts/"]
+    },
+    "consensus": {
+      "status": "completed",
+      "unresolved_items": 0,
+      "action": "skipped; no CRITICAL/HIGH findings or disputed analysis findings"
+    },
+    "confidence_emit": {
+      "composite": 0.96,
+      "criteria": {
+        "task_understanding": 0.95,
+        "approach_clarity": 0.94,
+        "requirements_alignment": 0.91,
+        "risk_assessment": 1.0,
+        "completeness": 1.0
+      }
+    },
+    "after_analyze_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
+    }
+  },
+  "phase6_5": {
+    "status": "completed",
+    "gate": {
+      "id": "G6.5",
+      "status": "passed",
+      "mode": "advisory",
+      "threshold": 0.9,
+      "composite": 0.96,
+      "reason": "composite at or above threshold",
+      "recommended_action": "proceed"
+    },
+    "criteria": {
+      "task_understanding": 0.95,
+      "approach_clarity": 0.94,
+      "requirements_alignment": 0.91,
+      "risk_assessment": 1.0,
+      "completeness": 1.0
+    },
+    "iterations": 0
   }
 }

@@ -56,9 +56,9 @@ decisions:
 | Plan | `/speckit-plan` | ✅ Complete | G3 passed; reviewability warning accepted, no blockers |
 | Checklist | `/speckit-checklist` | ✅ Complete | G4 passed with 48 checklist items and 0 gaps |
 | Tasks | `/speckit-tasks` | ✅ Complete | G5 passed with 60 dependency-ordered tasks |
-| Analyze | `/speckit-analyze` | ⏳ Pending | |
-| Confidence Gate | G6.5 | ⏳ Pending | Advisory pre-implementation confidence check |
-| Implement | `/speckit-implement` | ⏳ Pending | |
+| Analyze | `/speckit-analyze` | ✅ Complete | G6 passed with 0 CRITICAL/HIGH findings |
+| Confidence Gate | G6.5 | ✅ Complete | Confidence 0.96 ≥ 0.90 in advisory mode |
+| Implement | `/speckit-implement` | 🔄 In Progress | Starting with T001 |
 | Post | Post-Implementation | ⏳ Pending | Verification, reviewability, PR, and retrospective |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -630,7 +630,35 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| | | | |
+| A0 | INFO | No blocking cross-artifact consistency findings. `spec.md`, `plan.md`, `tasks.md`, contracts, quickstart, and design concept align on Q1–Q9, result coverage, trust/dormancy, generated runtime freshness, dogfood, and reviewability guardrails. | Proceed to G6.5 and implementation. |
+
+### Coverage Summary
+
+| Area | Status | Evidence |
+|------|--------|----------|
+| Q1 safe fork support | Covered | US2 tasks T024–T032 |
+| Q2 threshold-only blocking | Covered | US3 tasks T033–T040 |
+| Q3 explicit unavailable failure | Covered | US2/US3 tasks T026, T033, T035–T039 |
+| Q4 prose-only narrative | Covered | US2/US4 tasks T031, T042, T048–T049 |
+| Q5 one sticky comment | Covered | US1 tasks T015, T020–T021 |
+| Q6 validate-or-rebuild cache | Covered | US4 tasks T041, T045–T047 |
+| Q7 summary plus artifact fallback | Covered | US2 tasks T025, T029–T030 |
+| Q8 advisory dogfood | Covered | US4 tasks T043, T050, T057 |
+| Q9 one-spec scope | Covered | Setup/polish tasks T007, T058 |
+
+### Consensus Resolution Log
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Phase 6 findings | No consensus routing required | Analyze found 0 CRITICAL/HIGH issues and no unresolved findings. |
+
+📊 Confidence: 0.96
+
+- Task understanding: 0.95
+- Approach clarity: 0.94
+- Requirements alignment: 0.91
+- Risk assessment: 1.00
+- Completeness: 1.00
 
 ---
 
@@ -642,7 +670,7 @@ Focus on:
 
 | Gate | Status | Evidence |
 |------|--------|----------|
-| G6.5 | ⏳ Pending | Awaiting Phase 6 confidence emit |
+| G6.5 | ✅ Passed | `confidence-gate`: composite 0.96 ≥ threshold 0.90; mode `advisory`; recommended action `proceed` |
 
 ---
 
