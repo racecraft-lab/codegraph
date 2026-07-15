@@ -32,7 +32,7 @@ decisions captured during scaffold.
 | Clarify | `/speckit-clarify` | Complete | Resolved UX, API, chat, and clean-room ambiguity. |
 | Plan | `/speckit-plan` | Complete | Selected renderer, shadcn style, API contracts, and slices. |
 | Checklist | `/speckit-checklist` | Complete | UX, accessibility, API-contracts, llm-integration, and performance complete with 0 remaining gaps. |
-| Tasks | `/speckit-tasks` | In Progress | Generate small vertical-slice tasks. |
+| Tasks | `/speckit-tasks` | Complete | Generated 94 tasks across setup, foundation, seven user stories, and polish. |
 | Analyze | `/speckit-analyze` | Pending | Fix consistency gaps before implementation. |
 | Confidence Gate | G6.5 | Pending | Run advisory confidence gate before implementation. |
 | Implement | `/speckit-implement` | Pending | Execute with tests and UAT evidence. |
@@ -419,10 +419,12 @@ Focus on SPEC-006 requirements:
 
 | Metric | Value |
 |---|---|
-| Total Tasks | Pending |
-| Phases | Pending |
-| Parallel Opportunities | Pending |
-| User Stories Covered | Pending |
+| Total Tasks | 94 |
+| Phases | 10 |
+| Parallel Opportunities | Setup T003-T005/T007; foundation T011-T013/T016-T017; story test groups; US1-US4 after foundation; US5-US7 after foundation; polish T085-T088 |
+| User Stories Covered | 7/7 |
+
+**G5 Gate:** PASS - runner `validate-gate` reported `94 tasks found`.
 
 ## Atomicity Route
 
@@ -430,16 +432,24 @@ Filled after Tasks phase by the autopilot classifier.
 
 | Field | Value | Meaning |
 |---|---|---|
-| Route | Pending | One of the classifier route values. |
-| Releasable | Pending | True unless classifier identifies release risk. |
-| Signals | Pending | Decisive detector findings. |
-| Warnings | Pending | Release-safety warnings. |
+| Route | one-navigable-PR | One of the classifier route values. |
+| Releasable | true | True unless classifier identifies release risk. |
+| Signals | change-shape:modify-heavy | Decisive detector findings. |
+| Warnings | none | Release-safety warnings. |
 
 To produce the decision:
 
 ```text
 runner helper atomicity-route specs/006-web-ui-graph-browser
 ```
+
+## Phase 5.1: Verify Tasks
+
+**Result:** Skipped cleanly - `tasks.md` has no completed `[X]` task entries yet, so there are no phantom completions to verify before implementation.
+
+## Phase 5.2: Tasks to Issues
+
+**Status:** Pending.
 
 ## Phase 6: Analyze
 
