@@ -55,13 +55,14 @@ Navigation map for the CodeGraph Intelligence Platform roadmap. This home note c
 
 ### Phase 5 — Team & Enterprise Capabilities
 - [SPEC-018 LLM Access Layer](.process/SPEC-018-workflow.md)
-- [SPEC-019 Auto-Updating Code Wiki](SPEC-019-workflow.md)
+- [SPEC-027 Markdown / OKF Knowledge Bundle Indexing](SPEC-027-workflow.md)
+- [SPEC-019 Auto-Updating Project Knowledge Wiki](SPEC-019-workflow.md)
 - [SPEC-020 PR Blast-Radius Review Action](SPEC-020-workflow.md)
 - [SPEC-021 Repo Groups & Contract Extraction](SPEC-021-workflow.md)
 - [SPEC-022 Cross-Repo Bridge & Impact](SPEC-022-workflow.md)
 - [SPEC-023 OCaml Language Support](.process/SPEC-023-workflow.md)
 
-**Why:** Team-scale value — a dual-path LLM layer feeding an auto-updating wiki and PR reviews, cross-repo contract impact, and OCaml coverage.
+**Why:** Team-scale value — producer-neutral Markdown/OKF knowledge indexed beside code, a dual-path LLM layer feeding generated wiki views and PR reviews, cross-repo contract impact, and OCaml coverage.
 
 ### Phase 6 — Plugin-Channel Distribution
 - [SPEC-025 Plugin Platform Mechanics Spike](SPEC-025-workflow.md)
