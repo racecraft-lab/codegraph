@@ -23,7 +23,7 @@ Represents index health, freshness, active job, and degraded API states.
 
 Fields:
 
-- `state`: `healthy | stale | indexing | unavailable | not_indexed | error`.
+- `state`: `healthy | stale | indexing | unavailable | not_indexed | unauthorized | error`.
 - `fileCount`, `nodeCount`, `edgeCount`: optional counts where available.
 - `lastAnalysisAt`: optional timestamp.
 - `activeJob`: optional `ReanalysisJob`.
@@ -32,7 +32,7 @@ Fields:
 
 Validation rules:
 
-- Status must distinguish unavailable, stale, indexing, and no-repo states.
+- Status must distinguish unavailable, unauthorized, stale, indexing, and no-repo states.
 - Error messages use existing CodeGraph error envelope semantics and must not expose bearer tokens or provider secrets.
 
 ## Symbol
@@ -137,7 +137,7 @@ Fields:
 Validation rules:
 
 - One active job per repo; duplicate active start maps to existing `409` behavior.
-- EventSource stream is live-only: snapshot, progress, terminal `done` or `error`, heartbeat comments, and no Last-Event-ID replay guarantee.
+- EventSource stream is live-only: snapshot, progress, terminal `done` or `error`, heartbeat comments, terminal status collapsed into the snapshot for already-finished jobs, slow-consumer progress coalescing, disconnects that never cancel the job, and no Last-Event-ID replay guarantee.
 - UI prevents duplicate ambiguous starts while a job is active.
 
 ## ChatStatus
@@ -181,7 +181,7 @@ Represents one backend chat result.
 
 Fields:
 
-- `state`: `answer | fallback | pending_bundle | disabled | misconfigured | error`.
+- `state`: `answer | fallback | pending_bundle | disabled | dormant | misconfigured | rate_limited | error`.
 - `text`: response or fallback text safe to render.
 - `handle`: optional agent-bundle handle for pending-bundle mode.
 - `context`: `ChatContextBoundary`.
@@ -189,7 +189,8 @@ Fields:
 
 Validation rules:
 
-- `state` must let the UI distinguish endpoint answer, fallback, pending bundle, disabled, misconfigured, and error paths.
+- `state` must let the UI distinguish endpoint answer, fallback, pending bundle, disabled, dormant, misconfigured, rate-limited, and error paths.
+- Adapter mapping preserves SPEC-018 generation result semantics: endpoint source becomes an answer, pending-bundle source returns fallback text plus an opaque handle, and fallback source returns safe fallback text without implying provider success.
 - Context boundaries and truncation are visible with the answer or fallback.
 
 ## ChatContextBoundary

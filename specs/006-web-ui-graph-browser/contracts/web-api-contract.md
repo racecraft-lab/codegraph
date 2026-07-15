@@ -21,7 +21,7 @@ The SPEC-006 SPA consumes the shipped CodeGraph local HTTP API from `src/server/
 | `/api/clusters?repo=&minSize=` | GET | `?repo=<repo-id>` optional/default | Cluster and context navigation | UI treats labels as backend data, not LLM-created graph structure. |
 | `/api/reindex/{repo}` | POST | Path repo id | Start sync/full re-analysis | URL/query only; duplicate active job returns `409`. |
 | `/api/reindex/{repo}` | GET | Path repo id | Latest job state | Used for snapshot/refresh after navigation. |
-| `/api/reindex/{repo}/events` | GET | Path repo id | Live EventSource progress | Live-only stream: snapshot, progress, terminal event, heartbeat comments, no replay guarantee. |
+| `/api/reindex/{repo}/events` | GET | Path repo id | Live EventSource progress | Live-only stream: snapshot, progress, terminal event, heartbeat comments, terminal status collapsed into snapshot for already-finished jobs, slow-consumer progress coalescing, disconnect does not cancel the job, no replay guarantee. |
 
 ## Error Handling
 
@@ -40,4 +40,4 @@ The SPEC-006 SPA consumes the shipped CodeGraph local HTTP API from `src/server/
 
 - Contract tests cover request URL construction for repo-scoped and non-repo-scoped routes.
 - UI tests verify `/api/*` 404/error behavior is not swallowed by the SPA fallback.
-- Re-analysis tests cover start, duplicate active job, latest job, SSE snapshot/progress/terminal events, disconnect, and no replay assumption.
+- Re-analysis tests cover start, duplicate active job, latest job, SSE snapshot/progress/terminal events, already-finished terminal snapshot, slow-consumer progress coalescing, disconnect-does-not-cancel behavior, and no replay assumption.

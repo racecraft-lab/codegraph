@@ -5,7 +5,7 @@
   "branch": "006-web-ui-graph-browser",
   "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/006-web-ui-graph-browser",
   "status": "in_progress",
-  "active_step": "phase_4_checklist",
+  "active_step": "phase_5_tasks",
   "plan": [
     {
       "step": "Archive Sweep: merged spec cleanup",
@@ -49,47 +49,47 @@
     },
     {
       "step": "Phase 4: Checklist - UX",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - UX Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Accessibility",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Accessibility Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - API Contracts",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - API Contracts Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - LLM Integration",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - LLM Integration Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Performance",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Performance Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 5: Verify Tasks",
@@ -399,6 +399,129 @@
         },
         "fallback_evidence": "Use spec.md reviewability budget: projected reviewable LOC 1115, warning accepted, three vertical implementation slices."
       }
+    },
+    {
+      "id": "phase_4_checklist_ux",
+      "title": "Checklist - UX",
+      "status": "completed",
+      "agent": "checklist-executor",
+      "items": 31,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "outputs": {
+        "checklist": "specs/006-web-ui-graph-browser/checklists/ux.md",
+        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
+        "data_model_updates": "specs/006-web-ui-graph-browser/data-model.md",
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
+      },
+      "result": "Unauthorized/token-required API access added to UX state taxonomy and RepositoryStatus state."
+    },
+    {
+      "id": "phase_4_checklist_ux_consensus",
+      "title": "Checklist - UX Consensus",
+      "status": "completed",
+      "agents": [
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ],
+      "result": "Consensus accepted the unauthorized/token-required UX state. Parent applied a codebase precision refinement distinguishing token-bound request 401 from non-loopback startup refusal."
+    },
+    {
+      "id": "phase_4_checklist_accessibility",
+      "title": "Checklist - Accessibility",
+      "status": "completed",
+      "agent": "checklist-executor",
+      "items": 29,
+      "gaps_found": 9,
+      "gaps_remaining": 0,
+      "outputs": {
+        "checklist": "specs/006-web-ui-graph-browser/checklists/accessibility.md",
+        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
+        "plan_updates": "specs/006-web-ui-graph-browser/plan.md",
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
+      },
+      "result": "Added FR-054 through FR-060 and SC-012 for keyboard, focus, accessible names/status, graph/impact mirrors, contrast, target size, reduced motion, and reflow."
+    },
+    {
+      "id": "phase_4_checklist_accessibility_consensus",
+      "title": "Checklist - Accessibility Consensus",
+      "status": "completed",
+      "result": "Skipped: checklist-executor reported no unresolved consensus items."
+    },
+    {
+      "id": "phase_4_checklist_api_contracts",
+      "title": "Checklist - API Contracts",
+      "status": "completed",
+      "agent": "parent-executor",
+      "items": 35,
+      "gaps_found": 6,
+      "gaps_remaining": 0,
+      "outputs": {
+        "checklist": "specs/006-web-ui-graph-browser/checklists/api-contracts.md",
+        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
+        "data_model_updates": "specs/006-web-ui-graph-browser/data-model.md",
+        "contract_updates": [
+          "specs/006-web-ui-graph-browser/contracts/web-api-contract.md",
+          "specs/006-web-ui-graph-browser/contracts/chat-adapter-contract.md"
+        ],
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
+      },
+      "result": "Resolved SSE terminal-snapshot/slow-consumer/disconnect semantics and chat dormant/rate-limited/error-envelope contract alignment."
+    },
+    {
+      "id": "phase_4_checklist_api_contracts_consensus",
+      "title": "Checklist - API Contracts Consensus",
+      "status": "completed",
+      "result": "Skipped: all API Contracts gaps were resolved in the checklist pass; no unresolved consensus items remain."
+    },
+    {
+      "id": "phase_4_checklist_llm_integration",
+      "title": "Checklist - LLM Integration",
+      "status": "completed",
+      "agent": "parent-executor",
+      "items": 33,
+      "gaps_found": 4,
+      "gaps_remaining": 0,
+      "outputs": {
+        "checklist": "specs/006-web-ui-graph-browser/checklists/llm-integration.md",
+        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
+        "data_model_updates": "specs/006-web-ui-graph-browser/data-model.md",
+        "contract_updates": [
+          "specs/006-web-ui-graph-browser/contracts/chat-adapter-contract.md"
+        ],
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
+      },
+      "result": "Resolved SPEC-018 generation result mapping for endpoint answers, pending bundles, fallback results, dormant/misconfigured no-call behavior, and bundle-emission fallback."
+    },
+    {
+      "id": "phase_4_checklist_llm_integration_consensus",
+      "title": "Checklist - LLM Integration Consensus",
+      "status": "completed",
+      "result": "Skipped: all LLM Integration gaps were resolved in the checklist pass; no unresolved consensus items remain."
+    },
+    {
+      "id": "phase_4_checklist_performance",
+      "title": "Checklist - Performance",
+      "status": "completed",
+      "agent": "parent-executor",
+      "items": 37,
+      "gaps_found": 9,
+      "gaps_remaining": 0,
+      "outputs": {
+        "checklist": "specs/006-web-ui-graph-browser/checklists/performance.md",
+        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
+        "plan_updates": "specs/006-web-ui-graph-browser/plan.md",
+        "quickstart_updates": "specs/006-web-ui-graph-browser/quickstart.md",
+        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
+      },
+      "result": "Resolved qualitative performance coverage by adding NFR-001 through NFR-006, SC-013, plan threshold coverage, and quickstart performance evidence steps."
+    },
+    {
+      "id": "phase_4_checklist_performance_consensus",
+      "title": "Checklist - Performance Consensus",
+      "status": "completed",
+      "result": "Skipped: all Performance gaps were resolved in the checklist pass; no unresolved consensus items remain."
     }
   ],
   "post_implementation": [
@@ -490,6 +613,104 @@
         "status": "not_estimated",
         "fallback_evidence": "spec.md reviewability budget warning accepted"
       }
+    },
+    "phase_4_checklist_ux": {
+      "checklist": "specs/006-web-ui-graph-browser/checklists/ux.md",
+      "items": 31,
+      "gaps_found": 1,
+      "gaps_remaining": 0,
+      "consensus_agents": [
+        "codebase-analyst",
+        "spec-context-analyst",
+        "domain-researcher"
+      ],
+      "security_consensus": {
+        "question": "Is the remediated UX requirement for unauthorized/token-required API states correct and sufficient?",
+        "selected_answer": "accept_with_codebase_wording_refinement",
+        "result": "2 accepted as sufficient, 1 requested precision refinement; refinement applied."
+      }
+    },
+    "phase_4_checklist_accessibility": {
+      "checklist": "specs/006-web-ui-graph-browser/checklists/accessibility.md",
+      "items": 29,
+      "gaps_found": 9,
+      "gaps_remaining": 0,
+      "requirements_added": [
+        "FR-054",
+        "FR-055",
+        "FR-056",
+        "FR-057",
+        "FR-058",
+        "FR-059",
+        "FR-060"
+      ],
+      "success_criteria_added": [
+        "SC-012"
+      ],
+      "consensus": "none_unresolved"
+    },
+    "phase_4_checklist_api_contracts": {
+      "checklist": "specs/006-web-ui-graph-browser/checklists/api-contracts.md",
+      "items": 35,
+      "gaps_found": 6,
+      "gaps_remaining": 0,
+      "requirements_updated": [
+        "FR-045"
+      ],
+      "data_model_updates": [
+        "ReanalysisJob",
+        "ChatResponse"
+      ],
+      "contracts_updated": [
+        "web-api-contract.md",
+        "chat-adapter-contract.md"
+      ],
+      "consensus": "none_unresolved"
+    },
+    "phase_4_checklist_llm_integration": {
+      "checklist": "specs/006-web-ui-graph-browser/checklists/llm-integration.md",
+      "items": 33,
+      "gaps_found": 4,
+      "gaps_remaining": 0,
+      "requirements_updated": [
+        "FR-041"
+      ],
+      "data_model_updates": [
+        "ChatResponse"
+      ],
+      "contracts_updated": [
+        "chat-adapter-contract.md"
+      ],
+      "consensus": "none_unresolved"
+    },
+    "phase_4_checklist_performance": {
+      "checklist": "specs/006-web-ui-graph-browser/checklists/performance.md",
+      "items": 37,
+      "gaps_found": 9,
+      "gaps_remaining": 0,
+      "non_functional_requirements_added": [
+        "NFR-001",
+        "NFR-002",
+        "NFR-003",
+        "NFR-004",
+        "NFR-005",
+        "NFR-006"
+      ],
+      "success_criteria_added": [
+        "SC-013"
+      ],
+      "plan_updates": [
+        "Testing",
+        "Performance Goals",
+        "Phase 1 Design"
+      ],
+      "consensus": "none_unresolved"
+    },
+    "phase_4_checklist_gate": {
+      "gate": "G4",
+      "status": "passed",
+      "reason": "0 [Gap] markers",
+      "markers": 0
     }
   },
   "blockers": []

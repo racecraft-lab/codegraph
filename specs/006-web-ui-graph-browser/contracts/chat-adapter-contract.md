@@ -87,7 +87,9 @@ Allowed `state` values:
 - `fallback`
 - `pending_bundle`
 - `disabled`
+- `dormant`
 - `misconfigured`
+- `rate_limited`
 - `error`
 
 Rules:
@@ -125,8 +127,18 @@ Rules:
 - Completed responses return safe completed text only.
 - Missing or pending bundles are explicit states, not generic failures.
 
+## SPEC-018 Result Mapping
+
+- SPEC-018 endpoint generation results map to `state: "answer"` with safe answer text and context-boundary metadata.
+- SPEC-018 pending-bundle results map to `state: "pending_bundle"` with safe fallback text, an opaque `handle`, and context-boundary metadata.
+- SPEC-018 fallback results map to `state: "fallback"` unless the adapter can classify a more specific visible state such as `disabled`, `dormant`, `misconfigured`, or `rate_limited`.
+- Dormant and misconfigured SPEC-018 states must not trigger provider calls or agent-bundle writes.
+- Endpoint failures degrade through SPEC-018 fallback behavior; bundle emission failures degrade to fallback without exposing filesystem errors.
+
 ## Error Handling
 
+- Expected chat readiness or generation states may be success-shaped responses when they are safe for the browser to render, including disabled, dormant, misconfigured, rate-limited, fallback, pending-bundle, and endpoint-fallback states.
+- Malformed or missing `repoId`, empty or invalid `prompt`, invalid context hints, unknown repos, unknown bundle handles, non-loopback authorization failures, and backend faults use the existing CodeGraph error envelope instead of a browser-only error protocol.
 - Adapter route errors use the existing CodeGraph error envelope.
 - Provider failures degrade through SPEC-018 fallback where possible.
 - Backend logs may include local diagnostic summaries but must not log provider secrets or browser tokens.
@@ -135,4 +147,5 @@ Rules:
 
 - Unit tests verify no provider config fields are serialized to browser responses.
 - Contract tests verify dormant, misconfigured, endpoint-active, endpoint-fallback, pending-bundle, completed-bundle, and backend-error states.
+- Contract tests verify malformed request, unknown repo or bundle, unauthorized, unavailable, and sanitized internal fault envelopes.
 - Network inspection in Playwright verifies browser calls stay same-origin and no direct provider request is made by the browser.

@@ -31,8 +31,8 @@ decisions captured during scaffold.
 | Specify | `/speckit-specify` | Complete | Created `specs/006-web-ui-graph-browser/spec.md`. |
 | Clarify | `/speckit-clarify` | Complete | Resolved UX, API, chat, and clean-room ambiguity. |
 | Plan | `/speckit-plan` | Complete | Selected renderer, shadcn style, API contracts, and slices. |
-| Checklist | `/speckit-checklist` | Pending | Run UX, accessibility, API-contracts, llm-integration, performance. |
-| Tasks | `/speckit-tasks` | Pending | Generate small vertical-slice tasks. |
+| Checklist | `/speckit-checklist` | Complete | UX, accessibility, API-contracts, llm-integration, and performance complete with 0 remaining gaps. |
+| Tasks | `/speckit-tasks` | In Progress | Generate small vertical-slice tasks. |
 | Analyze | `/speckit-analyze` | Pending | Fix consistency gaps before implementation. |
 | Confidence Gate | G6.5 | Pending | Run advisory confidence gate before implementation. |
 | Implement | `/speckit-implement` | Pending | Execute with tests and UAT evidence. |
@@ -379,11 +379,13 @@ Focus on SPEC-006 requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |---|---:|---:|---|
-| ux | Pending | Pending | Pending |
-| accessibility | Pending | Pending | Pending |
-| api-contracts | Pending | Pending | Pending |
-| llm-integration | Pending | Pending | Pending |
-| performance | Pending | Pending | Pending |
+| ux | 31 | 0 | FR-001, FR-031-FR-038, SC-001-SC-009 |
+| accessibility | 29 | 0 | FR-034-FR-038, FR-054-FR-060, SC-009, SC-012 |
+| api-contracts | 35 | 0 | FR-039-FR-047, FR-052, SC-007, SC-008, SC-011 |
+| llm-integration | 33 | 0 | FR-020-FR-023, FR-041-FR-044, FR-047, SC-007, SC-008 |
+| performance | 37 | 0 | NFR-001-NFR-006, SC-013, FR-014, FR-045 |
+
+**G4 Gate:** PASS - runner `validate-gate` reported `0 [Gap] markers`.
 
 ## Phase 5: Tasks
 

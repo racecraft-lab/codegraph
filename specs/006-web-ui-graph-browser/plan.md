@@ -16,17 +16,17 @@ Build a package-shipped Vite + React + TypeScript SPA under `web/` for local Cod
 
 **Storage**: Existing `node:sqlite` CodeGraph store remains backend-owned. Browser state is local in-memory UI state plus URL/deep-link state. SPEC-018 agent bundles remain backend filesystem state under `.codegraph/tasks/` when agent mode is active.
 
-**Testing**: `npm run build`, `npm run typecheck`, `npm test`; focused Vitest suites for API clients, chat adapter, static serving, packaging, and renderer data transforms; Playwright for primary UI/UAT, keyboard paths, nonblank canvas checks, offline/no-CDN behavior, mobile layout, and packaged `codegraph serve --web`.
+**Testing**: `npm run build`, `npm run typecheck`, `npm test`; focused Vitest suites for API clients, chat adapter, static serving, packaging, and renderer data transforms; Playwright for primary UI/UAT, keyboard paths, focus containment/return, accessible names and status announcements, nonblank canvas checks, synchronized graph/impact text mirrors, reduced-motion behavior, contrast and target-size checks, text-resize/reflow/no-overlap checks, performance thresholds from NFR-001 through NFR-006, offline/no-CDN behavior, mobile layout, and packaged `codegraph serve --web`.
 
 **Target Platform**: Self-hosted local browser UI served by `codegraph serve --web`; loopback default with no credentials; existing non-loopback bearer-token behavior for `/api/*`; package-shipped npm CLI/runtime.
 
 **Project Type**: Local-first CLI/library with an added SPA and minimal local HTTP server integration.
 
-**Performance Goals**: Search and symbol pages remain responsive on representative indexed repos; graph neighborhoods render visibly at capped sizes, support pan/zoom/select/filter/expand without blank-canvas failures, and disclose truncation at backend/browser limits; re-analysis progress updates live through existing SSE.
+**Performance Goals**: Primary UI actions show feedback within 100 ms; search and symbol content render within 500 ms after local API response on representative indexed repos; representative graph payloads up to 500 nodes and 1,000 edges render nonblank or summary-first fallback within 2,000 ms after receipt while controls avoid validation-visible main-thread stalls over 100 ms; large graph payloads disclose truncation and avoid unbounded expansion; re-analysis progress reflects accepted starts and received SSE events within the NFR thresholds; package validation records JS/CSS asset sizes and justifies any single runtime asset above 1.5 MB uncompressed.
 
 **Constraints**: No browser-side indexing, provider SDK, provider secret, remote telemetry, external CDN, hosted auth, hosted database, or remote runtime asset fetch. `/api/*` routes must never be swallowed by SPA fallback. Backend scope is limited to static package integration and a minimal SPEC-018 chat adapter.
 
-**Scale/Scope**: 7 user stories, 53 functional requirements, 3 vertical implementation slices: foundation/search/symbol, graph canvas, and impact/reindex/chat/package validation.
+**Scale/Scope**: 7 user stories, 60 functional requirements, 3 vertical implementation slices: foundation/search/symbol, graph canvas, and impact/reindex/chat/package validation.
 
 **Reviewability Budget**: Primary surface UI; secondary surfaces API, package/static serving, docs/process. Projected reviewable LOC 1115; projected production files 35; projected total files 55; budget result warning accepted in `spec.md` with a one-spec split exception and three vertical slices.
 
@@ -137,3 +137,4 @@ See [data-model.md](./data-model.md) and [contracts/](./contracts/) for details.
 - The web API contract consumes the existing OpenAPI read/reindex routes before adding any backend route.
 - The chat adapter contract adds only status, message generation, and agent-bundle redemption over SPEC-018.
 - The static package contract defines asset copy, route fallback, `/api/*` separation, and offline/no-CDN validation.
+- Accessibility and performance validation are part of the three existing vertical slices, not new slices: shadcn sidebar/search/tabs/dialog/sheet/chat controls must keep keyboard and focus semantics, Cytoscape graph state must stay synchronized with non-canvas summaries, impact summaries must be available as programmatic text/list/table content, Playwright/UAT must cover WCAG 2.2 AA contrast, target size, reduced motion, focus order, text resize, reflow, and no-overlap checks, and performance evidence must cover NFR-001 through NFR-006.

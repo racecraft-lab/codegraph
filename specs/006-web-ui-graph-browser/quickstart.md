@@ -82,6 +82,19 @@ Expected outcome:
 - SSE progress shows snapshot, progress, heartbeat tolerance, and terminal state.
 - Repository freshness updates after completion.
 
+## Browser UAT: Performance
+
+Validate the NFR thresholds with Playwright traces, browser performance marks, or equivalent instrumentation.
+
+Expected outcome:
+
+- Repository selection, search submission, symbol opening, graph opening, re-analysis start, and chat submission show visible feedback within 100 ms.
+- Search results and symbol details render within 500 ms after successful local API responses on a representative indexed repo.
+- Representative graph payloads up to 500 nodes and 1,000 edges produce a nonblank canvas or documented summary-first fallback within 2,000 ms after receipt.
+- Graph interactions avoid validation-visible main-thread stalls over 100 ms.
+- Re-analysis accepted starts and received SSE events are reflected within the NFR thresholds, with stalled or disconnected streams surfaced.
+- Build or package evidence records JS/CSS asset sizes and documents any accepted runtime asset over 1.5 MB uncompressed.
+
 ## Browser UAT: Chat
 
 Validate three chat states:

@@ -33,4 +33,4 @@
 
 - Validation pass completed on 2026-07-15.
 - SPEC-006 includes stack and library constraints because the workflow explicitly requires preserving them for planning and implementation. Those constraints are isolated in functional requirements FR-027 through FR-030; user-facing outcomes remain measurable and testable.
-- No `[NEEDS CLARIFICATION]`, `[Gap]`, or `[CRITICAL]` markers were introduced.
+- No clarification, gap, or critical markers were introduced.
