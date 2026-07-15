@@ -73,11 +73,22 @@ export function readFlowList(
   limit: number,
   offset: number,
 ): FlowListResult {
-  const state = resolveState(enabled, probeCatalog(db, 'flows'));
-  if (INERT_STATES.has(state)) {
-    return { items: [], total: 0, limit, offset, sourceVersion: 0, state };
-  }
-  return { ...pageFlows(db, limit, offset), state };
+  // Probe + page in ONE read transaction so a concurrent daemon connection that
+  // commits a swap between them cannot pair one generation's state with another
+  // generation's rows (FR-021a; WAL pins the snapshot at the first read).
+  return db.transaction((): FlowListResult => {
+    const probe = probeCatalog(db, 'flows');
+    const state = resolveState(enabled, probe);
+    if (INERT_STATES.has(state)) {
+      return { items: [], total: 0, limit, offset, sourceVersion: 0, state };
+    }
+    const page = pageFlows(db, limit, offset);
+    // A successfully-computed but empty catalog has no row to carry the version —
+    // fall back to the probe's computed-from token so it reports its real source
+    // version, not 0 (FR-022). Non-inert ⇒ computedFromVersion is non-null.
+    const sourceVersion = page.total === 0 ? probe.computedFromVersion ?? 0 : page.sourceVersion;
+    return { ...page, sourceVersion, state };
+  })();
 }
 
 /**
@@ -95,11 +106,16 @@ export type FlowDetailRead =
  * such id yields `{found:false,state}` (the "unknown flow id" guidance case).
  */
 export function readFlowDetail(db: SqliteDatabase, enabled: boolean, id: string): FlowDetailRead {
-  const state = resolveState(enabled, probeCatalog(db, 'flows'));
-  if (INERT_STATES.has(state)) return { found: false, state };
-  const base = getFlowDetail(db, id);
-  if (!base) return { found: false, state };
-  return { found: true, flow: { ...base, state } };
+  // Probe + detail in ONE read transaction (FR-021a) — a concurrent swap between
+  // them cannot pair a stale state with a fresh generation's flow (or vice versa).
+  return db.transaction((): FlowDetailRead => {
+    const probe = probeCatalog(db, 'flows');
+    const state = resolveState(enabled, probe);
+    if (INERT_STATES.has(state)) return { found: false, state };
+    const base = getFlowDetail(db, id);
+    if (!base) return { found: false, state };
+    return { found: true, flow: { ...base, state } };
+  })();
 }
 
 /**
@@ -181,11 +197,19 @@ export function readClusterList(
   limit: number,
   offset: number,
 ): ClusterListResult {
-  const state = resolveState(enabled, probeCatalog(db, 'clusters'));
-  if (INERT_STATES.has(state)) {
-    return { items: [], total: 0, limit, offset, sourceVersion: 0, state };
-  }
-  return { ...pageClusters(db, minSize, limit, offset), state };
+  // Probe + page in ONE read transaction (FR-021a) — see readFlowList.
+  return db.transaction((): ClusterListResult => {
+    const probe = probeCatalog(db, 'clusters');
+    const state = resolveState(enabled, probe);
+    if (INERT_STATES.has(state)) {
+      return { items: [], total: 0, limit, offset, sourceVersion: 0, state };
+    }
+    const page = pageClusters(db, minSize, limit, offset);
+    // A zero-match minSize filter (or an empty catalog) has no row to carry the
+    // version — use the probe's computed-from token, not 0 (FR-022).
+    const sourceVersion = page.total === 0 ? probe.computedFromVersion ?? 0 : page.sourceVersion;
+    return { ...page, sourceVersion, state };
+  })();
 }
 
 /**

@@ -19,7 +19,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { DatabaseConnection } from '../../src/db';
 import { SqliteDatabase } from '../../src/db/sqlite-adapter';
-import { swapFlows, probeCatalog, resolveState, type CatalogProbe } from '../../src/analysis/catalog-store';
+import { swapFlows, swapClusters, probeCatalog, resolveState, type CatalogProbe } from '../../src/analysis/catalog-store';
+import { readClusterList, readFlowList } from '../../src/analysis';
 
 function probe(over: Partial<CatalogProbe> = {}): CatalogProbe {
   return {
@@ -108,6 +109,41 @@ describe('catalog-store read-time state resolution', () => {
 
       // Flag turned off → disabled, even though the rows are still present.
       expect(resolveState(false, probeCatalog(db, 'flows'))).toBe('disabled');
+    });
+
+    it('an available-but-empty catalog reports its computed source version, not 0 (FR-022)', () => {
+      const db = freshDb();
+      setGwv(db, 5);
+      // Successfully computed with zero entry points / zero clusters → empty, but
+      // still tagged with the version it was computed from (not 0).
+      swapFlows(db, 5, [], []);
+      const flows = readFlowList(db, true, 20, 0);
+      expect(flows.state).toBe('empty');
+      expect(flows.total).toBe(0);
+      expect(flows.sourceVersion).toBe(5); // ← was 0 before the fix
+
+      swapClusters(db, 5, [], []);
+      const clusters = readClusterList(db, true, 1, 20, 0);
+      expect(clusters.state).toBe('empty');
+      expect(clusters.total).toBe(0);
+      expect(clusters.sourceVersion).toBe(5);
+    });
+
+    it('a zero-match minSize filter still reports the catalog source version, not 0 (FR-022)', () => {
+      const db = freshDb();
+      setGwv(db, 7);
+      // A real cluster exists, but the minSize filter excludes it → filtered-empty
+      // page; sourceVersion must still be the computed-from token.
+      swapClusters(
+        db,
+        7,
+        [{ id: 'c1', canonicalLabel: 'x', displayLabel: null, memberCount: 1, isSingleton: true }],
+        [{ clusterId: 'c1', filePath: 'src/x.ts' }],
+      );
+      const clusters = readClusterList(db, true, 5, 20, 0); // minSize 5 excludes the size-1 cluster
+      expect(clusters.state).toBe('available');
+      expect(clusters.total).toBe(0);
+      expect(clusters.sourceVersion).toBe(7); // ← was 0 before the fix
     });
   });
 });
