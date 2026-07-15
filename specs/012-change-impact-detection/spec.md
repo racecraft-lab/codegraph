@@ -24,7 +24,7 @@
 - Q: When is a stale index allowed to fail strictly? → A: Not in SPEC-012 v1 default behavior; stale indexes warn and continue, while strict failures are reserved for malformed input, invalid base refs, unreadable index state, or future explicit policy outside the `failOn` threshold grammar.
 - Q: What are the default caller expansion bounds? → A: Use `callerDepth: 1`, `maxCallers: 20`, and clamp user-provided caller bounds to `callerDepth` 1–3 and `maxCallers` 1–100.
 - Q: What is the hub-risk definition? → A: A changed symbol is hub-like when its unique direct upstream caller count exceeds `hubCallerThreshold: 20`; hub risk is calculated before display truncation.
-- Q: What is the exact `failOn` grammar? → A: `failOn` is a comma-separated policy string with tokens `callers>N` and/or `hub`, where `N` is a positive integer; CLI `--fail-on` and MCP `failOn` use the same grammar.
+- Q: What is the exact `failOn` grammar? → A: `failOn` is a comma-separated policy string with tokens `callers>N` and/or `hub`, where `N` is a zero-or-positive integer; `callers>0` means any impacted caller breaches the threshold. CLI `--fail-on` and MCP `failOn` use the same grammar.
 - Q: When does exit code 2 apply? → A: Exit code `2` applies only when a valid report breaches a configured `failOn` policy; it takes precedence over ordinary impact code `1` but not over true operational failures.
 - Q: How is affected-flow absence represented when SPEC-011 catalogs are disabled? → A: `affectedFlows` carries a `state` matching the SPEC-011 catalog state (`disabled`, `unavailable`, `not_indexed`, `stale`, `empty`, or `available`) plus empty `items` when no flow rows can be reported.
 
@@ -108,7 +108,7 @@ A CI workflow or local preflight can configure risk thresholds so ordinary impac
 - **FR-014**: System MUST expose command-line and MCP surfaces that share one report meaning and compatible field semantics; the MCP tool name is `codegraph_detect_changes`.
 - **FR-015**: MCP expected conditions, including missing indexes, stale indexes, unmapped hunks, and unavailable flow data, MUST return one normal text content payload in the requested format rather than tool errors.
 - **FR-016**: Command-line exit codes MUST distinguish clean reports (`0`), ordinary impact reports (`1`), threshold breaches (`2`), and unavailable or failed operational states through a separate non-0/1/2 failure code.
-- **FR-017**: Threshold configuration MUST support caller-count and hub-risk policies through one shared `failOn` grammar: comma-separated tokens `callers>N` and/or `hub`, with `N` a positive integer.
+- **FR-017**: Threshold configuration MUST support caller-count and hub-risk policies through one shared `failOn` grammar: comma-separated tokens `callers>N` and/or `hub`, with `N` a zero-or-positive integer.
 - **FR-018**: System MUST keep SPEC-020 PR comments, GitHub Actions wiring, REST endpoints, general git-range parsing, and cross-repository impact out of SPEC-012 scope.
 - **FR-019**: System MUST provide a reproducible self-repo UAT path that proves a controlled diff end-to-end across symbol mapping, caller and flow expansion, JSON and markdown output, warnings, and exit codes.
 - **FR-020**: System MUST avoid network access and hidden remote state for this feature; reports derive from local git state and local index data only.
