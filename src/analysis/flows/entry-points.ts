@@ -227,7 +227,11 @@ function collectCliEntries(src: string, filePath: string, queries: QueryBuilder,
           rootKind: handler.kind,
           rootQualifiedName: handler.qualifiedName,
           commandName,
-          filePath: handler.filePath,
+          // The REGISTRATION file (where `.command(...)` is), NOT the handler's
+          // file: two CLIs' `sync` in different files can share one handler node,
+          // so the registration site is what distinguishes the entry points and
+          // gives them distinct flow ids (FR-003/SC-001, FR-017a).
+          filePath,
         });
       }
       continue;
@@ -324,7 +328,10 @@ function dedupe(entries: EntryPoint[]): EntryPoint[] {
   const kept: EntryPoint[] = [];
   for (const e of entries) {
     if (ENTRY_PRECEDENCE[e.entryKind] !== winning.get(e.rootNodeId)) continue; // lower precedence → suppressed
-    const key = e.entryKind === 'cli' ? `${e.rootNodeId}\n${e.commandName ?? ''}` : e.rootNodeId;
+    // A CLI command is distinguished by (root, command name, REGISTRATION file) —
+    // two CLIs' `sync` sharing a handler live in different files and are distinct
+    // entry points; every other kind is one-per-root.
+    const key = e.entryKind === 'cli' ? `${e.rootNodeId}\n${e.commandName ?? ''}\n${e.filePath ?? ''}` : e.rootNodeId;
     if (seen.has(key)) continue;
     seen.add(key);
     kept.push(e);

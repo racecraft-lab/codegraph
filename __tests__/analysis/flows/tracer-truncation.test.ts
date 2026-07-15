@@ -143,6 +143,26 @@ describe('flow truncation flags', () => {
     expect(r.steps).toHaveLength(1); // just the root
   });
 
+  it('does NOT set truncatedWidth when a KEPT subtree reaches the dropped target', () => {
+    const h = freshSeed();
+    const root = node(h, { id: 'R', name: 'R', kind: 'function', filePath: 'src/r.ts' });
+    // A sorts first (kept); X sorts last (the 21st candidate, dropped by width).
+    const a = node(h, { id: 'A', name: 'A', kind: 'function', filePath: 'src/00a.ts' });
+    const x = node(h, { id: 'X', name: 'X', kind: 'function', filePath: 'src/99z.ts' });
+    edge(h, root.id, a.id, 'calls');
+    edge(h, root.id, x.id, 'calls');
+    for (let i = 1; i <= 19; i++) {
+      const id = `k${String(i).padStart(2, '0')}`; // 19 filler kept children between A and X
+      node(h, { id, name: id, kind: 'function', filePath: `src/${String(i).padStart(2, '0')}.ts` });
+      edge(h, root.id, id, 'calls');
+    }
+    edge(h, a.id, x.id, 'calls'); // the KEPT branch A itself reaches the dropped target X
+
+    const r = traceFlow(rootAt(root.id), h.queries);
+    expect(r.truncatedWidth).toBe(false); // X is reached via kept A → nothing was truncated
+    expect(r.steps.some((s) => s.nodeId === 'X')).toBe(true); // X IS in the flow
+  });
+
   it('does NOT set truncatedDepth when the depth-cap node only cycles back to a visited node', () => {
     // A chain reaching exactly the depth cap whose last node's ONLY out-edge is a
     // back-edge to the already-visited root — a cycle, not a truncation. The

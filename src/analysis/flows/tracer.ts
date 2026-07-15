@@ -186,17 +186,21 @@ export function traceFlow(entry: EntryPoint, queries: QueryBuilder): TraceResult
     }
     const candidates = sortedCandidates(nodeId, entry, queries);
     let kept = candidates;
+    let widthDropped: string[] = [];
     if (candidates.length > FLOW_CAP_WIDTH) {
       kept = candidates.slice(0, FLOW_CAP_WIDTH);
-      // Width truncation only if the cap DROPPED a candidate that could add a NEW
-      // step — an unvisited target not already covered by a kept candidate. A
-      // dropped edge to an already-visited or duplicate target (21 self/back-edges
-      // to the visited root) contributes nothing, so counting raw edge count would
-      // falsely flag truncation (consistent with the depth-cap flag, FR-007).
+      // Candidate width-truncations: dropped targets that could add a NEW step (an
+      // unvisited target not already covered by a kept candidate). Re-checked
+      // AFTER the kept subtrees run — a kept branch may itself reach a dropped
+      // target (kept A also calls dropped X), in which case the width cap
+      // truncated nothing. A dropped edge to an already-visited or duplicate
+      // target contributes nothing either. Consistent with the depth-cap flag,
+      // so raw edge count never falsely flags truncation (FR-007).
       const keptTargets = new Set(kept.map((c) => c.targetId));
-      if (candidates.slice(FLOW_CAP_WIDTH).some((c) => !visited.has(c.targetId) && !keptTargets.has(c.targetId))) {
-        flags.width = true;
-      }
+      widthDropped = candidates
+        .slice(FLOW_CAP_WIDTH)
+        .filter((c) => !visited.has(c.targetId) && !keptTargets.has(c.targetId))
+        .map((c) => c.targetId);
     }
     for (const c of kept) {
       if (visited.has(c.targetId)) continue;
@@ -216,6 +220,9 @@ export function traceFlow(entry: EntryPoint, queries: QueryBuilder): TraceResult
       });
       dfs(c.targetId, depth + 1);
     }
+    // A dropped candidate is a real width truncation only if NO kept subtree
+    // reached its target during the traversal above (FR-007).
+    if (widthDropped.some((t) => !visited.has(t))) flags.width = true;
   };
   dfs(entry.rootNodeId, 0);
 

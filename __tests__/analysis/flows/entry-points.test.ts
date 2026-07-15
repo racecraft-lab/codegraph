@@ -153,4 +153,20 @@ describe('entry-point detection', () => {
     expect(cli.every((e) => e.rootNodeId === run.id)).toBe(true); // both root at the shared handler
     expect(new Set(cli.map((e) => e.commandName))).toEqual(new Set(['start', 'stop']));
   });
+
+  it('keeps BOTH same-named CLI commands registered in DIFFERENT files (FR-003/SC-001)', () => {
+    const h = freshSeed();
+    // Two `sync` commands in different files sharing ONE handler node — distinct
+    // entry points; the REGISTRATION file (not the handler's file) distinguishes
+    // them, so both must survive with distinct flow ids.
+    file(h, 'src/a.ts', `program.command('sync').action(run);\n`);
+    file(h, 'src/b.ts', `program.command('sync').action(run);\n`);
+    const run = node(h, { name: 'run', kind: 'function', filePath: 'src/shared.ts' });
+
+    const cli = detectEntryPoints(h.graph).filter((e) => e.entryKind === 'cli');
+    expect(cli).toHaveLength(2); // was 1 before the fix (same root+command+handler-file)
+    expect(cli.every((e) => e.rootNodeId === run.id && e.commandName === 'sync')).toBe(true);
+    // Distinct REGISTRATION files → distinct flow ids downstream.
+    expect(new Set(cli.map((e) => e.filePath))).toEqual(new Set(['src/a.ts', 'src/b.ts']));
+  });
 });
