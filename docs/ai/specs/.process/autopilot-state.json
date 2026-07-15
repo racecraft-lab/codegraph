@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 5: Tasks",
-  "updated_at": "2026-07-15T23:38:12Z",
+  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-15T23:42:29Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -24,8 +24,8 @@
     {"step": "Phase 4: Checklist - error-handling Consensus", "status": "completed"},
     {"step": "Phase 4: Checklist - performance", "status": "completed"},
     {"step": "Phase 4: Checklist - performance Consensus", "status": "completed"},
-    {"step": "Phase 5: Tasks", "status": "in_progress"},
-    {"step": "Phase 6: Analyze", "status": "pending"},
+    {"step": "Phase 5: Tasks", "status": "completed"},
+    {"step": "Phase 6: Analyze", "status": "in_progress"},
     {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
     {"step": "Phase 6.5: Confidence Gate", "status": "pending"},
     {"step": "Phase 7: Implement - Pending task decomposition", "status": "pending"},
@@ -347,6 +347,45 @@
       "low": 0
     },
     "after_checklist_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
+    }
+  },
+  "phase5": {
+    "status": "completed",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-tasks",
+    "tasks_file": "specs/020-pr-blast-radius-review-action/tasks.md",
+    "metrics": {
+      "total_tasks": 60,
+      "phases": 7,
+      "parallel_opportunity_groups": 6,
+      "user_stories_covered": 4
+    },
+    "gate": {
+      "id": "G5",
+      "status": "passed",
+      "reason": "60 tasks found",
+      "markers": 0
+    },
+    "marker_counts": {
+      "gaps": 0,
+      "clarifications": 0,
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "format_check": {
+      "status": "passed",
+      "nonconforming_task_rows": 0
+    },
+    "atomicity_route": {
+      "route": "one-navigable-PR",
+      "releasable": true,
+      "signals": ["change-shape:modify-heavy"],
+      "warnings": []
+    },
+    "after_tasks_hooks": {
       "git_commit": "deferred_to_autopilot_phase_commit"
     }
   }

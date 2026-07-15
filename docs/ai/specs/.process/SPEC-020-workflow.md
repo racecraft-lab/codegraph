@@ -55,7 +55,7 @@ decisions:
 | Clarify | `/speckit-clarify` | ✅ Complete | G2 passed with 0 clarification markers |
 | Plan | `/speckit-plan` | ✅ Complete | G3 passed; reviewability warning accepted, no blockers |
 | Checklist | `/speckit-checklist` | ✅ Complete | G4 passed with 48 checklist items and 0 gaps |
-| Tasks | `/speckit-tasks` | 🔄 In Progress | |
+| Tasks | `/speckit-tasks` | ✅ Complete | G5 passed with 60 dependency-ordered tasks |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Confidence Gate | G6.5 | ⏳ Pending | Advisory pre-implementation confidence check |
 | Implement | `/speckit-implement` | ⏳ Pending | |
@@ -547,10 +547,10 @@ When checklist identifies `[Gap]` items:
 
 | Metric | Value |
 |--------|-------|
-| **Total Tasks** | |
-| **Phases** | |
-| **Parallel Opportunities** | |
-| **User Stories Covered** | |
+| **Total Tasks** | 60 |
+| **Phases** | 7 — setup, foundation, US1, US2, US3, US4, polish |
+| **Parallel Opportunities** | 6 groups — foundation tests, US1 tests, US2 tests, US3 tests, US4 tests, polish docs/changelog |
+| **User Stories Covered** | 4 of 4 — US1 current report, US2 safe fallback, US3 policy enforcement, US4 cache/narrative |
 
 ---
 
@@ -571,10 +571,10 @@ line count. Surface the four fields the SKILL extracts from the emitted decision
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
-| **Signals** | | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
-| **Warnings** | | Any release-safety warning attached to the change (empty when there is no releasability risk). |
+| **Route** | `one-navigable-PR` | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
+| **Releasable** | `true` | `true`, or `false` for a destructive-migration or concurrency-sensitive change (a passing CI run does not prove such a change is safe to release). |
+| **Signals** | `change-shape:modify-heavy` | The decisive detector findings behind the route and releasability reading (may be empty when the classifier abstains). |
+| **Warnings** | none | Any release-safety warning attached to the change (empty when there is no releasability risk). |
 
 To produce the decision, run the classifier against the feature directory:
 
