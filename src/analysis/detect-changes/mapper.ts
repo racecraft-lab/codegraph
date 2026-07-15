@@ -51,7 +51,14 @@ export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): M
   const warnings: ReportWarning[] = [];
 
   for (const hunk of diff.hunks) {
-    if (hunk.isPureMove) continue;
+    if (hunk.isPureMove) {
+      unmappedHunks.push(toUnmapped(
+        hunk,
+        'no-symbol-span',
+        'Path-only rename or move is reported without mapped symbol impact.',
+      ));
+      continue;
+    }
 
     const reason = classifyUnmapped(hunk, indexedFiles);
     if (reason) {
@@ -159,7 +166,7 @@ function symbolChangeType(hunk: ChangedHunk): ChangedSymbol['changeType'] {
   return 'modified';
 }
 
-function toUnmapped(hunk: ChangedHunk, reason: UnmappedReason): UnmappedHunk {
+function toUnmapped(hunk: ChangedHunk, reason: UnmappedReason, message = messageFor(reason)): UnmappedHunk {
   return {
     hunkId: hunk.id,
     oldPath: hunk.oldPath,
@@ -169,7 +176,7 @@ function toUnmapped(hunk: ChangedHunk, reason: UnmappedReason): UnmappedHunk {
     newStart: hunk.newStart ?? undefined,
     newLines: hunk.newLines ?? undefined,
     reason,
-    message: messageFor(reason),
+    message,
   };
 }
 

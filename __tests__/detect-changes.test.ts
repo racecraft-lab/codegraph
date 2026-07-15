@@ -63,11 +63,19 @@ describe('detect changes', () => {
     expect(report.exitCode).toBe(1);
   });
 
-  it('suppresses pure renames, maps edited renames and deleted indexed symbols, and reports untracked files', async () => {
+  it('reports pure renames without symbol impact, maps edited renames and deleted indexed symbols, and reports untracked files', async () => {
     const fx = await indexedFixture();
     fx.git(['mv', 'src/rename-me.ts', 'src/renamed.ts']);
     let report = await detectChanges(fx.cg, { mode: 'all' });
     expect(report.changedSymbols.some((s) => s.name === 'movedOnly')).toBe(false);
+    expect(report.unmappedHunks).toContainEqual(expect.objectContaining({
+      oldPath: 'src/rename-me.ts',
+      newPath: 'src/renamed.ts',
+      reason: 'no-symbol-span',
+      message: 'Path-only rename or move is reported without mapped symbol impact.',
+    }));
+    expect(report.summary.status).toBe('impact');
+    expect(report.exitCode).toBe(1);
 
     fx.write('src/renamed.ts', 'export function movedOnly() {\n  return false;\n}\n');
     report = await detectChanges(fx.cg, { mode: 'all' });
