@@ -51,13 +51,15 @@ decisions:
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Optional but recommended |
+| Specify | `/speckit-specify` | ✅ Complete | G1 passed with 0 clarification markers |
+| Clarify | `/speckit-clarify` | 🔄 In Progress | Optional but recommended |
 | Plan | `/speckit-plan` | ⏳ Pending | |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
+| Confidence Gate | G6.5 | ⏳ Pending | Advisory pre-implementation confidence check |
 | Implement | `/speckit-implement` | ⏳ Pending | |
+| Post | Post-Implementation | ⏳ Pending | Verification, reviewability, PR, and retrospective |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -73,6 +75,7 @@ Each phase requires **human review and approval** before proceeding:
 | G4 | After Checklist | All `[Gap]` markers addressed |
 | G5 | After Tasks | Task coverage verified, dependencies ordered |
 | G6 | After Analyze | No `CRITICAL` issues, `WARNING` items reviewed |
+| G6.5 | Confidence Gate | Pre-implementation confidence recorded; advisory by default |
 | G7 | After Each Implementation Phase | Tests pass, manual verification complete |
 
 ---
@@ -91,7 +94,9 @@ Each phase requires **human review and approval** before proceeding:
 | VII. Local-first and private | Narrative is off by default; fork runs receive no privileged secrets; cache/report behavior makes no unrelated network calls or schema writes | Fork-permission tests, secret-hygiene review, dormancy tests |
 | Dogfooding discipline | Exercise the action on CodeGraph itself and preserve a reproducible self-repo validation path | `.github/workflows/pr-impact.yml`, warm-cache timing evidence, manual UAT |
 
-**Constitution Check:** ⏳ Pending — mark before G1.
+**Constitution Check:** ✅ Complete — Phase 1 specification aligns with the
+constitution's deterministic graph authority, local-first privacy, and
+goal-driven reviewability constraints.
 
 ---
 
@@ -219,13 +224,16 @@ SPEC-020 turns that existing detector into a safe, reusable GitHub Action.
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | <!-- e.g., FR-001 through FR-020 --> |
-| User Stories | <!-- Count --> |
-| Acceptance Criteria | <!-- Count --> |
+| Functional Requirements | FR-001 through FR-021 |
+| User Stories | 4 |
+| Acceptance Criteria | 13 |
+| Quality Checklist | 16/16 complete |
+| G1 Gate | Passed — `spec.md` exists with 0 `[NEEDS CLARIFICATION]` markers |
 
 ### Files Generated
 
-- [ ] `specs/020-pr-blast-radius-review-action/spec.md`
+- [x] `specs/020-pr-blast-radius-review-action/spec.md`
+- [x] `specs/020-pr-blast-radius-review-action/checklists/requirements.md`
 
 ### SpecKit Traceability Markers
 
@@ -624,6 +632,18 @@ Focus on:
 
 ---
 
+## Phase 6.5: Confidence Gate
+
+**When to run:** After analyze and before implementation.
+
+**Mode:** Advisory unless overridden by local SpecKit Pro configuration.
+
+| Gate | Status | Evidence |
+|------|--------|----------|
+| G6.5 | ⏳ Pending | Awaiting Phase 6 confidence emit |
+
+---
+
 ## Phase 7: Implement
 
 **When to run:** After tasks.md is generated and analyzed (no coverage gaps).
@@ -699,6 +719,23 @@ Before starting any task:
 - [ ] `CHANGELOG.md` has a user-facing bullet under `## [Unreleased]`
 - [ ] PR created and reviewed
 - [ ] Merged to main branch
+
+### Autopilot Post Plan
+
+- [ ] Post: Doctor Extension Check
+- [ ] Post: Verify Implementation
+- [ ] Post: Verify Tasks Phantom Check
+- [ ] Post: Code Review
+- [ ] Post: Integration Suite
+- [ ] Post: Reviewability Diff Gate
+- [ ] Post: Self-Review
+- [ ] Post: UAT Runbook Generation
+- [ ] Post: Final Reviewability Backstop
+- [ ] Post: PR Packet/Body Generation
+- [ ] Post: PR Body Generation
+- [ ] Post: PR Creation
+- [ ] Post: Review Remediation
+- [ ] Post: Retrospective
 
 ---
 
