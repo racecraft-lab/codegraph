@@ -337,16 +337,9 @@ SpecKit-driven or not. Its spine is the four Karpathy principles
 - **Version-tag every image referenced in `README.md`.** GitHub caches README images (`raw.githubusercontent.com` with a 5-minute TTL; third-party hosts sit behind the long-lived camo proxy), so updating an asset in place can keep showing the stale version. Give each README image URL a `?v=N` query tag and **bump `N` in the same commit whenever the asset bytes change** — e.g. `assets/waitlist.svg?v=2`. The changed URL sidesteps every cache so the new image shows immediately instead of waiting on a TTL to expire.
 
 <!-- SPECKIT START -->
-SPEC-018 (LLM Access Layer) is in flight on branch `018-llm-access-layer` — plan at
-`specs/018-llm-access-layer/plan.md`. Two-slice delivery off one branch: slice 1 is the
-OpenAI-compatible endpoint path end-to-end (`src/llm/{config,client,prompt,generate}.ts` +
-`getLlmStatus()` + the status `LLM:` block); slice 2 is the agent-bundle path
-(`src/llm/{agent-bundle,ingest}.ts` + `codegraph tasks list|ingest` + companion skill + the committed
-research note). Dormant with no `CODEGRAPH_LLM_*` set.
-
-SPEC-001, SPEC-002, SPEC-003, SPEC-004, SPEC-005, SPEC-008, SPEC-010, SPEC-023,
-and SPEC-025 are complete and archived; provenance and recovery commands live in
-`.specify/memory/archive-reports/`.
+SPEC-001, SPEC-002, SPEC-003, SPEC-004, SPEC-005, SPEC-008, SPEC-010, SPEC-011,
+SPEC-018, SPEC-023, and SPEC-025 are complete and archived; provenance and
+recovery commands live in `.specify/memory/archive-reports/`.
 
 Canonical completed-spec artifacts:
 - SPEC-002: local embedding fallback in `src/embeddings/` plus model-fetch and
@@ -366,6 +359,12 @@ Canonical completed-spec artifacts:
 - SPEC-010: graph-aware rename in `src/refactor/` (dry-run plan engine + atomic
   apply with span-verify/snapshot/post-check), the `codegraph rename` CLI, and
   the `codegraph_rename` MCP tool.
+- SPEC-011: execution-flow and functional-cluster catalogs in `src/analysis/`,
+  schema/query additions under `src/db/`, opt-in `codegraph.json` activation,
+  MCP catalog tools, REST mirrors, benchmark harness, and self-repo UAT evidence.
+- SPEC-018: LLM access layer in `src/llm/` with OpenAI-compatible endpoint mode,
+  agent-bundle mode, `codegraph tasks list|ingest`, `getLlmStatus()`, companion
+  skill, and `docs/design/llm-paths-note.md`. Dormant without `CODEGRAPH_LLM_*`.
 - SPEC-023: OCaml grammar, extractor, Dune-aware resolver, fixtures, tests, and
   grammar docs.
 - SPEC-025: plugin-channel decision in `docs/design/plugin-channel-decision.md`
@@ -373,8 +372,10 @@ Canonical completed-spec artifacts:
 
 SPEC-006 (Web UI: Graph Browser) and SPEC-009 (LSP Server Facade) are ready
 because SPEC-005 shipped the server, API, static-asset mount, and WebSocket
-hook; SPEC-007 remains downstream of SPEC-006. SPEC-024 is dormant unless future
-parity drift creates a concrete unowned language, feature, or capability row.
+hook; SPEC-012 is ready because SPEC-011 shipped flow catalogs; SPEC-019 is
+ready because SPEC-011 and SPEC-018 are both merged; SPEC-007 remains downstream
+of SPEC-006, and SPEC-020 remains downstream of SPEC-012. SPEC-024 is dormant
+unless future parity drift creates a concrete unowned language, feature, or capability row.
 SPEC-026 (plugin-channel distribution — Claude Code + Codex plugins carrying the
 MCP server, prompt hook, skills, and agents) is ready to scaffold now that
 SPEC-025's decision document is merged.

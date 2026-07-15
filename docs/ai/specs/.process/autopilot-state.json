@@ -2,8 +2,44 @@
   "workflow_file": "docs/ai/specs/.process/SPEC-018-workflow.md",
   "spec_id": "SPEC-018",
   "feature_dir": "specs/018-llm-access-layer",
-  "updated_at": "2026-07-13T22:15:00Z",
+  "status": "completed_archived",
+  "active_step": "archived",
+  "updated_at": "2026-07-15T14:49:46Z",
   "note": "Overwrites stale SPEC-003 state (that spec is archived; staleness of this file was a recorded SPEC-025 review finding).",
+  "archive_cleanup": {
+    "applied": true,
+    "applied_at": "2026-07-15T14:49:46Z",
+    "cleanup_branch": "codex/archive-spec-011-018-2026-07-15",
+    "cleanup_command": "speckit-pro:speckit-archive-cleanup all merged specs",
+    "archived_specs": [
+      {
+        "spec_id": "SPEC-018",
+        "feature_dir": "specs/018-llm-access-layer",
+        "archive_report": ".specify/memory/archive-reports/2026-07-15-SPEC-018.md",
+        "merged_prs": [
+          "https://github.com/racecraft-lab/codegraph/pull/48",
+          "https://github.com/racecraft-lab/codegraph/pull/49"
+        ],
+        "merge_commits": [
+          "2cd10a7af9c07ecda30459336e4dce77458109f6",
+          "4acfa1b47c9e20b08ed3654fbc67e9c523a07477"
+        ]
+      },
+      {
+        "spec_id": "SPEC-011",
+        "feature_dir": "specs/011-execution-flows-clusters",
+        "archive_report": ".specify/memory/archive-reports/2026-07-15-SPEC-011.md",
+        "merged_prs": [
+          "https://github.com/racecraft-lab/codegraph/pull/50"
+        ],
+        "merge_commits": [
+          "ecb5d83dd3a8048dcc770aa91425f82e5c876572"
+        ]
+      }
+    ],
+    "feature_json_removed": true,
+    "process_evidence_preserved": true
+  },
   "confidence_gate_mode": "advisory",
   "reviewability": {
     "setup_mode": {

@@ -2,8 +2,9 @@
  * LlmEndpointClient — OpenAI-compatible chat-completions client (SPEC-018, US2 / T009-T010).
  *
  * Integration tests against a local `node:http` mock endpoint (ephemeral port) exercising the real
- * global `fetch` + `AbortSignal` transport — no fetch mocking. Each case maps to the wire contract in
- * `specs/018-llm-access-layer/contracts/endpoint-wire.md` (the authoritative source) and research D4.
+ * global `fetch` + `AbortSignal` transport — no fetch mocking. Each case maps to the archived SPEC-018
+ * wire contract recoverable from `git show 4acfa1b:specs/018-llm-access-layer/contracts/endpoint-wire.md`
+ * and research D4.
  *
  * Traceability: FR-005 (redaction-safe error; key never leaks; cross-origin redirect drops the key),
  * FR-009a (empty/whitespace completion → failure), FR-015 (minimal request body), FR-015a

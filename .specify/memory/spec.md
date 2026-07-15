@@ -125,3 +125,34 @@ Canonical code: `src/refactor/`, `src/bin/codegraph.ts rename`, `src/mcp/tools.t
 The active `specs/010-graph-aware-rename/` folder was removed because the shipped
 code, tests, and preserved workflow/design evidence carry the durable record;
 SPEC-010 is a dependency-graph leaf with no downstream unblock.
+
+## SPEC-018 - LLM Access Layer (archived 2026-07-15)
+
+The shared LLM access layer shipped as two slices: PR #48 (OpenAI-compatible
+endpoint path) + PR #49 (agent-bundle path). It added dormant-by-default
+`CODEGRAPH_LLM_*` config resolution, a redaction-safe chat-completions client,
+prompt/context budgeting, `generate()` with consumer fallback semantics, the
+`LLM:` status block, self-describing `.codegraph/tasks/` bundles,
+`codegraph tasks list|ingest`, hardened ingest, a companion skill, and the
+`docs/design/llm-paths-note.md` comparison note. Canonical code: `src/llm/`,
+`src/bin/codegraph.ts tasks`, and `src/index.ts getLlmStatus()`. Detailed
+provenance + recovery:
+[archive-reports/2026-07-15-SPEC-018.md](archive-reports/2026-07-15-SPEC-018.md).
+The active `specs/018-llm-access-layer/` folder was removed because the shipped
+code, tests, research note, and preserved workflow/design evidence carry the
+durable record; SPEC-019's LLM dependency is now satisfied.
+
+## SPEC-011 - Execution Flows & Clusters (archived 2026-07-15)
+
+Execution Flows & Clusters shipped in PR #50. It added opt-in, deterministic
+catalogs for bounded execution flows and functional clusters, persisted in the
+project database, recomputed after successful index/sync, and exposed over MCP
+and REST with success-shaped states. Canonical code: `src/analysis/`,
+catalog schema/query additions under `src/db/`, lifecycle wiring in
+`src/index.ts`, MCP catalog tools in `src/mcp/`, REST mirrors in `src/server/`,
+and self-repo dogfood/benchmark coverage. Detailed provenance + recovery:
+[archive-reports/2026-07-15-SPEC-011.md](archive-reports/2026-07-15-SPEC-011.md).
+The active `specs/011-execution-flows-clusters/` folder was removed because the
+shipped code, tests, UAT evidence, benchmark evidence, and preserved
+workflow/design evidence carry the durable record; SPEC-012 can now enrich
+impact results with flows and SPEC-019 can consume clusters and flow walkthroughs.
