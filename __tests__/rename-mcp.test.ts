@@ -25,7 +25,7 @@
  *         so MCP-driving them is disproportionate and they stay engine-covered.
  *
  *  T045 — Exposure + annotations (FR-022 / FR-028). `codegraph_rename` is a member
- *         of `DEFAULT_MCP_TOOLS` (the second default-served tool after explore),
+ *         of `DEFAULT_MCP_TOOLS` (alongside explore and detect-changes),
  *         and its annotations are its OWN write-tool object
  *         `{readOnlyHint:false, destructiveHint:true, idempotentHint:false,
  *         openWorldHint:false}` — the mirror image of the shared read-only
@@ -380,11 +380,15 @@ describe('T045 codegraph_rename — exposure + write annotations', () => {
     else process.env[ENV] = original;
   });
 
-  it('is a member of DEFAULT_MCP_TOOLS — the second default-served tool after explore', () => {
+  it('is a member of DEFAULT_MCP_TOOLS alongside explore and detect-changes', () => {
     // getStaticTools() with no allowlist reflects DEFAULT_MCP_TOOLS exactly (the
-    // proxy tools/list surface). Order proves rename lands right after explore.
+    // proxy tools/list surface).
     delete process.env[ENV];
-    expect(getStaticTools().map((t) => t.name)).toEqual(['codegraph_explore', 'codegraph_rename']);
+    expect(getStaticTools().map((t) => t.name)).toEqual([
+      'codegraph_detect_changes',
+      'codegraph_explore',
+      'codegraph_rename',
+    ]);
   });
 
   it('advertises its OWN write annotations, the mirror image of READ_ONLY_ANNOTATIONS', () => {

@@ -19,6 +19,7 @@
  *   codegraph callers <symbol>   Find what calls a function/method
  *   codegraph callees <symbol>   Find what a function/method calls
  *   codegraph impact <symbol>    Analyze what code is affected by changing a symbol
+ *   codegraph detect-changes     Report impact of the current git diff
  *   codegraph affected [files]   Find test files affected by changes
  *   codegraph upgrade [version]  Update CodeGraph to the latest release
  */
@@ -56,6 +57,13 @@ import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
 import { RENAME_EXIT_CODES, renameApplyExitCode } from '../refactor/types';
 import type { ApplyResult, RenamePlan } from '../refactor/types';
 import { formatApplyResultTable, formatRenamePlanTable, serializeApplyResultJson, serializeRenamePlanJson } from '../refactor/plan-format';
+import { createUnavailableReport, detectChanges, type DiffMode, type ReportFormat } from '../analysis/detect-changes';
+import {
+  normalizeDetectChangesRequest,
+  parseFailOn,
+  renderJsonReport,
+  renderMarkdownReport,
+} from '../analysis/detect-changes/report';
 
 // Lazy-load heavy modules (CodeGraph, runInstaller) to keep CLI startup fast.
 async function loadCodeGraph(): Promise<typeof import('../index')> {
@@ -2253,6 +2261,61 @@ program
     } catch (err) {
       error(`Failed to remove lock: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
+    }
+  });
+
+/**
+ * codegraph detect-changes
+ */
+program
+  .command('detect-changes')
+  .description('Report changed symbols and bounded impact for the current git diff')
+  .option('--mode <mode>', 'Diff mode: unstaged | staged | all | base-ref', 'all')
+  .option('--base-ref <ref>', 'Base ref for --mode base-ref')
+  .option('--format <format>', 'Output format: json | markdown', 'json')
+  .option('--fail-on <policy>', 'Comma-separated threshold policies: callers>N and/or hub')
+  .option('--caller-depth <number>', 'Caller traversal depth, clamped to 1-3', '1')
+  .option('--max-callers <number>', 'Maximum caller rows, clamped to 1-100', '20')
+  .option('-p, --path <path>', 'Project path')
+  .action(async (options: {
+    mode?: string;
+    baseRef?: string;
+    format?: string;
+    failOn?: string;
+    callerDepth?: string;
+    maxCallers?: string;
+    path?: string;
+  }) => {
+    const projectPath = resolveProjectPath(options.path);
+    const request = {
+      mode: (options.mode ?? 'all') as DiffMode,
+      baseRef: options.baseRef ?? null,
+      format: (options.format ?? 'json') as ReportFormat,
+      failOn: options.failOn ?? null,
+      callerDepth: options.callerDepth === undefined ? undefined : Number(options.callerDepth),
+      maxCallers: options.maxCallers === undefined ? undefined : Number(options.maxCallers),
+      projectPath,
+    };
+
+    try {
+      const normalized = normalizeDetectChangesRequest(request);
+      parseFailOn(normalized.failOn);
+      const { default: CodeGraph } = await loadCodeGraph();
+      const report = !isInitialized(projectPath)
+        ? createUnavailableReport(normalized, `CodeGraph not initialized in ${projectPath}`)
+        : await (async () => {
+            const cg = await CodeGraph.open(projectPath);
+            try {
+              return await detectChanges(cg, normalized);
+            } finally {
+              cg.close();
+            }
+          })();
+      console.log(normalized.format === 'markdown' ? renderMarkdownReport(report) : renderJsonReport(report));
+      process.exit(report.exitCode);
+    } catch (err) {
+      error(`detect-changes failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(3);
     }
   });
 

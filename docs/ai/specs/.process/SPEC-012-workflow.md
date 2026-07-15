@@ -67,13 +67,15 @@ Resolved from this worktree on 2026-07-15:
 
 | Phase | Command | Status | Notes |
 |-------|---------|--------|-------|
-| Specify | `/speckit-specify` | ⏳ Pending | Produce `specs/012-change-impact-detection/spec.md`; no unresolved markers at G1 |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Focus on CLI/MCP contracts, staleness semantics, thresholds, and rename edge cases |
-| Plan | `/speckit-plan` | ⏳ Pending | Confirm constants, file layout, schema changes, and two-slice implementation plan |
-| Checklist | `/speckit-checklist` | ⏳ Pending | Run api-contracts, data-integrity, error-handling, and performance domains |
-| Tasks | `/speckit-tasks` | ⏳ Pending | Preserve two vertical slices with independent verification |
-| Analyze | `/speckit-analyze` | ⏳ Pending | Resolve all critical/high consistency findings before implementation |
-| Implement | `/speckit-implement` | ⏳ Pending | TDD for mapper/expansion/contracts; record self-repo UAT evidence |
+| Specify | `/speckit-specify` | ✅ Complete | `spec.md` generated with 0 unresolved markers at G1 |
+| Clarify | `/speckit-clarify` | ✅ Complete | CLI/MCP contracts, staleness semantics, thresholds, and rename edge cases resolved with 15 total clarification answers |
+| Plan | `/speckit-plan` | ✅ Complete | Constants, file layout, contracts, and two-slice implementation plan recorded |
+| Checklist | `/speckit-checklist` | ✅ Complete | api-contracts, data-integrity, error-handling, and performance checklists passed with no unresolved gaps |
+| Tasks | `/speckit-tasks` | ✅ Complete | 46 tasks generated across setup, foundation, 3 user stories, and polish |
+| Analyze | `/speckit-analyze` | ✅ Complete | 0 critical/high findings; 2 medium advisory findings carried into confidence gate |
+| Confidence Gate | G6.5 | ✅ Complete | Advisory pre-Implement confidence score 0.82; proceed with medium advisories visible |
+| Implement | `/speckit-implement` | ✅ Complete | Core engine, CLI, MCP, tests, UAT, and verification completed |
+| Post | Post-Implementation | 🔄 In Progress | One-PR reviewability exception accepted by the maintainer on 2026-07-15; draft PR creation authorized |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -87,6 +89,7 @@ Resolved from this worktree on 2026-07-15:
 | G4 | After Checklist | All genuine `[Gap]` items are resolved or explicitly out of scope |
 | G5 | After Tasks | Both vertical slices have complete task and verification coverage |
 | G6 | After Analyze | No unresolved `CRITICAL` findings; `HIGH` findings resolved or accepted with rationale |
+| G6.5 | Confidence Gate | Advisory confidence score recorded before implementation begins |
 | G7 | After Each Implementation Phase | Targeted tests pass, full suite passes before completion claim, UAT evidence recorded |
 
 ---
@@ -108,11 +111,22 @@ Before starting any workflow phase, verify alignment with
 | VI. Retrieval Performance | MCP output is bounded, success-shaped for expected conditions, and does not steer agents to Read/Grep. | MCP contract tests and retrieval-guardian review if `src/mcp/` changes |
 | VII. Local-First | No network calls; works offline against local git and `.codegraph/`; stale index warns without mutating hidden state. | Dormancy and no-network review |
 
-**Bootstrap status:** no explicit worktree bootstrap command is documented in
-root `AGENTS.md` or wrappers. Setup did not run `npm install`, `npm run build`,
-or `codegraph init`. Run only user-approved project bootstrap commands from
-this worktree before starting implementation if the environment is missing
-dependencies or a fresh build.
+**Bootstrap status:** complete for autopilot Phase 0 on 2026-07-15. The
+ambient shell was on unsupported Node `v26.4.0`, so all project commands were
+run with the pinned `.nvmrc` runtime `v24.11.1`.
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| Worktree binding | ✅ Pass | `git branch --show-current` → `012-change-impact-detection` |
+| Dependencies | ✅ Pass | `npm install` added dependencies without lockfile changes |
+| Build | ✅ Pass | `npm run build` |
+| Typecheck | ✅ Pass | `npm run typecheck` |
+| Full test suite | ✅ Pass | Escalated rerun of `npm test`: 231 files, 3913 tests passed, 7 skipped |
+
+The first sandboxed `npm test` run failed because local loopback and Unix
+socket listeners were denied (`listen EPERM`) and temporary git commits could
+not reach the GPG agent. The same suite passed outside the sandbox, confirming
+those failures were environmental rather than SPEC-012 regressions.
 
 ---
 
@@ -220,14 +234,16 @@ Plan this as two vertical slices:
 
 | Metric | Value |
 |--------|-------|
-| Functional Requirements | Pending |
-| User Stories | Pending |
-| Acceptance Criteria | Pending |
-| Clarification markers | Must be zero before G1 passes |
+| Functional Requirements | 20 |
+| User Stories | 3 |
+| Acceptance Criteria | 10 acceptance scenarios; 9 measurable success criteria |
+| Clarification markers | 0 in `spec.md` |
 
 ### Files Generated
 
-- [ ] `specs/012-change-impact-detection/spec.md`
+- [x] `specs/012-change-impact-detection/spec.md`
+- [x] `specs/012-change-impact-detection/checklists/requirements.md`
+- [x] `.specify/feature.json`
 
 ---
 
@@ -275,9 +291,9 @@ can be interpreted multiple ways. Maximum 5 targeted questions per session.
 
 | Session | Focus Area | Questions | Key Outcomes |
 |---------|------------|-----------|--------------|
-| 1 | Output/API contracts | Pending | Pending |
-| 2 | Diff and rename correctness | Pending | Pending |
-| 3 | Risk and threshold behavior | Pending | Pending |
+| 1 | Output/API contracts | 5 answered | `codegraph_detect_changes`; `schemaVersion: 1`; stable JSON fields; deterministic markdown sections; normal MCP text payload for expected states; unmapped hunks are diagnostics, not invented impacts. Consensus: PASS |
+| 2 | Diff and rename correctness | 5 answered | Exact `unstaged`/`staged`/`all`/`base-ref` comparison semantics; git rename detection preserves old/new paths; pure moves suppress semantic impact; edited/deleted indexed symbols map when spans exist; binary/generated/unsupported/unindexed/untracked files become reason-coded diagnostics; stale indexes warn and continue. Consensus: PASS |
+| 3 | Risk and threshold behavior | 5 answered | Default caller bounds are `callerDepth: 1`, `maxCallers: 20`, clamped to 1–3 and 1–100; hub risk is direct callers >20; `failOn` grammar is `callers>N` and/or `hub`; exit code 2 only covers configured threshold breaches; `affectedFlows.state` mirrors SPEC-011 catalog states. Consensus: PASS |
 
 ---
 
@@ -317,11 +333,16 @@ can be interpreted multiple ways. Maximum 5 targeted questions per session.
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, constitution checks, and file plan |
-| `research.md` | ⏳ | Only if Plan needs decisions beyond existing roadmap and design concept |
-| `data-model.md` | ⏳ | Impact report entities and risk annotations |
-| `contracts/` | ⏳ | CLI/MCP JSON schema and examples |
-| `quickstart.md` | ⏳ | Local and CI-oriented detect-changes examples |
+| `plan.md` | ✅ | Technical context, constitution checks, two-slice plan, reviewability warning handling, and file plan recorded |
+| `research.md` | ✅ | Diff acquisition, hunk mapping, staleness, caller bounds, affected-flow state, and threshold grammar decisions recorded |
+| `data-model.md` | ✅ | Diff request, hunks, symbols, diagnostics, callers, flows, risks, limits, and report entities defined |
+| `contracts/` | ✅ | CLI, MCP, and JSON schema contracts with examples generated |
+| `quickstart.md` | ✅ | Local and CI-oriented validation/UAT scenarios generated |
+
+**G3 status:** PASS. Constitution check passes pre- and post-design. Reviewability
+warning remains accepted with the ratified two-slice implementation plan. Optional
+before/after plan git hooks were skipped because `.specify/extensions/git/git-config.yml`
+has `auto_commit.before_plan.enabled=false` and `auto_commit.after_plan.enabled=false`.
 
 ---
 
@@ -397,10 +418,17 @@ Focus on SPEC-012 requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| api-contracts | Pending | Pending | Pending |
-| data-integrity | Pending | Pending | Pending |
-| error-handling | Pending | Pending | Pending |
-| performance | Pending | Pending | Pending |
+| api-contracts | 14/14 checked | 0 unresolved | `spec.md`, `contracts/cli.md`, `contracts/json-report.md`, `contracts/mcp.md` |
+| data-integrity | 15/15 checked | 0 unresolved | `spec.md`, `data-model.md`, `research.md`, `quickstart.md` |
+| error-handling | 15/15 checked | 0 unresolved | `spec.md`, `contracts/`, `data-model.md` |
+| performance | 14/14 checked | 0 unresolved | `spec.md`, `plan.md`, `data-model.md`, `quickstart.md` |
+
+**G4 status:** PASS. Checklist prep identified and resolved minor contract gaps
+around untracked-file diagnostics in `all` mode, markdown table columns,
+unavailable report status, and flow output bounds before the checklists were
+marked complete. Optional before/after checklist git hooks were skipped because
+`.specify/extensions/git/git-config.yml` has `auto_commit.before_checklist.enabled=false`
+and `auto_commit.after_checklist.enabled=false`.
 
 ---
 
@@ -443,10 +471,10 @@ Output: `specs/012-change-impact-detection/tasks.md`.
 
 | Metric | Value |
 |--------|-------|
-| Total Tasks | Pending |
-| Phases | Pending |
-| Parallel Opportunities | Pending |
-| User Stories Covered | Pending |
+| Total Tasks | 46 |
+| Phases | 6: setup, foundational, US1, US2, US3, polish |
+| Parallel Opportunities | 15 tasks marked `[P]` plus story-level test batches |
+| User Stories Covered | 3/3 with independent test criteria |
 
 ---
 
@@ -460,10 +488,10 @@ runner helper atomicity-route specs/012-change-impact-detection
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| Route | Pending | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope` |
-| Releasable | Pending | Whether CI-green is enough to consider the change releasable |
-| Signals | Pending | Decisive detector findings |
-| Warnings | Pending | Release-safety warnings |
+| Route | `one-navigable-PR` | One PR remains navigable if implementation stays near the 610 LOC estimate and follows the two vertical slices |
+| Releasable | Yes, after all three user stories plus polish gates are complete | CI-green alone is not enough until self-repo UAT, reviewability re-measurement, and PR packet evidence are recorded |
+| Signals | 46 tasks; 5 planned production files; thin CLI/MCP adapters; 3 test files; two ratified vertical slices | `split-PR` remains the fallback if reviewable LOC approaches the 800 block threshold |
+| Warnings | Reviewability warning accepted; helper command not present in checkout, route recorded from task/file signals | Stop and resurface if tasks expand beyond the plan or add new surfaces |
 
 ---
 
@@ -488,7 +516,26 @@ Focus on SPEC-012:
 
 | ID | Severity | Issue | Resolution |
 |----|----------|-------|------------|
-| Pending | Pending | Pending | Pending |
+| A1 | MEDIUM | Some `[P]` markers in `tasks.md` target the same test file (`T008`/`T009`/`T010`, `T020`/`T021`), so parallel execution could create edit contention. | Non-blocking because implementation can run sequentially; remove `[P]` markers or split test files if parallel agents are used. |
+| A2 | MEDIUM | SC-009 no-network behavior is covered by local-first constraints and UAT, but there is no dedicated no-network verification task. | Non-blocking for G6; strengthen T045 or add a polish task if implementation reveals network-sensitive code paths. |
+
+**Coverage summary:** 20/20 functional requirements mapped to tasks. 8/9 success
+criteria have direct task coverage; SC-009 has partial coverage through local-only
+constraints and UAT. Constitution alignment has no critical issue. Optional
+before/after analyze git hooks were skipped because
+`.specify/extensions/git/git-config.yml` has `auto_commit.before_analyze.enabled=false`
+and `auto_commit.after_analyze.enabled=false`.
+
+---
+
+## Phase 6.5: Confidence Gate
+
+**When to run:** After Analyze and before Implement. This gate records the
+latest pre-Implement confidence block emitted by Analyze consensus.
+
+| Gate | Mode | Status | Notes |
+|------|------|--------|-------|
+| G6.5 | advisory | ✅ Pass | Confidence score 0.82. No critical/high findings; medium advisories A1/A2 remain visible for implementation discipline |
 
 ---
 
@@ -518,22 +565,141 @@ Focus on SPEC-012:
 
 | Phase | Tasks | Completed | Notes |
 |-------|-------|-----------|-------|
-| Slice 1 - Core diff-to-symbol CLI | Pending | 0 | Pending |
-| Slice 2 - Impact expansion and MCP | Pending | 0 | Pending |
-| Polish and UAT | Pending | 0 | Pending |
+| Setup and foundation | T001-T007 | ✅ 7/7 | Planned module files, fixtures, shared model, constants, render contracts, and reviewability tracking were established |
+| Slice 1 - Core diff-to-symbol CLI | T008-T019 | ✅ 12/12 | Diff acquisition, hunk parsing, symbol mapping, diagnostics, stale/missing-index states, JSON/markdown output, and CLI exit behavior implemented |
+| Slice 2 - Impact expansion and MCP | T020-T029 | ✅ 10/10 | Bounded callers, affected-flow enrichment, risks, MCP tool wiring, and agent-facing guidance implemented |
+| CI thresholds | T030-T037 | ✅ 8/8 | `failOn` parsing, threshold-breach status, exit-code precedence, CLI exit 2, and MCP parity implemented |
+| Polish and UAT | T038-T046 | ✅ 9/9 | Changelog, UAT evidence, verification evidence, retrieval-guardian review, reviewability measurement, and PR packet recorded |
+
+### Reviewability Checkpoint
+
+| Scope | Files | Additions | Deletions | Notes |
+|-------|-------|-----------|-----------|-------|
+| Production | 8 | 1,418 | 8 | `src/analysis/detect-changes/`, CLI wiring, MCP wiring, and server instructions |
+| Tests | 8 | 338 | 0 | Unit, CLI, MCP, helper, and fixture coverage |
+| Spec/process docs | 22 | 2,589 | 148 | SpecKit artifacts, workflow, UAT, contracts, and checklists |
+| Total | 38 | 4,345 | 156 | Includes generated/SpecKit documentation artifacts |
+
+**Reviewability verdict:** ✅ One-PR exception accepted. The ratified workflow
+said to pause if implementation size materially exceeded the setup estimate or
+approached the 800 reviewable LOC block threshold. The production diff is 1,418
+additions across 8 files, and the maintainer accepted a one-PR exception on
+2026-07-15 so draft PR creation may proceed.
+
+### Verification Evidence
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| Build | ✅ Pass | `PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:$PATH npm run build` |
+| Typecheck | ✅ Pass | `PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:$PATH npm run typecheck` |
+| Focused detect-changes suite | ✅ Pass | `npx vitest run __tests__/detect-changes.test.ts __tests__/detect-changes-cli.test.ts __tests__/detect-changes-mcp.test.ts`: 3 files, 12 tests |
+| MCP/default-surface regression suite | ✅ Pass | `npx vitest run __tests__/rename-mcp.test.ts __tests__/mcp-tool-allowlist.test.ts __tests__/analysis/explore-unchanged.test.ts __tests__/mcp-server-instructions.test.ts __tests__/detect-changes-mcp.test.ts`: 5 files, 36 tests |
+| Full suite | ✅ Pass | Escalated `npm test`: 234 files, 3,925 tests passed, 7 skipped |
+
+The first sandboxed `npm test` attempt was stopped after unrelated environment
+failures: GPG signing could not access `~/.gnupg`, loopback/Unix socket listeners
+hit `listen EPERM`, and endpoint/embedding tests timed out. The same suite
+passed with the pinned project runtime outside the sandbox.
+
+### Retrieval Guardian Review
+
+| Check | Verdict | Evidence |
+|-------|---------|----------|
+| Explore call budget | ✅ Unchanged | `getExploreBudget` still uses the expected monotonic tiers: 1/2/3/4/5 calls as repository size grows |
+| Explore output budget | ✅ Unchanged | Per-file caps remain monotonic at 3,800/3,800/6,500/7,000/7,000 chars; no smaller large-repo tier was introduced |
+| Read/Grep steering | ✅ Pass | Added server instructions do not tell agents to use Read/Grep/open files for this workflow |
+| Expected degraded states | ✅ Pass | Missing index returns a normal unavailable report; malformed args and git failures remain operational tool errors |
+| Dynamic-dispatch coverage | ✅ Not touched | No extraction, resolver, synthesized-edge, or flow-connection code was modified |
+| Focused regression tests | ✅ Pass | `explore-unchanged`, MCP server instructions, MCP allowlist, rename MCP, and detect-changes MCP tests passed together |
+| Agent A/B | N/A | No explore retrieval behavior, dynamic-dispatch coverage, or output budget changed; this adds a local diff impact tool |
+
+### Self-Repo UAT Evidence
+
+The worktree CodeGraph index was refreshed with `node dist/bin/codegraph.js sync`
+before UAT.
+
+| Scenario | Exit | Result |
+|----------|------|--------|
+| `--mode staged --format json` | 0 | Clean report: 0 changed symbols, 0 unmapped hunks, 0 callers, 0 affected flows |
+| `--mode all --format json --max-callers 10` | 1 | Impact report: 9 changed symbols, 68 unmapped diagnostics, 10 bounded callers, 0 affected flows |
+| `--mode all --format markdown --max-callers 10` | 1 | Markdown summary matched JSON counts and surfaced risks/warnings |
+| `--mode all --format json --fail-on callers>0 --max-callers 10` | 2 | Threshold-breach report with configured caller threshold risk |
+| `--path <tempdir> --mode all --format json` | 3 | Success-shaped unavailable report for a directory without `.codegraph/` |
+
+Detailed command evidence is recorded in
+`specs/012-change-impact-detection/.process/uat-runbook.md`.
+
+### PR Review Packet
+
+Recommended review order:
+
+1. Spec and contracts: `specs/012-change-impact-detection/spec.md`,
+   `contracts/`, `data-model.md`, and `research.md`.
+2. Core engine: `src/analysis/detect-changes/`.
+3. CLI adapter: `src/bin/codegraph.ts`.
+4. MCP adapter and guidance: `src/mcp/tools.ts`,
+   `src/mcp/server-instructions.ts`.
+5. Tests and fixtures: `__tests__/detect-changes*.test.ts`,
+   `__tests__/helpers/detect-changes-fixture.ts`, and
+   `__tests__/fixtures/detect-changes/`.
+6. UAT, changelog, and reviewability evidence.
+
+Traceability:
+
+- US1 maps to T008-T019 and covers diff acquisition, hunk-to-symbol mapping,
+  diagnostics, stale/missing-index behavior, JSON/markdown output, and CLI exit
+  codes.
+- US2 maps to T020-T029 and covers bounded callers, affected-flow enrichment,
+  MCP parity, expected-state non-errors, and agent guidance.
+- US3 maps to T030-T037 and covers `failOn`, threshold-breach status, exit-code
+  precedence, and CLI/MCP parity.
+
+Known gaps and risks:
+
+- The implementation is verified but exceeds the ratified reviewability stop
+  condition: 1,418 production additions versus the 800 LOC block threshold.
+- No Sonnet A/B run was performed because the change does not alter
+  `codegraph_explore`, retrieval budgets, extraction, resolution, or dynamic
+  dispatch. Retrieval-guardian review remains focused on MCP-surface safety.
+- The one-PR exception was accepted on 2026-07-15. Reviewers should still start
+  with the core engine and adapter boundaries because the production diff
+  exceeds the original reviewability threshold.
+
+Rollback notes:
+
+- Remove `src/analysis/detect-changes/`.
+- Remove `codegraph detect-changes` CLI wiring from `src/bin/codegraph.ts`.
+- Remove `codegraph_detect_changes` MCP wiring/default exposure from
+  `src/mcp/tools.ts` and related agent guidance from `src/mcp/server-instructions.ts`.
+- Remove detect-changes tests, fixtures, helper, changelog entry, and SPEC-012
+  generated artifacts if abandoning the feature branch.
 
 ---
 
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in `tasks.md`.
-- [ ] Reviewability LOC re-measured and compared to setup warning.
-- [ ] `npm run build` passes.
-- [ ] `npm test` passes.
-- [ ] CLI and MCP contract tests pass.
-- [ ] Self-repo UAT runbook executed and evidence recorded.
-- [ ] CHANGELOG entry added under `## [Unreleased]`.
-- [ ] PR packet excludes Codex/Claude session URLs.
+- [ ] Post: Doctor Extension Check
+- [ ] Post: Verify Implementation
+- [ ] Post: Verify Tasks Phantom Check
+- [ ] Post: Code Review
+- [x] Post: Integration Suite
+- [x] Post: Reviewability Diff Gate — one-PR exception accepted by maintainer
+- [ ] Post: Self-Review
+- [x] Post: UAT Runbook Generation
+- [ ] Post: Final Reviewability Backstop
+- [x] Post: PR Packet/Body Generation
+- [x] Post: PR Body Generation
+- [ ] Post: PR Creation — in progress
+- [ ] Post: Review Remediation
+- [ ] Post: Retrospective
+- [x] All tasks marked complete in `tasks.md`.
+- [x] Reviewability LOC re-measured and compared to setup warning.
+- [x] `npm run build` passes.
+- [x] `npm test` passes.
+- [x] CLI and MCP contract tests pass.
+- [x] Self-repo UAT runbook executed and evidence recorded.
+- [x] CHANGELOG entry added under `## [Unreleased]`.
+- [x] PR packet excludes Codex/Claude session URLs.
 
 ---
 
