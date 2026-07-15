@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 4: Checklist - api-contracts",
-  "updated_at": "2026-07-15T23:32:58Z",
+  "active_step": "Phase 5: Tasks",
+  "updated_at": "2026-07-15T23:38:12Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -16,15 +16,15 @@
     {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance", "status": "completed"},
     {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance Consensus", "status": "completed"},
     {"step": "Phase 3: Plan", "status": "completed"},
-    {"step": "Phase 4: Checklist - api-contracts", "status": "in_progress"},
-    {"step": "Phase 4: Checklist - api-contracts Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - security", "status": "pending"},
-    {"step": "Phase 4: Checklist - security Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - error-handling", "status": "pending"},
-    {"step": "Phase 4: Checklist - error-handling Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - performance", "status": "pending"},
-    {"step": "Phase 4: Checklist - performance Consensus", "status": "pending"},
-    {"step": "Phase 5: Tasks", "status": "pending"},
+    {"step": "Phase 4: Checklist - api-contracts", "status": "completed"},
+    {"step": "Phase 4: Checklist - api-contracts Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - security", "status": "completed"},
+    {"step": "Phase 4: Checklist - security Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - error-handling", "status": "completed"},
+    {"step": "Phase 4: Checklist - error-handling Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - performance", "status": "completed"},
+    {"step": "Phase 4: Checklist - performance Consensus", "status": "completed"},
+    {"step": "Phase 5: Tasks", "status": "in_progress"},
     {"step": "Phase 6: Analyze", "status": "pending"},
     {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
     {"step": "Phase 6.5: Confidence Gate", "status": "pending"},
@@ -287,6 +287,66 @@
     },
     "after_plan_hooks": {
       "agent_context": "disabled",
+      "git_commit": "deferred_to_autopilot_phase_commit"
+    }
+  },
+  "phase4": {
+    "status": "completed",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-checklist",
+    "domains": {
+      "api_contracts": {
+        "status": "completed",
+        "items": 14,
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/api-contracts.md",
+        "references": ["FR-022-FR-029", "contracts/action-contract.md", "contracts/result-matrix.md", "contracts/report-contract.md"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
+      },
+      "security": {
+        "status": "completed",
+        "items": 12,
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/security.md",
+        "references": ["FR-030-FR-033", "Q1", "Q4"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
+      },
+      "error_handling": {
+        "status": "completed",
+        "items": 12,
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/error-handling.md",
+        "references": ["FR-013-FR-015", "FR-039-FR-047", "Q3"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
+      },
+      "performance": {
+        "status": "completed",
+        "items": 10,
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/performance.md",
+        "references": ["FR-048-FR-049", "SC-016", "Q6"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
+      }
+    },
+    "totals": {
+      "items": 48,
+      "gaps": 0
+    },
+    "gate": {
+      "id": "G4",
+      "status": "passed",
+      "reason": "0 [Gap] markers",
+      "markers": 0
+    },
+    "marker_counts": {
+      "gaps": 0,
+      "clarifications": 0,
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "after_checklist_hooks": {
       "git_commit": "deferred_to_autopilot_phase_commit"
     }
   }

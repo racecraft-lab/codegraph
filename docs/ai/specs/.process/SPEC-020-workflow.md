@@ -54,8 +54,8 @@ decisions:
 | Specify | `/speckit-specify` | ✅ Complete | G1 passed with 0 clarification markers |
 | Clarify | `/speckit-clarify` | ✅ Complete | G2 passed with 0 clarification markers |
 | Plan | `/speckit-plan` | ✅ Complete | G3 passed; reviewability warning accepted, no blockers |
-| Checklist | `/speckit-checklist` | 🔄 In Progress | Run for each domain |
-| Tasks | `/speckit-tasks` | ⏳ Pending | |
+| Checklist | `/speckit-checklist` | ✅ Complete | G4 passed with 48 checklist items and 0 gaps |
+| Tasks | `/speckit-tasks` | 🔄 In Progress | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Confidence Gate | G6.5 | ⏳ Pending | Advisory pre-implementation confidence check |
 | Implement | `/speckit-implement` | ⏳ Pending | |
@@ -478,11 +478,11 @@ Focus on PR Blast-Radius Review Action requirements:
 
 | Checklist | Items | Gaps | Spec References |
 |-----------|-------|------|-----------------|
-| api-contracts | | | |
-| security | | | |
-| error-handling | | | |
-| performance | | | |
-| **Total** | | | |
+| api-contracts | 14 | 0 | FR-022–FR-029; contracts/action-contract.md; contracts/result-matrix.md; contracts/report-contract.md |
+| security | 12 | 0 | FR-030–FR-033; Q1 safe fork support; Q4 prose-only narrative |
+| error-handling | 12 | 0 | FR-013–FR-015; FR-039–FR-047; Q3 explicit unavailable failure |
+| performance | 10 | 0 | FR-048–FR-049; SC-016; Q6 validate-or-rebuild |
+| **Total** | 48 | 0 | G4 passed with 0 `[Gap]` markers |
 
 ### Addressing Gaps
 

@@ -37,6 +37,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [contracts/action-contract.md](contracts/action-contract.md)
 - [contracts/report-contract.md](contracts/report-contract.md)
 - [contracts/result-matrix.md](contracts/result-matrix.md)
+- [checklists/api-contracts.md](checklists/api-contracts.md)
+- [checklists/error-handling.md](checklists/error-handling.md)
+- [checklists/performance.md](checklists/performance.md)
 - [checklists/requirements.md](checklists/requirements.md)
+- [checklists/security.md](checklists/security.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->
