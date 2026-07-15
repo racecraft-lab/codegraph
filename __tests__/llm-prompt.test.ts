@@ -2,7 +2,8 @@
  * Prompt composition + deterministic token-budget guard — unit tests (SPEC-018 slice 1, T007).
  *
  * Pins `src/llm/prompt.ts` against research D5, spec FR-018/FR-019, data-model §1
- * (ProseTask), and contracts/endpoint-wire.md §"Token budget guard":
+ * (ProseTask), and the archived endpoint-wire contract recoverable from
+ * `git show 4acfa1b:specs/018-llm-access-layer/contracts/endpoint-wire.md`:
  *   - estimateTokens(s) = ceil(s.length / CHARS_PER_TOKEN), CHARS_PER_TOKEN = 4 (no external tokenizer).
  *   - GRAPH_CONTEXT_TOKEN_BUDGET = 2000 → GRAPH_CONTEXT_CHAR_BUDGET = 8000 (2000 × 4).
  *   - composePrompt composes the chat messages in the FIXED priority order

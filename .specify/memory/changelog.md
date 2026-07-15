@@ -61,3 +61,18 @@
   with provenance in
   [archive-reports/2026-07-13-SPEC-010.md](archive-reports/2026-07-13-SPEC-010.md);
   `.specify/feature.json` cleared (no feature in flight after this cleanup).
+
+- **2026-07-15** - SPEC-018 archived. PRs #48 (`2cd10a7`) and #49 (`4acfa1b`)
+  merged (two slices: endpoint path; agent-bundle path); roadmap row flipped to
+  complete; SPEC-019's LLM dependency is satisfied and SPEC-020's optional
+  narrative path is available; `specs/018-llm-access-layer/` removed with
+  provenance in
+  [archive-reports/2026-07-15-SPEC-018.md](archive-reports/2026-07-15-SPEC-018.md).
+
+- **2026-07-15** - SPEC-011 archived. PR #50 (`ecb5d83`) merged (execution-flow
+  and functional-cluster catalogs over MCP and REST); roadmap row flipped to
+  complete; SPEC-012 can use flow impact enrichment and SPEC-019 is ready because
+  both SPEC-011 and SPEC-018 are merged; `specs/011-execution-flows-clusters/`
+  removed with provenance in
+  [archive-reports/2026-07-15-SPEC-011.md](archive-reports/2026-07-15-SPEC-011.md);
+  `.specify/feature.json` cleared (no active spec remains after this cleanup).

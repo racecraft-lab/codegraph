@@ -95,3 +95,22 @@ whole of Slice 1; the write path only activates on explicit apply and is
 guarded so a failure leaves the tree untouched. Rides the SPEC-008 LSP substrate
 where a server is present, graph-derived otherwise. Full plan recoverable:
 `git show f2e307d:specs/010-graph-aware-rename/plan.md`.
+
+## SPEC-018 - LLM Access Layer (archived 2026-07-15)
+
+Plan shape that shipped: a new `src/llm/` module split into two vertical PRs.
+Slice 1 delivered endpoint config, client, prompt budgeting, `generate()`,
+status, and dormancy; Slice 2 delivered task-bundle emission, redemption,
+ingest, `codegraph tasks`, companion skill, and the LLM paths research note.
+No schema change, no MCP surface change, and no runtime dependency were added.
+Full plan recoverable:
+`git show 4acfa1b:specs/018-llm-access-layer/plan.md`.
+
+## SPEC-011 - Execution Flows & Clusters (archived 2026-07-15)
+
+Plan shape that shipped: a new `src/analysis/` module with flow and cluster
+catalogs, additive catalog tables in schema v10, opt-in `codegraph.json`
+activation, atomic catalog recompute after index/sync, bounded MCP tools, and
+REST mirrors through the existing serve daemon. `codegraph_explore` remained
+unchanged; catalog analysis is dormant unless enabled. Full plan recoverable:
+`git show ecb5d83:specs/011-execution-flows-clusters/plan.md`.
