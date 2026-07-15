@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 3: Plan",
-  "updated_at": "2026-07-15T23:26:26Z",
+  "active_step": "Phase 4: Checklist - api-contracts",
+  "updated_at": "2026-07-15T23:32:58Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -15,8 +15,8 @@
     {"step": "Phase 2: Clarify - Trust Boundary and Report Delivery Consensus", "status": "completed"},
     {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance", "status": "completed"},
     {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance Consensus", "status": "completed"},
-    {"step": "Phase 3: Plan", "status": "in_progress"},
-    {"step": "Phase 4: Checklist - api-contracts", "status": "pending"},
+    {"step": "Phase 3: Plan", "status": "completed"},
+    {"step": "Phase 4: Checklist - api-contracts", "status": "in_progress"},
     {"step": "Phase 4: Checklist - api-contracts Consensus", "status": "pending"},
     {"step": "Phase 4: Checklist - security", "status": "pending"},
     {"step": "Phase 4: Checklist - security Consensus", "status": "pending"},
@@ -238,6 +238,55 @@
       }
     },
     "after_clarify_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
+    }
+  },
+  "phase3": {
+    "status": "completed",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-plan",
+    "artifacts": {
+      "plan": "specs/020-pr-blast-radius-review-action/plan.md",
+      "research": "specs/020-pr-blast-radius-review-action/research.md",
+      "data_model": "specs/020-pr-blast-radius-review-action/data-model.md",
+      "quickstart": "specs/020-pr-blast-radius-review-action/quickstart.md",
+      "contracts": [
+        "specs/020-pr-blast-radius-review-action/contracts/action-contract.md",
+        "specs/020-pr-blast-radius-review-action/contracts/result-matrix.md",
+        "specs/020-pr-blast-radius-review-action/contracts/report-contract.md"
+      ]
+    },
+    "gate": {
+      "id": "G3",
+      "status": "passed",
+      "reason": "plan.md exists with 0 unresolved markers",
+      "markers": 0
+    },
+    "reviewability": {
+      "estimate_reviewable_loc": {
+        "status": "pass",
+        "projected": 80,
+        "declared_files": {
+          "production": 2,
+          "new": 4,
+          "modified": 2,
+          "total_entries": 6
+        },
+        "note": "Runner heuristic uses parseable declared file operations; roadmap/Grill Me projection remains authoritative for warning."
+      },
+      "setup_gate": {
+        "status": "warn",
+        "pass": true,
+        "reviewable_loc": 455,
+        "production_files": 4,
+        "total_files": 11,
+        "primary_surfaces": ["harness/adapter"],
+        "warnings": ["reviewable LOC 455 exceeds warn threshold 400"],
+        "blockers": []
+      }
+    },
+    "after_plan_hooks": {
+      "agent_context": "disabled",
       "git_commit": "deferred_to_autopilot_phase_commit"
     }
   }

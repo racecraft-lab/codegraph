@@ -53,8 +53,8 @@ decisions:
 |-------|---------|--------|-------|
 | Specify | `/speckit-specify` | ✅ Complete | G1 passed with 0 clarification markers |
 | Clarify | `/speckit-clarify` | ✅ Complete | G2 passed with 0 clarification markers |
-| Plan | `/speckit-plan` | 🔄 In Progress | |
-| Checklist | `/speckit-checklist` | ⏳ Pending | Run for each domain |
+| Plan | `/speckit-plan` | ✅ Complete | G3 passed; reviewability warning accepted, no blockers |
+| Checklist | `/speckit-checklist` | 🔄 In Progress | Run for each domain |
 | Tasks | `/speckit-tasks` | ⏳ Pending | |
 | Analyze | `/speckit-analyze` | ⏳ Pending | |
 | Confidence Gate | G6.5 | ⏳ Pending | Advisory pre-implementation confidence check |
@@ -367,11 +367,13 @@ Q4 "Prose only", and Q8 "Advisory first".
 
 | Artifact | Status | Notes |
 |----------|--------|-------|
-| `plan.md` | ⏳ | Technical context, execution flow |
-| `research.md` | ⏳ | Decision rationales (if needed) |
-| `data-model.md` | ⏳ | Entities and types |
-| `contracts/` | ⏳ | API specifications |
-| `quickstart.md` | ⏳ | Developer onboarding |
+| `plan.md` | ✅ | Technical context, execution flow, constitution check, declared file operations, and reviewability gate fields |
+| `research.md` | ✅ | Runtime packaging, version pinning, detector mapping, trust boundary, cache validation, narrative, and performance decisions |
+| `data-model.md` | ✅ | Pull request context, action inputs, detector result, cache, delivery, narrative, and conclusion state |
+| `contracts/` | ✅ | Action contract, result matrix, and report contract |
+| `quickstart.md` | ✅ | Focused validation scenarios and PR evidence checklist |
+| Reviewability | ⚠️ | Setup-mode gate passed with warning: 455 reviewable LOC > 400 warning threshold; no blockers |
+| G3 Gate | ✅ | `plan.md` exists with 0 unresolved markers |
 
 ---
 
