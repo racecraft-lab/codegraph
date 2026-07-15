@@ -187,8 +187,16 @@ export function traceFlow(entry: EntryPoint, queries: QueryBuilder): TraceResult
     const candidates = sortedCandidates(nodeId, entry, queries);
     let kept = candidates;
     if (candidates.length > FLOW_CAP_WIDTH) {
-      flags.width = true;
       kept = candidates.slice(0, FLOW_CAP_WIDTH);
+      // Width truncation only if the cap DROPPED a candidate that could add a NEW
+      // step — an unvisited target not already covered by a kept candidate. A
+      // dropped edge to an already-visited or duplicate target (21 self/back-edges
+      // to the visited root) contributes nothing, so counting raw edge count would
+      // falsely flag truncation (consistent with the depth-cap flag, FR-007).
+      const keptTargets = new Set(kept.map((c) => c.targetId));
+      if (candidates.slice(FLOW_CAP_WIDTH).some((c) => !visited.has(c.targetId) && !keptTargets.has(c.targetId))) {
+        flags.width = true;
+      }
     }
     for (const c of kept) {
       if (visited.has(c.targetId)) continue;

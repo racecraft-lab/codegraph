@@ -299,19 +299,43 @@ function collectEventEntries(src: string, filePath: string, queries: QueryBuilde
   }
 }
 
-/** One entry per root node id; highest-precedence kind wins (FR-003). */
+/**
+ * Reduce to the flows a root should produce (FR-003). The highest-precedence kind
+ * wins PER ROOT NODE (route > cli > event > export) — a node detected through more
+ * than one form of evidence roots ONE flow of the winning kind. BUT two CLI
+ * commands that share a handler (`.command('start').action(run)` +
+ * `.command('stop').action(run)` both root at `run`) are DISTINCT entry points
+ * that must EACH yield a flow (FR-003/SC-001), so within the winning kind, CLI
+ * entries are kept per command name; every other kind is one-per-root.
+ * Deterministically ordered (precedence, root id, then command name).
+ */
 function dedupe(entries: EntryPoint[]): EntryPoint[] {
-  const best = new Map<string, EntryPoint>();
+  // 1. The winning (lowest-value) precedence for each root node.
+  const winning = new Map<string, number>();
   for (const e of entries) {
-    const prior = best.get(e.rootNodeId);
-    if (!prior || ENTRY_PRECEDENCE[e.entryKind] < ENTRY_PRECEDENCE[prior.entryKind]) {
-      best.set(e.rootNodeId, e);
-    }
+    const p = ENTRY_PRECEDENCE[e.entryKind];
+    const cur = winning.get(e.rootNodeId);
+    if (cur === undefined || p < cur) winning.set(e.rootNodeId, p);
   }
-  return [...best.values()].sort((a, b) => {
+  // 2. Keep entries of the winning kind, deduped by their DISTINGUISHING identity:
+  //    a CLI command by (root, command name) so sibling commands survive; every
+  //    other kind collapses to one per root.
+  const seen = new Set<string>();
+  const kept: EntryPoint[] = [];
+  for (const e of entries) {
+    if (ENTRY_PRECEDENCE[e.entryKind] !== winning.get(e.rootNodeId)) continue; // lower precedence → suppressed
+    const key = e.entryKind === 'cli' ? `${e.rootNodeId}\n${e.commandName ?? ''}` : e.rootNodeId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(e);
+  }
+  return kept.sort((a, b) => {
     const pa = ENTRY_PRECEDENCE[a.entryKind];
     const pb = ENTRY_PRECEDENCE[b.entryKind];
     if (pa !== pb) return pa - pb;
-    return a.rootNodeId < b.rootNodeId ? -1 : a.rootNodeId > b.rootNodeId ? 1 : 0;
+    if (a.rootNodeId !== b.rootNodeId) return a.rootNodeId < b.rootNodeId ? -1 : 1;
+    const ca = a.commandName ?? '';
+    const cb = b.commandName ?? '';
+    return ca < cb ? -1 : ca > cb ? 1 : 0;
   });
 }

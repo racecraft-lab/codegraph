@@ -129,6 +129,20 @@ describe('flow truncation flags', () => {
     expect(anyTrunc(r)).toBe(false);
   });
 
+  it('does NOT set truncatedWidth when the over-cap edges all target visited/duplicate nodes', () => {
+    const h = freshSeed();
+    const root = node(h, { id: 'root', name: 'root', kind: 'function', filePath: 'src/root.ts' });
+    // 21 self-call edges root→root at distinct lines (so the unique edge index
+    // keeps them all) — over the width cap, but every target is the already-
+    // visited root, so nothing is added and no width truncation occurred.
+    for (let i = 0; i < 21; i++) edge(h, root.id, root.id, 'calls', undefined, i + 1);
+    const r = traceFlow(rootAt(root.id), h.queries);
+
+    expect(r.truncatedWidth).toBe(false); // was true before the fix (raw edge count)
+    expect(anyTrunc(r)).toBe(false); // fully explored — nothing was dropped
+    expect(r.steps).toHaveLength(1); // just the root
+  });
+
   it('does NOT set truncatedDepth when the depth-cap node only cycles back to a visited node', () => {
     // A chain reaching exactly the depth cap whose last node's ONLY out-edge is a
     // back-edge to the already-visited root — a cycle, not a truncation. The

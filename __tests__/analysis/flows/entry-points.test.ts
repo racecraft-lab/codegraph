@@ -140,4 +140,17 @@ describe('entry-point detection', () => {
     expect(roots.get(onData.id)).toBe('event'); // .mts scanned (was skipped pre-fix)
     expect(roots.get(buildHandler.id)).toBe('cli'); // .jsx scanned (was skipped pre-fix)
   });
+
+  it('keeps BOTH CLI commands when two share one handler (FR-003/SC-001)', () => {
+    const h = freshSeed();
+    // Two distinct commands, one shared handler — two distinct entry points that
+    // must each yield a flow, not collapse to one on the shared root node.
+    file(h, 'src/cli.ts', `program.command('start').action(run);\nprogram.command('stop').action(run);\n`);
+    const run = node(h, { name: 'run', kind: 'function', filePath: 'src/cli.ts' });
+
+    const cli = detectEntryPoints(h.graph).filter((e) => e.entryKind === 'cli');
+    expect(cli).toHaveLength(2); // was 1 before the fix (dedupe collapsed by rootNodeId)
+    expect(cli.every((e) => e.rootNodeId === run.id)).toBe(true); // both root at the shared handler
+    expect(new Set(cli.map((e) => e.commandName))).toEqual(new Set(['start', 'stop']));
+  });
 });
