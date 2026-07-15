@@ -274,7 +274,7 @@ function table(headers: string[], rows: string[][]): string {
 }
 
 function escapeCell(value: string): string {
-  return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return String(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
 function lineRange(start?: number, end?: number): string {

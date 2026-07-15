@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { acquireGitDiff } from '../src/analysis/detect-changes/git-diff';
 import { detectChanges } from '../src/analysis/detect-changes';
-import { parseFailOn } from '../src/analysis/detect-changes/report';
+import { buildInitialReport, parseFailOn, renderMarkdownReport } from '../src/analysis/detect-changes/report';
 import { createDetectChangesFixture, indexFixture, type DetectChangesFixture } from './helpers/detect-changes-fixture';
 
 describe('detect changes', () => {
@@ -105,5 +105,55 @@ describe('detect changes', () => {
       { raw: 'hub', kind: 'hub' },
     ]);
     expect(() => parseFailOn('callers>=10')).toThrow(/Invalid failOn/);
+  });
+
+  it('escapes markdown table cells with backslashes, pipes, and newlines', () => {
+    const report = buildInitialReport({
+      mode: 'all',
+      baseRef: null,
+      format: 'markdown',
+      failOn: null,
+      callerDepth: 1,
+      maxCallers: 20,
+      projectPath: undefined,
+    }, [
+      {
+        id: 'symbol\\id|pipe',
+        nodeId: 'node-1',
+        name: 'symbol',
+        qualifiedName: 'Calculator\\total|value',
+        kind: 'function',
+        filePath: 'src\\windows|pipe.ts',
+        startLine: 1,
+        endLine: 2,
+        changeType: 'modified',
+        hunkIds: ['hunk\\1|pipe'],
+      },
+    ], [
+      {
+        hunkId: 'hunk\\2|pipe',
+        oldPath: null,
+        newPath: 'src/multi|line.ts',
+        newStart: 3,
+        newLines: 1,
+        reason: 'unsupported',
+        message: 'bad\\path | message\nnext',
+      },
+    ], [
+      {
+        code: 'warn\\code|x',
+        message: 'warn\\message | next\nline',
+      },
+    ]);
+
+    const markdown = renderMarkdownReport(report);
+
+    expect(markdown).toContain('warn\\\\code\\|x');
+    expect(markdown).toContain('warn\\\\message \\| next line');
+    expect(markdown).toContain('Calculator\\\\total\\|value');
+    expect(markdown).toContain('src\\\\windows\\|pipe.ts');
+    expect(markdown).toContain('hunk\\\\1\\|pipe');
+    expect(markdown).toContain('src/multi\\|line.ts');
+    expect(markdown).toContain('bad\\\\path \\| message next');
   });
 });
