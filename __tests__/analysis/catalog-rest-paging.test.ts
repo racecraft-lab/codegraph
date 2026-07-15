@@ -15,7 +15,11 @@
  * state) — exactly what the paging assertion needs.
  */
 import { describe, it, expect, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { startServerFixture, type ServerFixture } from '../helpers/server-fixture';
+import { startWebServer, type WebServerHandle } from '../../src/server/index';
 
 /** Loosen waits on CI (cold caches, shared vCPUs) — mirrors the server suites. */
 const CI = !['', '0', 'false'].includes((process.env.CI ?? '').trim().toLowerCase());
@@ -78,4 +82,54 @@ describe('SPEC-011 REST catalog paging coercion (PR #50 review, FR-028a/030)', (
     expect(bad.body.offset).toBe(0); // non-numeric → default 0
     // minSize is coerced to 1 (default) — the read succeeds rather than 400.
   }, CT(60000));
+});
+
+/**
+ * PR #50 review — an UNINDEXED project's catalog endpoints must return the
+ * success-shaped `not_indexed` result (200), NOT a 503. An unindexed root has no
+ * daemon to attach to, so the catalog handlers must check `isRepoIndexed` BEFORE
+ * the attach (the daemon-side readOnMissingIndex is never reached) — mirroring
+ * how /api/status reports an un-indexed startup repo (FR-030).
+ */
+describe('SPEC-011 REST catalog on an UNINDEXED project (PR #50 review, FR-030)', () => {
+  let handle: WebServerHandle | undefined;
+  let dir: string | undefined;
+  afterEach(async () => {
+    if (handle) {
+      try {
+        await handle.close();
+      } catch {
+        /* already closed */
+      }
+    }
+    handle = undefined;
+    if (dir) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+    dir = undefined;
+  });
+
+  it('returns 200 not_indexed for /api/flows, /api/clusters, /api/flows/{id} — never 503', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-unindexed-'));
+    handle = await startWebServer({ port: 0, projectPath: dir });
+    const base = `http://${handle.host}:${handle.port}`;
+
+    const flows = await fetch(`${base}/api/flows`);
+    expect(flows.status).toBe(200); // not a 503
+    expect((await flows.json()).state).toBe('not_indexed');
+
+    const clusters = await fetch(`${base}/api/clusters`);
+    expect(clusters.status).toBe(200);
+    expect((await clusters.json()).state).toBe('not_indexed');
+
+    const detail = await fetch(`${base}/api/flows/flow:anything`);
+    expect(detail.status).toBe(200);
+    const body = await detail.json();
+    expect(body.found).toBe(false);
+    expect(body.state).toBe('not_indexed');
+  }, CT(30000));
 });

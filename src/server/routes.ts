@@ -378,6 +378,27 @@ async function withClient(
   }
 }
 
+/**
+ * Like {@link withClient}, but for the SPEC-011 catalog endpoints: a resolved-but-
+ * UNINDEXED repo has no daemon to attach to, so `getClient` would throw and
+ * `withClient` would map it to a transient 503 — and the daemon-side
+ * `readOnMissingIndex` never runs because the request never reaches a daemon. An
+ * expected condition (project not indexed) MUST stay success-shaped (FR-030), so
+ * check `isRepoIndexed` BEFORE the attach and return the caller's `not_indexed`
+ * envelope — exactly as {@link statusHandler} reports an un-indexed startup repo.
+ */
+async function withCatalogClient(
+  deps: ReadApiDeps,
+  ctx: RouteContext,
+  notIndexed: () => HandlerResult,
+  fn: (client: DaemonReadClient) => Promise<HandlerResult>,
+): Promise<HandlerResult> {
+  const repo = deps.resolveRepo(ctx.query.get('repo') ?? undefined);
+  if (!repo) return notFound('repo');
+  if (!deps.isRepoIndexed(repo.root)) return notIndexed();
+  return withClient(deps, ctx, fn);
+}
+
 /** GET /api/status (T014, FR-005/016) — not repo-scoped; reports the default repo. */
 function statusHandler(deps: ReadApiDeps): RouteHandler {
   return async (ctx): Promise<HandlerResult> => {
@@ -496,10 +517,18 @@ function relationHandler(deps: ReadApiDeps, which: 'callers' | 'callees'): Route
 function flowsListHandler(deps: ReadApiDeps): RouteHandler {
   return (ctx) => {
     const paging = parseCatalogPaging(ctx.query);
-    return withClient(deps, ctx, async (client) => {
-      const result = await readFlows(client, paging.limit, paging.offset);
-      return { status: 200, body: result };
-    });
+    return withCatalogClient(
+      deps,
+      ctx,
+      () => ({
+        status: 200,
+        body: { items: [], total: 0, limit: paging.limit, offset: paging.offset, sourceVersion: 0, state: 'not_indexed' },
+      }),
+      async (client) => {
+        const result = await readFlows(client, paging.limit, paging.offset);
+        return { status: 200, body: result };
+      },
+    );
   };
 }
 
@@ -510,13 +539,18 @@ function flowsListHandler(deps: ReadApiDeps): RouteHandler {
  */
 function flowDetailHandler(deps: ReadApiDeps): RouteHandler {
   return (ctx) =>
-    withClient(deps, ctx, async (client) => {
-      const r = await readFlow(client, ctx.params.id ?? '');
-      if (r.found) return { status: 200, body: r.flow };
-      const live = r.state === 'available' || r.state === 'stale' || r.state === 'empty';
-      const message = live ? 'unknown flow id' : `flows catalog ${r.state}`;
-      return { status: 200, body: { found: false, state: r.state, message } };
-    });
+    withCatalogClient(
+      deps,
+      ctx,
+      () => ({ status: 200, body: { found: false, state: 'not_indexed', message: 'flows catalog not_indexed' } }),
+      async (client) => {
+        const r = await readFlow(client, ctx.params.id ?? '');
+        if (r.found) return { status: 200, body: r.flow };
+        const live = r.state === 'available' || r.state === 'stale' || r.state === 'empty';
+        const message = live ? 'unknown flow id' : `flows catalog ${r.state}`;
+        return { status: 200, body: { found: false, state: r.state, message } };
+      },
+    );
 }
 
 /**
@@ -530,10 +564,18 @@ function clustersListHandler(deps: ReadApiDeps): RouteHandler {
   return (ctx) => {
     const paging = parseCatalogPaging(ctx.query);
     const minSize = parseMinSize(ctx.query);
-    return withClient(deps, ctx, async (client) => {
-      const result = await readClusters(client, minSize, paging.limit, paging.offset);
-      return { status: 200, body: result };
-    });
+    return withCatalogClient(
+      deps,
+      ctx,
+      () => ({
+        status: 200,
+        body: { items: [], total: 0, limit: paging.limit, offset: paging.offset, sourceVersion: 0, state: 'not_indexed' },
+      }),
+      async (client) => {
+        const result = await readClusters(client, minSize, paging.limit, paging.offset);
+        return { status: 200, body: result };
+      },
+    );
   };
 }
 

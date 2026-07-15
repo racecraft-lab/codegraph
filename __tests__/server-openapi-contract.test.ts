@@ -231,7 +231,11 @@ for (const [p, methods] of DOCUMENTED)
 // walk against the happy/unavailable fixtures) and the jobs walk (POST/GET +
 // SSE, exercised against a controllable-job fixture). Both are derived from the
 // SAME committed document, so a tuple can never fall through a gap between them.
-const READ_PATH_SET = new Set(READ_PATHS);
+// The catalog paths ARE part of the read walk (GET-only, daemon-forwarding).
+// Earlier they were only presence-checked and excluded from READ_TUPLES, so their
+// 200/404/503 and the FlowListResult/ClusterListResult/CatalogMiss schemas were
+// never validated against live responses; now they are (PR #50 rp-review).
+const READ_PATH_SET = new Set([...READ_PATHS, ...FLOW_PATHS, ...CLUSTER_PATHS]);
 const JOB_PATH_SET = new Set(JOB_PATHS);
 const READ_TUPLES = TUPLES.filter(([p]) => READ_PATH_SET.has(p));
 const JOB_TUPLES = TUPLES.filter(([p]) => JOB_PATH_SET.has(p));
@@ -321,6 +325,36 @@ function assertRepoArray(b: any): void {
   }
 }
 
+const CATALOG_STATES = new Set(['available', 'stale', 'empty', 'unavailable', 'disabled', 'not_indexed']);
+/** FlowListResult / ClusterListResult REQUIRED fields (identical envelope shape). */
+function assertCatalogListResult(b: any): void {
+  expect(Array.isArray(b.items)).toBe(true);
+  expect(typeof b.total).toBe('number');
+  expect(typeof b.limit).toBe('number');
+  expect(typeof b.offset).toBe('number');
+  expect(typeof b.sourceVersion).toBe('number');
+  expect(CATALOG_STATES.has(b.state)).toBe(true);
+}
+/** GET /api/flows/{id} 200 → FlowDetail OR the success-shaped CatalogMiss (oneOf). */
+function assertFlowDetailOrMiss(b: any): void {
+  expect(typeof b).toBe('object');
+  expect(b).not.toBeNull();
+  if (b.found === false) {
+    // CatalogMiss: unknown id / inert catalog guidance (FR-030).
+    expect(CATALOG_STATES.has(b.state)).toBe(true);
+    expect(typeof b.message).toBe('string');
+    return;
+  }
+  expect(typeof b.id).toBe('string');
+  expect(typeof b.name).toBe('string');
+  expect(typeof b.entryKind).toBe('string');
+  expect(typeof b.root).toBe('object');
+  expect(Array.isArray(b.steps)).toBe(true);
+  expect(typeof b.truncated).toBe('boolean');
+  expect(typeof b.sourceVersion).toBe('number');
+  expect(CATALOG_STATES.has(b.state)).toBe(true);
+}
+
 /** Validate a documented 2xx body against its schema's REQUIRED fields. */
 function assert2xxBody(pathKey: string, b: any): void {
   switch (pathKey) {
@@ -340,6 +374,11 @@ function assert2xxBody(pathKey: string, b: any): void {
     case '/api/impact/{id}':
     case '/api/graph/{id}':
       return assertGraphResult(b);
+    case '/api/flows':
+    case '/api/clusters':
+      return assertCatalogListResult(b);
+    case '/api/flows/{id}':
+      return assertFlowDetailOrMiss(b);
     default:
       throw new Error(`no 2xx validator wired for ${pathKey}`);
   }
@@ -473,6 +512,19 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
     matrix.set('/api/graph/{id} 400', H(`/api/graph/${enc(subId)}?depth=abc`)); // malformed depth
     matrix.set('/api/graph/{id} 404', H(`/api/graph/${UNKNOWN}`));
     matrix.set('/api/graph/{id} 503', U(`/api/graph/${UNKNOWN}`));
+    // SPEC-011 catalog paths: 200 (the fixture doesn't opt into catalogs, so the
+    // read is a success-shaped `disabled` envelope — still a valid 200 shape),
+    // 404 (bad ?repo), 503 (daemon fault). No 400: paging is coerced, never 4xx.
+    const FLOW_ID = 'flow:0000000000000000'; // any id → CatalogMiss on the disabled fixture
+    matrix.set('/api/flows 200', H('/api/flows'));
+    matrix.set('/api/flows 404', H(`/api/flows?repo=${BAD_REPO}`));
+    matrix.set('/api/flows 503', U('/api/flows'));
+    matrix.set('/api/flows/{id} 200', H(`/api/flows/${FLOW_ID}`));
+    matrix.set('/api/flows/{id} 404', H(`/api/flows/${FLOW_ID}?repo=${BAD_REPO}`));
+    matrix.set('/api/flows/{id} 503', U(`/api/flows/${FLOW_ID}`));
+    matrix.set('/api/clusters 200', H('/api/clusters'));
+    matrix.set('/api/clusters 404', H(`/api/clusters?repo=${BAD_REPO}`));
+    matrix.set('/api/clusters 503', U('/api/clusters'));
   }, CT(90000));
 
   afterAll(async () => {

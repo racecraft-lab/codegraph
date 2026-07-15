@@ -273,15 +273,16 @@ components:
         truncation: { $ref: '#/components/schemas/FlowTruncation' }
         sourceVersion: { type: integer, description: 'graph_write_version the catalog was computed from.' }
         state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
-    FlowListResult:   # ListResult extended with flow items + sourceVersion/state (the SearchResult allOf precedent)
-      allOf:
-        - $ref: '#/components/schemas/ListResult'
-        - type: object
-          required: [items, sourceVersion, state]
-          properties:
-            items: { type: array, items: { $ref: '#/components/schemas/FlowSummary' } }
-            sourceVersion: { type: integer }
-            state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+    FlowListResult:   # a paged flow catalog defined DIRECTLY — NOT `allOf ListResult`, whose items are Node[]: a catalog item is a FlowSummary, so `allOf` forced items to satisfy BOTH shapes and validated nothing real.
+      type: object
+      required: [items, total, limit, offset, sourceVersion, state]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/FlowSummary' } }
+        total: { type: integer, description: Match count. }
+        limit: { type: integer, description: Effective (coerced) page size. }
+        offset: { type: integer, description: Effective (coerced) offset. }
+        sourceVersion: { type: integer, description: 'graph_write_version the catalog was computed from (0 when not_indexed).' }
+        state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
     # ---------- SPEC-011: functional-cluster catalog (FR-028/028a/029) ----------
     ClusterSummary:   # field names IDENTICAL to the codegraph_list_clusters MCP item (FR-028a)
       type: object
@@ -292,15 +293,23 @@ components:
         displayLabel: { type: ['string', 'null'], description: 'Optional LLM label, presentation-only; null when unconfigured (FR-019).' }
         memberCount: { type: integer }
         isSingleton: { type: boolean, description: 'True for a single-file cluster (FR-014).' }
-    ClusterListResult:   # ListResult extended with cluster items + sourceVersion/state (the SearchResult allOf precedent)
-      allOf:
-        - $ref: '#/components/schemas/ListResult'
-        - type: object
-          required: [items, sourceVersion, state]
-          properties:
-            items: { type: array, items: { $ref: '#/components/schemas/ClusterSummary' } }
-            sourceVersion: { type: integer }
-            state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+    ClusterListResult:   # a paged cluster catalog defined DIRECTLY — NOT `allOf ListResult` (whose items are Node[]); see FlowListResult.
+      type: object
+      required: [items, total, limit, offset, sourceVersion, state]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ClusterSummary' } }
+        total: { type: integer, description: Post-minSize-filter match count. }
+        limit: { type: integer, description: Effective (coerced) page size. }
+        offset: { type: integer, description: Effective (coerced) offset. }
+        sourceVersion: { type: integer, description: 'graph_write_version the catalog was computed from (0 when not_indexed).' }
+        state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+    CatalogMiss:   # success-shaped guidance for /api/flows/{id}: an unknown id within a live catalog, or an inert (disabled/unavailable/not_indexed) catalog (FR-030).
+      type: object
+      required: [found, state, message]
+      properties:
+        found: { type: boolean, enum: [false] }
+        state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
+        message: { type: string }
   responses:
     NotFound:
       description: Unknown node/repo/route (FR-011/015a); details.resource discriminates.
@@ -443,7 +452,7 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string }, description: 'The deterministic flow id from /api/flows.' }
         - { $ref: '#/components/parameters/RepoQuery' }
       responses:
-        '200': { description: 'OK — the flow detail, or success-shaped guidance for an unknown id / disabled / not-computed catalog (FR-030).', content: { application/json: { schema: { $ref: '#/components/schemas/FlowDetail' } } } }
+        '200': { description: 'OK — the flow detail, or success-shaped guidance (found:false) for an unknown id / disabled / unavailable / not-indexed catalog (FR-030).', content: { application/json: { schema: { oneOf: [{ $ref: '#/components/schemas/FlowDetail' }, { $ref: '#/components/schemas/CatalogMiss' }] } } } }
         '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011) — NOT unknown flow id
         '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/clusters:
