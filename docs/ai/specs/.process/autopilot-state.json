@@ -5,10 +5,10 @@
   "branch": "006-web-ui-graph-browser",
   "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/006-web-ui-graph-browser",
   "status": "in_progress",
-  "active_step": "phase_7_implement",
+  "active_step": "Post: Self-Review",
   "plan": [
     {
-      "step": "Archive Sweep: merged spec cleanup",
+      "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
       "status": "completed"
     },
     {
@@ -108,7 +108,7 @@
       "status": "completed"
     },
     {
-      "step": "Phase 6: Analyze Consensus",
+      "step": "Phase 6: Analyze - Consensus",
       "status": "completed"
     },
     {
@@ -117,38 +117,58 @@
     },
     {
       "step": "Phase 7: Implement",
-      "status": "in_progress"
+      "status": "completed"
+    },
+    {
+      "step": "Phase 7: Playwright MCP Browser UAT",
+      "status": "completed"
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "doctor/speckit-utils extension not installed"
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "pending"
+      "status": "completed",
+      "result": "passed: 96/96 tasks complete, 96 task-referenced file paths, 0 missing files"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "pending"
+      "status": "completed",
+      "report": "specs/006-web-ui-graph-browser/verify-tasks-report.md",
+      "result": "passed: 96 verified, 0 flagged"
     },
     {
       "step": "Post: Code Review",
-      "status": "pending"
+      "status": "completed",
+      "report": "specs/006-web-ui-graph-browser/code-review.md",
+      "result": "passed after fixing review findings"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "pending"
+      "status": "completed",
+      "result": "passed: build, typecheck, web lint/unit/e2e, focused server/package suite, full root npm test, and Playwright MCP browser UAT all passed"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "pending"
+      "status": "completed",
+      "result": "warn/proceed: cohesive single navigable PR with explicit review order; evidence at specs/006-web-ui-graph-browser/.process/emission/reviewability-diff-gate.md"
     },
     {
       "step": "Post: Self-Review",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: UAT Runbook Generation",
+      "status": "pending"
+    },
+    {
+      "step": "Post: Final Reviewability Backstop",
+      "status": "pending"
+    },
+    {
+      "step": "Post: PR Packet/Body Generation",
       "status": "pending"
     },
     {
@@ -168,7 +188,7 @@
       "status": "pending"
     }
   ],
-  "updated_at": "2026-07-15T21:09:46Z",
+  "updated_at": "2026-07-15T23:44:00Z",
   "confidence_gate_mode": "advisory",
   "preflight": {
     "archive_sweep": {
@@ -196,10 +216,11 @@
       "shell_branch": "006-web-ui-graph-browser",
       "workflow_present": true,
       "runner_marker": {
-        "status": "temporary",
+        "status": "moved_out_of_worktree",
         "path": "speckit-pro/speckit_pro_runner",
+        "moved_to": "/private/tmp/speckit-pro-marker-cleanup-SPEC-006/speckit-pro",
         "reason": "Nested .worktrees checkout otherwise lets the read-only runner discover the parent checkout first.",
-        "cleanup_required": true
+        "cleanup_required": false
       },
       "runner_check_prerequisites": {
         "status": "ok",
@@ -603,13 +624,122 @@
       "pass": null,
       "recommended_action": "soft_skip",
       "reason": "No synthesizer confidence emit found in docs/ai/specs/.process/SPEC-006-workflow.md."
+    },
+    {
+      "id": "phase_7_implement",
+      "title": "Implement",
+      "status": "completed",
+      "tasks_completed": 96,
+      "outputs": {
+        "web_app": "web/",
+        "server_chat_adapter": "src/server/chat.ts",
+        "package_assets": "dist/web/",
+        "review_packet": "specs/006-web-ui-graph-browser/review-packet.md"
+      },
+      "verification": {
+        "web_unit": "npm --prefix web run test passed: 17 files, 19 tests",
+        "web_lint": "npm --prefix web run lint passed with 0 errors and 6 shadcn-style Fast Refresh warnings",
+        "web_typecheck": "npm --prefix web run typecheck passed",
+        "root_typecheck": "npm run typecheck passed",
+        "web_e2e": "npm --prefix web run test:e2e passed: 13 tests",
+        "root_build": "npm run build passed",
+        "server_package": "vitest focused server/package suite passed: 4 files, 100 tests",
+        "root_full": "npm test passed outside sandbox with Node 24.11.1 and temporary Git signing override: 233 files, 3922 passed, 7 skipped"
+      }
+    },
+    {
+      "id": "phase_7_playwright_mcp_browser_uat",
+      "title": "Playwright MCP Browser UAT",
+      "status": "completed",
+      "result": "Packaged self-repo UAT passed after fixing terminal re-analysis recovery and package-local favicon metadata; reran after post-review frontend fixes.",
+      "evidence": {
+        "routes": [
+          "/",
+          "/search?q=startWebServer",
+          "/symbol/<startWebServer>",
+          "/graph/<startWebServer>",
+          "/impact/<startWebServer>",
+          "/chat",
+          "/reindex"
+        ],
+        "search": "17 startWebServer matches with no-provider degraded semantic search state",
+        "impact": "20 affected symbols and 161 graph edges",
+        "chat": "dormant no-provider state; Ask disabled; no provider key-like strings exposed",
+        "graph_canvas": "nonblank Cytoscape layer: 356 sampled nonblank points out of 7055",
+        "reindex": "done with Checked 712 files; 0 changed; updated 0 nodes.",
+        "mobile": "390x844 no horizontal overflow"
+      }
     }
   ],
   "post_implementation": [
     {
+      "id": "post_doctor_extension_check",
+      "title": "Doctor Extension Check",
+      "status": "skipped",
+      "reason": "doctor/speckit-utils extension not installed in .specify/extensions/.registry or command inventory"
+    },
+    {
       "id": "post_runner_marker_cleanup",
       "title": "Temporary runner marker removed before commit",
-      "status": "pending"
+      "status": "completed",
+      "result": "Moved generated speckit-pro runner marker out of the worktree before review/PR artifacts.",
+      "moved_to": "/private/tmp/speckit-pro-marker-cleanup-SPEC-006/speckit-pro"
+    },
+    {
+      "id": "post_verify_implementation",
+      "title": "Verify Implementation",
+      "status": "completed",
+      "result": "passed",
+      "metrics": {
+        "tasks_completed": 96,
+        "tasks_total": 96,
+        "task_referenced_file_paths": 96,
+        "missing_files": 0
+      }
+    },
+    {
+      "id": "post_verify_tasks_phantom_check",
+      "title": "Verify Tasks Phantom Check",
+      "status": "completed",
+      "report": "specs/006-web-ui-graph-browser/verify-tasks-report.md",
+      "summary": "96 verified, 0 flagged"
+    },
+    {
+      "id": "post_code_review",
+      "title": "Code Review",
+      "status": "completed",
+      "report": "specs/006-web-ui-graph-browser/code-review.md",
+      "summary": "Fixed chat request discrimination, search stale responses, re-analysis stale state, chat context reset, and generated web artifact cleanup."
+    },
+    {
+      "id": "post_integration_suite",
+      "title": "Integration Suite",
+      "status": "completed",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/integration-suite.md",
+      "commands": [
+        "npm --prefix web run lint",
+        "vitest focused server/package suite",
+        "npm run typecheck",
+        "npm --prefix web run test",
+        "npm run build",
+        "npm --prefix web run test:e2e",
+        "npm test",
+        "Playwright MCP packaged browser UAT"
+      ],
+      "summary": "All integration checks passed. Full root npm test passed outside the sandbox with Node 24.11.1: 233 files, 3922 passed, 7 skipped."
+    },
+    {
+      "id": "post_reviewability_diff_gate",
+      "title": "Reviewability Diff Gate",
+      "status": "completed",
+      "status_detail": "warn/proceed",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/reviewability-diff-gate.md",
+      "summary": "Large but cohesive greenfield web workspace; proceed as one navigable PR with review order."
+    },
+    {
+      "id": "post_self_review",
+      "title": "Self-Review",
+      "status": "in_progress"
     }
   ],
   "phase_outputs": {
@@ -847,6 +977,24 @@
       "threshold": 0.9,
       "recommended_action": "soft_skip",
       "reason": "no confidence emit found"
+    },
+    "phase_7_implement": {
+      "tasks_completed": 96,
+      "tasks_file": "specs/006-web-ui-graph-browser/tasks.md",
+      "review_packet": "specs/006-web-ui-graph-browser/review-packet.md",
+      "verification": [
+        "npm --prefix web run test: passed, 17 files, 19 tests",
+        "npm --prefix web run typecheck: passed",
+        "npm run typecheck: passed",
+        "npm --prefix web run test:e2e: passed, 13 tests",
+        "npm run build: passed",
+        "npm exec -- vitest run __tests__/server-chat-adapter.test.ts __tests__/server-openapi-contract.test.ts __tests__/package-web-assets.test.ts __tests__/server-reindex-jobs.test.ts: passed, 4 files, 99 tests"
+      ]
+    },
+    "phase_7_playwright_mcp_browser_uat": {
+      "status": "passed",
+      "evidence": "specs/006-web-ui-graph-browser/review-packet.md",
+      "finding_fixed": "EventSource close after fast re-analysis terminal snapshot left UI disconnected; fixed by polling latest job on disconnect and showing terminal summary."
     }
   },
   "blockers": []

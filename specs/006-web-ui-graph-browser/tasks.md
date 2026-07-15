@@ -20,14 +20,14 @@
 
 **Purpose**: Create the nested Vite React app, shadcn/Tailwind foundation, and package/build seams.
 
-- [ ] T001 Create the nested web app scaffold files in `web/package.json`, `web/index.html`, and `web/tsconfig.json`
-- [ ] T002 Configure Vite React and Tailwind v4 integration in `web/vite.config.ts` and `web/src/styles/globals.css`
-- [ ] T003 [P] Configure shadcn/ui aliases and utilities in `web/components.json` and `web/src/lib/utils.ts`
-- [ ] T004 [P] Add required shadcn base components under `web/src/components/ui/`
-- [ ] T005 [P] Create the web test harness in `web/vitest.config.ts`, `web/src/tests/setup.ts`, and `web/src/tests/test-utils.tsx`
-- [ ] T006 Wire root web build and asset copy commands in `package.json` and `scripts/copy-web-assets.mjs`
-- [ ] T007 [P] Create the web app entry and route shell placeholders in `web/src/main.tsx`, `web/src/app/App.tsx`, and `web/src/app/routes.tsx`
-- [ ] T008 Record the accepted reviewability split checkpoint in `specs/006-web-ui-graph-browser/tasks.md`
+- [X] T001 Create the nested web app scaffold files in `web/package.json`, `web/index.html`, and `web/tsconfig.json`
+- [X] T002 Configure Vite React and Tailwind v4 integration in `web/vite.config.ts` and `web/src/styles/globals.css`
+- [X] T003 [P] Configure shadcn/ui aliases and utilities in `web/components.json` and `web/src/lib/utils.ts`
+- [X] T004 [P] Add required shadcn base components under `web/src/components/ui/`
+- [X] T005 [P] Create the web test harness in `web/vitest.config.ts`, `web/src/tests/setup.ts`, and `web/src/tests/test-utils.tsx`
+- [X] T006 Wire root web build and asset copy commands in `package.json` and `scripts/copy-web-assets.mjs`
+- [X] T007 [P] Create the web app entry and route shell placeholders in `web/src/main.tsx`, `web/src/app/App.tsx`, and `web/src/app/routes.tsx`
+- [X] T008 Record the accepted reviewability split checkpoint in `specs/006-web-ui-graph-browser/tasks.md`
 
 **Checkpoint**: Web scaffolding and build seams exist; no user story work depends on missing app structure.
 
@@ -39,18 +39,18 @@
 
 **Critical**: No user story implementation starts until this phase is complete.
 
-- [ ] T009 Define shared data-model types and state taxonomy in `web/src/lib/api/types.ts`
-- [ ] T010 Implement the same-origin API client core and ErrorEnvelope handling in `web/src/lib/api/client.ts`
-- [ ] T011 [P] Add URL/search-param helpers for repo-scoped routes in `web/src/lib/api/routes.ts`
-- [ ] T012 [P] Add status announcement and async state helpers in `web/src/lib/a11y/status-announcer.ts`
-- [ ] T013 [P] Add performance mark and threshold helpers for NFR evidence in `web/src/lib/perf/marks.ts`
-- [ ] T014 Implement app-level repository and selected-context state in `web/src/app/state.ts`
-- [ ] T015 Implement the persistent developer-tool shell layout in `web/src/components/layout/AppShell.tsx`
-- [ ] T016 [P] Implement reusable loading, empty, degraded, unauthorized, and error panels in `web/src/components/layout/StatePanel.tsx`
-- [ ] T017 [P] Add shared accessible toolbar and icon-button primitives in `web/src/components/layout/Toolbar.tsx`
-- [ ] T018 Add root app tests for shell rendering and state taxonomy in `web/src/tests/app-shell.test.tsx`
-- [ ] T019 Update server static/package asset integration in `src/server/static.ts` and `scripts/copy-web-assets.mjs`
-- [ ] T020 Add package asset and static fallback tests in `__tests__/package-web-assets.test.ts` and `__tests__/server-static-fallback.test.ts`
+- [X] T009 Define shared data-model types and state taxonomy in `web/src/lib/api/types.ts`
+- [X] T010 Implement the same-origin API client core and ErrorEnvelope handling in `web/src/lib/api/client.ts`
+- [X] T011 [P] Add URL/search-param helpers for repo-scoped routes in `web/src/lib/api/routes.ts`
+- [X] T012 [P] Add status announcement and async state helpers in `web/src/lib/a11y/status-announcer.ts`
+- [X] T013 [P] Add performance mark and threshold helpers for NFR evidence in `web/src/lib/perf/marks.ts`
+- [X] T014 Implement app-level repository and selected-context state in `web/src/app/state.tsx`
+- [X] T015 Implement the persistent developer-tool shell layout in `web/src/components/layout/AppShell.tsx`
+- [X] T016 [P] Implement reusable loading, empty, degraded, unauthorized, and error panels in `web/src/components/layout/StatePanel.tsx`
+- [X] T017 [P] Add shared accessible toolbar and icon-button primitives in `web/src/components/layout/Toolbar.tsx`
+- [X] T018 Add root app tests for shell rendering and state taxonomy in `web/src/tests/app-shell.test.tsx`
+- [X] T019 Update server static/package asset integration in `src/server/static.ts` and `scripts/copy-web-assets.mjs`
+- [X] T020 Add package asset and static fallback tests in `__tests__/package-web-assets.test.ts` and `__tests__/server-static-fallback.test.ts`
 
 **Checkpoint**: Shared foundation is ready; user stories can proceed independently.
 
@@ -64,18 +64,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T021 [P] [US1] Add repository/status API client tests in `web/src/tests/repository-api.test.ts`
-- [ ] T022 [P] [US1] Add repo shell and status state tests in `web/src/tests/repository-shell.test.tsx`
-- [ ] T023 [P] [US1] Add Playwright repo/status UAT coverage in `web/src/tests/repository-status.spec.ts`
+- [X] T021 [P] [US1] Add repository/status API client tests in `web/src/tests/repository-api.test.ts`
+- [X] T022 [P] [US1] Add repo shell and status state tests in `web/src/tests/repository-shell.test.tsx`
+- [X] T023 [P] [US1] Add Playwright repo/status UAT coverage in `web/src/tests/repository-status.spec.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] Implement `/api/repos` and `/api/status` clients in `web/src/lib/api/repositories.ts`
-- [ ] T025 [US1] Implement repository switcher component in `web/src/components/layout/RepositorySwitcher.tsx`
-- [ ] T026 [US1] Implement repository health and freshness status display in `web/src/components/layout/RepositoryStatus.tsx`
-- [ ] T027 [US1] Implement repository overview route in `web/src/routes/RepositoryOverview.tsx`
-- [ ] T028 [US1] Wire repository switching reset behavior in `web/src/app/state.ts` and `web/src/app/routes.tsx`
-- [ ] T029 [US1] Implement unauthorized and backend-unreachable repo states in `web/src/components/layout/StatePanel.tsx`
+- [X] T024 [US1] Implement `/api/repos` and `/api/status` clients in `web/src/lib/api/repositories.ts`
+- [X] T025 [US1] Implement repository switcher component in `web/src/components/layout/RepositorySwitcher.tsx`
+- [X] T026 [US1] Implement repository health and freshness status display in `web/src/components/layout/RepositoryStatus.tsx`
+- [X] T027 [US1] Implement repository overview route in `web/src/routes/RepositoryOverview.tsx`
+- [X] T028 [US1] Wire repository switching reset behavior in `web/src/app/state.tsx` and `web/src/app/routes.tsx`
+- [X] T029 [US1] Implement unauthorized and backend-unreachable repo states in `web/src/components/layout/StatePanel.tsx`
 
 **Checkpoint**: US1 is independently functional and testable.
 
@@ -89,19 +89,19 @@
 
 ### Tests for User Story 2
 
-- [ ] T030 [P] [US2] Add search API client tests in `web/src/tests/search-api.test.ts`
-- [ ] T031 [P] [US2] Add symbol detail API client tests in `web/src/tests/symbol-api.test.ts`
-- [ ] T032 [P] [US2] Add search and symbol route UI tests in `web/src/tests/search-symbol.test.tsx`
+- [X] T030 [P] [US2] Add search API client tests in `web/src/tests/search-api.test.ts`
+- [X] T031 [P] [US2] Add symbol detail API client tests in `web/src/tests/symbol-api.test.ts`
+- [X] T032 [P] [US2] Add search and symbol route UI tests in `web/src/tests/search-symbol.test.tsx`
 
 ### Implementation for User Story 2
 
-- [ ] T033 [US2] Implement `/api/search` client and result unions in `web/src/lib/api/search.ts`
-- [ ] T034 [US2] Implement `/api/node/{id}` client and symbol types in `web/src/lib/api/symbols.ts`
-- [ ] T035 [US2] Implement global search input and results in `web/src/components/search/GlobalSearch.tsx`
-- [ ] T036 [US2] Implement search route with loading, no-result, ambiguous, stale, degraded, and error states in `web/src/routes/SearchRoute.tsx`
-- [ ] T037 [US2] Implement symbol detail route with metadata and source context in `web/src/routes/SymbolDetailRoute.tsx`
-- [ ] T038 [US2] Preserve selected-symbol context and breadcrumbs in `web/src/components/layout/SelectedContextBar.tsx`
-- [ ] T039 [US2] Add post-response rendering performance marks for search and symbol views in `web/src/routes/SearchRoute.tsx` and `web/src/routes/SymbolDetailRoute.tsx`
+- [X] T033 [US2] Implement `/api/search` client and result unions in `web/src/lib/api/search.ts`
+- [X] T034 [US2] Implement `/api/node/{id}` client and symbol types in `web/src/lib/api/symbols.ts`
+- [X] T035 [US2] Implement global search input and results in `web/src/components/search/GlobalSearch.tsx`
+- [X] T036 [US2] Implement search route with loading, no-result, ambiguous, stale, degraded, and error states in `web/src/routes/SearchRoute.tsx`
+- [X] T037 [US2] Implement symbol detail route with metadata and source context in `web/src/routes/SymbolDetailRoute.tsx`
+- [X] T038 [US2] Preserve selected-symbol context and breadcrumbs in `web/src/components/layout/SelectedContextBar.tsx`
+- [X] T039 [US2] Add post-response rendering performance marks for search and symbol views in `web/src/routes/SearchRoute.tsx` and `web/src/routes/SymbolDetailRoute.tsx`
 
 **Checkpoint**: US2 is independently functional and testable.
 
@@ -115,18 +115,18 @@
 
 ### Tests for User Story 3
 
-- [ ] T040 [P] [US3] Add callers and callees API client tests in `web/src/tests/relationships-api.test.ts`
-- [ ] T041 [P] [US3] Add flows and clusters API client tests in `web/src/tests/catalog-api.test.ts`
-- [ ] T042 [P] [US3] Add relationship panel UI tests in `web/src/tests/relationships-panel.test.tsx`
+- [X] T040 [P] [US3] Add callers and callees API client tests in `web/src/tests/relationships-api.test.ts`
+- [X] T041 [P] [US3] Add flows and clusters API client tests in `web/src/tests/catalog-api.test.ts`
+- [X] T042 [P] [US3] Add relationship panel UI tests in `web/src/tests/relationships-panel.test.tsx`
 
 ### Implementation for User Story 3
 
-- [ ] T043 [US3] Implement callers and callees clients in `web/src/lib/api/relationships.ts`
-- [ ] T044 [US3] Implement flows and clusters clients in `web/src/lib/api/catalogs.ts`
-- [ ] T045 [US3] Implement callers/callees relationship panels in `web/src/components/symbol/RelationshipPanels.tsx`
-- [ ] T046 [US3] Implement flow and trace-style catalog sections in `web/src/components/symbol/FlowSections.tsx`
-- [ ] T047 [US3] Implement empty, unavailable, stale, truncated, and success-shaped catalog states in `web/src/components/symbol/RelationshipStates.tsx`
-- [ ] T048 [US3] Integrate relationship sections into `web/src/routes/SymbolDetailRoute.tsx`
+- [X] T043 [US3] Implement callers and callees clients in `web/src/lib/api/relationships.ts`
+- [X] T044 [US3] Implement flows and clusters clients in `web/src/lib/api/catalogs.ts`
+- [X] T045 [US3] Implement callers/callees relationship panels in `web/src/components/symbol/RelationshipPanels.tsx`
+- [X] T046 [US3] Implement flow and trace-style catalog sections in `web/src/components/symbol/FlowSections.tsx`
+- [X] T047 [US3] Implement empty, unavailable, stale, truncated, and success-shaped catalog states in `web/src/components/symbol/RelationshipStates.tsx`
+- [X] T048 [US3] Integrate relationship sections into `web/src/routes/SymbolDetailRoute.tsx`
 
 **Checkpoint**: US3 is independently functional and testable.
 
@@ -140,19 +140,19 @@
 
 ### Tests for User Story 4
 
-- [ ] T049 [P] [US4] Add graph API and transform tests in `web/src/tests/graph-transform.test.ts`
-- [ ] T050 [P] [US4] Add graph canvas component tests in `web/src/tests/graph-view.test.tsx`
-- [ ] T051 [P] [US4] Add Playwright nonblank canvas, keyboard controls, and graph performance coverage in `web/src/tests/graph-uat.spec.ts`
+- [X] T049 [P] [US4] Add graph API and transform tests in `web/src/tests/graph-transform.test.ts`
+- [X] T050 [P] [US4] Add graph canvas component tests in `web/src/tests/graph-view.test.tsx`
+- [X] T051 [P] [US4] Add Playwright nonblank canvas, keyboard controls, and graph performance coverage in `web/src/tests/graph-uat.spec.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T052 [US4] Add Cytoscape dependency and renderer setup in `web/package.json` and `web/src/lib/graph/cytoscape.ts`
-- [ ] T053 [US4] Implement `/api/graph/{id}` client and graph transform layer in `web/src/lib/api/graph.ts` and `web/src/lib/graph/transform.ts`
-- [ ] T054 [US4] Implement graph canvas component in `web/src/components/graph/GraphCanvas.tsx`
-- [ ] T055 [US4] Implement graph toolbar controls for zoom, fit/reset, filter, focus, select, and expand in `web/src/components/graph/GraphToolbar.tsx`
-- [ ] T056 [US4] Implement synchronized selected-node and neighbor summaries in `web/src/components/graph/GraphSummary.tsx`
-- [ ] T057 [US4] Implement graph route and expansion behavior in `web/src/routes/GraphRoute.tsx`
-- [ ] T058 [US4] Implement graph truncation, render-error, reduced-motion, and performance-threshold handling in `web/src/components/graph/GraphState.tsx`
+- [X] T052 [US4] Add Cytoscape dependency and renderer setup in `web/package.json` and `web/src/lib/graph/cytoscape.ts`
+- [X] T053 [US4] Implement `/api/graph/{id}` client and graph transform layer in `web/src/lib/api/graph.ts` and `web/src/lib/graph/transform.ts`
+- [X] T054 [US4] Implement graph canvas component in `web/src/components/graph/GraphCanvas.tsx`
+- [X] T055 [US4] Implement graph toolbar controls for zoom, fit/reset, filter, focus, select, and expand in `web/src/components/graph/GraphToolbar.tsx`
+- [X] T056 [US4] Implement synchronized selected-node and neighbor summaries in `web/src/components/graph/GraphSummary.tsx`
+- [X] T057 [US4] Implement graph route and expansion behavior in `web/src/routes/GraphRoute.tsx`
+- [X] T058 [US4] Implement graph truncation, render-error, reduced-motion, and performance-threshold handling in `web/src/components/graph/GraphState.tsx`
 
 **Checkpoint**: US4 is independently functional and testable.
 
@@ -166,16 +166,16 @@
 
 ### Tests for User Story 5
 
-- [ ] T059 [P] [US5] Add impact API and transform tests in `web/src/tests/impact-api.test.ts`
-- [ ] T060 [P] [US5] Add impact route UI tests in `web/src/tests/impact-route.test.tsx`
+- [X] T059 [P] [US5] Add impact API and transform tests in `web/src/tests/impact-api.test.ts`
+- [X] T060 [P] [US5] Add impact route UI tests in `web/src/tests/impact-route.test.tsx`
 
 ### Implementation for User Story 5
 
-- [ ] T061 [US5] Implement `/api/impact/{id}` client and impact transform layer in `web/src/lib/api/impact.ts`
-- [ ] T062 [US5] Implement affected symbols and files tables in `web/src/components/impact/ImpactTables.tsx`
-- [ ] T063 [US5] Implement impact limits, stale input, unavailable, truncated, and incomplete-result states in `web/src/components/impact/ImpactState.tsx`
-- [ ] T064 [US5] Implement impact route in `web/src/routes/ImpactRoute.tsx`
-- [ ] T065 [US5] Integrate impact navigation from symbol detail and graph selections in `web/src/routes/SymbolDetailRoute.tsx` and `web/src/routes/GraphRoute.tsx`
+- [X] T061 [US5] Implement `/api/impact/{id}` client and impact transform layer in `web/src/lib/api/impact.ts`
+- [X] T062 [US5] Implement affected symbols and files tables in `web/src/components/impact/ImpactTables.tsx`
+- [X] T063 [US5] Implement impact limits, stale input, unavailable, truncated, and incomplete-result states in `web/src/components/impact/ImpactState.tsx`
+- [X] T064 [US5] Implement impact route in `web/src/routes/ImpactRoute.tsx`
+- [X] T065 [US5] Integrate impact navigation from symbol detail and graph selections in `web/src/routes/SymbolDetailRoute.tsx` and `web/src/routes/GraphRoute.tsx`
 
 **Checkpoint**: US5 is independently functional and testable.
 
@@ -189,17 +189,17 @@
 
 ### Tests for User Story 6
 
-- [ ] T066 [P] [US6] Add re-analysis REST and SSE client tests in `web/src/tests/reindex-api.test.ts`
-- [ ] T067 [P] [US6] Add re-analysis UI state tests in `web/src/tests/reindex-panel.test.tsx`
-- [ ] T068 [P] [US6] Extend server reindex lifecycle coverage for terminal snapshots and disconnect semantics in `__tests__/server-reindex-jobs.test.ts`
+- [X] T066 [P] [US6] Add re-analysis REST and SSE client tests in `web/src/tests/reindex-api.test.ts`
+- [X] T067 [P] [US6] Add re-analysis UI state tests in `web/src/tests/reindex-panel.test.tsx`
+- [X] T068 [P] [US6] Extend server reindex lifecycle coverage for terminal snapshots and disconnect semantics in `__tests__/server-reindex-jobs.test.ts`
 
 ### Implementation for User Story 6
 
-- [ ] T069 [US6] Implement `/api/reindex/{repo}` REST and EventSource clients in `web/src/lib/api/reindex.ts`
-- [ ] T070 [US6] Implement re-analysis start controls and duplicate-job handling in `web/src/components/reindex/ReindexControls.tsx`
-- [ ] T071 [US6] Implement progress, terminal, stalled, disconnected, and already-finished snapshot states in `web/src/components/reindex/ReindexProgress.tsx`
-- [ ] T072 [US6] Implement re-analysis route or panel in `web/src/routes/ReindexRoute.tsx`
-- [ ] T073 [US6] Refresh repository freshness after terminal jobs in `web/src/app/state.ts` and `web/src/lib/api/repositories.ts`
+- [X] T069 [US6] Implement `/api/reindex/{repo}` REST and EventSource clients in `web/src/lib/api/reindex.ts`
+- [X] T070 [US6] Implement re-analysis start controls and duplicate-job handling in `web/src/components/reindex/ReindexControls.tsx`
+- [X] T071 [US6] Implement progress, terminal, stalled, disconnected, and already-finished snapshot states in `web/src/components/reindex/ReindexProgress.tsx`
+- [X] T072 [US6] Implement re-analysis route or panel in `web/src/routes/ReindexRoute.tsx`
+- [X] T073 [US6] Refresh repository freshness after terminal jobs in `web/src/app/state.tsx` and `web/src/lib/api/repositories.ts`
 
 **Checkpoint**: US6 is independently functional and testable.
 
@@ -213,20 +213,20 @@
 
 ### Tests for User Story 7
 
-- [ ] T074 [P] [US7] Add server chat adapter contract tests in `__tests__/server-chat-adapter.test.ts`
-- [ ] T075 [P] [US7] Add web chat API client tests in `web/src/tests/chat-api.test.ts`
-- [ ] T076 [P] [US7] Add chat panel UI state tests in `web/src/tests/chat-panel.test.tsx`
-- [ ] T077 [P] [US7] Add Playwright network-boundary coverage for no browser provider calls in `web/src/tests/chat-network.spec.ts`
+- [X] T074 [P] [US7] Add server chat adapter contract tests in `__tests__/server-chat-adapter.test.ts`
+- [X] T075 [P] [US7] Add web chat API client tests in `web/src/tests/chat-api.test.ts`
+- [X] T076 [P] [US7] Add chat panel UI state tests in `web/src/tests/chat-panel.test.tsx`
+- [X] T077 [P] [US7] Add Playwright network-boundary coverage for no browser provider calls in `web/src/tests/chat-network.spec.ts`
 
 ### Implementation for User Story 7
 
-- [ ] T078 [US7] Implement SPEC-018 chat adapter route handlers in `src/server/chat.ts`
-- [ ] T079 [US7] Wire `/api/chat/status`, `/api/chat/messages`, and `/api/chat/bundles/{handle}` routes in `src/server/routes.ts`
-- [ ] T080 [US7] Implement chat adapter error-envelope and result-mapping behavior in `src/server/chat.ts`
-- [ ] T081 [US7] Implement browser chat status, message, and bundle clients in `web/src/lib/api/chat.ts`
-- [ ] T082 [US7] Implement chat panel with disabled, dormant, misconfigured, pending-bundle, fallback, answer, rate-limited, and error states in `web/src/components/chat/ChatPanel.tsx`
-- [ ] T083 [US7] Integrate selected repo, symbol, view hints, and context-boundary display in `web/src/components/chat/ChatContextBoundary.tsx`
-- [ ] T084 [US7] Integrate chat route and symbol-context entry points in `web/src/routes/ChatRoute.tsx` and `web/src/routes/SymbolDetailRoute.tsx`
+- [X] T078 [US7] Implement SPEC-018 chat adapter route handlers in `src/server/chat.ts`
+- [X] T079 [US7] Wire `/api/chat/status`, `/api/chat/messages`, and `/api/chat/bundles/{handle}` routes in `src/server/index.ts` and `src/server/chat.ts`
+- [X] T080 [US7] Implement chat adapter error-envelope and result-mapping behavior in `src/server/chat.ts`
+- [X] T081 [US7] Implement browser chat status, message, and bundle clients in `web/src/lib/api/chat.ts`
+- [X] T082 [US7] Implement chat panel with disabled, dormant, misconfigured, pending-bundle, fallback, answer, rate-limited, and error states in `web/src/components/chat/ChatPanel.tsx`
+- [X] T083 [US7] Integrate selected repo, symbol, view hints, and context-boundary display in `web/src/components/chat/ChatContextBoundary.tsx`
+- [X] T084 [US7] Integrate chat route and symbol-context entry points in `web/src/routes/ChatRoute.tsx` and `web/src/routes/SymbolDetailRoute.tsx`
 
 **Checkpoint**: US7 is independently functional and testable.
 
@@ -236,18 +236,18 @@
 
 **Purpose**: Validate package delivery, accessibility, performance, clean-room evidence, and final review material across all stories.
 
-- [ ] T085 [P] Add package/offline/no-CDN Playwright coverage in `web/src/tests/package-offline.spec.ts`
-- [ ] T086 [P] Add accessibility regression coverage for keyboard, focus, names, status announcements, graph/impact mirrors, contrast, target size, reduced motion, and reflow in `web/src/tests/accessibility.spec.ts`
-- [ ] T087 [P] Add performance validation coverage for NFR-001 through NFR-006 in `web/src/tests/performance.spec.ts`
-- [ ] T088 [P] Add mobile layout and no-overlap coverage in `web/src/tests/mobile-layout.spec.ts`
-- [ ] T089 Update release notes under `## [Unreleased]` in `CHANGELOG.md`
-- [ ] T090 Update package/static documentation and non-loopback guidance in `README.md`
-- [ ] T091 Record quickstart validation evidence in `specs/006-web-ui-graph-browser/quickstart.md`
-- [ ] T092 Create PR review packet with review order, scope budget, traceability, verification evidence, known gaps, rollback notes, and clean-room ledger in `specs/006-web-ui-graph-browser/review-packet.md`
-- [ ] T093 Run full verification commands and record results in `specs/006-web-ui-graph-browser/review-packet.md`
-- [ ] T094 Run `codegraph serve --web` packaged UAT and record local/package results in `specs/006-web-ui-graph-browser/review-packet.md`
-- [ ] T095 Update chat adapter OpenAPI route documentation in `src/server/openapi.yaml`
-- [ ] T096 Record self-repo dogfood UAT results in `specs/006-web-ui-graph-browser/review-packet.md`
+- [X] T085 [P] Add package/offline/no-CDN Playwright coverage in `web/src/tests/package-offline.spec.ts`
+- [X] T086 [P] Add accessibility regression coverage for keyboard, focus, names, status announcements, graph/impact mirrors, contrast, target size, reduced motion, and reflow in `web/src/tests/accessibility.spec.ts`
+- [X] T087 [P] Add performance validation coverage for NFR-001 through NFR-006 in `web/src/tests/performance.spec.ts`
+- [X] T088 [P] Add mobile layout and no-overlap coverage in `web/src/tests/mobile-layout.spec.ts`
+- [X] T089 Update release notes under `## [Unreleased]` in `CHANGELOG.md`
+- [X] T090 Update package/static documentation and non-loopback guidance in `README.md`
+- [X] T091 Record quickstart validation evidence in `specs/006-web-ui-graph-browser/quickstart.md`
+- [X] T092 Create PR review packet with review order, scope budget, traceability, verification evidence, known gaps, rollback notes, and clean-room ledger in `specs/006-web-ui-graph-browser/review-packet.md`
+- [X] T093 Run full verification commands and record results in `specs/006-web-ui-graph-browser/review-packet.md`
+- [X] T094 Run `codegraph serve --web` packaged UAT and record local/package results in `specs/006-web-ui-graph-browser/review-packet.md`
+- [X] T095 Update chat adapter OpenAPI route documentation in `src/server/openapi.yaml`
+- [X] T096 Record self-repo dogfood UAT results in `specs/006-web-ui-graph-browser/review-packet.md`
 
 ---
 

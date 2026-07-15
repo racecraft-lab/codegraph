@@ -35,8 +35,8 @@ decisions captured during scaffold.
 | Tasks | `/speckit-tasks` | Complete | Generated 96 tasks across setup, foundation, seven user stories, and polish. |
 | Analyze | `/speckit-analyze` | Complete | Resolved chat OpenAPI and self-repo UAT coverage gaps before implementation. |
 | Confidence Gate | G6.5 | Complete | Advisory soft-skip: no confidence emit found. |
-| Implement | `/speckit-implement` | In Progress | Execute with tests and UAT evidence. |
-| Post | Post | Pending | Complete canonical post-implementation gates before handoff. |
+| Implement | `/speckit-implement` | Complete | Implemented all 96 tasks with automated verification and Playwright MCP browser UAT evidence. |
+| Post | Post | In Progress | Active canonical post gate is `Post: Self-Review`. |
 
 ### Canonical Post Gates
 
@@ -51,6 +51,8 @@ explicitly skip each one before final handoff:
 - Post: Reviewability Diff Gate
 - Post: Self-Review
 - Post: UAT Runbook Generation
+- Post: Final Reviewability Backstop
+- Post: PR Packet/Body Generation
 - Post: PR Body Generation
 - Post: PR Creation
 - Post: Review Remediation
@@ -530,19 +532,40 @@ For each task:
 
 | Phase | Tasks | Completed | Notes |
 |---|---|---|---|
-| Slice 1 - Foundation/search/symbol | Pending | Pending | Pending |
-| Slice 2 - Graph canvas | Pending | Pending | Pending |
-| Slice 3 - Impact/reindex/chat/package | Pending | Pending | Pending |
+| Slice 1 - Foundation/search/symbol | T001-T049 | Complete | Vite React + shadcn/Tailwind app, same-origin clients, repository status, search, symbol detail, relationships, flows, clusters, package asset copy, and server static seams. |
+| Slice 2 - Graph canvas | T050-T058 | Complete | Cytoscape graph route, toolbar, summary mirror, truncation/render states, component tests, and Playwright nonblank canvas/keyboard coverage. |
+| Slice 3 - Impact/reindex/chat/package | T059-T096 | Complete | Impact, re-analysis, chat adapter/UI, package/offline/accessibility/performance/mobile tests, docs, review packet, and self-repo UAT evidence. |
+| Playwright MCP Browser UAT | SPEC-006 UAT | Complete | Ran packaged app through Playwright MCP against the self-repo; fixed and retested fast re-analysis terminal snapshot recovery. |
+
+### Implementation Results
+
+| Area | Evidence |
+|---|---|
+| Web unit tests | `npm --prefix web run test` passed: 17 files, 19 tests. |
+| TypeScript | `npm --prefix web run typecheck` and `npm run typecheck` passed. |
+| Playwright CLI | `npm --prefix web run test:e2e` passed: 13 tests. |
+| Root build/package | `npm run build` passed and copied `web/dist` to `dist/web`; largest JS asset was 967.87 kB minified. |
+| Server/package suites | Focused Vitest suite passed: 4 files, 100 tests. |
+| Full root suite | `npm test` passed outside the sandbox with Node 24.11.1 and a temporary Git signing override for test fixtures: 233 files, 3,922 passed, 7 skipped. |
+| Playwright MCP browser UAT | Search returned 17 `startWebServer` matches; symbol, graph, impact, chat, re-analysis, and mobile checks passed after post-review frontend fixes. Graph canvas layer sampled 356 nonblank points out of 7,055. |
+
+### Implementation Fixes From UAT
+
+- Replaced Vite scaffold title/favicon metadata with `CodeGraph` and package-local data favicon so the packaged browser app does not request missing `/vite.svg`.
+- Fixed re-analysis terminal snapshot recovery: if EventSource closes before the terminal frame is consumed, the browser polls `GET /api/reindex/:repo`, renders the terminal `done` state, clears disconnected state, refreshes repository status, and shows a terminal summary.
 
 ## Post-Implementation Checklist
 
-- `npm run build` passes.
-- `npm test` passes or documented scoped failures are explained.
-- Web unit tests pass.
-- Playwright web tests pass for desktop and mobile.
-- Canvas pixel check proves graph is nonblank and correctly framed.
-- Accessibility checks pass or any residual issue is explicitly documented.
-- Offline/no-CDN network audit passes.
+- Doctor Extension Check: skipped because no doctor/speckit-utils extension is installed in `.specify/extensions/.registry` or command inventory.
+- Verify Implementation: passed. 96/96 tasks complete; task-referenced file scan found 96 file paths and 0 missing files; requirement/constitution checks have implementation and test evidence.
+- Verify Tasks Phantom Check: passed. `specs/006-web-ui-graph-browser/verify-tasks-report.md` shows 96 verified tasks and 0 flagged tasks.
+- Code Review: passed after fixes. `specs/006-web-ui-graph-browser/code-review.md` records the review scope, RepoPrompt MCP dispatch limitation, fixed findings, and focused verification.
+- Integration Suite: passed. `npm run build`, `npm run typecheck`, `npm --prefix web run lint`, `npm --prefix web run test`, `npm --prefix web run test:e2e`, focused server/package Vitest, full root `npm test`, and Playwright MCP packaged-browser UAT all passed.
+- Temporary runner marker cleanup: complete. The generated `speckit-pro/` marker was moved out of the worktree to `/private/tmp/speckit-pro-marker-cleanup-SPEC-006/speckit-pro` before review/PR artifacts.
+- Reviewability Diff Gate: warn/proceed. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/reviewability-diff-gate.md`; review as one navigable PR in package/server/API, web app, then tests/docs order.
+- Canvas pixel check proves graph is nonblank and correctly framed: Cytoscape canvas layer 2 sampled 356 nonblank points out of 7,055.
+- Accessibility checks pass through Playwright/axe coverage; no residual accessibility issue is documented.
+- Offline/no-CDN network audit passes through Playwright package-offline coverage.
 - Package build includes `dist/web/` and static serving works through `codegraph serve --web`.
 - GitNexus parity matrix is updated with implemented, deferred, or backend-blocked statuses.
 - Clean-room guardrails are still satisfied.

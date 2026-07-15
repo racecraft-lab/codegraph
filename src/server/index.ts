@@ -28,6 +28,7 @@ import {
   type ReadApiDeps,
   type RepoInfo,
 } from './routes';
+import { buildChatRoutes } from './chat';
 import { internalError, apiError } from './errors';
 import { resolveBindSecurity, isAllowedHostHeader } from './auth';
 import { serveStatic } from './static';
@@ -324,6 +325,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       resolveRepo,
       isRepoIndexed: (root) => findNearestCodeGraphRoot(root) !== null,
       registry: jobRegistry,
+    }),
+    ...buildChatRoutes({
+      defaultRepo,
+      resolveRepo,
+      getClient,
     }),
   ];
 

@@ -174,3 +174,32 @@ Expected outcome:
 
 - Repository selection, search, symbol detail, graph, impact, re-analysis, chat state handling, package/offline behavior, accessibility, and performance checks run against the CodeGraph repository itself.
 - Results are recorded in `specs/006-web-ui-graph-browser/review-packet.md`.
+
+## Validation Evidence (2026-07-15)
+
+Environment:
+
+- Worktree: `.worktrees/006-web-ui-graph-browser`
+- Node: `24.11.1`
+- Indexed self-repo fixture: 712 files, 10,187 symbols, 42,483 edges after final browser-triggered sync
+
+Automated checks:
+
+- `npm --prefix web run test`: passed after the MCP UAT fix with 17 files and 19 tests.
+- `npm --prefix web run test -- src/tests/reindex-panel.test.tsx`: passed after the MCP UAT found the terminal-snapshot recovery issue; 1 file, 2 tests.
+- `npm --prefix web run typecheck`: passed.
+- `npm --prefix web run test:e2e`: passed with 13 Playwright tests.
+- `npm exec -- vitest run __tests__/server-chat-adapter.test.ts __tests__/server-openapi-contract.test.ts __tests__/package-web-assets.test.ts __tests__/server-reindex-jobs.test.ts`: passed with 99 tests.
+- `npm run build`: passed after the final UI fixes and copied `web/dist` into `dist/web`; Vite reported a 967.53 kB minified JS chunk, which is below the SPEC-006 1.5 MB uncompressed runtime-asset threshold.
+
+Packaged server and Playwright MCP browser UAT:
+
+- `node dist/bin/codegraph.js serve --web --port 0 --path .`: passed from the packaged `dist/` app.
+- Browser title and favicon were corrected from the scaffold defaults to `CodeGraph` with no missing `/vite.svg` request.
+- `/`, `/search?q=startWebServer`, `/symbol/<startWebServer>`, `/graph/<startWebServer>`, `/impact/<startWebServer>`, `/chat`, and `/reindex` were opened through Playwright MCP against the live self-repo backend.
+- Search returned 17 `startWebServer` matches; symbol detail rendered signature, callers, callees, flows, and clusters.
+- Graph route rendered the toolbar, summary, and nonblank Cytoscape canvas layer with 356 nonblank sampled points out of 7,055 sampled points.
+- Impact route rendered 20 affected symbols and 161 graph edges.
+- Chat route rendered the expected dormant state with no provider configured and no browser provider-secret exposure.
+- Re-analysis route accepted an incremental sync, recovered from EventSource close via the latest terminal snapshot, and rendered `done` with `Checked 712 files; 0 changed; updated 0 nodes.`
+- Mobile MCP check at 390x844 reported no horizontal overflow (`scrollWidth` 375, `innerWidth` 390) on the search results route.

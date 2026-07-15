@@ -24,6 +24,7 @@ servers:
 tags:
   - name: read     # Slice 1
   - name: jobs     # Slice 2
+  - name: chat     # SPEC-006
 
 # Bearer auth applies ONLY when a token is configured for a non-loopback bind
 # (FR-014); the loopback-default bind enforces no auth and serves /api/* with no
@@ -310,6 +311,38 @@ components:
         found: { type: boolean, enum: [false] }
         state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
         message: { type: string }
+    ChatStatus:
+      type: object
+      required: [state, message, providerConfigured, repo]
+      properties:
+        state: { type: string, enum: [enabled, dormant, misconfigured, disabled, rate_limited] }
+        message: { type: string }
+        providerConfigured: { type: boolean }
+        repo: { type: string }
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        repo: { type: string, description: Optional 16-hex repo id; omitted uses the startup repo. }
+        message: { type: string, minLength: 1 }
+        selectedNodeId: { type: string }
+        view: { type: string }
+    ChatResponse:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [answer, fallback, pending_bundle, dormant, misconfigured, rate_limited, error] }
+        answer: { type: string }
+        bundleHandle: { type: string }
+        message: { type: string }
+        citations:
+          type: array
+          items:
+            type: object
+            properties:
+              nodeId: { type: string }
+              file: { type: string }
+              line: { type: integer }
   responses:
     NotFound:
       description: Unknown node/repo/route (FR-011/015a); details.resource discriminates.
@@ -471,6 +504,43 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ClusterListResult' } } } }
         '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011)
         '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
+
+  # ---------- SPEC-006: same-origin browser chat adapter over SPEC-018 ----------
+  /api/chat/status:
+    get:
+      tags: [chat]
+      summary: Backend-only LLM/chat readiness for the browser UI; no provider secrets are returned.
+      parameters:
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChatStatus' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/chat/messages:
+    post:
+      tags: [chat]
+      summary: Ask a graph-grounded question through the local backend; provider calls, if any, happen server-side.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChatResponse' } } } }
+        '400': { description: Malformed JSON body or missing message, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/chat/bundles/{handle}:
+    get:
+      tags: [chat]
+      summary: Redeem or inspect an agent-mode bundle handle emitted by /api/chat/messages.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { type: string }
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        '200': { description: Completed answer or pending bundle state, content: { application/json: { schema: { $ref: '#/components/schemas/ChatResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ---------- Slice 2: re-index jobs (T041) ----------
   # These handlers run wholly in the serve process against the in-memory job
