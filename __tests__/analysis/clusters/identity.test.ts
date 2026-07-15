@@ -78,6 +78,23 @@ describe('assignClusterIdentity (FR-015/016/017)', () => {
       mintClusterId(['c']),
     ]);
   });
+
+  it('never mints an id equal to a transferred id (swap-safe on a split, FR-017a)', () => {
+    // {c,d} originally minted H; it grew to {a,b,c,d} and kept H; now it splits so
+    // {a,b} inherits H by tie-break while {c,d} re-forms. A naïve re-mint of {c,d}
+    // reproduces H → swapClusters would fail on the duplicate PRIMARY KEY and the
+    // whole cluster catalog swap would roll back (stuck stale/unavailable).
+    const H = mintClusterId(['c', 'd']);
+    const prior = [{ id: H, members: ['a', 'b', 'c', 'd'] }];
+    const next = [{ members: ['a', 'b'] }, { members: ['c', 'd'] }];
+    const ids = assignClusterIdentity(next, prior);
+
+    expect(ids[0]).toBe(H); // {a,b} inherits H (deterministic tie-break winner)
+    expect(ids[1]).not.toBe(H); // {c,d} must NOT collide with the transferred id
+    expect(new Set(ids).size).toBe(ids.length); // all ids distinct → swap-safe
+    // And the salted fallback is deterministic — byte-identical every run (SC-004).
+    expect(assignClusterIdentity(next, prior)).toEqual(ids);
+  });
 });
 
 // ── End-to-end: identity wired into runClusterAnalysis (T042) ─────────────────

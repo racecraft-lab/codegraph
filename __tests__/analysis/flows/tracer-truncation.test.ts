@@ -128,4 +128,50 @@ describe('flow truncation flags', () => {
 
     expect(anyTrunc(r)).toBe(false);
   });
+
+  it('sets truncatedSteps when the 200th node is a last child with an unvisited edge', () => {
+    // Regression (FR-007): the 200th step is pushed as the LAST child in DFS
+    // pre-order, then we recurse into it. A top-of-dfs `steps.length >= cap`
+    // bail returned before the node's own unvisited out-edge could trip the
+    // step-cap flag, so a genuinely truncated flow reported as complete.
+    const h = freshSeed();
+    const root = node(h, { id: 'root', name: 'root', kind: 'function', filePath: 'src/0-root.ts' });
+
+    // padA's subtree is explored FIRST (its file sorts before the tail's) and
+    // holds exactly 197 descendants — bushy/shallow so nothing else truncates.
+    const padA = node(h, { id: 'padA', name: 'padA', kind: 'function', filePath: 'src/1-pad/A.ts' });
+    edge(h, root.id, padA.id, 'calls');
+    let added = 0;
+    let idx = 0;
+    const queue: Array<{ id: string; depth: number }> = [{ id: padA.id, depth: 1 }];
+    while (added < FLOW_CAP_STEPS - 3 && queue.length) {
+      const cur = queue.shift()!;
+      if (cur.depth >= FLOW_CAP_DEPTH) continue;
+      const kids = Math.min(15, FLOW_CAP_STEPS - 3 - added); // ≤ width cap, ≤ remaining
+      for (let i = 0; i < kids; i++) {
+        const cid = `pad${idx++}`;
+        node(h, { id: cid, name: cid, kind: 'function', filePath: `src/1-pad/${cid}.ts` });
+        edge(h, cur.id, cid, 'calls');
+        added++;
+        queue.push({ id: cid, depth: cur.depth + 1 });
+      }
+    }
+    expect(added).toBe(FLOW_CAP_STEPS - 3); // root + padA + 197 descendants = 199 so far
+
+    // The tail: root's SECOND child, examined after padA's whole subtree, pushed
+    // as the 200th step; its unvisited child is what the cap prevents adding.
+    const tail = node(h, { id: 'tail', name: 'tail', kind: 'function', filePath: 'src/2-tail/T.ts' });
+    edge(h, root.id, tail.id, 'calls');
+    const tailChild = node(h, { id: 'tailChild', name: 'tailChild', kind: 'function', filePath: 'src/2-tail/child.ts' });
+    edge(h, tail.id, tailChild.id, 'calls');
+
+    const r = traceFlow(rootAt(root.id), h.queries);
+
+    expect(r.steps).toHaveLength(FLOW_CAP_STEPS); // exactly 200 (tailChild dropped)
+    expect(r.steps.some((s) => s.nodeId === 'tail')).toBe(true); // the 200th step
+    expect(r.steps.some((s) => s.nodeId === 'tailChild')).toBe(false); // cut by the cap
+    expect(r.truncatedSteps).toBe(true); // ← false before the fix
+    expect(r.truncatedDepth).toBe(false);
+    expect(r.truncatedWidth).toBe(false);
+  });
 });

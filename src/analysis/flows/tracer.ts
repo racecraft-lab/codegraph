@@ -167,7 +167,13 @@ export function traceFlow(entry: EntryPoint, queries: QueryBuilder): TraceResult
   visited.add(entry.rootNodeId);
 
   const dfs = (nodeId: string, depth: number): void => {
-    if (steps.length >= FLOW_CAP_STEPS) return;
+    // NOTE: no `steps.length >= FLOW_CAP_STEPS` early-return here. When the 200th
+    // step is pushed and we recurse into it, this call must still examine that
+    // node's out-edges so an unvisited candidate trips `flags.steps` below — a
+    // top-of-fn bail would report a truncated flow as complete (FR-007). The
+    // in-loop cap guard keeps `steps.length` from ever exceeding the cap, and the
+    // per-candidate `visited` skip means a node whose successors are all already
+    // visited (exactly-200-explored) correctly leaves the flag unset.
     if (depth >= FLOW_CAP_DEPTH) {
       if (hasOutEdges(nodeId, entry, queries)) flags.depth = true;
       return;
