@@ -449,7 +449,14 @@ runner helper atomicity-route specs/006-web-ui-graph-browser
 
 ## Phase 5.2: Tasks to Issues
 
-**Status:** Pending.
+**Result:** Created 94 GitHub issues in `racecraft-lab/codegraph` for T001 through T094.
+
+| Metric | Value |
+|---|---|
+| Created | 94 |
+| Skipped Existing | 0 |
+| First Issue | https://github.com/racecraft-lab/codegraph/issues/57 |
+| Last Issue | https://github.com/racecraft-lab/codegraph/issues/150 |
 
 ## Phase 6: Analyze
 
