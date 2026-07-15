@@ -30,7 +30,7 @@ decisions captured during scaffold.
 |---|---|---|---|
 | Specify | `/speckit-specify` | Complete | Created `specs/006-web-ui-graph-browser/spec.md`. |
 | Clarify | `/speckit-clarify` | Complete | Resolved UX, API, chat, and clean-room ambiguity. |
-| Plan | `/speckit-plan` | In Progress | Select renderer, shadcn style, API contracts, and slices. |
+| Plan | `/speckit-plan` | Complete | Selected renderer, shadcn style, API contracts, and slices. |
 | Checklist | `/speckit-checklist` | Pending | Run UX, accessibility, API-contracts, llm-integration, performance. |
 | Tasks | `/speckit-tasks` | Pending | Generate small vertical-slice tasks. |
 | Analyze | `/speckit-analyze` | Pending | Fix consistency gaps before implementation. |
@@ -291,11 +291,21 @@ local UI.
 
 | Artifact | Status | Notes |
 |---|---|---|
-| `plan.md` | Pending | Technical context, execution flow |
-| `research.md` | Pending | Renderer, shadcn style, chat, clean-room parity |
-| `data-model.md` | Pending | UI entities, graph view state, chat state |
-| `contracts/` | Pending | REST/chat contracts and static package contract |
-| `quickstart.md` | Pending | Local web dev and package-shipped serve flow |
+| `plan.md` | Complete | Technical context, constitution check, structure decision, complexity justification, and three vertical slices. |
+| `research.md` | Complete | Cytoscape.js selected after Cytoscape/Sigma bake-off; `base-nova` shadcn style locked; SPEC-018 chat and clean-room parity recorded. |
+| `data-model.md` | Complete | Repository, symbol, graph view, impact, re-analysis, chat, context boundary, and clean-room inventory entities. |
+| `contracts/` | Complete | Existing OpenAPI consumption, SPEC-018 chat adapter, and static package/fallback contracts. |
+| `quickstart.md` | Complete | Local dev, package-shipped serve, offline/no-CDN, chat-secret, renderer, re-analysis, and clean-room validation flows. |
+
+Phase 3 completed on 2026-07-15. No checklist or tasks phase was executed in this step.
+
+Plan-phase reviewability estimator:
+
+- Helper: `estimate-reviewable-loc`
+- Mode: read-only advisory
+- Status: `not_estimated`
+- Reason: `plan.md` does not use the runner's declared-file table format, so the helper reported 0 declared production entries.
+- Fallback evidence: `spec.md` reviewability budget remains the governing size signal (`1115` projected reviewable LOC, warning accepted, three vertical slices).
 
 ## Phase 4: Domain Checklists
 

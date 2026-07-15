@@ -1,0 +1,149 @@
+# Quickstart: Web UI Graph Browser Validation
+
+## Prerequisites
+
+- Node version accepted by the repo engine range: `>=20.0.0 <25.0.0`.
+- Existing CodeGraph build and test prerequisites.
+- At least one local repository initialized/indexed by CodeGraph for manual UAT.
+- Optional SPEC-018 endpoint config for configured-chat UAT:
+  - `CODEGRAPH_LLM_PROVIDER=endpoint`
+  - `CODEGRAPH_LLM_URL`
+  - `CODEGRAPH_LLM_MODEL`
+  - `CODEGRAPH_LLM_API_KEY` when required by the endpoint
+
+Provider config remains backend-only. Do not enter provider secrets in the browser.
+
+## Local Development Validation
+
+1. Install dependencies from the repository root.
+
+```bash
+npm install
+```
+
+2. Initialize and build the web app after implementation tasks create `web/`.
+
+```bash
+npm --prefix web install
+npm --prefix web run build
+```
+
+3. Run repository verification.
+
+```bash
+npm run build
+npm run typecheck
+npm test
+```
+
+Expected outcome:
+
+- TypeScript succeeds.
+- Vitest suites pass.
+- `dist/web/index.html` and `dist/web/assets/` exist after the integrated build/copy step.
+
+## Browser UAT: Repo, Search, Symbol, Graph
+
+1. Start the local web server.
+
+```bash
+node dist/bin/codegraph.js serve --web --path <indexed-repo>
+```
+
+2. Open the printed local URL.
+
+3. Validate the primary path:
+
+- The app opens directly to the graph-browsing tool surface.
+- Repo switcher/status is visible.
+- Search finds a known symbol.
+- Opening a symbol shows metadata, source context, and relationship summaries.
+- Graph view renders a nonblank neighborhood.
+- Pan, zoom, fit/reset, filter, select/focus, and expand controls are visible and keyboard-operable.
+- A non-canvas selected-node/neighbor summary remains available.
+
+Expected outcome:
+
+- Repository context remains visible.
+- Empty, stale, unavailable, loading, truncated, and error states do not erase the shell.
+- No critical text overlap or unreachable primary controls on desktop or mobile viewport checks.
+
+## Browser UAT: Impact And Re-analysis
+
+1. Select a symbol with known downstream usage.
+2. Open the impact view.
+3. Trigger re-analysis for an eligible repository.
+4. Observe progress until terminal success or failure.
+
+Expected outcome:
+
+- Impact shows affected symbols/files or an explicit unavailable/truncated state.
+- Re-analysis prevents duplicate ambiguous starts while active.
+- SSE progress shows snapshot, progress, heartbeat tolerance, and terminal state.
+- Repository freshness updates after completion.
+
+## Browser UAT: Chat
+
+Validate three chat states:
+
+1. Dormant or disabled: run without `CODEGRAPH_LLM_*` endpoint activation.
+2. Misconfigured: set an incomplete endpoint config.
+3. Configured endpoint or agent mode: use a valid SPEC-018 setup, or agent mode where available.
+
+Expected outcome:
+
+- Browser sends only same-origin `/api/chat/*` requests.
+- Browser request contains repo id, prompt, and selected symbol/view hints only.
+- Browser never sends or receives provider URL, model, API key, provider bearer token, raw provider response body, or secret surrogate.
+- Disabled, dormant, misconfigured, pending-bundle, fallback, answer, and error states are visually distinct.
+- Chat responses include visible graph-context boundaries or truncation metadata.
+
+## Package And Offline Validation
+
+1. Build the package assets.
+
+```bash
+npm run build
+```
+
+2. Serve the built app.
+
+```bash
+node dist/bin/codegraph.js serve --web --path <indexed-repo>
+```
+
+3. Use browser network inspection or Playwright network interception.
+
+Expected outcome:
+
+- `dist/web/index.html` serves for `/` and extensionless browser routes.
+- `/api/*` routes return API responses or API errors, never `index.html`.
+- Missing asset-extension URLs return 404.
+- No external CDN, hosted asset, hosted auth, hosted database, remote telemetry, or direct provider request is made by the browser.
+- All runtime assets load from the local backend.
+
+## Container Or Non-loopback Guidance Validation
+
+Use existing server options and auth behavior only:
+
+```bash
+node dist/bin/codegraph.js serve --web --host 0.0.0.0 --port 8080 --path <indexed-repo>
+```
+
+Expected outcome:
+
+- Non-loopback `/api/*` access follows existing `CODEGRAPH_SERVER_TOKEN` rules.
+- Static shell serving does not weaken API auth.
+- Documentation explains host, port, and token requirements without adding hosted auth or a production Dockerfile requirement.
+
+## Clean-room Verification
+
+Before PR:
+
+- Confirm `research.md` contains the GitNexus README/license source ledger.
+- Confirm no GitNexus source, assets, screenshots, UI text, visual design, CSS, or implementation structure were inspected or copied.
+- Confirm parity gaps are marked implemented, deferred, backend-blocked, or out of scope.
+
+Expected outcome:
+
+- PR evidence can trace clean-room parity only to allowed README/license URLs and original CodeGraph implementation files.
