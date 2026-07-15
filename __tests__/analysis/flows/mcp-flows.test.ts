@@ -109,6 +109,9 @@ describe('codegraph_list_flows', () => {
     expect(parse(await handler.execute('codegraph_list_flows', { limit: 500 })).body.limit).toBe(100);
     expect(parse(await handler.execute('codegraph_list_flows', { limit: 0 })).body.limit).toBe(1);
     expect(parse(await handler.execute('codegraph_list_flows', { limit: 'abc' })).body.limit).toBe(20);
+    // An empty string is ABSENT → default, matching read-ops/REST (FR-028a), not
+    // Number('') === 0 → clamp-to-1.
+    expect(parse(await handler.execute('codegraph_list_flows', { limit: '' })).body.limit).toBe(20);
   });
 
   it('sorts by name ascending then id, and pages by offset/limit', async () => {

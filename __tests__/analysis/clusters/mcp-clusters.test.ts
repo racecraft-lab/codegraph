@@ -137,6 +137,11 @@ describe('codegraph_list_clusters', () => {
     expect(parse(await handler.execute('codegraph_list_clusters', { limit: 500 })).body.limit).toBe(100);
     expect(parse(await handler.execute('codegraph_list_clusters', { limit: 0 })).body.limit).toBe(1);
     expect(parse(await handler.execute('codegraph_list_clusters', { limit: 'abc' })).body.limit).toBe(20);
+    // Empty string is ABSENT → default (limit 20; minSize 1), matching read-ops /
+    // REST — not Number('') === 0 (FR-028a).
+    expect(parse(await handler.execute('codegraph_list_clusters', { limit: '' })).body.limit).toBe(20);
+    const emptyMin = parse(await handler.execute('codegraph_list_clusters', { minSize: '' }));
+    expect((emptyMin.body.items as unknown[]).length).toBe(1); // minSize '' → default 1
   });
 
   it('returns success-shaped disabled guidance when the catalog is not enabled', async () => {

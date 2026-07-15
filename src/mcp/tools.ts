@@ -1654,11 +1654,13 @@ export class ToolHandler {
 
   /**
    * Coerce a numeric catalog arg: floor a finite number, else the default
-   * (missing/non-numeric → default). Clamping is applied by the caller. Mirrors
-   * the read-ops coercion contract — never a 4xx.
+   * (missing/empty-string/non-numeric → default). Clamping is applied by the
+   * caller. Mirrors the read-ops / REST coercion contract exactly — `''` is
+   * treated as ABSENT (→ default), not as `Number('') === 0`, so the three
+   * surfaces stay in parity (FR-028a); never a 4xx.
    */
   private coerceCatalogInt(raw: unknown, def: number): number {
-    if (raw === undefined || raw === null) return def;
+    if (raw === undefined || raw === null || raw === '') return def;
     const n = Number(raw);
     return Number.isFinite(n) ? Math.floor(n) : def;
   }
