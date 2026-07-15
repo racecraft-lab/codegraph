@@ -12,9 +12,9 @@
  *   2. NO CATALOG STEERING — neither the explore output nor the MCP `initialize`
  *      instructions (`server-instructions.ts`, the single low-salience steering
  *      channel) mention flows/clusters/catalog tools. The feature added zero
- *      steering (the CLAUDE.md do-not-regress rule).
+ *      steering (the AGENTS.md do-not-regress rule).
  *   3. BUDGETS PINNED — `getExploreBudget` / `getExploreOutputBudget` (the two
- *      explore knobs the MCP CLAUDE.md flags as the regression surface) return
+ *      explore knobs the MCP AGENTS.md flags as the regression surface) return
  *      their exact pre-feature tier values, and the monotonic-`maxCharsPerFile`
  *      invariant holds.
  *
@@ -134,7 +134,7 @@ describe('SPEC-011 T059 — codegraph_explore golden (FR-031/SC-012, do-not-regr
     for (const [fileCount, expected] of perFile) {
       expect(getExploreOutputBudget(fileCount).maxCharsPerFile, `maxCharsPerFile @${fileCount}`).toBe(expected);
     }
-    // Invariant (MCP CLAUDE.md): a larger tier never gets a smaller per-file cap.
+    // Invariant (MCP AGENTS.md): a larger tier never gets a smaller per-file cap.
     const ascending = [50, 200, 800, 6000, 12000, 20000, 40000];
     const caps = ascending.map((n) => getExploreOutputBudget(n).maxCharsPerFile);
     for (let i = 1; i < caps.length; i++) {

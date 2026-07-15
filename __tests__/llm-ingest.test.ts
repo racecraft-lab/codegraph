@@ -23,7 +23,7 @@
  *     `{ status:'completed', text }` (FR-010a).
  *
  * Real temp roots via `fs.mkdtempSync`, cleaned in `afterEach`; real files, real fs —
- * no mocking (root CLAUDE.md → Tests). Ingest is user-invoked only (FR-029); nothing
+ * no mocking (root AGENTS.md -> Tests). Ingest is user-invoked only (FR-029); nothing
  * here wires it into a watcher/daemon.
  */
 import { describe, it, expect, afterEach } from 'vitest';

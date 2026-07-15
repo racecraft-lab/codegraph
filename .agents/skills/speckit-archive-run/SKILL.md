@@ -46,8 +46,8 @@ If none are provided, update all archival artifacts.
 - `--spec-only`: update only `.specify/memory/spec.md`
 - `--plan-only`: update only `.specify/memory/plan.md`
 - `--changelog-only`: update only `.specify/memory/changelog.md`
-- `--agent-only`: update only the agent knowledge file
-  (`GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`)
+- `--agent-only`: unsupported in this repository. Agent instruction files are
+  stable imports and are not archive targets.
 
 ### Mode And Safety Options
 
@@ -283,7 +283,6 @@ Before applying edits, produce an impact map:
 | `.specify/memory/spec.md` | User Stories, FRs, Entities | Append/Update |
 | `.specify/memory/plan.md` | Dependencies, Structure, Testing | Append/Update |
 | `.specify/memory/changelog.md` | Merged Features Log | Append |
-| `AGENTS.md` | Recent Changes, Gotchas | Append/Update |
 | `specs/###-feature-name` | Cleanup Eligibility | Report/Remove only if gated |
 ```
 
@@ -314,11 +313,11 @@ Update `.specify/memory/plan.md` with dependencies, project structure,
 configuration, routing, and testing strategy. Remove completed items from
 future-work sections only when the implementation evidence proves completion.
 
-### 6.3 Agent Knowledge
+### 6.3 Agent Instruction Files
 
-Update the first existing agent file in this order: `GEMINI.md`, `AGENTS.md`,
-`CLAUDE.md`. Record active technologies, project structure, commands, recent
-changes, and gotchas extracted from `research.md`.
+Do not update `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`. Record active
+technologies, project structure, commands, recent changes, and gotchas in
+`.specify/memory/plan.md`, `.specify/memory/spec.md`, or the archive report.
 
 ### 6.4 Changelog
 
