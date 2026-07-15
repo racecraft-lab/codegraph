@@ -29,8 +29,9 @@
 - `npm --prefix web run test -- src/tests/reindex-panel.test.tsx`: passed after the MCP UAT fix; 1 file, 2 tests.
 - `npm --prefix web run typecheck`: passed.
 - `npm --prefix web run test:e2e`: passed with 13 Playwright tests.
-- `npm exec -- vitest run __tests__/server-chat-adapter.test.ts __tests__/server-openapi-contract.test.ts __tests__/package-web-assets.test.ts __tests__/server-reindex-jobs.test.ts`: passed with 99 tests.
-- `npm run build`: passed after final UI fixes. Vite reported a 967.53 kB minified JS chunk, below the SPEC-006 1.5 MB uncompressed runtime-asset threshold.
+- `npm exec -- vitest run __tests__/server-chat-adapter.test.ts __tests__/server-openapi-contract.test.ts __tests__/package-web-assets.test.ts __tests__/server-reindex-jobs.test.ts`: passed with 100 tests.
+- `npm test`: passed outside the sandbox with Node 24.11.1 and a temporary Git signing override for test fixtures: 233 files, 3,922 passed, 7 skipped.
+- `npm run build`: passed after final UI fixes. Vite reported a 967.87 kB minified JS chunk, below the SPEC-006 1.5 MB uncompressed runtime-asset threshold.
 
 ## Playwright MCP UAT
 
@@ -58,7 +59,7 @@ The MCP pass found one real issue: quick terminal EventSource close left the UI 
 
 - Configured endpoint chat was not exercised with real provider credentials in this pass; dormant/no-provider and no-browser-secret boundaries were validated.
 - The Vite default chunk warning remains. The built JS asset is below the accepted SPEC-006 threshold, so no code splitting was added in this slice.
-- Full `npm test` has a known local Git signing hazard from inherited machine config; focused affected suites and web suites were run. A temporary `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false` override was previously validated for the affected Git-signing case.
+- Full `npm test` requires the local Git signing override on this machine because inherited config signs temporary fixture commits; the suite passed with that override.
 
 ## Rollback Notes
 

@@ -4,8 +4,8 @@
   "feature_dir": "specs/006-web-ui-graph-browser",
   "branch": "006-web-ui-graph-browser",
   "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/006-web-ui-graph-browser",
-  "status": "in_progress",
-  "active_step": "Post: Self-Review",
+  "status": "blocked",
+  "active_step": "Blocked: PR packet emission deferred",
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -157,38 +157,57 @@
     },
     {
       "step": "Post: Self-Review",
-      "status": "in_progress"
+      "status": "completed",
+      "result": "passed: no blocking edge-case, traceability, or tidiness gaps; evidence at specs/006-web-ui-graph-browser/.process/emission/self-review.md"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "generate-uat-skeleton deferred and no committed source-derived UAT runbook exists",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/uat-runbook-generation.md"
     },
     {
       "step": "Post: Final Reviewability Backstop",
-      "status": "pending"
+      "status": "completed",
+      "result": "warn/proceed using current committed reviewability evidence at 4df3b13; helper is deferred",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/final-reviewability-backstop.md"
     },
     {
       "step": "Post: PR Packet/Body Generation",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "blocked before PR side effects: no current feature-local PR packet exists and packet emission is deferred",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md"
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "no packet-owned body file exists because PR packet is absent"
     },
     {
       "step": "Post: PR Creation",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "no gh pr create side effect allowed without a current validated PR packet"
     },
     {
       "step": "Post: Review Remediation",
-      "status": "pending"
+      "status": "completed",
+      "skipped": "no PR was opened, so there are no review comments to remediate"
     },
     {
       "step": "Post: Retrospective",
-      "status": "pending"
+      "status": "completed",
+      "report": "specs/006-web-ui-graph-browser/retrospective.md",
+      "result": "completed: 100% task completion, 100% spec adherence, 0 critical findings"
     }
   ],
-  "updated_at": "2026-07-15T23:44:00Z",
+  "updated_at": "2026-07-15T23:59:00Z",
+  "completion_blocker": {
+    "type": "deferred_pr_packet_emission",
+    "status": "blocked_before_pr_side_effects",
+    "reason": "No current feature-local PR packet exists at specs/006-web-ui-graph-browser/.process/pr-packets/<packet-id>.json, and pr-packet-output is deferred.",
+    "evidence": "specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md",
+    "implementation_commit": "4df3b13"
+  },
   "confidence_gate_mode": "advisory",
   "preflight": {
     "archive_sweep": {
@@ -739,7 +758,56 @@
     {
       "id": "post_self_review",
       "title": "Self-Review",
-      "status": "in_progress"
+      "status": "completed",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/self-review.md",
+      "summary": "No blocking edge-case, traceability, or tidiness gaps found; configured real-provider chat remains an explicitly documented non-blocking limitation."
+    },
+    {
+      "id": "post_uat_runbook_generation",
+      "title": "UAT Runbook Generation",
+      "status": "skipped",
+      "reason": "generate-uat-skeleton deferred and no committed source-derived UAT runbook exists",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/uat-runbook-generation.md"
+    },
+    {
+      "id": "post_final_reviewability_backstop",
+      "title": "Final Reviewability Backstop",
+      "status": "completed",
+      "status_detail": "warn/proceed",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/final-reviewability-backstop.md",
+      "summary": "Used committed reviewability evidence at 4df3b13 because final-reviewability-backstop is deferred."
+    },
+    {
+      "id": "post_pr_packet_body_generation",
+      "title": "PR Packet/Body Generation",
+      "status": "skipped",
+      "reason": "blocked before PR side effects: no current feature-local PR packet exists and packet emission is deferred",
+      "evidence": "specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md"
+    },
+    {
+      "id": "post_pr_body_generation",
+      "title": "PR Body Generation",
+      "status": "skipped",
+      "reason": "no packet-owned body file exists because PR packet is absent"
+    },
+    {
+      "id": "post_pr_creation",
+      "title": "PR Creation",
+      "status": "skipped",
+      "reason": "no gh pr create side effect allowed without a current validated PR packet"
+    },
+    {
+      "id": "post_review_remediation",
+      "title": "Review Remediation",
+      "status": "skipped",
+      "reason": "no PR was opened, so there are no review comments to remediate"
+    },
+    {
+      "id": "post_retrospective",
+      "title": "Retrospective",
+      "status": "completed",
+      "report": "specs/006-web-ui-graph-browser/retrospective.md",
+      "summary": "100% task completion, 100% spec adherence, 0 critical findings."
     }
   ],
   "phase_outputs": {

@@ -36,7 +36,7 @@ decisions captured during scaffold.
 | Analyze | `/speckit-analyze` | Complete | Resolved chat OpenAPI and self-repo UAT coverage gaps before implementation. |
 | Confidence Gate | G6.5 | Complete | Advisory soft-skip: no confidence emit found. |
 | Implement | `/speckit-implement` | Complete | Implemented all 96 tasks with automated verification and Playwright MCP browser UAT evidence. |
-| Post | Post | In Progress | Active canonical post gate is `Post: Self-Review`. |
+| Post | Post | Blocked before PR side effects | All canonical post gates are complete or explicitly skipped; PR creation is blocked because no feature-local PR packet exists and packet emission is deferred. |
 
 ### Canonical Post Gates
 
@@ -563,6 +563,15 @@ For each task:
 - Integration Suite: passed. `npm run build`, `npm run typecheck`, `npm --prefix web run lint`, `npm --prefix web run test`, `npm --prefix web run test:e2e`, focused server/package Vitest, full root `npm test`, and Playwright MCP packaged-browser UAT all passed.
 - Temporary runner marker cleanup: complete. The generated `speckit-pro/` marker was moved out of the worktree to `/private/tmp/speckit-pro-marker-cleanup-SPEC-006/speckit-pro` before review/PR artifacts.
 - Reviewability Diff Gate: warn/proceed. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/reviewability-diff-gate.md`; review as one navigable PR in package/server/API, web app, then tests/docs order.
+- Self-Review: passed. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/self-review.md`; no blocking edge-case, traceability, or tidiness gaps found.
+- UAT Runbook Generation: skipped because `generate-uat-skeleton` is deferred and no committed source-derived UAT runbook exists. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/uat-runbook-generation.md`.
+- Final Reviewability Backstop: warn/proceed using committed reviewability evidence at `4df3b13` because `final-reviewability-backstop` is deferred. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/final-reviewability-backstop.md`.
+- PR Packet/Body Generation: skipped before PR side effects because no current feature-local PR packet exists and packet emission is deferred. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md`.
+- PR Body Generation: skipped because no packet-owned body file exists.
+- PR Creation: skipped; no `gh pr create` side effect was allowed without a current validated PR packet.
+- Review Remediation: skipped because no PR was opened.
+- Retrospective: complete. `specs/006-web-ui-graph-browser/retrospective.md` reports 100% task completion, 100% spec adherence, and 0 critical findings.
+- Completion blocker: no current feature-local PR packet exists at `specs/006-web-ui-graph-browser/.process/pr-packets/<packet-id>.json`, and `pr-packet-output` is deferred. No PR was opened.
 - Canvas pixel check proves graph is nonblank and correctly framed: Cytoscape canvas layer 2 sampled 356 nonblank points out of 7,055.
 - Accessibility checks pass through Playwright/axe coverage; no residual accessibility issue is documented.
 - Offline/no-CDN network audit passes through Playwright package-offline coverage.
@@ -586,4 +595,4 @@ rather than broadening the PR.
 
 ## Lessons Learned
 
-Capture after implementation.
+See `specs/006-web-ui-graph-browser/retrospective.md`.
