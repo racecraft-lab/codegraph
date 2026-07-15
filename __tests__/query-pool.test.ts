@@ -15,6 +15,13 @@ import type { ToolResult } from '../src/mcp/tools';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+async function waitUntil(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await sleep(5);
+  }
+}
+
 interface CallMsg { type: 'call'; id: number; toolName: string; args: Record<string, unknown> }
 type Action = { result: ToolResult } | { crash: true } | { hang: true } | { wait: Promise<ToolResult> };
 
@@ -99,7 +106,7 @@ describe('QueryPool', () => {
     });
     const pool = new QueryPool({ root: '/x', size: 5, createWorker: () => new FakeWorker(behavior) });
     const calls = Promise.all(Array.from({ length: 5 }, (_, i) => pool.run('codegraph_search', { i })));
-    await sleep(40); // let all workers spawn (cold-start cap → a few generations) + dispatch
+    await waitUntil(() => maxActive === 5); // let all workers spawn (cold-start cap → a few generations) + dispatch
     expect(maxActive).toBe(5);
     release();
     const results = await calls;
