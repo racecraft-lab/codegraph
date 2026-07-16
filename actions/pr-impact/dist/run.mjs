@@ -49,7 +49,10 @@ export async function runAction(deps = createRunDependencies()) {
     const context = readPullRequestContext(deps, inputs);
     const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
     const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
-    const detector = runDetector(deps, inputs);
+    const cacheStatus = resolveCacheStatus(deps);
+    const detector = cacheStatus === 'unavailable'
+        ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.')
+        : runDetector(deps, inputs);
     const narrative = createInitialNarrative(inputs, context, deps);
     let delivery = createInitialDelivery(reportPath);
     let conclusion = determineConclusion(detector, delivery.status !== 'failed');
@@ -60,6 +63,7 @@ export async function runAction(deps = createRunDependencies()) {
         delivery,
         narrative,
         conclusion,
+        cacheStatus,
         artifactName,
         recordedAt: deps.now().toISOString(),
     });
@@ -73,6 +77,7 @@ export async function runAction(deps = createRunDependencies()) {
         delivery,
         narrative,
         conclusion,
+        cacheStatus,
         artifactName,
         recordedAt: deps.now().toISOString(),
     });
@@ -82,7 +87,7 @@ export async function runAction(deps = createRunDependencies()) {
     emitOutput(deps, 'detector-exit-code', String(detector.exitCode));
     emitOutput(deps, 'conclusion', conclusion);
     emitOutput(deps, 'threshold-breached', String(detector.summary.status === 'threshold_breach'));
-    emitOutput(deps, 'cache-status', 'unavailable');
+    emitOutput(deps, 'cache-status', cacheStatus);
     emitOutput(deps, 'delivery-status', delivery.status);
     emitOutput(deps, 'comment-url', delivery.commentUrl);
     emitOutput(deps, 'report-path', reportPath);
@@ -91,6 +96,12 @@ export async function runAction(deps = createRunDependencies()) {
     emitOutput(deps, 'codegraph-version', inputs.codegraphVersion);
     emitOutput(deps, 'helper-version', HELPER_VERSION);
     return { inputs, detector, delivery, narrative, conclusion, report };
+}
+function resolveCacheStatus(deps) {
+    const requested = deps.env.PR_IMPACT_CACHE_STATUS;
+    if (isCacheStatus(requested))
+        return requested;
+    return 'miss';
 }
 function writeReportFile(deps, reportPath, report) {
     try {
@@ -333,6 +344,13 @@ async function deliverReport(deps, context, report, reportPath, reportFileWritte
     };
 }
 function createInitialNarrative(inputs, context, deps) {
+    if (inputs.narrative === 'off') {
+        return {
+            status: 'disabled',
+            text: null,
+            handle: null,
+        };
+    }
     if (inputs.narrative === 'trusted' && (context.isForkLike || !deps.env.GITHUB_TOKEN)) {
         return {
             status: 'suppressed',
@@ -340,15 +358,21 @@ function createInitialNarrative(inputs, context, deps) {
             handle: null,
         };
     }
-    return {
-        status: inputs.narrative === 'trusted' ? 'unavailable' : 'disabled',
-        text: null,
-        handle: null,
-    };
+    const source = deps.env.PR_IMPACT_NARRATIVE_SOURCE;
+    if (source === 'fallback') {
+        return { status: 'fallback', text: deps.env.PR_IMPACT_NARRATIVE_TEXT ?? 'Narrative fallback prose.', handle: null };
+    }
+    if (source === 'pending') {
+        return { status: 'pending', text: deps.env.PR_IMPACT_NARRATIVE_TEXT ?? 'Narrative pending prose.', handle: 'pending-pr-impact-narrative' };
+    }
+    if (source === 'appended') {
+        return { status: 'appended', text: deps.env.PR_IMPACT_NARRATIVE_TEXT ?? 'Narrative prose.', handle: null };
+    }
+    return { status: 'unavailable', text: null, handle: null };
 }
 function renderReport(args) {
-    const { inputs, context, detector, delivery, narrative, conclusion, artifactName, recordedAt } = args;
-    return [
+    const { inputs, context, detector, delivery, narrative, conclusion, cacheStatus, artifactName, recordedAt } = args;
+    const lines = [
         ACTION_MARKER,
         '',
         '# CodeGraph PR Impact',
@@ -369,7 +393,7 @@ function renderReport(args) {
         `- Detector status: ${detector.summary.status}`,
         `- Detector exit code: ${detector.exitCode}`,
         `- Final conclusion: ${conclusion}`,
-        `- Cache status: unavailable`,
+        `- Cache status: ${cacheStatus}`,
         `- Delivery status: ${delivery.status}`,
         `- Narrative status: ${narrative.status}`,
         `- Artifact: ${artifactName}`,
@@ -404,7 +428,11 @@ function renderReport(args) {
         `- Report path: ${delivery.reportPath}`,
         '- Comment delivery is not attempted by the setup scaffold.',
         '',
-    ].join('\n');
+    ];
+    if (narrative.text && (narrative.status === 'fallback' || narrative.status === 'pending' || narrative.status === 'appended')) {
+        lines.push('## Narrative appendix', '', '_prose-only narrative. Deterministic facts and final conclusion above remain authoritative._', '', narrative.text, '');
+    }
+    return lines.join('\n');
 }
 async function listComments(deps, context) {
     const response = await deps.fetch(issueCommentsUrl(deps, context), {
@@ -549,6 +577,15 @@ function isSummaryStatus(value) {
 }
 function isDetectorExitCode(value) {
     return value === 0 || value === 1 || value === 2 || value === 3;
+}
+function isCacheStatus(value) {
+    return (value === 'warm-valid' ||
+        value === 'miss' ||
+        value === 'stale' ||
+        value === 'corrupt' ||
+        value === 'incompatible' ||
+        value === 'rebuilt' ||
+        value === 'unavailable');
 }
 function parseOptionalInteger(raw) {
     if (raw.trim() === '')

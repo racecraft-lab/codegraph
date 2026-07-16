@@ -76,6 +76,15 @@ runs:
       shell: bash
       run: npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"
 
+    - name: Restore CodeGraph index cache
+      id: codegraph-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .codegraph
+        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ inputs.codegraph-version }}
+        restore-keys: |
+          codegraph-${{ runner.os }}-${{ github.repository }}-
+
     - name: Run PR impact helper
       id: pr-impact
       shell: bash
@@ -87,6 +96,7 @@ runs:
         INPUT_CALLER_DEPTH: ${{ inputs.caller-depth }}
         INPUT_MAX_CALLERS: ${{ inputs.max-callers }}
         INPUT_NARRATIVE: ${{ inputs.narrative }}
+        PR_IMPACT_CACHE_STATUS: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'warm-valid' || 'miss' }}
       run: node "${{ github.action_path }}/dist/run.mjs"
 
     - name: Upload PR impact report
@@ -96,6 +106,13 @@ runs:
         name: ${{ steps.pr-impact.outputs.artifact-name }}
         path: ${{ steps.pr-impact.outputs.report-path }}
         if-no-files-found: error
+
+    - name: Save CodeGraph index cache
+      if: always() && steps.pr-impact.outputs.cache-status != 'unavailable'
+      uses: actions/cache/save@v4
+      with:
+        path: .codegraph
+        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ inputs.codegraph-version }}
 
     - name: Enforce PR impact conclusion
       if: always() && steps.pr-impact.outputs.conclusion != 'pass'

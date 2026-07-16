@@ -136,20 +136,20 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation.**
 
-- [ ] T041 [P] [US4] Add failing cache validation tests for warm-valid, miss, stale, corrupt, incompatible, rebuilt, and unavailable states in `__tests__/pr-impact-cache.test.ts` (Q6)
-- [ ] T042 [P] [US4] Add failing narrative tests proving disabled, suppressed, unavailable, fallback, pending, and appended prose never change deterministic facts or conclusion in `__tests__/pr-impact-narrative.test.ts` (Q4)
-- [ ] T043 [P] [US4] Add failing dogfood workflow tests proving advisory defaults, no threshold inputs, narrative disabled, and pull-request trigger in `.github/workflows/pr-impact.yml` via `__tests__/pr-impact-action-contract.test.ts` (Q8)
-- [ ] T044 [P] [US4] Add failing warm-cache evidence validation for at least five eligible self-repository samples and median ≤3 minutes in `__tests__/pr-impact-cache.test.ts`
+- [X] T041 [P] [US4] Add failing cache validation tests for warm-valid, miss, stale, corrupt, incompatible, rebuilt, and unavailable states in `__tests__/pr-impact-cache.test.ts` (Q6)
+- [X] T042 [P] [US4] Add failing narrative tests proving disabled, suppressed, unavailable, fallback, pending, and appended prose never change deterministic facts or conclusion in `__tests__/pr-impact-narrative.test.ts` (Q4)
+- [X] T043 [P] [US4] Add failing dogfood workflow tests proving advisory defaults, no threshold inputs, narrative disabled, and pull-request trigger in `.github/workflows/pr-impact.yml` via `__tests__/pr-impact-action-contract.test.ts` (Q8)
+- [X] T044 [P] [US4] Add failing warm-cache evidence validation for at least five eligible self-repository samples and median ≤3 minutes in `__tests__/pr-impact-cache.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T045 [US4] Implement cache identity and validation metadata for lockfile, merge base, base ref, head SHA, and CodeGraph runtime in `actions/pr-impact/run.ts`
-- [ ] T046 [US4] Implement cache miss, stale, corrupt, incompatible, rebuild, and unavailable transitions in `actions/pr-impact/run.ts`
-- [ ] T047 [US4] Wire `.codegraph/` cache restore/save steps around validation and rebuild in `actions/pr-impact/action.yml`
-- [ ] T048 [US4] Implement optional SPEC-018 narrative status handling as disabled, suppressed, unavailable, fallback, pending, or appended in `actions/pr-impact/run.ts`
-- [ ] T049 [US4] Append eligible narrative only after deterministic report sections and final conclusion are fixed in `actions/pr-impact/run.ts`
-- [ ] T050 [US4] Add advisory self-repository dogfood workflow with thresholds unset and narrative disabled in `.github/workflows/pr-impact.yml` (Q8)
-- [ ] T051 [US4] Regenerate `actions/pr-impact/dist/run.mjs` and verify US4 cache/narrative freshness in `actions/pr-impact/dist/run.mjs`
+- [X] T045 [US4] Implement cache identity and validation metadata for lockfile, merge base, base ref, head SHA, and CodeGraph runtime in `actions/pr-impact/run.ts`
+- [X] T046 [US4] Implement cache miss, stale, corrupt, incompatible, rebuild, and unavailable transitions in `actions/pr-impact/run.ts`
+- [X] T047 [US4] Wire `.codegraph/` cache restore/save steps around validation and rebuild in `actions/pr-impact/action.yml`
+- [X] T048 [US4] Implement optional SPEC-018 narrative status handling as disabled, suppressed, unavailable, fallback, pending, or appended in `actions/pr-impact/run.ts`
+- [X] T049 [US4] Append eligible narrative only after deterministic report sections and final conclusion are fixed in `actions/pr-impact/run.ts`
+- [X] T050 [US4] Add advisory self-repository dogfood workflow with thresholds unset and narrative disabled in `.github/workflows/pr-impact.yml` (Q8)
+- [X] T051 [US4] Regenerate `actions/pr-impact/dist/run.mjs` and verify US4 cache/narrative freshness in `actions/pr-impact/dist/run.mjs`
 
 **Checkpoint**: Cache, narrative, and dogfood behavior are subordinate to deterministic correctness and privacy.
 

@@ -16,6 +16,7 @@ import {
 
 const ROOT = path.resolve(__dirname, '..');
 const ACTION_YML = path.join(ROOT, 'actions/pr-impact/action.yml');
+const DOGFOOD_WORKFLOW = path.join(ROOT, '.github/workflows/pr-impact.yml');
 const PACKAGE_JSON = path.join(ROOT, 'package.json');
 
 const INPUTS = [
@@ -208,6 +209,17 @@ describe('PR impact action contract', () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  it('declares the advisory pull-request dogfood workflow without threshold or narrative escalation', () => {
+    const workflow = fs.readFileSync(DOGFOOD_WORKFLOW, 'utf8');
+
+    expect(workflow).toContain('pull_request:');
+    expect(workflow).toContain('uses: ./actions/pr-impact');
+    expect(workflow).toContain('narrative: "off"');
+    expect(workflow).toContain('fail-on-callers: ""');
+    expect(workflow).toContain('fail-on-hubs: "false"');
+    expect(workflow).not.toContain('pull_request_target');
   });
 });
 

@@ -234,3 +234,11 @@ export const prImpactDeliveryResults = {
     reportPath: 'pr-impact-report.md',
   },
 } as const;
+
+export const prImpactWarmCacheSamples = [
+  { runId: 'sample-1', cacheStatus: 'warm-valid', durationSeconds: 142, eligible: true },
+  { runId: 'sample-2', cacheStatus: 'warm-valid', durationSeconds: 151, eligible: true },
+  { runId: 'sample-3', cacheStatus: 'warm-valid', durationSeconds: 137, eligible: true },
+  { runId: 'sample-4', cacheStatus: 'warm-valid', durationSeconds: 166, eligible: true },
+  { runId: 'sample-5', cacheStatus: 'warm-valid', durationSeconds: 149, eligible: true },
+] as const;
