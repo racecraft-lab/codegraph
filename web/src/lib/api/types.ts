@@ -165,6 +165,7 @@ export interface ChatStatus {
   state: ChatAvailability
   message: string
   providerConfigured: boolean
+  repo: string
 }
 
 export interface ChatRequest {
