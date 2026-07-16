@@ -249,4 +249,32 @@ describe('PR impact report delivery', () => {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it('emits an empty report path when report file delivery fails', async () => {
+    const tmp = tmpDir();
+    try {
+      const reportPath = path.join(tmp, 'report.md');
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          PR_IMPACT_REPORT_PATH: reportPath,
+        },
+        writeFileSync: (target: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+          if (String(target) === reportPath) throw new Error('disk full');
+          fs.writeFileSync(target, data);
+        },
+      }));
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.artifact).toBe('failed');
+      expect(result.delivery.summary).toBe('written');
+      expect(outputs['delivery-status']).toBe('fallback');
+      expect(outputs['report-path']).toBe('');
+      expect(fs.existsSync(reportPath)).toBe(false);
+      expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('## Summary');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

@@ -17,6 +17,7 @@ import { prImpactGitHubEvent } from './fixtures/pr-impact';
 
 const ROOT = path.resolve(__dirname, '..');
 const ACTION_YML = path.join(ROOT, 'actions/pr-impact/action.yml');
+const ACTION_README = path.join(ROOT, 'actions/pr-impact/README.md');
 const DOGFOOD_WORKFLOW = path.join(ROOT, '.github/workflows/pr-impact.yml');
 const PACKAGE_JSON = path.join(ROOT, 'package.json');
 
@@ -299,6 +300,7 @@ describe('PR impact action contract', () => {
 
   it('pins external GitHub Actions to full commit SHAs', () => {
     const action = readAction();
+    const readme = fs.readFileSync(ACTION_README, 'utf8');
     const workflow = fs.readFileSync(DOGFOOD_WORKFLOW, 'utf8');
     const combined = `${action}\n${workflow}`;
     const externalUses = [...combined.matchAll(/uses:\s+(actions\/[^\s@]+)@([^\s]+)/g)]
@@ -313,6 +315,8 @@ describe('PR impact action contract', () => {
     for (const { ref } of externalUses) {
       expect(ref).toMatch(/^[0-9a-f]{40}$/);
     }
+    expect(readme).toContain('actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5');
+    expect(readme).not.toContain('actions/checkout@v4');
   });
 });
 

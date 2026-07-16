@@ -292,7 +292,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   emitOutput(deps, 'cache-status', cacheStatus);
   emitOutput(deps, 'delivery-status', delivery.status);
   emitOutput(deps, 'comment-url', delivery.commentUrl);
-  emitOutput(deps, 'report-path', reportPath);
+  emitOutput(deps, 'report-path', reportFileWritten ? reportPath : '');
   emitOutput(deps, 'artifact-name', artifactName);
   emitOutput(deps, 'narrative-status', narrative.status);
   emitOutput(deps, 'codegraph-version', inputs.codegraphVersion);
