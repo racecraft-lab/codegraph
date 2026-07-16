@@ -11,24 +11,34 @@ import type { GraphResult } from "@/lib/api/types"
 
 export function ImpactRoute() {
   const { id = "" } = useParams()
-  const decodedId = decodeURIComponent(id)
-  const { selectedRepo } = useAppState()
+  const nodeId = id
+  const { selectedRepo, selectNode, clearNode } = useAppState()
   const [impact, setImpact] = React.useState<GraphResult | null>(null)
   const [error, setError] = React.useState<string | undefined>()
 
   React.useEffect(() => {
     let cancelled = false
+    setImpact(null)
+    setError(undefined)
+    clearNode()
     async function load() {
       try {
-        const next = await getImpact(decodedId, selectedRepo?.id)
+        const next = await getImpact(nodeId, selectedRepo?.id)
         if (!cancelled) {
           setImpact(next)
           setError(undefined)
+          const routeNode = next.nodes.find((node) => node.id === nodeId)
+          if (routeNode) {
+            selectNode(routeNode)
+          } else {
+            clearNode()
+          }
         }
       } catch (caught) {
         if (!cancelled) {
           setImpact(null)
           setError(errorState(caught).message)
+          clearNode()
         }
       }
     }
@@ -36,7 +46,7 @@ export function ImpactRoute() {
     return () => {
       cancelled = true
     }
-  }, [decodedId, selectedRepo?.id])
+  }, [clearNode, nodeId, selectNode, selectedRepo?.id])
 
   if (!impact) {
     return (

@@ -34,6 +34,7 @@ describe("chat API client", () => {
 
   it("posts messages and redeems bundle handles through same-origin paths", async () => {
     await expect(sendChatMessage({ message: "hello", repo: "0123456789abcdef" })).resolves.toMatchObject({ state: "answer" })
-    await expect(redeemChatBundle("bundle-1")).resolves.toMatchObject({ state: "pending_bundle" })
+    await expect(redeemChatBundle("bundle-1", "0123456789abcdef")).resolves.toMatchObject({ state: "pending_bundle" })
+    expect(fetch).toHaveBeenCalledWith("/api/chat/bundles/bundle-1?repo=0123456789abcdef", expect.any(Object))
   })
 })

@@ -18,7 +18,7 @@ Build a package-shipped Vite + React + TypeScript SPA under `web/` for local Cod
 
 **Testing**: `npm run build`, `npm run typecheck`, `npm test`; focused Vitest suites for API clients, chat adapter, static serving, packaging, and renderer data transforms; Playwright for primary UI/UAT, keyboard paths, focus containment/return, accessible names and status announcements, nonblank canvas checks, synchronized graph/impact text mirrors, reduced-motion behavior, contrast and target-size checks, text-resize/reflow/no-overlap checks, performance thresholds from NFR-001 through NFR-006, offline/no-CDN behavior, mobile layout, and packaged `codegraph serve --web`.
 
-**Target Platform**: Self-hosted local browser UI served by `codegraph serve --web`; loopback default with no credentials; existing non-loopback bearer-token behavior for `/api/*`; package-shipped npm CLI/runtime.
+**Target Platform**: Self-hosted local browser UI served by `codegraph serve --web`; loopback default with no credentials; non-loopback browser serving refused until browser-compatible API/SSE session auth exists; package-shipped npm CLI/runtime.
 
 **Project Type**: Local-first CLI/library with an added SPA and minimal local HTTP server integration.
 

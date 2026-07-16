@@ -44,6 +44,7 @@ describe("reindex panel", () => {
     })
     window.history.pushState({}, "", "/reindex")
 
+    let started = false
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input)
       if (url === "/api/repos") {
@@ -57,6 +58,7 @@ describe("reindex panel", () => {
         })
       }
       if (url === "/api/reindex/repo-1" && init?.method === "POST") {
+        started = true
         return Response.json({
           id: "job-1",
           repo: "repo-1",
@@ -66,6 +68,9 @@ describe("reindex panel", () => {
         }, { status: 202 })
       }
       if (url === "/api/reindex/repo-1") {
+        if (!started) {
+          return Response.json({ error: { code: "not_found", message: "No re-analysis job found." } }, { status: 404 })
+        }
         return Response.json({
           id: "job-1",
           repo: "repo-1",
@@ -89,5 +94,116 @@ describe("reindex panel", () => {
     await screen.findByText("done")
     expect(screen.getByText("Checked 1 files; 0 changed; updated 0 nodes.")).toBeInTheDocument()
     expect(screen.queryByText("Disconnected")).not.toBeInTheDocument()
+  })
+
+  it("ignores stale disconnect recovery snapshots after a terminal job wins", async () => {
+    Object.defineProperty(globalThis, "EventSource", {
+      value: TestEventSource,
+      writable: true,
+    })
+    window.history.pushState({}, "", "/reindex")
+
+    let started = false
+    const latestResolvers: Array<(job: unknown) => void> = []
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === "/api/repos") {
+        return Response.json([{ id: "repo-1", root: "/repo", name: "repo", default: true }])
+      }
+      if (url.startsWith("/api/status")) {
+        return Response.json({
+          version: "1.4.1",
+          repo: { id: "repo-1", root: "/repo", name: "repo" },
+          index: { state: "ready", fileCount: 1, nodeCount: 2, edgeCount: 3 },
+        })
+      }
+      if (url === "/api/reindex/repo-1" && init?.method === "POST") {
+        started = true
+        return Response.json({
+          id: "job-1",
+          repo: "repo-1",
+          mode: "sync",
+          status: "running",
+          startedAt: "2026-07-15T22:57:53.440Z",
+        }, { status: 202 })
+      }
+      if (url === "/api/reindex/repo-1") {
+        if (!started) {
+          return Response.json({ error: { code: "not_found", message: "No re-analysis job found." } }, { status: 404 })
+        }
+        return new Promise<Response>((resolve) => {
+          latestResolvers.push((job) => resolve(Response.json(job)))
+        })
+      }
+      return Response.json({ error: { code: "not_found", message: "Not found." } }, { status: 404 })
+    })
+
+    renderApp()
+
+    await userEvent.click(await screen.findByRole("button", { name: "Sync changed files" }))
+    await waitFor(() => expect(TestEventSource.instances).toHaveLength(1))
+
+    TestEventSource.instances[0]?.dispatchEvent(new Event("error"))
+    TestEventSource.instances[0]?.dispatchEvent(new Event("error"))
+    await waitFor(() => expect(latestResolvers).toHaveLength(2))
+
+    latestResolvers[1]?.({
+      id: "job-1",
+      repo: "repo-1",
+      mode: "sync",
+      status: "done",
+      startedAt: "2026-07-15T22:57:53.440Z",
+      finishedAt: "2026-07-15T22:57:54.267Z",
+    })
+    await screen.findByText("done")
+
+    latestResolvers[0]?.({
+      id: "job-1",
+      repo: "repo-1",
+      mode: "sync",
+      status: "running",
+      startedAt: "2026-07-15T22:57:53.440Z",
+    })
+
+    await waitFor(() => expect(screen.getByText("done")).toBeInTheDocument())
+    expect(screen.queryByText("running")).not.toBeInTheDocument()
+  })
+
+  it("hydrates and subscribes to a running job for the selected repository", async () => {
+    Object.defineProperty(globalThis, "EventSource", {
+      value: TestEventSource,
+      writable: true,
+    })
+    window.history.pushState({}, "", "/reindex")
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === "/api/repos") {
+        return Response.json([{ id: "repo-1", root: "/repo", name: "repo", default: true }])
+      }
+      if (url.startsWith("/api/status")) {
+        return Response.json({
+          version: "1.4.1",
+          repo: { id: "repo-1", root: "/repo", name: "repo" },
+          index: { state: "ready", fileCount: 1, nodeCount: 2, edgeCount: 3 },
+        })
+      }
+      if (url === "/api/reindex/repo-1") {
+        return Response.json({
+          id: "job-1",
+          repo: "repo-1",
+          mode: "sync",
+          status: "running",
+          startedAt: "2026-07-15T22:57:53.440Z",
+        })
+      }
+      return Response.json({ error: { code: "not_found", message: "Not found." } }, { status: 404 })
+    })
+
+    renderApp()
+
+    await screen.findByText("running")
+    await waitFor(() => expect(TestEventSource.instances).toHaveLength(1))
+    expect(TestEventSource.instances[0]?.url).toBe("/api/reindex/repo-1/events")
   })
 })

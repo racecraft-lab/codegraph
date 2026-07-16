@@ -136,9 +136,11 @@ Expected outcome:
 - No external CDN, hosted asset, hosted auth, hosted database, remote telemetry, or direct provider request is made by the browser.
 - All runtime assets load from the local backend.
 
-## Container Or Non-loopback Guidance Validation
+## Non-loopback Guidance Validation
 
-Use existing server options and auth behavior only:
+The packaged browser UI is loopback-only until browser-compatible API and
+EventSource session auth exists. Non-loopback startup is expected to fail
+clearly:
 
 ```bash
 node dist/bin/codegraph.js serve --web --host 0.0.0.0 --port 8080 --path <indexed-repo>
@@ -146,9 +148,9 @@ node dist/bin/codegraph.js serve --web --host 0.0.0.0 --port 8080 --path <indexe
 
 Expected outcome:
 
-- Non-loopback `/api/*` access follows existing `CODEGRAPH_SERVER_TOKEN` rules.
-- Static shell serving does not weaken API auth.
-- Documentation explains host, port, and token requirements without adding hosted auth or a production Dockerfile requirement.
+- Startup refuses the bind with a loopback-only browser UI message.
+- Static shell serving does not create a broken authenticated browser surface.
+- Documentation explains host and port behavior without adding hosted auth or a production Dockerfile requirement.
 
 ## Clean-room Verification
 

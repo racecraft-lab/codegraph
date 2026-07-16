@@ -17,6 +17,7 @@ export interface ChatApiDeps {
   defaultRepo: RepoInfo;
   resolveRepo(repoId: string | undefined): RepoInfo | null;
   getClient(repo: RepoInfo): Promise<DaemonReadClient>;
+  evictClient(repo: RepoInfo, client: DaemonReadClient): void;
 }
 
 interface ChatRequestBody {
@@ -24,6 +25,21 @@ interface ChatRequestBody {
   message?: string;
   selectedNodeId?: string;
   view?: string;
+}
+
+interface ChatContextMetadata {
+  repo: { id: string; name: string };
+  view: string;
+  selectedNodeId?: string;
+  symbols: Array<{ id: string; name: string; kind: string; file?: string; line?: number }>;
+  files: string[];
+  truncated: boolean;
+  insufficiencyReason?: string;
+}
+
+interface ChatGraphContext {
+  lines: string[];
+  metadata: ChatContextMetadata;
 }
 
 type ChatBodyResult = { ok: true; body: ChatRequestBody } | { ok: false; error: ApiError };
@@ -69,17 +85,32 @@ async function readJsonBody(ctx: RouteContext): Promise<ChatBodyResult> {
   const raw = await new Promise<string | ApiError>((resolve) => {
     const chunks: Buffer[] = [];
     let total = 0;
+    let oversized = false;
+    let settled = false;
+    const settle = (value: string | ApiError) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     ctx.req!.on('data', (chunk: unknown) => {
+      if (oversized) return;
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
       total += buf.byteLength;
       if (total > MAX_CHAT_BODY_BYTES) {
-        resolve(apiError('invalid_request', { message: 'Request body is too large.' }));
+        oversized = true;
+        chunks.length = 0;
+        settle(apiError('invalid_request', { message: 'Request body is too large.' }));
         return;
       }
       chunks.push(buf);
     });
-    ctx.req!.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    ctx.req!.on('error', () => resolve(apiError('invalid_request', { message: 'Request body could not be read.' })));
+    ctx.req!.on('end', () => {
+      if (!oversized) settle(Buffer.concat(chunks).toString('utf8'));
+    });
+    ctx.req!.on('error', () => {
+      chunks.length = 0;
+      settle(apiError('invalid_request', { message: 'Request body could not be read.' }));
+    });
   });
   if (typeof raw !== 'string') return { ok: false, error: raw };
   try {
@@ -103,32 +134,69 @@ function fallbackFor(body: ChatRequestBody): string {
   return `CodeGraph chat is unavailable. Use search, graph, and impact views for ${subject} while provider-backed prose is unavailable.`;
 }
 
-async function graphContext(deps: ChatApiDeps, repo: RepoInfo, body: ChatRequestBody): Promise<string[]> {
-  const context = [`Repository: ${repo.name} (${repo.id})`, `View: ${body.view ?? 'repository'}`];
+function baseContext(repo: RepoInfo, body: ChatRequestBody): ChatGraphContext {
+  const view = body.view ?? 'repository';
+  const insufficiencyReason = body.selectedNodeId ? undefined : 'No selected symbol was provided.';
+  const metadata: ChatContextMetadata = {
+    repo: { id: repo.id, name: repo.name },
+    view,
+    selectedNodeId: body.selectedNodeId,
+    symbols: [],
+    files: [],
+    truncated: false,
+    insufficiencyReason,
+  };
+  return {
+    lines: [
+      `Repository: ${repo.name} (${repo.id})`,
+      `View: ${view}`,
+      ...(insufficiencyReason ? [`Context limitation: ${insufficiencyReason}`] : []),
+    ],
+    metadata,
+  };
+}
+
+async function graphContext(deps: ChatApiDeps, repo: RepoInfo, body: ChatRequestBody): Promise<ChatGraphContext> {
+  const context = baseContext(repo, body);
   if (!body.selectedNodeId) return context;
+  let client: DaemonReadClient | undefined;
   try {
-    const client = await deps.getClient(repo);
+    client = await deps.getClient(repo);
     const node = await readNode(client, body.selectedNodeId);
     if (node) {
-      context.push(
+      context.metadata.symbols.push({
+        id: node.id,
+        name: node.name,
+        kind: node.kind,
+        ...(node.file ? { file: node.file } : {}),
+        ...(node.line ? { line: node.line } : {}),
+      });
+      if (node.file) context.metadata.files.push(node.file);
+      context.metadata.insufficiencyReason = undefined;
+      context.lines.push(
         `Selected symbol: ${node.name}`,
         `Kind: ${node.kind}`,
         node.file ? `File: ${node.file}${node.line ? `:${node.line}` : ''}` : 'File: unknown',
         node.signature ? `Signature: ${node.signature}` : 'Signature: unavailable',
       );
+    } else {
+      context.metadata.insufficiencyReason = 'Selected symbol was not found in the local graph.';
+      context.lines.push(`Context limitation: ${context.metadata.insufficiencyReason}`);
     }
   } catch {
-    context.push('Selected symbol context could not be loaded from the local graph daemon.');
+    if (client) deps.evictClient(repo, client);
+    context.metadata.insufficiencyReason = 'Selected symbol context could not be loaded from the local graph daemon.';
+    context.lines.push(context.metadata.insufficiencyReason);
   }
   return context;
 }
 
-function taskFor(repo: RepoInfo, body: ChatRequestBody, context: string[]): ProseTask {
+function taskFor(repo: RepoInfo, body: ChatRequestBody, context: ChatGraphContext): ProseTask {
   return {
     instructions:
       `Answer this CodeGraph browser question about ${repo.name} using only the supplied graph context. ` +
       `Be explicit when the context is insufficient.\n\nQuestion: ${body.message ?? ''}`,
-    graphContext: context,
+    graphContext: context.lines,
     outputContract: { requiredFields: [{ name: 'prose', type: 'string', nonEmpty: true }] },
     fallback: fallbackFor(body),
   };
@@ -150,6 +218,15 @@ function messagesHandler(deps: ChatApiDeps) {
     if (!request.message || typeof request.message !== 'string' || !request.message.trim()) {
       return apiError('invalid_request', { message: 'Missing required body field: message' });
     }
+    if (request.repo !== undefined && typeof request.repo !== 'string') {
+      return apiError('invalid_request', { message: 'Body field repo must be a string.', details: { param: 'repo' } });
+    }
+    if (request.selectedNodeId !== undefined && typeof request.selectedNodeId !== 'string') {
+      return apiError('invalid_request', { message: 'Body field selectedNodeId must be a string.', details: { param: 'selectedNodeId' } });
+    }
+    if (request.view !== undefined && typeof request.view !== 'string') {
+      return apiError('invalid_request', { message: 'Body field view must be a string.', details: { param: 'view' } });
+    }
 
     const repo = resolveChatRepo(deps, request.repo);
     if ('status' in repo) return repo;
@@ -162,6 +239,7 @@ function messagesHandler(deps: ChatApiDeps) {
           state: 'dormant',
           answer: fallbackFor(request),
           message: 'LLM provider is not configured.',
+          context: baseContext(repo, request).metadata,
         },
       };
     }
@@ -172,6 +250,7 @@ function messagesHandler(deps: ChatApiDeps) {
           state: 'misconfigured',
           answer: fallbackFor(request),
           message: `LLM configuration is incomplete or invalid: ${config.missingVariable}.`,
+          context: baseContext(repo, request).metadata,
         },
       };
     }
@@ -179,7 +258,7 @@ function messagesHandler(deps: ChatApiDeps) {
     const context = await graphContext(deps, repo, request);
     const result = await generate(repo.root, taskFor(repo, request, context));
     if (result.source === 'endpoint') {
-      return { status: 200, body: { state: 'answer', answer: result.text } };
+      return { status: 200, body: { state: 'answer', answer: result.text, context: context.metadata } };
     }
     if (result.source === 'pending-bundle') {
       return {
@@ -189,10 +268,11 @@ function messagesHandler(deps: ChatApiDeps) {
           answer: result.text,
           bundleHandle: result.handle,
           message: 'Agent bundle emitted and pending completion.',
+          context: context.metadata,
         },
       };
     }
-    return { status: 200, body: { state: 'fallback', answer: result.text } };
+    return { status: 200, body: { state: 'fallback', answer: result.text, context: context.metadata } };
   };
 }
 

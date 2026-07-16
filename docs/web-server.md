@@ -23,7 +23,7 @@ server also shuts down cleanly on `SIGTERM`.
 | Flag | What it does | Default |
 |------|--------------|---------|
 | `--web` | Run as a local HTTP server (instead of the MCP stdio server) | — |
-| `--host <host>` | Bind address. Any non-loopback host requires a token (see below) | `127.0.0.1` |
+| `--host <host>` | Bind address. The packaged browser UI is loopback-only. | `127.0.0.1` |
 | `--port <port>` | Bind port | `11235` |
 | `--port 0` | Bind an OS-assigned ephemeral port — the actual port is printed on startup | — |
 | `-p, --path <path>` | Serve a different project directory | current directory |
@@ -41,7 +41,9 @@ When you pass `--port 0`, read the printed line to discover the assigned port.
 
 Visiting `/` opens the packaged graph browser. Extensionless browser routes such
 as `/search`, `/symbol/<id>`, `/graph/<id>`, `/impact/<id>`, `/reindex`, and
-`/chat` serve the same SPA shell so refreshes and direct links work.
+`/chat` serve the same SPA shell so refreshes and direct links work. Symbol
+routes whose encoded ids look like filenames, such as
+`/symbol/file%3Asrc%2Findex.ts`, also serve the SPA shell.
 
 Static assets ship from the installed package under `dist/web/`. The runtime app
 does not require a CDN, hosted asset server, hosted auth/database service, remote
@@ -58,28 +60,13 @@ The server is **loopback-first and fail-closed**:
 
 - **Loopback (the default `127.0.0.1`)** serves with no authentication — it is
   only reachable from your own machine.
-- **Any non-loopback host** (binding `--host 0.0.0.0`, a LAN address, etc.)
-  **requires an authentication token**. Set it in the environment:
+- **Any non-loopback host** (binding `--host 0.0.0.0`, a LAN address, etc.) is
+  refused for the packaged browser UI, even when `CODEGRAPH_SERVER_TOKEN` is set.
+  Browser `fetch` and `EventSource` need a browser-compatible session mechanism
+  before the UI can be safely served off-machine. Bind `127.0.0.1` for the UI.
 
-  ```bash
-  export CODEGRAPH_SERVER_TOKEN=your-secret-token
-  codegraph serve --web --host 0.0.0.0
-  ```
-
-  If you bind a non-loopback host **without** `CODEGRAPH_SERVER_TOKEN`, the
-  server refuses to start — nothing binds. This is deliberate: it is never
-  possible to expose the API off-machine unauthenticated.
-
-- When a token is set, every `/api/*` request must send it as a **Bearer**
-  header:
-
-  ```bash
-  curl -H "Authorization: Bearer $CODEGRAPH_SERVER_TOKEN" \
-    http://your-host:11235/api/status
-  ```
-
-  On a loopback bind the token is a no-op — Bearer auth is not enforced. Static
-  shell serving does not weaken API auth; token enforcement remains on `/api/*`.
+- On a loopback bind, `CODEGRAPH_SERVER_TOKEN` is a no-op — Bearer auth is not
+  enforced by the packaged browser server.
 
 - Every request's **`Host` header is validated** against an allowlist for the
   address the server bound to. A request with an unexpected `Host` is rejected,
@@ -93,13 +80,14 @@ All responses are JSON, except the events endpoint
 (`text/event-stream`). Read endpoints accept an optional **`?repo=<id>`** query
 parameter to target a specific indexed project (the `id` comes from
 `/api/repos`); omit it to use the project the server was started for.
-`/api/status` and `/api/repos` are not repo-scoped and ignore `?repo`.
+`/api/status` is repo-scoped; `/api/repos` lists all known repos and ignores
+`?repo`.
 
 ### Read
 
 | Method & path | Purpose |
 |---------------|---------|
-| `GET /api/status` | Server version and index health/counts for the default project |
+| `GET /api/status` | Server version and index health/counts for the selected or default project |
 | `GET /api/repos` | The indexed projects the server can address; the startup project is the default |
 | `GET /api/search?q=<text>&mode=<mode>` | Symbol search. `mode` is one of `keyword`, `semantic`, `hybrid`, `auto` (default `auto`) |
 | `GET /api/node/:id` | One symbol's own fields (identity, kind, name, location, signature, doc); relationships come from `callers`/`callees`/`impact`/`graph` |

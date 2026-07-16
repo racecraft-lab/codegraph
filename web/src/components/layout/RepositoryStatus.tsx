@@ -9,6 +9,7 @@ const LABELS = {
   unavailable: "Unavailable",
   unauthorized: "Token required",
   empty: "No index",
+  unindexed: "Unindexed",
   missing: "No repository",
 } as const
 

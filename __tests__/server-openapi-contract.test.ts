@@ -492,6 +492,7 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
     const BAD_REPO = 'zzzzzzzzzzzzzzzz'; // fails ^[0-9a-f]{16}$ → 404 repo (FR-011)
 
     matrix.set('/api/status 200', H('/api/status'));
+    matrix.set('/api/status 404', H(`/api/status?repo=${BAD_REPO}`));
     matrix.set('/api/status 503', U('/api/status'));
     matrix.set('/api/repos 200', H('/api/repos'));
     matrix.set('/api/search 200', H('/api/search?q=subHelper'));
@@ -591,6 +592,7 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
       defaultRepo: readStub.defaultRepo,
       resolveRepo: () => null,
       getClient: () => Promise.reject(new Error('stub — never invoked by route enumeration')),
+      evictClient: () => {},
     };
     const live = [...buildReadRoutes(readStub), ...buildJobRoutes(jobStub), ...buildChatRoutes(chatStub)].map((r) => ({
       // `/api/node/:id` → `/api/node/{id}` (the OpenAPI path-template form).

@@ -28,6 +28,7 @@ import {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar"
 
 const navItems = [
@@ -37,9 +38,36 @@ const navItems = [
   { to: "/chat", label: "Chat", icon: BotIcon },
 ]
 
-export function AppShell({ children }: { children: ReactNode }) {
+function WorkspaceNavigation() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  function navigateAndClose(path: string) {
+    navigate(path)
+    if (isMobile) setOpenMobile(false)
+  }
+
+  return (
+    <SidebarMenu>
+      {navItems.map((item) => (
+        <SidebarMenuItem key={item.to}>
+          <SidebarMenuButton
+            isActive={location.pathname === item.to}
+            tooltip={item.label}
+            onClick={() => navigateAndClose(item.to)}
+          >
+            <item.icon />
+            <span>{item.label}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
+  )
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const navigate = useNavigate()
 
   return (
     <SidebarProvider>
@@ -59,20 +87,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <SidebarGroup>
             <SidebarGroupLabel>Workspace</SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
-                {navItems.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton
-                      isActive={location.pathname === item.to}
-                      tooltip={item.label}
-                      onClick={() => navigate(item.to)}
-                    >
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
+              <WorkspaceNavigation />
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>

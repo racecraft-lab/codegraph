@@ -1022,7 +1022,7 @@ describe('SPEC-005 read endpoints (T011, FR-004/004a/005/006/006a/007/016)', () 
       expect(body.lsp.available).toBe(false);
     }, T(20000));
 
-    it('is not repo-scoped: does not carry the full repo list', async () => {
+    it('does not carry the full repo list', async () => {
       const { body } = await getJson('/api/status');
       expect(Array.isArray(body.repos)).toBe(false);
     }, T(15000));
@@ -1274,13 +1274,9 @@ describe('SPEC-005 /api/status on an un-indexed startup repo (T014, FR-005/016)'
 // startup) and returns ITS data (FR-010/010a); an unregistered OR malformed
 // `?repo` → 404 `not_found` (`details.resource: repo`), NEVER 400 (FR-011).
 //
-// `/api/status` and `/api/repos` are deliberately NOT repo-scoped: they IGNORE a
-// stray `?repo` (→ 200), never 400. The shipped contract (openapi.yaml) lists no
-// `repo` parameter and no 400 response for either path, and FR-025's contract
-// test fails on any status an endpoint emits that the document omits — so a 400
-// here would be a contract violation. "Ignore unknown params consistently" is
-// the resolved reading of FR-010a's "do not accept `repo`" (matches how every
-// other endpoint already ignores unrecognized query params).
+// `/api/status` is repo-scoped so the web UI can report the selected repo's
+// index health. `/api/repos` still lists all registered repos and ignores a
+// stray `?repo` (→ 200), never 400.
 //
 // TWO real fixture indexes, each with its own running (registered) daemon, keyed
 // on temp dirs — never this repo's own daemon (dogfood hazard). The global
@@ -1465,14 +1461,12 @@ describe('SPEC-005 multi-repo /api/repos + ?repo (T026, FR-009/010/010a/011)', (
     }, T(25000));
   });
 
-  // ---- /api/status + /api/repos are NOT repo-scoped: ignore ?repo (no 400) ----
-  describe('/api/status and /api/repos ignore ?repo (not repo-scoped, FR-010a)', () => {
-    it('GET /api/status?repo=<second repo> → 200 reporting the DEFAULT repo (param ignored)', async () => {
+  // ---- /api/status is repo-scoped; /api/repos ignores ?repo (no 400) ----
+  describe('/api/status repo selection and /api/repos listing', () => {
+    it('GET /api/status?repo=<second repo> → 200 reporting the selected repo', async () => {
       const { status, body } = await getJson(`/api/status?repo=${idB}`);
       expect(status).toBe(200);
-      // Reports the startup/default repo regardless of the stray ?repo (status is
-      // not repo-scoped); never 400 (the contract documents no 400 here).
-      expect(body.repo.id).toBe(idA);
+      expect(body.repo.id).toBe(idB);
     }, T(20000));
 
     it('GET /api/repos?repo=<second repo> → 200 still listing repos (param ignored)', async () => {

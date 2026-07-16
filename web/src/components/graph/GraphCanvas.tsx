@@ -13,6 +13,15 @@ export const GraphCanvas = React.forwardRef<
   }
 >(function GraphCanvas({ graph, onSelectNode }, forwardedRef) {
   const containerRef = React.useRef<HTMLDivElement | null>(null)
+  const [themeRevision, setThemeRevision] = React.useState(0)
+
+  React.useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setThemeRevision((revision) => revision + 1)
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+    return () => observer.disconnect()
+  }, [])
 
   React.useEffect(() => {
     if (!containerRef.current) return undefined
@@ -31,7 +40,7 @@ export const GraphCanvas = React.forwardRef<
         forwardedRef.current = null
       }
     }
-  }, [forwardedRef, graph, onSelectNode])
+  }, [forwardedRef, graph, onSelectNode, themeRevision])
 
   return (
     <div className="min-h-[520px] flex-1 overflow-hidden rounded-lg border bg-card">

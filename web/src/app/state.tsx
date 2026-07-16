@@ -29,6 +29,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [repositoryState, setRepositoryState] = React.useState<RepositoryState>("missing")
   const [statusMessage, setStatusMessage] = React.useState("Loading repository state.")
   const [selectedNode, setSelectedNode] = React.useState<CodeNode | undefined>()
+  const statusRequestRef = React.useRef(0)
 
   const selectedRepo = React.useMemo(
     () => repositories.find((repo) => repo.id === selectedRepoId) ?? repositories.find((repo) => repo.default) ?? repositories[0],
@@ -51,18 +52,41 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const refreshStatus = React.useCallback(async () => {
+    const repoId = selectedRepo?.id
+    const requestId = statusRequestRef.current + 1
+    statusRequestRef.current = requestId
     try {
-      const status = await getRepositoryStatus(selectedRepo?.id)
+      const status = await getRepositoryStatus(repoId)
+      if (statusRequestRef.current !== requestId) return
+      if (repoId && status.repo.id !== repoId) return
       setRepositoryStatus(status)
       setRepositoryState(classifyRepositoryStatus(status))
       setStatusMessage(`${status.index.nodeCount.toLocaleString()} symbols across ${status.index.fileCount.toLocaleString()} files.`)
     } catch (error) {
+      if (statusRequestRef.current !== requestId) return
       const nextError = errorState(error)
       setRepositoryStatus(undefined)
       setRepositoryState(classifyRepositoryStatus(undefined, nextError.code))
       setStatusMessage(nextError.message)
     }
   }, [selectedRepo?.id])
+
+  const selectRepository = React.useCallback((repoId: string) => {
+    statusRequestRef.current += 1
+    setSelectedRepoId(repoId)
+    setRepositoryStatus(undefined)
+    setRepositoryState("missing")
+    setStatusMessage("Loading repository state.")
+    setSelectedNode(undefined)
+  }, [])
+
+  const selectNode = React.useCallback((node: CodeNode) => {
+    setSelectedNode(node)
+  }, [])
+
+  const clearNode = React.useCallback(() => {
+    setSelectedNode(undefined)
+  }, [])
 
   React.useEffect(() => {
     void refreshRepositories()
@@ -81,16 +105,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       repositoryState,
       statusMessage,
       selectedNode,
-      selectRepository(repoId) {
-        setSelectedRepoId(repoId)
-        setSelectedNode(undefined)
-      },
-      selectNode(node) {
-        setSelectedNode(node)
-      },
-      clearNode() {
-        setSelectedNode(undefined)
-      },
+      selectRepository,
+      selectNode,
+      clearNode,
       refreshRepositories,
       refreshStatus,
     }),
@@ -102,6 +119,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       repositoryState,
       statusMessage,
       selectedNode,
+      selectRepository,
+      selectNode,
+      clearNode,
       refreshRepositories,
       refreshStatus,
     ],

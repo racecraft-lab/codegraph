@@ -1,12 +1,26 @@
 import { Link } from "react-router-dom"
 
+import { StatePanel } from "@/components/layout/StatePanel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { CodeNode, ListResult } from "@/lib/api/types"
 
-function NodeRows({ result }: { result?: ListResult<CodeNode> }) {
-  if (!result || result.items.length === 0) {
+export type RelationshipPanelState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "success"; result: ListResult<CodeNode> }
+
+function NodeRows({ state, label }: { state: RelationshipPanelState; label: string }) {
+  if (state.status === "loading") {
+    return <StatePanel kind="loading" title={`Loading ${label}`}>Loading relationship rows.</StatePanel>
+  }
+
+  if (state.status === "error") {
+    return <StatePanel kind="degraded" title={`${label} unavailable`}>{state.message}</StatePanel>
+  }
+
+  if (state.result.items.length === 0) {
     return <p className="text-sm text-muted-foreground">No relationship rows returned.</p>
   }
 
@@ -21,7 +35,7 @@ function NodeRows({ result }: { result?: ListResult<CodeNode> }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {result.items.map((node) => (
+        {state.result.items.map((node) => (
           <TableRow key={node.id}>
             <TableCell className="font-medium">{node.name}</TableCell>
             <TableCell>{node.kind}</TableCell>
@@ -42,8 +56,8 @@ export function RelationshipPanels({
   callers,
   callees,
 }: {
-  callers?: ListResult<CodeNode>
-  callees?: ListResult<CodeNode>
+  callers: RelationshipPanelState
+  callees: RelationshipPanelState
 }) {
   return (
     <div className="grid gap-3 lg:grid-cols-2">
@@ -53,7 +67,7 @@ export function RelationshipPanels({
           <CardDescription>Symbols that call or reference this symbol.</CardDescription>
         </CardHeader>
         <CardContent>
-          <NodeRows result={callers} />
+          <NodeRows state={callers} label="callers" />
         </CardContent>
       </Card>
       <Card>
@@ -62,7 +76,7 @@ export function RelationshipPanels({
           <CardDescription>Symbols this symbol calls or references.</CardDescription>
         </CardHeader>
         <CardContent>
-          <NodeRows result={callees} />
+          <NodeRows state={callees} label="callees" />
         </CardContent>
       </Card>
     </div>

@@ -17,6 +17,7 @@
  */
 
 import * as crypto from 'crypto';
+import * as net from 'net';
 import { isLoopbackHost } from '../utils';
 
 /** Resolved bind security posture for a `(host, token)` pair. */
@@ -78,12 +79,23 @@ export function isAllowedHostHeader(
   if (parsed === null) return false;
   if (parsed.port !== boundPort) return false;
   const allowed = new Set(['localhost', '127.0.0.1', '::1', normalizeHost(boundHost)]);
-  return allowed.has(normalizeHost(parsed.host));
+  const host = normalizeHost(parsed.host);
+  if (allowed.has(host)) return true;
+  // Wildcard binds are intentionally reachable through the machine's concrete
+  // interface IPs. Allow IP-literal Host values while still rejecting arbitrary
+  // DNS names for rebinding protection.
+  if (isWildcardHost(boundHost) && net.isIP(host) !== 0) return true;
+  return false;
 }
 
 /** Lowercase a host and strip IPv6 brackets (`[::1]` → `::1`). */
 function normalizeHost(host: string): string {
   return host.toLowerCase().replace(/^\[|\]$/g, '');
+}
+
+function isWildcardHost(host: string): boolean {
+  const normalized = normalizeHost(host);
+  return normalized === '0.0.0.0' || normalized === '::';
 }
 
 /**

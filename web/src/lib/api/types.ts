@@ -7,6 +7,7 @@ export type RepositoryState =
   | "unavailable"
   | "unauthorized"
   | "empty"
+  | "unindexed"
   | "missing"
 
 export interface ErrorEnvelope {
@@ -185,5 +186,14 @@ export interface ChatResponse {
   answer?: string
   bundleHandle?: string
   message?: string
+  context?: {
+    repo: { id: string; name: string }
+    view: string
+    selectedNodeId?: string
+    symbols: Array<{ id: string; name: string; kind: string; file?: string; line?: number }>
+    files: string[]
+    truncated: boolean
+    insufficiencyReason?: string
+  }
   citations?: Array<{ nodeId?: string; file?: string; line?: number }>
 }

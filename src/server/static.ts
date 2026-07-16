@@ -49,9 +49,21 @@ const MIME_BY_EXT: Record<string, string> = {
 
 /** `text/html` for the app shell and placeholder page. */
 const HTML_CONTENT_TYPE = 'text/html; charset=utf-8';
+const SPA_EXACT_ROUTES = new Set(['/', '/search', '/reindex', '/chat']);
+const SPA_PREFIX_ROUTES = ['/symbol/', '/graph/', '/impact/'];
 
 function contentType(ext: string): string {
   return MIME_BY_EXT[ext.toLowerCase()] ?? 'application/octet-stream';
+}
+
+function isSpaRoute(rawPath: string): boolean {
+  const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+  if (SPA_EXACT_ROUTES.has(normalized)) return true;
+  return SPA_PREFIX_ROUTES.some((prefix) => {
+    if (!normalized.startsWith(prefix)) return false;
+    const encodedParam = normalized.slice(prefix.length);
+    return encodedParam.length > 0 && !encodedParam.includes('/');
+  });
 }
 
 /**
@@ -118,6 +130,7 @@ const PLACEHOLDER_HTML = `<!doctype html>
  */
 export function serveStatic(rawPath: string, webRoot: string): StaticResult {
   // (1) Decode ONCE. Never loop to a fixed point (FR-017b).
+  const spaRoute = isSpaRoute(rawPath);
   let decoded: string;
   try {
     decoded = decodeURIComponent(rawPath);
@@ -142,8 +155,10 @@ export function serveStatic(rawPath: string, webRoot: string): StaticResult {
   const present = shellPath !== null && fs.existsSync(shellPath);
 
   // (3a) Asset-extension path: serve the exact file, else 404 — NEVER the shell
-  //      (FR-018). Holds identically whether the web build is present or absent.
-  if (ext !== '') {
+  //      (FR-018). Known SPA route prefixes are checked against the raw route
+  //      shape first because opaque symbol ids can contain encoded slashes and
+  //      file-like suffixes such as `src/index.ts`.
+  if (ext !== '' && !spaRoute) {
     if (!present) return routeMiss();
     try {
       const body = fs.readFileSync(resolved);

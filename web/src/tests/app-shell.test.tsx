@@ -1,4 +1,5 @@
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { renderApp } from "./test-utils"
@@ -11,6 +12,7 @@ const repo = {
 }
 
 beforeEach(() => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 })
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
@@ -43,6 +45,19 @@ describe("App shell", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Ready")).toBeInTheDocument()
+    })
+  })
+
+  it("closes the mobile sidebar after navigation", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 })
+    renderApp()
+
+    await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }))
+    const dialog = await screen.findByRole("dialog")
+    await userEvent.click(within(dialog).getByText("Search"))
+
+    await waitFor(() => {
+      expect(dialog).not.toBeInTheDocument()
     })
   })
 })

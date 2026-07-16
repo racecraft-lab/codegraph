@@ -8,7 +8,7 @@ The SPEC-006 SPA consumes the shipped CodeGraph local HTTP API from `src/server/
 
 | Route | Method | Repo Scope | UI Usage | Notes |
 |---|---|---|---|---|
-| `/api/status` | GET | Default repo only | Server/index health and default repository status | Not repo-scoped. |
+| `/api/status?repo=` | GET | `?repo=<repo-id>` optional/default | Server/index health and selected/default repository status | Unknown repo id returns `404`. |
 | `/api/repos` | GET | None | Repository picker | Startup repo is default; registry repos are listed when live. |
 | `/api/search?q=&repo=` | GET | `?repo=<repo-id>` optional/default | Global search and empty/degraded states | Empty `q` is invalid; clients treat capped totals as capped. |
 | `/api/node/{id}?repo=` | GET | `?repo=<repo-id>` optional/default | Symbol detail anchor | Node id is opaque and percent-encoded in path. |

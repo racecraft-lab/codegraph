@@ -5,6 +5,7 @@ type StatusScenario =
   | "stale"
   | "indexing"
   | "empty"
+  | "unindexed"
   | "unauthorized"
   | "unavailable"
   | "missing"
@@ -63,6 +64,10 @@ function statusBody(scenario: StatusScenario) {
 
   if (scenario === "empty") {
     return { ...base, index: { state: "ready", fileCount: 0, nodeCount: 0, edgeCount: 0, lastIndexed: null } }
+  }
+
+  if (scenario === "unindexed") {
+    return { ...base, index: { state: "unindexed", fileCount: 0, nodeCount: 0, edgeCount: 0, lastIndexed: null } }
   }
 
   return {

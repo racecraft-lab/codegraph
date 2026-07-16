@@ -35,7 +35,9 @@ Required build integration:
 
 - Runtime assets are served from same-origin local `codegraph serve --web`.
 - The built app performs no external CDN, hosted asset, hosted auth, hosted database, remote telemetry, or direct provider requests.
-- Non-loopback binds preserve existing server bearer-token rules for `/api/*`.
+- The packaged browser UI is loopback-only. Non-loopback `serve --web` startup
+  is refused until a browser-compatible API and EventSource session mechanism is
+  available.
 
 ## Offline/Package Validation
 
@@ -52,4 +54,4 @@ Required validation scenarios:
 
 - Server static tests cover present and absent `dist/web` behavior.
 - Package tests inspect packed or built output for `dist/web/index.html` and asset files.
-- UAT documents local/package serving and non-loopback container guidance using existing `--host`, `--port`, and `CODEGRAPH_SERVER_TOKEN` behavior.
+- UAT documents local/package serving and the loopback-only browser policy.

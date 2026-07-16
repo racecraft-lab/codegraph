@@ -1,6 +1,28 @@
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 
+interface GraphRendererColors {
+  node: string
+  label: string
+  edge: string
+  selected: string
+}
+
+function cssColor(container: HTMLElement, name: string, fallback: string): string {
+  return getComputedStyle(container).getPropertyValue(name).trim() || fallback
+}
+
+export function resolveGraphRendererColors(container: HTMLElement): GraphRendererColors {
+  return {
+    node: cssColor(container, "--primary", "oklch(0.205 0 0)"),
+    label: cssColor(container, "--foreground", "oklch(0.145 0 0)"),
+    edge: cssColor(container, "--ring", "oklch(0.708 0 0)"),
+    selected: cssColor(container, "--destructive", "oklch(0.577 0.245 27.325)"),
+  }
+}
+
 export function createGraphRenderer(container: HTMLElement, elements: ElementDefinition[]): Core {
+  const colors = resolveGraphRendererColors(container)
+
   return cytoscape({
     container,
     elements,
@@ -11,8 +33,8 @@ export function createGraphRenderer(container: HTMLElement, elements: ElementDef
       {
         selector: "node",
         style: {
-          "background-color": "oklch(0.205 0 0)",
-          color: "oklch(0.145 0 0)",
+          "background-color": colors.node,
+          color: colors.label,
           label: "data(label)",
           "font-size": 10,
           "text-valign": "bottom",
@@ -26,8 +48,8 @@ export function createGraphRenderer(container: HTMLElement, elements: ElementDef
         selector: "edge",
         style: {
           width: 1,
-          "line-color": "oklch(0.708 0 0)",
-          "target-arrow-color": "oklch(0.708 0 0)",
+          "line-color": colors.edge,
+          "target-arrow-color": colors.edge,
           "target-arrow-shape": "triangle",
           "curve-style": "bezier",
         },
@@ -35,9 +57,9 @@ export function createGraphRenderer(container: HTMLElement, elements: ElementDef
       {
         selector: ":selected",
         style: {
-          "background-color": "oklch(0.577 0.245 27.325)",
-          "line-color": "oklch(0.577 0.245 27.325)",
-          "target-arrow-color": "oklch(0.577 0.245 27.325)",
+          "background-color": colors.selected,
+          "line-color": colors.selected,
+          "target-arrow-color": colors.selected,
         },
       },
     ],
