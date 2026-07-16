@@ -66,10 +66,11 @@ Reviewers need one current deterministic blast-radius report on pull requests. T
 - PR check remediation: PASS locally — fallback restore-key caches are validated from metadata instead of treated as cold misses.
 - PR check remediation: PASS locally — helper uses the resolved installed CLI path and falls back from failed restored-cache reindex to cold initialization.
 - PR check remediation: PASS locally — omitted `base-ref` uses the computed merge base/base SHA for detector execution in detached PR checkouts.
+- Live PR checks: PASS — `pr-impact`, CodeQL, dependency review, installer coverage guard, and OS/Node test matrix passed on run `29464931728`.
 
 ## Known gaps
 
-- Live dogfood workflow artifact URL is pending until GitHub Actions reruns after the detached-checkout base-ref remediation.
+- Live dogfood workflow artifact: https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028.
 - Optional narrative quality and provider behavior remain owned by SPEC-018.
 
 ## Rollback

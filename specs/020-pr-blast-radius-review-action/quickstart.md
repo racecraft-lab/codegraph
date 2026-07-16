@@ -135,5 +135,5 @@ Warm-cache evidence:
 Median eligible duration: 149s, which is below the 180s target.
 
 Exclusions: none in the deterministic self-repository sample set. Live GitHub
-dogfood artifact URL is pending until GitHub Actions reruns after the
-detached-checkout base-ref remediation.
+dogfood artifact passed on run `29464931728`:
+https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028.

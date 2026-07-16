@@ -27,10 +27,11 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - PR check remediation passed locally for fallback restore-key cache validation.
 - PR check remediation passed locally for explicit installed CLI path resolution and reindex-to-init fallback.
 - PR check remediation passed locally for detached-checkout base-ref resolution.
+- Live PR checks passed after remediation: `pr-impact`, CodeQL, dependency review, installer coverage guard, and OS/Node test matrix.
 
 ## Deviations
 
-- Live dogfood artifact evidence is deferred until GitHub Actions reruns after the detached-checkout base-ref remediation.
+- Live dogfood artifact evidence is recorded from run `29464931728`: https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028.
 - Optional narrative remains represented by deterministic seams; live provider quality remains outside SPEC-020 and belongs to SPEC-018.
 
 ## Lessons

@@ -764,7 +764,7 @@ Before starting any task:
 - [x] Post: PR Packet/Body Generation
 - [x] Post: PR Body Generation
 - [x] Post: PR Creation
-- [ ] Post: Review Remediation
+- [x] Post: Review Remediation
 - [x] Post: Retrospective
 
 ---

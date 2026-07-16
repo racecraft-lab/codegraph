@@ -58,3 +58,5 @@ Passed after remediation.
 - `npm run typecheck`: PASS.
 - `npm test`: PARTIAL — 239 files passed; `detect-changes-cli` timed out under full-suite load.
 - `npm test -- __tests__/detect-changes-cli.test.ts`: PASS — 1 file, 4 tests.
+- PR #154 live checks: PASS — `pr-impact`, CodeQL, dependency review, installer coverage guard, and OS/Node test matrix passed on run `29464931728`.
+- PR-impact artifact: https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028.

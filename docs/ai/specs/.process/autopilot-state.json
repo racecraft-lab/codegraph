@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-16T01:43:26Z",
+  "active_step": "Awaiting PR review/merge",
+  "updated_at": "2026-07-16T01:52:54Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -41,7 +41,7 @@
     {"step": "Post: PR Packet/Body Generation", "status": "completed"},
     {"step": "Post: PR Body Generation", "status": "completed"},
     {"step": "Post: PR Creation", "status": "completed"},
-    {"step": "Post: Review Remediation", "status": "pending"},
+    {"step": "Post: Review Remediation", "status": "completed"},
     {"step": "Post: Retrospective", "status": "completed"}
   ],
   "archive_sweep": {
@@ -494,12 +494,12 @@
         "median_seconds": 149,
         "target_seconds": 180
       },
-      "known_gap": "Live GitHub dogfood artifact URL is pending until GitHub Actions reruns after detached-checkout base-ref remediation."
+      "known_gap": "PR #154 remains draft and unmerged; live PR-impact artifact passed on run 29464931728."
     }
   },
   "post": {
     "status": "in_progress",
-    "active_step": "Post: Review Remediation",
+    "active_step": "Awaiting PR review/merge",
     "doctor_extension_check": {
       "status": "passed",
       "config": "defaults loaded; no local verify config file",
@@ -559,7 +559,7 @@
     "uat": {
       "status": "runbook_ready",
       "runbook": "specs/020-pr-blast-radius-review-action/uat-runbook.md",
-      "live_github_artifact": "pending until GitHub Actions reruns after detached-checkout base-ref remediation"
+      "live_github_artifact": "https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028"
     },
     "pr_packet": {
       "status": "ready",
@@ -573,7 +573,7 @@
       "draft": true
     },
     "review_remediation": {
-      "status": "checks_remediated_pending_rerun",
+      "status": "checks_remediated_current_pass",
       "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, missing workspace build for file:. self-dogfood, restore-key fallback cache handling that treated restored metadata as a cold miss, unavailable analysis after restored-cache reindexing failed, and detached-checkout base-ref resolution.",
       "remediation": [
         "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
@@ -596,9 +596,11 @@
         "focused_pr_impact_tests": "passed: 6 files, 28 tests",
         "build": "passed",
         "typecheck": "passed",
-        "full_test": "partial: 239 files passed, 1 detect-changes-cli timeout under full-suite load; targeted rerun passed 1 file, 4 tests"
+        "full_test": "partial: 239 files passed, 1 detect-changes-cli timeout under full-suite load; targeted rerun passed 1 file, 4 tests",
+        "live_pr_checks": "passed: pr-impact, CodeQL, dependency review, installer coverage guard, and OS/Node test matrix on PR #154 head e26c555",
+        "pr_impact_artifact": "https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028"
       },
-      "next": "Push remediation and monitor PR #154 check rerun."
+      "next": "Await PR review/merge; do not merge without maintainer approval."
     },
     "retrospective": {
       "status": "completed",
