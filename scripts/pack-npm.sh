@@ -80,6 +80,7 @@ done
 cp "$ROOT/scripts/npm-shim.js" "$NPM/main/npm-shim.js"
 cp "$ROOT/scripts/npm-sdk.js" "$NPM/main/npm-sdk.js"
 [ -f "$ROOT/README.md" ] && cp "$ROOT/README.md" "$NPM/main/README.md"
+[ -d "$ROOT/actions" ] && cp -R "$ROOT/actions" "$NPM/main/actions"
 
 # Ship the type declarations so `types`/`exports.types` resolve. Built from this
 # same release, so they can't skew from the runtime npm-sdk.js re-exports.
@@ -110,7 +111,7 @@ VERSION="$VERSION" SCOPE="$SCOPE" TARGETS="${targets[*]}" \
         "./package.json": "./package.json"
       },
       optionalDependencies: opt,
-      files: ["npm-shim.js","npm-sdk.js","dist","README.md"],
+      files: ["npm-shim.js","npm-sdk.js","dist","README.md","actions"],
       license: "MIT"
     }, null, 2) + "\n");
   ' "$NPM/main/package.json"

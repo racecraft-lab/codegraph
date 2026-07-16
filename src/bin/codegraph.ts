@@ -2276,6 +2276,7 @@ program
   .option('--fail-on <policy>', 'Comma-separated threshold policies: callers>N and/or hub')
   .option('--caller-depth <number>', 'Caller traversal depth, clamped to 1-3', '1')
   .option('--max-callers <number>', 'Maximum caller rows, clamped to 1-100', '20')
+  .option('--base-index-dir <dir>', 'Alternate CODEGRAPH_DIR containing base-revision symbols for deleted-file impact')
   .option('-p, --path <path>', 'Project path')
   .action(async (options: {
     mode?: string;
@@ -2284,6 +2285,7 @@ program
     failOn?: string;
     callerDepth?: string;
     maxCallers?: string;
+    baseIndexDir?: string;
     path?: string;
   }) => {
     const projectPath = resolveProjectPath(options.path);
@@ -2300,14 +2302,30 @@ program
     try {
       const normalized = normalizeDetectChangesRequest(request);
       parseFailOn(normalized.failOn);
+      const baseIndexDir = options.baseIndexDir ? validateCodeGraphDirOption(options.baseIndexDir) : null;
       const { default: CodeGraph } = await loadCodeGraph();
       const report = !isInitialized(projectPath)
         ? createUnavailableReport(normalized, `CodeGraph not initialized in ${projectPath}`)
         : await (async () => {
             const cg = await CodeGraph.open(projectPath);
+            let baseCg: Awaited<ReturnType<typeof CodeGraph.open>> | null = null;
             try {
-              return await detectChanges(cg, normalized);
+              if (baseIndexDir) {
+                const previousDir = process.env.CODEGRAPH_DIR;
+                process.env.CODEGRAPH_DIR = baseIndexDir;
+                try {
+                  if (!isInitialized(projectPath)) {
+                    throw new Error(`Base CodeGraph index not initialized in ${projectPath}/${baseIndexDir}`);
+                  }
+                  baseCg = await CodeGraph.open(projectPath);
+                } finally {
+                  if (previousDir === undefined) delete process.env.CODEGRAPH_DIR;
+                  else process.env.CODEGRAPH_DIR = previousDir;
+                }
+              }
+              return await detectChanges(cg, normalized, { baseGraph: baseCg });
             } finally {
+              baseCg?.close();
               cg.close();
             }
           })();
@@ -2318,6 +2336,21 @@ program
       process.exit(3);
     }
   });
+
+function validateCodeGraphDirOption(raw: string): string {
+  const dir = raw.trim();
+  if (
+    dir === '' ||
+    dir === '.' ||
+    dir.includes('..') ||
+    dir.includes('/') ||
+    dir.includes('\\') ||
+    path.isAbsolute(dir)
+  ) {
+    throw new Error('--base-index-dir must be a plain CODEGRAPH_DIR directory name');
+  }
+  return dir;
+}
 
 /**
  * codegraph callers <symbol>

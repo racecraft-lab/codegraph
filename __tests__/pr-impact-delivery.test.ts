@@ -175,9 +175,10 @@ describe('PR impact report delivery', () => {
               ok: true,
               status: 200,
               json: async () => [
-                { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old' },
-                { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new' },
+                { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old', user: { login: 'github-actions[bot]' } },
+                { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
                 { id: 12, body: 'unrelated', created_at: '2026-07-15T00:00:01Z', html_url: 'unrelated' },
+                { id: 13, body: `${ACTION_MARKER}\nspoofed`, created_at: '2026-07-15T00:00:02Z', html_url: 'spoofed', user: { login: 'random-user' } },
               ],
             };
           }
@@ -195,8 +196,79 @@ describe('PR impact report delivery', () => {
       expect(patches[1]?.body).toContain('Retired duplicate');
       expect(patches[2]?.body).toContain('- Delivery status: comment');
       expect(calls.some((call) => call.url.includes('/comments/12'))).toBe(false);
+      expect(calls.some((call) => call.url.includes('/comments/13'))).toBe(false);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('paginates issue comments before updating the action-owned sticky comment', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    try {
+      await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
+          if ((init?.method ?? 'GET') === 'GET' && url.includes('&page=1')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => Array.from({ length: 100 }, (_, id) => ({
+                id,
+                body: 'unrelated',
+                created_at: '2026-07-15T00:00:00Z',
+                html_url: `unrelated-${id}`,
+                user: { login: 'github-actions[bot]' },
+              })),
+            };
+          }
+          if ((init?.method ?? 'GET') === 'GET') {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [
+                { id: 101, body: `${ACTION_MARKER}\ncurrent`, created_at: '2026-07-15T00:00:01Z', html_url: 'current', user: { login: 'github-actions[bot]' } },
+              ],
+            };
+          }
+          return { ok: true, status: 200, json: async () => ({ id: 101, html_url: 'current' }) };
+        },
+      }));
+
+      expect(calls.some((call) => call.method === 'GET' && call.url.includes('&page=1'))).toBe(true);
+      expect(calls.some((call) => call.method === 'GET' && call.url.includes('&page=2'))).toBe(true);
+      expect(calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/101'))).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back when GitHub comment fetch or JSON parsing fails', async () => {
+    for (const fetch of [
+      async () => { throw new Error('network down'); },
+      async () => ({ ok: true, status: 200, json: async () => { throw new Error('bad json'); } }),
+    ]) {
+      const tmp = tmpDir();
+      try {
+        const result = await runAction(deps(tmp, {
+          env: {
+            ...deps(tmp).env,
+            GITHUB_TOKEN: 'token',
+          },
+          fetch,
+        }));
+
+        expect(result.delivery.status).toBe('fallback');
+        expect(result.delivery.comment).toBe('permission-denied');
+        expect(result.delivery.summary).toBe('written');
+        expect(fs.existsSync(path.join(tmp, 'report.md'))).toBe(true);
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
     }
   });
 
@@ -240,7 +312,7 @@ describe('PR impact report delivery', () => {
       expect(result.delivery.status).toBe('fallback');
       expect(result.delivery.comment).toBe('permission-denied');
       expect(result.delivery.summary).toBe('written');
-      expect(result.delivery.artifact).toBe('uploaded');
+      expect(result.delivery.artifact).toBe('pending');
       expect(outputs['delivery-status']).toBe('fallback');
       expect(outputs['artifact-name']).toBe('codegraph-pr-impact');
       expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('## Summary');

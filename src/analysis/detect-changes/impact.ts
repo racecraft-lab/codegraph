@@ -1,6 +1,6 @@
 import type { Node } from '../../types';
 import type { AffectedFlowItem, CallerImpact, DetectChangesGraph, ImpactReport } from './index';
-import { HUB_CALLER_THRESHOLD, MAX_FLOWS } from './report';
+import { applyFailOnPolicies, HUB_CALLER_THRESHOLD, MAX_FLOWS } from './report';
 
 interface FlowDetailShape {
   found?: boolean;
@@ -14,7 +14,12 @@ interface FlowDetailShape {
   };
 }
 
-export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void {
+export function enrichImpact(
+  cg: DetectChangesGraph,
+  report: ImpactReport,
+  failOn: string | null = null,
+  baseGraph: DetectChangesGraph | null = null,
+): void {
   if (report.changedSymbols.length === 0) {
     report.callers = [];
     report.limits.truncatedCallers = false;
@@ -23,7 +28,7 @@ export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void
     return;
   }
 
-  const { callers, directCallerCounts } = collectCallers(cg, report);
+  const { callers, directCallerCounts } = collectCallers(cg, report, baseGraph);
   report.callers = callers;
   report.limits.truncatedCallers = callers.length > report.limits.maxCallers;
   if (report.limits.truncatedCallers) {
@@ -56,6 +61,7 @@ export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void
     }
   }
 
+  applyFailOnPolicies(report, failOn);
   report.callers = callers.slice(0, report.limits.maxCallers);
   enrichAffectedFlows(cg, report);
 }
@@ -63,12 +69,14 @@ export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void
 function collectCallers(
   cg: DetectChangesGraph,
   report: ImpactReport,
+  baseGraph: DetectChangesGraph | null,
 ): { callers: CallerImpact[]; directCallerCounts: Map<string, number> } {
   const rows = new Map<string, CallerImpact>();
   const directCallerCounts = new Map<string, number>();
 
   for (const changed of report.changedSymbols) {
-    const direct = uniqueCallers(cg.getCallers(changed.nodeId, 1));
+    const graph = changed.changeType === 'deleted' && baseGraph ? baseGraph : cg;
+    const direct = uniqueCallers(graph.getCallers(changed.nodeId, 1));
     directCallerCounts.set(changed.id, direct.length);
 
     let frontier = [{ nodeId: changed.nodeId }];
@@ -76,7 +84,7 @@ function collectCallers(
     for (let depth = 1; depth <= report.limits.callerDepth; depth++) {
       const next: Array<{ nodeId: string }> = [];
       for (const item of frontier) {
-        for (const caller of uniqueCallers(cg.getCallers(item.nodeId, 1))) {
+        for (const caller of uniqueCallers(graph.getCallers(item.nodeId, 1))) {
           if (seen.has(caller.node.id)) continue;
           seen.add(caller.node.id);
           next.push({ nodeId: caller.node.id });

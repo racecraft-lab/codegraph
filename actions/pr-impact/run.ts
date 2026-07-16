@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,7 +88,7 @@ export interface DeliveryResult {
   status: DeliveryStatus;
   comment: 'updated' | 'created' | 'skipped' | 'permission-denied' | 'failed';
   summary: 'written' | 'failed';
-  artifact: 'uploaded' | 'failed';
+  artifact: 'pending' | 'failed';
   currentCommentId: string | null;
   duplicateCommentIds: string[];
   reportPath: string;
@@ -132,6 +132,7 @@ export interface RunDependencies {
   stderr: Pick<NodeJS.WriteStream, 'write'>;
   now: () => Date;
   appendFileSync: typeof appendFileSync;
+  cpSync?: typeof cpSync;
   existsSync: typeof existsSync;
   mkdirSync: typeof mkdirSync;
   rmSync: typeof rmSync;
@@ -161,6 +162,7 @@ export function createRunDependencies(): RunDependencies {
     stderr: process.stderr,
     now: () => new Date(),
     appendFileSync,
+    cpSync,
     existsSync,
     mkdirSync,
     rmSync,
@@ -173,8 +175,9 @@ export function createRunDependencies(): RunDependencies {
 
 export function parseActionInputs(env: NodeJS.ProcessEnv): ActionInputs {
   const narrative = readInput(env, 'NARRATIVE', 'off');
+  const requestedCodegraphVersion = readInput(env, 'CODEGRAPH_VERSION', DEFAULT_CODEGRAPH_VERSION);
   return {
-    codegraphVersion: readInput(env, 'CODEGRAPH_VERSION', DEFAULT_CODEGRAPH_VERSION),
+    codegraphVersion: env.PR_IMPACT_CODEGRAPH_RESOLVED_VERSION || requestedCodegraphVersion,
     baseRef: readInput(env, 'BASE_REF', ''),
     failOnCallers: parseOptionalInteger(readInput(env, 'FAIL_ON_CALLERS', '')),
     failOnHubs: parseBoolean(readInput(env, 'FAIL_ON_HUBS', 'false')),
@@ -206,10 +209,11 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
   const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
   const cacheStatus = prepareCache(deps, inputs, context);
+  const baseIndexDir = cacheStatus === 'unavailable' ? null : prepareBaseIndexIfNeeded(deps, context);
   const effectiveBaseRef = resolveBaseRef(inputs, context);
   const detector = cacheStatus === 'unavailable'
     ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.', effectiveBaseRef)
-    : runDetector(deps, inputs, context);
+    : runDetector(deps, inputs, context, baseIndexDir);
   const narrative = createInitialNarrative(inputs, context, deps);
   let delivery = createInitialDelivery(reportPath);
   let conclusion = determineConclusion(detector, delivery.status !== 'failed');
@@ -265,7 +269,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   delivery = {
     ...delivery,
     status: delivery.status === 'comment' ? 'comment' : reportFileWritten ? 'fallback' : 'failed',
-    artifact: reportFileWritten ? 'uploaded' : 'failed',
+    artifact: reportFileWritten ? 'pending' : 'failed',
     summary: writeSummary(deps, report),
   };
   if (delivery.status === 'failed' && delivery.summary === 'written') {
@@ -323,6 +327,67 @@ function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: Pull
   return 'rebuilt';
 }
 
+function prepareBaseIndexIfNeeded(deps: RunDependencies, context: PullRequestContext): string | null {
+  if (deps.env.PR_IMPACT_PREPARE_BASE_INDEX !== 'true') return deps.env.PR_IMPACT_BASE_INDEX_DIR ?? null;
+  if (!context.mergeBase || !prDiffHasDeletedFiles(deps, context.mergeBase)) return null;
+  if (!deps.cpSync) return null;
+
+  const baseIndexDir = deps.env.PR_IMPACT_BASE_INDEX_DIR ?? '.codegraph-pr-impact-base';
+  if (!isPlainCodeGraphDirName(baseIndexDir)) return null;
+  const safeRunId = (context.runId || 'local').replace(/[^A-Za-z0-9_.-]/g, '-');
+  const baseWorktreePath = deps.env.PR_IMPACT_BASE_WORKTREE_PATH ?? `.codegraph/pr-impact-base-worktree-${safeRunId}`;
+  try {
+    deps.rmSync(baseWorktreePath, { recursive: true, force: true });
+    deps.rmSync(baseIndexDir, { recursive: true, force: true });
+    deps.execFileSync('git', ['worktree', 'add', '--detach', baseWorktreePath, context.mergeBase], {
+      encoding: 'utf8',
+      env: deps.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    deps.execFileSync(codegraphBin(deps), ['init', baseWorktreePath], {
+      encoding: 'utf8',
+      env: { ...deps.env, CODEGRAPH_DIR: baseIndexDir },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    deps.cpSync(`${baseWorktreePath}/${baseIndexDir}`, baseIndexDir, { recursive: true });
+    return baseIndexDir;
+  } catch {
+    deps.rmSync(baseIndexDir, { recursive: true, force: true });
+    return null;
+  } finally {
+    try {
+      deps.execFileSync('git', ['worktree', 'remove', '--force', baseWorktreePath], {
+        encoding: 'utf8',
+        env: deps.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      deps.rmSync(baseWorktreePath, { recursive: true, force: true });
+    }
+  }
+}
+
+function prDiffHasDeletedFiles(deps: RunDependencies, mergeBase: string): boolean {
+  try {
+    const output = String(deps.execFileSync('git', ['diff', '--name-status', '-z', mergeBase, 'HEAD', '--'], {
+      encoding: 'utf8',
+      env: deps.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }));
+    return output.split('\0').some((part) => part.startsWith('D'));
+  } catch {
+    return false;
+  }
+}
+
+function isPlainCodeGraphDirName(dir: string): boolean {
+  return dir !== ''
+    && dir !== '.'
+    && !dir.includes('..')
+    && !dir.includes('/')
+    && !dir.includes('\\');
+}
+
 function cacheIdentity(deps: RunDependencies, inputs: ActionInputs, context: PullRequestContext): CacheIdentity {
   return {
     repository: context.repository || deps.env.GITHUB_REPOSITORY || 'unknown',
@@ -371,24 +436,39 @@ function validateWarmIndexHealth(deps: RunDependencies, expected: CacheIdentity)
   } catch {
     return 'stale';
   }
-  const report = status as Record<string, unknown>;
-  if (stringField(report, 'version') !== '' && stringField(report, 'version') !== expected.codegraphVersion) {
+  const report = objectValue(status);
+  if (!report) return 'stale';
+  const version = requiredStringField(report, 'version');
+  if (version === null || version !== expected.codegraphVersion) {
     return 'incompatible';
   }
-  if (report.worktreeMismatch !== null && report.worktreeMismatch !== undefined) {
+  if (!hasOwn(report, 'worktreeMismatch') || report.worktreeMismatch !== null) {
     return 'stale';
   }
-  const pending = report.pendingChanges as Record<string, unknown> | null | undefined;
-  if (pending && (numberOr(pending.added, 0) > 0 || numberOr(pending.modified, 0) > 0 || numberOr(pending.removed, 0) > 0)) {
+  const pending = objectField(report, 'pendingChanges');
+  if (
+    !pending ||
+    requiredNumberField(pending, 'added') === null ||
+    requiredNumberField(pending, 'modified') === null ||
+    requiredNumberField(pending, 'removed') === null
+  ) {
     return 'stale';
   }
-  const index = report.index as Record<string, unknown> | null | undefined;
+  if (requiredNumberField(pending, 'added')! > 0 || requiredNumberField(pending, 'modified')! > 0 || requiredNumberField(pending, 'removed')! > 0) {
+    return 'stale';
+  }
+  const index = objectField(report, 'index');
   if (!index) return 'stale';
-  if (numberOr(index.builtWithExtractionVersion, -1) !== numberOr(index.currentExtractionVersion, -2)) {
+  const builtWithExtractionVersion = requiredNumberField(index, 'builtWithExtractionVersion');
+  const currentExtractionVersion = requiredNumberField(index, 'currentExtractionVersion');
+  if (builtWithExtractionVersion === null || currentExtractionVersion === null) {
     return 'incompatible';
   }
-  if (index.reindexRecommended === true) return 'stale';
-  if (index.state !== null && index.state !== undefined && index.state !== 'complete') return 'stale';
+  if (builtWithExtractionVersion !== currentExtractionVersion) {
+    return 'incompatible';
+  }
+  if (index.reindexRecommended !== false) return 'stale';
+  if (index.state !== 'complete') return 'stale';
   return 'warm-valid';
 }
 
@@ -499,6 +579,9 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
   const baseSha = stringAt(event, ['pull_request', 'base', 'sha']);
   const headRepo = stringAt(event, ['pull_request', 'head', 'repo', 'full_name']);
   const baseRepo = stringAt(event, ['pull_request', 'base', 'repo', 'full_name']) || repository;
+  const isForkLike = headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo;
+  const hasTrustedContext = trustedContextFor(deps, isForkLike);
+  const hasTrustedToken = Boolean(deps.env.GITHUB_TOKEN) && hasTrustedContext;
 
   return {
     repository,
@@ -508,11 +591,11 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
     mergeBase: resolveMergeBase(deps, baseRef, headSha, baseSha),
     runId: deps.env.GITHUB_RUN_ID ?? 'unknown',
     runAttempt: deps.env.GITHUB_RUN_ATTEMPT ?? 'unknown',
-    isForkLike: headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo,
+    isForkLike,
     tokenPermissions: {
       contentsRead: true,
-      issuesWrite: Boolean(deps.env.GITHUB_TOKEN),
-      pullRequestsWrite: Boolean(deps.env.GITHUB_TOKEN),
+      issuesWrite: hasTrustedToken,
+      pullRequestsWrite: hasTrustedToken,
     },
   };
 }
@@ -535,20 +618,37 @@ function resolveMergeBase(
   fallbackBaseSha: string,
 ): string | null {
   if (deps.env.PR_IMPACT_MERGE_BASE) return deps.env.PR_IMPACT_MERGE_BASE;
-  if (baseRef && headSha) {
-    try {
-      return String(deps.execFileSync('git', ['merge-base', baseRef, headSha], {
-        encoding: 'utf8',
-        env: deps.env,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })).trim() || fallbackBaseSha || null;
-    } catch {
-      // Event payload base SHA is a safe fallback for metadata when the local
-      // checkout cannot compute a merge base, but cache validation still treats
-      // the recorded identity as exact for that run.
+  if (headSha) {
+    const candidates = [
+      fallbackBaseSha,
+      baseRef,
+      baseRef && !baseRef.includes('/') ? `origin/${baseRef}` : '',
+    ].filter(Boolean);
+    for (const candidate of [...new Set(candidates)]) {
+      try {
+        const mergeBase = String(deps.execFileSync('git', ['merge-base', candidate, headSha], {
+          encoding: 'utf8',
+          env: deps.env,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        })).trim();
+        if (mergeBase) return mergeBase;
+      } catch {
+        // Try the next available base identity before falling back to payload
+        // metadata. Detached PR checkouts frequently lack a local base branch.
+      }
     }
   }
   return fallbackBaseSha || null;
+}
+
+function trustedContextFor(deps: RunDependencies, isForkLike: boolean): boolean {
+  const raw = deps.env.PR_IMPACT_TRUSTED_CONTEXT;
+  if (raw !== undefined) return parseBoolean(raw);
+  return !isForkLike;
+}
+
+function hasTrustedWriteToken(deps: RunDependencies, context: PullRequestContext): boolean {
+  return Boolean(deps.env.GITHUB_TOKEN) && !context.isForkLike && (context.tokenPermissions.issuesWrite || context.tokenPermissions.pullRequestsWrite);
 }
 
 function readGitHubEvent(deps: RunDependencies): unknown {
@@ -561,13 +661,16 @@ function readGitHubEvent(deps: RunDependencies): unknown {
   }
 }
 
-function runDetector(deps: RunDependencies, inputs: ActionInputs, context: PullRequestContext): DetectorResult {
+function runDetector(
+  deps: RunDependencies,
+  inputs: ActionInputs,
+  context: PullRequestContext,
+  baseIndexDir: string | null = null,
+): DetectorResult {
   const baseRef = resolveDetectorBaseRef(inputs, context);
-  const jsonArgs = detectorArgs(inputs, baseRef, 'json');
-  const markdownArgs = detectorArgs(inputs, baseRef, 'markdown');
+  const jsonArgs = detectorArgs(inputs, baseRef, 'json', baseIndexDir);
   try {
     const json = runDetectorCommand(deps, jsonArgs);
-    runDetectorCommand(deps, markdownArgs);
     return normalizeDetectorResult(JSON.parse(json), inputs, baseRef);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -575,7 +678,12 @@ function runDetector(deps: RunDependencies, inputs: ActionInputs, context: PullR
   }
 }
 
-function detectorArgs(inputs: ActionInputs, baseRef: string, format: 'json' | 'markdown'): string[] {
+function detectorArgs(
+  inputs: ActionInputs,
+  baseRef: string,
+  format: 'json' | 'markdown',
+  baseIndexDir: string | null = null,
+): string[] {
   const args = [
     'detect-changes',
     '--mode', 'base-ref',
@@ -586,6 +694,7 @@ function detectorArgs(inputs: ActionInputs, baseRef: string, format: 'json' | 'm
   ];
   const failOn = failOnPolicy(inputs);
   if (failOn) args.push('--fail-on', failOn);
+  if (baseIndexDir) args.push('--base-index-dir', baseIndexDir);
   return args;
 }
 
@@ -601,6 +710,7 @@ function runDetectorCommand(deps: RunDependencies, args: string[]): string {
     return String(deps.execFileSync(codegraphBin(deps), args, {
       encoding: 'utf8',
       env: deps.env,
+      maxBuffer: 20 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
     }));
   } catch (error: unknown) {
@@ -695,7 +805,7 @@ function createInitialDelivery(reportPath: string): DeliveryResult {
     status: 'fallback',
     comment: 'skipped',
     summary: 'failed',
-    artifact: 'uploaded',
+    artifact: 'pending',
     currentCommentId: null,
     duplicateCommentIds: [],
     reportPath,
@@ -714,14 +824,14 @@ async function deliverReportComment(
     status: reportFileWritten ? 'fallback' : 'failed',
     comment: 'skipped',
     summary: 'failed',
-    artifact: reportFileWritten ? 'uploaded' : 'failed',
+    artifact: reportFileWritten ? 'pending' : 'failed',
     currentCommentId: null,
     duplicateCommentIds: [],
     reportPath,
     commentUrl: '',
   };
 
-  if (!deps.env.GITHUB_TOKEN || context.pullNumber === null || context.isForkLike) {
+  if (!hasTrustedWriteToken(deps, context) || context.pullNumber === null) {
     return base;
   }
 
@@ -731,7 +841,7 @@ async function deliverReportComment(
   }
 
   const marked = comments
-    .filter((comment) => comment.body.includes(ACTION_MARKER))
+    .filter(isActionOwnedComment)
     .sort(compareCommentNewestFirst);
   const current = marked[0];
   const duplicates = marked.slice(1);
@@ -800,7 +910,7 @@ function createInitialNarrative(inputs: ActionInputs, context: PullRequestContex
       handle: null,
     };
   }
-  if (inputs.narrative === 'trusted' && (context.isForkLike || !deps.env.GITHUB_TOKEN)) {
+  if (inputs.narrative === 'trusted' && !hasTrustedWriteToken(deps, context)) {
     return {
       status: 'suppressed',
       text: null,
@@ -910,17 +1020,43 @@ interface GitHubComment {
   body: string;
   created_at?: string;
   html_url: string;
+  user?: {
+    login?: string;
+    type?: string;
+  };
 }
 
 async function listComments(deps: RunDependencies, context: PullRequestContext): Promise<GitHubComment[] | null> {
-  const response = await deps.fetch(issueCommentsUrl(deps, context), {
-    method: 'GET',
-    headers: githubHeaders(deps),
-  });
-  if (!response.ok) return null;
-  const json = await response.json();
-  if (!Array.isArray(json)) return [];
-  return json.filter(isGitHubComment);
+  const comments: GitHubComment[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const result = await fetchJson(deps, `${issueCommentsUrl(deps, context)}?per_page=100&page=${page}`, {
+      method: 'GET',
+      headers: githubHeaders(deps),
+    });
+    if (!result.ok) return null;
+    if (!Array.isArray(result.json)) return [];
+    comments.push(...result.json.filter(isGitHubComment));
+    if (result.json.length < 100) break;
+  }
+  return comments;
+}
+
+async function fetchJson(
+  deps: RunDependencies,
+  url: string,
+  init: Parameters<FetchLike>[1],
+): Promise<{ ok: boolean; status: number; json: unknown }> {
+  try {
+    const response = await deps.fetch(url, init);
+    if (!response.ok) return { ok: false, status: response.status, json: null };
+    try {
+      return { ok: true, status: response.status, json: await response.json() };
+    } catch {
+      return { ok: false, status: response.status, json: null };
+    }
+  } catch {
+    return { ok: false, status: 0, json: null };
+  }
 }
 
 async function createComment(
@@ -928,14 +1064,13 @@ async function createComment(
   context: PullRequestContext,
   body: string,
 ): Promise<GitHubComment | null> {
-  const response = await deps.fetch(issueCommentsUrl(deps, context), {
+  const result = await fetchJson(deps, issueCommentsUrl(deps, context), {
     method: 'POST',
     headers: githubHeaders(deps),
     body: JSON.stringify({ body }),
   });
-  if (!response.ok) return null;
-  const json = await response.json();
-  return isGitHubComment(json) ? json : null;
+  if (!result.ok) return null;
+  return isGitHubComment(result.json) ? result.json : null;
 }
 
 async function patchComment(
@@ -944,12 +1079,12 @@ async function patchComment(
   id: number | string,
   body: string,
 ): Promise<boolean> {
-  const response = await deps.fetch(`${apiBase(deps)}/repos/${context.repository}/issues/comments/${id}`, {
+  const result = await fetchJson(deps, `${apiBase(deps)}/repos/${context.repository}/issues/comments/${id}`, {
     method: 'PATCH',
     headers: githubHeaders(deps),
     body: JSON.stringify({ body }),
   });
-  return response.ok;
+  return result.ok;
 }
 
 function issueCommentsUrl(deps: RunDependencies, context: PullRequestContext): string {
@@ -977,6 +1112,10 @@ function compareCommentNewestFirst(left: GitHubComment, right: GitHubComment): n
     return rightTime - leftTime;
   }
   return Number(right.id) - Number(left.id);
+}
+
+function isActionOwnedComment(comment: GitHubComment): boolean {
+  return comment.body.includes(ACTION_MARKER) && comment.user?.login === 'github-actions[bot]';
 }
 
 function isGitHubComment(value: unknown): value is GitHubComment {
@@ -1054,6 +1193,29 @@ function numberAt(value: unknown, pathParts: string[]): number | null {
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function objectField(value: Record<string, unknown>, field: string): Record<string, unknown> | null {
+  return objectValue(value[field]);
+}
+
+function requiredStringField(value: Record<string, unknown>, field: string): string | null {
+  return typeof value[field] === 'string' && value[field] !== '' ? value[field] : null;
+}
+
+function requiredNumberField(value: Record<string, unknown>, field: string): number | null {
+  const fieldValue = value[field];
+  return typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? fieldValue : null;
+}
+
+function hasOwn(value: Record<string, unknown>, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, field);
 }
 
 function stringField(value: Record<string, unknown>, field: string): string {

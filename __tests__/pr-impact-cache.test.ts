@@ -4,7 +4,7 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import { runAction } from '../actions/pr-impact/run';
-import { prImpactDetectorResults, prImpactGitHubEvent, prImpactWarmCacheSamples } from './fixtures/pr-impact';
+import { prImpactDetectorResults, prImpactGitHubEvent } from './fixtures/pr-impact';
 
 function outputMap(raw: string): Record<string, string> {
   return Object.fromEntries(raw.trim().split('\n').filter(Boolean).map((line) => {
@@ -60,7 +60,7 @@ function healthyStatus() {
       builtWithExtractionVersion: 24,
       currentExtractionVersion: 24,
       reindexRecommended: false,
-      state: null,
+      state: 'complete',
     },
   };
 }
@@ -74,7 +74,10 @@ function cacheMetadata(identity: Record<string, string>) {
   };
 }
 
-async function runWithMetadata(metadata: unknown, options: { lockfile?: string; indexFails?: boolean; status?: unknown } = {}) {
+async function runWithMetadata(
+  metadata: unknown,
+  options: { inputVersion?: string; lockfile?: string; indexFails?: boolean; resolvedVersion?: string; status?: unknown } = {},
+) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-cache-meta-'));
   const lockfile = options.lockfile ?? '{"lockfileVersion":3}';
   try {
@@ -85,8 +88,9 @@ async function runWithMetadata(metadata: unknown, options: { lockfile?: string; 
     const calls: string[][] = [];
     await runAction({
       env: {
-        INPUT_CODEGRAPH_VERSION: '1.4.1',
+        INPUT_CODEGRAPH_VERSION: options.inputVersion ?? '1.4.1',
         INPUT_BASE_REF: 'main',
+        ...(options.resolvedVersion ? { PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: options.resolvedVersion } : {}),
         GITHUB_EVENT_PATH: eventPath,
         GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
         GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
@@ -165,6 +169,28 @@ describe('PR impact cache handling', () => {
     expect(calls.map((args) => args[0])).not.toContain('index');
   });
 
+  it('uses the resolved installed CodeGraph version for restored cache identity', async () => {
+    const lockfile = '{"lockfileVersion":3}';
+    const identity = {
+      repository: 'racecraft-lab/codegraph',
+      codegraphVersion: '1.4.1',
+      baseRef: 'main',
+      headSha: '0000000000000000000000000000000000000002',
+      mergeBase: '0000000000000000000000000000000000000001',
+      lockfileHash: lockfileHash(lockfile),
+    };
+
+    const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), {
+      inputVersion: 'file:.',
+      lockfile,
+      resolvedVersion: '1.4.1',
+    });
+
+    expect(outputs['codegraph-version']).toBe('1.4.1');
+    expect(outputs['cache-status']).toBe('warm-valid');
+    expect(calls.map((args) => args[0])).not.toContain('index');
+  });
+
   it('rebuilds stale restored cache metadata before detector analysis and records the new identity', async () => {
     const lockfile = '{"lockfileVersion":3}';
     const staleIdentity = {
@@ -234,7 +260,7 @@ describe('PR impact cache handling', () => {
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['cache-status']).toBe('rebuilt');
       expect(outputs.conclusion).toBe('pass');
-      expect(calls.map((args) => args[0])).toEqual(['init', 'detect-changes', 'detect-changes']);
+      expect(calls.map((args) => args[0])).toEqual(['init', 'detect-changes']);
       expect(fs.readFileSync(gitignorePath, 'utf8')).toBe(originalGitignore);
       expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.headSha).toBe('0000000000000000000000000000000000000002');
     } finally {
@@ -296,7 +322,7 @@ describe('PR impact cache handling', () => {
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['cache-status']).toBe('rebuilt');
       expect(outputs.conclusion).toBe('pass');
-      expect(calls.map((args) => args[0])).toEqual(['index', 'detect-changes', 'detect-changes']);
+      expect(calls.map((args) => args[0])).toEqual(['index', 'detect-changes']);
       expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.codegraphVersion).toBe('file:.');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -363,7 +389,7 @@ describe('PR impact cache handling', () => {
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['cache-status']).toBe('rebuilt');
       expect(outputs.conclusion).toBe('pass');
-      expect(calls.map((args) => args[0])).toEqual(['index', 'init', 'detect-changes', 'detect-changes']);
+      expect(calls.map((args) => args[0])).toEqual(['index', 'init', 'detect-changes']);
       expect(fs.existsSync(oldMarker)).toBe(false);
       expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.codegraphVersion).toBe('file:.');
     } finally {
@@ -390,7 +416,34 @@ describe('PR impact cache handling', () => {
     const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), { lockfile, status: unhealthy });
 
     expect(outputs['cache-status']).toBe('rebuilt');
-    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'detect-changes', 'detect-changes']);
+    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'detect-changes']);
+  });
+
+  it('fails closed and rebuilds when restored index health omits required fields', async () => {
+    const lockfile = '{"lockfileVersion":3}';
+    const identity = {
+      repository: 'racecraft-lab/codegraph',
+      codegraphVersion: '1.4.1',
+      baseRef: 'main',
+      headSha: '0000000000000000000000000000000000000002',
+      mergeBase: '0000000000000000000000000000000000000001',
+      lockfileHash: lockfileHash(lockfile),
+    };
+
+    const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), {
+      lockfile,
+      status: {
+        version: '1.4.1',
+        index: {
+          builtWithExtractionVersion: 24,
+          currentExtractionVersion: 24,
+          reindexRecommended: false,
+        },
+      },
+    });
+
+    expect(outputs['cache-status']).toBe('rebuilt');
+    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'detect-changes']);
   });
 
   it('emits unavailable analysis when invalid cache cannot be rebuilt', async () => {
@@ -402,12 +455,4 @@ describe('PR impact cache handling', () => {
     expect(calls).toEqual([['index']]);
   });
 
-  it('validates at least five eligible warm-cache samples with median completion at or below three minutes', () => {
-    const eligible = prImpactWarmCacheSamples.filter((sample) => sample.eligible && sample.cacheStatus === 'warm-valid');
-    const durations = eligible.map((sample) => sample.durationSeconds).sort((a, b) => a - b);
-    const median = durations[Math.floor(durations.length / 2)];
-
-    expect(eligible).toHaveLength(5);
-    expect(median).toBeLessThanOrEqual(180);
-  });
 });

@@ -44,8 +44,13 @@ export interface MappingResult {
   warnings: ReportWarning[];
 }
 
-export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): MappingResult {
+export function mapDiffToSymbols(
+  cg: DetectChangesGraph,
+  diff: GitDiffResult,
+  baseGraph: DetectChangesGraph | null = null,
+): MappingResult {
   const indexedFiles = new Set(cg.getFiles().map((file) => file.path));
+  const baseIndexedFiles = baseGraph ? new Set(baseGraph.getFiles().map((file) => file.path)) : null;
   const bySymbol = new Map<string, ChangedSymbol>();
   const unmappedHunks: UnmappedHunk[] = [];
   const warnings: ReportWarning[] = [];
@@ -60,20 +65,21 @@ export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): M
       continue;
     }
 
-    const reason = classifyUnmapped(hunk, indexedFiles);
+    const reason = classifyUnmapped(hunk, indexedFiles, baseIndexedFiles);
     if (reason) {
       unmappedHunks.push(toUnmapped(hunk, reason));
       warnings.push({ code: reason, message: toUnmapped(hunk, reason).message });
       continue;
     }
 
-    const filePath = mappingPath(hunk, indexedFiles);
+    const filePath = mappingPath(hunk, indexedFiles, baseIndexedFiles);
     if (!filePath) {
       unmappedHunks.push(toUnmapped(hunk, 'unindexed'));
       continue;
     }
 
-    const nodes = cg.getNodesInFile(filePath).filter(isReportableSymbol);
+    const graph = graphForHunk(hunk, filePath, cg, baseGraph, baseIndexedFiles);
+    const nodes = graph.getNodesInFile(filePath).filter(isReportableSymbol);
     const range = hunkRange(hunk);
     const intersecting = nodes.filter((node) => nodeIntersects(node, range));
 
@@ -122,24 +128,51 @@ export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): M
   };
 }
 
-function classifyUnmapped(hunk: ChangedHunk, indexedFiles: Set<string>): UnmappedReason | null {
+function classifyUnmapped(
+  hunk: ChangedHunk,
+  indexedFiles: Set<string>,
+  baseIndexedFiles: Set<string> | null,
+): UnmappedReason | null {
   if (hunk.reason === 'binary' || hunk.changeKind === 'binary') return 'binary';
   if (hunk.reason === 'untracked') return 'untracked';
-  const filePath = mappingPath(hunk, indexedFiles);
+  const filePath = mappingPath(hunk, indexedFiles, baseIndexedFiles);
   if (!filePath) return 'unindexed';
   if (isGenerated(filePath)) return 'generated';
   if (!isSupportedPath(filePath)) return 'unsupported';
-  if (!indexedFiles.has(filePath)) return hunk.changeKind === 'deleted' ? 'deleted-without-span' : 'unindexed';
+  if (!indexedFiles.has(filePath) && !baseIndexedFiles?.has(filePath)) {
+    return hunk.changeKind === 'deleted' ? 'deleted-without-span' : 'unindexed';
+  }
   return null;
 }
 
-function mappingPath(hunk: ChangedHunk, indexedFiles?: Set<string>): string | null {
-  if (hunk.changeKind === 'deleted') return hunk.oldPath;
+function mappingPath(
+  hunk: ChangedHunk,
+  indexedFiles?: Set<string>,
+  baseIndexedFiles?: Set<string> | null,
+): string | null {
+  if (hunk.changeKind === 'deleted') {
+    if (hunk.oldPath && indexedFiles?.has(hunk.oldPath)) return hunk.oldPath;
+    if (hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) return hunk.oldPath;
+    return hunk.oldPath;
+  }
   if ((hunk.changeKind === 'renamed' || hunk.changeKind === 'moved') && indexedFiles) {
     if (hunk.newPath && indexedFiles.has(hunk.newPath)) return hunk.newPath;
     if (hunk.oldPath && indexedFiles.has(hunk.oldPath)) return hunk.oldPath;
   }
   return hunk.newPath;
+}
+
+function graphForHunk(
+  hunk: ChangedHunk,
+  filePath: string,
+  headGraph: DetectChangesGraph,
+  baseGraph: DetectChangesGraph | null,
+  baseIndexedFiles: Set<string> | null,
+): DetectChangesGraph {
+  if (hunk.changeKind === 'deleted' && baseGraph && baseIndexedFiles?.has(filePath)) {
+    return baseGraph;
+  }
+  return headGraph;
 }
 
 function hunkRange(hunk: ChangedHunk): { start: number; end: number } {

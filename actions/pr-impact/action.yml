@@ -73,9 +73,17 @@ runs:
   using: composite
   steps:
     - name: Install CodeGraph CLI
+      id: install-codegraph
       shell: bash
+      env:
+        INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}
       run: |
-        npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"
+        codegraph_spec="$INPUT_CODEGRAPH_VERSION"
+        if [[ ! "$codegraph_spec" =~ ^[A-Za-z0-9._~:/@+-]+$ ]]; then
+          echo "Unsupported codegraph-version package spec" >&2
+          exit 1
+        fi
+        npm install --global "@colbymchenry/codegraph@$codegraph_spec"
         codegraph_bin="$(npm prefix --global)/bin/codegraph"
         if [[ ! -x "$codegraph_bin" ]]; then
           codegraph_bin="$(command -v codegraph || true)"
@@ -84,14 +92,21 @@ runs:
           echo "Unable to resolve installed codegraph binary" >&2
           exit 1
         fi
+        codegraph_version="$("$codegraph_bin" --version)"
+        if [[ -z "$codegraph_version" ]]; then
+          echo "Unable to resolve installed codegraph version" >&2
+          exit 1
+        fi
         echo "PR_IMPACT_CODEGRAPH_BIN=$codegraph_bin" >> "$GITHUB_ENV"
+        echo "PR_IMPACT_CODEGRAPH_RESOLVED_VERSION=$codegraph_version" >> "$GITHUB_ENV"
+        echo "codegraph-version=$codegraph_version" >> "$GITHUB_OUTPUT"
 
     - name: Restore CodeGraph index cache
       id: codegraph-cache
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .codegraph
-        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ inputs.codegraph-version }}
+        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}
         restore-keys: |
           codegraph-${{ runner.os }}-${{ github.repository }}-
 
@@ -107,6 +122,10 @@ runs:
         INPUT_MAX_CALLERS: ${{ inputs.max-callers }}
         INPUT_NARRATIVE: ${{ inputs.narrative }}
         PR_IMPACT_CACHE_RESTORE_HIT: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'true' || 'false' }}
+        PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: ${{ steps.install-codegraph.outputs.codegraph-version }}
+        PR_IMPACT_PREPARE_BASE_INDEX: "true"
+        PR_IMPACT_TRUSTED_CONTEXT: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'true' || 'false' }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: node "${{ github.action_path }}/dist/run.mjs"
 
     - name: Upload PR impact report
@@ -122,7 +141,7 @@ runs:
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .codegraph
-        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ inputs.codegraph-version }}
+        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}
 
     - name: Enforce PR impact conclusion
       if: always() && steps.pr-impact.outputs.conclusion != 'pass'

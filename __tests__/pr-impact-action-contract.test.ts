@@ -20,6 +20,7 @@ const ACTION_YML = path.join(ROOT, 'actions/pr-impact/action.yml');
 const ACTION_README = path.join(ROOT, 'actions/pr-impact/README.md');
 const DOGFOOD_WORKFLOW = path.join(ROOT, '.github/workflows/pr-impact.yml');
 const PACKAGE_JSON = path.join(ROOT, 'package.json');
+const PACK_NPM = path.join(ROOT, 'scripts/pack-npm.sh');
 
 const INPUTS = [
   'codegraph-version',
@@ -83,13 +84,24 @@ describe('PR impact action contract', () => {
     }
 
     expect(action).toContain(`default: "${pkg.version}"`);
-    expect(action).toContain('npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"');
+    expect(action).toContain('INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}');
+    expect(action).toContain('codegraph_spec="$INPUT_CODEGRAPH_VERSION"');
+    expect(action).toContain('npm install --global "@colbymchenry/codegraph@$codegraph_spec"');
     expect(action).toContain('PR_IMPACT_CODEGRAPH_BIN=$codegraph_bin');
+    expect(action).toContain('PR_IMPACT_CODEGRAPH_RESOLVED_VERSION=$codegraph_version');
+    expect(action).toContain('codegraph-version=$codegraph_version');
     expect(action).toContain('$GITHUB_ENV');
     expect(action).toContain('node "${{ github.action_path }}/dist/run.mjs"');
     expect(action).toContain('PR_IMPACT_CACHE_RESTORE_HIT:');
+    expect(action).toContain('PR_IMPACT_TRUSTED_CONTEXT:');
+    expect(action).toContain('PR_IMPACT_PREPARE_BASE_INDEX: "true"');
+    expect(action).toContain('steps.install-codegraph.outputs.codegraph-version');
+    expect(action).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(action).toContain("steps.pr-impact.outputs.cache-status == 'rebuilt'");
     expect(pkg.files).toContain('actions');
+    const packNpm = fs.readFileSync(PACK_NPM, 'utf8');
+    expect(packNpm).toContain('cp -R "$ROOT/actions" "$NPM/main/actions"');
+    expect(packNpm).toContain('"actions"');
   });
 
   it('parses action inputs into the helper contract shape', () => {
@@ -112,6 +124,12 @@ describe('PR impact action contract', () => {
       maxCallers: 40,
       narrative: 'trusted',
     });
+
+    const resolved = parseActionInputs({
+      INPUT_CODEGRAPH_VERSION: 'file:.',
+      PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: '1.4.1',
+    });
+    expect(resolved.codegraphVersion).toBe('1.4.1');
   });
 
   it('emits required metadata outputs from the helper seam', async () => {
@@ -151,7 +169,7 @@ describe('PR impact action contract', () => {
     }
   });
 
-  it('invokes detect-changes with base-ref, bounds, threshold policy, JSON capture, and markdown capture', async () => {
+  it('invokes detect-changes with base-ref, bounds, threshold policy, and authoritative JSON capture', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-detector-'));
     try {
       const calls: Array<{ command: string; args: string[] }> = [];
@@ -201,20 +219,96 @@ describe('PR impact action contract', () => {
         },
       } as any);
 
-      expect(calls).toHaveLength(2);
-      for (const call of calls) {
-        expect(call.command).toBe('/tmp/codegraph-bin');
-        expect(call.args).toEqual(expect.arrayContaining([
-          'detect-changes',
-          '--mode', 'base-ref',
-          '--base-ref', 'origin/main',
-          '--caller-depth', '3',
-          '--max-callers', '50',
-          '--fail-on', 'callers>10,hub',
-        ]));
-      }
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.command).toBe('/tmp/codegraph-bin');
+      expect(calls[0]?.args).toEqual(expect.arrayContaining([
+        'detect-changes',
+        '--mode', 'base-ref',
+        '--base-ref', 'origin/main',
+        '--caller-depth', '3',
+        '--max-callers', '50',
+        '--fail-on', 'callers>10,hub',
+      ]));
       expect(calls[0]?.args).toEqual(expect.arrayContaining(['--format', 'json']));
-      expect(calls[1]?.args).toEqual(expect.arrayContaining(['--format', 'markdown']));
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('prepares and passes a base index when the PR diff deletes files', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-base-index-'));
+    try {
+      const calls: Array<{ command: string; args: string[]; codegraphDir?: string }> = [];
+      const copies: Array<{ source: string; target: string }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.4.1',
+          INPUT_BASE_REF: 'origin/main',
+          PR_IMPACT_CODEGRAPH_BIN: '/tmp/codegraph-bin',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          PR_IMPACT_MERGE_BASE: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          PR_IMPACT_PREPARE_BASE_INDEX: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        cpSync: (source: string, target: string) => {
+          copies.push({ source, target });
+        },
+        mkdirSync: fs.mkdirSync,
+        rmSync: fs.rmSync,
+        writeFileSync: fs.writeFileSync,
+        execFileSync: (command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
+          calls.push({ command, args, codegraphDir: options?.env?.CODEGRAPH_DIR });
+          if (command === 'git' && args[0] === 'diff') return 'D\0src/delete-me.ts\0';
+          if (command === 'git' && args[0] === 'worktree') return '';
+          if (command === '/tmp/codegraph-bin' && args[0] === 'init') return '';
+          return JSON.stringify({
+            summary: {
+              status: 'impact',
+              baseRef: 'origin/main',
+              changedSymbolCount: 1,
+              unmappedHunkCount: 0,
+              callerCount: 0,
+              affectedFlowCount: 0,
+              riskCount: 0,
+              warningCount: 0,
+            },
+            exitCode: 1,
+            changedSymbols: [],
+            unmappedHunks: [],
+            callers: [],
+            affectedFlows: { state: 'empty', items: [], truncated: false },
+            risks: [],
+            warnings: [],
+            limits: { callerDepth: 1, maxCallers: 20 },
+          });
+        },
+      } as any);
+
+      expect(calls).toContainEqual(expect.objectContaining({
+        command: 'git',
+        args: ['diff', '--name-status', '-z', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'HEAD', '--'],
+      }));
+      expect(calls).toContainEqual(expect.objectContaining({
+        command: 'git',
+        args: ['worktree', 'add', '--detach', '.codegraph/pr-impact-base-worktree-200', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+      }));
+      expect(calls).toContainEqual(expect.objectContaining({
+        command: '/tmp/codegraph-bin',
+        args: ['init', '.codegraph/pr-impact-base-worktree-200'],
+        codegraphDir: '.codegraph-pr-impact-base',
+      }));
+      expect(copies).toEqual([{
+        source: '.codegraph/pr-impact-base-worktree-200/.codegraph-pr-impact-base',
+        target: '.codegraph-pr-impact-base',
+      }]);
+      const detectorCall = calls.find((call) => call.command === '/tmp/codegraph-bin' && call.args[0] === 'detect-changes');
+      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-index-dir', '.codegraph-pr-impact-base']));
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -273,7 +367,7 @@ describe('PR impact action contract', () => {
       } as any);
 
       const codegraphCalls = calls.filter((call) => call.command === 'codegraph');
-      expect(codegraphCalls).toHaveLength(2);
+      expect(codegraphCalls).toHaveLength(1);
       for (const call of codegraphCalls) {
         expect(call.args).toEqual(expect.arrayContaining(['--base-ref', '0000000000000000000000000000000000000000']));
       }
@@ -284,10 +378,78 @@ describe('PR impact action contract', () => {
     }
   });
 
+  it('computes merge base from event base SHA when detached checkout lacks the base branch', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-detached-base-'));
+    try {
+      const eventPath = path.join(tmp, 'event.json');
+      fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
+      const calls: Array<{ command: string; args: string[] }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.4.1',
+          INPUT_BASE_REF: '',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        mkdirSync: fs.mkdirSync,
+        writeFileSync: fs.writeFileSync,
+        readFileSync: fs.readFileSync,
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          if (command === 'git') {
+            if (args[1] === '0000000000000000000000000000000000000001') {
+              return 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n';
+            }
+            throw new Error('base ref unavailable');
+          }
+          return JSON.stringify({
+            summary: {
+              status: 'impact',
+              baseRef: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              changedSymbolCount: 0,
+              unmappedHunkCount: 0,
+              callerCount: 0,
+              affectedFlowCount: 0,
+              riskCount: 0,
+              warningCount: 0,
+            },
+            exitCode: 1,
+            changedSymbols: [],
+            unmappedHunks: [],
+            callers: [],
+            affectedFlows: { state: 'empty', items: [], truncated: false },
+            risks: [],
+            warnings: [],
+            limits: { callerDepth: 1, maxCallers: 20 },
+          });
+        },
+      } as any);
+
+      expect(calls.find((call) => call.command === 'git')?.args).toEqual([
+        'merge-base',
+        '0000000000000000000000000000000000000001',
+        '0000000000000000000000000000000000000002',
+      ]);
+      const detectorCall = calls.find((call) => call.command === 'codegraph');
+      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-ref', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']));
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Merge base: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('declares the advisory pull-request dogfood workflow without threshold or narrative escalation', () => {
     const workflow = fs.readFileSync(DOGFOOD_WORKFLOW, 'utf8');
 
     expect(workflow).toContain('pull_request:');
+    expect(workflow).toContain('concurrency:');
+    expect(workflow).toContain('cancel-in-progress: true');
     expect(workflow.indexOf('run: npm ci')).toBeLessThan(workflow.indexOf('uses: ./actions/pr-impact'));
     expect(workflow.indexOf('run: npm run build')).toBeLessThan(workflow.indexOf('uses: ./actions/pr-impact'));
     expect(workflow).toContain('uses: ./actions/pr-impact');
@@ -380,7 +542,7 @@ const typeSurface: {
     status: 'fallback',
     comment: 'skipped',
     summary: 'written',
-    artifact: 'uploaded',
+    artifact: 'pending',
     currentCommentId: null,
     duplicateCommentIds: [],
     reportPath: 'pr-impact-report.md',

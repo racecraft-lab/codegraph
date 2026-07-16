@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ export function createRunDependencies() {
         stderr: process.stderr,
         now: () => new Date(),
         appendFileSync,
+        cpSync,
         existsSync,
         mkdirSync,
         rmSync,
@@ -25,8 +26,9 @@ export function createRunDependencies() {
 }
 export function parseActionInputs(env) {
     const narrative = readInput(env, 'NARRATIVE', 'off');
+    const requestedCodegraphVersion = readInput(env, 'CODEGRAPH_VERSION', DEFAULT_CODEGRAPH_VERSION);
     return {
-        codegraphVersion: readInput(env, 'CODEGRAPH_VERSION', DEFAULT_CODEGRAPH_VERSION),
+        codegraphVersion: env.PR_IMPACT_CODEGRAPH_RESOLVED_VERSION || requestedCodegraphVersion,
         baseRef: readInput(env, 'BASE_REF', ''),
         failOnCallers: parseOptionalInteger(readInput(env, 'FAIL_ON_CALLERS', '')),
         failOnHubs: parseBoolean(readInput(env, 'FAIL_ON_HUBS', 'false')),
@@ -53,10 +55,11 @@ export async function runAction(deps = createRunDependencies()) {
     const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
     const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
     const cacheStatus = prepareCache(deps, inputs, context);
+    const baseIndexDir = cacheStatus === 'unavailable' ? null : prepareBaseIndexIfNeeded(deps, context);
     const effectiveBaseRef = resolveBaseRef(inputs, context);
     const detector = cacheStatus === 'unavailable'
         ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.', effectiveBaseRef)
-        : runDetector(deps, inputs, context);
+        : runDetector(deps, inputs, context, baseIndexDir);
     const narrative = createInitialNarrative(inputs, context, deps);
     let delivery = createInitialDelivery(reportPath);
     let conclusion = determineConclusion(detector, delivery.status !== 'failed');
@@ -111,7 +114,7 @@ export async function runAction(deps = createRunDependencies()) {
     delivery = {
         ...delivery,
         status: delivery.status === 'comment' ? 'comment' : reportFileWritten ? 'fallback' : 'failed',
-        artifact: reportFileWritten ? 'uploaded' : 'failed',
+        artifact: reportFileWritten ? 'pending' : 'failed',
         summary: writeSummary(deps, report),
     };
     if (delivery.status === 'failed' && delivery.summary === 'written') {
@@ -166,6 +169,71 @@ function prepareCache(deps, inputs, context) {
     writeCacheMetadata(deps, metadataPath, identity);
     return 'rebuilt';
 }
+function prepareBaseIndexIfNeeded(deps, context) {
+    if (deps.env.PR_IMPACT_PREPARE_BASE_INDEX !== 'true')
+        return deps.env.PR_IMPACT_BASE_INDEX_DIR ?? null;
+    if (!context.mergeBase || !prDiffHasDeletedFiles(deps, context.mergeBase))
+        return null;
+    if (!deps.cpSync)
+        return null;
+    const baseIndexDir = deps.env.PR_IMPACT_BASE_INDEX_DIR ?? '.codegraph-pr-impact-base';
+    if (!isPlainCodeGraphDirName(baseIndexDir))
+        return null;
+    const safeRunId = (context.runId || 'local').replace(/[^A-Za-z0-9_.-]/g, '-');
+    const baseWorktreePath = deps.env.PR_IMPACT_BASE_WORKTREE_PATH ?? `.codegraph/pr-impact-base-worktree-${safeRunId}`;
+    try {
+        deps.rmSync(baseWorktreePath, { recursive: true, force: true });
+        deps.rmSync(baseIndexDir, { recursive: true, force: true });
+        deps.execFileSync('git', ['worktree', 'add', '--detach', baseWorktreePath, context.mergeBase], {
+            encoding: 'utf8',
+            env: deps.env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        deps.execFileSync(codegraphBin(deps), ['init', baseWorktreePath], {
+            encoding: 'utf8',
+            env: { ...deps.env, CODEGRAPH_DIR: baseIndexDir },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        deps.cpSync(`${baseWorktreePath}/${baseIndexDir}`, baseIndexDir, { recursive: true });
+        return baseIndexDir;
+    }
+    catch {
+        deps.rmSync(baseIndexDir, { recursive: true, force: true });
+        return null;
+    }
+    finally {
+        try {
+            deps.execFileSync('git', ['worktree', 'remove', '--force', baseWorktreePath], {
+                encoding: 'utf8',
+                env: deps.env,
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+        }
+        catch {
+            deps.rmSync(baseWorktreePath, { recursive: true, force: true });
+        }
+    }
+}
+function prDiffHasDeletedFiles(deps, mergeBase) {
+    try {
+        const output = String(deps.execFileSync('git', ['diff', '--name-status', '-z', mergeBase, 'HEAD', '--'], {
+            encoding: 'utf8',
+            env: deps.env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        }));
+        return output.split('\0').some((part) => part.startsWith('D'));
+    }
+    catch {
+        return false;
+    }
+}
+function isPlainCodeGraphDirName(dir) {
+    return dir !== ''
+        && dir !== '.'
+        && !dir.includes('..')
+        && !dir.includes('/')
+        && !dir.includes('\\');
+}
 function cacheIdentity(deps, inputs, context) {
     return {
         repository: context.repository || deps.env.GITHUB_REPOSITORY || 'unknown',
@@ -211,26 +279,40 @@ function validateWarmIndexHealth(deps, expected) {
     catch {
         return 'stale';
     }
-    const report = status;
-    if (stringField(report, 'version') !== '' && stringField(report, 'version') !== expected.codegraphVersion) {
+    const report = objectValue(status);
+    if (!report)
+        return 'stale';
+    const version = requiredStringField(report, 'version');
+    if (version === null || version !== expected.codegraphVersion) {
         return 'incompatible';
     }
-    if (report.worktreeMismatch !== null && report.worktreeMismatch !== undefined) {
+    if (!hasOwn(report, 'worktreeMismatch') || report.worktreeMismatch !== null) {
         return 'stale';
     }
-    const pending = report.pendingChanges;
-    if (pending && (numberOr(pending.added, 0) > 0 || numberOr(pending.modified, 0) > 0 || numberOr(pending.removed, 0) > 0)) {
+    const pending = objectField(report, 'pendingChanges');
+    if (!pending ||
+        requiredNumberField(pending, 'added') === null ||
+        requiredNumberField(pending, 'modified') === null ||
+        requiredNumberField(pending, 'removed') === null) {
         return 'stale';
     }
-    const index = report.index;
+    if (requiredNumberField(pending, 'added') > 0 || requiredNumberField(pending, 'modified') > 0 || requiredNumberField(pending, 'removed') > 0) {
+        return 'stale';
+    }
+    const index = objectField(report, 'index');
     if (!index)
         return 'stale';
-    if (numberOr(index.builtWithExtractionVersion, -1) !== numberOr(index.currentExtractionVersion, -2)) {
+    const builtWithExtractionVersion = requiredNumberField(index, 'builtWithExtractionVersion');
+    const currentExtractionVersion = requiredNumberField(index, 'currentExtractionVersion');
+    if (builtWithExtractionVersion === null || currentExtractionVersion === null) {
         return 'incompatible';
     }
-    if (index.reindexRecommended === true)
+    if (builtWithExtractionVersion !== currentExtractionVersion) {
+        return 'incompatible';
+    }
+    if (index.reindexRecommended !== false)
         return 'stale';
-    if (index.state !== null && index.state !== undefined && index.state !== 'complete')
+    if (index.state !== 'complete')
         return 'stale';
     return 'warm-valid';
 }
@@ -340,6 +422,9 @@ function readPullRequestContext(deps, inputs) {
     const baseSha = stringAt(event, ['pull_request', 'base', 'sha']);
     const headRepo = stringAt(event, ['pull_request', 'head', 'repo', 'full_name']);
     const baseRepo = stringAt(event, ['pull_request', 'base', 'repo', 'full_name']) || repository;
+    const isForkLike = headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo;
+    const hasTrustedContext = trustedContextFor(deps, isForkLike);
+    const hasTrustedToken = Boolean(deps.env.GITHUB_TOKEN) && hasTrustedContext;
     return {
         repository,
         pullNumber,
@@ -348,11 +433,11 @@ function readPullRequestContext(deps, inputs) {
         mergeBase: resolveMergeBase(deps, baseRef, headSha, baseSha),
         runId: deps.env.GITHUB_RUN_ID ?? 'unknown',
         runAttempt: deps.env.GITHUB_RUN_ATTEMPT ?? 'unknown',
-        isForkLike: headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo,
+        isForkLike,
         tokenPermissions: {
             contentsRead: true,
-            issuesWrite: Boolean(deps.env.GITHUB_TOKEN),
-            pullRequestsWrite: Boolean(deps.env.GITHUB_TOKEN),
+            issuesWrite: hasTrustedToken,
+            pullRequestsWrite: hasTrustedToken,
         },
     };
 }
@@ -371,21 +456,38 @@ function resolveDetectorBaseRef(inputs, context) {
 function resolveMergeBase(deps, baseRef, headSha, fallbackBaseSha) {
     if (deps.env.PR_IMPACT_MERGE_BASE)
         return deps.env.PR_IMPACT_MERGE_BASE;
-    if (baseRef && headSha) {
-        try {
-            return String(deps.execFileSync('git', ['merge-base', baseRef, headSha], {
-                encoding: 'utf8',
-                env: deps.env,
-                stdio: ['ignore', 'pipe', 'ignore'],
-            })).trim() || fallbackBaseSha || null;
-        }
-        catch {
-            // Event payload base SHA is a safe fallback for metadata when the local
-            // checkout cannot compute a merge base, but cache validation still treats
-            // the recorded identity as exact for that run.
+    if (headSha) {
+        const candidates = [
+            fallbackBaseSha,
+            baseRef,
+            baseRef && !baseRef.includes('/') ? `origin/${baseRef}` : '',
+        ].filter(Boolean);
+        for (const candidate of [...new Set(candidates)]) {
+            try {
+                const mergeBase = String(deps.execFileSync('git', ['merge-base', candidate, headSha], {
+                    encoding: 'utf8',
+                    env: deps.env,
+                    stdio: ['ignore', 'pipe', 'ignore'],
+                })).trim();
+                if (mergeBase)
+                    return mergeBase;
+            }
+            catch {
+                // Try the next available base identity before falling back to payload
+                // metadata. Detached PR checkouts frequently lack a local base branch.
+            }
         }
     }
     return fallbackBaseSha || null;
+}
+function trustedContextFor(deps, isForkLike) {
+    const raw = deps.env.PR_IMPACT_TRUSTED_CONTEXT;
+    if (raw !== undefined)
+        return parseBoolean(raw);
+    return !isForkLike;
+}
+function hasTrustedWriteToken(deps, context) {
+    return Boolean(deps.env.GITHUB_TOKEN) && !context.isForkLike && (context.tokenPermissions.issuesWrite || context.tokenPermissions.pullRequestsWrite);
 }
 function readGitHubEvent(deps) {
     const eventPath = deps.env.GITHUB_EVENT_PATH;
@@ -398,13 +500,11 @@ function readGitHubEvent(deps) {
         return {};
     }
 }
-function runDetector(deps, inputs, context) {
+function runDetector(deps, inputs, context, baseIndexDir = null) {
     const baseRef = resolveDetectorBaseRef(inputs, context);
-    const jsonArgs = detectorArgs(inputs, baseRef, 'json');
-    const markdownArgs = detectorArgs(inputs, baseRef, 'markdown');
+    const jsonArgs = detectorArgs(inputs, baseRef, 'json', baseIndexDir);
     try {
         const json = runDetectorCommand(deps, jsonArgs);
-        runDetectorCommand(deps, markdownArgs);
         return normalizeDetectorResult(JSON.parse(json), inputs, baseRef);
     }
     catch (error) {
@@ -412,7 +512,7 @@ function runDetector(deps, inputs, context) {
         return createUnavailableDetector(inputs, message, baseRef);
     }
 }
-function detectorArgs(inputs, baseRef, format) {
+function detectorArgs(inputs, baseRef, format, baseIndexDir = null) {
     const args = [
         'detect-changes',
         '--mode', 'base-ref',
@@ -424,6 +524,8 @@ function detectorArgs(inputs, baseRef, format) {
     const failOn = failOnPolicy(inputs);
     if (failOn)
         args.push('--fail-on', failOn);
+    if (baseIndexDir)
+        args.push('--base-index-dir', baseIndexDir);
     return args;
 }
 function failOnPolicy(inputs) {
@@ -439,6 +541,7 @@ function runDetectorCommand(deps, args) {
         return String(deps.execFileSync(codegraphBin(deps), args, {
             encoding: 'utf8',
             env: deps.env,
+            maxBuffer: 20 * 1024 * 1024,
             stdio: ['ignore', 'pipe', 'pipe'],
         }));
     }
@@ -526,7 +629,7 @@ function createInitialDelivery(reportPath) {
         status: 'fallback',
         comment: 'skipped',
         summary: 'failed',
-        artifact: 'uploaded',
+        artifact: 'pending',
         currentCommentId: null,
         duplicateCommentIds: [],
         reportPath,
@@ -538,13 +641,13 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
         status: reportFileWritten ? 'fallback' : 'failed',
         comment: 'skipped',
         summary: 'failed',
-        artifact: reportFileWritten ? 'uploaded' : 'failed',
+        artifact: reportFileWritten ? 'pending' : 'failed',
         currentCommentId: null,
         duplicateCommentIds: [],
         reportPath,
         commentUrl: '',
     };
-    if (!deps.env.GITHUB_TOKEN || context.pullNumber === null || context.isForkLike) {
+    if (!hasTrustedWriteToken(deps, context) || context.pullNumber === null) {
         return base;
     }
     const comments = await listComments(deps, context);
@@ -552,7 +655,7 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
         return { ...base, comment: 'permission-denied' };
     }
     const marked = comments
-        .filter((comment) => comment.body.includes(ACTION_MARKER))
+        .filter(isActionOwnedComment)
         .sort(compareCommentNewestFirst);
     const current = marked[0];
     const duplicates = marked.slice(1);
@@ -611,7 +714,7 @@ function createInitialNarrative(inputs, context, deps) {
             handle: null,
         };
     }
-    if (inputs.narrative === 'trusted' && (context.isForkLike || !deps.env.GITHUB_TOKEN)) {
+    if (inputs.narrative === 'trusted' && !hasTrustedWriteToken(deps, context)) {
         return {
             status: 'suppressed',
             text: null,
@@ -698,35 +801,55 @@ function renderReport(args) {
     return lines.join('\n');
 }
 async function listComments(deps, context) {
-    const response = await deps.fetch(issueCommentsUrl(deps, context), {
-        method: 'GET',
-        headers: githubHeaders(deps),
-    });
-    if (!response.ok)
-        return null;
-    const json = await response.json();
-    if (!Array.isArray(json))
-        return [];
-    return json.filter(isGitHubComment);
+    const comments = [];
+    for (let page = 1; page <= 10; page++) {
+        const result = await fetchJson(deps, `${issueCommentsUrl(deps, context)}?per_page=100&page=${page}`, {
+            method: 'GET',
+            headers: githubHeaders(deps),
+        });
+        if (!result.ok)
+            return null;
+        if (!Array.isArray(result.json))
+            return [];
+        comments.push(...result.json.filter(isGitHubComment));
+        if (result.json.length < 100)
+            break;
+    }
+    return comments;
+}
+async function fetchJson(deps, url, init) {
+    try {
+        const response = await deps.fetch(url, init);
+        if (!response.ok)
+            return { ok: false, status: response.status, json: null };
+        try {
+            return { ok: true, status: response.status, json: await response.json() };
+        }
+        catch {
+            return { ok: false, status: response.status, json: null };
+        }
+    }
+    catch {
+        return { ok: false, status: 0, json: null };
+    }
 }
 async function createComment(deps, context, body) {
-    const response = await deps.fetch(issueCommentsUrl(deps, context), {
+    const result = await fetchJson(deps, issueCommentsUrl(deps, context), {
         method: 'POST',
         headers: githubHeaders(deps),
         body: JSON.stringify({ body }),
     });
-    if (!response.ok)
+    if (!result.ok)
         return null;
-    const json = await response.json();
-    return isGitHubComment(json) ? json : null;
+    return isGitHubComment(result.json) ? result.json : null;
 }
 async function patchComment(deps, context, id, body) {
-    const response = await deps.fetch(`${apiBase(deps)}/repos/${context.repository}/issues/comments/${id}`, {
+    const result = await fetchJson(deps, `${apiBase(deps)}/repos/${context.repository}/issues/comments/${id}`, {
         method: 'PATCH',
         headers: githubHeaders(deps),
         body: JSON.stringify({ body }),
     });
-    return response.ok;
+    return result.ok;
 }
 function issueCommentsUrl(deps, context) {
     return `${apiBase(deps)}/repos/${context.repository}/issues/${context.pullNumber}/comments`;
@@ -751,6 +874,9 @@ function compareCommentNewestFirst(left, right) {
         return rightTime - leftTime;
     }
     return Number(right.id) - Number(left.id);
+}
+function isActionOwnedComment(comment) {
+    return comment.body.includes(ACTION_MARKER) && comment.user?.login === 'github-actions[bot]';
 }
 function isGitHubComment(value) {
     const candidate = value;
@@ -822,6 +948,24 @@ function numberAt(value, pathParts) {
 }
 function numberOr(value, fallback) {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+function objectValue(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : null;
+}
+function objectField(value, field) {
+    return objectValue(value[field]);
+}
+function requiredStringField(value, field) {
+    return typeof value[field] === 'string' && value[field] !== '' ? value[field] : null;
+}
+function requiredNumberField(value, field) {
+    const fieldValue = value[field];
+    return typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? fieldValue : null;
+}
+function hasOwn(value, field) {
+    return Object.prototype.hasOwnProperty.call(value, field);
 }
 function stringField(value, field) {
     const fieldValue = value[field];

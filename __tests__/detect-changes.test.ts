@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import { CodeGraph } from '../src';
 import { acquireGitDiff } from '../src/analysis/detect-changes/git-diff';
 import { detectChanges } from '../src/analysis/detect-changes';
 import { buildInitialReport, parseFailOn, renderMarkdownReport } from '../src/analysis/detect-changes/report';
@@ -91,6 +94,33 @@ describe('detect changes', () => {
     expect(report.unmappedHunks.some((h) => h.reason === 'untracked' && h.newPath === 'src/untracked.ts')).toBe(true);
   });
 
+  it('uses base graph symbols for deleted files after the head index is rebuilt', async () => {
+    const previousDir = process.env.CODEGRAPH_DIR;
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    await indexFixture(fx);
+    fx.remove('src/delete-me.ts');
+
+    process.env.CODEGRAPH_DIR = '.codegraph-head-test';
+    const headGraph = CodeGraph.initSync(fx.dir);
+    try {
+      await headGraph.indexAll();
+      const report = await detectChanges(headGraph, { mode: 'all' }, { baseGraph: fx.cg });
+
+      expect(report.changedSymbols).toContainEqual(expect.objectContaining({
+        name: 'deletedSymbol',
+        changeType: 'deleted',
+        filePath: 'src/delete-me.ts',
+      }));
+      expect(report.unmappedHunks.some((h) => h.oldPath === 'src/delete-me.ts')).toBe(false);
+    } finally {
+      headGraph.close();
+      if (previousDir === undefined) delete process.env.CODEGRAPH_DIR;
+      else process.env.CODEGRAPH_DIR = previousDir;
+      fs.rmSync(path.join(fx.dir, '.codegraph-head-test'), { recursive: true, force: true });
+    }
+  });
+
   it('expands direct callers and emits threshold breach risks', async () => {
     const fx = await indexedFixture();
     fx.write('src/calculator.ts', [
@@ -106,6 +136,65 @@ describe('detect changes', () => {
 
     const report = await detectChanges(fx.cg, { mode: 'all', failOn: 'callers>0' });
     expect(report.callers.some((caller) => caller.name === 'renderTotal')).toBe(true);
+    expect(report.summary.status).toBe('threshold_breach');
+    expect(report.exitCode).toBe(2);
+  });
+
+  it('evaluates caller failOn policy before truncating displayed callers', async () => {
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    fx.write('src/calculator.ts', [
+      'export function computeTotal(value: number) {',
+      '  return value + 1;',
+      '}',
+      '',
+      'export function renderTotalA() {',
+      '  return computeTotal(1);',
+      '}',
+      '',
+      'export function renderTotalB() {',
+      '  return computeTotal(2);',
+      '}',
+      '',
+      'export function renderTotalC() {',
+      '  return computeTotal(3);',
+      '}',
+      '',
+    ].join('\n'));
+    fx.git(['add', 'src/calculator.ts']);
+    fx.git([
+      '-c', 'user.email=test@example.com',
+      '-c', 'user.name=Test User',
+      '-c', 'commit.gpgsign=false',
+      'commit', '-m', 'expand callers', '-q',
+    ]);
+    await indexFixture(fx);
+    fx.write('src/calculator.ts', [
+      'export function computeTotal(value: number) {',
+      '  return value + 2;',
+      '}',
+      '',
+      'export function renderTotalA() {',
+      '  return computeTotal(1);',
+      '}',
+      '',
+      'export function renderTotalB() {',
+      '  return computeTotal(2);',
+      '}',
+      '',
+      'export function renderTotalC() {',
+      '  return computeTotal(3);',
+      '}',
+      '',
+    ].join('\n'));
+
+    const report = await detectChanges(fx.cg, { mode: 'all', maxCallers: 1, failOn: 'callers>1' });
+    expect(report.callers).toHaveLength(1);
+    expect(report.limits.truncatedCallers).toBe(true);
+    expect(report.risks).toContainEqual(expect.objectContaining({
+      code: 'threshold-breach',
+      policy: 'callers>1',
+    }));
     expect(report.summary.status).toBe('threshold_breach');
     expect(report.exitCode).toBe(2);
   });
