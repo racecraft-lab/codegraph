@@ -78,7 +78,7 @@ runs:
 
     - name: Restore CodeGraph index cache
       id: codegraph-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .codegraph
         key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ inputs.codegraph-version }}
@@ -101,7 +101,7 @@ runs:
 
     - name: Upload PR impact report
       if: always() && steps.pr-impact.outputs.report-path != ''
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: ${{ steps.pr-impact.outputs.artifact-name }}
         path: ${{ steps.pr-impact.outputs.report-path }}
@@ -109,7 +109,7 @@ runs:
 
     - name: Save CodeGraph index cache
       if: always() && steps.pr-impact.outputs.cache-status == 'rebuilt'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .codegraph
         key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ inputs.codegraph-version }}

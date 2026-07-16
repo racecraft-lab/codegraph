@@ -22,7 +22,13 @@ Passed after remediation.
 
 ## Verification after remediation
 
-- Focused PR-impact suite: PASS — 6 files, 24 tests.
+- Focused PR-impact suite: PASS — 6 files, 25 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,951 tests passed, 7 skipped; duration 65.40s.
+- `npm test`: PASS — 240 files, 3,952 tests passed, 7 skipped; duration 76.55s.
+
+## PR check remediation
+
+- Finding: GitHub rejected mutable external action references in the dogfood workflow/action because organization policy requires full commit SHA pins.
+- Fix: pinned `actions/checkout`, `actions/cache/restore`, `actions/cache/save`, and `actions/upload-artifact` to full 40-character commit SHAs.
+- Test: `pr-impact-action-contract.test.ts` now verifies external `actions/*` references are pinned to full commit SHAs.

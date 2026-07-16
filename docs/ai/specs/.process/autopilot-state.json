@@ -4,7 +4,7 @@
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
   "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-16T00:54:05Z",
+  "updated_at": "2026-07-16T01:01:26Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -466,16 +466,16 @@
       "focused_pr_impact_tests": {
         "status": "passed",
         "test_files": 6,
-        "tests": 24
+        "tests": 25
       },
       "build": "passed",
       "typecheck": "passed",
       "full_test": {
         "status": "passed",
         "test_files": 240,
-        "tests_passed": 3951,
+        "tests_passed": 3952,
         "tests_skipped": 7,
-        "duration_seconds": 65.4
+        "duration_seconds": 76.55
       },
       "reviewability_gate": {
         "status": "warn",
@@ -491,7 +491,7 @@
         "median_seconds": 149,
         "target_seconds": 180
       },
-      "known_gap": "Live GitHub dogfood artifact URL is pending until the branch is pushed and opened as a pull request."
+      "known_gap": "Live GitHub dogfood artifact URL is pending until GitHub Actions reruns after full-SHA pinning remediation."
     }
   },
   "post": {
@@ -527,10 +527,10 @@
         "Merge-base metadata now uses explicit env or git merge-base before falling back to event base SHA."
       ],
       "verification": {
-        "focused_pr_impact_tests": "passed: 6 files, 24 tests",
+        "focused_pr_impact_tests": "passed: 6 files, 25 tests",
         "build": "passed",
         "typecheck": "passed",
-        "full_test": "passed: 240 files, 3951 tests passed, 7 skipped"
+        "full_test": "passed: 240 files, 3952 tests passed, 7 skipped"
       }
     },
     "integration_suite": {
@@ -556,7 +556,7 @@
     "uat": {
       "status": "runbook_ready",
       "runbook": "specs/020-pr-blast-radius-review-action/uat-runbook.md",
-      "live_github_artifact": "pending until PR workflow runs"
+      "live_github_artifact": "pending until GitHub Actions reruns after full-SHA pinning remediation"
     },
     "pr_packet": {
       "status": "ready",
@@ -570,8 +570,19 @@
       "draft": true
     },
     "review_remediation": {
-      "status": "pending_external_review",
-      "note": "No review feedback existed at PR creation time; monitor PR #154 for checks or reviewer comments."
+      "status": "checks_remediated_pending_rerun",
+      "note": "PR #154 dogfood check initially failed because repository policy rejects mutable external action refs.",
+      "remediation": [
+        "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
+        "Added a contract test proving external actions/* references use full 40-character commit SHAs."
+      ],
+      "verification": {
+        "focused_pr_impact_tests": "passed: 6 files, 25 tests",
+        "build": "passed",
+        "typecheck": "passed",
+        "full_test": "passed: 240 files, 3952 tests passed, 7 skipped"
+      },
+      "next": "Push remediation and monitor PR #154 check rerun."
     },
     "retrospective": {
       "status": "completed",

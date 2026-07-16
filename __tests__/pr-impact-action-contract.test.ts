@@ -289,6 +289,24 @@ describe('PR impact action contract', () => {
     expect(workflow).toContain('fail-on-hubs: "false"');
     expect(workflow).not.toContain('pull_request_target');
   });
+
+  it('pins external GitHub Actions to full commit SHAs', () => {
+    const action = readAction();
+    const workflow = fs.readFileSync(DOGFOOD_WORKFLOW, 'utf8');
+    const combined = `${action}\n${workflow}`;
+    const externalUses = [...combined.matchAll(/uses:\s+(actions\/[^\s@]+)@([^\s]+)/g)]
+      .map((match) => ({ action: match[1], ref: match[2] }));
+
+    expect(externalUses).toEqual([
+      { action: 'actions/cache/restore', ref: '0057852bfaa89a56745cba8c7296529d2fc39830' },
+      { action: 'actions/upload-artifact', ref: 'ea165f8d65b6e75b540449e92b4886f43607fa02' },
+      { action: 'actions/cache/save', ref: '0057852bfaa89a56745cba8c7296529d2fc39830' },
+      { action: 'actions/checkout', ref: '34e114876b0b11c390a56381ad16ebd13914f8d5' },
+    ]);
+    for (const { ref } of externalUses) {
+      expect(ref).toMatch(/^[0-9a-f]{40}$/);
+    }
+  });
 });
 
 const typeSurface: {
