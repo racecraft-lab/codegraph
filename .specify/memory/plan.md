@@ -114,3 +114,12 @@ activation, atomic catalog recompute after index/sync, bounded MCP tools, and
 REST mirrors through the existing serve daemon. `codegraph_explore` remained
 unchanged; catalog analysis is dormant unless enabled. Full plan recoverable:
 `git show ecb5d83:specs/011-execution-flows-clusters/plan.md`.
+
+## SPEC-012 - Change Impact Detection (archived 2026-07-15)
+
+Plan shape that shipped: a new `src/analysis/detect-changes/` module with a thin
+CLI and MCP adapter. The engine acquires git diffs locally, maps hunks to indexed
+symbols, reports unmapped hunks instead of inventing impact, expands callers with
+bounded graph traversal, enriches with SPEC-011 flows when catalogs exist, and
+renders stable JSON/markdown plus deterministic exit codes for CI use. Full plan
+recoverable: `git show d14e9d6:specs/012-change-impact-detection/plan.md`.

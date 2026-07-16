@@ -156,3 +156,19 @@ The active `specs/011-execution-flows-clusters/` folder was removed because the
 shipped code, tests, UAT evidence, benchmark evidence, and preserved
 workflow/design evidence carry the durable record; SPEC-012 can now enrich
 impact results with flows and SPEC-019 can consume clusters and flow walkthroughs.
+
+## SPEC-012 - Change Impact Detection (archived 2026-07-15)
+
+Change Impact Detection shipped in PR #55. It added local-first diff-to-impact
+analysis over indexed symbols, explicit unmapped-hunk diagnostics, bounded caller
+expansion, SPEC-011 flow enrichment, deterministic JSON/markdown reports, the
+`codegraph detect-changes` CLI, and the `codegraph_detect_changes` MCP tool.
+Canonical code: `src/analysis/detect-changes/`, CLI wiring in
+`src/bin/codegraph.ts`, MCP wiring in `src/mcp/tools.ts`, and focused unit, CLI,
+and MCP coverage in `__tests__/detect-changes*.test.ts`. Detailed provenance +
+recovery:
+[archive-reports/2026-07-15-SPEC-012.md](archive-reports/2026-07-15-SPEC-012.md).
+The active `specs/012-change-impact-detection/` folder was removed because the
+shipped code, tests, merged PR evidence, and preserved workflow/design evidence
+carry the durable record; SPEC-020 is now ready because the review-action
+substrate, stable report contract, and CI exit behavior are merged.

@@ -76,3 +76,11 @@
   removed with provenance in
   [archive-reports/2026-07-15-SPEC-011.md](archive-reports/2026-07-15-SPEC-011.md);
   `.specify/feature.json` cleared (no active spec remains after this cleanup).
+
+- **2026-07-15** - SPEC-012 archived. PR #55 (`d14e9d6`) merged (local
+  diff-to-impact detection over CLI and MCP); roadmap row flipped to complete;
+  SPEC-020 moved to ready because the stable report contract, markdown output,
+  threshold exit codes, and MCP surface are merged; `specs/012-change-impact-detection/`
+  removed with provenance in
+  [archive-reports/2026-07-15-SPEC-012.md](archive-reports/2026-07-15-SPEC-012.md);
+  `.specify/feature.json` cleared because it pointed at the archived spec.

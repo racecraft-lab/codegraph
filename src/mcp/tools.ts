@@ -36,6 +36,13 @@ import { getUpdateNotice } from '../upgrade/update-check';
 // with the SAME canonical serializers the CLI `--json` path uses, so the MCP text
 // payload is byte-identical to CLI stdout (SC-005 / FR-027).
 import { serializeRenamePlanJson, serializeApplyResultJson } from '../refactor/plan-format';
+import { createUnavailableReport, detectChanges, type DiffMode, type ReportFormat } from '../analysis/detect-changes';
+import {
+  normalizeDetectChangesRequest,
+  parseFailOn,
+  renderJsonReport,
+  renderMarkdownReport,
+} from '../analysis/detect-changes/report';
 
 /**
  * An expected, recoverable "codegraph can't serve this" condition — most
@@ -697,6 +704,48 @@ export const tools: ToolDefinition[] = [
     annotations: READ_ONLY_ANNOTATIONS,
   },
   {
+    name: 'codegraph_detect_changes',
+    description: 'Report changed symbols and bounded impact for the current git diff. Use before committing or when an agent needs local change impact: supports unstaged, staged, all, and base-ref diffs; returns JSON or deterministic markdown with changed symbols, unmapped hunks, callers, affected flows, risks, warnings, limits, and exitCode.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          description: 'Diff mode: unstaged | staged | all | base-ref. Default for CLI is all; MCP callers should pass this explicitly.',
+          enum: ['unstaged', 'staged', 'all', 'base-ref'],
+          default: 'all',
+        },
+        baseRef: {
+          type: 'string',
+          description: 'Required when mode is base-ref; compared via merge-base(baseRef, HEAD).',
+        },
+        format: {
+          type: 'string',
+          description: 'Output format: json | markdown. Default json.',
+          enum: ['json', 'markdown'],
+          default: 'json',
+        },
+        failOn: {
+          type: 'string',
+          description: 'Optional comma-separated policies: callers>N and/or hub. Threshold breaches return normal payloads with exitCode 2.',
+        },
+        callerDepth: {
+          type: 'number',
+          description: 'Caller traversal depth, clamped to 1-3. Default 1.',
+          default: 1,
+        },
+        maxCallers: {
+          type: 'number',
+          description: 'Maximum caller rows, clamped to 1-100. Default 20.',
+          default: 20,
+        },
+        projectPath: projectPathProperty,
+      },
+      required: ['mode'],
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
     name: 'codegraph_node',
     description: 'Two modes. (1) READ A FILE — use INSTEAD of the Read tool: pass `file` (a path or basename) with no `symbol` and it returns that file\'s current on-disk source with line numbers, exactly the shape Read gives you (`<n>\\t<line>`, safe to Edit from), narrowable with `offset`/`limit` just like Read — PLUS a one-line note of which files depend on it. Same bytes as Read, faster (served from the index), with the blast radius attached. Use it whenever you would Read a source file. (2) ONE SYMBOL you can name — its location, signature, verbatim source (includeCode=true) and caller/callee trail in one call, so before changing it you see what calls it and what your edit would break. For an AMBIGUOUS name it returns EVERY matching definition\'s body in one call (so you never Read a file to find the right overload); pass `file`/`line` to pin one. Use codegraph_explore for several related symbols or the full flow.',
     inputSchema: {
@@ -936,16 +985,17 @@ export function getStaticTools(): ToolDefinition[] {
 /**
  * The MCP tools served by DEFAULT (short names): `codegraph_explore` — the single
  * retrieval tool that reliably earns its place (one capped call returns the
- * verbatim source of the relevant symbols grouped by file) — plus `codegraph_rename`,
- * the graph-aware write tool (SPEC-010 FR-022), the first non-read-only tool on the
- * surface. Every other read tool is a narrower slice of what explore already does,
- * and presence itself steers mis-picks, so they are no longer LISTED to agents.
+ * verbatim source of the relevant symbols grouped by file), `codegraph_detect_changes`
+ * for local diff impact reports, plus `codegraph_rename`, the graph-aware write
+ * tool (SPEC-010 FR-022), the first non-read-only tool on the surface. Every other
+ * read tool is a narrower slice of what explore already does, and presence itself
+ * steers mis-picks, so they are no longer LISTED to agents.
  *
  * The other defined tools (`node`, `search`, `callers`, plus callees/impact/files/
  * status) remain fully functional — handlers stay, the library API and CLI are
  * untouched, and `CODEGRAPH_MCP_TOOLS=explore,node,...` re-enables any of them.
  */
-const DEFAULT_MCP_TOOLS = new Set(['explore', 'rename']);
+const DEFAULT_MCP_TOOLS = new Set(['explore', 'detect_changes', 'rename']);
 
 /**
  * Tool handler that executes tools against a CodeGraph instance
@@ -1093,7 +1143,7 @@ export class ToolHandler {
    */
   getTools(): ToolDefinition[] {
     const allow = this.toolAllowlist();
-    // No explicit allowlist → the default 4-tool surface (see
+    // No explicit allowlist → the default tool surface (see
     // DEFAULT_MCP_TOOLS for the evidence). An allowlist replaces the
     // default entirely, so any defined tool can be re-enabled.
     let visible = allow
@@ -1143,6 +1193,7 @@ export class ToolHandler {
         'codegraph_explore',
         'codegraph_search',
         'codegraph_node',
+        'codegraph_detect_changes',
         // The write tool is exempt from the tiny-repo trim: the gating above is
         // calibrated on read-flow tool-salience A/Bs (which read tools an agent
         // recoups overhead on at tiny scale) — codegraph_rename never competed
@@ -1642,6 +1693,7 @@ export class ToolHandler {
       case 'codegraph_callers': return await this.handleCallers(args);
       case 'codegraph_callees': return await this.handleCallees(args);
       case 'codegraph_impact': return await this.handleImpact(args);
+      case 'codegraph_detect_changes': return await this.handleDetectChanges(args);
       case 'codegraph_explore': return await this.handleExplore(args);
       case 'codegraph_node': return await this.handleNode(args);
       case 'codegraph_files': return await this.handleFiles(args);
@@ -1663,6 +1715,49 @@ export class ToolHandler {
     if (raw === undefined || raw === null || raw === '') return def;
     const n = Number(raw);
     return Number.isFinite(n) ? Math.floor(n) : def;
+  }
+
+  /**
+   * Handle codegraph_detect_changes (SPEC-012). Expected unavailable states
+   * return normal text payloads; malformed input and git failures return tool
+   * errors.
+   */
+  private async handleDetectChanges(args: Record<string, unknown>): Promise<ToolResult> {
+    const request = {
+      mode: (typeof args.mode === 'string' ? args.mode : 'all') as DiffMode,
+      baseRef: typeof args.baseRef === 'string' ? args.baseRef : null,
+      format: (typeof args.format === 'string' ? args.format : 'json') as ReportFormat,
+      failOn: typeof args.failOn === 'string' ? args.failOn : null,
+      callerDepth: typeof args.callerDepth === 'number' ? args.callerDepth : undefined,
+      maxCallers: typeof args.maxCallers === 'number' ? args.maxCallers : undefined,
+      projectPath: typeof args.projectPath === 'string' ? args.projectPath : undefined,
+    };
+
+    let normalized: ReturnType<typeof normalizeDetectChangesRequest>;
+    try {
+      normalized = normalizeDetectChangesRequest(request);
+      parseFailOn(normalized.failOn);
+    } catch (err) {
+      return this.errorResult(`detect_changes failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    let cg: CodeGraph;
+    try {
+      cg = this.getCodeGraph(normalized.projectPath);
+    } catch (err) {
+      if (err instanceof NotIndexedError) {
+        const report = createUnavailableReport(normalized, err.message);
+        return this.textResult(normalized.format === 'markdown' ? renderMarkdownReport(report) : renderJsonReport(report));
+      }
+      throw err;
+    }
+
+    try {
+      const report = await detectChanges(cg, normalized);
+      return this.textResult(normalized.format === 'markdown' ? renderMarkdownReport(report) : renderJsonReport(report));
+    } catch (err) {
+      return this.errorResult(`detect_changes failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
