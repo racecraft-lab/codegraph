@@ -62,6 +62,7 @@ Reviewers need one current deterministic blast-radius report on pull requests. T
 - PR check remediation: PASS locally — external `actions/*` references are pinned to full commit SHAs.
 - PR check remediation: PASS locally — cold cache misses initialize the CodeGraph index before analysis.
 - PR check remediation: PASS locally — dogfood installs the checked-out workspace package so unreleased detector commands are available.
+- PR check remediation: PASS locally — dogfood builds the workspace package before local `file:.` installation.
 - PR check remediation: PASS locally — fallback restore-key caches are validated from metadata instead of treated as cold misses.
 - PR check remediation: PASS locally — helper uses the resolved installed CLI path and falls back from failed restored-cache reindex to cold initialization.
 

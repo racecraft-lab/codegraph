@@ -44,6 +44,9 @@ Passed after remediation.
 - Finding: the failed dogfood report still showed unavailable analysis after the fallback cache fix, while logs suppressed the lower-level rebuild cause.
 - Fix: the composite action now records the installed CodeGraph binary path for the helper, and restored-cache reindex failures fall back to deleting the restored `.codegraph` directory and running cold initialization.
 - Test: `pr-impact-action-contract.test.ts` verifies the explicit binary path, and `pr-impact-cache.test.ts` verifies reindex-to-init fallback.
+- Finding: self-dogfood `codegraph-version: "file:."` ran before the package `dist/` CLI existed in the GitHub checkout, so npm installed the local package without a resolvable `codegraph` binary.
+- Fix: the self-repository dogfood workflow now runs `npm ci` and `npm run build` before invoking the local action.
+- Test: `pr-impact-action-contract.test.ts` verifies the dogfood workflow builds before `uses: ./actions/pr-impact`.
 
 ## Verification after PR check remediation
 

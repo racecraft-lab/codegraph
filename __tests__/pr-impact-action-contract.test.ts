@@ -286,6 +286,8 @@ describe('PR impact action contract', () => {
     const workflow = fs.readFileSync(DOGFOOD_WORKFLOW, 'utf8');
 
     expect(workflow).toContain('pull_request:');
+    expect(workflow.indexOf('run: npm ci')).toBeLessThan(workflow.indexOf('uses: ./actions/pr-impact'));
+    expect(workflow.indexOf('run: npm run build')).toBeLessThan(workflow.indexOf('uses: ./actions/pr-impact'));
     expect(workflow).toContain('uses: ./actions/pr-impact');
     expect(workflow).toContain('codegraph-version: "file:."');
     expect(workflow).toContain('narrative: "off"');

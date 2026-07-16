@@ -4,7 +4,7 @@
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
   "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-16T01:31:49Z",
+  "updated_at": "2026-07-16T01:36:45Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -574,7 +574,7 @@
     },
     "review_remediation": {
       "status": "checks_remediated_pending_rerun",
-      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, restore-key fallback cache handling that treated restored metadata as a cold miss, and unavailable analysis after restored-cache reindexing failed.",
+      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, missing workspace build for file:. self-dogfood, restore-key fallback cache handling that treated restored metadata as a cold miss, and unavailable analysis after restored-cache reindexing failed.",
       "remediation": [
         "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
         "Added a contract test proving external actions/* references use full 40-character commit SHAs.",
@@ -582,6 +582,8 @@
         "Added a cache regression test proving cold-cache initialization, metadata recording, detector execution, and .gitignore restoration.",
         "Changed the self-repository dogfood workflow to install the checked-out workspace package via codegraph-version file:.",
         "Added a contract assertion that dogfood uses the workspace package while preserving advisory thresholds and narrative off.",
+        "Changed the self-repository dogfood workflow to run npm ci and npm run build before invoking the local action.",
+        "Added a contract assertion that the dogfood workflow builds before uses: ./actions/pr-impact.",
         "Changed cache preparation to validate restored metadata whenever the metadata file exists, even when actions/cache reports a non-exact restore-key hit.",
         "Added a cache regression test proving fallback restored metadata is re-indexed instead of initialized when the restored CodeGraph version is incompatible.",
         "Changed the composite action to persist the resolved installed codegraph binary path for the helper.",

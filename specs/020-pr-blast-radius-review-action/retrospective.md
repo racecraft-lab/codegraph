@@ -23,6 +23,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - PR check remediation passed locally for full-SHA external action pinning.
 - PR check remediation passed locally for cold-cache CodeGraph initialization.
 - PR check remediation passed locally for self-dogfood using the checked-out workspace package.
+- PR check remediation passed locally for building the workspace package before self-dogfood local installation.
 - PR check remediation passed locally for fallback restore-key cache validation.
 - PR check remediation passed locally for explicit installed CLI path resolution and reindex-to-init fallback.
 
@@ -37,6 +38,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - Report metadata needs action run identity to make reruns and synchronize events distinguishable.
 - A reusable action cannot assume an index exists on a first run; cold-cache paths need initialization, not only re-indexing.
 - Self-dogfood for unreleased CLI features must install the checked-out workspace package, not the last published package.
+- Local `file:.` self-dogfood also needs a prior package build because the repository does not check in the package-level `dist/` CLI.
 - GitHub `actions/cache` restore-key hits can restore real cache contents while reporting `cache-hit=false`; runtime metadata must be validated before choosing a cold-cache initialization path.
 - Restored caches can still be unsalvageable; the action needs a cold-init fallback after failed reindexing instead of reporting unavailable immediately.
 - Advisory dogfood should remain threshold-free until enough live PR samples exist to justify blocking defaults.

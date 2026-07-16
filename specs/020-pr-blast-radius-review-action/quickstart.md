@@ -103,7 +103,7 @@ Expected:
 
 ## Final SPEC-020 validation evidence
 
-Recorded on 2026-07-16 from the SPEC-020 worktree with Node 24.11.1 after code-review remediation, PR check pinning remediation, cold-cache initialization remediation, self-dogfood package remediation, fallback restore-key cache remediation, explicit CLI path remediation, and reindex-to-init fallback remediation.
+Recorded on 2026-07-16 from the SPEC-020 worktree with Node 24.11.1 after code-review remediation, PR check pinning remediation, cold-cache initialization remediation, self-dogfood package/build remediation, fallback restore-key cache remediation, explicit CLI path remediation, and reindex-to-init fallback remediation.
 
 Commands:
 
