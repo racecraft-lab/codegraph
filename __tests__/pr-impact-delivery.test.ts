@@ -208,7 +208,7 @@ describe('PR impact report delivery', () => {
           summary: {
             ...prImpactDetectorResults.impact.summary,
             changedSymbolCount: 0,
-            unmappedHunkCount: 1,
+            unmappedHunkCount: 2,
             callerCount: 0,
             affectedFlowCount: 0,
           },
@@ -221,6 +221,16 @@ describe('PR impact report delivery', () => {
             newLines: 3,
             reason: 'no-symbol-span',
             message: 'Path-only rename or move is reported without mapped symbol impact.',
+          }, {
+            hunkId: 'h2',
+            oldPath: 'src/deleted.ts',
+            newPath: null,
+            oldStart: 44,
+            oldLines: 2,
+            newStart: 0,
+            newLines: 0,
+            reason: 'deleted-without-span',
+            message: 'Deleted hunk has no mapped symbol span.',
           }],
           callers: [],
           affectedFlows: {
@@ -233,8 +243,40 @@ describe('PR impact report delivery', () => {
 
       expect(result.report).toContain('## Unmapped hunks');
       expect(result.report).toContain('docs/new.md:12+3');
+      expect(result.report).toContain('src/deleted.ts:44+2');
       expect(result.report).toContain('no-symbol-span');
       expect(result.report).toContain('Path-only rename or move');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('does not abort report delivery when detector arrays contain malformed entries', async () => {
+    const tmp = tmpDir();
+    try {
+      const result = await runAction(deps(tmp, {
+        execFileSync: () => JSON.stringify({
+          ...prImpactDetectorResults.impact,
+          changedSymbols: [null],
+          unmappedHunks: [null],
+          callers: [null],
+          affectedFlows: {
+            state: 'available',
+            items: [null],
+            truncated: false,
+          },
+          risks: [null],
+          warnings: [null],
+        }),
+      }));
+
+      expect(result.conclusion).toBe('pass');
+      expect(result.report).toContain('## Changed symbols');
+      expect(result.report).toContain('unknown path');
+      expect(result.report).toContain('## Unmapped hunks');
+      expect(result.report).toContain('unknown path');
+      expect(result.report).toContain('## Impacted callers');
+      expect(result.report).toContain('## Risks');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -399,7 +441,78 @@ describe('PR impact report delivery', () => {
       expect(result.delivery.status).toBe('fallback');
       expect(result.delivery.comment).toBe('skipped');
       expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1);
-      expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
+      const patches = calls.filter((call) => call.method === 'PATCH');
+      expect(patches.map((call) => call.url)).toEqual([
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/301',
+      ]);
+      expect(patches[0]?.body).toContain('Retired duplicate');
+      expect(patches[0]?.body).not.toContain('- Delivery status: comment');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('retires the current run comment instead of finalizing when a newer run appears before final patch', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    let createdComment: { id: number; body: string; created_at: string; html_url: string; user: { login: string } } | null = null;
+    let getCount = 0;
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_RUN_ATTEMPT: '1',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ method, url, body: init?.body });
+          if (method === 'GET') {
+            getCount += 1;
+            const newerComment = {
+              id: 401,
+              body: [
+                ACTION_MARKER,
+                '<!-- codegraph-pr-impact-run:201:1:0000000000000000000000000000000000000002 -->',
+                '',
+                '# CodeGraph PR Impact',
+              ].join('\n'),
+              created_at: '2026-07-15T00:00:03Z',
+              html_url: 'newer',
+              user: { login: 'github-actions[bot]' },
+            };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => getCount < 3
+                ? (createdComment ? [createdComment] : [])
+                : [newerComment, ...(createdComment ? [createdComment] : [])],
+            };
+          }
+          if (method === 'POST') {
+            createdComment = {
+              id: 400,
+              body: JSON.parse(String(init?.body ?? '{}')).body,
+              created_at: '2026-07-15T00:00:02Z',
+              html_url: 'created',
+              user: { login: 'github-actions[bot]' },
+            };
+            return { ok: true, status: 201, json: async () => createdComment };
+          }
+          return { ok: true, status: 200, json: async () => ({ id: Number(url.split('/').pop()), html_url: 'patched' }) };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('failed');
+      const patches = calls.filter((call) => call.method === 'PATCH');
+      expect(patches.map((call) => call.url)).toEqual([
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/400',
+      ]);
+      expect(patches[0]?.body).toContain('Retired duplicate');
+      expect(patches[0]?.body).not.toContain('- Delivery status: comment');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

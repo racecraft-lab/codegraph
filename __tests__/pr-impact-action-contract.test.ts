@@ -156,7 +156,7 @@ describe('PR impact action contract', () => {
     expect(bounded.callerDepth).toBe(3);
     expect(bounded.maxCallers).toBe(1);
 
-    for (const invalid of ['abc', '10junk', '-1']) {
+    for (const invalid of ['abc', '10junk', '-1', '9007199254740992']) {
       expect(() => parseActionInputs({ INPUT_FAIL_ON_CALLERS: invalid })).toThrow('Invalid fail-on-callers');
       expect(() => parseActionInputs({ INPUT_CALLER_DEPTH: invalid })).toThrow('Invalid caller-depth');
       expect(() => parseActionInputs({ INPUT_MAX_CALLERS: invalid })).toThrow('Invalid max-callers');

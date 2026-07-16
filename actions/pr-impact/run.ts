@@ -404,14 +404,18 @@ function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: Pull
   const identity = cacheIdentity(deps, inputs, context);
   const metadataPath = deps.env.PR_IMPACT_CACHE_METADATA_PATH ?? '.codegraph/pr-impact-cache.json';
   const restoreHit = deps.env.PR_IMPACT_CACHE_RESTORE_HIT === 'true';
+  const indexPath = deps.env.PR_IMPACT_CODEGRAPH_PATH ?? '.codegraph';
+  const restoredIndexExists = fileExists(deps, indexPath);
   const restoredStatus = restoreHit || fileExists(deps, metadataPath)
     ? validateCacheMetadata(deps, metadataPath, identity)
+    : restoredIndexExists
+      ? 'stale'
     : 'miss';
   if (restoredStatus === 'warm-valid') return restoredStatus;
 
   const rebuildMode = restoredStatus === 'miss' ? 'init' : 'index';
   if (!rebuildAndValidateCodeGraphIndex(deps, rebuildMode, metadataPath, identity)) {
-    if (rebuildMode !== 'index' || !resetCodeGraphIndex(deps) || !rebuildAndValidateCodeGraphIndex(deps, 'init', metadataPath, identity)) {
+    if (!resetCodeGraphIndex(deps) || !rebuildAndValidateCodeGraphIndex(deps, 'init', metadataPath, identity)) {
       return 'unavailable';
     }
   }
@@ -1038,11 +1042,12 @@ async function deliverReportComment(
   const postCreateDuplicateIds: string[] = [];
   const postCreateFailedDuplicateIds: string[] = [];
   if (isNewerRunComment(currentAfterCreate, context)) {
+    const retiredCurrentRun = await retireCurrentRunComments(deps, context, markedAfterCreate);
     return {
       ...base,
       comment: 'skipped',
-      duplicateCommentIds: postCreateDuplicateIds,
-      failedDuplicateCommentIds: postCreateFailedDuplicateIds,
+      duplicateCommentIds: retiredCurrentRun.retired,
+      failedDuplicateCommentIds: retiredCurrentRun.failed,
     };
   }
   if (!isSameRunComment(currentAfterCreate, context)) {
@@ -1079,9 +1084,35 @@ async function patchDeliveredComment(
   if (delivery.currentCommentId === null) return false;
   const comments = await listComments(deps, context);
   if (comments === null) return false;
+  const marked = sortActionOwnedComments(comments);
+  if (marked.some((comment) => isNewerRunComment(comment, context))) {
+    await retireCurrentRunComments(deps, context, marked);
+    return false;
+  }
   const current = comments.find((comment) => String(comment.id) === String(delivery.currentCommentId));
   if (!current || !isSameRunComment(current, context)) return false;
   return patchComment(deps, context, delivery.currentCommentId, report);
+}
+
+async function retireCurrentRunComments(
+  deps: RunDependencies,
+  context: PullRequestContext,
+  comments: GitHubComment[],
+): Promise<{ retired: string[]; failed: string[] }> {
+  const retired: string[] = [];
+  const failed: string[] = [];
+  for (const comment of comments) {
+    if (!isSameRunComment(comment, context)) continue;
+    const ok = await patchComment(
+      deps,
+      context,
+      comment.id,
+      `${ACTION_MARKER}\n${actionRunMarker(context)}\n\n_Retired duplicate CodeGraph PR impact report._`,
+    );
+    if (ok) retired.push(String(comment.id));
+    else failed.push(String(comment.id));
+  }
+  return { retired, failed };
 }
 
 function writeSummary(deps: RunDependencies, report: string): DeliveryResult['summary'] {
@@ -1504,7 +1535,9 @@ function hasOwn(value: Record<string, unknown>, field: string): boolean {
 }
 
 function stringField(value: Record<string, unknown>, field: string): string {
-  const fieldValue = value[field];
+  const object = objectValue(value);
+  if (!object) return '';
+  const fieldValue = object[field];
   return typeof fieldValue === 'string' ? fieldValue : '';
 }
 
@@ -1546,7 +1579,14 @@ function parseOptionalInteger(raw: string, label: string): { value: number | nul
       error: `Invalid ${label}: expected a non-negative integer or an empty value, received ${JSON.stringify(raw)}.`,
     };
   }
-  return { value: Number(trimmed), error: null };
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    return {
+      value: null,
+      error: `Invalid ${label}: expected a safe non-negative integer or an empty value, received ${JSON.stringify(raw)}.`,
+    };
+  }
+  return { value: parsed, error: null };
 }
 
 function parseIntegerInput(raw: string, label: string, fallback: number): { value: number; error: string | null } {
@@ -1558,7 +1598,14 @@ function parseIntegerInput(raw: string, label: string, fallback: number): { valu
       error: `Invalid ${label}: expected a non-negative integer or an empty value, received ${JSON.stringify(raw)}.`,
     };
   }
-  return { value: Number(trimmed), error: null };
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    return {
+      value: fallback,
+      error: `Invalid ${label}: expected a safe non-negative integer or an empty value, received ${JSON.stringify(raw)}.`,
+    };
+  }
+  return { value: parsed, error: null };
 }
 
 function clampInteger(value: number, min: number, max: number): number {
@@ -1591,11 +1638,21 @@ function numberLimit(limits: Record<string, unknown>, field: string, fallback: n
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function formatHunkRange(hunk: Record<string, unknown>): string {
-  const start = numberOr(hunk.newStart, numberOr(hunk.oldStart, 0));
-  const lines = numberOr(hunk.newLines, numberOr(hunk.oldLines, 0));
+function formatHunkRange(value: unknown): string {
+  const hunk = objectValue(value);
+  if (!hunk) return '';
+  const newStart = positiveNumberOrNull(hunk.newStart);
+  const newLines = numberOr(hunk.newLines, 1);
+  const oldStart = positiveNumberOrNull(hunk.oldStart);
+  const oldLines = numberOr(hunk.oldLines, 1);
+  const start = newStart !== null && newLines !== 0 ? newStart : oldStart;
+  const lines = newStart !== null && newLines !== 0 ? newLines : oldLines;
   if (!start) return '';
   return lines && lines > 1 ? `${start}+${lines}` : String(start);
+}
+
+function positiveNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function markdownInline(raw: string): string {
