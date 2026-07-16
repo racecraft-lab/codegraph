@@ -82,6 +82,24 @@ runs:
       env:
         INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}
       run: |
+        write_env_line() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "Refusing to write multi-line value for $name" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+        }
+        write_output_line() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "Refusing to write multi-line value for $name" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$name" "$value" >> "$GITHUB_OUTPUT"
+        }
         codegraph_spec="$INPUT_CODEGRAPH_VERSION"
         if [[ ! "$codegraph_spec" =~ ^[A-Za-z0-9._~:/@+-]+$ ]]; then
           echo "Unsupported codegraph-version package spec" >&2
@@ -97,13 +115,13 @@ runs:
           exit 1
         fi
         codegraph_version="$("$codegraph_bin" --version)"
-        if [[ -z "$codegraph_version" ]]; then
+        if [[ -z "$codegraph_version" || "$codegraph_version" == *$'\n'* || "$codegraph_version" == *$'\r'* || ! "$codegraph_version" =~ ^[A-Za-z0-9][A-Za-z0-9._~:+/-]*$ ]]; then
           echo "Unable to resolve installed codegraph version" >&2
           exit 1
         fi
-        echo "PR_IMPACT_CODEGRAPH_BIN=$codegraph_bin" >> "$GITHUB_ENV"
-        echo "PR_IMPACT_CODEGRAPH_RESOLVED_VERSION=$codegraph_version" >> "$GITHUB_ENV"
-        echo "codegraph-version=$codegraph_version" >> "$GITHUB_OUTPUT"
+        write_env_line "PR_IMPACT_CODEGRAPH_BIN" "$codegraph_bin"
+        write_env_line "PR_IMPACT_CODEGRAPH_RESOLVED_VERSION" "$codegraph_version"
+        write_output_line "codegraph-version" "$codegraph_version"
 
     - name: Restore CodeGraph index cache
       id: codegraph-cache
@@ -167,6 +185,15 @@ runs:
         PR_IMPACT_HELPER_VERSION: ${{ steps.pr-impact.outputs.helper-version }}
         PR_IMPACT_UPLOAD_OUTCOME: ${{ steps.upload-report.outcome }}
       run: |
+        write_output_line() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "Refusing to write multi-line value for $name" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$name" "$value" >> "$GITHUB_OUTPUT"
+        }
         summary_status="${PR_IMPACT_SUMMARY_STATUS:-unavailable}"
         detector_exit_code="${PR_IMPACT_DETECTOR_EXIT_CODE:-3}"
         conclusion="${PR_IMPACT_INITIAL_CONCLUSION:-fail-analysis-unavailable}"
@@ -198,20 +225,18 @@ runs:
           fi
         fi
 
-        {
-          printf 'summary-status=%s\n' "$summary_status"
-          printf 'detector-exit-code=%s\n' "$detector_exit_code"
-          printf 'conclusion=%s\n' "$conclusion"
-          printf 'threshold-breached=%s\n' "$threshold_breached"
-          printf 'cache-status=%s\n' "$cache_status"
-          printf 'delivery-status=%s\n' "$delivery_status"
-          printf 'comment-url=%s\n' "$comment_url"
-          printf 'report-path=%s\n' "$report_path"
-          printf 'artifact-name=%s\n' "$artifact_name"
-          printf 'narrative-status=%s\n' "$narrative_status"
-          printf 'codegraph-version=%s\n' "$codegraph_version"
-          printf 'helper-version=%s\n' "$helper_version"
-        } >> "$GITHUB_OUTPUT"
+        write_output_line "summary-status" "$summary_status"
+        write_output_line "detector-exit-code" "$detector_exit_code"
+        write_output_line "conclusion" "$conclusion"
+        write_output_line "threshold-breached" "$threshold_breached"
+        write_output_line "cache-status" "$cache_status"
+        write_output_line "delivery-status" "$delivery_status"
+        write_output_line "comment-url" "$comment_url"
+        write_output_line "report-path" "$report_path"
+        write_output_line "artifact-name" "$artifact_name"
+        write_output_line "narrative-status" "$narrative_status"
+        write_output_line "codegraph-version" "$codegraph_version"
+        write_output_line "helper-version" "$helper_version"
 
     - name: Save CodeGraph index cache
       if: always() && steps.pr-impact.outputs.cache-status == 'rebuilt'

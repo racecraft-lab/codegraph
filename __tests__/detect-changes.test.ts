@@ -790,6 +790,7 @@ describe('detect changes', () => {
       { raw: 'hub', kind: 'hub' },
     ]);
     expect(() => parseFailOn('callers>=10')).toThrow(/Invalid failOn/);
+    expect(() => parseFailOn('callers>9007199254740993')).toThrow(/Invalid failOn/);
   });
 
   it('escapes markdown table cells with backslashes, pipes, and newlines', () => {

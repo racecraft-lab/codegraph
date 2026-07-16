@@ -13,6 +13,7 @@ const MIN_CALLER_DEPTH = 1;
 const MAX_CALLER_DEPTH = 3;
 const MIN_MAX_CALLERS = 1;
 const MAX_MAX_CALLERS = 100;
+const GIT_DIFF_MAX_BUFFER = 20 * 1024 * 1024;
 export function createRunDependencies() {
     return {
         env: process.env,
@@ -332,33 +333,30 @@ function prDiffNeedsBaseIndex(deps, mergeBase, headSha) {
         const nameStatus = String(deps.execFileSync('git', ['diff', '--name-status', '-z', mergeBase, headSha || 'HEAD', '--'], {
             encoding: 'utf8',
             env: deps.env,
+            maxBuffer: GIT_DIFF_MAX_BUFFER,
             stdio: ['ignore', 'pipe', 'pipe'],
         }));
         if (nameStatusHasDeletedFile(nameStatus))
             return true;
-        const patch = String(deps.execFileSync('git', ['diff', '--no-ext-diff', '--no-color', '--unified=0', mergeBase, headSha || 'HEAD', '--'], {
+        const numstat = String(deps.execFileSync('git', ['diff', '--numstat', '-z', mergeBase, headSha || 'HEAD', '--'], {
             encoding: 'utf8',
             env: deps.env,
+            maxBuffer: GIT_DIFF_MAX_BUFFER,
             stdio: ['ignore', 'pipe', 'pipe'],
         }));
-        return patchDeletesContent(patch);
+        return numstatDeletesContent(numstat);
     }
     catch {
         return null;
     }
 }
-function patchDeletesContent(patch) {
-    let inHunk = false;
-    for (const line of patch.split(/\r?\n/)) {
-        if (line.startsWith('diff --git ')) {
-            inHunk = false;
+function numstatDeletesContent(numstat) {
+    for (const record of numstat.split('\0')) {
+        const match = /^(?:-|\d+)\t(-|\d+)\t/.exec(record);
+        if (!match)
             continue;
-        }
-        if (line.startsWith('@@ ')) {
-            inHunk = true;
-            continue;
-        }
-        if (inHunk && line.startsWith('-'))
+        const deleted = match[1] ?? '0';
+        if (deleted !== '-' && Number(deleted) > 0)
             return true;
     }
     return false;

@@ -92,9 +92,11 @@ describe('PR impact action contract', () => {
     expect(action).toContain('INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}');
     expect(action).toContain('codegraph_spec="$INPUT_CODEGRAPH_VERSION"');
     expect(action).toContain('npm install --global "@colbymchenry/codegraph@$codegraph_spec"');
-    expect(action).toContain('PR_IMPACT_CODEGRAPH_BIN=$codegraph_bin');
-    expect(action).toContain('PR_IMPACT_CODEGRAPH_RESOLVED_VERSION=$codegraph_version');
-    expect(action).toContain('codegraph-version=$codegraph_version');
+    expect(action).toContain('write_env_line "PR_IMPACT_CODEGRAPH_BIN" "$codegraph_bin"');
+    expect(action).toContain('write_env_line "PR_IMPACT_CODEGRAPH_RESOLVED_VERSION" "$codegraph_version"');
+    expect(action).toContain('write_output_line "codegraph-version" "$codegraph_version"');
+    expect(action).toContain('Refusing to write multi-line value for $name');
+    expect(action).toContain('! "$codegraph_version" =~ ^[A-Za-z0-9][A-Za-z0-9._~:+/-]*$');
     expect(action).toContain('$GITHUB_ENV');
     expect(action).toContain('node "${{ github.action_path }}/dist/run.mjs"');
     expect(action).toContain('PR_IMPACT_CACHE_RESTORE_HIT:');
@@ -119,6 +121,8 @@ describe('PR impact action contract', () => {
     expect(action).toContain('detector_exit_code="${PR_IMPACT_DETECTOR_EXIT_CODE:-3}"');
     expect(action).toContain('conclusion="${PR_IMPACT_INITIAL_CONCLUSION:-fail-analysis-unavailable}"');
     expect(action).toContain('cache_status="${PR_IMPACT_CACHE_STATUS:-unavailable}"');
+    expect(action).toContain('write_output_line "summary-status" "$summary_status"');
+    expect(action).toContain('write_output_line "helper-version" "$helper_version"');
     expect(action).toContain("steps.finalize-pr-impact.outputs.conclusion != 'pass'");
     expect(readme).toContain('codegraph-version: "1.5.0"');
     expect(readme).toContain('uses: racecraft-lab/codegraph/actions/pr-impact@<immutable-ref>');
@@ -486,12 +490,7 @@ describe('PR impact action contract', () => {
         execFileSync: (command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
           calls.push({ command, args, codegraphDir: options?.env?.CODEGRAPH_DIR });
           if (command === 'git' && args[0] === 'diff' && args.includes('--name-status')) return 'M\0src/calculator.ts\0';
-          if (command === 'git' && args[0] === 'diff') return [
-            'diff --git a/src/calculator.ts b/src/calculator.ts',
-            '@@ -2 +1,0 @@ export function computeTotal(value: number) {',
-            '--- removed Lua-style comment',
-            '',
-          ].join('\n');
+          if (command === 'git' && args[0] === 'diff' && args.includes('--numstat')) return '1\t1\tsrc/calculator.ts\0';
           if (command === 'git' && args[0] === 'worktree') return '';
           if (command === '/tmp/codegraph-bin' && args[0] === 'init') return '';
           return JSON.stringify({
@@ -518,6 +517,11 @@ describe('PR impact action contract', () => {
         },
       } as any);
 
+      expect(calls).toContainEqual(expect.objectContaining({
+        command: 'git',
+        args: ['diff', '--numstat', '-z', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '--'],
+      }));
+      expect(calls.some((call) => call.command === 'git' && call.args.includes('--unified=0'))).toBe(false);
       expect(calls).toContainEqual(expect.objectContaining({
         command: 'git',
         args: ['worktree', 'add', '--detach', '.codegraph/pr-impact-base-worktree-201', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
@@ -557,13 +561,7 @@ describe('PR impact action contract', () => {
         execFileSync: (command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
           calls.push({ command, args, codegraphDir: options?.env?.CODEGRAPH_DIR });
           if (command === 'git' && args[0] === 'diff' && args.includes('--name-status')) return 'A\0Docs/new.ts\0';
-          if (command === 'git' && args[0] === 'diff') return [
-            'diff --git a/Docs/new.ts b/Docs/new.ts',
-            'new file mode 100644',
-            '@@ -0,0 +1 @@',
-            '+export const docs = true;',
-            '',
-          ].join('\n');
+          if (command === 'git' && args[0] === 'diff' && args.includes('--numstat')) return '1\t0\tDocs/new.ts\0';
           if (command === 'git' && args[0] === 'worktree') throw new Error('base worktree should not be prepared');
           return JSON.stringify({
             schemaVersion: 1,

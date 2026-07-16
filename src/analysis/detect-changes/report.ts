@@ -106,7 +106,9 @@ export function parseFailOn(raw: string | null | undefined): FailOnPolicy[] {
     }
     const callers = /^callers>(\d+)$/.exec(token);
     if (callers) {
-      policies.push({ raw: token, kind: 'callers', threshold: Number(callers[1]) });
+      const threshold = Number(callers[1]);
+      if (!Number.isSafeInteger(threshold)) throw new Error(`Invalid failOn policy: ${token}`);
+      policies.push({ raw: token, kind: 'callers', threshold });
       continue;
     }
     throw new Error(`Invalid failOn policy: ${token}`);
