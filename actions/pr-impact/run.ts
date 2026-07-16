@@ -39,6 +39,8 @@ export interface PullRequestContext {
   baseRef: string;
   headSha: string;
   mergeBase: string | null;
+  runId: string;
+  runAttempt: string;
   isForkLike: boolean;
   tokenPermissions: {
     contentsRead: boolean;
@@ -363,6 +365,8 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
     baseRef,
     headSha,
     mergeBase: deps.env.PR_IMPACT_MERGE_BASE ?? baseSha ?? null,
+    runId: deps.env.GITHUB_RUN_ID ?? 'unknown',
+    runAttempt: deps.env.GITHUB_RUN_ATTEMPT ?? 'unknown',
     isForkLike: headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo,
     tokenPermissions: {
       contentsRead: true,
@@ -643,6 +647,8 @@ function renderReport(args: {
     '## Run metadata',
     '',
     `- Recorded at: ${recordedAt}`,
+    `- Action run: ${context.runId}`,
+    `- Run attempt: ${context.runAttempt}`,
     `- Repository: ${context.repository || 'unknown'}`,
     `- Pull request: ${context.pullNumber === null ? 'unknown' : `#${context.pullNumber}`}`,
     `- Base ref: ${inputs.baseRef || 'unresolved'}`,
@@ -656,6 +662,7 @@ function renderReport(args: {
     `- Detector status: ${detector.summary.status}`,
     `- Detector exit code: ${detector.exitCode}`,
     `- Final conclusion: ${conclusion}`,
+    `- Threshold breached: ${detector.summary.status === 'threshold_breach'}`,
     `- Cache status: ${cacheStatus}`,
     `- Delivery status: ${delivery.status}`,
     `- Narrative status: ${narrative.status}`,

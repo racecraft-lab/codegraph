@@ -91,6 +91,8 @@ describe('PR impact report delivery', () => {
       expect(report).toBe(result.report);
       expect(report).toContain(ACTION_MARKER);
       expect(report).toContain('## Run metadata');
+      expect(report).toContain('- Action run: 200');
+      expect(report).toContain('- Run attempt: 1');
       expect(report).toContain('- Repository: racecraft-lab/codegraph');
       expect(report).toContain('- Pull request: #20');
       expect(report).toContain('- Base ref: main');
@@ -99,6 +101,7 @@ describe('PR impact report delivery', () => {
       expect(report).toContain('## Summary');
       expect(report).toContain('- Detector status: impact');
       expect(report).toContain('- Final conclusion: pass');
+      expect(report).toContain('- Threshold breached: false');
       expect(report).toContain('## Changed symbols');
       expect(report).toContain('runAction');
       expect(report).toContain('## Impacted callers');

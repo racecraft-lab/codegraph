@@ -250,6 +250,8 @@ const typeSurface: {
     baseRef: 'main',
     headSha: 'head',
     mergeBase: null,
+    runId: '200',
+    runAttempt: '1',
     isForkLike: false,
     tokenPermissions: {
       contentsRead: true,
