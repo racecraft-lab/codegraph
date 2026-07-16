@@ -121,6 +121,84 @@ describe('PR impact report delivery', () => {
     }
   });
 
+  it('renders normalized limits returned by the detector', async () => {
+    const tmp = tmpDir();
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          INPUT_CALLER_DEPTH: '99',
+          INPUT_MAX_CALLERS: '0',
+        },
+        execFileSync: () => JSON.stringify({
+          ...prImpactDetectorResults.impact,
+          limits: {
+            ...prImpactDetectorResults.impact.limits,
+            callerDepth: 3,
+            maxCallers: 1,
+          },
+        }),
+      }));
+
+      expect(result.report).toContain('- Caller depth: 3');
+      expect(result.report).toContain('- Max callers: 1');
+      expect(result.report).not.toContain('- Caller depth: 99');
+      expect(result.report).not.toContain('- Max callers: 0');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('escapes PR-controlled Markdown fields in bot-authored reports', async () => {
+    const tmp = tmpDir();
+    try {
+      const result = await runAction(deps(tmp, {
+        execFileSync: () => JSON.stringify({
+          ...prImpactDetectorResults.impact,
+          changedSymbols: [{
+            qualifiedName: 'bad\n## Injected | \\ <b>',
+            kind: 'function',
+            filePath: 'src/a|b\\c\nmalicious.ts',
+            changeType: 'modified',
+          }],
+          callers: [{
+            qualifiedName: 'caller*name*',
+            filePath: 'src/caller[link].ts',
+            depth: 1,
+          }],
+          affectedFlows: {
+            state: 'available',
+            items: [{
+              flowId: 'flow:bad',
+              name: 'flow<script>\n# fake',
+              entryKind: 'action',
+              stepCount: 1,
+              truncated: false,
+            }],
+            truncated: false,
+          },
+          risks: [{
+            code: 'risk|pipe',
+            message: 'contains <html>\n## heading',
+          }],
+        }),
+      }));
+
+      expect(result.report).not.toContain('\n## Injected');
+      expect(result.report).not.toContain('<b>');
+      expect(result.report).not.toContain('<script>');
+      expect(result.report).not.toContain('\n# fake');
+      expect(result.report).toContain('bad ↵ \\#\\# Injected \\| \\\\ &lt;b&gt;');
+      expect(result.report).toContain('src/a\\|b\\\\c ↵ malicious.ts');
+      expect(result.report).toContain('caller\\*name\\*');
+      expect(result.report).toContain('src/caller\\[link\\].ts');
+      expect(result.report).toContain('flow&lt;script&gt; ↵ \\# fake');
+      expect(result.report).toContain('contains &lt;html&gt;\\\\n\\#\\# heading');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('creates one action-owned sticky comment when none exists', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];

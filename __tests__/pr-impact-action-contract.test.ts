@@ -142,6 +142,13 @@ describe('PR impact action contract', () => {
       PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: '1.4.1',
     });
     expect(resolved.codegraphVersion).toBe('1.4.1');
+
+    const bounded = parseActionInputs({
+      INPUT_CALLER_DEPTH: '99',
+      INPUT_MAX_CALLERS: '0',
+    });
+    expect(bounded.callerDepth).toBe(3);
+    expect(bounded.maxCallers).toBe(1);
   });
 
   it('emits required metadata outputs from the helper seam', async () => {
@@ -360,7 +367,7 @@ describe('PR impact action contract', () => {
           if (command === 'git' && args[0] === 'diff') return [
             'diff --git a/src/calculator.ts b/src/calculator.ts',
             '@@ -2 +1,0 @@ export function computeTotal(value: number) {',
-            '-  return value + 1;',
+            '---- removed documentation divider',
             '',
           ].join('\n');
           if (command === 'git' && args[0] === 'worktree') return '';

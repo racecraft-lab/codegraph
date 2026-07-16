@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 export const HELPER_VERSION = '0.1.0-spec-020';
 export const DEFAULT_CODEGRAPH_VERSION = '1.5.0';
 export const ACTION_MARKER = '<!-- codegraph-pr-impact-action -->';
+const MIN_CALLER_DEPTH = 1;
+const MAX_CALLER_DEPTH = 3;
+const MIN_MAX_CALLERS = 1;
+const MAX_MAX_CALLERS = 100;
 
 export type SummaryStatus = 'clean' | 'impact' | 'threshold_breach' | 'unavailable';
 export type DetectorExitCode = 0 | 1 | 2 | 3;
@@ -187,8 +191,8 @@ export function parseActionInputs(env: NodeJS.ProcessEnv): ActionInputs {
     baseRef: readInput(env, 'BASE_REF', ''),
     failOnCallers: parseOptionalInteger(readInput(env, 'FAIL_ON_CALLERS', '')),
     failOnHubs: parseBoolean(readInput(env, 'FAIL_ON_HUBS', 'false')),
-    callerDepth: parseInteger(readInput(env, 'CALLER_DEPTH', '1'), 1),
-    maxCallers: parseInteger(readInput(env, 'MAX_CALLERS', '20'), 20),
+    callerDepth: clampInteger(parseInteger(readInput(env, 'CALLER_DEPTH', '1'), 1), MIN_CALLER_DEPTH, MAX_CALLER_DEPTH),
+    maxCallers: clampInteger(parseInteger(readInput(env, 'MAX_CALLERS', '20'), 20), MIN_MAX_CALLERS, MAX_MAX_CALLERS),
     narrative: narrative === 'trusted' ? 'trusted' : 'off',
   };
 }
@@ -437,7 +441,7 @@ function prDiffNeedsBaseIndex(deps: RunDependencies, mergeBase: string, headSha:
       env: deps.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     }));
-    return patch.split(/\r?\n/).some((line) => line.startsWith('-') && !line.startsWith('---'));
+    return patch.split(/\r?\n/).some((line) => line.startsWith('-') && !line.startsWith('--- '));
   } catch {
     return null;
   }
@@ -1040,6 +1044,8 @@ function renderReport(args: {
   recordedAt: string;
 }): string {
   const { inputs, context, detector, delivery, narrative, conclusion, cacheStatus, artifactName, recordedAt } = args;
+  const callerDepth = numberLimit(detector.limits, 'callerDepth', inputs.callerDepth);
+  const maxCallers = numberLimit(detector.limits, 'maxCallers', inputs.maxCallers);
   const lines = [
     ACTION_MARKER,
     '',
@@ -1048,14 +1054,14 @@ function renderReport(args: {
     '## Run metadata',
     '',
     `- Recorded at: ${recordedAt}`,
-    `- Action run: ${context.runId}`,
-    `- Run attempt: ${context.runAttempt}`,
-    `- Repository: ${context.repository || 'unknown'}`,
+    `- Action run: ${markdownInline(context.runId || 'unknown')}`,
+    `- Run attempt: ${markdownInline(context.runAttempt || 'unknown')}`,
+    `- Repository: ${markdownInline(context.repository || 'unknown')}`,
     `- Pull request: ${context.pullNumber === null ? 'unknown' : `#${context.pullNumber}`}`,
-    `- Base ref: ${resolveBaseRef(inputs, context)}`,
-    `- Head SHA: ${context.headSha || 'unknown'}`,
-    `- Merge base: ${context.mergeBase ?? 'unknown'}`,
-    `- CodeGraph version: ${inputs.codegraphVersion}`,
+    `- Base ref: ${markdownInline(resolveBaseRef(inputs, context))}`,
+    `- Head SHA: ${markdownInline(context.headSha || 'unknown')}`,
+    `- Merge base: ${markdownInline(context.mergeBase ?? 'unknown')}`,
+    `- CodeGraph version: ${markdownInline(inputs.codegraphVersion)}`,
     `- Helper version: ${HELPER_VERSION}`,
     '',
     '## Summary',
@@ -1067,7 +1073,7 @@ function renderReport(args: {
     `- Cache status: ${cacheStatus}`,
     `- Delivery status: ${delivery.status}`,
     `- Narrative status: ${narrative.status}`,
-    `- Artifact: ${artifactName}`,
+    `- Artifact: ${markdownInline(artifactName)}`,
     '',
     '## Changed symbols',
     '',
@@ -1091,12 +1097,12 @@ function renderReport(args: {
     '',
     '## Limits',
     '',
-    `- Caller depth: ${inputs.callerDepth}`,
-    `- Max callers: ${inputs.maxCallers}`,
+    `- Caller depth: ${callerDepth}`,
+    `- Max callers: ${maxCallers}`,
     '',
     '## Fallback delivery note',
     '',
-    `- Report path: ${delivery.reportPath}`,
+    `- Report path: ${markdownInline(delivery.reportPath)}`,
     `- Duplicate comments retired: ${delivery.duplicateCommentIds.length}`,
     `- Duplicate cleanup failures: ${delivery.failedDuplicateCommentIds.length}`,
     '- Comment delivery is attempted only when a trusted pull-request token is available.',
@@ -1233,7 +1239,7 @@ function formatChangedSymbols(items: unknown[]): string[] {
   if (items.length === 0) return ['- None.'];
   return items.map((item) => {
     const symbol = item as Record<string, unknown>;
-    return `- ${stringField(symbol, 'qualifiedName') || stringField(symbol, 'name') || 'unknown'} (${stringField(symbol, 'kind') || 'symbol'}) — ${stringField(symbol, 'filePath') || 'unknown path'}`;
+    return `- ${markdownInline(stringField(symbol, 'qualifiedName') || stringField(symbol, 'name') || 'unknown')} (${markdownInline(stringField(symbol, 'kind') || 'symbol')}) — ${markdownInline(stringField(symbol, 'filePath') || 'unknown path')}`;
   });
 }
 
@@ -1241,23 +1247,23 @@ function formatCallers(items: unknown[]): string[] {
   if (items.length === 0) return ['- None.'];
   return items.map((item) => {
     const caller = item as Record<string, unknown>;
-    return `- ${stringField(caller, 'qualifiedName') || stringField(caller, 'name') || 'unknown'} — ${stringField(caller, 'filePath') || 'unknown path'}`;
+    return `- ${markdownInline(stringField(caller, 'qualifiedName') || stringField(caller, 'name') || 'unknown')} — ${markdownInline(stringField(caller, 'filePath') || 'unknown path')}`;
   });
 }
 
 function formatAffectedFlows(flows: DetectorResult['affectedFlows']): string[] {
-  const lines = [`- State: ${flows.state}`];
+  const lines = [`- State: ${markdownInline(flows.state)}`];
   if (flows.items.length === 0) return lines;
   for (const item of flows.items) {
     const flow = item as Record<string, unknown>;
-    lines.push(`- ${stringField(flow, 'name') || stringField(flow, 'flowId') || 'unknown flow'}`);
+    lines.push(`- ${markdownInline(stringField(flow, 'name') || stringField(flow, 'flowId') || 'unknown flow')}`);
   }
   return lines;
 }
 
 function formatItems(items: unknown[]): string[] {
   if (items.length === 0) return ['- None.'];
-  return items.map((item) => `- ${JSON.stringify(item)}`);
+  return items.map((item) => `- ${markdownInline(JSON.stringify(item))}`);
 }
 
 function emitOutput(deps: RunDependencies, name: string, value: string): void {
@@ -1363,8 +1369,27 @@ function parseInteger(raw: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 function parseBoolean(raw: string): boolean {
   return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
+}
+
+function numberLimit(limits: Record<string, unknown>, field: string, fallback: number): number {
+  const value = limits[field];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function markdownInline(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\r\n|\r|\n/g, ' ↵ ')
+    .replace(/\\/g, '\\\\')
+    .replace(/([`*_\[\]()#!|])/g, '\\$1');
 }
 
 function escapeOutputFileValue(value: string): string {
