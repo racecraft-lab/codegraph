@@ -72,6 +72,10 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Install CodeGraph CLI
+      shell: bash
+      run: npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"
+
     - name: Run PR impact helper
       id: pr-impact
       shell: bash

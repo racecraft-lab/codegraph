@@ -80,6 +80,7 @@ describe('PR impact action contract', () => {
     }
 
     expect(action).toContain(`default: "${pkg.version}"`);
+    expect(action).toContain('npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"');
     expect(action).toContain('node "${{ github.action_path }}/dist/run.mjs"');
     expect(pkg.files).toContain('actions');
   });
@@ -137,6 +138,73 @@ describe('PR impact action contract', () => {
       expect(emitted.conclusion).toBe(result.conclusion);
       expect(result.report).toContain(`- Helper version: ${HELPER_VERSION}`);
       expect(result.report).toContain('- CodeGraph version: 1.4.1');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('invokes detect-changes with base-ref, bounds, threshold policy, JSON capture, and markdown capture', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-detector-'));
+    try {
+      const calls: Array<{ command: string; args: string[] }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.4.1',
+          INPUT_BASE_REF: 'origin/main',
+          INPUT_FAIL_ON_CALLERS: '10',
+          INPUT_FAIL_ON_HUBS: 'true',
+          INPUT_CALLER_DEPTH: '3',
+          INPUT_MAX_CALLERS: '50',
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        mkdirSync: fs.mkdirSync,
+        writeFileSync: fs.writeFileSync,
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          return args.includes('json')
+            ? JSON.stringify({
+              summary: {
+                status: 'impact',
+                baseRef: 'origin/main',
+                changedSymbolCount: 0,
+                unmappedHunkCount: 0,
+                callerCount: 0,
+                affectedFlowCount: 0,
+                riskCount: 0,
+                warningCount: 0,
+              },
+              exitCode: 1,
+              changedSymbols: [],
+              unmappedHunks: [],
+              callers: [],
+              affectedFlows: { state: 'empty', items: [], truncated: false },
+              risks: [],
+              warnings: [],
+              limits: { callerDepth: 3, maxCallers: 50 },
+            })
+            : '## Markdown detector report';
+        },
+      } as any);
+
+      expect(calls).toHaveLength(2);
+      for (const call of calls) {
+        expect(call.command).toBe('codegraph');
+        expect(call.args).toEqual(expect.arrayContaining([
+          'detect-changes',
+          '--mode', 'base-ref',
+          '--base-ref', 'origin/main',
+          '--caller-depth', '3',
+          '--max-callers', '50',
+          '--fail-on', 'callers>10,hub',
+        ]));
+      }
+      expect(calls[0]?.args).toEqual(expect.arrayContaining(['--format', 'json']));
+      expect(calls[1]?.args).toEqual(expect.arrayContaining(['--format', 'markdown']));
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

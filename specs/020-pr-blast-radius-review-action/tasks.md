@@ -55,19 +55,19 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation.**
 
-- [ ] T014 [P] [US1] Add failing report contract tests for required deterministic sections and run metadata in `__tests__/pr-impact-delivery.test.ts`
-- [ ] T015 [P] [US1] Add failing sticky-comment tests for create, update, deleted prior comment, duplicate action-owned markers, and unrelated comments in `__tests__/pr-impact-delivery.test.ts` (Q5)
-- [ ] T016 [P] [US1] Add failing detector invocation tests for `detect-changes --base-ref`, caller depth, max callers, JSON capture, and markdown capture in `__tests__/pr-impact-action-contract.test.ts`
+- [X] T014 [P] [US1] Add failing report contract tests for required deterministic sections and run metadata in `__tests__/pr-impact-delivery.test.ts`
+- [X] T015 [P] [US1] Add failing sticky-comment tests for create, update, deleted prior comment, duplicate action-owned markers, and unrelated comments in `__tests__/pr-impact-delivery.test.ts` (Q5)
+- [X] T016 [P] [US1] Add failing detector invocation tests for `detect-changes --base-ref`, caller depth, max callers, JSON capture, and markdown capture in `__tests__/pr-impact-action-contract.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Implement action input parsing and output emission for report metadata in `actions/pr-impact/run.ts`
-- [ ] T018 [US1] Implement detector execution capture without shell-failing on ordinary impact in `actions/pr-impact/run.ts`
-- [ ] T019 [US1] Implement deterministic markdown report rendering with hidden marker, metadata, changed symbols, callers, affected flows, risks, warnings, and limits in `actions/pr-impact/run.ts`
-- [ ] T020 [US1] Implement action-owned sticky comment create/update behavior in `actions/pr-impact/run.ts`
-- [ ] T021 [US1] Implement duplicate action-owned comment retirement and warning behavior in `actions/pr-impact/run.ts`
-- [ ] T022 [US1] Wire helper outputs and report file paths through the composite action in `actions/pr-impact/action.yml`
-- [ ] T023 [US1] Regenerate `actions/pr-impact/dist/run.mjs` and verify US1 contract freshness in `actions/pr-impact/dist/run.mjs`
+- [X] T017 [US1] Implement action input parsing and output emission for report metadata in `actions/pr-impact/run.ts`
+- [X] T018 [US1] Implement detector execution capture without shell-failing on ordinary impact in `actions/pr-impact/run.ts`
+- [X] T019 [US1] Implement deterministic markdown report rendering with hidden marker, metadata, changed symbols, callers, affected flows, risks, warnings, and limits in `actions/pr-impact/run.ts`
+- [X] T020 [US1] Implement action-owned sticky comment create/update behavior in `actions/pr-impact/run.ts`
+- [X] T021 [US1] Implement duplicate action-owned comment retirement and warning behavior in `actions/pr-impact/run.ts`
+- [X] T022 [US1] Wire helper outputs and report file paths through the composite action in `actions/pr-impact/action.yml`
+- [X] T023 [US1] Regenerate `actions/pr-impact/dist/run.mjs` and verify US1 contract freshness in `actions/pr-impact/dist/run.mjs`
 
 **Checkpoint**: User Story 1 is independently functional and testable as the MVP.
 
