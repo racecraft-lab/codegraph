@@ -202,13 +202,14 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
   const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
   const cacheStatus = prepareCache(deps, inputs, context);
+  const effectiveBaseRef = resolveBaseRef(inputs, context);
   const detector = cacheStatus === 'unavailable'
-    ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.')
-    : runDetector(deps, inputs);
+    ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.', effectiveBaseRef)
+    : runDetector(deps, inputs, context);
   const narrative = createInitialNarrative(inputs, context, deps);
   let delivery = createInitialDelivery(reportPath);
   let conclusion = determineConclusion(detector, delivery.status !== 'failed');
-  let report = renderReport({
+  const preliminaryReport = renderReport({
     inputs,
     context,
     detector,
@@ -220,10 +221,10 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
     recordedAt: deps.now().toISOString(),
   });
 
-  const reportFileWritten = writeReportFile(deps, reportPath, report);
-  delivery = await deliverReport(deps, context, report, reportPath, reportFileWritten);
+  const preliminaryReportFileWritten = writeReportFile(deps, reportPath, preliminaryReport);
+  delivery = await deliverReportComment(deps, context, preliminaryReport, reportPath, preliminaryReportFileWritten);
   conclusion = determineConclusion(detector, delivery.status !== 'failed');
-  report = renderReport({
+  let report = renderReport({
     inputs,
     context,
     detector,
@@ -234,7 +235,51 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
     artifactName,
     recordedAt: deps.now().toISOString(),
   });
-  if (reportFileWritten) writeReportFile(deps, reportPath, report);
+  if (delivery.status === 'comment') {
+    const finalizedComment = await patchDeliveredComment(deps, context, delivery, report);
+    if (!finalizedComment) {
+      delivery = {
+        ...delivery,
+        status: preliminaryReportFileWritten ? 'fallback' : 'failed',
+        comment: 'failed',
+      };
+      conclusion = determineConclusion(detector, delivery.status !== 'failed');
+      report = renderReport({
+        inputs,
+        context,
+        detector,
+        delivery,
+        narrative,
+        conclusion,
+        cacheStatus,
+        artifactName,
+        recordedAt: deps.now().toISOString(),
+      });
+    }
+  }
+  const reportFileWritten = writeReportFile(deps, reportPath, report);
+  delivery = {
+    ...delivery,
+    status: delivery.status === 'comment' ? 'comment' : reportFileWritten ? 'fallback' : 'failed',
+    artifact: reportFileWritten ? 'uploaded' : 'failed',
+    summary: writeSummary(deps, report),
+  };
+  if (delivery.status === 'failed' && delivery.summary === 'written') {
+    delivery = { ...delivery, status: 'fallback' };
+    conclusion = determineConclusion(detector, true);
+    report = renderReport({
+      inputs,
+      context,
+      detector,
+      delivery,
+      narrative,
+      conclusion,
+      cacheStatus,
+      artifactName,
+      recordedAt: deps.now().toISOString(),
+    });
+    if (reportFileWritten) writeReportFile(deps, reportPath, report);
+  }
 
   emitOutput(deps, 'summary-status', detector.summary.status);
   emitOutput(deps, 'detector-exit-code', String(detector.exitCode));
@@ -401,7 +446,7 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
     pullNumber,
     baseRef,
     headSha,
-    mergeBase: deps.env.PR_IMPACT_MERGE_BASE ?? baseSha ?? null,
+    mergeBase: resolveMergeBase(deps, baseRef, headSha, baseSha),
     runId: deps.env.GITHUB_RUN_ID ?? 'unknown',
     runAttempt: deps.env.GITHUB_RUN_ATTEMPT ?? 'unknown',
     isForkLike: headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo,
@@ -411,6 +456,33 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
       pullRequestsWrite: Boolean(deps.env.GITHUB_TOKEN),
     },
   };
+}
+
+function resolveBaseRef(inputs: ActionInputs, context: PullRequestContext): string {
+  return inputs.baseRef || context.baseRef || 'HEAD^';
+}
+
+function resolveMergeBase(
+  deps: RunDependencies,
+  baseRef: string,
+  headSha: string,
+  fallbackBaseSha: string,
+): string | null {
+  if (deps.env.PR_IMPACT_MERGE_BASE) return deps.env.PR_IMPACT_MERGE_BASE;
+  if (baseRef && headSha) {
+    try {
+      return String(deps.execFileSync('git', ['merge-base', baseRef, headSha], {
+        encoding: 'utf8',
+        env: deps.env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })).trim() || fallbackBaseSha || null;
+    } catch {
+      // Event payload base SHA is a safe fallback for metadata when the local
+      // checkout cannot compute a merge base, but cache validation still treats
+      // the recorded identity as exact for that run.
+    }
+  }
+  return fallbackBaseSha || null;
 }
 
 function readGitHubEvent(deps: RunDependencies): unknown {
@@ -423,17 +495,17 @@ function readGitHubEvent(deps: RunDependencies): unknown {
   }
 }
 
-function runDetector(deps: RunDependencies, inputs: ActionInputs): DetectorResult {
-  const baseRef = inputs.baseRef || 'HEAD^';
+function runDetector(deps: RunDependencies, inputs: ActionInputs, context: PullRequestContext): DetectorResult {
+  const baseRef = resolveBaseRef(inputs, context);
   const jsonArgs = detectorArgs(inputs, baseRef, 'json');
   const markdownArgs = detectorArgs(inputs, baseRef, 'markdown');
   try {
     const json = runDetectorCommand(deps, jsonArgs);
     runDetectorCommand(deps, markdownArgs);
-    return normalizeDetectorResult(JSON.parse(json), inputs);
+    return normalizeDetectorResult(JSON.parse(json), inputs, baseRef);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    return createUnavailableDetector(inputs, message);
+    return createUnavailableDetector(inputs, message, baseRef);
   }
 }
 
@@ -474,13 +546,13 @@ function runDetectorCommand(deps: RunDependencies, args: string[]): string {
   }
 }
 
-function normalizeDetectorResult(raw: unknown, inputs: ActionInputs): DetectorResult {
+function normalizeDetectorResult(raw: unknown, inputs: ActionInputs, baseRef: string): DetectorResult {
   const candidate = raw as Partial<DetectorResult>;
   const summary = (candidate.summary ?? {}) as Partial<DetectorResult['summary']>;
   return {
     summary: {
       status: isSummaryStatus(summary.status) ? summary.status : 'unavailable',
-      baseRef: typeof summary.baseRef === 'string' ? summary.baseRef : inputs.baseRef || null,
+      baseRef: typeof summary.baseRef === 'string' ? summary.baseRef : baseRef || null,
       changedSymbolCount: numberOr(summary.changedSymbolCount, 0),
       unmappedHunkCount: numberOr(summary.unmappedHunkCount, 0),
       callerCount: numberOr(summary.callerCount, 0),
@@ -502,11 +574,15 @@ function normalizeDetectorResult(raw: unknown, inputs: ActionInputs): DetectorRe
   };
 }
 
-function createUnavailableDetector(inputs: ActionInputs, message = 'SPEC-020 action helper could not run detect-changes.'): DetectorResult {
+function createUnavailableDetector(
+  inputs: ActionInputs,
+  message = 'SPEC-020 action helper could not run detect-changes.',
+  baseRef = inputs.baseRef,
+): DetectorResult {
   return {
     summary: {
       status: 'unavailable',
-      baseRef: inputs.baseRef || null,
+      baseRef: baseRef || null,
       changedSymbolCount: 0,
       unmappedHunkCount: 0,
       callerCount: 0,
@@ -548,36 +624,26 @@ function createInitialDelivery(reportPath: string): DeliveryResult {
   return {
     status: 'fallback',
     comment: 'skipped',
-    summary: 'written',
+    summary: 'failed',
     artifact: 'uploaded',
     currentCommentId: null,
-      duplicateCommentIds: [],
-      reportPath,
-      commentUrl: '',
+    duplicateCommentIds: [],
+    reportPath,
+    commentUrl: '',
   };
 }
 
-async function deliverReport(
+async function deliverReportComment(
   deps: RunDependencies,
   context: PullRequestContext,
   report: string,
   reportPath: string,
   reportFileWritten: boolean,
 ): Promise<DeliveryResult> {
-  let summary: DeliveryResult['summary'] = 'failed';
-  try {
-    if (deps.env.GITHUB_STEP_SUMMARY) {
-      deps.appendFileSync(deps.env.GITHUB_STEP_SUMMARY, `${report}\n`, 'utf8');
-    }
-    summary = 'written';
-  } catch {
-    summary = 'failed';
-  }
-
   const base: DeliveryResult = {
-    status: summary === 'written' || reportFileWritten ? 'fallback' : 'failed',
+    status: reportFileWritten ? 'fallback' : 'failed',
     comment: 'skipped',
-    summary,
+    summary: 'failed',
     artifact: reportFileWritten ? 'uploaded' : 'failed',
     currentCommentId: null,
     duplicateCommentIds: [],
@@ -636,6 +702,26 @@ async function deliverReport(
   };
 }
 
+async function patchDeliveredComment(
+  deps: RunDependencies,
+  context: PullRequestContext,
+  delivery: DeliveryResult,
+  report: string,
+): Promise<boolean> {
+  if (delivery.currentCommentId === null) return false;
+  return patchComment(deps, context, delivery.currentCommentId, report);
+}
+
+function writeSummary(deps: RunDependencies, report: string): DeliveryResult['summary'] {
+  if (!deps.env.GITHUB_STEP_SUMMARY) return 'failed';
+  try {
+    deps.appendFileSync(deps.env.GITHUB_STEP_SUMMARY, `${report}\n`, 'utf8');
+    return 'written';
+  } catch {
+    return 'failed';
+  }
+}
+
 function createInitialNarrative(inputs: ActionInputs, context: PullRequestContext, deps: RunDependencies): NarrativeResult {
   if (inputs.narrative === 'off') {
     return {
@@ -688,7 +774,7 @@ function renderReport(args: {
     `- Run attempt: ${context.runAttempt}`,
     `- Repository: ${context.repository || 'unknown'}`,
     `- Pull request: ${context.pullNumber === null ? 'unknown' : `#${context.pullNumber}`}`,
-    `- Base ref: ${inputs.baseRef || 'unresolved'}`,
+    `- Base ref: ${detector.summary.baseRef || context.baseRef || inputs.baseRef || 'unresolved'}`,
     `- Head SHA: ${context.headSha || 'unknown'}`,
     `- Merge base: ${context.mergeBase ?? 'unknown'}`,
     `- CodeGraph version: ${inputs.codegraphVersion}`,

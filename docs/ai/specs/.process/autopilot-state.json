@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Post: Doctor Extension Check",
-  "updated_at": "2026-07-16T00:25:00Z",
+  "active_step": "Post: PR Creation",
+  "updated_at": "2026-07-16T00:52:30Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -29,20 +29,20 @@
     {"step": "Phase 6: Analyze - Consensus", "status": "completed"},
     {"step": "Phase 6.5: Confidence Gate", "status": "completed"},
     {"step": "Phase 7: Implement - Pending task decomposition", "status": "completed"},
-    {"step": "Post: Doctor Extension Check", "status": "in_progress"},
-    {"step": "Post: Verify Implementation", "status": "pending"},
-    {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
-    {"step": "Post: Code Review", "status": "pending"},
-    {"step": "Post: Integration Suite", "status": "pending"},
-    {"step": "Post: Reviewability Diff Gate", "status": "pending"},
-    {"step": "Post: Self-Review", "status": "pending"},
-    {"step": "Post: UAT Runbook Generation", "status": "pending"},
-    {"step": "Post: Final Reviewability Backstop", "status": "pending"},
-    {"step": "Post: PR Packet/Body Generation", "status": "pending"},
-    {"step": "Post: PR Body Generation", "status": "pending"},
+    {"step": "Post: Doctor Extension Check", "status": "completed"},
+    {"step": "Post: Verify Implementation", "status": "completed"},
+    {"step": "Post: Verify Tasks Phantom Check", "status": "completed"},
+    {"step": "Post: Code Review", "status": "completed"},
+    {"step": "Post: Integration Suite", "status": "completed"},
+    {"step": "Post: Reviewability Diff Gate", "status": "completed"},
+    {"step": "Post: Self-Review", "status": "completed"},
+    {"step": "Post: UAT Runbook Generation", "status": "completed"},
+    {"step": "Post: Final Reviewability Backstop", "status": "completed"},
+    {"step": "Post: PR Packet/Body Generation", "status": "completed"},
+    {"step": "Post: PR Body Generation", "status": "completed"},
     {"step": "Post: PR Creation", "status": "pending"},
     {"step": "Post: Review Remediation", "status": "pending"},
-    {"step": "Post: Retrospective", "status": "pending"}
+    {"step": "Post: Retrospective", "status": "completed"}
   ],
   "archive_sweep": {
     "status": "no_candidates",
@@ -466,16 +466,16 @@
       "focused_pr_impact_tests": {
         "status": "passed",
         "test_files": 6,
-        "tests": 23
+        "tests": 24
       },
       "build": "passed",
       "typecheck": "passed",
       "full_test": {
         "status": "passed",
         "test_files": 240,
-        "tests_passed": 3950,
+        "tests_passed": 3951,
         "tests_skipped": 7,
-        "duration_seconds": 68.06
+        "duration_seconds": 65.4
       },
       "reviewability_gate": {
         "status": "warn",
@@ -492,6 +492,80 @@
         "target_seconds": 180
       },
       "known_gap": "Live GitHub dogfood artifact URL is pending until the branch is pushed and opened as a pull request."
+    }
+  },
+  "post": {
+    "status": "in_progress",
+    "active_step": "Post: PR Creation",
+    "doctor_extension_check": {
+      "status": "passed",
+      "config": "defaults loaded; no local verify config file",
+      "after_implement_hooks": ["review", "verify", "verify-tasks", "cleanup", "retrospective", "git"]
+    },
+    "verify_implementation": {
+      "status": "passed",
+      "evidence": "Final validation recorded in quickstart.md: focused PR-impact tests passed, npm run build passed, npm run typecheck passed, npm test passed."
+    },
+    "verify_tasks": {
+      "status": "passed",
+      "report": "specs/020-pr-blast-radius-review-action/verify-tasks-report.md",
+      "completed_tasks": 60,
+      "verified_tasks": 60,
+      "phantom_completions": 0
+    },
+    "code_review": {
+      "status": "passed_after_remediation",
+      "report": "specs/020-pr-blast-radius-review-action/code-review-report.md",
+      "findings": [
+        "Omitted base-ref defaulted detector comparison to HEAD^ instead of pull-request base ref.",
+        "Delivered summary/comment surfaces could contain preliminary delivery metadata.",
+        "Merge-base metadata used event base SHA when no explicit merge base was provided."
+      ],
+      "remediation": [
+        "Detector now resolves effective base ref from input, pull-request event base ref, then HEAD^ fallback.",
+        "Summary/file/comment finalization now uses final delivery metadata.",
+        "Merge-base metadata now uses explicit env or git merge-base before falling back to event base SHA."
+      ],
+      "verification": {
+        "focused_pr_impact_tests": "passed: 6 files, 24 tests",
+        "build": "passed",
+        "typecheck": "passed",
+        "full_test": "passed: 240 files, 3951 tests passed, 7 skipped"
+      }
+    },
+    "integration_suite": {
+      "status": "passed",
+      "build": "passed",
+      "typecheck": "passed",
+      "full_test": "passed"
+    },
+    "reviewability": {
+      "status": "passed_with_warning_adjudicated",
+      "gate": "warn",
+      "reviewable_loc": 455,
+      "production_files": 4,
+      "total_files": 11,
+      "warnings": ["reviewable LOC 455 exceeds warn threshold 400"],
+      "blockers": [],
+      "adjudication": "Maintainer-selected Q9 decision kept SPEC-020 as one navigable PR; no installed final-reviewability helper beyond recorded gate evidence."
+    },
+    "self_review": {
+      "status": "completed",
+      "evidence": "pr-review-packet.md, verify-tasks-report.md, pr-body.md, and retrospective.md"
+    },
+    "uat": {
+      "status": "runbook_ready",
+      "runbook": "specs/020-pr-blast-radius-review-action/uat-runbook.md",
+      "live_github_artifact": "pending until PR workflow runs"
+    },
+    "pr_packet": {
+      "status": "ready",
+      "packet": "specs/020-pr-blast-radius-review-action/pr-review-packet.md",
+      "body": "specs/020-pr-blast-radius-review-action/pr-body.md"
+    },
+    "retrospective": {
+      "status": "completed",
+      "file": "specs/020-pr-blast-radius-review-action/retrospective.md"
     }
   }
 }

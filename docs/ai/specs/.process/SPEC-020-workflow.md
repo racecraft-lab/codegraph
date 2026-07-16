@@ -737,35 +737,35 @@ Before starting any task:
 
 ## Post-Implementation Checklist
 
-- [ ] All tasks marked complete in tasks.md
-- [ ] Focused action, cache, threshold, fork, delivery, and narrative tests pass
-- [ ] Full tests pass: `npm test`
-- [ ] Build succeeds: `npm run build`
-- [ ] Generated action runtime artifacts, if any, are fresh and package-visible
-- [ ] Fork fixtures prove no privileged secret/narrative path is used
-- [ ] Self-repo sticky-comment and fallback UAT evidence is recorded
-- [ ] Warm-cache benchmark median is <=3 minutes with method and samples recorded
-- [ ] Reviewability gates pass or any warning is explicitly adjudicated
-- [ ] `CHANGELOG.md` has a user-facing bullet under `## [Unreleased]`
+- [x] All tasks marked complete in tasks.md
+- [x] Focused action, cache, threshold, fork, delivery, and narrative tests pass
+- [x] Full tests pass: `npm test`
+- [x] Build succeeds: `npm run build`
+- [x] Generated action runtime artifacts, if any, are fresh and package-visible
+- [x] Fork fixtures prove no privileged secret/narrative path is used
+- [x] Self-repo sticky-comment and fallback UAT evidence is recorded
+- [x] Warm-cache benchmark median is <=3 minutes with method and samples recorded
+- [x] Reviewability gates pass or any warning is explicitly adjudicated
+- [x] `CHANGELOG.md` has a user-facing bullet under `## [Unreleased]`
 - [ ] PR created and reviewed
 - [ ] Merged to main branch
 
 ### Autopilot Post Plan
 
-- [ ] Post: Doctor Extension Check
-- [ ] Post: Verify Implementation
-- [ ] Post: Verify Tasks Phantom Check
-- [ ] Post: Code Review
-- [ ] Post: Integration Suite
-- [ ] Post: Reviewability Diff Gate
-- [ ] Post: Self-Review
-- [ ] Post: UAT Runbook Generation
-- [ ] Post: Final Reviewability Backstop
-- [ ] Post: PR Packet/Body Generation
-- [ ] Post: PR Body Generation
+- [x] Post: Doctor Extension Check
+- [x] Post: Verify Implementation
+- [x] Post: Verify Tasks Phantom Check
+- [x] Post: Code Review
+- [x] Post: Integration Suite
+- [x] Post: Reviewability Diff Gate
+- [x] Post: Self-Review
+- [x] Post: UAT Runbook Generation
+- [x] Post: Final Reviewability Backstop
+- [x] Post: PR Packet/Body Generation
+- [x] Post: PR Body Generation
 - [ ] Post: PR Creation
 - [ ] Post: Review Remediation
-- [ ] Post: Retrospective
+- [x] Post: Retrospective
 
 ---
 

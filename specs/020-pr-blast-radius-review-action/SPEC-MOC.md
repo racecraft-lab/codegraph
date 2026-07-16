@@ -43,6 +43,11 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [checklists/performance.md](checklists/performance.md)
 - [checklists/requirements.md](checklists/requirements.md)
 - [checklists/security.md](checklists/security.md)
-- [quickstart.md](quickstart.md)
+- [code-review-report.md](code-review-report.md)
+- [pr-body.md](pr-body.md)
 - [pr-review-packet.md](pr-review-packet.md)
+- [quickstart.md](quickstart.md)
+- [retrospective.md](retrospective.md)
+- [uat-runbook.md](uat-runbook.md)
+- [verify-tasks-report.md](verify-tasks-report.md)
 <!-- GENERATED:BACKLINKS:END -->

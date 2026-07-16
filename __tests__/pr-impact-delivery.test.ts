@@ -110,6 +110,7 @@ describe('PR impact report delivery', () => {
       expect(report).toContain('## Warnings');
       expect(report).toContain('## Limits');
       expect(report).toContain('## Fallback delivery note');
+      expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('- Delivery status: fallback');
 
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['summary-status']).toBe('impact');
@@ -132,14 +133,27 @@ describe('PR impact report delivery', () => {
         fetch: async (url: string, init?: { method?: string; body?: string }) => {
           calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
           if ((init?.method ?? 'GET') === 'GET') return { ok: true, status: 200, json: async () => [] };
-          return { ok: true, status: 201, json: async () => ({ id: 100, html_url: 'https://example.test/comment/100' }) };
+          return {
+            ok: true,
+            status: 201,
+            json: async () => ({
+              id: 100,
+              body: String(init?.body ?? ''),
+              html_url: 'https://example.test/comment/100',
+            }),
+          };
         },
       }));
 
       const post = calls.find((call) => call.method === 'POST');
+      const finalPatch = calls.find((call) => call.method === 'PATCH' && call.url.endsWith('/100'));
       expect(post?.url).toContain('/repos/racecraft-lab/codegraph/issues/20/comments');
       expect(post?.body).toContain(ACTION_MARKER);
       expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+      expect(finalPatch?.url).toBe('https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/100');
+      expect(finalPatch?.body).toContain('- Delivery status: comment');
+      expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('- Delivery status: comment');
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Delivery status: comment');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -175,9 +189,11 @@ describe('PR impact report delivery', () => {
       expect(patches.map((call) => call.url)).toEqual([
         'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/11',
         'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/10',
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/11',
       ]);
       expect(patches[0]?.body).toContain('runAction');
       expect(patches[1]?.body).toContain('Retired duplicate');
+      expect(patches[2]?.body).toContain('- Delivery status: comment');
       expect(calls.some((call) => call.url.includes('/comments/12'))).toBe(false);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

@@ -13,6 +13,7 @@ import {
   type NarrativeResult,
   type PullRequestContext,
 } from '../actions/pr-impact/run';
+import { prImpactGitHubEvent } from './fixtures/pr-impact';
 
 const ROOT = path.resolve(__dirname, '..');
 const ACTION_YML = path.join(ROOT, 'actions/pr-impact/action.yml');
@@ -215,6 +216,69 @@ describe('PR impact action contract', () => {
     }
   });
 
+  it('defaults omitted base-ref input to the pull-request event base ref', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-event-base-'));
+    try {
+      const eventPath = path.join(tmp, 'event.json');
+      fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
+      const calls: Array<{ command: string; args: string[] }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.4.1',
+          INPUT_BASE_REF: '',
+          INPUT_CALLER_DEPTH: '1',
+          INPUT_MAX_CALLERS: '20',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          PR_IMPACT_MERGE_BASE: '0000000000000000000000000000000000000000',
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        mkdirSync: fs.mkdirSync,
+        writeFileSync: fs.writeFileSync,
+        readFileSync: fs.readFileSync,
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          return args.includes('json')
+            ? JSON.stringify({
+              summary: {
+                status: 'impact',
+                baseRef: 'main',
+                changedSymbolCount: 0,
+                unmappedHunkCount: 0,
+                callerCount: 0,
+                affectedFlowCount: 0,
+                riskCount: 0,
+                warningCount: 0,
+              },
+              exitCode: 1,
+              changedSymbols: [],
+              unmappedHunks: [],
+              callers: [],
+              affectedFlows: { state: 'empty', items: [], truncated: false },
+              risks: [],
+              warnings: [],
+              limits: { callerDepth: 1, maxCallers: 20 },
+            })
+            : '## Markdown detector report';
+        },
+      } as any);
+
+      const codegraphCalls = calls.filter((call) => call.command === 'codegraph');
+      expect(codegraphCalls).toHaveLength(2);
+      for (const call of codegraphCalls) {
+        expect(call.args).toEqual(expect.arrayContaining(['--base-ref', 'main']));
+      }
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Base ref: main');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('declares the advisory pull-request dogfood workflow without threshold or narrative escalation', () => {
     const workflow = fs.readFileSync(DOGFOOD_WORKFLOW, 'utf8');
 
@@ -291,6 +355,7 @@ const typeSurface: {
     currentCommentId: null,
     duplicateCommentIds: [],
     reportPath: 'pr-impact-report.md',
+    commentUrl: '',
   },
   narrative: {
     status: 'disabled',
