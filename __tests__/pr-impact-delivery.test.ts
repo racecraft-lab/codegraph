@@ -379,11 +379,34 @@ describe('PR impact report delivery', () => {
     }
   });
 
-  it('does not patch an existing comment when a newer run appears before post-create refresh', async () => {
+  it('retires an updated sticky comment when a newer run appears before post-update refresh', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
     let getCount = 0;
-    let createdComment: { id: number; body: string; created_at: string; html_url: string; user: { login: string } } | null = null;
+    const stickyComment = {
+      id: 300,
+      body: [
+        ACTION_MARKER,
+        '<!-- codegraph-pr-impact-run:200:1:0000000000000000000000000000000000000002 -->',
+        '',
+        '# CodeGraph PR Impact',
+      ].join('\n'),
+      created_at: '2026-07-15T00:00:01Z',
+      html_url: 'sticky',
+      user: { login: 'github-actions[bot]' },
+    };
+    const newerComment = {
+      id: 301,
+      body: [
+        ACTION_MARKER,
+        '<!-- codegraph-pr-impact-run:201:1:newer-head -->',
+        '',
+        '# CodeGraph PR Impact',
+      ].join('\n'),
+      created_at: '2026-07-15T00:00:02Z',
+      html_url: 'newer',
+      user: { login: 'github-actions[bot]' },
+    };
     try {
       const result = await runAction(deps(tmp, {
         env: {
@@ -399,54 +422,29 @@ describe('PR impact report delivery', () => {
           calls.push({ method, url, body: init?.body });
           if (method === 'GET') {
             getCount += 1;
-            const body = getCount === 1
-              ? [
-                ACTION_MARKER,
-                '<!-- codegraph-pr-impact-run:200:1:0000000000000000000000000000000000000002 -->',
-                '',
-                '# CodeGraph PR Impact',
-              ].join('\n')
-              : [
-                ACTION_MARKER,
-                '<!-- codegraph-pr-impact-run:201:1:newer-head -->',
-                '',
-                '# CodeGraph PR Impact',
-              ].join('\n');
             return {
               ok: true,
               status: 200,
-              json: async () => [
-                {
-                  id: 300,
-                  body,
-                  created_at: '2026-07-15T00:00:01Z',
-                  html_url: 'sticky',
-                  user: { login: 'github-actions[bot]' },
-                },
-                ...(createdComment ? [createdComment] : []),
-              ],
+              json: async () => getCount === 1 ? [stickyComment] : [newerComment, stickyComment],
             };
           }
-          createdComment = {
-            id: 301,
-            body: JSON.parse(String(init?.body ?? '{}')).body,
-            created_at: '2026-07-15T00:00:02Z',
-            html_url: 'created',
-            user: { login: 'github-actions[bot]' },
-          };
-          return { ok: true, status: 201, json: async () => createdComment };
+          stickyComment.body = JSON.parse(String(init?.body ?? '{}')).body;
+          return { ok: true, status: 200, json: async () => stickyComment };
         },
       }));
 
       expect(result.delivery.status).toBe('fallback');
       expect(result.delivery.comment).toBe('skipped');
-      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+      expect(result.delivery.duplicateCommentIds).toEqual(['300']);
+      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
       const patches = calls.filter((call) => call.method === 'PATCH');
       expect(patches.map((call) => call.url)).toEqual([
-        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/301',
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/300',
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/300',
       ]);
-      expect(patches[0]?.body).toContain('Retired duplicate');
-      expect(patches[0]?.body).not.toContain('- Delivery status: comment');
+      expect(patches[0]?.body).toContain('# CodeGraph PR Impact');
+      expect(patches[1]?.body).toContain('Retired duplicate');
+      expect(patches[1]?.body).not.toContain('- Delivery status: comment');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -509,6 +507,7 @@ describe('PR impact report delivery', () => {
       expect(result.delivery.comment).toBe('failed');
       expect(result.delivery.currentCommentId).toBeNull();
       expect(result.delivery.commentUrl).toBe('');
+      expect(result.delivery.duplicateCommentIds).toEqual(['400']);
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['comment-url']).toBe('');
       const patches = calls.filter((call) => call.method === 'PATCH');
@@ -522,10 +521,82 @@ describe('PR impact report delivery', () => {
     }
   });
 
-  it('creates a run-owned comment and retires older duplicates', async () => {
+  it('records final-patch race cleanup failures in the fallback report', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
     let createdComment: { id: number; body: string; created_at: string; html_url: string; user: { login: string } } | null = null;
+    let getCount = 0;
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_RUN_ATTEMPT: '1',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ method, url, body: init?.body });
+          if (method === 'GET') {
+            getCount += 1;
+            const newerComment = {
+              id: 401,
+              body: [
+                ACTION_MARKER,
+                '<!-- codegraph-pr-impact-run:201:1:0000000000000000000000000000000000000002 -->',
+                '',
+                '# CodeGraph PR Impact',
+              ].join('\n'),
+              created_at: '2026-07-15T00:00:03Z',
+              html_url: 'newer',
+              user: { login: 'github-actions[bot]' },
+            };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => getCount < 3
+                ? (createdComment ? [createdComment] : [])
+                : [newerComment, ...(createdComment ? [createdComment] : [])],
+            };
+          }
+          if (method === 'POST') {
+            createdComment = {
+              id: 400,
+              body: JSON.parse(String(init?.body ?? '{}')).body,
+              created_at: '2026-07-15T00:00:02Z',
+              html_url: 'created',
+              user: { login: 'github-actions[bot]' },
+            };
+            return { ok: true, status: 201, json: async () => createdComment };
+          }
+          return { ok: false, status: 500, json: async () => ({}) };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.failedDuplicateCommentIds).toEqual(['400']);
+      expect(result.delivery.duplicateCommentIds).toEqual([]);
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Duplicate cleanup failures: 1');
+      const patches = calls.filter((call) => call.method === 'PATCH');
+      expect(patches.map((call) => call.url)).toEqual([
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/400',
+      ]);
+      expect(patches[0]?.body).toContain('Retired duplicate');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('updates the newest action-owned sticky comment and retires older duplicates', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    const comments = [
+      { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old', user: { login: 'github-actions[bot]' } },
+      { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
+      { id: 12, body: 'unrelated', created_at: '2026-07-15T00:00:01Z', html_url: 'unrelated', user: { login: 'github-actions[bot]' } },
+      { id: 13, body: `${ACTION_MARKER}\nspoofed`, created_at: '2026-07-15T00:00:02Z', html_url: 'spoofed', user: { login: 'random-user' } },
+    ];
     try {
       await runAction(deps(tmp, {
         env: {
@@ -539,37 +610,24 @@ describe('PR impact report delivery', () => {
             return {
               ok: true,
               status: 200,
-              json: async () => [
-                { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old', user: { login: 'github-actions[bot]' } },
-                { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
-                { id: 12, body: 'unrelated', created_at: '2026-07-15T00:00:01Z', html_url: 'unrelated' },
-                { id: 13, body: `${ACTION_MARKER}\nspoofed`, created_at: '2026-07-15T00:00:02Z', html_url: 'spoofed', user: { login: 'random-user' } },
-                ...(createdComment ? [createdComment] : []),
-              ],
+              json: async () => comments,
             };
           }
-          if ((init?.method ?? 'GET') === 'POST') {
-            createdComment = {
-              id: 100,
-              body: JSON.parse(String(init?.body ?? '{}')).body,
-              created_at: '2026-07-15T00:00:03Z',
-              html_url: 'created',
-              user: { login: 'github-actions[bot]' },
-            };
-            return { ok: true, status: 201, json: async () => createdComment };
-          }
-          return { ok: true, status: 200, json: async () => ({ id: Number(url.split('/').pop()), html_url: 'patched' }) };
+          const id = Number(url.split('/').pop());
+          const comment = comments.find((item) => item.id === id);
+          if (comment) comment.body = JSON.parse(String(init?.body ?? '{}')).body;
+          return { ok: true, status: 200, json: async () => comment ?? { id, html_url: 'patched' } };
         },
       }));
 
       const patches = calls.filter((call) => call.method === 'PATCH');
-      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
       expect(patches.map((call) => call.url)).toEqual([
         'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/11',
         'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/10',
-        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/100',
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/11',
       ]);
-      expect(patches[0]?.body).toContain('Retired duplicate');
+      expect(patches[0]?.body).toContain('# CodeGraph PR Impact');
       expect(patches[1]?.body).toContain('Retired duplicate');
       expect(patches[2]?.body).toContain('- Delivery status: comment');
       expect(calls.some((call) => call.url.includes('/comments/12'))).toBe(false);
@@ -581,7 +639,10 @@ describe('PR impact report delivery', () => {
 
   it('records duplicate cleanup failures without hiding successful current comment delivery', async () => {
     const tmp = tmpDir();
-    let createdComment: { id: number; body: string; created_at: string; html_url: string; user: { login: string } } | null = null;
+    const comments = [
+      { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old', user: { login: 'github-actions[bot]' } },
+      { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
+    ];
     try {
       const result = await runAction(deps(tmp, {
         env: {
@@ -594,34 +655,23 @@ describe('PR impact report delivery', () => {
             return {
               ok: true,
               status: 200,
-              json: async () => [
-                { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old', user: { login: 'github-actions[bot]' } },
-                { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
-                ...(createdComment ? [createdComment] : []),
-              ],
+              json: async () => comments,
             };
           }
-          if ((init?.method ?? 'GET') === 'POST') {
-            createdComment = {
-              id: 100,
-              body: JSON.parse(String(init?.body ?? '{}')).body,
-              created_at: '2026-07-15T00:00:01Z',
-              html_url: 'created',
-              user: { login: 'github-actions[bot]' },
-            };
-            return { ok: true, status: 201, json: async () => createdComment };
-          }
+          const id = Number(url.split('/').pop());
+          const comment = comments.find((item) => item.id === id);
+          if (comment) comment.body = JSON.parse(String(init?.body ?? '{}')).body;
           return {
             ok: !url.endsWith('/10'),
             status: url.endsWith('/10') ? 500 : 200,
-            json: async () => ({ id: Number(url.split('/').pop()), html_url: 'patched' }),
+            json: async () => comment ?? { id, html_url: 'patched' },
           };
         },
       }));
 
       expect(result.delivery.status).toBe('comment');
-      expect(result.delivery.currentCommentId).toBe('100');
-      expect(result.delivery.duplicateCommentIds).toEqual(['11']);
+      expect(result.delivery.currentCommentId).toBe('11');
+      expect(result.delivery.duplicateCommentIds).toEqual([]);
       expect(result.delivery.failedDuplicateCommentIds).toEqual(['10']);
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Duplicate cleanup failures: 1');
     } finally {
@@ -629,10 +679,10 @@ describe('PR impact report delivery', () => {
     }
   });
 
-  it('paginates issue comments before creating the run-owned comment', async () => {
+  it('paginates issue comments before updating the sticky comment', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
-    let createdComment: { id: number; body: string; created_at: string; html_url: string; user: { login: string } } | null = null;
+    const stickyComment = { id: 101, body: `${ACTION_MARKER}\ncurrent`, created_at: '2026-07-15T00:00:01Z', html_url: 'current', user: { login: 'github-actions[bot]' } };
     try {
       await runAction(deps(tmp, {
         env: {
@@ -659,30 +709,18 @@ describe('PR impact report delivery', () => {
             return {
               ok: true,
               status: 200,
-              json: async () => [
-                { id: 101, body: `${ACTION_MARKER}\ncurrent`, created_at: '2026-07-15T00:00:01Z', html_url: 'current', user: { login: 'github-actions[bot]' } },
-                ...(createdComment ? [createdComment] : []),
-              ],
+              json: async () => [stickyComment],
             };
           }
-          if ((init?.method ?? 'GET') === 'POST') {
-            createdComment = {
-              id: 102,
-              body: JSON.parse(String(init?.body ?? '{}')).body,
-              created_at: '2026-07-15T00:00:02Z',
-              html_url: 'created',
-              user: { login: 'github-actions[bot]' },
-            };
-            return { ok: true, status: 201, json: async () => createdComment };
-          }
-          return { ok: true, status: 200, json: async () => ({ id: Number(url.split('/').pop()), html_url: 'patched' }) };
+          stickyComment.body = JSON.parse(String(init?.body ?? '{}')).body;
+          return { ok: true, status: 200, json: async () => stickyComment };
         },
       }));
 
       expect(calls.some((call) => call.method === 'GET' && call.url.includes('&page=1'))).toBe(true);
       expect(calls.some((call) => call.method === 'GET' && call.url.includes('&page=2'))).toBe(true);
-      expect(calls.some((call) => call.method === 'POST')).toBe(true);
-      expect(calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/102'))).toBe(true);
+      expect(calls.some((call) => call.method === 'POST')).toBe(false);
+      expect(calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/101'))).toBe(true);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

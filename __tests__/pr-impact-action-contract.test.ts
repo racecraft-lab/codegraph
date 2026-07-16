@@ -82,7 +82,7 @@ describe('PR impact action contract', () => {
 
     for (const output of OUTPUTS) {
       expect(action).toMatch(new RegExp(`^  ${output}:`, 'm'));
-      expect(action).toContain(`steps.pr-impact.outputs.${output}`);
+      expect(action).toContain(`steps.finalize-pr-impact.outputs.${output}`);
     }
 
     expect(action).toContain(`default: "${pkg.version}"`);
@@ -107,6 +107,12 @@ describe('PR impact action contract', () => {
     expect(action).toContain('${{ github.run_id }}-${{ github.run_attempt }}');
     expect(action).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(action).toContain("steps.pr-impact.outputs.cache-status == 'rebuilt'");
+    expect(action).toContain('id: upload-report');
+    expect(action).toContain('continue-on-error: true');
+    expect(action).toContain('id: finalize-pr-impact');
+    expect(action).toContain('PR_IMPACT_SUMMARY_WRITE_STATUS: ${{ steps.pr-impact.outputs.summary-write-status }}');
+    expect(action).toContain('PR_IMPACT_UPLOAD_OUTCOME: ${{ steps.upload-report.outcome }}');
+    expect(action).toContain("steps.finalize-pr-impact.outputs.conclusion != 'pass'");
     expect(readme).toContain('codegraph-version: "1.5.0"');
     expect(readme).toContain('uses: racecraft-lab/codegraph/actions/pr-impact@<immutable-ref>');
     expect(readme).toContain('pull-requests: write');

@@ -34,40 +34,40 @@ inputs:
 outputs:
   summary-status:
     description: Detector summary status.
-    value: ${{ steps.pr-impact.outputs.summary-status }}
+    value: ${{ steps.finalize-pr-impact.outputs.summary-status }}
   detector-exit-code:
     description: Raw detector exit code captured by the helper.
-    value: ${{ steps.pr-impact.outputs.detector-exit-code }}
+    value: ${{ steps.finalize-pr-impact.outputs.detector-exit-code }}
   conclusion:
     description: Final action conclusion after SPEC-020 policy mapping.
-    value: ${{ steps.pr-impact.outputs.conclusion }}
+    value: ${{ steps.finalize-pr-impact.outputs.conclusion }}
   threshold-breached:
     description: Whether configured policy was breached.
-    value: ${{ steps.pr-impact.outputs.threshold-breached }}
+    value: ${{ steps.finalize-pr-impact.outputs.threshold-breached }}
   cache-status:
     description: Cache path taken before analysis.
-    value: ${{ steps.pr-impact.outputs.cache-status }}
+    value: ${{ steps.finalize-pr-impact.outputs.cache-status }}
   delivery-status:
     description: Durable delivery path.
-    value: ${{ steps.pr-impact.outputs.delivery-status }}
+    value: ${{ steps.finalize-pr-impact.outputs.delivery-status }}
   comment-url:
     description: Current action-owned comment when available.
-    value: ${{ steps.pr-impact.outputs.comment-url }}
+    value: ${{ steps.finalize-pr-impact.outputs.comment-url }}
   report-path:
     description: Deterministic markdown report path.
-    value: ${{ steps.pr-impact.outputs.report-path }}
+    value: ${{ steps.finalize-pr-impact.outputs.report-path }}
   artifact-name:
     description: Uploaded report artifact name.
-    value: ${{ steps.pr-impact.outputs.artifact-name }}
+    value: ${{ steps.finalize-pr-impact.outputs.artifact-name }}
   narrative-status:
     description: Optional narrative outcome.
-    value: ${{ steps.pr-impact.outputs.narrative-status }}
+    value: ${{ steps.finalize-pr-impact.outputs.narrative-status }}
   codegraph-version:
     description: Resolved CodeGraph runtime version.
-    value: ${{ steps.pr-impact.outputs.codegraph-version }}
+    value: ${{ steps.finalize-pr-impact.outputs.codegraph-version }}
   helper-version:
     description: Resolved action helper version.
-    value: ${{ steps.pr-impact.outputs.helper-version }}
+    value: ${{ steps.finalize-pr-impact.outputs.helper-version }}
 
 runs:
   using: composite
@@ -132,12 +132,70 @@ runs:
       run: node "${{ github.action_path }}/dist/run.mjs"
 
     - name: Upload PR impact report
+      id: upload-report
       if: always() && steps.pr-impact.outputs.report-path != ''
+      continue-on-error: true
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: ${{ steps.pr-impact.outputs.artifact-name }}
         path: ${{ steps.pr-impact.outputs.report-path }}
         if-no-files-found: error
+
+    - name: Finalize PR impact outputs
+      id: finalize-pr-impact
+      if: always()
+      shell: bash
+      env:
+        PR_IMPACT_SUMMARY_STATUS: ${{ steps.pr-impact.outputs.summary-status }}
+        PR_IMPACT_DETECTOR_EXIT_CODE: ${{ steps.pr-impact.outputs.detector-exit-code }}
+        PR_IMPACT_INITIAL_CONCLUSION: ${{ steps.pr-impact.outputs.conclusion }}
+        PR_IMPACT_THRESHOLD_BREACHED: ${{ steps.pr-impact.outputs.threshold-breached }}
+        PR_IMPACT_CACHE_STATUS: ${{ steps.pr-impact.outputs.cache-status }}
+        PR_IMPACT_INITIAL_DELIVERY_STATUS: ${{ steps.pr-impact.outputs.delivery-status }}
+        PR_IMPACT_SUMMARY_WRITE_STATUS: ${{ steps.pr-impact.outputs.summary-write-status }}
+        PR_IMPACT_COMMENT_URL: ${{ steps.pr-impact.outputs.comment-url }}
+        PR_IMPACT_REPORT_PATH: ${{ steps.pr-impact.outputs.report-path }}
+        PR_IMPACT_ARTIFACT_NAME: ${{ steps.pr-impact.outputs.artifact-name }}
+        PR_IMPACT_NARRATIVE_STATUS: ${{ steps.pr-impact.outputs.narrative-status }}
+        PR_IMPACT_CODEGRAPH_VERSION: ${{ steps.pr-impact.outputs.codegraph-version }}
+        PR_IMPACT_HELPER_VERSION: ${{ steps.pr-impact.outputs.helper-version }}
+        PR_IMPACT_UPLOAD_OUTCOME: ${{ steps.upload-report.outcome }}
+      run: |
+        conclusion="${PR_IMPACT_INITIAL_CONCLUSION:-fail-report-unavailable}"
+        delivery_status="${PR_IMPACT_INITIAL_DELIVERY_STATUS:-failed}"
+        durable_report_available=false
+
+        if [[ "$delivery_status" == "comment" ]]; then
+          durable_report_available=true
+        fi
+        if [[ "$PR_IMPACT_SUMMARY_WRITE_STATUS" == "written" ]]; then
+          durable_report_available=true
+        fi
+        if [[ -n "$PR_IMPACT_REPORT_PATH" && "$PR_IMPACT_UPLOAD_OUTCOME" == "success" ]]; then
+          durable_report_available=true
+        fi
+
+        if [[ "$durable_report_available" != "true" ]]; then
+          delivery_status="failed"
+          if [[ "$conclusion" == "pass" ]]; then
+            conclusion="fail-report-unavailable"
+          fi
+        fi
+
+        {
+          printf 'summary-status=%s\n' "$PR_IMPACT_SUMMARY_STATUS"
+          printf 'detector-exit-code=%s\n' "$PR_IMPACT_DETECTOR_EXIT_CODE"
+          printf 'conclusion=%s\n' "$conclusion"
+          printf 'threshold-breached=%s\n' "$PR_IMPACT_THRESHOLD_BREACHED"
+          printf 'cache-status=%s\n' "$PR_IMPACT_CACHE_STATUS"
+          printf 'delivery-status=%s\n' "$delivery_status"
+          printf 'comment-url=%s\n' "$PR_IMPACT_COMMENT_URL"
+          printf 'report-path=%s\n' "$PR_IMPACT_REPORT_PATH"
+          printf 'artifact-name=%s\n' "$PR_IMPACT_ARTIFACT_NAME"
+          printf 'narrative-status=%s\n' "$PR_IMPACT_NARRATIVE_STATUS"
+          printf 'codegraph-version=%s\n' "$PR_IMPACT_CODEGRAPH_VERSION"
+          printf 'helper-version=%s\n' "$PR_IMPACT_HELPER_VERSION"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Save CodeGraph index cache
       if: always() && steps.pr-impact.outputs.cache-status == 'rebuilt'
@@ -147,8 +205,8 @@ runs:
         key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Enforce PR impact conclusion
-      if: always() && steps.pr-impact.outputs.conclusion != 'pass'
+      if: always() && steps.finalize-pr-impact.outputs.conclusion != 'pass'
       shell: bash
       run: |
-        echo "CodeGraph PR impact conclusion: ${{ steps.pr-impact.outputs.conclusion }}" >&2
+        echo "CodeGraph PR impact conclusion: ${{ steps.finalize-pr-impact.outputs.conclusion }}" >&2
         exit 1

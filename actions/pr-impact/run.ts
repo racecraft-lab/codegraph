@@ -298,12 +298,14 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   });
   if (delivery.status === 'comment') {
     const finalizedComment = await patchDeliveredComment(deps, context, delivery, report);
-    if (!finalizedComment) {
+    if (!finalizedComment.patched) {
       delivery = {
         ...delivery,
         status: preliminaryReportFileWritten ? 'fallback' : 'failed',
         comment: 'failed',
         currentCommentId: null,
+        duplicateCommentIds: mergeIds(delivery.duplicateCommentIds, finalizedComment.retired),
+        failedDuplicateCommentIds: mergeIds(delivery.failedDuplicateCommentIds, finalizedComment.failed),
         commentUrl: '',
       };
       narrative = createInitialNarrative(inputs, context, deps, false);
@@ -390,6 +392,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   emitOutput(deps, 'threshold-breached', String(detector.summary.status === 'threshold_breach'));
   emitOutput(deps, 'cache-status', cacheStatus);
   emitOutput(deps, 'delivery-status', delivery.status);
+  emitOutput(deps, 'summary-write-status', delivery.summary);
   emitOutput(deps, 'comment-url', delivery.commentUrl);
   emitOutput(deps, 'report-path', finalReportFileWritten ? reportPath : '');
   emitOutput(deps, 'artifact-name', artifactName);
@@ -1117,15 +1120,37 @@ async function deliverReportComment(
 
   if (current && isNewerRunComment(current, context)) return { ...base, comment: 'skipped' };
 
-  const created = await createComment(deps, context, report);
-  if (!created) return { ...base, comment: 'failed' };
-  const refreshed = await listComments(deps, context);
-  const markedAfterCreate = refreshed === null ? [created] : sortActionOwnedComments(refreshed);
-  const currentAfterCreate = markedAfterCreate[0] ?? created;
-  const postCreateDuplicateIds: string[] = [];
-  const postCreateFailedDuplicateIds: string[] = [];
-  if (isNewerRunComment(currentAfterCreate, context)) {
-    const retiredCurrentRun = await retireCurrentRunComments(deps, context, markedAfterCreate);
+  let writtenComment: GitHubComment;
+  let markedAfterWrite: GitHubComment[];
+  let commentStatus: DeliveryResult['comment'];
+  if (current) {
+    const patched = await patchComment(deps, context, current.id, report);
+    if (!patched) return { ...base, comment: 'failed' };
+    const refreshed = await listComments(deps, context);
+    markedAfterWrite = refreshed === null
+      ? [{ ...current, body: report }]
+      : sortActionOwnedComments(refreshed);
+    markedAfterWrite = markedAfterWrite.map((comment) => String(comment.id) === String(current.id)
+      ? { ...comment, body: report }
+      : comment);
+    writtenComment = markedAfterWrite.find((comment) => String(comment.id) === String(current.id))
+      ?? markedAfterWrite[0]
+      ?? { ...current, body: report };
+    commentStatus = 'updated';
+  } else {
+    const created = await createComment(deps, context, report);
+    if (!created) return { ...base, comment: 'failed' };
+    const refreshed = await listComments(deps, context);
+    markedAfterWrite = refreshed === null ? [created] : sortActionOwnedComments(refreshed);
+    writtenComment = markedAfterWrite.find((comment) => String(comment.id) === String(created.id))
+      ?? markedAfterWrite[0]
+      ?? created;
+    commentStatus = 'created';
+  }
+  const duplicateIds: string[] = [];
+  const failedDuplicateIds: string[] = [];
+  if (markedAfterWrite.some((comment) => isNewerRunComment(comment, context))) {
+    const retiredCurrentRun = await retireCurrentRunComments(deps, context, markedAfterWrite);
     return {
       ...base,
       comment: 'skipped',
@@ -1133,10 +1158,11 @@ async function deliverReportComment(
       failedDuplicateCommentIds: retiredCurrentRun.failed,
     };
   }
-  if (!isSameRunComment(currentAfterCreate, context)) {
+  if (!isSameRunComment(writtenComment, context)) {
     return { ...base, comment: 'failed' };
   }
-  for (const duplicate of markedAfterCreate.slice(1)) {
+  for (const duplicate of markedAfterWrite) {
+    if (String(duplicate.id) === String(writtenComment.id)) continue;
     if (isNewerRunComment(duplicate, context)) continue;
     const retired = await patchComment(
       deps,
@@ -1144,17 +1170,17 @@ async function deliverReportComment(
       duplicate.id,
       `${ACTION_MARKER}\n\n_Retired duplicate CodeGraph PR impact report._`,
     );
-    if (retired) postCreateDuplicateIds.push(String(duplicate.id));
-    else postCreateFailedDuplicateIds.push(String(duplicate.id));
+    if (retired) duplicateIds.push(String(duplicate.id));
+    else failedDuplicateIds.push(String(duplicate.id));
   }
   return {
     ...base,
     status: 'comment',
-    comment: 'created',
-    currentCommentId: String(currentAfterCreate.id),
-    duplicateCommentIds: postCreateDuplicateIds,
-    failedDuplicateCommentIds: postCreateFailedDuplicateIds,
-    commentUrl: currentAfterCreate.html_url,
+    comment: commentStatus,
+    currentCommentId: String(writtenComment.id),
+    duplicateCommentIds: duplicateIds,
+    failedDuplicateCommentIds: failedDuplicateIds,
+    commentUrl: writtenComment.html_url,
   };
 }
 
@@ -1163,18 +1189,22 @@ async function patchDeliveredComment(
   context: PullRequestContext,
   delivery: DeliveryResult,
   report: string,
-): Promise<boolean> {
-  if (delivery.currentCommentId === null) return false;
+): Promise<{ patched: boolean; retired: string[]; failed: string[] }> {
+  if (delivery.currentCommentId === null) return { patched: false, retired: [], failed: [] };
   const comments = await listComments(deps, context);
-  if (comments === null) return false;
+  if (comments === null) return { patched: false, retired: [], failed: [] };
   const marked = sortActionOwnedComments(comments);
   if (marked.some((comment) => isNewerRunComment(comment, context))) {
-    await retireCurrentRunComments(deps, context, marked);
-    return false;
+    const retiredCurrentRun = await retireCurrentRunComments(deps, context, marked);
+    return { patched: false, retired: retiredCurrentRun.retired, failed: retiredCurrentRun.failed };
   }
   const current = comments.find((comment) => String(comment.id) === String(delivery.currentCommentId));
-  if (!current || !isSameRunComment(current, context)) return false;
-  return patchComment(deps, context, delivery.currentCommentId, report);
+  if (!current || !isSameRunComment(current, context)) return { patched: false, retired: [], failed: [] };
+  return {
+    patched: await patchComment(deps, context, delivery.currentCommentId, report),
+    retired: [],
+    failed: [],
+  };
 }
 
 async function retireCurrentRunComments(
@@ -1622,6 +1652,10 @@ function requiredCountField(value: Record<string, unknown>, field: string): numb
 
 function hasOwn(value: Record<string, unknown>, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, field);
+}
+
+function mergeIds(current: string[], next: string[]): string[] {
+  return [...new Set([...current, ...next])];
 }
 
 function stringField(value: Record<string, unknown>, field: string): string {
