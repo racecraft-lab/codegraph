@@ -72,6 +72,7 @@ function outputMap(raw: string): Record<string, string> {
 describe('PR impact action contract', () => {
   it('declares the public action inputs, outputs, helper runtime, and package surface', () => {
     const action = readAction();
+    const readme = fs.readFileSync(ACTION_README, 'utf8');
     const pkg = readPackage();
 
     for (const input of INPUTS) {
@@ -100,9 +101,15 @@ describe('PR impact action contract', () => {
     expect(action).toContain('PR_IMPACT_TOKEN_WRITE:');
     expect(action).toContain("github.actor != 'dependabot[bot]'");
     expect(action).toContain('PR_IMPACT_PREPARE_BASE_INDEX: "true"');
+    expect(action).toContain('PR_IMPACT_VALIDATE_HEAD: "true"');
     expect(action).toContain('steps.install-codegraph.outputs.codegraph-version');
+    expect(action).toContain('steps.install-codegraph.outputs.codegraph-version }}-');
+    expect(action).toContain('${{ github.run_id }}-${{ github.run_attempt }}');
     expect(action).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(action).toContain("steps.pr-impact.outputs.cache-status == 'rebuilt'");
+    expect(readme).toContain('codegraph-version: "1.5.0"');
+    expect(readme).toContain('| `codegraph-version` | `1.5.0` |');
+    expect(readme).not.toContain('1.4.1');
     expect(pkg.files).toContain('actions');
     const packNpm = fs.readFileSync(PACK_NPM, 'utf8');
     expect(packNpm).toContain('cp -R "$ROOT/actions" "$NPM/main/actions"');
@@ -367,6 +374,50 @@ describe('PR impact action contract', () => {
     }
   });
 
+  it('fails closed when the checked-out workspace is not the pull-request head', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-head-mismatch-'));
+    try {
+      const eventPath = path.join(tmp, 'event.json');
+      fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
+      const calls: Array<{ command: string; args: string[] }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.5.0',
+          INPUT_BASE_REF: '',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          PR_IMPACT_MERGE_BASE: '0000000000000000000000000000000000000000',
+          PR_IMPACT_VALIDATE_HEAD: 'true',
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        mkdirSync: fs.mkdirSync,
+        writeFileSync: fs.writeFileSync,
+        readFileSync: fs.readFileSync,
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          if (command === 'git' && args.join(' ') === 'rev-parse HEAD') {
+            return '9999999999999999999999999999999999999999\n';
+          }
+          throw new Error('detector should not run');
+        },
+      } as any);
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(outputs['summary-status']).toBe('unavailable');
+      expect(outputs.conclusion).toBe('fail-analysis-unavailable');
+      expect(calls).toContainEqual({ command: 'git', args: ['rev-parse', 'HEAD'] });
+      expect(calls.some((call) => call.command === 'codegraph')).toBe(false);
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('does not match pull request head SHA');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('defaults omitted base-ref input to the computed merge base for detector execution', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-event-base-'));
     try {
@@ -503,8 +554,11 @@ describe('PR impact action contract', () => {
     const workflow = fs.readFileSync(DOGFOOD_WORKFLOW, 'utf8');
 
     expect(workflow).toContain('pull_request:');
+    expect(workflow).toContain('issues: write');
+    expect(workflow).not.toContain('pull-requests: write');
     expect(workflow).toContain('concurrency:');
     expect(workflow).toContain('cancel-in-progress: true');
+    expect(workflow).toContain('ref: ${{ github.event.pull_request.head.sha }}');
     expect(workflow.indexOf('run: npm ci')).toBeLessThan(workflow.indexOf('uses: ./actions/pr-impact'));
     expect(workflow.indexOf('run: npm run build')).toBeLessThan(workflow.indexOf('uses: ./actions/pr-impact'));
     expect(workflow).toContain('uses: ./actions/pr-impact');

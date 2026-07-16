@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
   issues: write
   actions: read
 
@@ -23,10 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - uses: ./actions/pr-impact
         with:
-          codegraph-version: "1.4.1"
+          codegraph-version: "1.5.0"
           fail-on-callers: ""
           fail-on-hubs: "false"
           narrative: "off"
@@ -36,7 +36,7 @@ jobs:
 
 | Input | Default | Purpose |
 | --- | --- | --- |
-| `codegraph-version` | `1.4.1` | Pinned `@colbymchenry/codegraph` CLI version. |
+| `codegraph-version` | `1.5.0` | Pinned `@colbymchenry/codegraph` CLI version. |
 | `base-ref` | event base ref | Comparison target for `detect-changes --mode base-ref`. |
 | `fail-on-callers` | empty | Optional caller-count threshold, e.g. `20`. |
 | `fail-on-hubs` | `false` | Fail on detector hub threshold breaches when `true`. |

@@ -108,6 +108,7 @@ runs:
         path: .codegraph
         key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}
         restore-keys: |
+          codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}-
           codegraph-${{ runner.os }}-${{ github.repository }}-
 
     - name: Run PR impact helper
@@ -124,6 +125,7 @@ runs:
         PR_IMPACT_CACHE_RESTORE_HIT: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'true' || 'false' }}
         PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: ${{ steps.install-codegraph.outputs.codegraph-version }}
         PR_IMPACT_PREPARE_BASE_INDEX: "true"
+        PR_IMPACT_VALIDATE_HEAD: "true"
         PR_IMPACT_TRUSTED_CONTEXT: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && 'true' || 'false' }}
         PR_IMPACT_TOKEN_WRITE: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && 'true' || 'false' }}
         GITHUB_TOKEN: ${{ github.token }}
@@ -142,7 +144,7 @@ runs:
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .codegraph
-        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}
+        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Enforce PR impact conclusion
       if: always() && steps.pr-impact.outputs.conclusion != 'pass'

@@ -150,6 +150,43 @@ describe('detect changes', () => {
     }
   });
 
+  it('uses base graph old-side spans for deleted symbols inside retained files', async () => {
+    const previousDir = process.env.CODEGRAPH_DIR;
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    await indexFixture(fx);
+    fx.write('src/calculator.ts', [
+      'export function renderTotal() {',
+      '  return 41;',
+      '}',
+      '',
+    ].join('\n'));
+
+    process.env.CODEGRAPH_DIR = '.codegraph-head-retained-file-test';
+    const headGraph = CodeGraph.initSync(fx.dir);
+    try {
+      await headGraph.indexAll();
+      const report = await detectChanges(headGraph, { mode: 'all', failOn: 'callers>0' }, { baseGraph: fx.cg });
+
+      expect(report.changedSymbols).toContainEqual(expect.objectContaining({
+        name: 'computeTotal',
+        changeType: 'deleted',
+        filePath: 'src/calculator.ts',
+      }));
+      expect(report.callers).toContainEqual(expect.objectContaining({
+        name: 'renderTotal',
+      }));
+      expect(report.summary.status).toBe('threshold_breach');
+      expect(report.exitCode).toBe(2);
+      expect(report.unmappedHunks.some((h) => h.oldPath === 'src/calculator.ts')).toBe(false);
+    } finally {
+      headGraph.close();
+      if (previousDir === undefined) delete process.env.CODEGRAPH_DIR;
+      else process.env.CODEGRAPH_DIR = previousDir;
+      fs.rmSync(path.join(fx.dir, '.codegraph-head-retained-file-test'), { recursive: true, force: true });
+    }
+  });
+
   it('expands direct callers and emits threshold breach risks', async () => {
     const fx = await indexedFixture();
     fx.write('src/calculator.ts', [
@@ -291,6 +328,68 @@ describe('detect changes', () => {
       name: 'Late affected flow',
     }));
     expect(report.limits.truncatedFlows).toBe(false);
+  });
+
+  it('matches base graph flows for deleted symbols', () => {
+    const report = buildInitialReport({
+      mode: 'all',
+      baseRef: null,
+      headRef: null,
+      format: 'json',
+      failOn: null,
+      callerDepth: 1,
+      maxCallers: 20,
+      projectPath: undefined,
+    }, [
+      {
+        id: 'symbol:1',
+        nodeId: 'node:deleted',
+        name: 'deleted',
+        qualifiedName: 'deleted',
+        kind: 'function',
+        filePath: 'src/deleted.ts',
+        startLine: 1,
+        endLine: 3,
+        changeType: 'deleted',
+        hunkIds: ['hunk:1'],
+      },
+    ], [], []);
+    const headGraph = {
+      getProjectRoot: () => process.cwd(),
+      getFiles: () => [],
+      getNodesInFile: () => [],
+      getCallers: () => [],
+    };
+    const baseGraph = {
+      ...headGraph,
+      listFlows: (limit: number, offset: number) => ({
+        items: offset === 0 ? [{ id: 'flow:base', name: 'Base deleted flow', entryKind: 'function', stepCount: 1, truncated: false }] : [],
+        total: 1,
+        limit,
+        offset,
+        sourceVersion: 7,
+        state: 'available' as const,
+      }),
+      getFlowById: () => ({
+        found: true,
+        flow: {
+          id: 'flow:base',
+          name: 'Base deleted flow',
+          entryKind: 'function',
+          steps: [{ nodeId: 'node:deleted' }],
+          truncated: false,
+        },
+      }),
+    };
+
+    enrichImpact(headGraph, report, null, baseGraph);
+
+    expect(report.affectedFlows.items).toContainEqual(expect.objectContaining({
+      flowId: 'flow:base',
+      name: 'Base deleted flow',
+      matchedNodeIds: ['node:deleted'],
+    }));
+    expect(report.affectedFlows.sourceVersion).toBe(7);
   });
 
   it('parses failOn grammar', () => {

@@ -54,16 +54,19 @@ export async function runAction(deps = createRunDependencies()) {
     const context = readPullRequestContext(deps, inputs);
     const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
     const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
-    const cacheStatus = prepareCache(deps, inputs, context);
+    const workspaceHeadError = validateWorkspaceHead(deps, context);
+    const cacheStatus = workspaceHeadError ? 'unavailable' : prepareCache(deps, inputs, context);
     const effectiveBaseRef = resolveBaseRef(inputs, context);
     const baseIndex = cacheStatus === 'unavailable'
         ? { status: 'not-needed', dir: null }
         : prepareBaseIndexIfNeeded(deps, context);
-    const detector = cacheStatus === 'unavailable'
-        ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.', effectiveBaseRef)
-        : baseIndex.status === 'failed'
-            ? createUnavailableDetector(inputs, baseIndex.message, effectiveBaseRef)
-            : runDetector(deps, inputs, context, baseIndex.dir);
+    const detector = workspaceHeadError
+        ? createUnavailableDetector(inputs, workspaceHeadError, effectiveBaseRef)
+        : cacheStatus === 'unavailable'
+            ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.', effectiveBaseRef)
+            : baseIndex.status === 'failed'
+                ? createUnavailableDetector(inputs, baseIndex.message, effectiveBaseRef)
+                : runDetector(deps, inputs, context, baseIndex.dir);
     const narrative = createInitialNarrative(inputs, context, deps);
     let delivery = createInitialDelivery(reportPath);
     let conclusion = determineConclusion(detector, delivery.status !== 'failed');
@@ -173,6 +176,23 @@ function prepareCache(deps, inputs, context) {
     }
     writeCacheMetadata(deps, metadataPath, identity);
     return 'rebuilt';
+}
+function validateWorkspaceHead(deps, context) {
+    if (deps.env.PR_IMPACT_VALIDATE_HEAD !== 'true' || !context.headSha)
+        return null;
+    try {
+        const actual = String(deps.execFileSync('git', ['rev-parse', 'HEAD'], {
+            encoding: 'utf8',
+            env: deps.env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        })).trim();
+        if (actual === context.headSha)
+            return null;
+        return `Checked-out workspace HEAD (${actual || 'unknown'}) does not match pull request head SHA (${context.headSha}); checkout github.event.pull_request.head.sha before running CodeGraph PR impact.`;
+    }
+    catch {
+        return 'Unable to verify checked-out workspace HEAD before CodeGraph PR impact analysis.';
+    }
 }
 function prepareBaseIndexIfNeeded(deps, context) {
     if (deps.env.PR_IMPACT_PREPARE_BASE_INDEX !== 'true') {
@@ -454,7 +474,7 @@ function readPullRequestContext(deps, inputs) {
         tokenPermissions: {
             contentsRead: true,
             issuesWrite: hasTrustedToken,
-            pullRequestsWrite: hasTrustedToken,
+            pullRequestsWrite: false,
         },
     };
 }

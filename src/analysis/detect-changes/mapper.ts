@@ -78,10 +78,7 @@ export function mapDiffToSymbols(
       continue;
     }
 
-    const graph = graphForHunk(hunk, filePath, cg, baseGraph, baseIndexedFiles);
-    const nodes = graph.getNodesInFile(filePath).filter(isReportableSymbol);
-    const range = hunkRange(hunk);
-    const intersecting = nodes.filter((node) => nodeIntersects(node, range));
+    const intersecting = intersectingSymbolsForHunk(hunk, filePath, cg, baseGraph, baseIndexedFiles);
 
     if (intersecting.length === 0) {
       const fallback = hunk.changeKind === 'deleted' ? 'deleted-without-span' : 'no-symbol-span';
@@ -89,8 +86,7 @@ export function mapDiffToSymbols(
       continue;
     }
 
-    for (const node of intersecting) {
-      const changeType = symbolChangeType(hunk);
+    for (const { node, changeType } of intersecting) {
       const key = `${node.id}:${changeType}`;
       const existing = bySymbol.get(key);
       if (existing) {
@@ -162,22 +158,51 @@ function mappingPath(
   return hunk.newPath;
 }
 
-function graphForHunk(
+function intersectingSymbolsForHunk(
   hunk: ChangedHunk,
   filePath: string,
   headGraph: DetectChangesGraph,
   baseGraph: DetectChangesGraph | null,
   baseIndexedFiles: Set<string> | null,
-): DetectChangesGraph {
+): Array<{ node: Node; changeType: ChangedSymbol['changeType'] }> {
   if (hunk.changeKind === 'deleted' && baseGraph && baseIndexedFiles?.has(filePath)) {
-    return baseGraph;
+    return symbolsIntersecting(baseGraph, filePath, hunkRange(hunk, 'old'))
+      .map((node) => ({ node, changeType: 'deleted' }));
   }
-  return headGraph;
+
+  const results: Array<{ node: Node; changeType: ChangedSymbol['changeType'] }> = [];
+  const deletionOnlyModifiedHunk = hunk.changeKind === 'modified'
+    && (hunk.oldLines ?? 0) > 0
+    && (hunk.newLines ?? 0) === 0;
+
+  if (!deletionOnlyModifiedHunk) {
+    for (const node of symbolsIntersecting(headGraph, filePath, hunkRange(hunk, 'new'))) {
+      results.push({ node, changeType: symbolChangeType(hunk) });
+    }
+  }
+
+  if (deletionOnlyModifiedHunk && baseGraph && hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) {
+    for (const node of symbolsIntersecting(baseGraph, hunk.oldPath, hunkRange(hunk, 'old'))) {
+      results.push({ node, changeType: 'deleted' });
+    }
+  }
+
+  return results;
 }
 
-function hunkRange(hunk: ChangedHunk): { start: number; end: number } {
-  const start = hunk.changeKind === 'deleted' ? hunk.oldStart : hunk.newStart;
-  const lines = hunk.changeKind === 'deleted' ? hunk.oldLines : hunk.newLines;
+function symbolsIntersecting(
+  graph: DetectChangesGraph,
+  filePath: string,
+  range: { start: number; end: number },
+): Node[] {
+  return graph.getNodesInFile(filePath)
+    .filter(isReportableSymbol)
+    .filter((node) => nodeIntersects(node, range));
+}
+
+function hunkRange(hunk: ChangedHunk, side: 'old' | 'new' = hunk.changeKind === 'deleted' ? 'old' : 'new'): { start: number; end: number } {
+  const start = side === 'old' ? hunk.oldStart : hunk.newStart;
+  const lines = side === 'old' ? hunk.oldLines : hunk.newLines;
   const safeStart = Math.max(1, start ?? 1);
   const safeLines = Math.max(1, lines ?? 1);
   return { start: safeStart, end: safeStart + safeLines - 1 };

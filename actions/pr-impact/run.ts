@@ -214,12 +214,15 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   const context = readPullRequestContext(deps, inputs);
   const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
   const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
-  const cacheStatus = prepareCache(deps, inputs, context);
+  const workspaceHeadError = validateWorkspaceHead(deps, context);
+  const cacheStatus = workspaceHeadError ? 'unavailable' : prepareCache(deps, inputs, context);
   const effectiveBaseRef = resolveBaseRef(inputs, context);
   const baseIndex = cacheStatus === 'unavailable'
     ? { status: 'not-needed', dir: null } as BaseIndexPreparation
     : prepareBaseIndexIfNeeded(deps, context);
-  const detector = cacheStatus === 'unavailable'
+  const detector = workspaceHeadError
+    ? createUnavailableDetector(inputs, workspaceHeadError, effectiveBaseRef)
+    : cacheStatus === 'unavailable'
     ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.', effectiveBaseRef)
     : baseIndex.status === 'failed'
       ? createUnavailableDetector(inputs, baseIndex.message, effectiveBaseRef)
@@ -336,6 +339,21 @@ function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: Pull
   }
   writeCacheMetadata(deps, metadataPath, identity);
   return 'rebuilt';
+}
+
+function validateWorkspaceHead(deps: RunDependencies, context: PullRequestContext): string | null {
+  if (deps.env.PR_IMPACT_VALIDATE_HEAD !== 'true' || !context.headSha) return null;
+  try {
+    const actual = String(deps.execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      env: deps.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })).trim();
+    if (actual === context.headSha) return null;
+    return `Checked-out workspace HEAD (${actual || 'unknown'}) does not match pull request head SHA (${context.headSha}); checkout github.event.pull_request.head.sha before running CodeGraph PR impact.`;
+  } catch {
+    return 'Unable to verify checked-out workspace HEAD before CodeGraph PR impact analysis.';
+  }
 }
 
 function prepareBaseIndexIfNeeded(deps: RunDependencies, context: PullRequestContext): BaseIndexPreparation {
@@ -620,7 +638,7 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
     tokenPermissions: {
       contentsRead: true,
       issuesWrite: hasTrustedToken,
-      pullRequestsWrite: hasTrustedToken,
+      pullRequestsWrite: false,
     },
   };
 }
