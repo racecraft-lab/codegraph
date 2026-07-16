@@ -100,6 +100,7 @@ describe('PR impact action contract', () => {
     expect(action).toContain('PR_IMPACT_CACHE_RESTORE_HIT:');
     expect(action).toContain('PR_IMPACT_TRUSTED_CONTEXT:');
     expect(action).toContain('PR_IMPACT_TOKEN_WRITE:');
+    expect(action).toContain('description: "Set true only when the caller grants GITHUB_TOKEN pull-requests: write."');
     expect(action).toContain("inputs.comment-write == 'true'");
     expect(action).toContain("github.actor != 'dependabot[bot]'");
     expect(action).toContain('PR_IMPACT_PREPARE_BASE_INDEX: "true"');

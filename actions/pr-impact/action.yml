@@ -31,7 +31,7 @@ inputs:
     required: false
     default: "off"
   comment-write:
-    description: Set true only when the caller grants GITHUB_TOKEN pull-requests: write.
+    description: "Set true only when the caller grants GITHUB_TOKEN pull-requests: write."
     required: false
     default: "false"
 
