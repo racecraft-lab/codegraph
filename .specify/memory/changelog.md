@@ -84,3 +84,17 @@
   removed with provenance in
   [archive-reports/2026-07-15-SPEC-012.md](archive-reports/2026-07-15-SPEC-012.md);
   `.specify/feature.json` cleared because it pointed at the archived spec.
+
+- **2026-07-16** - SPEC-006 archived. PR #153 (`098e49e`) merged (packaged
+  self-hosted web graph browser); roadmap row flipped to complete; SPEC-007 moved
+  to ready because the packaged app shell, local API clients, graph surface, and
+  static-asset pipeline are merged; `specs/006-web-ui-graph-browser/` removed
+  with provenance in
+  [archive-reports/2026-07-16-SPEC-006.md](archive-reports/2026-07-16-SPEC-006.md).
+
+- **2026-07-16** - SPEC-020 archived. PR #154 (`316ca16`) merged (reusable PR
+  blast-radius review action); roadmap row flipped to complete;
+  `specs/020-pr-blast-radius-review-action/` removed with provenance in
+  [archive-reports/2026-07-16-SPEC-020.md](archive-reports/2026-07-16-SPEC-020.md);
+  `.specify/feature.json` cleared because the repository-wide sweep left no
+  active spec directory.

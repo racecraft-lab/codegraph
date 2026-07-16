@@ -123,3 +123,23 @@ symbols, reports unmapped hunks instead of inventing impact, expands callers wit
 bounded graph traversal, enriches with SPEC-011 flows when catalogs exist, and
 renders stable JSON/markdown plus deterministic exit codes for CI use. Full plan
 recoverable: `git show d14e9d6:specs/012-change-impact-detection/plan.md`.
+
+## SPEC-006 - Web UI: Graph Browser (archived 2026-07-16)
+
+Plan shape that shipped: a nested Vite/React workspace under `web/`, styled with
+Tailwind and shadcn components, using Cytoscape for graph rendering and the
+same-origin SPEC-005 REST/SSE surface for all repository operations. The root
+build copies `web/dist` into the npm package; the browser remains local/offline
+and routes chat through the SPEC-018 server adapter so provider secrets never
+enter browser code. Full plan recoverable:
+`git show 098e49e:specs/006-web-ui-graph-browser/plan.md`.
+
+## SPEC-020 - PR Blast-Radius Review Action (archived 2026-07-16)
+
+Plan shape that shipped: a reusable TypeScript GitHub Action under
+`actions/pr-impact/` that installs or reuses CodeGraph, validates restored index
+caches, resolves the pull-request comparison base, runs SPEC-012 detection,
+normalizes the closed result matrix, and publishes one deterministic report by
+trusted comment or fork-safe artifact fallback. Optional SPEC-018 narrative is
+append-only and cannot change facts or conclusions. Full plan recoverable:
+`git show 316ca16:specs/020-pr-blast-radius-review-action/plan.md`.

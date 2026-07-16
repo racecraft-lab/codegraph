@@ -103,13 +103,13 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 
 | Spec | Name | Status | Workflow File | Next Phase |
 |------|------|--------|---------------|------------|
-| SPEC-001 | Embedding Infrastructure & Endpoint Provider | ✅ Complete | [SPEC-001-workflow.md](.process/SPEC-001-workflow.md) | Merged (#16, #17) |
+| SPEC-001 | Embedding Infrastructure & Endpoint Provider | ✅ Complete | [SPEC-001-workflow.md](.process/SPEC-001-workflow.md) | Merged (#16, #17); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-001.md` |
 | SPEC-002 | Bundled Local Embedding Fallback | ✅ Complete | [SPEC-002-workflow.md](.process/SPEC-002-workflow.md) | Merged (#22); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-002.md` |
 | SPEC-003 | Hybrid Semantic Search | ✅ Complete | [SPEC-003-workflow.md](.process/SPEC-003-workflow.md) | Merged (#36); archived in `.specify/memory/archive-reports/2026-07-10-SPEC-003.md` |
 | SPEC-004 | Web Framework Research Spike | ✅ Complete | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Merged (#19); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-004.md` |
 | SPEC-005 | Local HTTP Server & REST API | ✅ Complete | [SPEC-005-workflow.md](.process/SPEC-005-workflow.md) | Merged (#41, #42); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-005.md` |
-| SPEC-006 | Web UI: Graph Browser | 🔄 In Progress | [SPEC-006-workflow.md](.process/SPEC-006-workflow.md) | Scaffolded on `006-web-ui-graph-browser`; shadcn/Tailwind and clean-room GitNexus parity captured |
-| SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Blocked by SPEC-006 |
+| SPEC-006 | Web UI: Graph Browser | ✅ Complete | [SPEC-006-workflow.md](.process/SPEC-006-workflow.md) | Merged (#153); archived in `.specify/memory/archive-reports/2026-07-16-SPEC-006.md` |
+| SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Ready (SPEC-006 shipped the packaged app shell, local API clients, graph surface, and static-asset pipeline) |
 | SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
 | SPEC-009 | LSP Server Facade | ⏳ Pending | [SPEC-009-workflow.md](SPEC-009-workflow.md) | Ready (SPEC-005 shipped the serve daemon + WebSocket hook) |
 | SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
@@ -122,7 +122,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-017 | Taint Analysis Engine | ⏳ Pending | [SPEC-017-workflow.md](SPEC-017-workflow.md) | Blocked by SPEC-016 |
 | SPEC-018 | LLM Access Layer | ✅ Complete | [SPEC-018-workflow.md](.process/SPEC-018-workflow.md) | Merged (#48, #49); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-018.md` |
 | SPEC-019 | Auto-Updating Project Knowledge Wiki | ⏳ Pending | [SPEC-019-workflow.md](SPEC-019-workflow.md) | Blocked by SPEC-027; SPEC-011 catalogs and SPEC-018 LLM layer are merged |
-| SPEC-020 | PR Blast-Radius Review Action | 🔄 In Progress | [SPEC-020-workflow.md](.process/SPEC-020-workflow.md) | Scaffolded on branch `020-pr-blast-radius-review-action`; ready for autopilot |
+| SPEC-020 | PR Blast-Radius Review Action | ✅ Complete | [SPEC-020-workflow.md](.process/SPEC-020-workflow.md) | Merged (#154); archived in `.specify/memory/archive-reports/2026-07-16-SPEC-020.md` |
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | ✅ Complete | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Merged (#21); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-023.md` |

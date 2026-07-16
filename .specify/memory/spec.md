@@ -172,3 +172,29 @@ The active `specs/012-change-impact-detection/` folder was removed because the
 shipped code, tests, merged PR evidence, and preserved workflow/design evidence
 carry the durable record; SPEC-020 is now ready because the review-action
 substrate, stable report contract, and CI exit behavior are merged.
+
+## SPEC-006 - Web UI: Graph Browser (archived 2026-07-16)
+
+The self-hosted web graph browser shipped in PR #153. It adds a packaged
+Vite/React/Tailwind/shadcn application for repository status, search, symbol
+relationships and catalogs, graph exploration, impact review, re-analysis, and
+same-origin chat. Canonical implementation lives under `web/`, with package and
+server integration in `src/server/`, `scripts/copy-web-assets.mjs`, and root
+build scripts. Detailed provenance + recovery:
+[archive-reports/2026-07-16-SPEC-006.md](archive-reports/2026-07-16-SPEC-006.md).
+The active `specs/006-web-ui-graph-browser/` folder was removed because the
+shipped code, tests, package/docs surfaces, and preserved workflow/design
+evidence carry the durable record; SPEC-007 is now ready.
+
+## SPEC-020 - PR Blast-Radius Review Action (archived 2026-07-16)
+
+The reusable PR impact action shipped in PR #154. It adds deterministic
+change-impact reporting, validated cache reuse, fork-safe artifact fallback,
+trusted comment delivery, opt-in thresholds, duplicate-comment recovery, and
+optional prose-only narrative appendices. Canonical implementation lives in
+`actions/pr-impact/`, `.github/workflows/pr-impact.yml`, and the focused
+`__tests__/pr-impact-*.test.ts` suites. Detailed provenance + recovery:
+[archive-reports/2026-07-16-SPEC-020.md](archive-reports/2026-07-16-SPEC-020.md).
+The active `specs/020-pr-blast-radius-review-action/` folder was removed because
+the shipped action, tests, consumer documentation, live dogfood evidence, and
+preserved workflow/design evidence carry the durable record.
