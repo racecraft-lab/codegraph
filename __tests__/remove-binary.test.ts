@@ -225,4 +225,8 @@ describe('npmInvocation', () => {
     expect(inv.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
     expect(inv.args[3]).toBe(`npm uninstall -g ${NPM_PACKAGE}`);
   });
+  it('windows: rejects npm arguments containing cmd.exe syntax', () => {
+    expect(() => npmInvocation('win32', ['install', `${NPM_PACKAGE}@1.2.3 & calc.exe`]))
+      .toThrow(/safe characters/i);
+  });
 });
