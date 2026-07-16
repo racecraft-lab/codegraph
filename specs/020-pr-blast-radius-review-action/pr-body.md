@@ -58,17 +58,18 @@ Reviewers need one current deterministic blast-radius report on pull requests. T
 - `npm test -- __tests__/detect-changes-cli.test.ts`: PASS — 1 file, 4 tests.
 - Warm-cache deterministic sample median: 149s, below the 180s target.
 - Verify-tasks phantom check: PASS — 60/60 completed tasks verified.
-- Code review remediation: PASS — event-base defaulting, final delivery metadata consistency, and merge-base metadata fixed.
+- Code review remediation: PASS — comparison-base defaulting, final delivery metadata consistency, and merge-base metadata fixed.
 - PR check remediation: PASS locally — external `actions/*` references are pinned to full commit SHAs.
 - PR check remediation: PASS locally — cold cache misses initialize the CodeGraph index before analysis.
 - PR check remediation: PASS locally — dogfood installs the checked-out workspace package so unreleased detector commands are available.
 - PR check remediation: PASS locally — dogfood builds the workspace package before local `file:.` installation.
 - PR check remediation: PASS locally — fallback restore-key caches are validated from metadata instead of treated as cold misses.
 - PR check remediation: PASS locally — helper uses the resolved installed CLI path and falls back from failed restored-cache reindex to cold initialization.
+- PR check remediation: PASS locally — omitted `base-ref` uses the computed merge base/base SHA for detector execution in detached PR checkouts.
 
 ## Known gaps
 
-- Live dogfood workflow artifact URL is pending until GitHub Actions reruns after the fallback restore-key cache remediation.
+- Live dogfood workflow artifact URL is pending until GitHub Actions reruns after the detached-checkout base-ref remediation.
 - Optional narrative quality and provider behavior remain owned by SPEC-018.
 
 ## Rollback

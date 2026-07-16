@@ -219,7 +219,7 @@ describe('PR impact action contract', () => {
     }
   });
 
-  it('defaults omitted base-ref input to the pull-request event base ref', async () => {
+  it('defaults omitted base-ref input to the computed merge base for detector execution', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-event-base-'));
     try {
       const eventPath = path.join(tmp, 'event.json');
@@ -274,9 +274,10 @@ describe('PR impact action contract', () => {
       const codegraphCalls = calls.filter((call) => call.command === 'codegraph');
       expect(codegraphCalls).toHaveLength(2);
       for (const call of codegraphCalls) {
-        expect(call.args).toEqual(expect.arrayContaining(['--base-ref', 'main']));
+        expect(call.args).toEqual(expect.arrayContaining(['--base-ref', '0000000000000000000000000000000000000000']));
       }
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Base ref: main');
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Merge base: 0000000000000000000000000000000000000000');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

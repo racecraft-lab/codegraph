@@ -4,7 +4,7 @@
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
   "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-16T01:36:45Z",
+  "updated_at": "2026-07-16T01:43:26Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -494,7 +494,7 @@
         "median_seconds": 149,
         "target_seconds": 180
       },
-      "known_gap": "Live GitHub dogfood artifact URL is pending until GitHub Actions reruns after fallback restore-key cache remediation."
+      "known_gap": "Live GitHub dogfood artifact URL is pending until GitHub Actions reruns after detached-checkout base-ref remediation."
     }
   },
   "post": {
@@ -520,12 +520,12 @@
       "status": "passed_after_remediation",
       "report": "specs/020-pr-blast-radius-review-action/code-review-report.md",
       "findings": [
-        "Omitted base-ref defaulted detector comparison to HEAD^ instead of pull-request base ref.",
+        "Omitted base-ref defaulted detector comparison to HEAD^ instead of a stable pull-request comparison base.",
         "Delivered summary/comment surfaces could contain preliminary delivery metadata.",
         "Merge-base metadata used event base SHA when no explicit merge base was provided."
       ],
       "remediation": [
-        "Detector now resolves effective base ref from input, pull-request event base ref, then HEAD^ fallback.",
+        "Detector now resolves effective base ref from explicit input, computed merge base/base SHA, origin base ref, then HEAD^ fallback while report metadata keeps the human PR base ref.",
         "Summary/file/comment finalization now uses final delivery metadata.",
         "Merge-base metadata now uses explicit env or git merge-base before falling back to event base SHA."
       ],
@@ -559,7 +559,7 @@
     "uat": {
       "status": "runbook_ready",
       "runbook": "specs/020-pr-blast-radius-review-action/uat-runbook.md",
-      "live_github_artifact": "pending until GitHub Actions reruns after fallback restore-key cache remediation"
+      "live_github_artifact": "pending until GitHub Actions reruns after detached-checkout base-ref remediation"
     },
     "pr_packet": {
       "status": "ready",
@@ -574,7 +574,7 @@
     },
     "review_remediation": {
       "status": "checks_remediated_pending_rerun",
-      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, missing workspace build for file:. self-dogfood, restore-key fallback cache handling that treated restored metadata as a cold miss, and unavailable analysis after restored-cache reindexing failed.",
+      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, missing workspace build for file:. self-dogfood, restore-key fallback cache handling that treated restored metadata as a cold miss, unavailable analysis after restored-cache reindexing failed, and detached-checkout base-ref resolution.",
       "remediation": [
         "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
         "Added a contract test proving external actions/* references use full 40-character commit SHAs.",
@@ -588,7 +588,9 @@
         "Added a cache regression test proving fallback restored metadata is re-indexed instead of initialized when the restored CodeGraph version is incompatible.",
         "Changed the composite action to persist the resolved installed codegraph binary path for the helper.",
         "Changed restored-cache rebuild handling to delete the restored .codegraph directory and retry cold initialization when reindexing fails.",
-        "Added contract/cache regressions for explicit CLI path usage and reindex-to-init fallback."
+        "Added contract/cache regressions for explicit CLI path usage and reindex-to-init fallback.",
+        "Changed omitted base-ref detector execution to use the computed merge base/base SHA in detached pull-request checkouts while keeping human base-ref metadata in the report.",
+        "Added a contract regression proving omitted base-ref input uses the computed merge base for detector execution."
       ],
       "verification": {
         "focused_pr_impact_tests": "passed: 6 files, 28 tests",

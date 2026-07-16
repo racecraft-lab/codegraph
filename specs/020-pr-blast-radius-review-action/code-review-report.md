@@ -8,9 +8,9 @@ Passed after remediation.
 
 ## Findings remediated
 
-1. Critical: omitted `base-ref` input defaulted detector comparison to `HEAD^` instead of the pull-request event base ref.
-   - Fix: `runDetector()` now receives pull-request context and resolves the effective base ref from input, event base ref, then `HEAD^` fallback.
-   - Test: `pr-impact-action-contract.test.ts` now verifies omitted `INPUT_BASE_REF` uses `pull_request.base.ref`.
+1. Critical: omitted `base-ref` input defaulted detector comparison to `HEAD^` instead of the pull-request comparison base.
+   - Fix: `runDetector()` now receives pull-request context and resolves detector comparison from explicit input, computed merge base/base SHA, `origin/<base>`, then `HEAD^` fallback while report metadata keeps the human PR base ref.
+   - Test: `pr-impact-action-contract.test.ts` now verifies omitted `INPUT_BASE_REF` uses the computed merge base for detection and keeps `Base ref: main` in the report.
 
 2. Important: summary/comment delivery surfaces could contain preliminary delivery metadata.
    - Fix: comment delivery is finalized after final delivery status is known, and summary/file output now use the final report content.
@@ -47,6 +47,9 @@ Passed after remediation.
 - Finding: self-dogfood `codegraph-version: "file:."` ran before the package `dist/` CLI existed in the GitHub checkout, so npm installed the local package without a resolvable `codegraph` binary.
 - Fix: the self-repository dogfood workflow now runs `npm ci` and `npm run build` before invoking the local action.
 - Test: `pr-impact-action-contract.test.ts` verifies the dogfood workflow builds before `uses: ./actions/pr-impact`.
+- Finding: the dogfood detector reached `codegraph detect-changes` but failed with `fatal: Not a valid object name main` because the pull-request merge checkout has `origin/main` and the base SHA, not a local `main` ref.
+- Fix: omitted `base-ref` input now sends the computed merge base/base SHA to the detector while retaining `Base ref: main` and merge-base metadata in the report.
+- Test: `pr-impact-action-contract.test.ts` verifies detector execution uses the computed merge base when the input is omitted.
 
 ## Verification after PR check remediation
 

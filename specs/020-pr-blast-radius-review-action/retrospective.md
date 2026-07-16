@@ -19,17 +19,18 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - Latest `npm test` after PR-check remediation passed 239 files, with one `detect-changes-cli` timeout under full-suite load; rerunning `__tests__/detect-changes-cli.test.ts` passed 1 file, 4 tests.
 - Verify-tasks phantom check passed: 60/60 completed tasks verified.
 - Warm-cache deterministic sample median was 149s, under the 180s target.
-- Code review remediation passed for event-base defaulting, final delivery metadata consistency, and merge-base metadata.
+- Code review remediation passed for comparison-base defaulting, final delivery metadata consistency, and merge-base metadata.
 - PR check remediation passed locally for full-SHA external action pinning.
 - PR check remediation passed locally for cold-cache CodeGraph initialization.
 - PR check remediation passed locally for self-dogfood using the checked-out workspace package.
 - PR check remediation passed locally for building the workspace package before self-dogfood local installation.
 - PR check remediation passed locally for fallback restore-key cache validation.
 - PR check remediation passed locally for explicit installed CLI path resolution and reindex-to-init fallback.
+- PR check remediation passed locally for detached-checkout base-ref resolution.
 
 ## Deviations
 
-- Live dogfood artifact evidence is deferred until GitHub Actions reruns after the fallback restore-key cache remediation.
+- Live dogfood artifact evidence is deferred until GitHub Actions reruns after the detached-checkout base-ref remediation.
 - Optional narrative remains represented by deterministic seams; live provider quality remains outside SPEC-020 and belongs to SPEC-018.
 
 ## Lessons
@@ -41,6 +42,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - Local `file:.` self-dogfood also needs a prior package build because the repository does not check in the package-level `dist/` CLI.
 - GitHub `actions/cache` restore-key hits can restore real cache contents while reporting `cache-hit=false`; runtime metadata must be validated before choosing a cold-cache initialization path.
 - Restored caches can still be unsalvageable; the action needs a cold-init fallback after failed reindexing instead of reporting unavailable immediately.
+- Pull-request merge checkouts may not expose a local branch named after the base ref; detector execution should use a resolved merge base/base SHA unless the action caller explicitly supplies a base ref.
 - Advisory dogfood should remain threshold-free until enough live PR samples exist to justify blocking defaults.
 
 ## Follow-up

@@ -521,6 +521,13 @@ function resolveBaseRef(inputs: ActionInputs, context: PullRequestContext): stri
   return inputs.baseRef || context.baseRef || 'HEAD^';
 }
 
+function resolveDetectorBaseRef(inputs: ActionInputs, context: PullRequestContext): string {
+  if (inputs.baseRef) return inputs.baseRef;
+  if (context.mergeBase) return context.mergeBase;
+  if (context.baseRef) return context.baseRef.includes('/') ? context.baseRef : `origin/${context.baseRef}`;
+  return 'HEAD^';
+}
+
 function resolveMergeBase(
   deps: RunDependencies,
   baseRef: string,
@@ -555,7 +562,7 @@ function readGitHubEvent(deps: RunDependencies): unknown {
 }
 
 function runDetector(deps: RunDependencies, inputs: ActionInputs, context: PullRequestContext): DetectorResult {
-  const baseRef = resolveBaseRef(inputs, context);
+  const baseRef = resolveDetectorBaseRef(inputs, context);
   const jsonArgs = detectorArgs(inputs, baseRef, 'json');
   const markdownArgs = detectorArgs(inputs, baseRef, 'markdown');
   try {
@@ -837,7 +844,7 @@ function renderReport(args: {
     `- Run attempt: ${context.runAttempt}`,
     `- Repository: ${context.repository || 'unknown'}`,
     `- Pull request: ${context.pullNumber === null ? 'unknown' : `#${context.pullNumber}`}`,
-    `- Base ref: ${detector.summary.baseRef || context.baseRef || inputs.baseRef || 'unresolved'}`,
+    `- Base ref: ${resolveBaseRef(inputs, context)}`,
     `- Head SHA: ${context.headSha || 'unknown'}`,
     `- Merge base: ${context.mergeBase ?? 'unknown'}`,
     `- CodeGraph version: ${inputs.codegraphVersion}`,
