@@ -183,7 +183,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
   const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
   const detector = runDetector(deps, inputs);
-  const narrative = createInitialNarrative(inputs);
+  const narrative = createInitialNarrative(inputs, context, deps);
   let delivery = createInitialDelivery(reportPath);
   const conclusion = determineConclusion(detector, delivery.status !== 'failed');
   const report = renderReport({
@@ -464,7 +464,14 @@ async function deliverReport(
   };
 }
 
-function createInitialNarrative(inputs: ActionInputs): NarrativeResult {
+function createInitialNarrative(inputs: ActionInputs, context: PullRequestContext, deps: RunDependencies): NarrativeResult {
+  if (inputs.narrative === 'trusted' && (context.isForkLike || !deps.env.GITHUB_TOKEN)) {
+    return {
+      status: 'suppressed',
+      text: null,
+      handle: null,
+    };
+  }
   return {
     status: inputs.narrative === 'trusted' ? 'unavailable' : 'disabled',
     text: null,

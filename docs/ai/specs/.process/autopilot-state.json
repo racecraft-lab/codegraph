@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 7: Implement - T024",
-  "updated_at": "2026-07-16T00:07:00Z",
+  "active_step": "Phase 7: Implement - T033",
+  "updated_at": "2026-07-16T00:08:00Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -446,8 +446,8 @@
   },
   "phase7": {
     "status": "in_progress",
-    "current_task": "T024",
-    "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016", "T017", "T018", "T019", "T020", "T021", "T022", "T023"],
+    "current_task": "T033",
+    "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016", "T017", "T018", "T019", "T020", "T021", "T022", "T023", "T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031", "T032"],
     "baseline": {
       "recorded_at": "2026-07-15T23:54:02Z",
       "node": "v24.11.1",

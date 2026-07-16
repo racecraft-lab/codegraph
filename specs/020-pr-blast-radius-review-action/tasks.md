@@ -83,18 +83,18 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation.**
 
-- [ ] T024 [P] [US2] Add failing fork/read-only permission tests for comment denial and no privileged secret use in `__tests__/pr-impact-delivery.test.ts` (Q1)
-- [ ] T025 [P] [US2] Add failing fallback delivery tests for job summary plus artifact when comments are unavailable in `__tests__/pr-impact-delivery.test.ts` (Q7)
-- [ ] T026 [P] [US2] Add failing delivery-degradation tests proving comment failure does not rewrite analysis status or threshold status in `__tests__/pr-impact-result-matrix.test.ts` (Q3, Q7)
+- [X] T024 [P] [US2] Add failing fork/read-only permission tests for comment denial and no privileged secret use in `__tests__/pr-impact-delivery.test.ts` (Q1)
+- [X] T025 [P] [US2] Add failing fallback delivery tests for job summary plus artifact when comments are unavailable in `__tests__/pr-impact-delivery.test.ts` (Q7)
+- [X] T026 [P] [US2] Add failing delivery-degradation tests proving comment failure does not rewrite analysis status or threshold status in `__tests__/pr-impact-result-matrix.test.ts` (Q3, Q7)
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] Implement pull-request trust-boundary detection and observed permission checks in `actions/pr-impact/run.ts`
-- [ ] T028 [US2] Implement safe comment-write eligibility and fork-like denial handling in `actions/pr-impact/run.ts`
-- [ ] T029 [US2] Implement workflow-summary report writing in `actions/pr-impact/run.ts`
-- [ ] T030 [US2] Implement artifact report handoff and delivery-status output wiring in `actions/pr-impact/action.yml`
-- [ ] T031 [US2] Suppress secret-backed narrative eligibility for untrusted or read-only-token runs in `actions/pr-impact/run.ts` (Q1, Q4)
-- [ ] T032 [US2] Regenerate `actions/pr-impact/dist/run.mjs` and verify US2 delivery freshness in `actions/pr-impact/dist/run.mjs`
+- [X] T027 [US2] Implement pull-request trust-boundary detection and observed permission checks in `actions/pr-impact/run.ts`
+- [X] T028 [US2] Implement safe comment-write eligibility and fork-like denial handling in `actions/pr-impact/run.ts`
+- [X] T029 [US2] Implement workflow-summary report writing in `actions/pr-impact/run.ts`
+- [X] T030 [US2] Implement artifact report handoff and delivery-status output wiring in `actions/pr-impact/action.yml`
+- [X] T031 [US2] Suppress secret-backed narrative eligibility for untrusted or read-only-token runs in `actions/pr-impact/run.ts` (Q1, Q4)
+- [X] T032 [US2] Regenerate `actions/pr-impact/dist/run.mjs` and verify US2 delivery freshness in `actions/pr-impact/dist/run.mjs`
 
 **Checkpoint**: User Stories 1 and 2 both work independently for trusted and restricted PR contexts.
 

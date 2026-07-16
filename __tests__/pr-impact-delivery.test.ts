@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { ACTION_MARKER, runAction } from '../actions/pr-impact/run';
-import { prImpactDetectorResults, prImpactGitHubEvent } from './fixtures/pr-impact';
+import { prImpactDetectorResults, prImpactForkEvent, prImpactGitHubEvent } from './fixtures/pr-impact';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-delivery-'));
@@ -55,6 +55,22 @@ function deps(tmp: string, overrides: Record<string, unknown> = {}) {
     execFileSync: () => JSON.stringify(prImpactDetectorResults.impact),
     fetch: async () => ({ ok: false, status: 403, json: async () => ({}) }),
     ...overrides,
+  } as any;
+}
+
+function depsForEvent(tmp: string, event: unknown, overrides: Record<string, unknown> = {}) {
+  const base = deps(tmp);
+  const eventPath = path.join(tmp, 'event.json');
+  fs.writeFileSync(eventPath, JSON.stringify(event), 'utf8');
+  const overrideEnv = (overrides.env ?? {}) as Record<string, string>;
+  return {
+    ...base,
+    ...overrides,
+    env: {
+      ...base.env,
+      GITHUB_EVENT_PATH: eventPath,
+      ...overrideEnv,
+    },
   } as any;
 }
 
@@ -159,6 +175,56 @@ describe('PR impact report delivery', () => {
       expect(patches[0]?.body).toContain('runAction');
       expect(patches[1]?.body).toContain('Retired duplicate');
       expect(calls.some((call) => call.url.includes('/comments/12'))).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back for fork-like pull requests without using comment or narrative privileges', async () => {
+    const tmp = tmpDir();
+    const calls: string[] = [];
+    try {
+      const result = await runAction(depsForEvent(tmp, prImpactForkEvent, {
+        env: {
+          GITHUB_TOKEN: 'token-that-must-not-be-used',
+          INPUT_NARRATIVE: 'trusted',
+        },
+        fetch: async (url: string) => {
+          calls.push(url);
+          return { ok: true, status: 200, json: async () => [] };
+        },
+      }));
+
+      expect(calls).toEqual([]);
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('skipped');
+      expect(result.narrative.status).toBe('suppressed');
+      expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain(ACTION_MARKER);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps summary and artifact fallback available when comment listing is denied', async () => {
+    const tmp = tmpDir();
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'read-only-token',
+        },
+        fetch: async () => ({ ok: false, status: 403, json: async () => ({ message: 'Resource not accessible by integration' }) }),
+      }));
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('permission-denied');
+      expect(result.delivery.summary).toBe('written');
+      expect(result.delivery.artifact).toBe('uploaded');
+      expect(outputs['delivery-status']).toBe('fallback');
+      expect(outputs['artifact-name']).toBe('codegraph-pr-impact');
+      expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('## Summary');
+      expect(fs.existsSync(path.join(tmp, 'report.md'))).toBe(true);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
