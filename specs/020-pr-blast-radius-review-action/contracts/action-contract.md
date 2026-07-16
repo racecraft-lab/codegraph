@@ -11,6 +11,7 @@
 | `caller-depth` | no | `1` | Caller traversal depth, clamped by detector bounds. |
 | `max-callers` | no | `20` | Maximum caller rows, clamped by detector bounds. |
 | `narrative` | no | `off` | `off` or `trusted`; trusted still requires safe event and configured SPEC-018 seam. |
+| `comment-write` | no | `false` | Set `true` only when the caller grants `GITHUB_TOKEN` `pull-requests: write`. |
 
 ## Outputs
 
@@ -33,6 +34,6 @@
 
 - The helper captures detector JSON and exit code instead of allowing shell failure on ordinary impact.
 - The final conclusion follows [result-matrix.md](./result-matrix.md).
-- Comment write attempts require observed write capability.
+- Comment write attempts require trusted context and explicit caller-declared write capability.
 - Summary and artifact delivery are mandatory fallbacks when comments are unavailable.
 - All outputs are emitted even when the final conclusion is failing, unless the action cannot write outputs at all.

@@ -9,6 +9,7 @@ export const HELPER_VERSION = '0.1.0-spec-020';
 export const DEFAULT_CODEGRAPH_VERSION = '1.5.0';
 export const ACTION_MARKER = '<!-- codegraph-pr-impact-action -->';
 const ACTION_RUN_MARKER_PREFIX = '<!-- codegraph-pr-impact-run:';
+const ACTION_RETIRED_MARKER = '<!-- codegraph-pr-impact-retired -->';
 const MIN_CALLER_DEPTH = 1;
 const MAX_CALLER_DEPTH = 3;
 const MIN_MAX_CALLERS = 1;
@@ -1123,7 +1124,7 @@ async function deliverReportComment(
   let writtenComment: GitHubComment;
   let markedAfterWrite: GitHubComment[];
   let commentStatus: DeliveryResult['comment'];
-  if (current) {
+  if (current && isSameRunComment(current, context)) {
     const patched = await patchComment(deps, context, current.id, report);
     if (!patched) return { ...base, comment: 'failed' };
     const refreshed = await listComments(deps, context);
@@ -1168,7 +1169,7 @@ async function deliverReportComment(
       deps,
       context,
       duplicate.id,
-      `${ACTION_MARKER}\n\n_Retired duplicate CodeGraph PR impact report._`,
+      retiredCommentBody(duplicate),
     );
     if (retired) duplicateIds.push(String(duplicate.id));
     else failedDuplicateIds.push(String(duplicate.id));
@@ -1220,7 +1221,7 @@ async function retireCurrentRunComments(
       deps,
       context,
       comment.id,
-      `${ACTION_MARKER}\n${actionRunMarker(context)}\n\n_Retired duplicate CodeGraph PR impact report._`,
+      retiredCommentBody(comment, context),
     );
     if (ok) retired.push(String(comment.id));
     else failed.push(String(comment.id));
@@ -1475,7 +1476,7 @@ function compareCommentNewestFirst(left: GitHubComment, right: GitHubComment): n
 }
 
 function isActionOwnedComment(comment: GitHubComment): boolean {
-  return comment.body.includes(ACTION_MARKER) && comment.user?.login === 'github-actions[bot]';
+  return comment.body.includes(ACTION_MARKER) && comment.user?.login === 'github-actions[bot]' && !isRetiredActionComment(comment);
 }
 
 function sortActionOwnedComments(comments: GitHubComment[]): GitHubComment[] {
@@ -1486,6 +1487,26 @@ function sortActionOwnedComments(comments: GitHubComment[]): GitHubComment[] {
 
 function actionRunMarker(context: PullRequestContext): string {
   return `${ACTION_RUN_MARKER_PREFIX}${context.runId || 'unknown'}:${context.runAttempt || 'unknown'}:${context.headSha || 'unknown'} -->`;
+}
+
+function actionRunMarkerFromBody(body: string): string | null {
+  return body.match(/<!-- codegraph-pr-impact-run:[^>]+ -->/)?.[0] ?? null;
+}
+
+function isRetiredActionComment(comment: GitHubComment): boolean {
+  return comment.body.includes(ACTION_RETIRED_MARKER) ||
+    comment.body.includes('Retired duplicate CodeGraph PR impact report');
+}
+
+function retiredCommentBody(comment: GitHubComment, fallbackContext?: PullRequestContext): string {
+  const marker = actionRunMarkerFromBody(comment.body) ?? (fallbackContext ? actionRunMarker(fallbackContext) : null);
+  return [
+    ACTION_MARKER,
+    ACTION_RETIRED_MARKER,
+    ...(marker ? [marker] : []),
+    '',
+    '_Retired duplicate CodeGraph PR impact report._',
+  ].join('\n');
 }
 
 function parseActionRunIdentity(body: string): ActionRunIdentity | null {

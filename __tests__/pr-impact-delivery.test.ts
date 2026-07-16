@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { ACTION_MARKER, runAction } from '../actions/pr-impact/run';
 import { prImpactDetectorResults, prImpactForkEvent, prImpactGitHubEvent } from './fixtures/pr-impact';
 
+const CURRENT_RUN_MARKER = '<!-- codegraph-pr-impact-run:200:1:0000000000000000000000000000000000000002 -->';
+
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-delivery-'));
 }
@@ -588,7 +590,7 @@ describe('PR impact report delivery', () => {
     }
   });
 
-  it('updates the newest action-owned sticky comment and retires older duplicates', async () => {
+  it('creates a current-run sticky comment without overwriting older active comments', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
     const comments = [
@@ -613,6 +615,17 @@ describe('PR impact report delivery', () => {
               json: async () => comments,
             };
           }
+          if ((init?.method ?? 'GET') === 'POST') {
+            const created = {
+              id: 14,
+              body: JSON.parse(String(init?.body ?? '{}')).body,
+              created_at: '2026-07-15T00:00:03Z',
+              html_url: 'created',
+              user: { login: 'github-actions[bot]' },
+            };
+            comments.push(created);
+            return { ok: true, status: 201, json: async () => created };
+          }
           const id = Number(url.split('/').pop());
           const comment = comments.find((item) => item.id === id);
           if (comment) comment.body = JSON.parse(String(init?.body ?? '{}')).body;
@@ -621,13 +634,13 @@ describe('PR impact report delivery', () => {
       }));
 
       const patches = calls.filter((call) => call.method === 'PATCH');
-      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1);
       expect(patches.map((call) => call.url)).toEqual([
         'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/11',
         'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/10',
-        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/11',
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/14',
       ]);
-      expect(patches[0]?.body).toContain('# CodeGraph PR Impact');
+      expect(patches[0]?.body).toContain('Retired duplicate');
       expect(patches[1]?.body).toContain('Retired duplicate');
       expect(patches[2]?.body).toContain('- Delivery status: comment');
       expect(calls.some((call) => call.url.includes('/comments/12'))).toBe(false);
@@ -641,7 +654,7 @@ describe('PR impact report delivery', () => {
     const tmp = tmpDir();
     const comments = [
       { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old', user: { login: 'github-actions[bot]' } },
-      { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
+      { id: 11, body: `${ACTION_MARKER}\n${CURRENT_RUN_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
     ];
     try {
       const result = await runAction(deps(tmp, {
@@ -679,10 +692,63 @@ describe('PR impact report delivery', () => {
     }
   });
 
+  it('does not reuse retired duplicate comments as the current sticky comment', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    const comments = [
+      {
+        id: 20,
+        body: `${ACTION_MARKER}\n<!-- codegraph-pr-impact-retired -->\n\n_Retired duplicate CodeGraph PR impact report._`,
+        created_at: '2026-07-15T00:00:05Z',
+        html_url: 'retired',
+        user: { login: 'github-actions[bot]' },
+      },
+      { id: 21, body: `${ACTION_MARKER}\nold active`, created_at: '2026-07-15T00:00:00Z', html_url: 'active', user: { login: 'github-actions[bot]' } },
+    ];
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ method, url, body: init?.body });
+          if (method === 'GET') {
+            return { ok: true, status: 200, json: async () => comments };
+          }
+          if (method === 'POST') {
+            const created = {
+              id: 22,
+              body: JSON.parse(String(init?.body ?? '{}')).body,
+              created_at: '2026-07-15T00:00:06Z',
+              html_url: 'created',
+              user: { login: 'github-actions[bot]' },
+            };
+            comments.push(created);
+            return { ok: true, status: 201, json: async () => created };
+          }
+          const id = Number(url.split('/').pop());
+          const comment = comments.find((item) => item.id === id);
+          if (comment) comment.body = JSON.parse(String(init?.body ?? '{}')).body;
+          return { ok: true, status: 200, json: async () => comment ?? { id, html_url: 'patched' } };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('comment');
+      expect(result.delivery.currentCommentId).toBe('22');
+      expect(calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/20'))).toBe(false);
+      expect(calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/21'))).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('paginates issue comments before updating the sticky comment', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
-    const stickyComment = { id: 101, body: `${ACTION_MARKER}\ncurrent`, created_at: '2026-07-15T00:00:01Z', html_url: 'current', user: { login: 'github-actions[bot]' } };
+    const stickyComment = { id: 101, body: `${ACTION_MARKER}\n${CURRENT_RUN_MARKER}\ncurrent`, created_at: '2026-07-15T00:00:01Z', html_url: 'current', user: { login: 'github-actions[bot]' } };
     try {
       await runAction(deps(tmp, {
         env: {

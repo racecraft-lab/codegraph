@@ -8,6 +8,7 @@ export const HELPER_VERSION = '0.1.0-spec-020';
 export const DEFAULT_CODEGRAPH_VERSION = '1.5.0';
 export const ACTION_MARKER = '<!-- codegraph-pr-impact-action -->';
 const ACTION_RUN_MARKER_PREFIX = '<!-- codegraph-pr-impact-run:';
+const ACTION_RETIRED_MARKER = '<!-- codegraph-pr-impact-retired -->';
 const MIN_CALLER_DEPTH = 1;
 const MAX_CALLER_DEPTH = 3;
 const MIN_MAX_CALLERS = 1;
@@ -912,7 +913,7 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
     let writtenComment;
     let markedAfterWrite;
     let commentStatus;
-    if (current) {
+    if (current && isSameRunComment(current, context)) {
         const patched = await patchComment(deps, context, current.id, report);
         if (!patched)
             return { ...base, comment: 'failed' };
@@ -958,7 +959,7 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
             continue;
         if (isNewerRunComment(duplicate, context))
             continue;
-        const retired = await patchComment(deps, context, duplicate.id, `${ACTION_MARKER}\n\n_Retired duplicate CodeGraph PR impact report._`);
+        const retired = await patchComment(deps, context, duplicate.id, retiredCommentBody(duplicate));
         if (retired)
             duplicateIds.push(String(duplicate.id));
         else
@@ -1000,7 +1001,7 @@ async function retireCurrentRunComments(deps, context, comments) {
     for (const comment of comments) {
         if (!isSameRunComment(comment, context))
             continue;
-        const ok = await patchComment(deps, context, comment.id, `${ACTION_MARKER}\n${actionRunMarker(context)}\n\n_Retired duplicate CodeGraph PR impact report._`);
+        const ok = await patchComment(deps, context, comment.id, retiredCommentBody(comment, context));
         if (ok)
             retired.push(String(comment.id));
         else
@@ -1207,7 +1208,7 @@ function compareCommentNewestFirst(left, right) {
     return Number(right.id) - Number(left.id);
 }
 function isActionOwnedComment(comment) {
-    return comment.body.includes(ACTION_MARKER) && comment.user?.login === 'github-actions[bot]';
+    return comment.body.includes(ACTION_MARKER) && comment.user?.login === 'github-actions[bot]' && !isRetiredActionComment(comment);
 }
 function sortActionOwnedComments(comments) {
     return comments
@@ -1216,6 +1217,23 @@ function sortActionOwnedComments(comments) {
 }
 function actionRunMarker(context) {
     return `${ACTION_RUN_MARKER_PREFIX}${context.runId || 'unknown'}:${context.runAttempt || 'unknown'}:${context.headSha || 'unknown'} -->`;
+}
+function actionRunMarkerFromBody(body) {
+    return body.match(/<!-- codegraph-pr-impact-run:[^>]+ -->/)?.[0] ?? null;
+}
+function isRetiredActionComment(comment) {
+    return comment.body.includes(ACTION_RETIRED_MARKER) ||
+        comment.body.includes('Retired duplicate CodeGraph PR impact report');
+}
+function retiredCommentBody(comment, fallbackContext) {
+    const marker = actionRunMarkerFromBody(comment.body) ?? (fallbackContext ? actionRunMarker(fallbackContext) : null);
+    return [
+        ACTION_MARKER,
+        ACTION_RETIRED_MARKER,
+        ...(marker ? [marker] : []),
+        '',
+        '_Retired duplicate CodeGraph PR impact report._',
+    ].join('\n');
 }
 function parseActionRunIdentity(body) {
     const marker = body.match(/<!-- codegraph-pr-impact-run:([^:>]+):([^:>]+):([^ >]+) -->/);

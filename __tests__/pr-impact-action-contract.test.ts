@@ -31,6 +31,7 @@ const INPUTS = [
   'caller-depth',
   'max-callers',
   'narrative',
+  'comment-write',
 ] as const;
 
 const OUTPUTS = [
@@ -99,6 +100,7 @@ describe('PR impact action contract', () => {
     expect(action).toContain('PR_IMPACT_CACHE_RESTORE_HIT:');
     expect(action).toContain('PR_IMPACT_TRUSTED_CONTEXT:');
     expect(action).toContain('PR_IMPACT_TOKEN_WRITE:');
+    expect(action).toContain("inputs.comment-write == 'true'");
     expect(action).toContain("github.actor != 'dependabot[bot]'");
     expect(action).toContain('PR_IMPACT_PREPARE_BASE_INDEX: "true"');
     expect(action).toContain('PR_IMPACT_VALIDATE_HEAD: "true"');
@@ -112,10 +114,16 @@ describe('PR impact action contract', () => {
     expect(action).toContain('id: finalize-pr-impact');
     expect(action).toContain('PR_IMPACT_SUMMARY_WRITE_STATUS: ${{ steps.pr-impact.outputs.summary-write-status }}');
     expect(action).toContain('PR_IMPACT_UPLOAD_OUTCOME: ${{ steps.upload-report.outcome }}');
+    expect(action).toContain('summary_status="${PR_IMPACT_SUMMARY_STATUS:-unavailable}"');
+    expect(action).toContain('detector_exit_code="${PR_IMPACT_DETECTOR_EXIT_CODE:-3}"');
+    expect(action).toContain('conclusion="${PR_IMPACT_INITIAL_CONCLUSION:-fail-analysis-unavailable}"');
+    expect(action).toContain('cache_status="${PR_IMPACT_CACHE_STATUS:-unavailable}"');
     expect(action).toContain("steps.finalize-pr-impact.outputs.conclusion != 'pass'");
     expect(readme).toContain('codegraph-version: "1.5.0"');
     expect(readme).toContain('uses: racecraft-lab/codegraph/actions/pr-impact@<immutable-ref>');
     expect(readme).toContain('pull-requests: write');
+    expect(readme).toContain('comment-write: "true"');
+    expect(readme).toContain('| `comment-write` | `false` |');
     expect(readme).not.toContain('issues: write');
     expect(readme).toContain('| `codegraph-version` | `1.5.0` |');
     expect(readme).not.toContain('1.4.1');

@@ -30,6 +30,7 @@ jobs:
           fail-on-callers: ""
           fail-on-hubs: "false"
           narrative: "off"
+          comment-write: "true"
 ```
 
 ## Inputs
@@ -43,6 +44,7 @@ jobs:
 | `caller-depth` | `1` | Caller traversal depth passed to the detector. |
 | `max-callers` | `20` | Maximum caller rows in the deterministic report. |
 | `narrative` | `off` | Use `trusted` to allow optional prose on trusted runs only. |
+| `comment-write` | `false` | Set `true` only when the caller grants `GITHUB_TOKEN` `pull-requests: write`. |
 
 ## Outputs
 
@@ -63,7 +65,8 @@ jobs:
 
 - Runs CodeGraph `detect-changes` in base-ref mode and treats detector JSON as
   authoritative.
-- Publishes one action-owned sticky PR comment when permissions allow.
+- Publishes one action-owned sticky PR comment only when `comment-write: "true"`
+  and the run is trusted.
 - Always writes the deterministic report to the job summary and uploaded
   artifact path when possible.
 - Keeps ordinary impact advisory. Only configured caller/hub threshold breaches
