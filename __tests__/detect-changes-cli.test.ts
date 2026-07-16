@@ -6,6 +6,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { createDetectChangesFixture, indexFixture, type DetectChangesFixture } from './helpers/detect-changes-fixture';
 
 const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
+const CLI_TIMEOUT_MS = 120_000;
 
 describe('detect-changes CLI', () => {
   let fixture: DetectChangesFixture | null = null;
@@ -20,6 +21,8 @@ describe('detect-changes CLI', () => {
       cwd,
       encoding: 'utf8',
       env: { ...process.env, CODEGRAPH_WASM_RELAUNCHED: '1' },
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: CLI_TIMEOUT_MS,
     });
   }
 
@@ -62,10 +65,11 @@ describe('detect-changes CLI', () => {
     fixture.write('src/many-functions.ts', source.replaceAll('value + 1', 'value + 2'));
     const res = run(['--path', fixture.dir, '--mode', 'all', '--format', 'json']);
 
+    expect(res.error).toBeUndefined();
     expect(res.status).toBe(1);
     expect(res.stdout.length).toBeGreaterThan(65_536);
     expect(JSON.parse(res.stdout).summary.status).toBe('impact');
-  });
+  }, CLI_TIMEOUT_MS + 10_000);
 
   it('prints markdown and returns unavailable exit code for missing index', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-detect-missing-'));

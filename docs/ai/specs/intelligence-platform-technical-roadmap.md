@@ -122,7 +122,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-017 | Taint Analysis Engine | ⏳ Pending | [SPEC-017-workflow.md](SPEC-017-workflow.md) | Blocked by SPEC-016 |
 | SPEC-018 | LLM Access Layer | ✅ Complete | [SPEC-018-workflow.md](.process/SPEC-018-workflow.md) | Merged (#48, #49); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-018.md` |
 | SPEC-019 | Auto-Updating Project Knowledge Wiki | ⏳ Pending | [SPEC-019-workflow.md](SPEC-019-workflow.md) | Blocked by SPEC-027; SPEC-011 catalogs and SPEC-018 LLM layer are merged |
-| SPEC-020 | PR Blast-Radius Review Action | ⏳ Pending | [SPEC-020-workflow.md](SPEC-020-workflow.md) | Ready (SPEC-012 detect-changes shipped; optional SPEC-018 narrative path is available) |
+| SPEC-020 | PR Blast-Radius Review Action | 🔄 In Progress | [SPEC-020-workflow.md](.process/SPEC-020-workflow.md) | Scaffolded on branch `020-pr-blast-radius-review-action`; ready for autopilot |
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | ✅ Complete | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Merged (#21); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-023.md` |

@@ -1,6 +1,6 @@
 import type { Node } from '../../types';
 import type { AffectedFlowItem, CallerImpact, DetectChangesGraph, ImpactReport } from './index';
-import { HUB_CALLER_THRESHOLD, MAX_FLOWS } from './report';
+import { applyFailOnPolicies, HUB_CALLER_THRESHOLD, MAX_FLOWS } from './report';
 
 interface FlowDetailShape {
   found?: boolean;
@@ -14,7 +14,12 @@ interface FlowDetailShape {
   };
 }
 
-export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void {
+export function enrichImpact(
+  cg: DetectChangesGraph,
+  report: ImpactReport,
+  failOn: string | null = null,
+  baseGraph: DetectChangesGraph | null = null,
+): void {
   if (report.changedSymbols.length === 0) {
     report.callers = [];
     report.limits.truncatedCallers = false;
@@ -23,7 +28,7 @@ export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void
     return;
   }
 
-  const { callers, directCallerCounts } = collectCallers(cg, report);
+  const { callers, directCallerCounts } = collectCallers(cg, report, baseGraph);
   report.callers = callers;
   report.limits.truncatedCallers = callers.length > report.limits.maxCallers;
   if (report.limits.truncatedCallers) {
@@ -56,19 +61,22 @@ export function enrichImpact(cg: DetectChangesGraph, report: ImpactReport): void
     }
   }
 
+  applyFailOnPolicies(report, failOn);
+  enrichAffectedFlows(cg, report, baseGraph);
   report.callers = callers.slice(0, report.limits.maxCallers);
-  enrichAffectedFlows(cg, report);
 }
 
 function collectCallers(
   cg: DetectChangesGraph,
   report: ImpactReport,
+  baseGraph: DetectChangesGraph | null,
 ): { callers: CallerImpact[]; directCallerCounts: Map<string, number> } {
   const rows = new Map<string, CallerImpact>();
   const directCallerCounts = new Map<string, number>();
 
   for (const changed of report.changedSymbols) {
-    const direct = uniqueCallers(cg.getCallers(changed.nodeId, 1));
+    const graph = changed.changeType === 'deleted' && baseGraph ? baseGraph : cg;
+    const direct = uniqueCallers(graph.getCallers(changed.nodeId, 1));
     directCallerCounts.set(changed.id, direct.length);
 
     let frontier = [{ nodeId: changed.nodeId }];
@@ -76,7 +84,7 @@ function collectCallers(
     for (let depth = 1; depth <= report.limits.callerDepth; depth++) {
       const next: Array<{ nodeId: string }> = [];
       for (const item of frontier) {
-        for (const caller of uniqueCallers(cg.getCallers(item.nodeId, 1))) {
+        for (const caller of uniqueCallers(graph.getCallers(item.nodeId, 1))) {
           if (seen.has(caller.node.id)) continue;
           seen.add(caller.node.id);
           next.push({ nodeId: caller.node.id });
@@ -132,68 +140,79 @@ function sortCallers(a: CallerImpact, b: CallerImpact): number {
     || a.qualifiedName.localeCompare(b.qualifiedName);
 }
 
-function enrichAffectedFlows(cg: DetectChangesGraph, report: ImpactReport): void {
-  if (!cg.listFlows || !cg.getFlowById) {
-    report.affectedFlows = { state: 'unavailable', items: [], sourceVersion: 0, truncated: false };
-    report.risks.push({
-      code: 'flow-unavailable',
-      severity: 'info',
-      targetId: 'flows',
-      message: 'Execution-flow catalog is unavailable on this CodeGraph instance.',
-    });
+function enrichAffectedFlows(
+  cg: DetectChangesGraph,
+  report: ImpactReport,
+  baseGraph: DetectChangesGraph | null,
+): void {
+  const deletedSymbolIds = new Set(report.changedSymbols
+    .filter((symbol) => symbol.changeType === 'deleted')
+    .map((symbol) => symbol.id));
+  const headMatchedNodeIds = new Set<string>();
+  const baseMatchedNodeIds = new Set<string>();
+  for (const symbol of report.changedSymbols) {
+    (symbol.changeType === 'deleted' ? baseMatchedNodeIds : headMatchedNodeIds).add(symbol.nodeId);
+  }
+  for (const caller of report.callers) {
+    (deletedSymbolIds.has(caller.changedSymbolId) ? baseMatchedNodeIds : headMatchedNodeIds).add(caller.callerNodeId);
+  }
+
+  const groups = [
+    { graph: cg, matchedNodeIds: headMatchedNodeIds },
+    ...(baseGraph && baseMatchedNodeIds.size > 0 ? [{ graph: baseGraph, matchedNodeIds: baseMatchedNodeIds }] : []),
+  ].filter((group) => group.matchedNodeIds.size > 0);
+
+  if (groups.length === 0) {
+    report.affectedFlows = { state: 'empty', items: [], sourceVersion: 0, truncated: false };
+    report.limits.truncatedFlows = false;
     return;
   }
 
   try {
-    const flowList = cg.listFlows(MAX_FLOWS, 0);
-    report.affectedFlows.sourceVersion = flowList.sourceVersion;
-    report.affectedFlows.state = flowList.state;
-    if (flowList.state === 'stale') {
-      report.warnings.push({
-        code: 'stale-flows',
-        message: 'Execution-flow catalog is stale; affected flow matches are retained best-effort rows.',
-      });
-      report.risks.push({
-        code: 'stale-index',
-        severity: 'warning',
-        targetId: 'flows',
-        message: 'Execution-flow catalog is stale.',
-      });
-    }
-    if (flowList.state === 'disabled' || flowList.state === 'unavailable' || flowList.state === 'not_indexed') {
-      report.risks.push({
-        code: 'flow-unavailable',
-        severity: 'info',
-        targetId: 'flows',
-        message: `Execution-flow catalog state is ${flowList.state}.`,
-      });
-      return;
+    const itemsByFlow = new Map<string, AffectedFlowItem>();
+    let state: ImpactReport['affectedFlows']['state'] = 'empty';
+    let hasCatalog = false;
+    let truncated = false;
+    const sourceVersions = new Set<number>();
+
+    for (const group of groups) {
+      const result = collectAffectedFlowMatches(group.graph, group.matchedNodeIds, report);
+      if (!result) continue;
+      if (!hasCatalog) {
+        state = result.state;
+        hasCatalog = true;
+      } else {
+        state = mergeFlowState(state, result.state);
+      }
+      sourceVersions.add(result.sourceVersion);
+      truncated = truncated || result.truncated;
+      for (const item of result.items) {
+        const existing = itemsByFlow.get(item.flowId);
+        if (!existing) {
+          itemsByFlow.set(item.flowId, item);
+          continue;
+        }
+        existing.matchedNodeIds = [...new Set([...existing.matchedNodeIds, ...item.matchedNodeIds])].sort();
+        existing.stepCount = Math.max(existing.stepCount, item.stepCount);
+        existing.truncated = existing.truncated || item.truncated;
+      }
     }
 
-    const matchedNodeIds = new Set([
-      ...report.changedSymbols.map((symbol) => symbol.nodeId),
-      ...report.callers.map((caller) => caller.callerNodeId),
-    ]);
-    const items: AffectedFlowItem[] = [];
-    for (const summary of flowList.items) {
-      const detail = cg.getFlowById(summary.id) as FlowDetailShape;
-      if (!detail?.found || !detail.flow) continue;
-      const matches = detail.flow.steps
-        .map((step) => step.nodeId)
-        .filter((nodeId) => matchedNodeIds.has(nodeId));
-      if (matches.length === 0) continue;
-      items.push({
-        flowId: detail.flow.id,
-        name: detail.flow.name,
-        entryKind: detail.flow.entryKind,
-        matchedNodeIds: [...new Set(matches)].sort(),
-        stepCount: detail.flow.stepCount ?? detail.flow.steps.length,
-        truncated: detail.flow.truncated,
+    if (!hasCatalog) return;
+
+    const items = [...itemsByFlow.values()]
+      .sort((a, b) => a.name.localeCompare(b.name) || a.flowId.localeCompare(b.flowId));
+    const sortedSourceVersions = [...sourceVersions].sort((a, b) => a - b);
+    report.affectedFlows.sourceVersion = sortedSourceVersions.at(-1) ?? 0;
+    report.affectedFlows.state = state;
+    if (sortedSourceVersions.length > 1) {
+      report.warnings.push({
+        code: 'mixed-flow-source-version',
+        message: `Affected flows matched multiple catalog source versions: ${sortedSourceVersions.join(', ')}.`,
       });
     }
-    items.sort((a, b) => a.name.localeCompare(b.name) || a.flowId.localeCompare(b.flowId));
     report.affectedFlows.items = items.slice(0, MAX_FLOWS);
-    report.limits.truncatedFlows = items.length > MAX_FLOWS || flowList.total > flowList.limit;
+    report.limits.truncatedFlows = truncated || items.length > MAX_FLOWS;
     report.affectedFlows.truncated = report.limits.truncatedFlows;
     if (report.limits.truncatedFlows) {
       report.risks.push({
@@ -212,4 +231,120 @@ function enrichAffectedFlows(cg: DetectChangesGraph, report: ImpactReport): void
       message: 'Execution-flow lookup failed; continuing without flow matches.',
     });
   }
+}
+
+function mergeFlowState(
+  current: ImpactReport['affectedFlows']['state'],
+  next: ImpactReport['affectedFlows']['state'],
+): ImpactReport['affectedFlows']['state'] {
+  return flowStateRank(next) > flowStateRank(current) ? next : current;
+}
+
+function flowStateRank(state: ImpactReport['affectedFlows']['state']): number {
+  switch (state) {
+    case 'empty': return 0;
+    case 'available': return 1;
+    case 'stale': return 2;
+    case 'not_indexed': return 3;
+    case 'disabled': return 4;
+    case 'unavailable': return 5;
+  }
+}
+
+function collectAffectedFlowMatches(
+  cg: DetectChangesGraph,
+  matchedNodeIds: Set<string>,
+  report: ImpactReport,
+): {
+  items: AffectedFlowItem[];
+  sourceVersion: number;
+  state: ImpactReport['affectedFlows']['state'];
+  truncated: boolean;
+} | null {
+  if (!cg.listFlows || !cg.getFlowById) {
+    report.risks.push({
+      code: 'flow-unavailable',
+      severity: 'info',
+      targetId: 'flows',
+      message: 'Execution-flow catalog is unavailable on this CodeGraph instance.',
+    });
+    return { items: [], sourceVersion: 0, state: 'unavailable', truncated: false };
+  }
+
+  const flowSummaries: Array<{ id: string; name: string; entryKind: string; stepCount: number; truncated: boolean }> = [];
+  let totalFlows = 0;
+  let scannedFlows = 0;
+  let firstState: ImpactReport['affectedFlows']['state'] | null = null;
+  let sourceVersion = 0;
+  for (let offset = 0; ; offset += MAX_FLOWS) {
+    const flowList = cg.listFlows(MAX_FLOWS, offset);
+    if (firstState === null) {
+      firstState = flowList.state;
+      sourceVersion = flowList.sourceVersion;
+      totalFlows = flowList.total;
+    }
+    flowSummaries.push(...flowList.items);
+    scannedFlows += flowList.items.length;
+    if (
+      flowList.state === 'disabled' ||
+      flowList.state === 'unavailable' ||
+      flowList.state === 'not_indexed' ||
+      flowList.items.length === 0 ||
+      offset + flowList.items.length >= flowList.total
+    ) {
+      break;
+    }
+  }
+
+  if (firstState === 'stale') {
+    report.warnings.push({
+      code: 'stale-flows',
+      message: 'Execution-flow catalog is stale; affected flow matches are retained best-effort rows.',
+    });
+    report.risks.push({
+      code: 'stale-index',
+      severity: 'warning',
+      targetId: 'flows',
+      message: 'Execution-flow catalog is stale.',
+    });
+  }
+  if (firstState === 'disabled' || firstState === 'unavailable' || firstState === 'not_indexed') {
+    report.risks.push({
+      code: 'flow-unavailable',
+      severity: 'info',
+      targetId: 'flows',
+      message: `Execution-flow catalog state is ${firstState}.`,
+    });
+    return {
+      items: [],
+      sourceVersion,
+      state: firstState,
+      truncated: false,
+    };
+  }
+
+  const items: AffectedFlowItem[] = [];
+  for (const summary of flowSummaries) {
+    const detail = cg.getFlowById(summary.id) as FlowDetailShape;
+    if (!detail?.found || !detail.flow) continue;
+    const matches = detail.flow.steps
+      .map((step) => step.nodeId)
+      .filter((nodeId) => matchedNodeIds.has(nodeId));
+    if (matches.length === 0) continue;
+    items.push({
+      flowId: detail.flow.id,
+      name: detail.flow.name,
+      entryKind: detail.flow.entryKind,
+      matchedNodeIds: [...new Set(matches)].sort(),
+      stepCount: detail.flow.stepCount ?? detail.flow.steps.length,
+      truncated: detail.flow.truncated,
+    });
+  }
+
+  return {
+    items,
+    sourceVersion,
+    state: firstState ?? 'empty',
+    truncated: scannedFlows < totalFlows,
+  };
 }

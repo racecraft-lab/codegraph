@@ -45,6 +45,7 @@ export function normalizeDetectChangesRequest(request: DiffRequest): Required<Om
   return {
     mode,
     baseRef: request.baseRef ?? null,
+    headRef: request.headRef ?? null,
     format,
     failOn: request.failOn ?? null,
     callerDepth: clampInt(request.callerDepth, DEFAULT_CALLER_DEPTH, MIN_CALLER_DEPTH, MAX_CALLER_DEPTH),
@@ -105,7 +106,9 @@ export function parseFailOn(raw: string | null | undefined): FailOnPolicy[] {
     }
     const callers = /^callers>(\d+)$/.exec(token);
     if (callers) {
-      policies.push({ raw: token, kind: 'callers', threshold: Number(callers[1]) });
+      const threshold = Number(callers[1]);
+      if (!Number.isSafeInteger(threshold)) throw new Error(`Invalid failOn policy: ${token}`);
+      policies.push({ raw: token, kind: 'callers', threshold });
       continue;
     }
     throw new Error(`Invalid failOn policy: ${token}`);
@@ -284,8 +287,9 @@ function lineRange(start?: number, end?: number): string {
 }
 
 function hunkRange(hunk: UnmappedHunk): string {
-  const start = hunk.newStart ?? hunk.oldStart;
-  const lines = hunk.newLines ?? hunk.oldLines;
+  const useNewRange = Boolean(hunk.newStart && hunk.newLines !== 0);
+  const start = useNewRange ? hunk.newStart : hunk.oldStart;
+  const lines = useNewRange ? hunk.newLines : hunk.oldLines;
   if (!start) return '';
   return lines && lines > 1 ? `${start}+${lines}` : String(start);
 }

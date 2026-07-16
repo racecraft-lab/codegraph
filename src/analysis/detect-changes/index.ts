@@ -5,7 +5,6 @@ import { acquireGitDiff, type GitDiffResult } from './git-diff';
 import { mapDiffToSymbols } from './mapper';
 import { enrichImpact } from './impact';
 import {
-  applyFailOnPolicies,
   buildInitialReport,
   finalizeReport,
   normalizeDetectChangesRequest,
@@ -48,11 +47,16 @@ export {
 export interface DiffRequest {
   mode: DiffMode;
   baseRef?: string | null;
+  headRef?: string | null;
   format?: ReportFormat;
   failOn?: string | null;
   callerDepth?: number;
   maxCallers?: number;
   projectPath?: string;
+}
+
+export interface DetectChangesOptions {
+  baseGraph?: DetectChangesGraph | null;
 }
 
 export interface ChangedHunk {
@@ -185,15 +189,15 @@ export interface DetectChangesResult {
 export async function detectChanges(
   cg: DetectChangesGraph,
   request: DiffRequest,
+  options: DetectChangesOptions = {},
 ): Promise<ImpactReport> {
   const normalized = normalizeDetectChangesRequest(request);
   const projectRoot = request.projectPath ? path.resolve(request.projectPath) : cg.getProjectRoot();
   const diff = acquireGitDiff(projectRoot, normalized);
-  const mapping = mapDiffToSymbols(cg, diff);
+  const mapping = mapDiffToSymbols(cg, diff, options.baseGraph ?? null);
   const warnings = [...mapping.warnings, ...staleIndexWarnings(cg, projectRoot, diff)];
   const report = buildInitialReport(normalized, mapping.changedSymbols, mapping.unmappedHunks, warnings);
-  enrichImpact(cg, report);
-  applyFailOnPolicies(report, normalized.failOn ?? null);
+  enrichImpact(cg, report, normalized.failOn ?? null, options.baseGraph ?? null);
   return finalizeReport(report);
 }
 

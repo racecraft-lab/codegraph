@@ -1,25 +1,25 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-012-workflow.md",
-  "spec_id": "SPEC-012",
-  "feature_dir": "specs/012-change-impact-detection",
-  "status": "completed_archived",
-  "active_step": "Archived",
-  "updated_at": "2026-07-15T21:52:03Z",
+  "workflow_file": "docs/ai/specs/.process/SPEC-020-workflow.md",
+  "spec_id": "SPEC-020",
+  "feature_dir": "specs/020-pr-blast-radius-review-action",
+  "status": "running",
+  "active_step": "Awaiting PR review/merge",
+  "updated_at": "2026-07-16T01:52:54Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
     {"step": "Phase 1: Specify", "status": "completed"},
-    {"step": "Phase 2: Clarify - Output and API contract focus", "status": "completed"},
-    {"step": "Phase 2: Clarify - Output and API contract focus Consensus", "status": "completed"},
-    {"step": "Phase 2: Clarify - Diff and rename correctness focus", "status": "completed"},
-    {"step": "Phase 2: Clarify - Diff and rename correctness focus Consensus", "status": "completed"},
-    {"step": "Phase 2: Clarify - Risk and threshold focus", "status": "completed"},
-    {"step": "Phase 2: Clarify - Risk and threshold focus Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Action Runtime and Cache Contract", "status": "completed"},
+    {"step": "Phase 2: Clarify - Action Runtime and Cache Contract Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Trust Boundary and Report Delivery", "status": "completed"},
+    {"step": "Phase 2: Clarify - Trust Boundary and Report Delivery Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance", "status": "completed"},
+    {"step": "Phase 2: Clarify - Check Conclusion, Narrative, and Performance Consensus", "status": "completed"},
     {"step": "Phase 3: Plan", "status": "completed"},
     {"step": "Phase 4: Checklist - api-contracts", "status": "completed"},
     {"step": "Phase 4: Checklist - api-contracts Consensus", "status": "completed"},
-    {"step": "Phase 4: Checklist - data-integrity", "status": "completed"},
-    {"step": "Phase 4: Checklist - data-integrity Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - security", "status": "completed"},
+    {"step": "Phase 4: Checklist - security Consensus", "status": "completed"},
     {"step": "Phase 4: Checklist - error-handling", "status": "completed"},
     {"step": "Phase 4: Checklist - error-handling Consensus", "status": "completed"},
     {"step": "Phase 4: Checklist - performance", "status": "completed"},
@@ -28,45 +28,36 @@
     {"step": "Phase 6: Analyze", "status": "completed"},
     {"step": "Phase 6: Analyze - Consensus", "status": "completed"},
     {"step": "Phase 6.5: Confidence Gate", "status": "completed"},
-    {"step": "Phase 7: Implement - Setup and foundation T001-T007", "status": "completed"},
-    {"step": "Phase 7: Implement - US1 core diff-to-symbol CLI T008-T019", "status": "completed"},
-    {"step": "Phase 7: Implement - US2 impact expansion and MCP T020-T029", "status": "completed"},
-    {"step": "Phase 7: Implement - US3 CI thresholds T030-T037", "status": "completed"},
-    {"step": "Phase 7: Implement - Polish and UAT T038-T046", "status": "completed"},
-    {"step": "Post: Doctor Extension Check", "status": "pending"},
-    {"step": "Post: Verify Implementation", "status": "pending"},
-    {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
-    {"step": "Post: Code Review", "status": "pending"},
+    {"step": "Phase 7: Implement - Pending task decomposition", "status": "completed"},
+    {"step": "Post: Doctor Extension Check", "status": "completed"},
+    {"step": "Post: Verify Implementation", "status": "completed"},
+    {"step": "Post: Verify Tasks Phantom Check", "status": "completed"},
+    {"step": "Post: Code Review", "status": "completed"},
     {"step": "Post: Integration Suite", "status": "completed"},
     {"step": "Post: Reviewability Diff Gate", "status": "completed"},
-    {"step": "Post: Self-Review", "status": "pending"},
+    {"step": "Post: Self-Review", "status": "completed"},
     {"step": "Post: UAT Runbook Generation", "status": "completed"},
-    {"step": "Post: Final Reviewability Backstop", "status": "pending"},
+    {"step": "Post: Final Reviewability Backstop", "status": "completed"},
     {"step": "Post: PR Packet/Body Generation", "status": "completed"},
     {"step": "Post: PR Body Generation", "status": "completed"},
     {"step": "Post: PR Creation", "status": "completed"},
     {"step": "Post: Review Remediation", "status": "completed"},
-    {"step": "Post: Retrospective", "status": "not_run_before_merge"},
-    {"step": "Post: Archive Cleanup", "status": "completed"}
+    {"step": "Post: Retrospective", "status": "completed"}
   ],
   "archive_sweep": {
-    "status": "applied",
+    "status": "no_candidates",
     "execution_path": "extension_contract",
     "invocation_available": true,
     "prerequisite_available": true,
     "prerequisite_mode": "codex_native_worktree_binding",
     "archive_extension_installed": true,
     "archive_extension_version": "1.1.0",
-    "cleanup_mode": "post-merge-active-spec-archive",
+    "cleanup_mode": "feature_branch_apply_sweep",
     "eligible_previous_specs": [],
-    "archived_spec": "specs/012-change-impact-detection",
-    "excluded_current_spec": null,
-    "safeToApplyCleanup": true,
-    "cleanupApplied": true,
-    "archive_report": ".specify/memory/archive-reports/2026-07-15-SPEC-012.md",
-    "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/55",
-    "merge_commit": "d14e9d6eaf26de124dcfdc3ae95c619628d8ce6f",
-    "worktree_status": "cleanup branch codex/archive-spec-012",
+    "excluded_current_spec": "specs/020-pr-blast-radius-review-action",
+    "safeToApplyCleanup": false,
+    "worktree_status": "clean before state initialization",
+    "branch": "020-pr-blast-radius-review-action",
     "remotes": {
       "origin": "https://github.com/racecraft-lab/codegraph.git",
       "upstream": "https://github.com/colbymchenry/codegraph.git"
@@ -74,13 +65,18 @@
   },
   "phase0": {
     "status": "completed",
-    "worktree_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/012-change-impact-detection",
-    "branch": "012-change-impact-detection",
-    "node": {
-      "ambient": "v26.4.0",
-      "pinned": "v24.11.1",
-      "npm": "11.6.2",
-      "runtime_note": "Ambient Node was outside package engines; all project commands ran with /Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin prepended to PATH."
+    "worktree_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/020-pr-blast-radius-review-action",
+    "branch": "020-pr-blast-radius-review-action",
+    "runner": {
+      "source": "/Users/fredrickgabelmann/.codex/plugins/cache/racecraft-plugins-public/speckit-pro/2.19.2",
+      "worktree_anchor": "speckit-pro/speckit_pro_runner",
+      "note": "Installed plugin runner is invoked with the worktree-local ignored runner copy present so helper root detection binds to this worktree."
+    },
+    "prerequisites": {
+      "check_prerequisites": "passed",
+      "runtime_preflight": "passed with installed plugin runner",
+      "workflow_file": "docs/ai/specs/.process/SPEC-020-workflow.md",
+      "feature_dir": "specs/020-pr-blast-radius-review-action"
     },
     "project_commands": {
       "BUILD": "npm run build",
@@ -89,16 +85,9 @@
       "LINT_FIX": "N/A",
       "UNIT_TEST": "npm test",
       "INTEGRATION_TEST": "N/A",
-      "SINGLE_FILE_TEST": "npx vitest run <file>",
-      "FULL_VERIFY": "npm run build; npm run typecheck; npm test",
-      "notes": "Runner auto-detected npm build/npm typecheck, but package.json and AGENTS.md establish npm run build/npm run typecheck."
-    },
-    "verification": {
-      "npm_install": "passed; dependencies installed with no package-lock changes",
-      "build": "passed",
-      "typecheck": "passed",
-      "test_sandbox": "failed environmentally: loopback/Unix socket listen EPERM and GPG agent access blocked",
-      "test_escalated": "passed: 231 files, 3913 tests passed, 7 skipped"
+      "SINGLE_FILE_TEST": "npm test",
+      "SINGLE_FILE_INTEGRATION": "N/A",
+      "FULL_VERIFY": "npm run build && npm run typecheck && npm test"
     },
     "confidence_gate_mode": "advisory",
     "codex_agents": {
@@ -111,294 +100,511 @@
       "codegraph-project-overrides v1.0.0",
       "speckit-pro-reviewability v1.0.0"
     ],
-    "runner_notes": [
-      "Direct git binding confirms the feature worktree and branch.",
-      "Some runner root detection sees the parent checkout because this worktree is nested under .worktrees; use the absolute worktree root for all commands and subagent prompts."
-    ]
+    "capability_coverage": {
+      "status": "advisory-pass",
+      "note": "Optional research/context capabilities are discovered at runtime; local fallback is acceptable unless no evidence path remains."
+    }
   },
   "phase1": {
     "status": "completed",
-    "spec_file": "specs/012-change-impact-detection/spec.md",
-    "quality_checklist": "specs/012-change-impact-detection/checklists/requirements.md",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-specify",
+    "feature_dir": "specs/020-pr-blast-radius-review-action",
+    "spec_file": "specs/020-pr-blast-radius-review-action/spec.md",
+    "quality_checklist": "specs/020-pr-blast-radius-review-action/checklists/requirements.md",
     "feature_pointer": ".specify/feature.json",
-    "user_stories": 3,
-    "functional_requirements": 20,
-    "acceptance_scenarios": 10,
-    "success_criteria": 9,
-    "clarification_markers_in_spec": 0,
-    "g1_status": "passed"
+    "metrics": {
+      "user_stories": 4,
+      "functional_requirements": 21,
+      "acceptance_scenarios": 13,
+      "quality_checklist_passed": 16,
+      "quality_checklist_total": 16
+    },
+    "gate": {
+      "id": "G1",
+      "status": "passed",
+      "reason": "spec.md exists with 0 markers",
+      "clarification_markers": 0
+    },
+    "marker_counts": {
+      "gaps": 0,
+      "clarifications": 0,
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "constitution_check": "completed",
+    "after_specify_hooks": {
+      "agent_context": "disabled",
+      "git_commit": "deferred_to_autopilot_phase_commit"
+    },
+    "notes": [
+      "Delegated phase executor produced no files before timeout and was interrupted.",
+      "Mandatory branch hook was treated as pre-satisfied by the scaffolded SPEC-020 branch/worktree; no new branch was created."
+    ]
   },
   "phase2": {
-    "session1_output_api_contracts": {
-      "status": "completed",
-      "questions_answered": 5,
-      "consensus": "pass",
-      "outcomes": [
-        "MCP tool name codegraph_detect_changes",
-        "JSON schemaVersion 1 with stable top-level fields",
-        "deterministic markdown sections",
-        "MCP expected states return one normal text content payload",
-        "unmapped hunks are separate diagnostics, not invented impacts"
-      ]
+    "status": "completed",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "sessions": {
+      "action_runtime_and_cache_contract": {
+        "status": "completed",
+        "questions_answered": 3,
+        "spec_updates": [
+          "Clarifications section added for packaged pinned runtime, minimum action contract, and cache freshness proof.",
+          "Functional requirements FR-022 through FR-029 added.",
+          "Action Contract entity, cache validation details, and success criteria SC-010 through SC-011 added."
+        ],
+        "evidence": [
+          "src/analysis/detect-changes/index.ts exposes base-ref mode, json/markdown formats, summary statuses, report fields, and exit codes.",
+          "src/analysis/detect-changes/report.ts exposes exit codes 0 clean, 1 impact, 2 threshold breach, 3 unavailable and fail-on callers>N/hub policies.",
+          "src/bin/codegraph.ts exposes detect-changes CLI options for base-ref, format, fail-on, caller-depth, and max-callers."
+        ],
+        "gate": {
+          "id": "G2",
+          "status": "passed",
+          "reason": "0 [NEEDS CLARIFICATION] markers",
+          "clarification_markers": 0
+        },
+        "consensus": {
+          "status": "completed",
+          "unresolved_items": 0,
+          "action": "skipped; no consensus routing required"
+        }
+      },
+      "trust_boundary_and_report_delivery": {
+        "status": "completed",
+        "questions_answered": 3,
+        "spec_updates": [
+          "Clarifications added for pull-request trust boundary, sticky-comment recovery, and durable fallback delivery.",
+          "Functional requirements FR-030 through FR-039 added.",
+          "Trust Boundary entity and success criteria SC-012 through SC-013 added."
+        ],
+        "evidence": [
+          "GitHub Actions GITHUB_TOKEN docs require least required permissions for token access.",
+          "GitHub Actions workflow syntax docs state forked pull-request workflows typically cannot grant write access and write permissions are adjusted to read-only unless the repository explicitly opts into write tokens.",
+          "Design concept Q1, Q5, and Q7 require safe fork support, one sticky comment, and summary plus artifact fallback."
+        ],
+        "gate": {
+          "id": "G2",
+          "status": "passed",
+          "reason": "0 [NEEDS CLARIFICATION] markers",
+          "clarification_markers": 0
+        },
+        "consensus": {
+          "status": "completed",
+          "unresolved_items": 0,
+          "action": "skipped; no consensus routing required"
+        }
+      },
+      "check_conclusion_narrative_and_performance": {
+        "status": "completed",
+        "questions_answered": 3,
+        "spec_updates": [
+          "Clarifications added for result-to-conclusion mapping, narrative degradation/status, and warm-cache measurement.",
+          "Functional requirements FR-040 through FR-049 added.",
+          "Conclusion Matrix and Performance Sample entities plus success criteria SC-014 through SC-016 added."
+        ],
+        "evidence": [
+          "src/analysis/detect-changes/report.ts maps clean to exit 0, impact to exit 1, threshold_breach to exit 2, and unavailable to exit 3.",
+          "src/llm/generate.ts defines endpoint, pending-bundle, and fallback generation results and degrades dormant/misconfigured states to fallback.",
+          "src/llm/config.ts exposes network-free LLM status with dormant, endpoint, agent, and misconfigured states."
+        ],
+        "gate": {
+          "id": "G2",
+          "status": "passed",
+          "reason": "0 [NEEDS CLARIFICATION] markers",
+          "clarification_markers": 0
+        },
+        "consensus": {
+          "status": "completed",
+          "unresolved_items": 0,
+          "action": "skipped; no consensus routing required"
+        }
+      }
     },
-    "session2_diff_and_rename_correctness": {
-      "status": "completed",
-      "questions_answered": 5,
-      "consensus": "pass",
-      "outcomes": [
-        "mode semantics fixed for unstaged, staged, all, and base-ref",
-        "base-ref compares HEAD to merge base and ignores dirty local-only changes",
-        "git rename detection preserves old and new paths",
-        "pure moves suppress phantom semantic impact while edited or deleted indexed symbols still map",
-        "binary, generated, unsupported, unindexed, untracked, and stale-index states are explicit diagnostics or warnings"
-      ]
-    },
-    "session3_risk_and_threshold_behavior": {
-      "status": "completed",
-      "questions_answered": 5,
-      "consensus": "pass",
-      "outcomes": [
-        "default callerDepth 1 and maxCallers 20",
-        "callerDepth clamps to 1-3 and maxCallers clamps to 1-100",
-        "hub risk is unique direct upstream caller count greater than 20",
-        "failOn grammar is comma-separated callers>N and/or hub",
-        "affectedFlows state mirrors SPEC-011 disabled, unavailable, not_indexed, stale, empty, or available states"
-      ]
-    },
-    "g2_status": {
+    "final_gate": {
+      "id": "G2",
       "status": "passed",
-      "clarification_sessions": 3,
-      "questions_answered": 15,
-      "consensus": "pass",
-      "marker_scan": "passed"
+      "reason": "0 [NEEDS CLARIFICATION] markers",
+      "marker_counts": {
+        "gaps": 0,
+        "clarifications": 0,
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      }
+    },
+    "after_clarify_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
     }
   },
   "phase3": {
     "status": "completed",
-    "plan_file": "specs/012-change-impact-detection/plan.md",
-    "research_file": "specs/012-change-impact-detection/research.md",
-    "data_model_file": "specs/012-change-impact-detection/data-model.md",
-    "contracts": [
-      "specs/012-change-impact-detection/contracts/cli.md",
-      "specs/012-change-impact-detection/contracts/json-report.md",
-      "specs/012-change-impact-detection/contracts/mcp.md"
-    ],
-    "quickstart_file": "specs/012-change-impact-detection/quickstart.md",
-    "g3_status": "passed",
-    "constitution_check": "passed pre-design and post-design",
-    "reviewability": {
-      "setup_estimated_loc": 610,
-      "budget_result": "warning accepted",
-      "split_decision": "two vertical slices",
-      "block_threshold_stop": "pause if implementation approaches 800 reviewable LOC"
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-plan",
+    "artifacts": {
+      "plan": "specs/020-pr-blast-radius-review-action/plan.md",
+      "research": "specs/020-pr-blast-radius-review-action/research.md",
+      "data_model": "specs/020-pr-blast-radius-review-action/data-model.md",
+      "quickstart": "specs/020-pr-blast-radius-review-action/quickstart.md",
+      "contracts": [
+        "specs/020-pr-blast-radius-review-action/contracts/action-contract.md",
+        "specs/020-pr-blast-radius-review-action/contracts/result-matrix.md",
+        "specs/020-pr-blast-radius-review-action/contracts/report-contract.md"
+      ]
     },
-    "hooks": {
-      "before_plan_git_commit": "skipped: auto_commit.before_plan.enabled=false",
-      "after_plan_git_commit": "skipped: auto_commit.after_plan.enabled=false",
-      "agent_context_update": "skipped: after_plan hook disabled"
+    "gate": {
+      "id": "G3",
+      "status": "passed",
+      "reason": "plan.md exists with 0 unresolved markers",
+      "markers": 0
+    },
+    "reviewability": {
+      "estimate_reviewable_loc": {
+        "status": "pass",
+        "projected": 80,
+        "declared_files": {
+          "production": 2,
+          "new": 4,
+          "modified": 2,
+          "total_entries": 6
+        },
+        "note": "Runner heuristic uses parseable declared file operations; roadmap/Grill Me projection remains authoritative for warning."
+      },
+      "setup_gate": {
+        "status": "warn",
+        "pass": true,
+        "reviewable_loc": 455,
+        "production_files": 4,
+        "total_files": 11,
+        "primary_surfaces": ["harness/adapter"],
+        "warnings": ["reviewable LOC 455 exceeds warn threshold 400"],
+        "blockers": []
+      }
+    },
+    "after_plan_hooks": {
+      "agent_context": "disabled",
+      "git_commit": "deferred_to_autopilot_phase_commit"
     }
   },
   "phase4": {
     "status": "completed",
-    "g4_status": "passed",
-    "checklists": {
-      "api-contracts": {
-        "file": "specs/012-change-impact-detection/checklists/api-contracts.md",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-checklist",
+    "domains": {
+      "api_contracts": {
+        "status": "completed",
         "items": 14,
-        "checked": 14,
-        "unresolved_gaps": 0,
-        "consensus": "pass"
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/api-contracts.md",
+        "references": ["FR-022-FR-029", "contracts/action-contract.md", "contracts/result-matrix.md", "contracts/report-contract.md"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
       },
-      "data-integrity": {
-        "file": "specs/012-change-impact-detection/checklists/data-integrity.md",
-        "items": 15,
-        "checked": 15,
-        "unresolved_gaps": 0,
-        "consensus": "pass"
+      "security": {
+        "status": "completed",
+        "items": 12,
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/security.md",
+        "references": ["FR-030-FR-033", "Q1", "Q4"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
       },
-      "error-handling": {
-        "file": "specs/012-change-impact-detection/checklists/error-handling.md",
-        "items": 15,
-        "checked": 15,
-        "unresolved_gaps": 0,
-        "consensus": "pass"
+      "error_handling": {
+        "status": "completed",
+        "items": 12,
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/error-handling.md",
+        "references": ["FR-013-FR-015", "FR-039-FR-047", "Q3"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
       },
       "performance": {
-        "file": "specs/012-change-impact-detection/checklists/performance.md",
-        "items": 14,
-        "checked": 14,
-        "unresolved_gaps": 0,
-        "consensus": "pass"
+        "status": "completed",
+        "items": 10,
+        "gaps": 0,
+        "checklist": "specs/020-pr-blast-radius-review-action/checklists/performance.md",
+        "references": ["FR-048-FR-049", "SC-016", "Q6"],
+        "consensus": {"status": "completed", "unresolved_items": 0, "action": "skipped; no gaps or disputed findings"}
       }
     },
-    "resolved_during_checklist": [
-      "all mode now includes untracked-file diagnostics",
-      "markdown table columns are specified",
-      "unavailable report status and exitCode 3 are specified",
-      "flow output cap maxFlows 20 is specified",
-      "unmapped diagnostic reason precedence is specified"
-    ],
-    "hooks": {
-      "before_checklist_git_commit": "skipped: auto_commit.before_checklist.enabled=false",
-      "after_checklist_git_commit": "skipped: auto_commit.after_checklist.enabled=false"
+    "totals": {
+      "items": 48,
+      "gaps": 0
+    },
+    "gate": {
+      "id": "G4",
+      "status": "passed",
+      "reason": "0 [Gap] markers",
+      "markers": 0
+    },
+    "marker_counts": {
+      "gaps": 0,
+      "clarifications": 0,
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "after_checklist_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
     }
   },
   "phase5": {
     "status": "completed",
-    "tasks_file": "specs/012-change-impact-detection/tasks.md",
-    "total_tasks": 46,
-    "phases": 6,
-    "parallel_tasks": 15,
-    "user_stories_covered": 3,
-    "g5_status": "passed",
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-tasks",
+    "tasks_file": "specs/020-pr-blast-radius-review-action/tasks.md",
+    "metrics": {
+      "total_tasks": 60,
+      "phases": 7,
+      "parallel_opportunity_groups": 6,
+      "user_stories_covered": 4
+    },
+    "gate": {
+      "id": "G5",
+      "status": "passed",
+      "reason": "60 tasks found",
+      "markers": 0
+    },
+    "marker_counts": {
+      "gaps": 0,
+      "clarifications": 0,
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "format_check": {
+      "status": "passed",
+      "nonconforming_task_rows": 0
+    },
     "atomicity_route": {
       "route": "one-navigable-PR",
-      "releasable": "yes after all three user stories plus polish gates complete",
-      "signals": [
-        "46 tasks",
-        "5 planned production files",
-        "thin CLI/MCP adapters",
-        "3 test files",
-        "two ratified vertical slices"
-      ],
-      "warnings": [
-        "reviewability warning accepted",
-        "split-PR fallback if implementation approaches 800 reviewable LOC",
-        "atomicity-route helper was not present in the checkout"
-      ]
+      "releasable": true,
+      "signals": ["change-shape:modify-heavy"],
+      "warnings": []
     },
-    "hooks": {
-      "before_tasks_git_commit": "skipped: auto_commit.before_tasks.enabled=false",
-      "after_tasks_git_commit": "skipped: auto_commit.after_tasks.enabled=false"
+    "after_tasks_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
     }
   },
   "phase6": {
     "status": "completed",
-    "g6_status": "passed",
-    "critical_findings": 0,
-    "high_findings": 0,
-    "medium_findings": 2,
-    "low_findings": 0,
-    "coverage": {
-      "functional_requirements": "20/20 mapped",
-      "success_criteria": "8/9 direct, SC-009 partial through local-only constraints and UAT"
+    "execution_path": "direct_fallback_after_delegated_phase_timeout",
+    "skill": "speckit-analyze",
+    "findings": [],
+    "gate": {
+      "id": "G6",
+      "status": "passed",
+      "reason": "0 CRITICAL/HIGH findings",
+      "markers": 0
     },
-    "findings": [
-      {
-        "id": "A1",
-        "severity": "MEDIUM",
-        "summary": "Parallel markers on tasks targeting the same test file could create edit contention",
-        "recommendation": "Remove [P] markers or split test files if parallel agents are used"
-      },
-      {
-        "id": "A2",
-        "severity": "MEDIUM",
-        "summary": "SC-009 no-network behavior has partial but not dedicated verification coverage",
-        "recommendation": "Strengthen T045 or add a polish task if implementation reveals network-sensitive code paths"
+    "coverage_summary": {
+      "design_questions_covered": 9,
+      "user_stories_covered": 4,
+      "core_artifacts_present": ["spec.md", "plan.md", "tasks.md", "research.md", "data-model.md", "quickstart.md", "contracts/"]
+    },
+    "consensus": {
+      "status": "completed",
+      "unresolved_items": 0,
+      "action": "skipped; no CRITICAL/HIGH findings or disputed analysis findings"
+    },
+    "confidence_emit": {
+      "composite": 0.96,
+      "criteria": {
+        "task_understanding": 0.95,
+        "approach_clarity": 0.94,
+        "requirements_alignment": 0.91,
+        "risk_assessment": 1.0,
+        "completeness": 1.0
       }
-    ],
-    "hooks": {
-      "before_analyze_git_commit": "skipped: auto_commit.before_analyze.enabled=false",
-      "after_analyze_git_commit": "skipped: auto_commit.after_analyze.enabled=false"
+    },
+    "after_analyze_hooks": {
+      "git_commit": "deferred_to_autopilot_phase_commit"
     }
   },
   "phase6_5": {
     "status": "completed",
-    "mode": "advisory",
-    "confidence_score": 0.82,
-    "result": "pass",
-    "rationale": [
-      "no critical or high analyze findings",
-      "spec, plan, contracts, checklists, and tasks are complete",
-      "medium advisories remain visible but do not block implementation",
-      "reviewability warning has a two-slice route and 800 LOC stop condition"
-    ]
+    "gate": {
+      "id": "G6.5",
+      "status": "passed",
+      "mode": "advisory",
+      "threshold": 0.9,
+      "composite": 0.96,
+      "reason": "composite at or above threshold",
+      "recommended_action": "proceed"
+    },
+    "criteria": {
+      "task_understanding": 0.95,
+      "approach_clarity": 0.94,
+      "requirements_alignment": 0.91,
+      "risk_assessment": 1.0,
+      "completeness": 1.0
+    },
+    "iterations": 0
   },
   "phase7": {
     "status": "completed",
-    "tasks_completed": "46/46",
-    "implementation_summary": {
-      "core_engine": "src/analysis/detect-changes implements git diff acquisition, hunk parsing, symbol mapping, diagnostics, caller expansion, flow enrichment, risks, threshold evaluation, and JSON/markdown rendering",
-      "cli": "codegraph detect-changes supports mode, base-ref, format, fail-on, caller-depth, max-callers, and path options with deterministic exit codes",
-      "mcp": "codegraph_detect_changes is exposed on the default MCP surface with success-shaped expected states and bounded output",
-      "tests": "unit, CLI, MCP, helper, and fixture coverage added for SPEC-012 behavior"
-    },
-    "verification": {
+    "current_task": null,
+    "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016", "T017", "T018", "T019", "T020", "T021", "T022", "T023", "T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031", "T032", "T033", "T034", "T035", "T036", "T037", "T038", "T039", "T040", "T041", "T042", "T043", "T044", "T045", "T046", "T047", "T048", "T049", "T050", "T051", "T052", "T053", "T054", "T055", "T056", "T057", "T058", "T059", "T060"],
+    "baseline": {
+      "recorded_at": "2026-07-15T23:54:02Z",
+      "node": "v24.11.1",
+      "npm_ci": "passed",
       "build": "passed",
       "typecheck": "passed",
-      "focused_detect_changes": "passed: 3 files, 12 tests",
-      "mcp_default_surface": "passed: 5 files, 36 tests",
-      "full_suite": "passed outside sandbox: 234 files, 3925 tests passed, 7 skipped",
-      "sandbox_note": "initial sandboxed full-suite attempt was invalid due GPG, loopback/Unix socket, and endpoint/embedding environment failures"
+      "test": {
+        "status": "baseline_environmental_failure",
+        "failed_test_files": 22,
+        "failed_tests": 209,
+        "errors": 91,
+        "note": "Full suite failed before SPEC-020 implementation edits due local socket/listen EPERM, sandboxed temp-git/GPG behavior, local endpoint/LLM/embedding timeouts, and watcher timeout behavior."
+      }
     },
-    "uat": {
-      "status": "completed",
-      "runbook": "specs/012-change-impact-detection/.process/uat-runbook.md",
-      "scenarios": [
-        "staged clean: exit 0, clean report",
-        "all changes JSON: exit 1, impact report",
-        "all changes markdown: exit 1, markdown parity",
-        "threshold breach: exit 2",
-        "missing index: exit 3, success-shaped unavailable report"
-      ]
-    },
-    "retrieval_guardian": {
-      "status": "passed",
-      "scope": "manual review required because src/mcp changed",
-      "findings": [
-        "explore call and output budgets unchanged",
-        "new instructions do not steer agents to Read or Grep",
-        "missing-index expected state returns normal unavailable report",
-        "malformed args and git failures remain operational errors",
-        "no extraction, resolution, synthesized-edge, or dynamic-dispatch code changed",
-        "focused MCP and explore-unchanged regression tests passed"
-      ],
-      "agent_ab": "not run: no explore retrieval behavior, output budget, extraction, resolution, or dynamic-dispatch behavior changed"
-    },
-    "reviewability": {
-      "status": "accepted_exception",
-      "setup_estimated_loc": 610,
-      "block_threshold_loc": 800,
-      "actual_production_additions": 1418,
-      "actual_production_deletions": 8,
-      "production_files": 8,
-      "tests_additions": 338,
-      "spec_process_docs_additions": 2589,
-      "total_files": 38,
-      "decision": "maintainer accepted one-PR exception on 2026-07-15; draft PR creation may proceed"
+    "final_verification": {
+      "focused_pr_impact_tests": {
+        "status": "passed",
+        "test_files": 6,
+                "tests": 28
+            },
+            "build": "passed",
+            "typecheck": "passed",
+            "full_test": {
+                "status": "partial_latest_run_targeted_rerun_passed",
+                "test_files_passed": 239,
+                "test_files_failed": 1,
+                "tests_passed": 3954,
+                "tests_failed": 1,
+                "tests_skipped": 7,
+                "duration_seconds": 109.49,
+                "rerun": "npm test -- __tests__/detect-changes-cli.test.ts passed: 1 file, 4 tests"
+            },
+      "reviewability_gate": {
+        "status": "warn",
+        "pass": true,
+        "reviewable_loc": 455,
+        "production_files": 4,
+        "total_files": 11,
+        "warnings": ["reviewable LOC 455 exceeds warn threshold 400"],
+        "blockers": []
+      },
+      "warm_cache_samples": {
+        "eligible_samples": 5,
+        "median_seconds": 149,
+        "target_seconds": 180
+      },
+      "known_gap": "PR #154 remains draft and unmerged; live PR-impact artifact passed on run 29464931728."
     }
   },
   "post": {
-    "status": "completed_archived",
-    "completed": [
-      "Integration Suite",
-      "UAT Runbook Generation",
-      "PR Packet/Body Generation",
-      "Review Remediation",
-      "Archive Cleanup"
-    ],
-    "draft_pr": {
-      "number": 55,
-      "url": "https://github.com/racecraft-lab/codegraph/pull/55",
-      "state": "merged",
-      "merged_at": "2026-07-15T21:46:54Z",
-      "merge_commit": "d14e9d6eaf26de124dcfdc3ae95c619628d8ce6f"
+    "status": "in_progress",
+    "active_step": "Awaiting PR review/merge",
+    "doctor_extension_check": {
+      "status": "passed",
+      "config": "defaults loaded; no local verify config file",
+      "after_implement_hooks": ["review", "verify", "verify-tasks", "cleanup", "retrospective", "git"]
     },
-    "reviewability_diff_gate": {
+    "verify_implementation": {
+      "status": "passed",
+      "evidence": "Final validation recorded in quickstart.md: focused PR-impact tests passed, npm run build passed, npm run typecheck passed, latest full npm test had one detect-changes-cli timeout under load, and the targeted rerun passed."
+    },
+    "verify_tasks": {
+      "status": "passed",
+      "report": "specs/020-pr-blast-radius-review-action/verify-tasks-report.md",
+      "completed_tasks": 60,
+      "verified_tasks": 60,
+      "phantom_completions": 0
+    },
+    "code_review": {
+      "status": "passed_after_remediation",
+      "report": "specs/020-pr-blast-radius-review-action/code-review-report.md",
+      "findings": [
+        "Omitted base-ref defaulted detector comparison to HEAD^ instead of a stable pull-request comparison base.",
+        "Delivered summary/comment surfaces could contain preliminary delivery metadata.",
+        "Merge-base metadata used event base SHA when no explicit merge base was provided."
+      ],
+      "remediation": [
+        "Detector now resolves effective base ref from explicit input, computed merge base/base SHA, origin base ref, then HEAD^ fallback while report metadata keeps the human PR base ref.",
+        "Summary/file/comment finalization now uses final delivery metadata.",
+        "Merge-base metadata now uses explicit env or git merge-base before falling back to event base SHA."
+      ],
+      "verification": {
+        "focused_pr_impact_tests": "passed: 6 files, 28 tests",
+        "build": "passed",
+        "typecheck": "passed",
+        "full_test": "previously passed: 240 files, 3954 tests passed, 7 skipped; latest run partial with one detect-changes-cli timeout, targeted rerun passed 1 file and 4 tests"
+      }
+    },
+    "integration_suite": {
+      "status": "passed",
+      "build": "passed",
+      "typecheck": "passed",
+      "full_test": "partial_latest_run_targeted_rerun_passed"
+    },
+    "reviewability": {
+      "status": "passed_with_warning_adjudicated",
+      "gate": "warn",
+      "reviewable_loc": 455,
+      "production_files": 4,
+      "total_files": 11,
+      "warnings": ["reviewable LOC 455 exceeds warn threshold 400"],
+      "blockers": [],
+      "adjudication": "Maintainer-selected Q9 decision kept SPEC-020 as one navigable PR; no installed final-reviewability helper beyond recorded gate evidence."
+    },
+    "self_review": {
       "status": "completed",
-      "reason": "Production diff is 1418 additions across 8 files, exceeding the ratified 800 LOC stop condition.",
-      "decision": "Maintainer accepted a one-PR reviewability exception on 2026-07-15."
+      "evidence": "pr-review-packet.md, verify-tasks-report.md, pr-body.md, and retrospective.md"
     },
-    "active": "Archived",
-    "pending": [
-      "Doctor Extension Check",
-      "Verify Implementation",
-      "Verify Tasks Phantom Check",
-      "Code Review",
-      "Self-Review",
-      "Final Reviewability Backstop",
-      "Retrospective"
-    ],
-    "pending_note": "These post-implement advisory gates were not run before the PR merged; archive cleanup records the final merged state without claiming those gates completed."
+    "uat": {
+      "status": "runbook_ready",
+      "runbook": "specs/020-pr-blast-radius-review-action/uat-runbook.md",
+      "live_github_artifact": "https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028"
+    },
+    "pr_packet": {
+      "status": "ready",
+      "packet": "specs/020-pr-blast-radius-review-action/pr-review-packet.md",
+      "body": "specs/020-pr-blast-radius-review-action/pr-body.md"
+    },
+    "pr_creation": {
+      "status": "completed",
+      "number": 154,
+      "url": "https://github.com/racecraft-lab/codegraph/pull/154",
+      "draft": true
+    },
+    "review_remediation": {
+      "status": "checks_remediated_current_pass",
+      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, missing workspace build for file:. self-dogfood, restore-key fallback cache handling that treated restored metadata as a cold miss, unavailable analysis after restored-cache reindexing failed, and detached-checkout base-ref resolution.",
+      "remediation": [
+        "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
+        "Added a contract test proving external actions/* references use full 40-character commit SHAs.",
+        "Changed cache misses to initialize CodeGraph before detection while preserving re-index behavior for restored stale caches.",
+        "Added a cache regression test proving cold-cache initialization, metadata recording, detector execution, and .gitignore restoration.",
+        "Changed the self-repository dogfood workflow to install the checked-out workspace package via codegraph-version file:.",
+        "Added a contract assertion that dogfood uses the workspace package while preserving advisory thresholds and narrative off.",
+        "Changed the self-repository dogfood workflow to run npm ci and npm run build before invoking the local action.",
+        "Added a contract assertion that the dogfood workflow builds before uses: ./actions/pr-impact.",
+        "Changed cache preparation to validate restored metadata whenever the metadata file exists, even when actions/cache reports a non-exact restore-key hit.",
+        "Added a cache regression test proving fallback restored metadata is re-indexed instead of initialized when the restored CodeGraph version is incompatible.",
+        "Changed the composite action to persist the resolved installed codegraph binary path for the helper.",
+        "Changed restored-cache rebuild handling to delete the restored .codegraph directory and retry cold initialization when reindexing fails.",
+        "Added contract/cache regressions for explicit CLI path usage and reindex-to-init fallback.",
+        "Changed omitted base-ref detector execution to use the computed merge base/base SHA in detached pull-request checkouts while keeping human base-ref metadata in the report.",
+        "Added a contract regression proving omitted base-ref input uses the computed merge base for detector execution."
+      ],
+      "verification": {
+        "focused_pr_impact_tests": "passed: 6 files, 28 tests",
+        "build": "passed",
+        "typecheck": "passed",
+        "full_test": "partial: 239 files passed, 1 detect-changes-cli timeout under full-suite load; targeted rerun passed 1 file, 4 tests",
+        "live_pr_checks": "passed: pr-impact, CodeQL, dependency review, installer coverage guard, and OS/Node test matrix on PR #154 head e26c555",
+        "pr_impact_artifact": "https://github.com/racecraft-lab/codegraph/actions/runs/29464931728/artifacts/8362594028"
+      },
+      "next": "Await PR review/merge; do not merge without maintainer approval."
+    },
+    "retrospective": {
+      "status": "completed",
+      "file": "specs/020-pr-blast-radius-review-action/retrospective.md"
+    }
   }
 }

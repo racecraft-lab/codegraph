@@ -84,6 +84,8 @@ cp "$ROOT/scripts/npm-sdk.js" "$NPM/main/npm-sdk.js"
 # Ship the type declarations so `types`/`exports.types` resolve. Built from this
 # same release, so they can't skew from the runtime npm-sdk.js re-exports.
 [ -f "$ROOT/dist/index.d.ts" ] || ( echo "[pack-npm] building dist for .d.ts" >&2 && cd "$ROOT" && npm run build >/dev/null )
+( cd "$ROOT" && npm run build:pr-impact-action >/dev/null )
+[ -d "$ROOT/actions" ] && cp -R "$ROOT/actions" "$NPM/main/actions"
 ROOT="$ROOT" DEST="$NPM/main" node -e '
   const fs=require("fs"), path=require("path");
   const src=path.join(process.env.ROOT,"dist"), dest=path.join(process.env.DEST,"dist");
@@ -110,7 +112,7 @@ VERSION="$VERSION" SCOPE="$SCOPE" TARGETS="${targets[*]}" \
         "./package.json": "./package.json"
       },
       optionalDependencies: opt,
-      files: ["npm-shim.js","npm-sdk.js","dist","README.md"],
+      files: ["npm-shim.js","npm-sdk.js","dist","README.md","actions"],
       license: "MIT"
     }, null, 2) + "\n");
   ' "$NPM/main/package.json"
