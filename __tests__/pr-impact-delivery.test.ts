@@ -423,7 +423,11 @@ describe('PR impact report delivery', () => {
       expect(outputs['delivery-status']).toBe('fallback');
       expect(outputs['report-path']).toBe('');
       expect(fs.existsSync(reportPath)).toBe(false);
-      expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('## Summary');
+      const summary = fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8');
+      expect(summary).toContain('## Summary');
+      expect(summary).toContain('- Delivery status: fallback');
+      expect(summary).toContain('- Final conclusion: pass');
+      expect(summary).not.toContain('- Final conclusion: fail-report-unavailable');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

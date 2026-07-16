@@ -70,6 +70,26 @@ describe('detect changes', () => {
     expect(explicitHead.hunks.some((h) => h.newPath === 'src/calculator.ts')).toBe(true);
   });
 
+  it('parses Git-quoted diff headers for non-ASCII paths', () => {
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    fx.git(['config', 'core.quotePath', 'true']);
+    fx.write('src/café.ts', 'export function cafe() {\n  return 1;\n}\n');
+    fx.git(['add', 'src/café.ts']);
+    fx.git(['-c', 'commit.gpgsign=false', 'commit', '-m', 'add cafe', '-q']);
+
+    fx.write('src/café.ts', 'export function cafe() {\n  return 2;\n}\n');
+    const diff = acquireGitDiff(fx.dir, { mode: 'all' });
+
+    expect(diff.hunks).toContainEqual(expect.objectContaining({
+      oldPath: 'src/café.ts',
+      newPath: 'src/café.ts',
+      oldStart: 2,
+      newStart: 2,
+      changeKind: 'modified',
+    }));
+  });
+
   it('maps textual hunks to changed symbols and reports unmapped reason precedence', async () => {
     const fx = await indexedFixture();
     fx.write('src/calculator.ts', [

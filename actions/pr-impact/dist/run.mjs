@@ -118,16 +118,31 @@ export async function runAction(deps = createRunDependencies()) {
         }
     }
     const reportFileWritten = writeReportFile(deps, reportPath, report);
+    const summaryFallbackPossible = delivery.status !== 'comment'
+        && !reportFileWritten
+        && Boolean(deps.env.GITHUB_STEP_SUMMARY);
     delivery = {
         ...delivery,
-        status: delivery.status === 'comment' ? 'comment' : reportFileWritten ? 'fallback' : 'failed',
+        status: delivery.status === 'comment' ? 'comment' : reportFileWritten || summaryFallbackPossible ? 'fallback' : 'failed',
         artifact: reportFileWritten ? 'pending' : 'failed',
-        summary: writeSummary(deps, report),
+        summary: 'failed',
     };
     conclusion = determineConclusion(detector, delivery.status !== 'failed');
-    if (delivery.status === 'failed' && delivery.summary === 'written') {
-        delivery = { ...delivery, status: 'fallback' };
-        conclusion = determineConclusion(detector, true);
+    report = renderReport({
+        inputs,
+        context,
+        detector,
+        delivery,
+        narrative,
+        conclusion,
+        cacheStatus,
+        artifactName,
+        recordedAt: deps.now().toISOString(),
+    });
+    delivery = { ...delivery, summary: writeSummary(deps, report) };
+    if (delivery.status === 'fallback' && !reportFileWritten && delivery.summary !== 'written') {
+        delivery = { ...delivery, status: 'failed' };
+        conclusion = determineConclusion(detector, false);
         report = renderReport({
             inputs,
             context,
@@ -139,9 +154,9 @@ export async function runAction(deps = createRunDependencies()) {
             artifactName,
             recordedAt: deps.now().toISOString(),
         });
-        if (reportFileWritten)
-            writeReportFile(deps, reportPath, report);
     }
+    if (reportFileWritten)
+        writeReportFile(deps, reportPath, report);
     emitOutput(deps, 'summary-status', detector.summary.status);
     emitOutput(deps, 'detector-exit-code', String(detector.exitCode));
     emitOutput(deps, 'conclusion', conclusion);
@@ -257,7 +272,7 @@ function prDiffNeedsBaseIndex(deps, mergeBase, headSha) {
             env: deps.env,
             stdio: ['ignore', 'pipe', 'pipe'],
         }));
-        if (nameStatus.split('\0').some((part) => part.startsWith('D')))
+        if (nameStatusHasDeletedFile(nameStatus))
             return true;
         const patch = String(deps.execFileSync('git', ['diff', '--no-ext-diff', '--no-color', '--unified=0', mergeBase, headSha || 'HEAD', '--'], {
             encoding: 'utf8',
@@ -269,6 +284,16 @@ function prDiffNeedsBaseIndex(deps, mergeBase, headSha) {
     catch {
         return null;
     }
+}
+function nameStatusHasDeletedFile(output) {
+    const parts = output.split('\0').filter(Boolean);
+    for (let i = 0; i < parts.length;) {
+        const status = parts[i++];
+        if (status.startsWith('D'))
+            return true;
+        i += status.startsWith('R') || status.startsWith('C') ? 2 : 1;
+    }
+    return false;
 }
 function isPlainCodeGraphDirName(dir) {
     return dir !== ''
@@ -482,7 +507,7 @@ function readPullRequestContext(deps, inputs) {
         pullNumber,
         baseRef,
         headSha,
-        mergeBase: resolveMergeBase(deps, baseRef, headSha, baseSha),
+        mergeBase: resolveMergeBase(deps, baseRef, headSha, baseSha, Boolean(inputs.baseRef)),
         runId: deps.env.GITHUB_RUN_ID ?? 'unknown',
         runAttempt: deps.env.GITHUB_RUN_ATTEMPT ?? 'unknown',
         isForkLike,
@@ -505,15 +530,17 @@ function resolveDetectorBaseRef(inputs, context) {
         return context.baseRef.includes('/') ? context.baseRef : `origin/${context.baseRef}`;
     return 'HEAD^';
 }
-function resolveMergeBase(deps, baseRef, headSha, fallbackBaseSha) {
+function resolveMergeBase(deps, baseRef, headSha, fallbackBaseSha, explicitBaseRef = false) {
     if (deps.env.PR_IMPACT_MERGE_BASE)
         return deps.env.PR_IMPACT_MERGE_BASE;
     if (headSha) {
-        const candidates = [
-            fallbackBaseSha,
+        const baseRefCandidates = [
             baseRef,
             baseRef && !baseRef.includes('/') ? `origin/${baseRef}` : '',
         ].filter(Boolean);
+        const candidates = explicitBaseRef
+            ? baseRefCandidates
+            : [fallbackBaseSha, ...baseRefCandidates].filter(Boolean);
         for (const candidate of [...new Set(candidates)]) {
             try {
                 const mergeBase = String(deps.execFileSync('git', ['merge-base', candidate, headSha], {
@@ -530,7 +557,7 @@ function resolveMergeBase(deps, baseRef, headSha, fallbackBaseSha) {
             }
         }
     }
-    return fallbackBaseSha || null;
+    return explicitBaseRef ? null : fallbackBaseSha || null;
 }
 function trustedContextFor(deps, isForkLike) {
     if (deps.env.GITHUB_ACTOR === 'dependabot[bot]')

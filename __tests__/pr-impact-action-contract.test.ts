@@ -399,6 +399,73 @@ describe('PR impact action contract', () => {
     }
   });
 
+  it('does not mistake paths beginning with D for deleted-file statuses', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-base-index-d-path-'));
+    try {
+      const calls: Array<{ command: string; args: string[]; codegraphDir?: string }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.5.0',
+          INPUT_BASE_REF: 'origin/main',
+          PR_IMPACT_CODEGRAPH_BIN: '/tmp/codegraph-bin',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          PR_IMPACT_MERGE_BASE: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          PR_IMPACT_PREPARE_BASE_INDEX: 'true',
+          GITHUB_SHA: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          GITHUB_RUN_ID: '202',
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        cpSync: () => undefined,
+        mkdirSync: fs.mkdirSync,
+        rmSync: fs.rmSync,
+        writeFileSync: fs.writeFileSync,
+        execFileSync: (command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
+          calls.push({ command, args, codegraphDir: options?.env?.CODEGRAPH_DIR });
+          if (command === 'git' && args[0] === 'diff' && args.includes('--name-status')) return 'A\0Docs/new.ts\0';
+          if (command === 'git' && args[0] === 'diff') return [
+            'diff --git a/Docs/new.ts b/Docs/new.ts',
+            'new file mode 100644',
+            '@@ -0,0 +1 @@',
+            '+export const docs = true;',
+            '',
+          ].join('\n');
+          if (command === 'git' && args[0] === 'worktree') throw new Error('base worktree should not be prepared');
+          return JSON.stringify({
+            summary: {
+              status: 'impact',
+              baseRef: 'origin/main',
+              changedSymbolCount: 1,
+              unmappedHunkCount: 0,
+              callerCount: 0,
+              affectedFlowCount: 0,
+              riskCount: 0,
+              warningCount: 0,
+            },
+            exitCode: 1,
+            changedSymbols: [],
+            unmappedHunks: [],
+            callers: [],
+            affectedFlows: { state: 'empty', items: [], truncated: false },
+            risks: [],
+            warnings: [],
+            limits: { callerDepth: 1, maxCallers: 20 },
+          });
+        },
+      } as any);
+
+      expect(calls.some((call) => call.command === 'git' && call.args[0] === 'worktree')).toBe(false);
+      const detectorCall = calls.find((call) => call.command === '/tmp/codegraph-bin' && call.args[0] === 'detect-changes');
+      expect(detectorCall?.args).not.toContain('--base-index-dir');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('emits unavailable analysis when deleted-file base index preparation fails', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-base-index-fail-'));
     try {
@@ -615,6 +682,74 @@ describe('PR impact action contract', () => {
       expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-ref', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']));
       expect(detectorCall?.args).toEqual(expect.arrayContaining(['--head-ref', '0000000000000000000000000000000000000002']));
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Merge base: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves an explicit base-ref without falling back to the pull request event base SHA', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-explicit-base-'));
+    try {
+      const eventPath = path.join(tmp, 'event.json');
+      fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
+      const calls: Array<{ command: string; args: string[] }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.4.1',
+          INPUT_BASE_REF: 'release/next',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        mkdirSync: fs.mkdirSync,
+        writeFileSync: fs.writeFileSync,
+        readFileSync: fs.readFileSync,
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          if (command === 'git') {
+            if (args[1] === '0000000000000000000000000000000000000001') {
+              throw new Error('event base SHA must not be used for explicit base-ref');
+            }
+            if (args[1] === 'release/next') {
+              return 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n';
+            }
+            throw new Error(`unexpected merge-base candidate ${args[1]}`);
+          }
+          return JSON.stringify({
+            summary: {
+              status: 'impact',
+              baseRef: 'release/next',
+              changedSymbolCount: 0,
+              unmappedHunkCount: 0,
+              callerCount: 0,
+              affectedFlowCount: 0,
+              riskCount: 0,
+              warningCount: 0,
+            },
+            exitCode: 1,
+            changedSymbols: [],
+            unmappedHunks: [],
+            callers: [],
+            affectedFlows: { state: 'empty', items: [], truncated: false },
+            risks: [],
+            warnings: [],
+            limits: { callerDepth: 1, maxCallers: 20 },
+          });
+        },
+      } as any);
+
+      expect(calls.filter((call) => call.command === 'git').map((call) => call.args)).toEqual([
+        ['merge-base', 'release/next', '0000000000000000000000000000000000000002'],
+      ]);
+      const detectorCall = calls.find((call) => call.command === 'codegraph');
+      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-ref', 'release/next']));
+      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--head-ref', '0000000000000000000000000000000000000002']));
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Merge base: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
