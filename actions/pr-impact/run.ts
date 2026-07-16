@@ -231,7 +231,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
     : baseIndex.status === 'failed'
       ? createUnavailableDetector(inputs, baseIndex.message, effectiveBaseRef)
       : runDetector(deps, inputs, context, baseIndex.dir);
-  const narrative = createInitialNarrative(inputs, context, deps);
+  let narrative = createInitialNarrative(inputs, context, deps, false);
   let delivery = createInitialDelivery(reportPath);
   let conclusion = determineConclusion(detector, delivery.status !== 'failed');
   const preliminaryReport = renderReport({
@@ -248,6 +248,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
 
   const preliminaryReportFileWritten = writeReportFile(deps, reportPath, preliminaryReport);
   delivery = await deliverReportComment(deps, context, preliminaryReport, reportPath, preliminaryReportFileWritten);
+  narrative = createInitialNarrative(inputs, context, deps, delivery.status === 'comment');
   conclusion = determineConclusion(detector, delivery.status !== 'failed');
   let report = renderReport({
     inputs,
@@ -268,6 +269,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
         status: preliminaryReportFileWritten ? 'fallback' : 'failed',
         comment: 'failed',
       };
+      narrative = createInitialNarrative(inputs, context, deps, false);
       conclusion = determineConclusion(detector, delivery.status !== 'failed');
       report = renderReport({
         inputs,
@@ -441,10 +443,26 @@ function prDiffNeedsBaseIndex(deps: RunDependencies, mergeBase: string, headSha:
       env: deps.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     }));
-    return patch.split(/\r?\n/).some((line) => line.startsWith('-') && !line.startsWith('--- '));
+    return patchDeletesContent(patch);
   } catch {
     return null;
   }
+}
+
+function patchDeletesContent(patch: string): boolean {
+  let inHunk = false;
+  for (const line of patch.split(/\r?\n/)) {
+    if (line.startsWith('diff --git ')) {
+      inHunk = false;
+      continue;
+    }
+    if (line.startsWith('@@ ')) {
+      inHunk = true;
+      continue;
+    }
+    if (inHunk && line.startsWith('-')) return true;
+  }
+  return false;
 }
 
 function nameStatusHasDeletedFile(output: string): boolean {
@@ -695,8 +713,8 @@ function resolveBaseRef(inputs: ActionInputs, context: PullRequestContext): stri
 }
 
 function resolveDetectorBaseRef(inputs: ActionInputs, context: PullRequestContext): string {
-  if (inputs.baseRef) return inputs.baseRef;
   if (context.mergeBase) return context.mergeBase;
+  if (inputs.baseRef) return inputs.baseRef;
   if (context.baseRef) return context.baseRef.includes('/') ? context.baseRef : `origin/${context.baseRef}`;
   return 'HEAD^';
 }
@@ -710,10 +728,7 @@ function resolveMergeBase(
 ): string | null {
   if (deps.env.PR_IMPACT_MERGE_BASE) return deps.env.PR_IMPACT_MERGE_BASE;
   if (headSha) {
-    const baseRefCandidates = [
-      baseRef,
-      baseRef && !baseRef.includes('/') ? `origin/${baseRef}` : '',
-    ].filter(Boolean);
+    const baseRefCandidates = baseRefMergeCandidates(baseRef);
     const candidates = explicitBaseRef
       ? baseRefCandidates
       : [fallbackBaseSha, ...baseRefCandidates].filter(Boolean);
@@ -732,6 +747,15 @@ function resolveMergeBase(
     }
   }
   return explicitBaseRef ? null : fallbackBaseSha || null;
+}
+
+function baseRefMergeCandidates(baseRef: string): string[] {
+  if (!baseRef) return [];
+  const candidates = [baseRef];
+  if (!baseRef.startsWith('origin/')) {
+    candidates.push(`origin/${baseRef}`);
+  }
+  return [...new Set(candidates)];
 }
 
 function trustedContextFor(deps: RunDependencies, isForkLike: boolean): boolean {
@@ -1004,7 +1028,7 @@ function writeSummary(deps: RunDependencies, report: string): DeliveryResult['su
   }
 }
 
-function createInitialNarrative(inputs: ActionInputs, context: PullRequestContext, deps: RunDependencies): NarrativeResult {
+function createInitialNarrative(inputs: ActionInputs, context: PullRequestContext, deps: RunDependencies, privilegedDeliveryObserved: boolean): NarrativeResult {
   if (inputs.narrative === 'off') {
     return {
       status: 'disabled',
@@ -1012,7 +1036,7 @@ function createInitialNarrative(inputs: ActionInputs, context: PullRequestContex
       handle: null,
     };
   }
-  if (inputs.narrative === 'trusted' && !hasTrustedWriteToken(deps, context)) {
+  if (inputs.narrative === 'trusted' && (!hasTrustedWriteToken(deps, context) || !privilegedDeliveryObserved)) {
     return {
       status: 'suppressed',
       text: null,

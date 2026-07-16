@@ -12,11 +12,12 @@ function outputMap(raw: string): Record<string, string> {
   }));
 }
 
-async function runNarrative(status: string, event: unknown = prImpactGitHubEvent) {
+async function runNarrative(status: string, event: unknown = prImpactGitHubEvent, commentWritable = true) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-narrative-'));
   try {
     const eventPath = path.join(tmp, 'event.json');
     fs.writeFileSync(eventPath, JSON.stringify(event), 'utf8');
+    const comments: Array<{ id: number; body: string; created_at: string; html_url: string; user: { login: string } }> = [];
     await runAction({
       env: {
         INPUT_CODEGRAPH_VERSION: '1.4.1',
@@ -40,7 +41,40 @@ async function runNarrative(status: string, event: unknown = prImpactGitHubEvent
       writeFileSync: fs.writeFileSync,
       readFileSync: fs.readFileSync,
       execFileSync: () => JSON.stringify(prImpactDetectorResults.impact),
-      fetch: async () => ({ ok: false, status: 403, json: async () => ({}) }),
+      fetch: async (_url: string, init?: { method?: string; body?: string }) => {
+        if (!commentWritable) return { ok: false, status: 403, json: async () => ({}) };
+        const method = init?.method ?? 'GET';
+        if (method === 'GET') return { ok: true, status: 200, json: async () => comments };
+        if (method === 'POST') {
+          comments.push({
+            id: 1,
+            body: String(init?.body ?? ''),
+            created_at: '2026-07-15T00:00:00Z',
+            html_url: 'https://example.test/comment/1',
+            user: { login: 'github-actions[bot]' },
+          });
+          return {
+            ok: true,
+            status: 201,
+            json: async () => ({
+              id: 1,
+              body: String(init?.body ?? ''),
+              html_url: 'https://example.test/comment/1',
+              user: { login: 'github-actions[bot]' },
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 1,
+            body: String(init?.body ?? ''),
+            html_url: 'https://example.test/comment/1',
+            user: { login: 'github-actions[bot]' },
+          }),
+        };
+      },
     } as any);
     return {
       outputs: outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8')),
@@ -53,17 +87,18 @@ async function runNarrative(status: string, event: unknown = prImpactGitHubEvent
 
 describe('PR impact narrative behavior', () => {
   it('keeps disabled, suppressed, unavailable, fallback, pending, and appended narrative from changing deterministic facts', async () => {
-    const cases = [
+    const cases: Array<{ requested: string; expected: string; event: unknown; commentWritable?: boolean }> = [
       { requested: 'disabled', expected: 'disabled', event: prImpactGitHubEvent },
       { requested: 'fallback', expected: 'fallback', event: prImpactGitHubEvent },
       { requested: 'pending', expected: 'pending', event: prImpactGitHubEvent },
       { requested: 'appended', expected: 'appended', event: prImpactGitHubEvent },
       { requested: 'unavailable', expected: 'unavailable', event: prImpactGitHubEvent },
       { requested: 'appended', expected: 'suppressed', event: prImpactForkEvent },
+      { requested: 'appended', expected: 'suppressed', event: prImpactGitHubEvent, commentWritable: false },
     ];
 
     for (const testCase of cases) {
-      const { outputs, report } = await runNarrative(testCase.requested, testCase.event);
+      const { outputs, report } = await runNarrative(testCase.requested, testCase.event, testCase.commentWritable ?? true);
       expect(outputs['summary-status']).toBe('impact');
       expect(outputs.conclusion).toBe('pass');
       expect(outputs['narrative-status']).toBe(testCase.expected);

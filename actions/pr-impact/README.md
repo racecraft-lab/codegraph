@@ -24,7 +24,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-      - uses: ./actions/pr-impact
+      - uses: racecraft-lab/codegraph/actions/pr-impact@<immutable-ref>
         with:
           codegraph-version: "1.5.0"
           fail-on-callers: ""

@@ -62,8 +62,8 @@ export function enrichImpact(
   }
 
   applyFailOnPolicies(report, failOn);
-  report.callers = callers.slice(0, report.limits.maxCallers);
   enrichAffectedFlows(cg, report, baseGraph);
+  report.callers = callers.slice(0, report.limits.maxCallers);
 }
 
 function collectCallers(

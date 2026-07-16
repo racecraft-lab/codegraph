@@ -207,6 +207,49 @@ describe('detect changes', () => {
     }
   });
 
+  it('reports deleted symbols from mixed replacement hunks inside retained files', async () => {
+    const previousDir = process.env.CODEGRAPH_DIR;
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    await indexFixture(fx);
+    fx.write('src/calculator.ts', [
+      'export function computeSubtotal(value: number) {',
+      '  return value + 2;',
+      '}',
+      '',
+      'export function renderTotal() {',
+      '  return computeSubtotal(41);',
+      '}',
+      '',
+    ].join('\n'));
+
+    process.env.CODEGRAPH_DIR = '.codegraph-head-replacement-test';
+    const headGraph = CodeGraph.initSync(fx.dir);
+    try {
+      await headGraph.indexAll();
+      const report = await detectChanges(headGraph, { mode: 'all', failOn: 'callers>0' }, { baseGraph: fx.cg });
+
+      expect(report.changedSymbols).toContainEqual(expect.objectContaining({
+        name: 'computeSubtotal',
+        changeType: 'modified',
+      }));
+      expect(report.changedSymbols).toContainEqual(expect.objectContaining({
+        name: 'computeTotal',
+        changeType: 'deleted',
+        filePath: 'src/calculator.ts',
+      }));
+      expect(report.callers).toContainEqual(expect.objectContaining({
+        name: 'renderTotal',
+      }));
+      expect(report.summary.status).toBe('threshold_breach');
+    } finally {
+      headGraph.close();
+      if (previousDir === undefined) delete process.env.CODEGRAPH_DIR;
+      else process.env.CODEGRAPH_DIR = previousDir;
+      fs.rmSync(path.join(fx.dir, '.codegraph-head-replacement-test'), { recursive: true, force: true });
+    }
+  });
+
   it('does not report a surviving symbol as deleted when only one line is removed', async () => {
     const previousDir = process.env.CODEGRAPH_DIR;
     fixture = createDetectChangesFixture();
@@ -470,6 +513,89 @@ describe('detect changes', () => {
       name: 'Late affected flow',
     }));
     expect(report.limits.truncatedFlows).toBe(false);
+  });
+
+  it('matches affected flows from callers beyond the displayed caller cap', () => {
+    const report = buildInitialReport({
+      mode: 'all',
+      baseRef: null,
+      headRef: null,
+      format: 'json',
+      failOn: null,
+      callerDepth: 1,
+      maxCallers: 1,
+      projectPath: undefined,
+    }, [
+      {
+        id: 'symbol:1',
+        nodeId: 'node:changed',
+        name: 'changed',
+        qualifiedName: 'changed',
+        kind: 'function',
+        filePath: 'src/changed.ts',
+        startLine: 1,
+        endLine: 3,
+        changeType: 'modified',
+        hunkIds: ['hunk:1'],
+      },
+    ], [], []);
+    const callerA = {
+      id: 'node:caller-a',
+      name: 'callerA',
+      qualifiedName: 'callerA',
+      kind: 'function',
+      filePath: 'src/a.ts',
+      startLine: 1,
+      endLine: 3,
+    };
+    const callerB = {
+      id: 'node:caller-b',
+      name: 'callerB',
+      qualifiedName: 'callerB',
+      kind: 'function',
+      filePath: 'src/b.ts',
+      startLine: 1,
+      endLine: 3,
+    };
+    const cg = {
+      getProjectRoot: () => process.cwd(),
+      getFiles: () => [],
+      getNodesInFile: () => [],
+      getCallers: (nodeId: string) => nodeId === 'node:changed'
+        ? [
+          { node: callerA, edge: { kind: 'call' as const } },
+          { node: callerB, edge: { kind: 'call' as const } },
+        ]
+        : [],
+      listFlows: (limit: number, offset: number) => ({
+        items: offset === 0 ? [{ id: 'flow:caller-b', name: 'Caller B flow', entryKind: 'function', stepCount: 1, truncated: false }] : [],
+        total: 1,
+        limit,
+        offset,
+        sourceVersion: 1,
+        state: 'available' as const,
+      }),
+      getFlowById: () => ({
+        found: true,
+        flow: {
+          id: 'flow:caller-b',
+          name: 'Caller B flow',
+          entryKind: 'function',
+          steps: [{ nodeId: 'node:caller-b' }],
+          truncated: false,
+        },
+      }),
+    };
+
+    enrichImpact(cg, report);
+
+    expect(report.callers).toHaveLength(1);
+    expect(report.limits.truncatedCallers).toBe(true);
+    expect(report.affectedFlows.items).toContainEqual(expect.objectContaining({
+      flowId: 'flow:caller-b',
+      name: 'Caller B flow',
+      matchedNodeIds: ['node:caller-b'],
+    }));
   });
 
   it('matches base graph flows for deleted symbols', () => {

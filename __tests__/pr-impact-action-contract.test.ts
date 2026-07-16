@@ -108,6 +108,7 @@ describe('PR impact action contract', () => {
     expect(action).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(action).toContain("steps.pr-impact.outputs.cache-status == 'rebuilt'");
     expect(readme).toContain('codegraph-version: "1.5.0"');
+    expect(readme).toContain('uses: racecraft-lab/codegraph/actions/pr-impact@<immutable-ref>');
     expect(readme).toContain('| `codegraph-version` | `1.5.0` |');
     expect(readme).not.toContain('1.4.1');
     expect(pkg.files).toContain('actions');
@@ -367,7 +368,7 @@ describe('PR impact action contract', () => {
           if (command === 'git' && args[0] === 'diff') return [
             'diff --git a/src/calculator.ts b/src/calculator.ts',
             '@@ -2 +1,0 @@ export function computeTotal(value: number) {',
-            '---- removed documentation divider',
+            '--- removed Lua-style comment',
             '',
           ].join('\n');
           if (command === 'git' && args[0] === 'worktree') return '';
@@ -723,6 +724,9 @@ describe('PR impact action contract', () => {
               throw new Error('event base SHA must not be used for explicit base-ref');
             }
             if (args[1] === 'release/next') {
+              throw new Error('local branch unavailable');
+            }
+            if (args[1] === 'origin/release/next') {
               return 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n';
             }
             throw new Error(`unexpected merge-base candidate ${args[1]}`);
@@ -752,9 +756,10 @@ describe('PR impact action contract', () => {
 
       expect(calls.filter((call) => call.command === 'git').map((call) => call.args)).toEqual([
         ['merge-base', 'release/next', '0000000000000000000000000000000000000002'],
+        ['merge-base', 'origin/release/next', '0000000000000000000000000000000000000002'],
       ]);
       const detectorCall = calls.find((call) => call.command === 'codegraph');
-      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-ref', 'release/next']));
+      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-ref', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']));
       expect(detectorCall?.args).toEqual(expect.arrayContaining(['--head-ref', '0000000000000000000000000000000000000002']));
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Merge base: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
     } finally {

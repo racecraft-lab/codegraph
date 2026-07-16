@@ -184,13 +184,17 @@ function intersectingSymbolsForHunk(
     }
   }
 
-  if (oldSideOnlyHunk && baseGraph && hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) {
+  if (hunk.changeKind !== 'added' && baseGraph && hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) {
     const headNodes = headGraph.getNodesInFile(filePath).filter(isReportableSymbol);
     for (const node of symbolsIntersecting(baseGraph, hunk.oldPath, hunkRange(hunk, 'old'))) {
       const equivalent = findHeadEquivalent(node, headNodes);
-      results.push(equivalent
-        ? { node: equivalent, changeType: symbolChangeType(hunk) }
-        : { node, changeType: 'deleted' });
+      if (!equivalent) {
+        results.push({ node, changeType: 'deleted' });
+        continue;
+      }
+      if (!results.some((result) => result.node.id === equivalent.id)) {
+        results.push({ node: equivalent, changeType: symbolChangeType(hunk) });
+      }
     }
   }
 
