@@ -35,6 +35,7 @@ function deps(tmp: string, overrides: Record<string, unknown> = {}) {
       INPUT_BASE_REF: 'main',
       INPUT_CALLER_DEPTH: '2',
       INPUT_MAX_CALLERS: '40',
+      PR_IMPACT_CACHE_STATUS: 'warm-valid',
       GITHUB_EVENT_NAME: 'pull_request',
       GITHUB_EVENT_PATH: eventPath,
       GITHUB_REPOSITORY: 'racecraft-lab/codegraph',

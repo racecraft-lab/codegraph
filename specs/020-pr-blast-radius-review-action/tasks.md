@@ -159,15 +159,15 @@
 
 **Purpose**: Documentation, changelog, package inclusion, review packet, and final verification.
 
-- [ ] T052 [P] Add user-facing setup, inputs, outputs, fallback, threshold, cache, fork, and narrative documentation in `actions/pr-impact/README.md`
-- [ ] T053 [P] Add a user-facing `## [Unreleased]` changelog bullet for the reusable PR impact action in `CHANGELOG.md`
-- [ ] T054 Verify package inclusion for `actions/pr-impact/action.yml`, `actions/pr-impact/run.ts`, and `actions/pr-impact/dist/run.mjs` in `package.json`
-- [ ] T055 Run focused action contract, cache, delivery, result-matrix, narrative, runtime-freshness, and dogfood tests and record evidence in `specs/020-pr-blast-radius-review-action/quickstart.md`
-- [ ] T056 Run `npm run build`, `npm run typecheck`, and `npm test`, then record final verification evidence in `specs/020-pr-blast-radius-review-action/quickstart.md`
-- [ ] T057 Record at least five eligible self-repository warm-cache sample rows, exclusion decisions, and median duration in `specs/020-pr-blast-radius-review-action/quickstart.md`
-- [ ] T058 Run the SpecKit reviewability gate and record the pass/warn/blocker result in `specs/020-pr-blast-radius-review-action/plan.md`
-- [ ] T059 Generate the PR review packet with review order, scope budget, traceability, verification evidence, known gaps, and rollback notes in `specs/020-pr-blast-radius-review-action/pr-review-packet.md`
-- [ ] T060 Regenerate `specs/020-pr-blast-radius-review-action/SPEC-MOC.md` after final docs and task artifacts are present
+- [X] T052 [P] Add user-facing setup, inputs, outputs, fallback, threshold, cache, fork, and narrative documentation in `actions/pr-impact/README.md`
+- [X] T053 [P] Add a user-facing `## [Unreleased]` changelog bullet for the reusable PR impact action in `CHANGELOG.md`
+- [X] T054 Verify package inclusion for `actions/pr-impact/action.yml`, `actions/pr-impact/run.ts`, and `actions/pr-impact/dist/run.mjs` in `package.json`
+- [X] T055 Run focused action contract, cache, delivery, result-matrix, narrative, runtime-freshness, and dogfood tests and record evidence in `specs/020-pr-blast-radius-review-action/quickstart.md`
+- [X] T056 Run `npm run build`, `npm run typecheck`, and `npm test`, then record final verification evidence in `specs/020-pr-blast-radius-review-action/quickstart.md`
+- [X] T057 Record at least five eligible self-repository warm-cache sample rows, exclusion decisions, and median duration in `specs/020-pr-blast-radius-review-action/quickstart.md`
+- [X] T058 Run the SpecKit reviewability gate and record the pass/warn/blocker result in `specs/020-pr-blast-radius-review-action/plan.md`
+- [X] T059 Generate the PR review packet with review order, scope budget, traceability, verification evidence, known gaps, and rollback notes in `specs/020-pr-blast-radius-review-action/pr-review-packet.md`
+- [X] T060 Regenerate `specs/020-pr-blast-radius-review-action/SPEC-MOC.md` after final docs and task artifacts are present
 
 ---
 

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -98,6 +99,21 @@ export interface NarrativeResult {
   handle: string | null;
 }
 
+export interface CacheIdentity {
+  codegraphVersion: string;
+  baseRef: string;
+  headSha: string;
+  mergeBase: string;
+  lockfileHash: string;
+}
+
+interface CacheMetadata {
+  schemaVersion: 1;
+  helperVersion: string;
+  recordedAt: string;
+  identity: CacheIdentity;
+}
+
 export interface RunResult {
   inputs: ActionInputs;
   detector: DetectorResult;
@@ -182,7 +198,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   const context = readPullRequestContext(deps, inputs);
   const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
   const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
-  const cacheStatus = resolveCacheStatus(deps);
+  const cacheStatus = prepareCache(deps, inputs, context);
   const detector = cacheStatus === 'unavailable'
     ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.')
     : runDetector(deps, inputs);
@@ -233,10 +249,92 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   return { inputs, detector, delivery, narrative, conclusion, report };
 }
 
-function resolveCacheStatus(deps: RunDependencies): CacheStatus {
-  const requested = deps.env.PR_IMPACT_CACHE_STATUS;
-  if (isCacheStatus(requested)) return requested;
-  return 'miss';
+function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: PullRequestContext): CacheStatus {
+  const explicitStatus = deps.env.PR_IMPACT_CACHE_STATUS;
+  if (isCacheStatus(explicitStatus)) return explicitStatus;
+
+  const identity = cacheIdentity(deps, inputs, context);
+  const metadataPath = deps.env.PR_IMPACT_CACHE_METADATA_PATH ?? '.codegraph/pr-impact-cache.json';
+  const restoreHit = deps.env.PR_IMPACT_CACHE_RESTORE_HIT === 'true';
+  const restoredStatus = restoreHit ? validateCacheMetadata(deps, metadataPath, identity) : 'miss';
+  if (restoredStatus === 'warm-valid') return restoredStatus;
+
+  if (!rebuildCodeGraphIndex(deps)) return 'unavailable';
+  writeCacheMetadata(deps, metadataPath, identity);
+  return 'rebuilt';
+}
+
+function cacheIdentity(deps: RunDependencies, inputs: ActionInputs, context: PullRequestContext): CacheIdentity {
+  return {
+    codegraphVersion: inputs.codegraphVersion,
+    baseRef: inputs.baseRef || context.baseRef || 'HEAD^',
+    headSha: context.headSha || deps.env.GITHUB_SHA || 'unknown',
+    mergeBase: context.mergeBase ?? 'unknown',
+    lockfileHash: hashFirstExistingFile(deps, ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml']),
+  };
+}
+
+function validateCacheMetadata(
+  deps: RunDependencies,
+  metadataPath: string,
+  expected: CacheIdentity,
+): CacheStatus {
+  let metadata: CacheMetadata;
+  try {
+    metadata = JSON.parse(String(deps.readFileSync(metadataPath, 'utf8'))) as CacheMetadata;
+  } catch {
+    return 'corrupt';
+  }
+  if (metadata.schemaVersion !== 1 || metadata.identity === null || typeof metadata.identity !== 'object') {
+    return 'corrupt';
+  }
+  if (metadata.identity.codegraphVersion !== expected.codegraphVersion) {
+    return 'incompatible';
+  }
+  for (const field of ['baseRef', 'headSha', 'mergeBase', 'lockfileHash'] as const) {
+    if (metadata.identity[field] !== expected[field]) return 'stale';
+  }
+  return 'warm-valid';
+}
+
+function rebuildCodeGraphIndex(deps: RunDependencies): boolean {
+  try {
+    deps.execFileSync('codegraph', ['index'], {
+      encoding: 'utf8',
+      env: deps.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writeCacheMetadata(deps: RunDependencies, metadataPath: string, identity: CacheIdentity): void {
+  try {
+    deps.mkdirSync(dirname(metadataPath), { recursive: true });
+    const metadata: CacheMetadata = {
+      schemaVersion: 1,
+      helperVersion: HELPER_VERSION,
+      recordedAt: new Date().toISOString(),
+      identity,
+    };
+    deps.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+  } catch {
+    // A metadata write failure should not make a freshly rebuilt index unusable
+    // for the current analysis; the next run will simply rebuild again.
+  }
+}
+
+function hashFirstExistingFile(deps: RunDependencies, paths: string[]): string {
+  for (const path of paths) {
+    try {
+      return createHash('sha256').update(String(deps.readFileSync(path, 'utf8'))).digest('hex');
+    } catch {
+      // Try the next lockfile name.
+    }
+  }
+  return 'missing';
 }
 
 function writeReportFile(deps: RunDependencies, reportPath: string, report: string): boolean {
@@ -591,7 +689,7 @@ function renderReport(args: {
     '## Fallback delivery note',
     '',
     `- Report path: ${delivery.reportPath}`,
-    '- Comment delivery is not attempted by the setup scaffold.',
+    '- Comment delivery is attempted only when a trusted pull-request token is available.',
     '',
   ];
   if (narrative.text && (narrative.status === 'fallback' || narrative.status === 'pending' || narrative.status === 'appended')) {

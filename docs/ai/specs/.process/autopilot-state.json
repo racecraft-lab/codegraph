@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Phase 7: Implement - T052",
-  "updated_at": "2026-07-16T00:14:00Z",
+  "active_step": "Post: Doctor Extension Check",
+  "updated_at": "2026-07-16T00:25:00Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -28,8 +28,8 @@
     {"step": "Phase 6: Analyze", "status": "completed"},
     {"step": "Phase 6: Analyze - Consensus", "status": "completed"},
     {"step": "Phase 6.5: Confidence Gate", "status": "completed"},
-    {"step": "Phase 7: Implement - Pending task decomposition", "status": "in_progress"},
-    {"step": "Post: Doctor Extension Check", "status": "pending"},
+    {"step": "Phase 7: Implement - Pending task decomposition", "status": "completed"},
+    {"step": "Post: Doctor Extension Check", "status": "in_progress"},
     {"step": "Post: Verify Implementation", "status": "pending"},
     {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
     {"step": "Post: Code Review", "status": "pending"},
@@ -445,9 +445,9 @@
     "iterations": 0
   },
   "phase7": {
-    "status": "in_progress",
-    "current_task": "T052",
-    "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016", "T017", "T018", "T019", "T020", "T021", "T022", "T023", "T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031", "T032", "T033", "T034", "T035", "T036", "T037", "T038", "T039", "T040", "T041", "T042", "T043", "T044", "T045", "T046", "T047", "T048", "T049", "T050", "T051"],
+    "status": "completed",
+    "current_task": null,
+    "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016", "T017", "T018", "T019", "T020", "T021", "T022", "T023", "T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031", "T032", "T033", "T034", "T035", "T036", "T037", "T038", "T039", "T040", "T041", "T042", "T043", "T044", "T045", "T046", "T047", "T048", "T049", "T050", "T051", "T052", "T053", "T054", "T055", "T056", "T057", "T058", "T059", "T060"],
     "baseline": {
       "recorded_at": "2026-07-15T23:54:02Z",
       "node": "v24.11.1",
@@ -461,6 +461,37 @@
         "errors": 91,
         "note": "Full suite failed before SPEC-020 implementation edits due local socket/listen EPERM, sandboxed temp-git/GPG behavior, local endpoint/LLM/embedding timeouts, and watcher timeout behavior."
       }
+    },
+    "final_verification": {
+      "focused_pr_impact_tests": {
+        "status": "passed",
+        "test_files": 6,
+        "tests": 22
+      },
+      "build": "passed",
+      "typecheck": "passed",
+      "full_test": {
+        "status": "passed",
+        "test_files": 240,
+        "tests_passed": 3949,
+        "tests_skipped": 7,
+        "duration_seconds": 70.68
+      },
+      "reviewability_gate": {
+        "status": "warn",
+        "pass": true,
+        "reviewable_loc": 455,
+        "production_files": 4,
+        "total_files": 11,
+        "warnings": ["reviewable LOC 455 exceeds warn threshold 400"],
+        "blockers": []
+      },
+      "warm_cache_samples": {
+        "eligible_samples": 5,
+        "median_seconds": 149,
+        "target_seconds": 180
+      },
+      "known_gap": "Live GitHub dogfood artifact URL is pending until the branch is pushed and opened as a pull request."
     }
   }
 }

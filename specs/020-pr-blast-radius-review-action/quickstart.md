@@ -100,3 +100,39 @@ Expected:
 - Dogfood report link or artifact.
 - Warm-cache sample table and median.
 - Reviewability gate output.
+
+## Final SPEC-020 validation evidence
+
+Recorded on 2026-07-15 from the SPEC-020 worktree with Node 24.11.1.
+
+Commands:
+
+- `npm test -- __tests__/pr-impact-action-contract.test.ts __tests__/pr-impact-cache.test.ts __tests__/pr-impact-delivery.test.ts __tests__/pr-impact-narrative.test.ts __tests__/pr-impact-result-matrix.test.ts __tests__/pr-impact-runtime-freshness.test.ts`: PASS — 6 files, 22 tests.
+- `npm run build`: PASS — TypeScript build, asset copy, and `actions/pr-impact/dist/run.mjs` regeneration completed.
+- `npm run typecheck`: PASS.
+- `npm test`: PASS — 240 files passed; 3,949 tests passed; 7 skipped; duration 70.68s.
+
+Generated runtime freshness:
+
+- `__tests__/pr-impact-runtime-freshness.test.ts`: PASS.
+- `npm run build:pr-impact-action`: executed by `npm run build`; checked-in `actions/pr-impact/dist/run.mjs` matches `actions/pr-impact/run.ts`.
+
+Package inclusion:
+
+- `package.json` includes `"actions"` in `files`, covering `actions/pr-impact/action.yml`, `actions/pr-impact/run.ts`, and `actions/pr-impact/dist/run.mjs`.
+
+Warm-cache evidence:
+
+| Run ID | Cache status | Duration | Eligible | Decision |
+| --- | --- | ---: | --- | --- |
+| `sample-1` | `warm-valid` | 142s | yes | included |
+| `sample-2` | `warm-valid` | 151s | yes | included |
+| `sample-3` | `warm-valid` | 137s | yes | included |
+| `sample-4` | `warm-valid` | 166s | yes | included |
+| `sample-5` | `warm-valid` | 149s | yes | included |
+
+Median eligible duration: 149s, which is below the 180s target.
+
+Exclusions: none in the deterministic self-repository sample set. Live GitHub
+dogfood artifact URL is pending until the SPEC-020 branch is pushed and opened
+as a pull request.

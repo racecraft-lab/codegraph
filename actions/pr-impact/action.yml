@@ -96,7 +96,7 @@ runs:
         INPUT_CALLER_DEPTH: ${{ inputs.caller-depth }}
         INPUT_MAX_CALLERS: ${{ inputs.max-callers }}
         INPUT_NARRATIVE: ${{ inputs.narrative }}
-        PR_IMPACT_CACHE_STATUS: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'warm-valid' || 'miss' }}
+        PR_IMPACT_CACHE_RESTORE_HIT: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'true' || 'false' }}
       run: node "${{ github.action_path }}/dist/run.mjs"
 
     - name: Upload PR impact report
@@ -108,7 +108,7 @@ runs:
         if-no-files-found: error
 
     - name: Save CodeGraph index cache
-      if: always() && steps.pr-impact.outputs.cache-status != 'unavailable'
+      if: always() && steps.pr-impact.outputs.cache-status == 'rebuilt'
       uses: actions/cache/save@v4
       with:
         path: .codegraph

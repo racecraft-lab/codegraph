@@ -26,6 +26,7 @@ describe('PR impact result matrix', () => {
       env: {
         INPUT_CODEGRAPH_VERSION: '1.4.1',
         INPUT_BASE_REF: 'main',
+        PR_IMPACT_CACHE_STATUS: 'warm-valid',
         GITHUB_EVENT_NAME: 'pull_request',
         GITHUB_EVENT_PATH: eventPath,
         GITHUB_REPOSITORY: 'racecraft-lab/codegraph',
@@ -147,6 +148,7 @@ describe('PR impact result matrix', () => {
           INPUT_CODEGRAPH_VERSION: '1.4.1',
           INPUT_BASE_REF: 'main',
           INPUT_FAIL_ON_CALLERS: '1',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
           GITHUB_EVENT_NAME: 'pull_request',
           GITHUB_EVENT_PATH: eventPath,
           GITHUB_REPOSITORY: 'racecraft-lab/codegraph',

@@ -58,8 +58,8 @@ decisions:
 | Tasks | `/speckit-tasks` | ✅ Complete | G5 passed with 60 dependency-ordered tasks |
 | Analyze | `/speckit-analyze` | ✅ Complete | G6 passed with 0 CRITICAL/HIGH findings |
 | Confidence Gate | G6.5 | ✅ Complete | Confidence 0.96 ≥ 0.90 in advisory mode |
-| Implement | `/speckit-implement` | 🔄 In Progress | Starting with T001 |
-| Post | Post-Implementation | ⏳ Pending | Verification, reviewability, PR, and retrospective |
+| Implement | `/speckit-implement` | ✅ Complete | T001–T060 complete; full validation green |
+| Post | Post-Implementation | 🔄 In Progress | Verification, reviewability, PR, and retrospective |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -125,22 +125,22 @@ goal-driven reviewability constraints.
 
 ### Success Criteria Summary
 
-- [ ] A reusable action prepares Node/CodeGraph, restores and validates an
+- [x] A reusable action prepares Node/CodeGraph, restores and validates an
   index cache keyed from the repository state, rebuilds when necessary, and
   runs `detect-changes --base-ref` for the pull request.
-- [ ] The deterministic markdown report lists changed symbols, callers,
+- [x] The deterministic markdown report lists changed symbols, callers,
   affected flows, risks, warnings, and limits; one hidden-marker comment is
   updated in place when permissions allow.
-- [ ] Successfully computed reports remain available in the job summary and
+- [x] Successfully computed reports remain available in the job summary and
   as an artifact when PR commenting is unavailable.
-- [ ] Ordinary impact passes; configured caller or hub threshold breaches map
+- [x] Ordinary impact passes; configured caller or hub threshold breaches map
   to a failing check; analysis unavailability after fallback also fails
   explicitly.
-- [ ] Fork pull requests run without privileged secrets and degrade delivery
+- [x] Fork pull requests run without privileged secrets and degrade delivery
   or narrative safely rather than elevating trust.
-- [ ] Optional SPEC-018-backed narrative is off by default, prose-only, and
+- [x] Optional SPEC-018-backed narrative is off by default, prose-only, and
   unable to alter deterministic facts or status.
-- [ ] CodeGraph dogfoods the action automatically in advisory mode, with
+- [x] CodeGraph dogfoods the action automatically in advisory mode, with
   median warm-cache completion at or below three minutes.
 
 ---

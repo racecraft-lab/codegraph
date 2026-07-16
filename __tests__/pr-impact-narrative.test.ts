@@ -22,6 +22,7 @@ async function runNarrative(status: string, event: unknown = prImpactGitHubEvent
         INPUT_CODEGRAPH_VERSION: '1.4.1',
         INPUT_BASE_REF: 'main',
         INPUT_NARRATIVE: status === 'disabled' ? 'off' : 'trusted',
+        PR_IMPACT_CACHE_STATUS: 'warm-valid',
         GITHUB_EVENT_PATH: eventPath,
         GITHUB_TOKEN: 'token',
         GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),

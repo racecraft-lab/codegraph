@@ -131,3 +131,28 @@ T007 setup verification keeps the one-spec Q9 decision intact:
 - Package visibility is limited to exposing the existing package plus the new `actions` directory.
 - Initial setup files match the planned scaffold: `actions/pr-impact/action.yml`, `actions/pr-impact/run.ts`, `actions/pr-impact/dist/run.mjs`, `__tests__/fixtures/pr-impact.ts`, and `package.json`.
 - The accepted reviewability warning remains 455 projected reviewable LOC, 4 production files, and 11 total files. No blocker has been introduced during setup.
+
+## Final Polish Reviewability Gate Evidence
+
+T058 reran the installed SpecKit Pro runner helper `reviewability-gate` in setup
+mode against this plan. The first run exposed an ambiguous prose parse where
+`production files and 11 total files` was read as 11 production files; the
+parse anchor below keeps the intended budget machine-readable.
+
+Final gate result after the parse anchor:
+
+- Mode: `setup`
+- Status: `warn`
+- Pass: `true`
+- Reviewable LOC: 455
+- Production files: 4
+- Total files: 11
+- Primary surface: `harness/adapter`
+- Warnings: reviewable LOC 455 exceeds warn threshold 400
+- Blockers: none
+
+Final reviewability parse anchor:
+
+- reviewable LOC: 455
+- production files: 4
+- total files: 11

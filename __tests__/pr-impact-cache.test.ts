@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import { runAction } from '../actions/pr-impact/run';
 import { prImpactDetectorResults, prImpactGitHubEvent, prImpactWarmCacheSamples } from './fixtures/pr-impact';
@@ -45,6 +46,74 @@ async function runWithCacheStatus(cacheStatus: string) {
   }
 }
 
+function lockfileHash(lockfile: string): string {
+  return createHash('sha256').update(lockfile).digest('hex');
+}
+
+function cacheMetadata(identity: Record<string, string>) {
+  return {
+    schemaVersion: 1,
+    helperVersion: '0.1.0-spec-020',
+    recordedAt: '2026-07-15T00:00:00.000Z',
+    identity,
+  };
+}
+
+async function runWithMetadata(metadata: unknown, options: { lockfile?: string; indexFails?: boolean } = {}) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-cache-meta-'));
+  const lockfile = options.lockfile ?? '{"lockfileVersion":3}';
+  try {
+    const eventPath = path.join(tmp, 'event.json');
+    const metadataPath = path.join(tmp, 'pr-impact-cache.json');
+    fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
+    fs.writeFileSync(metadataPath, typeof metadata === 'string' ? metadata : JSON.stringify(metadata), 'utf8');
+    const calls: string[][] = [];
+    await runAction({
+      env: {
+        INPUT_CODEGRAPH_VERSION: '1.4.1',
+        INPUT_BASE_REF: 'main',
+        GITHUB_EVENT_PATH: eventPath,
+        GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+        GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
+        PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        PR_IMPACT_CACHE_RESTORE_HIT: 'true',
+        PR_IMPACT_CACHE_METADATA_PATH: metadataPath,
+      },
+      stdout: { write: () => true },
+      stderr: { write: () => true },
+      now: () => new Date('2026-07-15T00:00:00.000Z'),
+      appendFileSync: fs.appendFileSync,
+      mkdirSync: fs.mkdirSync,
+      writeFileSync: fs.writeFileSync,
+      readFileSync: (target: fs.PathOrFileDescriptor, options?: BufferEncoding | { encoding?: BufferEncoding | null; flag?: string } | null) => {
+        if (String(target) === 'package-lock.json') return lockfile;
+        return fs.readFileSync(target, options as BufferEncoding);
+      },
+      execFileSync: (_command: string, args: string[]) => {
+        calls.push(args);
+        if (args[0] === 'index') {
+          if (options.indexFails) throw new Error('index failed');
+          return '';
+        }
+        return args.includes('json')
+          ? JSON.stringify(prImpactDetectorResults.impact)
+          : '## Markdown detector report';
+      },
+      fetch: async () => ({ ok: false, status: 403, json: async () => ({}) }),
+    } as any);
+    const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+    let updatedMetadata: unknown = null;
+    try {
+      updatedMetadata = fs.existsSync(metadataPath) ? JSON.parse(fs.readFileSync(metadataPath, 'utf8')) : null;
+    } catch {
+      updatedMetadata = null;
+    }
+    return { outputs, calls, updatedMetadata };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 describe('PR impact cache handling', () => {
   it('records warm-valid, miss, stale, corrupt, incompatible, rebuilt, and unavailable cache states', async () => {
     for (const state of ['warm-valid', 'miss', 'stale', 'corrupt', 'incompatible', 'rebuilt'] as const) {
@@ -58,6 +127,48 @@ describe('PR impact cache handling', () => {
     expect(unavailable.outputs['cache-status']).toBe('unavailable');
     expect(unavailable.outputs['summary-status']).toBe('unavailable');
     expect(unavailable.outputs.conclusion).toBe('fail-analysis-unavailable');
+  });
+
+  it('accepts restored cache metadata only when the identity matches the current comparison', async () => {
+    const lockfile = '{"lockfileVersion":3}';
+    const identity = {
+      codegraphVersion: '1.4.1',
+      baseRef: 'main',
+      headSha: '0000000000000000000000000000000000000002',
+      mergeBase: '0000000000000000000000000000000000000001',
+      lockfileHash: lockfileHash(lockfile),
+    };
+
+    const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), { lockfile });
+
+    expect(outputs['cache-status']).toBe('warm-valid');
+    expect(calls.map((args) => args[0])).not.toContain('index');
+  });
+
+  it('rebuilds stale restored cache metadata before detector analysis and records the new identity', async () => {
+    const lockfile = '{"lockfileVersion":3}';
+    const staleIdentity = {
+      codegraphVersion: '1.4.1',
+      baseRef: 'main',
+      headSha: 'old-head',
+      mergeBase: '0000000000000000000000000000000000000001',
+      lockfileHash: lockfileHash(lockfile),
+    };
+
+    const { outputs, calls, updatedMetadata } = await runWithMetadata(cacheMetadata(staleIdentity), { lockfile });
+
+    expect(outputs['cache-status']).toBe('rebuilt');
+    expect(calls[0]).toEqual(['index']);
+    expect(updatedMetadata.identity.headSha).toBe('0000000000000000000000000000000000000002');
+  });
+
+  it('emits unavailable analysis when invalid cache cannot be rebuilt', async () => {
+    const { outputs, calls } = await runWithMetadata('{not json', { indexFails: true });
+
+    expect(outputs['cache-status']).toBe('unavailable');
+    expect(outputs['summary-status']).toBe('unavailable');
+    expect(outputs.conclusion).toBe('fail-analysis-unavailable');
+    expect(calls).toEqual([['index']]);
   });
 
   it('validates at least five eligible warm-cache samples with median completion at or below three minutes', () => {
