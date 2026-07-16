@@ -170,19 +170,21 @@ function enrichAffectedFlows(
 
   try {
     const itemsByFlow = new Map<string, AffectedFlowItem>();
-    let sourceVersion = 0;
     let state: ImpactReport['affectedFlows']['state'] = 'empty';
     let hasCatalog = false;
     let truncated = false;
+    const sourceVersions = new Set<number>();
 
     for (const group of groups) {
       const result = collectAffectedFlowMatches(group.graph, group.matchedNodeIds, report);
       if (!result) continue;
       if (!hasCatalog) {
-        sourceVersion = result.sourceVersion;
         state = result.state;
         hasCatalog = true;
+      } else {
+        state = mergeFlowState(state, result.state);
       }
+      sourceVersions.add(result.sourceVersion);
       truncated = truncated || result.truncated;
       for (const item of result.items) {
         const existing = itemsByFlow.get(item.flowId);
@@ -200,8 +202,15 @@ function enrichAffectedFlows(
 
     const items = [...itemsByFlow.values()]
       .sort((a, b) => a.name.localeCompare(b.name) || a.flowId.localeCompare(b.flowId));
-    report.affectedFlows.sourceVersion = sourceVersion;
+    const sortedSourceVersions = [...sourceVersions].sort((a, b) => a - b);
+    report.affectedFlows.sourceVersion = sortedSourceVersions.at(-1) ?? 0;
     report.affectedFlows.state = state;
+    if (sortedSourceVersions.length > 1) {
+      report.warnings.push({
+        code: 'mixed-flow-source-version',
+        message: `Affected flows matched multiple catalog source versions: ${sortedSourceVersions.join(', ')}.`,
+      });
+    }
     report.affectedFlows.items = items.slice(0, MAX_FLOWS);
     report.limits.truncatedFlows = truncated || items.length > MAX_FLOWS;
     report.affectedFlows.truncated = report.limits.truncatedFlows;
@@ -224,6 +233,24 @@ function enrichAffectedFlows(
   }
 }
 
+function mergeFlowState(
+  current: ImpactReport['affectedFlows']['state'],
+  next: ImpactReport['affectedFlows']['state'],
+): ImpactReport['affectedFlows']['state'] {
+  return flowStateRank(next) > flowStateRank(current) ? next : current;
+}
+
+function flowStateRank(state: ImpactReport['affectedFlows']['state']): number {
+  switch (state) {
+    case 'empty': return 0;
+    case 'available': return 1;
+    case 'stale': return 2;
+    case 'not_indexed': return 3;
+    case 'disabled': return 4;
+    case 'unavailable': return 5;
+  }
+}
+
 function collectAffectedFlowMatches(
   cg: DetectChangesGraph,
   matchedNodeIds: Set<string>,
@@ -241,7 +268,7 @@ function collectAffectedFlowMatches(
       targetId: 'flows',
       message: 'Execution-flow catalog is unavailable on this CodeGraph instance.',
     });
-    return null;
+    return { items: [], sourceVersion: 0, state: 'unavailable', truncated: false };
   }
 
   const flowSummaries: Array<{ id: string; name: string; entryKind: string; stepCount: number; truncated: boolean }> = [];
@@ -288,7 +315,12 @@ function collectAffectedFlowMatches(
       targetId: 'flows',
       message: `Execution-flow catalog state is ${firstState}.`,
     });
-    return null;
+    return {
+      items: [],
+      sourceVersion,
+      state: firstState,
+      truncated: false,
+    };
   }
 
   const items: AffectedFlowItem[] = [];

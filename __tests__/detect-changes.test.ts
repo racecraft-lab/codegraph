@@ -187,6 +187,128 @@ describe('detect changes', () => {
     }
   });
 
+  it('does not report a surviving symbol as deleted when only one line is removed', async () => {
+    const previousDir = process.env.CODEGRAPH_DIR;
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    await indexFixture(fx);
+    fx.write('src/calculator.ts', [
+      'export function computeTotal(value: number) {',
+      '}',
+      '',
+      'export function renderTotal() {',
+      '  return computeTotal(41);',
+      '}',
+      '',
+    ].join('\n'));
+
+    process.env.CODEGRAPH_DIR = '.codegraph-head-line-delete-test';
+    const headGraph = CodeGraph.initSync(fx.dir);
+    try {
+      await headGraph.indexAll();
+      const report = await detectChanges(headGraph, { mode: 'all' }, { baseGraph: fx.cg });
+
+      expect(report.changedSymbols).toContainEqual(expect.objectContaining({
+        name: 'computeTotal',
+        changeType: 'modified',
+      }));
+      expect(report.changedSymbols).not.toContainEqual(expect.objectContaining({
+        name: 'computeTotal',
+        changeType: 'deleted',
+      }));
+    } finally {
+      headGraph.close();
+      if (previousDir === undefined) delete process.env.CODEGRAPH_DIR;
+      else process.env.CODEGRAPH_DIR = previousDir;
+      fs.rmSync(path.join(fx.dir, '.codegraph-head-line-delete-test'), { recursive: true, force: true });
+    }
+  });
+
+  it('uses old-side base symbols for deleted declarations inside renamed files', async () => {
+    const previousDir = process.env.CODEGRAPH_DIR;
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    fx.write('src/rename-delete.ts', [
+      'export function removedDuringRename() {',
+      '  return 1;',
+      '}',
+      '',
+      'export function keepOne() {',
+      '  return 1;',
+      '}',
+      '',
+      'export function keepTwo() {',
+      '  return 2;',
+      '}',
+      '',
+      'export function keepThree() {',
+      '  return 3;',
+      '}',
+      '',
+    ].join('\n'));
+    fx.git(['add', 'src/rename-delete.ts']);
+    fx.git([
+      '-c', 'user.email=test@example.com',
+      '-c', 'user.name=Test User',
+      '-c', 'commit.gpgsign=false',
+      'commit', '-m', 'add rename delete fixture', '-q',
+    ]);
+    await indexFixture(fx);
+    fx.git(['mv', 'src/rename-delete.ts', 'src/renamed-delete.ts']);
+    fx.write('src/renamed-delete.ts', [
+      'export function keepOne() {',
+      '  return 1;',
+      '}',
+      '',
+      'export function keepTwo() {',
+      '  return 2;',
+      '}',
+      '',
+      'export function keepThree() {',
+      '  return 3;',
+      '}',
+      '',
+    ].join('\n'));
+
+    process.env.CODEGRAPH_DIR = '.codegraph-head-rename-delete-test';
+    const headGraph = CodeGraph.initSync(fx.dir);
+    try {
+      await headGraph.indexAll();
+      const report = await detectChanges(headGraph, { mode: 'all' }, { baseGraph: fx.cg });
+
+      expect(report.changedSymbols).toContainEqual(expect.objectContaining({
+        name: 'removedDuringRename',
+        changeType: 'deleted',
+        filePath: 'src/rename-delete.ts',
+      }));
+    } finally {
+      headGraph.close();
+      if (previousDir === undefined) delete process.env.CODEGRAPH_DIR;
+      else process.env.CODEGRAPH_DIR = previousDir;
+      fs.rmSync(path.join(fx.dir, '.codegraph-head-rename-delete-test'), { recursive: true, force: true });
+    }
+  });
+
+  it('reports status-only file changes as unmapped impact instead of clean', async () => {
+    const fx = await indexedFixture();
+    fx.git(['update-index', '--chmod=+x', 'src/calculator.ts']);
+    let report = await detectChanges(fx.cg, { mode: 'staged' });
+    expect(report.changedSymbols.some((symbol) => symbol.filePath === 'src/calculator.ts')).toBe(false);
+    expect(report.unmappedHunks).toContainEqual(expect.objectContaining({
+      newPath: 'src/calculator.ts',
+      reason: 'no-symbol-span',
+    }));
+    expect(report.summary.status).toBe('impact');
+
+    fx.write('src/empty.ts', '');
+    fx.git(['add', 'src/empty.ts']);
+    report = await detectChanges(fx.cg, { mode: 'staged' });
+    expect(report.unmappedHunks).toContainEqual(expect.objectContaining({
+      newPath: 'src/empty.ts',
+      reason: 'unindexed',
+    }));
+  });
+
   it('expands direct callers and emits threshold breach risks', async () => {
     const fx = await indexedFixture();
     fx.write('src/calculator.ts', [
@@ -390,6 +512,88 @@ describe('detect changes', () => {
       matchedNodeIds: ['node:deleted'],
     }));
     expect(report.affectedFlows.sourceVersion).toBe(7);
+  });
+
+  it('aggregates mixed head and base flow states without hiding base staleness', () => {
+    const report = buildInitialReport({
+      mode: 'all',
+      baseRef: null,
+      headRef: null,
+      format: 'json',
+      failOn: null,
+      callerDepth: 1,
+      maxCallers: 20,
+      projectPath: undefined,
+    }, [
+      {
+        id: 'symbol:head',
+        nodeId: 'node:head',
+        name: 'head',
+        qualifiedName: 'head',
+        kind: 'function',
+        filePath: 'src/head.ts',
+        startLine: 1,
+        endLine: 3,
+        changeType: 'modified',
+        hunkIds: ['hunk:1'],
+      },
+      {
+        id: 'symbol:deleted',
+        nodeId: 'node:deleted',
+        name: 'deleted',
+        qualifiedName: 'deleted',
+        kind: 'function',
+        filePath: 'src/deleted.ts',
+        startLine: 1,
+        endLine: 3,
+        changeType: 'deleted',
+        hunkIds: ['hunk:2'],
+      },
+    ], [], []);
+    const headGraph = {
+      getProjectRoot: () => process.cwd(),
+      getFiles: () => [],
+      getNodesInFile: () => [],
+      getCallers: () => [],
+      listFlows: (limit: number, offset: number) => ({
+        items: [],
+        total: 0,
+        limit,
+        offset,
+        sourceVersion: 1,
+        state: 'empty' as const,
+      }),
+      getFlowById: () => ({ found: false }),
+    };
+    const baseGraph = {
+      ...headGraph,
+      listFlows: (limit: number, offset: number) => ({
+        items: offset === 0 ? [{ id: 'flow:base', name: 'Base stale flow', entryKind: 'function', stepCount: 1, truncated: false }] : [],
+        total: 1,
+        limit,
+        offset,
+        sourceVersion: 7,
+        state: 'stale' as const,
+      }),
+      getFlowById: () => ({
+        found: true,
+        flow: {
+          id: 'flow:base',
+          name: 'Base stale flow',
+          entryKind: 'function',
+          steps: [{ nodeId: 'node:deleted' }],
+          truncated: false,
+        },
+      }),
+    };
+
+    enrichImpact(headGraph, report, null, baseGraph);
+
+    expect(report.affectedFlows.state).toBe('stale');
+    expect(report.affectedFlows.sourceVersion).toBe(7);
+    expect(report.affectedFlows.items).toContainEqual(expect.objectContaining({ flowId: 'flow:base' }));
+    expect(report.warnings).toContainEqual(expect.objectContaining({ code: 'stale-flows' }));
+    expect(report.warnings).toContainEqual(expect.objectContaining({ code: 'mixed-flow-source-version' }));
   });
 
   it('parses failOn grammar', () => {

@@ -61,6 +61,7 @@ function healthyStatus() {
       currentExtractionVersion: 24,
       reindexRecommended: false,
       state: 'complete',
+      pendingRefs: 0,
     },
   };
 }
@@ -112,6 +113,9 @@ async function runWithMetadata(
       execFileSync: (_command: string, args: string[]) => {
         calls.push(args);
         if (args[0] === 'status') {
+          if (Array.isArray(options.status)) {
+            return JSON.stringify(options.status.shift() ?? healthyStatus());
+          }
           return JSON.stringify(options.status ?? healthyStatus());
         }
         if (args[0] === 'index') {
@@ -250,6 +254,7 @@ describe('PR impact cache handling', () => {
             fs.appendFileSync(gitignorePath, '.codegraph/\n', 'utf8');
             return '';
           }
+          if (args[0] === 'status') return JSON.stringify(healthyStatus());
           return args.includes('json')
             ? JSON.stringify(prImpactDetectorResults.impact)
             : '## Markdown detector report';
@@ -260,7 +265,7 @@ describe('PR impact cache handling', () => {
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['cache-status']).toBe('rebuilt');
       expect(outputs.conclusion).toBe('pass');
-      expect(calls.map((args) => args[0])).toEqual(['init', 'detect-changes']);
+      expect(calls.map((args) => args[0])).toEqual(['init', 'status', 'detect-changes']);
       expect(fs.readFileSync(gitignorePath, 'utf8')).toBe(originalGitignore);
       expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.headSha).toBe('0000000000000000000000000000000000000002');
     } finally {
@@ -288,6 +293,7 @@ describe('PR impact cache handling', () => {
       await runAction({
         env: {
           INPUT_CODEGRAPH_VERSION: 'file:.',
+          PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: '1.4.1',
           INPUT_BASE_REF: 'main',
           GITHUB_EVENT_PATH: eventPath,
           GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
@@ -312,6 +318,7 @@ describe('PR impact cache handling', () => {
         execFileSync: (_command: string, args: string[]) => {
           calls.push(args);
           if (args[0] === 'index') return '';
+          if (args[0] === 'status') return JSON.stringify(healthyStatus());
           return args.includes('json')
             ? JSON.stringify(prImpactDetectorResults.impact)
             : '## Markdown detector report';
@@ -322,8 +329,8 @@ describe('PR impact cache handling', () => {
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['cache-status']).toBe('rebuilt');
       expect(outputs.conclusion).toBe('pass');
-      expect(calls.map((args) => args[0])).toEqual(['index', 'detect-changes']);
-      expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.codegraphVersion).toBe('file:.');
+      expect(calls.map((args) => args[0])).toEqual(['index', 'status', 'detect-changes']);
+      expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.codegraphVersion).toBe('1.4.1');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -353,6 +360,7 @@ describe('PR impact cache handling', () => {
       await runAction({
         env: {
           INPUT_CODEGRAPH_VERSION: 'file:.',
+          PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: '1.4.1',
           INPUT_BASE_REF: 'main',
           GITHUB_EVENT_PATH: eventPath,
           GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
@@ -379,6 +387,7 @@ describe('PR impact cache handling', () => {
           calls.push(args);
           if (args[0] === 'index') throw new Error('restored cache cannot be re-indexed');
           if (args[0] === 'init') return '';
+          if (args[0] === 'status') return JSON.stringify(healthyStatus());
           return args.includes('json')
             ? JSON.stringify(prImpactDetectorResults.impact)
             : '## Markdown detector report';
@@ -389,9 +398,9 @@ describe('PR impact cache handling', () => {
       const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
       expect(outputs['cache-status']).toBe('rebuilt');
       expect(outputs.conclusion).toBe('pass');
-      expect(calls.map((args) => args[0])).toEqual(['index', 'init', 'detect-changes']);
+      expect(calls.map((args) => args[0])).toEqual(['index', 'init', 'status', 'detect-changes']);
       expect(fs.existsSync(oldMarker)).toBe(false);
-      expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.codegraphVersion).toBe('file:.');
+      expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.codegraphVersion).toBe('1.4.1');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -413,10 +422,10 @@ describe('PR impact cache handling', () => {
       worktreeMismatch: { worktreeRoot: '/worktree', indexRoot: '/main' },
     };
 
-    const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), { lockfile, status: unhealthy });
+    const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), { lockfile, status: [unhealthy, healthyStatus()] });
 
     expect(outputs['cache-status']).toBe('rebuilt');
-    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'detect-changes']);
+    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'status', 'detect-changes']);
   });
 
   it('fails closed and rebuilds when restored index health omits required fields', async () => {
@@ -432,18 +441,46 @@ describe('PR impact cache handling', () => {
 
     const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), {
       lockfile,
-      status: {
+      status: [{
         version: '1.4.1',
         index: {
           builtWithExtractionVersion: 24,
           currentExtractionVersion: 24,
           reindexRecommended: false,
         },
-      },
+      }, healthyStatus()],
     });
 
     expect(outputs['cache-status']).toBe('rebuilt');
-    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'detect-changes']);
+    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'status', 'detect-changes']);
+  });
+
+  it('treats pending references as incomplete index health before and after rebuilds', async () => {
+    const lockfile = '{"lockfileVersion":3}';
+    const identity = {
+      repository: 'racecraft-lab/codegraph',
+      codegraphVersion: '1.4.1',
+      baseRef: 'main',
+      headSha: '0000000000000000000000000000000000000002',
+      mergeBase: '0000000000000000000000000000000000000001',
+      lockfileHash: lockfileHash(lockfile),
+    };
+    const incomplete = {
+      ...healthyStatus(),
+      index: {
+        ...healthyStatus().index,
+        pendingRefs: 2,
+      },
+    };
+
+    const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), {
+      lockfile,
+      status: [incomplete, incomplete, incomplete],
+    });
+
+    expect(outputs['cache-status']).toBe('unavailable');
+    expect(outputs['summary-status']).toBe('unavailable');
+    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'status']);
   });
 
   it('emits unavailable analysis when invalid cache cannot be rebuilt', async () => {

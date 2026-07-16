@@ -48,19 +48,7 @@ export function acquireGitDiff(projectRoot: string, request: DiffRequest): GitDi
   const hunksByFile = new Set(hunks.map((hunk) => `${hunk.oldPath ?? ''}\0${hunk.newPath ?? ''}`));
   for (const file of files) {
     if (hunksByFile.has(fileKey(file))) continue;
-    if (file.status.startsWith('R') || file.status.startsWith('C')) {
-      hunks.push({
-        id: '',
-        oldPath: file.oldPath,
-        newPath: file.newPath,
-        oldStart: null,
-        oldLines: null,
-        newStart: null,
-        newLines: null,
-        changeKind: 'renamed',
-        isPureMove: true,
-      });
-    }
+    hunks.push(fileLevelHunkForChange(file));
   }
 
   if (mode === 'all') {
@@ -203,6 +191,20 @@ function parseUnifiedDiff(output: string): ChangedHunk[] {
   }
 
   return hunks;
+}
+
+function fileLevelHunkForChange(file: GitFileChange): ChangedHunk {
+  return {
+    id: '',
+    oldPath: file.oldPath,
+    newPath: file.newPath,
+    oldStart: null,
+    oldLines: null,
+    newStart: null,
+    newLines: null,
+    changeKind: file.changeKind,
+    isPureMove: file.status.startsWith('R') || file.status.startsWith('C'),
+  };
 }
 
 function fileLevelHunk(

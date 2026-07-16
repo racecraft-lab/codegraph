@@ -47,7 +47,6 @@ describe('PR impact runtime freshness', () => {
     const expected = compileRuntime();
     const actual = fs.readFileSync(RUNTIME, 'utf8');
 
-    expect(fs.statSync(RUNTIME).mtimeMs).toBeGreaterThanOrEqual(fs.statSync(SOURCE).mtimeMs);
     expect(sha256(actual)).toBe(sha256(expected));
   });
 

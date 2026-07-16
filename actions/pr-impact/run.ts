@@ -332,12 +332,11 @@ function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: Pull
   if (restoredStatus === 'warm-valid') return restoredStatus;
 
   const rebuildMode = restoredStatus === 'miss' ? 'init' : 'index';
-  if (!rebuildCodeGraphIndex(deps, rebuildMode)) {
-    if (rebuildMode !== 'index' || !resetCodeGraphIndex(deps) || !rebuildCodeGraphIndex(deps, 'init')) {
+  if (!rebuildAndValidateCodeGraphIndex(deps, rebuildMode, metadataPath, identity)) {
+    if (rebuildMode !== 'index' || !resetCodeGraphIndex(deps) || !rebuildAndValidateCodeGraphIndex(deps, 'init', metadataPath, identity)) {
       return 'unavailable';
     }
   }
-  writeCacheMetadata(deps, metadataPath, identity);
   return 'rebuilt';
 }
 
@@ -363,11 +362,11 @@ function prepareBaseIndexIfNeeded(deps: RunDependencies, context: PullRequestCon
       : { status: 'not-needed', dir: null };
   }
   if (!context.mergeBase) return { status: 'not-needed', dir: null };
-  const hasDeletedFiles = prDiffHasDeletedFiles(deps, context.mergeBase, context.headSha);
-  if (hasDeletedFiles === null) {
-    return { status: 'failed', dir: null, message: 'Unable to inspect PR diff for deleted files before analysis.' };
+  const needsBaseIndex = prDiffNeedsBaseIndex(deps, context.mergeBase, context.headSha);
+  if (needsBaseIndex === null) {
+    return { status: 'failed', dir: null, message: 'Unable to inspect PR diff for deleted symbols before analysis.' };
   }
-  if (!hasDeletedFiles) return { status: 'not-needed', dir: null };
+  if (!needsBaseIndex) return { status: 'not-needed', dir: null };
   if (!deps.cpSync) {
     return { status: 'failed', dir: null, message: 'Unable to copy base CodeGraph index for deleted-file analysis.' };
   }
@@ -410,14 +409,20 @@ function prepareBaseIndexIfNeeded(deps: RunDependencies, context: PullRequestCon
   }
 }
 
-function prDiffHasDeletedFiles(deps: RunDependencies, mergeBase: string, headSha: string): boolean | null {
+function prDiffNeedsBaseIndex(deps: RunDependencies, mergeBase: string, headSha: string): boolean | null {
   try {
-    const output = String(deps.execFileSync('git', ['diff', '--name-status', '-z', mergeBase, headSha || 'HEAD', '--'], {
+    const nameStatus = String(deps.execFileSync('git', ['diff', '--name-status', '-z', mergeBase, headSha || 'HEAD', '--'], {
       encoding: 'utf8',
       env: deps.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     }));
-    return output.split('\0').some((part) => part.startsWith('D'));
+    if (nameStatus.split('\0').some((part) => part.startsWith('D'))) return true;
+    const patch = String(deps.execFileSync('git', ['diff', '--no-ext-diff', '--no-color', '--unified=0', mergeBase, headSha || 'HEAD', '--'], {
+      encoding: 'utf8',
+      env: deps.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }));
+    return patch.split(/\r?\n/).some((line) => line.startsWith('-') && !line.startsWith('---'));
   } catch {
     return null;
   }
@@ -512,7 +517,20 @@ function validateWarmIndexHealth(deps: RunDependencies, expected: CacheIdentity)
   }
   if (index.reindexRecommended !== false) return 'stale';
   if (index.state !== 'complete') return 'stale';
+  const pendingRefs = requiredNumberField(index, 'pendingRefs');
+  if (pendingRefs === null || pendingRefs !== 0) return 'stale';
   return 'warm-valid';
+}
+
+function rebuildAndValidateCodeGraphIndex(
+  deps: RunDependencies,
+  mode: 'init' | 'index',
+  metadataPath: string,
+  identity: CacheIdentity,
+): boolean {
+  if (!rebuildCodeGraphIndex(deps, mode)) return false;
+  writeCacheMetadata(deps, metadataPath, identity);
+  return validateWarmIndexHealth(deps, identity) === 'warm-valid';
 }
 
 function rebuildCodeGraphIndex(deps: RunDependencies, mode: 'init' | 'index'): boolean {

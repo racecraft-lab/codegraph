@@ -165,29 +165,44 @@ function intersectingSymbolsForHunk(
   baseGraph: DetectChangesGraph | null,
   baseIndexedFiles: Set<string> | null,
 ): Array<{ node: Node; changeType: ChangedSymbol['changeType'] }> {
-  if (hunk.changeKind === 'deleted' && baseGraph && baseIndexedFiles?.has(filePath)) {
-    return symbolsIntersecting(baseGraph, filePath, hunkRange(hunk, 'old'))
+  if (hunk.oldStart === null && hunk.newStart === null) return [];
+
+  if (hunk.changeKind === 'deleted') {
+    const graph = baseGraph && baseIndexedFiles?.has(filePath) ? baseGraph : headGraph;
+    return symbolsIntersecting(graph, filePath, hunkRange(hunk, 'old'))
       .map((node) => ({ node, changeType: 'deleted' }));
   }
 
   const results: Array<{ node: Node; changeType: ChangedSymbol['changeType'] }> = [];
-  const deletionOnlyModifiedHunk = hunk.changeKind === 'modified'
+  const oldSideOnlyHunk = hunk.changeKind !== 'added'
     && (hunk.oldLines ?? 0) > 0
     && (hunk.newLines ?? 0) === 0;
 
-  if (!deletionOnlyModifiedHunk) {
+  if (!oldSideOnlyHunk) {
     for (const node of symbolsIntersecting(headGraph, filePath, hunkRange(hunk, 'new'))) {
       results.push({ node, changeType: symbolChangeType(hunk) });
     }
   }
 
-  if (deletionOnlyModifiedHunk && baseGraph && hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) {
+  if (oldSideOnlyHunk && baseGraph && hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) {
+    const headNodes = headGraph.getNodesInFile(filePath).filter(isReportableSymbol);
     for (const node of symbolsIntersecting(baseGraph, hunk.oldPath, hunkRange(hunk, 'old'))) {
-      results.push({ node, changeType: 'deleted' });
+      const equivalent = findHeadEquivalent(node, headNodes);
+      results.push(equivalent
+        ? { node: equivalent, changeType: symbolChangeType(hunk) }
+        : { node, changeType: 'deleted' });
     }
   }
 
   return results;
+}
+
+function findHeadEquivalent(baseNode: Node, headNodes: Node[]): Node | null {
+  const baseQualifiedName = baseNode.qualifiedName || baseNode.name;
+  return headNodes.find((node) =>
+    node.kind === baseNode.kind
+    && (node.qualifiedName || node.name) === baseQualifiedName
+  ) ?? null;
 }
 
 function symbolsIntersecting(
