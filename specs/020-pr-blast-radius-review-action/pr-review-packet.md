@@ -34,7 +34,7 @@
 - Focused PR-impact tests: PASS — 6 files, 23 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,949 tests, 7 skipped.
+- `npm test`: PASS — 240 files, 3,950 tests, 7 skipped.
 - Warm-cache deterministic sample median: 149s, below 180s target.
 
 ## Known gaps
