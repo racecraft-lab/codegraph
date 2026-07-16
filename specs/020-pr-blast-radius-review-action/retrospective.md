@@ -13,20 +13,21 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 
 ## Verification
 
-- Focused PR-impact tests passed: 6 files, 26 tests.
+- Focused PR-impact tests passed after PR-check remediation: 6 files, 27 tests.
 - `npm run build` passed.
 - `npm run typecheck` passed.
-- `npm test` passed: 240 files, 3,953 tests, 7 skipped.
+- `npm test` passed after PR-check remediation: 240 files, 3,954 tests, 7 skipped.
 - Verify-tasks phantom check passed: 60/60 completed tasks verified.
 - Warm-cache deterministic sample median was 149s, under the 180s target.
 - Code review remediation passed for event-base defaulting, final delivery metadata consistency, and merge-base metadata.
 - PR check remediation passed locally for full-SHA external action pinning.
 - PR check remediation passed locally for cold-cache CodeGraph initialization.
 - PR check remediation passed locally for self-dogfood using the checked-out workspace package.
+- PR check remediation passed locally for fallback restore-key cache validation.
 
 ## Deviations
 
-- Live dogfood artifact evidence is deferred until GitHub Actions reruns after the cold-cache initialization remediation.
+- Live dogfood artifact evidence is deferred until GitHub Actions reruns after the fallback restore-key cache remediation.
 - Optional narrative remains represented by deterministic seams; live provider quality remains outside SPEC-020 and belongs to SPEC-018.
 
 ## Lessons
@@ -35,6 +36,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - Report metadata needs action run identity to make reruns and synchronize events distinguishable.
 - A reusable action cannot assume an index exists on a first run; cold-cache paths need initialization, not only re-indexing.
 - Self-dogfood for unreleased CLI features must install the checked-out workspace package, not the last published package.
+- GitHub `actions/cache` restore-key hits can restore real cache contents while reporting `cache-hit=false`; runtime metadata must be validated before choosing a cold-cache initialization path.
 - Advisory dogfood should remain threshold-free until enough live PR samples exist to justify blocking defaults.
 
 ## Follow-up

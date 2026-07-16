@@ -4,7 +4,7 @@
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
   "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-16T01:14:19Z",
+  "updated_at": "2026-07-16T01:19:42Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -466,16 +466,16 @@
       "focused_pr_impact_tests": {
         "status": "passed",
         "test_files": 6,
-        "tests": 26
+        "tests": 27
       },
       "build": "passed",
       "typecheck": "passed",
       "full_test": {
         "status": "passed",
         "test_files": 240,
-        "tests_passed": 3953,
+        "tests_passed": 3954,
         "tests_skipped": 7,
-        "duration_seconds": 65.54
+        "duration_seconds": 69.25
       },
       "reviewability_gate": {
         "status": "warn",
@@ -491,7 +491,7 @@
         "median_seconds": 149,
         "target_seconds": 180
       },
-      "known_gap": "Live GitHub dogfood artifact URL is pending until GitHub Actions reruns after cold-cache initialization remediation."
+      "known_gap": "Live GitHub dogfood artifact URL is pending until GitHub Actions reruns after fallback restore-key cache remediation."
     }
   },
   "post": {
@@ -527,10 +527,10 @@
         "Merge-base metadata now uses explicit env or git merge-base before falling back to event base SHA."
       ],
       "verification": {
-        "focused_pr_impact_tests": "passed: 6 files, 26 tests",
+        "focused_pr_impact_tests": "passed: 6 files, 27 tests",
         "build": "passed",
         "typecheck": "passed",
-        "full_test": "passed: 240 files, 3953 tests passed, 7 skipped"
+        "full_test": "passed: 240 files, 3954 tests passed, 7 skipped"
       }
     },
     "integration_suite": {
@@ -556,7 +556,7 @@
     "uat": {
       "status": "runbook_ready",
       "runbook": "specs/020-pr-blast-radius-review-action/uat-runbook.md",
-      "live_github_artifact": "pending until GitHub Actions reruns after cold-cache initialization remediation"
+      "live_github_artifact": "pending until GitHub Actions reruns after fallback restore-key cache remediation"
     },
     "pr_packet": {
       "status": "ready",
@@ -571,20 +571,22 @@
     },
     "review_remediation": {
       "status": "checks_remediated_pending_rerun",
-      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, and a published-package mismatch for unreleased detect-changes support.",
+      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, and restore-key fallback cache handling that treated restored metadata as a cold miss.",
       "remediation": [
         "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
         "Added a contract test proving external actions/* references use full 40-character commit SHAs.",
         "Changed cache misses to initialize CodeGraph before detection while preserving re-index behavior for restored stale caches.",
         "Added a cache regression test proving cold-cache initialization, metadata recording, detector execution, and .gitignore restoration.",
         "Changed the self-repository dogfood workflow to install the checked-out workspace package via codegraph-version file:.",
-        "Added a contract assertion that dogfood uses the workspace package while preserving advisory thresholds and narrative off."
+        "Added a contract assertion that dogfood uses the workspace package while preserving advisory thresholds and narrative off.",
+        "Changed cache preparation to validate restored metadata whenever the metadata file exists, even when actions/cache reports a non-exact restore-key hit.",
+        "Added a cache regression test proving fallback restored metadata is re-indexed instead of initialized when the restored CodeGraph version is incompatible."
       ],
       "verification": {
-        "focused_pr_impact_tests": "passed: 6 files, 26 tests",
+        "focused_pr_impact_tests": "passed: 6 files, 27 tests",
         "build": "passed",
         "typecheck": "passed",
-        "full_test": "passed: 240 files, 3953 tests passed, 7 skipped"
+        "full_test": "passed: 240 files, 3954 tests passed, 7 skipped"
       },
       "next": "Push remediation and monitor PR #154 check rerun."
     },

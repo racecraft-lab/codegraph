@@ -242,6 +242,67 @@ describe('PR impact cache handling', () => {
     }
   });
 
+  it('re-indexes restored fallback cache metadata even when the cache action reports a non-exact hit', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-restore-key-'));
+    try {
+      const eventPath = path.join(tmp, 'event.json');
+      const metadataPath = path.join(tmp, 'pr-impact-cache.json');
+      const lockfile = '{"lockfileVersion":3}';
+      fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
+      fs.writeFileSync(metadataPath, JSON.stringify(cacheMetadata({
+        repository: 'racecraft-lab/codegraph',
+        codegraphVersion: '1.4.1',
+        baseRef: 'main',
+        headSha: 'old-head',
+        mergeBase: '0000000000000000000000000000000000000001',
+        lockfileHash: lockfileHash(lockfile),
+      })), 'utf8');
+      const calls: string[][] = [];
+
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: 'file:.',
+          INPUT_BASE_REF: 'main',
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+          PR_IMPACT_CACHE_RESTORE_HIT: 'false',
+          PR_IMPACT_CACHE_METADATA_PATH: metadataPath,
+          PR_IMPACT_MERGE_BASE: '0000000000000000000000000000000000000001',
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        existsSync: fs.existsSync,
+        mkdirSync: fs.mkdirSync,
+        rmSync: fs.rmSync,
+        writeFileSync: fs.writeFileSync,
+        readFileSync: (target: fs.PathOrFileDescriptor, options?: BufferEncoding | { encoding?: BufferEncoding | null; flag?: string } | null) => {
+          if (String(target) === 'package-lock.json') return lockfile;
+          return fs.readFileSync(target, options as BufferEncoding);
+        },
+        execFileSync: (_command: string, args: string[]) => {
+          calls.push(args);
+          if (args[0] === 'index') return '';
+          return args.includes('json')
+            ? JSON.stringify(prImpactDetectorResults.impact)
+            : '## Markdown detector report';
+        },
+        fetch: async () => ({ ok: false, status: 403, json: async () => ({}) }),
+      } as any);
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(outputs['cache-status']).toBe('rebuilt');
+      expect(outputs.conclusion).toBe('pass');
+      expect(calls.map((args) => args[0])).toEqual(['index', 'detect-changes', 'detect-changes']);
+      expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.codegraphVersion).toBe('file:.');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('rebuilds matching restored metadata when index health reports worktree mismatch or pending changes', async () => {
     const lockfile = '{"lockfileVersion":3}';
     const identity = {

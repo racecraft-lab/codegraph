@@ -22,10 +22,10 @@ Passed after remediation.
 
 ## Verification after remediation
 
-- Focused PR-impact suite: PASS — 6 files, 26 tests.
+- Focused PR-impact suite: PASS — 6 files, 27 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,953 tests passed, 7 skipped; duration 65.54s.
+- `npm test`: PASS — 240 files, 3,954 tests passed, 7 skipped; duration 69.25s.
 
 ## PR check remediation
 
@@ -38,3 +38,13 @@ Passed after remediation.
 - Finding: the dogfood workflow installed the published `@colbymchenry/codegraph@1.4.1`, which does not expose the unreleased `detect-changes` command required by SPEC-020.
 - Fix: the self-repository dogfood workflow installs the checked-out workspace package with `codegraph-version: "file:."`.
 - Test: `pr-impact-action-contract.test.ts` now verifies the dogfood workflow uses the workspace package while keeping thresholds advisory and narrative off.
+- Finding: GitHub restored a fallback cache through `restore-keys`, but the helper treated `cache-hit=false` as a cold miss and tried `codegraph init` against an existing `.codegraph` directory.
+- Fix: restored cache metadata is now validated whenever the metadata file exists, even when the cache action reports a non-exact hit.
+- Test: `pr-impact-cache.test.ts` now verifies fallback restored metadata is re-indexed instead of initialized when the version is incompatible.
+
+## Verification after PR check remediation
+
+- Focused PR-impact suite: PASS — 6 files, 27 tests.
+- `npm run build`: PASS.
+- `npm run typecheck`: PASS.
+- `npm test`: PASS — 240 files, 3,954 tests passed, 7 skipped; duration 69.25s.

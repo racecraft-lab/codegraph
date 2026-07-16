@@ -308,7 +308,9 @@ function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: Pull
   const identity = cacheIdentity(deps, inputs, context);
   const metadataPath = deps.env.PR_IMPACT_CACHE_METADATA_PATH ?? '.codegraph/pr-impact-cache.json';
   const restoreHit = deps.env.PR_IMPACT_CACHE_RESTORE_HIT === 'true';
-  const restoredStatus = restoreHit ? validateCacheMetadata(deps, metadataPath, identity) : 'miss';
+  const restoredStatus = restoreHit || fileExists(deps, metadataPath)
+    ? validateCacheMetadata(deps, metadataPath, identity)
+    : 'miss';
   if (restoredStatus === 'warm-valid') return restoredStatus;
 
   if (!rebuildCodeGraphIndex(deps, restoredStatus === 'miss' ? 'init' : 'index')) return 'unavailable';
@@ -404,11 +406,19 @@ function rebuildCodeGraphIndex(deps: RunDependencies, mode: 'init' | 'index'): b
 
 function readOptionalFile(deps: RunDependencies, path: string): { exists: boolean; content: string } {
   try {
-    return deps.existsSync(path)
+    return fileExists(deps, path)
       ? { exists: true, content: String(deps.readFileSync(path, 'utf8')) }
       : { exists: false, content: '' };
   } catch {
     return { exists: false, content: '' };
+  }
+}
+
+function fileExists(deps: RunDependencies, path: string): boolean {
+  try {
+    return deps.existsSync(path);
+  } catch {
+    return false;
   }
 }
 

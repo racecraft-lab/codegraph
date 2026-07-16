@@ -51,20 +51,21 @@ Reviewers need one current deterministic blast-radius report on pull requests. T
 
 ## Verification
 
-- Focused PR-impact suite: PASS — 6 files, 26 tests.
+- Focused PR-impact suite: PASS — 6 files, 27 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,953 tests passed, 7 skipped.
+- `npm test`: PASS — 240 files, 3,954 tests passed, 7 skipped.
 - Warm-cache deterministic sample median: 149s, below the 180s target.
 - Verify-tasks phantom check: PASS — 60/60 completed tasks verified.
 - Code review remediation: PASS — event-base defaulting, final delivery metadata consistency, and merge-base metadata fixed.
 - PR check remediation: PASS locally — external `actions/*` references are pinned to full commit SHAs.
 - PR check remediation: PASS locally — cold cache misses initialize the CodeGraph index before analysis.
 - PR check remediation: PASS locally — dogfood installs the checked-out workspace package so unreleased detector commands are available.
+- PR check remediation: PASS locally — fallback restore-key caches are validated from metadata instead of treated as cold misses.
 
 ## Known gaps
 
-- Live dogfood workflow artifact URL is pending until GitHub Actions reruns after the cold-cache initialization remediation.
+- Live dogfood workflow artifact URL is pending until GitHub Actions reruns after the fallback restore-key cache remediation.
 - Optional narrative quality and provider behavior remain owned by SPEC-018.
 
 ## Rollback
