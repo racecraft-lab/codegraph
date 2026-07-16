@@ -45,6 +45,7 @@ export function normalizeDetectChangesRequest(request: DiffRequest): Required<Om
   return {
     mode,
     baseRef: request.baseRef ?? null,
+    headRef: request.headRef ?? null,
     format,
     failOn: request.failOn ?? null,
     callerDepth: clampInt(request.callerDepth, DEFAULT_CALLER_DEPTH, MIN_CALLER_DEPTH, MAX_CALLER_DEPTH),

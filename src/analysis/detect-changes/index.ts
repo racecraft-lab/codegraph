@@ -47,6 +47,7 @@ export {
 export interface DiffRequest {
   mode: DiffMode;
   baseRef?: string | null;
+  headRef?: string | null;
   format?: ReportFormat;
   failOn?: string | null;
   callerDepth?: number;

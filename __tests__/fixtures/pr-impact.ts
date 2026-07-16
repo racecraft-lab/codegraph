@@ -213,6 +213,7 @@ export const prImpactDeliveryResults = {
     artifact: 'pending',
     currentCommentId: '100',
     duplicateCommentIds: [],
+    failedDuplicateCommentIds: [],
     reportPath: 'pr-impact-report.md',
   },
   fallback: {
@@ -222,6 +223,7 @@ export const prImpactDeliveryResults = {
     artifact: 'pending',
     currentCommentId: null,
     duplicateCommentIds: [],
+    failedDuplicateCommentIds: [],
     reportPath: 'pr-impact-report.md',
   },
   failed: {
@@ -231,6 +233,7 @@ export const prImpactDeliveryResults = {
     artifact: 'failed',
     currentCommentId: null,
     duplicateCommentIds: [],
+    failedDuplicateCommentIds: [],
     reportPath: 'pr-impact-report.md',
   },
 } as const;

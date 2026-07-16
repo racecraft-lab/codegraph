@@ -2272,6 +2272,7 @@ program
   .description('Report changed symbols and bounded impact for the current git diff')
   .option('--mode <mode>', 'Diff mode: unstaged | staged | all | base-ref', 'all')
   .option('--base-ref <ref>', 'Base ref for --mode base-ref')
+  .option('--head-ref <ref>', 'Head ref for --mode base-ref comparisons', 'HEAD')
   .option('--format <format>', 'Output format: json | markdown', 'json')
   .option('--fail-on <policy>', 'Comma-separated threshold policies: callers>N and/or hub')
   .option('--caller-depth <number>', 'Caller traversal depth, clamped to 1-3', '1')
@@ -2281,6 +2282,7 @@ program
   .action(async (options: {
     mode?: string;
     baseRef?: string;
+    headRef?: string;
     format?: string;
     failOn?: string;
     callerDepth?: string;
@@ -2292,6 +2294,7 @@ program
     const request = {
       mode: (options.mode ?? 'all') as DiffMode,
       baseRef: options.baseRef ?? null,
+      headRef: options.headRef ?? null,
       format: (options.format ?? 'json') as ReportFormat,
       failOn: options.failOn ?? null,
       callerDepth: options.callerDepth === undefined ? undefined : Number(options.callerDepth),

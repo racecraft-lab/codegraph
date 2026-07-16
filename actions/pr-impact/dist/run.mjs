@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 export const HELPER_VERSION = '0.1.0-spec-020';
-export const DEFAULT_CODEGRAPH_VERSION = '1.4.1';
+export const DEFAULT_CODEGRAPH_VERSION = '1.5.0';
 export const ACTION_MARKER = '<!-- codegraph-pr-impact-action -->';
 export function createRunDependencies() {
     return {
@@ -55,11 +55,15 @@ export async function runAction(deps = createRunDependencies()) {
     const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
     const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
     const cacheStatus = prepareCache(deps, inputs, context);
-    const baseIndexDir = cacheStatus === 'unavailable' ? null : prepareBaseIndexIfNeeded(deps, context);
     const effectiveBaseRef = resolveBaseRef(inputs, context);
+    const baseIndex = cacheStatus === 'unavailable'
+        ? { status: 'not-needed', dir: null }
+        : prepareBaseIndexIfNeeded(deps, context);
     const detector = cacheStatus === 'unavailable'
         ? createUnavailableDetector(inputs, 'CodeGraph cache/index is unavailable.', effectiveBaseRef)
-        : runDetector(deps, inputs, context, baseIndexDir);
+        : baseIndex.status === 'failed'
+            ? createUnavailableDetector(inputs, baseIndex.message, effectiveBaseRef)
+            : runDetector(deps, inputs, context, baseIndex.dir);
     const narrative = createInitialNarrative(inputs, context, deps);
     let delivery = createInitialDelivery(reportPath);
     let conclusion = determineConclusion(detector, delivery.status !== 'failed');
@@ -117,6 +121,7 @@ export async function runAction(deps = createRunDependencies()) {
         artifact: reportFileWritten ? 'pending' : 'failed',
         summary: writeSummary(deps, report),
     };
+    conclusion = determineConclusion(detector, delivery.status !== 'failed');
     if (delivery.status === 'failed' && delivery.summary === 'written') {
         delivery = { ...delivery, status: 'fallback' };
         conclusion = determineConclusion(detector, true);
@@ -170,15 +175,26 @@ function prepareCache(deps, inputs, context) {
     return 'rebuilt';
 }
 function prepareBaseIndexIfNeeded(deps, context) {
-    if (deps.env.PR_IMPACT_PREPARE_BASE_INDEX !== 'true')
-        return deps.env.PR_IMPACT_BASE_INDEX_DIR ?? null;
-    if (!context.mergeBase || !prDiffHasDeletedFiles(deps, context.mergeBase))
-        return null;
-    if (!deps.cpSync)
-        return null;
+    if (deps.env.PR_IMPACT_PREPARE_BASE_INDEX !== 'true') {
+        return deps.env.PR_IMPACT_BASE_INDEX_DIR
+            ? { status: 'ready', dir: deps.env.PR_IMPACT_BASE_INDEX_DIR }
+            : { status: 'not-needed', dir: null };
+    }
+    if (!context.mergeBase)
+        return { status: 'not-needed', dir: null };
+    const hasDeletedFiles = prDiffHasDeletedFiles(deps, context.mergeBase, context.headSha);
+    if (hasDeletedFiles === null) {
+        return { status: 'failed', dir: null, message: 'Unable to inspect PR diff for deleted files before analysis.' };
+    }
+    if (!hasDeletedFiles)
+        return { status: 'not-needed', dir: null };
+    if (!deps.cpSync) {
+        return { status: 'failed', dir: null, message: 'Unable to copy base CodeGraph index for deleted-file analysis.' };
+    }
     const baseIndexDir = deps.env.PR_IMPACT_BASE_INDEX_DIR ?? '.codegraph-pr-impact-base';
-    if (!isPlainCodeGraphDirName(baseIndexDir))
-        return null;
+    if (!isPlainCodeGraphDirName(baseIndexDir)) {
+        return { status: 'failed', dir: null, message: 'Invalid base CodeGraph index directory name for deleted-file analysis.' };
+    }
     const safeRunId = (context.runId || 'local').replace(/[^A-Za-z0-9_.-]/g, '-');
     const baseWorktreePath = deps.env.PR_IMPACT_BASE_WORKTREE_PATH ?? `.codegraph/pr-impact-base-worktree-${safeRunId}`;
     try {
@@ -195,11 +211,12 @@ function prepareBaseIndexIfNeeded(deps, context) {
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         deps.cpSync(`${baseWorktreePath}/${baseIndexDir}`, baseIndexDir, { recursive: true });
-        return baseIndexDir;
+        return { status: 'ready', dir: baseIndexDir };
     }
-    catch {
+    catch (error) {
         deps.rmSync(baseIndexDir, { recursive: true, force: true });
-        return null;
+        const message = error instanceof Error ? error.message : String(error);
+        return { status: 'failed', dir: null, message: `Unable to prepare base CodeGraph index for deleted-file analysis: ${message}` };
     }
     finally {
         try {
@@ -214,9 +231,9 @@ function prepareBaseIndexIfNeeded(deps, context) {
         }
     }
 }
-function prDiffHasDeletedFiles(deps, mergeBase) {
+function prDiffHasDeletedFiles(deps, mergeBase, headSha) {
     try {
-        const output = String(deps.execFileSync('git', ['diff', '--name-status', '-z', mergeBase, 'HEAD', '--'], {
+        const output = String(deps.execFileSync('git', ['diff', '--name-status', '-z', mergeBase, headSha || 'HEAD', '--'], {
             encoding: 'utf8',
             env: deps.env,
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -224,7 +241,7 @@ function prDiffHasDeletedFiles(deps, mergeBase) {
         return output.split('\0').some((part) => part.startsWith('D'));
     }
     catch {
-        return false;
+        return null;
     }
 }
 function isPlainCodeGraphDirName(dir) {
@@ -424,7 +441,7 @@ function readPullRequestContext(deps, inputs) {
     const baseRepo = stringAt(event, ['pull_request', 'base', 'repo', 'full_name']) || repository;
     const isForkLike = headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo;
     const hasTrustedContext = trustedContextFor(deps, isForkLike);
-    const hasTrustedToken = Boolean(deps.env.GITHUB_TOKEN) && hasTrustedContext;
+    const hasTrustedToken = Boolean(deps.env.GITHUB_TOKEN) && hasTrustedContext && parseBoolean(deps.env.PR_IMPACT_TOKEN_WRITE ?? 'false');
     return {
         repository,
         pullNumber,
@@ -481,6 +498,8 @@ function resolveMergeBase(deps, baseRef, headSha, fallbackBaseSha) {
     return fallbackBaseSha || null;
 }
 function trustedContextFor(deps, isForkLike) {
+    if (deps.env.GITHUB_ACTOR === 'dependabot[bot]')
+        return false;
     const raw = deps.env.PR_IMPACT_TRUSTED_CONTEXT;
     if (raw !== undefined)
         return parseBoolean(raw);
@@ -502,7 +521,7 @@ function readGitHubEvent(deps) {
 }
 function runDetector(deps, inputs, context, baseIndexDir = null) {
     const baseRef = resolveDetectorBaseRef(inputs, context);
-    const jsonArgs = detectorArgs(inputs, baseRef, 'json', baseIndexDir);
+    const jsonArgs = detectorArgs(inputs, baseRef, context.headSha || 'HEAD', 'json', baseIndexDir);
     try {
         const json = runDetectorCommand(deps, jsonArgs);
         return normalizeDetectorResult(JSON.parse(json), inputs, baseRef);
@@ -512,11 +531,12 @@ function runDetector(deps, inputs, context, baseIndexDir = null) {
         return createUnavailableDetector(inputs, message, baseRef);
     }
 }
-function detectorArgs(inputs, baseRef, format, baseIndexDir = null) {
+function detectorArgs(inputs, baseRef, headRef, format, baseIndexDir = null) {
     const args = [
         'detect-changes',
         '--mode', 'base-ref',
         '--base-ref', baseRef,
+        '--head-ref', headRef,
         '--format', format,
         '--caller-depth', String(inputs.callerDepth),
         '--max-callers', String(inputs.maxCallers),
@@ -632,6 +652,7 @@ function createInitialDelivery(reportPath) {
         artifact: 'pending',
         currentCommentId: null,
         duplicateCommentIds: [],
+        failedDuplicateCommentIds: [],
         reportPath,
         commentUrl: '',
     };
@@ -644,6 +665,7 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
         artifact: reportFileWritten ? 'pending' : 'failed',
         currentCommentId: null,
         duplicateCommentIds: [],
+        failedDuplicateCommentIds: [],
         reportPath,
         commentUrl: '',
     };
@@ -660,12 +682,15 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
     const current = marked[0];
     const duplicates = marked.slice(1);
     const duplicateIds = [];
+    const failedDuplicateIds = [];
     if (current) {
         const updated = await patchComment(deps, context, current.id, report);
         for (const duplicate of duplicates) {
             const retired = await patchComment(deps, context, duplicate.id, `${ACTION_MARKER}\n\n_Retired duplicate CodeGraph PR impact report._`);
             if (retired)
                 duplicateIds.push(String(duplicate.id));
+            else
+                failedDuplicateIds.push(String(duplicate.id));
         }
         if (updated) {
             return {
@@ -674,6 +699,7 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
                 comment: 'updated',
                 currentCommentId: String(current.id),
                 duplicateCommentIds: duplicateIds,
+                failedDuplicateCommentIds: failedDuplicateIds,
                 commentUrl: current.html_url,
             };
         }
@@ -687,6 +713,7 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
         status: 'comment',
         comment: 'created',
         currentCommentId: String(created.id),
+        failedDuplicateCommentIds: [],
         commentUrl: created.html_url,
     };
 }
@@ -792,6 +819,8 @@ function renderReport(args) {
         '## Fallback delivery note',
         '',
         `- Report path: ${delivery.reportPath}`,
+        `- Duplicate comments retired: ${delivery.duplicateCommentIds.length}`,
+        `- Duplicate cleanup failures: ${delivery.failedDuplicateCommentIds.length}`,
         '- Comment delivery is attempted only when a trusted pull-request token is available.',
         '',
     ];

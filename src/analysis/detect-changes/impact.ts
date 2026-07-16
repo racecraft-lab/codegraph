@@ -153,10 +153,32 @@ function enrichAffectedFlows(cg: DetectChangesGraph, report: ImpactReport): void
   }
 
   try {
-    const flowList = cg.listFlows(MAX_FLOWS, 0);
-    report.affectedFlows.sourceVersion = flowList.sourceVersion;
-    report.affectedFlows.state = flowList.state;
-    if (flowList.state === 'stale') {
+    const flowSummaries: Array<{ id: string; name: string; entryKind: string; stepCount: number; truncated: boolean }> = [];
+    let totalFlows = 0;
+    let scannedFlows = 0;
+    let firstState: ImpactReport['affectedFlows']['state'] | null = null;
+    for (let offset = 0; ; offset += MAX_FLOWS) {
+      const flowList = cg.listFlows(MAX_FLOWS, offset);
+      if (firstState === null) {
+        firstState = flowList.state;
+        report.affectedFlows.sourceVersion = flowList.sourceVersion;
+        report.affectedFlows.state = flowList.state;
+        totalFlows = flowList.total;
+      }
+      flowSummaries.push(...flowList.items);
+      scannedFlows += flowList.items.length;
+      if (
+        flowList.state === 'disabled' ||
+        flowList.state === 'unavailable' ||
+        flowList.state === 'not_indexed' ||
+        flowList.items.length === 0 ||
+        offset + flowList.items.length >= flowList.total
+      ) {
+        break;
+      }
+    }
+
+    if (firstState === 'stale') {
       report.warnings.push({
         code: 'stale-flows',
         message: 'Execution-flow catalog is stale; affected flow matches are retained best-effort rows.',
@@ -168,12 +190,12 @@ function enrichAffectedFlows(cg: DetectChangesGraph, report: ImpactReport): void
         message: 'Execution-flow catalog is stale.',
       });
     }
-    if (flowList.state === 'disabled' || flowList.state === 'unavailable' || flowList.state === 'not_indexed') {
+    if (firstState === 'disabled' || firstState === 'unavailable' || firstState === 'not_indexed') {
       report.risks.push({
         code: 'flow-unavailable',
         severity: 'info',
         targetId: 'flows',
-        message: `Execution-flow catalog state is ${flowList.state}.`,
+        message: `Execution-flow catalog state is ${firstState}.`,
       });
       return;
     }
@@ -183,7 +205,7 @@ function enrichAffectedFlows(cg: DetectChangesGraph, report: ImpactReport): void
       ...report.callers.map((caller) => caller.callerNodeId),
     ]);
     const items: AffectedFlowItem[] = [];
-    for (const summary of flowList.items) {
+    for (const summary of flowSummaries) {
       const detail = cg.getFlowById(summary.id) as FlowDetailShape;
       if (!detail?.found || !detail.flow) continue;
       const matches = detail.flow.steps
@@ -201,7 +223,7 @@ function enrichAffectedFlows(cg: DetectChangesGraph, report: ImpactReport): void
     }
     items.sort((a, b) => a.name.localeCompare(b.name) || a.flowId.localeCompare(b.flowId));
     report.affectedFlows.items = items.slice(0, MAX_FLOWS);
-    report.limits.truncatedFlows = items.length > MAX_FLOWS || flowList.total > flowList.limit;
+    report.limits.truncatedFlows = items.length > MAX_FLOWS || scannedFlows < totalFlows;
     report.affectedFlows.truncated = report.limits.truncatedFlows;
     if (report.limits.truncatedFlows) {
       report.risks.push({

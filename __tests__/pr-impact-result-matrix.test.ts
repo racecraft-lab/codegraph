@@ -154,6 +154,7 @@ describe('PR impact result matrix', () => {
           GITHUB_EVENT_PATH: eventPath,
           GITHUB_REPOSITORY: 'racecraft-lab/codegraph',
           GITHUB_TOKEN: 'read-only-token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
           GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
           GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
           PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),

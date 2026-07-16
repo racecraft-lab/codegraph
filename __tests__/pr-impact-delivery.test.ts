@@ -129,6 +129,7 @@ describe('PR impact report delivery', () => {
         env: {
           ...deps(tmp).env,
           GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
         },
         fetch: async (url: string, init?: { method?: string; body?: string }) => {
           calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
@@ -167,6 +168,7 @@ describe('PR impact report delivery', () => {
         env: {
           ...deps(tmp).env,
           GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
         },
         fetch: async (url: string, init?: { method?: string; body?: string }) => {
           calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
@@ -202,6 +204,44 @@ describe('PR impact report delivery', () => {
     }
   });
 
+  it('records duplicate cleanup failures without hiding successful current comment delivery', async () => {
+    const tmp = tmpDir();
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          if ((init?.method ?? 'GET') === 'GET') {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [
+                { id: 10, body: `${ACTION_MARKER}\nold`, created_at: '2026-07-14T00:00:00Z', html_url: 'old', user: { login: 'github-actions[bot]' } },
+                { id: 11, body: `${ACTION_MARKER}\nnew`, created_at: '2026-07-15T00:00:00Z', html_url: 'new', user: { login: 'github-actions[bot]' } },
+              ],
+            };
+          }
+          return {
+            ok: !url.endsWith('/10'),
+            status: url.endsWith('/10') ? 500 : 200,
+            json: async () => ({ id: 11, html_url: 'new' }),
+          };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('comment');
+      expect(result.delivery.currentCommentId).toBe('11');
+      expect(result.delivery.duplicateCommentIds).toEqual([]);
+      expect(result.delivery.failedDuplicateCommentIds).toEqual(['10']);
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Duplicate cleanup failures: 1');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('paginates issue comments before updating the action-owned sticky comment', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
@@ -210,6 +250,7 @@ describe('PR impact report delivery', () => {
         env: {
           ...deps(tmp).env,
           GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
         },
         fetch: async (url: string, init?: { method?: string; body?: string }) => {
           calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
@@ -258,6 +299,7 @@ describe('PR impact report delivery', () => {
           env: {
             ...deps(tmp).env,
             GITHUB_TOKEN: 'token',
+            PR_IMPACT_TOKEN_WRITE: 'true',
           },
           fetch,
         }));
@@ -297,6 +339,42 @@ describe('PR impact report delivery', () => {
     }
   });
 
+  it('suppresses privileged paths for same-repository read-only and Dependabot-like runs', async () => {
+    for (const env of [
+      { GITHUB_TOKEN: 'read-only-token', INPUT_NARRATIVE: 'trusted', PR_IMPACT_NARRATIVE_SOURCE: 'appended' },
+      {
+        GITHUB_TOKEN: 'token',
+        INPUT_NARRATIVE: 'trusted',
+        PR_IMPACT_NARRATIVE_SOURCE: 'appended',
+        PR_IMPACT_TOKEN_WRITE: 'true',
+        GITHUB_ACTOR: 'dependabot[bot]',
+      },
+    ]) {
+      const tmp = tmpDir();
+      const calls: string[] = [];
+      try {
+        const base = deps(tmp);
+        const result = await runAction(deps(tmp, {
+          env: {
+            ...base.env,
+            ...env,
+          },
+          fetch: async (url: string) => {
+            calls.push(url);
+            return { ok: true, status: 200, json: async () => [] };
+          },
+        }));
+
+        expect(calls).toEqual([]);
+        expect(result.delivery.status).toBe('fallback');
+        expect(result.delivery.comment).toBe('skipped');
+        expect(result.narrative.status).toBe('suppressed');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('keeps summary and artifact fallback available when comment listing is denied', async () => {
     const tmp = tmpDir();
     try {
@@ -304,6 +382,7 @@ describe('PR impact report delivery', () => {
         env: {
           ...deps(tmp).env,
           GITHUB_TOKEN: 'read-only-token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
         },
         fetch: async () => ({ ok: false, status: 403, json: async () => ({ message: 'Resource not accessible by integration' }) }),
       }));
@@ -345,6 +424,43 @@ describe('PR impact report delivery', () => {
       expect(outputs['report-path']).toBe('');
       expect(fs.existsSync(reportPath)).toBe(false);
       expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('## Summary');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('fails report availability when preliminary write succeeds but final report and summary writes fail', async () => {
+    const tmp = tmpDir();
+    try {
+      const reportPath = path.join(tmp, 'report.md');
+      const summaryPath = path.join(tmp, 'summary.md');
+      let reportWrites = 0;
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_STEP_SUMMARY: summaryPath,
+          PR_IMPACT_REPORT_PATH: reportPath,
+        },
+        appendFileSync: (target: fs.PathOrFileDescriptor, data: string | Uint8Array) => {
+          if (String(target) === summaryPath) throw new Error('summary unavailable');
+          fs.appendFileSync(target, data);
+        },
+        writeFileSync: (target: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+          if (String(target) === reportPath) {
+            reportWrites += 1;
+            if (reportWrites > 1) throw new Error('final report unavailable');
+          }
+          fs.writeFileSync(target, data);
+        },
+      }));
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(result.delivery.status).toBe('failed');
+      expect(result.delivery.summary).toBe('failed');
+      expect(result.delivery.artifact).toBe('failed');
+      expect(result.conclusion).toBe('fail-report-unavailable');
+      expect(outputs.conclusion).toBe('fail-report-unavailable');
+      expect(outputs['report-path']).toBe('');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

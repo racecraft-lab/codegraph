@@ -4,6 +4,7 @@ import * as path from 'path';
 import { CodeGraph } from '../src';
 import { acquireGitDiff } from '../src/analysis/detect-changes/git-diff';
 import { detectChanges } from '../src/analysis/detect-changes';
+import { enrichImpact } from '../src/analysis/detect-changes/impact';
 import { buildInitialReport, parseFailOn, renderMarkdownReport } from '../src/analysis/detect-changes/report';
 import { createDetectChangesFixture, indexFixture, type DetectChangesFixture } from './helpers/detect-changes-fixture';
 
@@ -39,6 +40,34 @@ describe('detect changes', () => {
     const baseRef = acquireGitDiff(fx.dir, { mode: 'base-ref', baseRef: base });
     expect(baseRef.mergeBase).toBe(base);
     expect(baseRef.hunks.some((h) => h.newPath === 'src/calculator.ts')).toBe(true);
+  });
+
+  it('compares base-ref diffs against the explicit PR head instead of a synthetic merge HEAD', async () => {
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    const baseBranch = fx.git(['branch', '--show-current']).trim();
+    const prBase = fx.git(['rev-parse', 'HEAD']).trim();
+    fx.git(['checkout', '-b', 'pr-head', '-q']);
+    fx.write('src/calculator.ts', 'export function computeTotal(value: number) {\n  return value + 2;\n}\n');
+    fx.git(['add', 'src/calculator.ts']);
+    fx.git(['-c', 'commit.gpgsign=false', 'commit', '-m', 'pr change', '-q']);
+    const prHead = fx.git(['rev-parse', 'HEAD']).trim();
+
+    fx.git(['checkout', baseBranch, '-q']);
+    fx.write('src/base-only.ts', 'export function baseOnly() {\n  return true;\n}\n');
+    fx.git(['add', 'src/base-only.ts']);
+    fx.git(['-c', 'commit.gpgsign=false', 'commit', '-m', 'base change', '-q']);
+    const baseTip = fx.git(['rev-parse', 'HEAD']).trim();
+
+    fx.git(['checkout', '-b', 'synthetic-merge', prHead, '-q']);
+    fx.git(['-c', 'commit.gpgsign=false', 'merge', '--no-ff', baseTip, '-m', 'synthetic merge', '-q']);
+
+    const syntheticHead = acquireGitDiff(fx.dir, { mode: 'base-ref', baseRef: prBase });
+    const explicitHead = acquireGitDiff(fx.dir, { mode: 'base-ref', baseRef: prBase, headRef: prHead });
+
+    expect(syntheticHead.hunks.some((h) => h.newPath === 'src/base-only.ts')).toBe(true);
+    expect(explicitHead.hunks.some((h) => h.newPath === 'src/base-only.ts')).toBe(false);
+    expect(explicitHead.hunks.some((h) => h.newPath === 'src/calculator.ts')).toBe(true);
   });
 
   it('maps textual hunks to changed symbols and reports unmapped reason precedence', async () => {
@@ -199,6 +228,71 @@ describe('detect changes', () => {
     expect(report.exitCode).toBe(2);
   });
 
+  it('matches affected flows beyond the first display page before truncating', () => {
+    const report = buildInitialReport({
+      mode: 'all',
+      baseRef: null,
+      headRef: null,
+      format: 'json',
+      failOn: null,
+      callerDepth: 1,
+      maxCallers: 20,
+      projectPath: undefined,
+    }, [
+      {
+        id: 'symbol:1',
+        nodeId: 'node:changed',
+        name: 'changed',
+        qualifiedName: 'changed',
+        kind: 'function',
+        filePath: 'src/changed.ts',
+        startLine: 1,
+        endLine: 3,
+        changeType: 'modified',
+        hunkIds: ['hunk:1'],
+      },
+    ], [], []);
+    const summaries = Array.from({ length: 21 }, (_, index) => ({
+      id: `flow:${index}`,
+      name: index === 20 ? 'Late affected flow' : `Unrelated ${index}`,
+      entryKind: 'function',
+      stepCount: 1,
+      truncated: false,
+    }));
+    const cg = {
+      getProjectRoot: () => process.cwd(),
+      getFiles: () => [],
+      getNodesInFile: () => [],
+      getCallers: () => [],
+      listFlows: (limit: number, offset: number) => ({
+        items: summaries.slice(offset, offset + limit),
+        total: summaries.length,
+        limit,
+        offset,
+        sourceVersion: 1,
+        state: 'available' as const,
+      }),
+      getFlowById: (id: string) => ({
+        found: true,
+        flow: {
+          id,
+          name: summaries.find((summary) => summary.id === id)?.name ?? id,
+          entryKind: 'function',
+          steps: id === 'flow:20' ? [{ nodeId: 'node:changed' }] : [{ nodeId: 'node:other' }],
+          truncated: false,
+        },
+      }),
+    };
+
+    enrichImpact(cg, report);
+
+    expect(report.affectedFlows.items).toContainEqual(expect.objectContaining({
+      flowId: 'flow:20',
+      name: 'Late affected flow',
+    }));
+    expect(report.limits.truncatedFlows).toBe(false);
+  });
+
   it('parses failOn grammar', () => {
     expect(parseFailOn('callers>10,hub')).toEqual([
       { raw: 'callers>10', kind: 'callers', threshold: 10 },
@@ -211,6 +305,7 @@ describe('detect changes', () => {
     const report = buildInitialReport({
       mode: 'all',
       baseRef: null,
+      headRef: null,
       format: 'markdown',
       failOn: null,
       callerDepth: 1,

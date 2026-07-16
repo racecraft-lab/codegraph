@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_CODEGRAPH_VERSION,
   HELPER_VERSION,
   parseActionInputs,
   runAction,
@@ -84,6 +85,8 @@ describe('PR impact action contract', () => {
     }
 
     expect(action).toContain(`default: "${pkg.version}"`);
+    expect(DEFAULT_CODEGRAPH_VERSION).toBe(pkg.version);
+    expect(pkg.version).toBe('1.5.0');
     expect(action).toContain('INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}');
     expect(action).toContain('codegraph_spec="$INPUT_CODEGRAPH_VERSION"');
     expect(action).toContain('npm install --global "@colbymchenry/codegraph@$codegraph_spec"');
@@ -94,6 +97,8 @@ describe('PR impact action contract', () => {
     expect(action).toContain('node "${{ github.action_path }}/dist/run.mjs"');
     expect(action).toContain('PR_IMPACT_CACHE_RESTORE_HIT:');
     expect(action).toContain('PR_IMPACT_TRUSTED_CONTEXT:');
+    expect(action).toContain('PR_IMPACT_TOKEN_WRITE:');
+    expect(action).toContain("github.actor != 'dependabot[bot]'");
     expect(action).toContain('PR_IMPACT_PREPARE_BASE_INDEX: "true"');
     expect(action).toContain('steps.install-codegraph.outputs.codegraph-version');
     expect(action).toContain('GITHUB_TOKEN: ${{ github.token }}');
@@ -225,6 +230,7 @@ describe('PR impact action contract', () => {
         'detect-changes',
         '--mode', 'base-ref',
         '--base-ref', 'origin/main',
+        '--head-ref', 'HEAD',
         '--caller-depth', '3',
         '--max-callers', '50',
         '--fail-on', 'callers>10,hub',
@@ -248,6 +254,7 @@ describe('PR impact action contract', () => {
           PR_IMPACT_CACHE_STATUS: 'warm-valid',
           PR_IMPACT_MERGE_BASE: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
           PR_IMPACT_PREPARE_BASE_INDEX: 'true',
+          GITHUB_SHA: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           GITHUB_RUN_ID: '200',
           GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
           PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
@@ -292,7 +299,7 @@ describe('PR impact action contract', () => {
 
       expect(calls).toContainEqual(expect.objectContaining({
         command: 'git',
-        args: ['diff', '--name-status', '-z', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'HEAD', '--'],
+        args: ['diff', '--name-status', '-z', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '--'],
       }));
       expect(calls).toContainEqual(expect.objectContaining({
         command: 'git',
@@ -309,6 +316,52 @@ describe('PR impact action contract', () => {
       }]);
       const detectorCall = calls.find((call) => call.command === '/tmp/codegraph-bin' && call.args[0] === 'detect-changes');
       expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-index-dir', '.codegraph-pr-impact-base']));
+      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--head-ref', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']));
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('emits unavailable analysis when deleted-file base index preparation fails', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-base-index-fail-'));
+    try {
+      const calls: Array<{ command: string; args: string[] }> = [];
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.4.1',
+          INPUT_BASE_REF: 'origin/main',
+          PR_IMPACT_CODEGRAPH_BIN: '/tmp/codegraph-bin',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          PR_IMPACT_MERGE_BASE: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          PR_IMPACT_PREPARE_BASE_INDEX: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        cpSync: () => {
+          throw new Error('copy failed');
+        },
+        mkdirSync: fs.mkdirSync,
+        rmSync: fs.rmSync,
+        writeFileSync: fs.writeFileSync,
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          if (command === 'git' && args[0] === 'diff') return 'D\0src/delete-me.ts\0';
+          if (command === 'git' && args[0] === 'worktree') return '';
+          if (command === '/tmp/codegraph-bin' && args[0] === 'init') return '';
+          throw new Error('detector should not run');
+        },
+      } as any);
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(outputs['summary-status']).toBe('unavailable');
+      expect(outputs.conclusion).toBe('fail-analysis-unavailable');
+      expect(calls.some((call) => call.command === '/tmp/codegraph-bin' && call.args[0] === 'detect-changes')).toBe(false);
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('Unable to prepare base CodeGraph index');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -370,6 +423,7 @@ describe('PR impact action contract', () => {
       expect(codegraphCalls).toHaveLength(1);
       for (const call of codegraphCalls) {
         expect(call.args).toEqual(expect.arrayContaining(['--base-ref', '0000000000000000000000000000000000000000']));
+        expect(call.args).toEqual(expect.arrayContaining(['--head-ref', '0000000000000000000000000000000000000002']));
       }
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Base ref: main');
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Merge base: 0000000000000000000000000000000000000000');
@@ -438,6 +492,7 @@ describe('PR impact action contract', () => {
       ]);
       const detectorCall = calls.find((call) => call.command === 'codegraph');
       expect(detectorCall?.args).toEqual(expect.arrayContaining(['--base-ref', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']));
+      expect(detectorCall?.args).toEqual(expect.arrayContaining(['--head-ref', '0000000000000000000000000000000000000002']));
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Merge base: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -545,6 +600,7 @@ const typeSurface: {
     artifact: 'pending',
     currentCommentId: null,
     duplicateCommentIds: [],
+    failedDuplicateCommentIds: [],
     reportPath: 'pr-impact-report.md',
     commentUrl: '',
   },

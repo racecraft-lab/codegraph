@@ -26,6 +26,7 @@ export class GitDiffError extends Error {
 export function acquireGitDiff(projectRoot: string, request: DiffRequest): GitDiffResult {
   const { mode } = request;
   const baseRef = request.baseRef ?? null;
+  const headRef = request.headRef ?? 'HEAD';
   if (mode === 'base-ref' && !baseRef) {
     throw new GitDiffError('--base-ref is required when --mode base-ref');
   }
@@ -34,10 +35,10 @@ export function acquireGitDiff(projectRoot: string, request: DiffRequest): GitDi
   }
 
   const mergeBase = mode === 'base-ref'
-    ? runGit(projectRoot, ['merge-base', baseRef!, 'HEAD']).trim()
+    ? runGit(projectRoot, ['merge-base', baseRef!, headRef]).trim()
     : null;
 
-  const diffArgs = argsForMode(mode, mergeBase);
+  const diffArgs = argsForMode(mode, mergeBase, headRef);
   const statusOutput = runGit(projectRoot, ['diff', '--name-status', '-z', '-M', ...diffArgs]);
   const patchOutput = runGit(projectRoot, ['diff', '--no-ext-diff', '--no-color', '-M', '--unified=0', ...diffArgs]);
   const files = parseNameStatus(statusOutput);
@@ -90,12 +91,12 @@ export function acquireGitDiff(projectRoot: string, request: DiffRequest): GitDi
   };
 }
 
-function argsForMode(mode: DiffRequest['mode'], mergeBase: string | null): string[] {
+function argsForMode(mode: DiffRequest['mode'], mergeBase: string | null, headRef: string): string[] {
   switch (mode) {
     case 'unstaged': return ['--'];
     case 'staged': return ['--cached', '--'];
     case 'all': return ['HEAD', '--'];
-    case 'base-ref': return [mergeBase!, 'HEAD', '--'];
+    case 'base-ref': return [mergeBase!, headRef, '--'];
   }
 }
 

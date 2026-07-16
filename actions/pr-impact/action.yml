@@ -5,7 +5,7 @@ inputs:
   codegraph-version:
     description: Reproducible @colbymchenry/codegraph CLI/runtime version used for analysis.
     required: false
-    default: "1.4.1"
+    default: "1.5.0"
   base-ref:
     description: Comparison target for detect-changes --mode base-ref.
     required: false
@@ -124,7 +124,8 @@ runs:
         PR_IMPACT_CACHE_RESTORE_HIT: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'true' || 'false' }}
         PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: ${{ steps.install-codegraph.outputs.codegraph-version }}
         PR_IMPACT_PREPARE_BASE_INDEX: "true"
-        PR_IMPACT_TRUSTED_CONTEXT: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'true' || 'false' }}
+        PR_IMPACT_TRUSTED_CONTEXT: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && 'true' || 'false' }}
+        PR_IMPACT_TOKEN_WRITE: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && 'true' || 'false' }}
         GITHUB_TOKEN: ${{ github.token }}
       run: node "${{ github.action_path }}/dist/run.mjs"
 

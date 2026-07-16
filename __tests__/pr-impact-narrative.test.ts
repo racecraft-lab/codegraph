@@ -25,6 +25,7 @@ async function runNarrative(status: string, event: unknown = prImpactGitHubEvent
         PR_IMPACT_CACHE_STATUS: 'warm-valid',
         GITHUB_EVENT_PATH: eventPath,
         GITHUB_TOKEN: 'token',
+        PR_IMPACT_TOKEN_WRITE: 'true',
         GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
         GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
         PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
