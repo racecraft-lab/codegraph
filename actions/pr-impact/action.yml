@@ -5,7 +5,7 @@ inputs:
   codegraph-version:
     description: Reproducible @colbymchenry/codegraph CLI/runtime version used for analysis.
     required: false
-    default: ""
+    default: "1.4.1"
   base-ref:
     description: Comparison target for detect-changes --mode base-ref.
     required: false

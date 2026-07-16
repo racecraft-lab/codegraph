@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const HELPER_VERSION = '0.1.0-spec-020';
+export const DEFAULT_CODEGRAPH_VERSION = '1.4.1';
 export const ACTION_MARKER = '<!-- codegraph-pr-impact-action -->';
 
 export type SummaryStatus = 'clean' | 'impact' | 'threshold_breach' | 'unavailable';
@@ -128,7 +129,7 @@ export function createRunDependencies(): RunDependencies {
 export function parseActionInputs(env: NodeJS.ProcessEnv): ActionInputs {
   const narrative = readInput(env, 'NARRATIVE', 'off');
   return {
-    codegraphVersion: readInput(env, 'CODEGRAPH_VERSION', ''),
+    codegraphVersion: readInput(env, 'CODEGRAPH_VERSION', DEFAULT_CODEGRAPH_VERSION),
     baseRef: readInput(env, 'BASE_REF', ''),
     failOnCallers: parseOptionalInteger(readInput(env, 'FAIL_ON_CALLERS', '')),
     failOnHubs: parseBoolean(readInput(env, 'FAIL_ON_HUBS', 'false')),
@@ -272,7 +273,7 @@ function renderReport(args: {
     '',
     `- Recorded at: ${recordedAt}`,
     `- Base ref: ${inputs.baseRef || 'unresolved'}`,
-    `- CodeGraph version: ${inputs.codegraphVersion || 'package default'}`,
+    `- CodeGraph version: ${inputs.codegraphVersion}`,
     `- Helper version: ${HELPER_VERSION}`,
     '',
     '## Summary',

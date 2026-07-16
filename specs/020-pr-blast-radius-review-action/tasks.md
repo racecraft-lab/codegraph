@@ -34,12 +34,12 @@
 
 **⚠️ CRITICAL**: No user story implementation can begin until these tasks are complete.
 
-- [ ] T008 [P] Add failing contract tests for action inputs, outputs, helper version, and CodeGraph version metadata in `__tests__/pr-impact-action-contract.test.ts`
-- [ ] T009 [P] Add failing freshness tests proving `actions/pr-impact/dist/run.mjs` is generated from `actions/pr-impact/run.ts` in `__tests__/pr-impact-runtime-freshness.test.ts`
-- [ ] T010 Add minimal action contract declarations for inputs, outputs, runtime step, summary, and artifact surfaces in `actions/pr-impact/action.yml`
-- [ ] T011 Add minimal helper types for `PullRequestContext`, `ActionInputs`, `DetectorResult`, `DeliveryResult`, `NarrativeResult`, and `FinalConclusion` in `actions/pr-impact/run.ts`
-- [ ] T012 Implement the reproducible action-runtime build path for `actions/pr-impact/dist/run.mjs` in `package.json`
-- [ ] T013 Generate `actions/pr-impact/dist/run.mjs` from `actions/pr-impact/run.ts` and make `__tests__/pr-impact-runtime-freshness.test.ts` pass
+- [X] T008 [P] Add failing contract tests for action inputs, outputs, helper version, and CodeGraph version metadata in `__tests__/pr-impact-action-contract.test.ts`
+- [X] T009 [P] Add failing freshness tests proving `actions/pr-impact/dist/run.mjs` is generated from `actions/pr-impact/run.ts` in `__tests__/pr-impact-runtime-freshness.test.ts`
+- [X] T010 Add minimal action contract declarations for inputs, outputs, runtime step, summary, and artifact surfaces in `actions/pr-impact/action.yml`
+- [X] T011 Add minimal helper types for `PullRequestContext`, `ActionInputs`, `DetectorResult`, `DeliveryResult`, `NarrativeResult`, and `FinalConclusion` in `actions/pr-impact/run.ts`
+- [X] T012 Implement the reproducible action-runtime build path for `actions/pr-impact/dist/run.mjs` in `package.json`
+- [X] T013 Generate `actions/pr-impact/dist/run.mjs` from `actions/pr-impact/run.ts` and make `__tests__/pr-impact-runtime-freshness.test.ts` pass
 
 **Checkpoint**: Contract and generated-runtime foundation ready; user-story implementation can proceed.
 
