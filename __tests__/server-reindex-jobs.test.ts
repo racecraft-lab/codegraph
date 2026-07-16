@@ -528,6 +528,31 @@ describe('SSE GET /api/reindex/:repo/events (FR-023)', () => {
     expect(term.status).toBe('done');
   }, CT(30000));
 
+  it('a disconnected client can reconnect after completion and receive the terminal snapshot', async () => {
+    const ctl = controllable();
+    const fx = await server({ jobDeps: ctl.deps });
+    await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    await ctl.started;
+
+    const first = openSse(`${fx.baseURL}/api/reindex/${fx.repoId}/events`);
+    await first.ready;
+    await first.waitFor(() => first.frames.some((f) => f.event === 'snapshot'), CT(10000), 'first snapshot');
+    first.close();
+    await sleep(CT(300));
+    expect(ctl.aborted()).toBe(false);
+
+    ctl.release.resolve(syncResult());
+    await waitTerminal(fx.baseURL, fx.repoId, CT(15000));
+
+    const reconnect = openSse(`${fx.baseURL}/api/reindex/${fx.repoId}/events`);
+    await reconnect.ready;
+    await reconnect.waitFor(() => reconnect.frames.some((f) => f.event === 'snapshot'), CT(10000), 'terminal snapshot');
+    expect(reconnect.frames.filter((f) => f.event === 'done' || f.event === 'error')).toHaveLength(0);
+    expect((reconnect.frames[0].data as JobDescriptor).status).toBe('done');
+    await reconnect.waitFor(() => reconnect.gotEnd, CT(10000), 'reconnect stream closed');
+    reconnect.close();
+  }, CT(30000));
+
   it('a heartbeat comment frame keeps a quiet stream alive', async () => {
     const ctl = controllable();
     // A tiny heartbeat interval so the test observes a comment frame quickly

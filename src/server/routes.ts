@@ -399,10 +399,11 @@ async function withCatalogClient(
   return withClient(deps, ctx, fn);
 }
 
-/** GET /api/status (T014, FR-005/016) — not repo-scoped; reports the default repo. */
+/** GET /api/status (T014, FR-005/016) — reports the selected or default repo. */
 function statusHandler(deps: ReadApiDeps): RouteHandler {
   return async (ctx): Promise<HandlerResult> => {
-    const repo = deps.defaultRepo;
+    const repo = deps.resolveRepo(ctx.query.get('repo') ?? undefined);
+    if (!repo) return notFound('repo');
     let client: DaemonReadClient;
     try {
       client = await deps.getClient(repo);

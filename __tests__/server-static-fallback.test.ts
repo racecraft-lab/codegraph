@@ -128,6 +128,12 @@ describe('serveStatic — dist/web absent (T019/T020, FR-017/017b/018)', () => {
     expect(text(r.body)).toBe(placeholderPage());
   });
 
+  it('serves the placeholder for a file-like SPA symbol route, not an asset 404', () => {
+    const r = serveStatic('/symbol/file%3Asrc%2Findex.ts', absentRoot);
+    expect(r.status).toBe(200);
+    expect(text(r.body)).toBe(placeholderPage());
+  });
+
   it('returns the 404 route envelope for a missing .js asset (no shell fallback)', () => {
     const r = serveStatic('/assets/app.js', absentRoot);
     expect(r.status).toBe(404);
@@ -212,8 +218,21 @@ describe('serveStatic — dist/web present (T019/T020, FR-017/017b)', () => {
     expect(text(r.body)).toContain(INDEX_MARKER);
   });
 
+  it('falls back to the index.html shell for a file-like SPA symbol route', () => {
+    const r = serveStatic('/symbol/file%3Asrc%2Findex.ts', webRoot);
+    expect(r.status).toBe(200);
+    expect(r.headers?.['Content-Type']).toContain('text/html');
+    expect(text(r.body)).toContain(INDEX_MARKER);
+  });
+
   it('returns 404 for a missing asset — no shell fallback (FR-018)', () => {
     const r = serveStatic('/assets/missing.js', webRoot);
+    expect(r.status).toBe(404);
+    expectRouteMissEnvelope(text(r.body));
+  });
+
+  it('returns 404 for a missing nested asset under an SPA prefix', () => {
+    const r = serveStatic('/symbol/assets/missing.js', webRoot);
     expect(r.status).toBe(404);
     expectRouteMissEnvelope(text(r.body));
   });
@@ -348,6 +367,13 @@ describe('static mount over HTTP — dist/web present (T019, FR-017/017b)', () =
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.body).toContain('codegraph fixture'); // marker from the harness index.html
     expect(res.body).not.toContain(PLACEHOLDER_MARKER);
+  });
+
+  it('GET a file-like symbol route -> the index.html shell', async () => {
+    const res = await rawGet(fx.baseURL, '/symbol/file%3Asrc%2Findex.ts');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.body).toContain('codegraph fixture');
   });
 
   it('GET / -> the index.html shell', async () => {

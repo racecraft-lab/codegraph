@@ -7,6 +7,9 @@
   "bin": {
     "codegraph": "./dist/bin/codegraph.js"
   },
+  "workspaces": [
+    "web"
+  ],
   "files": [
     "dist",
     "actions",
@@ -14,14 +17,18 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && npm run copy-assets && npm run build:pr-impact-action && node -e \"require('fs').chmodSync('dist/bin/codegraph.js', 0o755)\"",
+    "build": "tsc && npm run build:web && npm run copy-assets && npm run copy-web-assets && npm run build:pr-impact-action && node -e \"require('fs').chmodSync('dist/bin/codegraph.js', 0o755)\"",
+    "build:web": "npm --prefix web run build",
     "build:pr-impact-action": "tsc actions/pr-impact/run.ts --target ES2022 --module ES2022 --moduleResolution node --types node --skipLibCheck --outDir actions/pr-impact/dist/.build --declaration false --sourceMap false && node -e \"const fs=require('fs');fs.copyFileSync('actions/pr-impact/dist/.build/run.js','actions/pr-impact/dist/run.mjs');fs.rmSync('actions/pr-impact/dist/.build',{recursive:true,force:true})\"",
     "preuninstall": "node dist/bin/uninstall.js",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/db',{recursive:true});fs.copyFileSync('src/db/schema.sql','dist/db/schema.sql');fs.mkdirSync('dist/extraction/wasm',{recursive:true});fs.readdirSync('src/extraction/wasm').filter(f=>f.endsWith('.wasm')).forEach(f=>fs.copyFileSync('src/extraction/wasm/'+f,'dist/extraction/wasm/'+f));fs.mkdirSync('dist/server',{recursive:true});fs.copyFileSync('src/server/openapi.yaml','dist/server/openapi.yaml')\"",
+    "copy-web-assets": "node scripts/copy-web-assets.mjs",
     "dev": "tsc --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && npm run typecheck:web",
+    "typecheck:web": "npm --prefix web run typecheck",
     "cli": "npm run build && node dist/bin/codegraph.js",
     "test": "vitest run",
+    "test:web": "npm --prefix web run test",
     "test:watch": "vitest",
     "test:eval": "vitest run __tests__/evaluation/",
     "eval": "npm run build && npx tsx __tests__/evaluation/runner.ts",

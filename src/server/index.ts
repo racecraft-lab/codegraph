@@ -28,6 +28,7 @@ import {
   type ReadApiDeps,
   type RepoInfo,
 } from './routes';
+import { buildChatRoutes } from './chat';
 import { internalError, apiError } from './errors';
 import { resolveBindSecurity, isAllowedHostHeader } from './auth';
 import { serveStatic } from './static';
@@ -36,6 +37,7 @@ import { JobRegistry, defaultRearmWatcher, type JobDeps } from './jobs';
 import { CodeGraphPackageVersion } from '../mcp/version';
 import { listDaemons } from '../mcp/daemon-registry';
 import { findNearestCodeGraphRoot } from '../directory';
+import { isLoopbackHost } from '../utils';
 
 /** Options for starting the web server. */
 export interface WebServerOptions {
@@ -209,9 +211,20 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   const requestedPort = options.port ?? DEFAULT_PORT;
   const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
 
-  // FR-012/FR-013 fail-closed bind gate — resolved BEFORE any `listen`. A
-  // non-loopback host with no token throws here, so startup is refused and
-  // nothing binds. On loopback `requireToken` is false (Bearer no-op, SC-002).
+  // SPEC-006 serves a packaged browser UI whose fetch/EventSource calls cannot
+  // carry a Bearer session token yet, so refuse every non-loopback bind before
+  // token resolution. This keeps startup guidance actionable: bind loopback for
+  // the browser UI until a browser-compatible API/SSE session mechanism exists.
+  if (!isLoopbackHost(host)) {
+    throw new WebServerError(
+      `Refusing to start the packaged CodeGraph web UI on non-loopback host ${host}: ` +
+        `the browser UI is loopback-only until a browser-compatible API/SSE session mechanism exists. ` +
+        `Bind 127.0.0.1 for the UI.`,
+    );
+  }
+
+  // FR-012/FR-013 fail-closed bind gate — resolved BEFORE any `listen`. On
+  // loopback `requireToken` is false (Bearer no-op, SC-002).
   const security = resolveBindSecurity(host, options.token ?? null);
 
   // Daemon clients attached while serving reads (lazily, FR-010) — closed on
@@ -324,6 +337,12 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       resolveRepo,
       isRepoIndexed: (root) => findNearestCodeGraphRoot(root) !== null,
       registry: jobRegistry,
+    }),
+    ...buildChatRoutes({
+      defaultRepo,
+      resolveRepo,
+      getClient,
+      evictClient,
     }),
   ];
 

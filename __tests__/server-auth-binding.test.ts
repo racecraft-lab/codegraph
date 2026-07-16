@@ -131,8 +131,11 @@ describe('isAllowedHostHeader — DNS-rebinding allowlist (T023, FR-012)', () =>
     ['[::1]:8080', '127.0.0.1', 8080, true],
     ['LOCALHOST:8080', '127.0.0.1', 8080, true], // hostnames are case-insensitive
     ['127.0.0.1:8080', '0.0.0.0', 8080, true], // 127.0.0.1 always allowed
+    ['192.168.1.5:8080', '0.0.0.0', 8080, true], // wildcard bind reached by concrete LAN IP
+    ['[2001:db8::1]:8080', '::', 8080, true], // IPv6 wildcard bind reached by concrete IPv6 literal
     ['192.168.1.5:8080', '192.168.1.5', 8080, true], // the bound host itself
     ['evil.example:8080', '127.0.0.1', 8080, false], // rebinding host → reject
+    ['evil.example:8080', '0.0.0.0', 8080, false], // wildcard still rejects DNS names
     ['127.0.0.1:9999', '127.0.0.1', 8080, false], // wrong port → reject
     ['127.0.0.1', '127.0.0.1', 8080, false], // no port → not the bound port
     [undefined, '127.0.0.1', 8080, false], // absent Host header → reject
@@ -205,8 +208,8 @@ describe('handleApiRequest Bearer scope (T024, FR-014)', () => {
   });
 
   it('the static mount + placeholder sit OUTSIDE the auth boundary (non-/api → null)', async () => {
-    // Even on a token-bound bind, a non-/api path is never 401'd here — it returns
-    // null so the caller serves the public shell without a token (FR-014/FR-017a).
+    // The bearer gate is scoped to /api/* here; the HTTP dispatcher applies the
+    // authenticated-bind browser-shell guard before static serving.
     const shell = await handleApiRequest(probeRoutes, reqCtx('GET', '/'), tokenBound);
     const asset = await handleApiRequest(probeRoutes, reqCtx('GET', '/index.html'), tokenBound);
     expect(shell).toBeNull();
@@ -313,7 +316,7 @@ describe('SPEC-005 auth/binding HTTP wiring (loopback, FR-012/013/014a)', () => 
     expect(status).toBe(404); // route miss, NOT a Host 400
   });
 
-  it('refuses startup on a non-loopback bind with no token — nothing binds (FR-013/SC-002)', async () => {
+  it('refuses startup on a non-loopback bind with no token using loopback-only guidance', async () => {
     // The gate throws BEFORE listen, so at GREEN nothing ever binds a non-loopback
     // interface. If (at RED) it were to bind, close the leaked handle immediately.
     const bound: WebServerHandle[] = [];
@@ -323,7 +326,18 @@ describe('SPEC-005 auth/binding HTTP wiring (loopback, FR-012/013/014a)', () => 
     );
     for (const h of bound) { try { await h.close(); } catch { /* ignore */ } }
     expect(err).toBeInstanceOf(Error); // startup was refused (rejected)
-    expect((err as Error | null)?.message ?? '').toMatch(/CODEGRAPH_SERVER_TOKEN|loopback/i);
+    expect((err as Error | null)?.message ?? '').toMatch(/loopback-only|browser UI/i);
+  });
+
+  it('refuses packaged browser UI startup on a non-loopback bind even with a token', async () => {
+    const bound: WebServerHandle[] = [];
+    const err = await startWebServer({ host: '0.0.0.0', token: 'secret', port: 0 }).then(
+      (h) => { bound.push(h); return null; },
+      (e) => e as Error,
+    );
+    for (const h of bound) { try { await h.close(); } catch { /* ignore */ } }
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error | null)?.message ?? '').toMatch(/loopback-only|browser UI/i);
   });
 
   it('the request-log seam never serializes the token or Authorization header (FR-014a)', async () => {

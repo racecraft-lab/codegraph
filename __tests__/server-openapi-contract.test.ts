@@ -8,6 +8,7 @@ import {
   type ReadApiDeps,
   type JobApiDeps,
 } from '../src/server/routes';
+import { buildChatRoutes, type ChatApiDeps } from '../src/server/chat';
 import { JobRegistry, type JobDeps, type JobDescriptor } from '../src/server/jobs';
 import type { SyncResult, IndexResult } from '../src/extraction';
 import {
@@ -57,6 +58,9 @@ const FLOW_PATHS = ['/api/flows', '/api/flows/{id}'];
 // The SPEC-011 functional-cluster catalog path (read-tagged, daemon-forwarding).
 const CLUSTER_PATHS = ['/api/clusters'];
 
+// The SPEC-006 same-origin browser chat adapter paths.
+const CHAT_PATHS = ['/api/chat/status', '/api/chat/messages', '/api/chat/bundles/{handle}'];
+
 /**
  * Zero-dep structural read of the `paths:` block's child keys (the path
  * templates indented exactly two spaces under it). Throws on tab indentation
@@ -89,7 +93,7 @@ describe('openapi ship check', () => {
     expect(fs.readFileSync(DIST_SPEC).equals(fs.readFileSync(SRC_SPEC))).toBe(true);
   });
 
-  it('is well-formed YAML documenting exactly the 8 read + 2 jobs + 2 flow + 1 cluster paths', () => {
+  it('is well-formed YAML documenting exactly the read, jobs, catalog, and chat paths', () => {
     expect(fs.existsSync(DIST_SPEC)).toBe(true);
     const yaml = fs.readFileSync(DIST_SPEC, 'utf8');
     expect(yaml).toMatch(/^openapi:\s*3\.1\.0\s*$/m);
@@ -99,8 +103,9 @@ describe('openapi ship check', () => {
     for (const p of JOB_PATHS) expect(keys).toContain(p);
     for (const p of FLOW_PATHS) expect(keys).toContain(p);
     for (const p of CLUSTER_PATHS) expect(keys).toContain(p);
+    for (const p of CHAT_PATHS) expect(keys).toContain(p);
     expect(keys).toHaveLength(
-      READ_PATHS.length + JOB_PATHS.length + FLOW_PATHS.length + CLUSTER_PATHS.length,
+      READ_PATHS.length + JOB_PATHS.length + FLOW_PATHS.length + CLUSTER_PATHS.length + CHAT_PATHS.length,
     );
   });
 
@@ -487,6 +492,7 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
     const BAD_REPO = 'zzzzzzzzzzzzzzzz'; // fails ^[0-9a-f]{16}$ → 404 repo (FR-011)
 
     matrix.set('/api/status 200', H('/api/status'));
+    matrix.set('/api/status 404', H(`/api/status?repo=${BAD_REPO}`));
     matrix.set('/api/status 503', U('/api/status'));
     matrix.set('/api/repos 200', H('/api/repos'));
     matrix.set('/api/search 200', H('/api/search?q=subHelper'));
@@ -571,8 +577,8 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
     }
   });
 
-  // ---- inverse walk: every LIVE /api route is documented, read + jobs (no undocumented routes) ----
-  it('every live /api route (read + jobs) is documented, and every documented (path,method) is live', () => {
+  // ---- inverse walk: every LIVE /api route is documented, read + jobs + chat (no undocumented routes) ----
+  it('every live /api route (read + jobs + chat) is documented, and every documented (path,method) is live', () => {
     const readStub: ReadApiDeps = {
       version: '0.0.0',
       defaultRepo: { id: '0'.repeat(16), root: '/does/not/exist', name: 'x' },
@@ -582,7 +588,13 @@ describe('SPEC-005 OpenAPI contract walk (T029, FR-025/SC-005)', () => {
       isRepoIndexed: () => false,
     };
     const jobStub: JobApiDeps = { resolveRepo: () => null, isRepoIndexed: () => false, registry: new JobRegistry() };
-    const live = [...buildReadRoutes(readStub), ...buildJobRoutes(jobStub)].map((r) => ({
+    const chatStub: ChatApiDeps = {
+      defaultRepo: readStub.defaultRepo,
+      resolveRepo: () => null,
+      getClient: () => Promise.reject(new Error('stub — never invoked by route enumeration')),
+      evictClient: () => {},
+    };
+    const live = [...buildReadRoutes(readStub), ...buildJobRoutes(jobStub), ...buildChatRoutes(chatStub)].map((r) => ({
       // `/api/node/:id` → `/api/node/{id}` (the OpenAPI path-template form).
       key: `${r.method} ${r.pattern.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`,
     }));

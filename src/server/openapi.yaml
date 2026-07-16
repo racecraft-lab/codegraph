@@ -14,9 +14,10 @@ info:
   version: 0.0.0   # placeholder; the running server reports its real version via GET /api/status (FR-016, no URL /v1)
   description: >
     Local, loopback-first REST surface over the per-project daemon index
-    (`codegraph serve --web`). Same-origin only (no CORS, FR-019). Auth applies
-    only to non-loopback binds (FR-012/013/014): with defaults the server binds
-    127.0.0.1 and serves /api/* with no credentials.
+    (`codegraph serve --web`). Same-origin only (no CORS, FR-019). The packaged
+    browser UI is currently loopback-only: the server refuses non-loopback binds
+    until browser-compatible API and SSE session auth exists. With defaults the
+    server binds 127.0.0.1 and serves /api/* with no credentials.
 servers:
   - url: http://127.0.0.1:11235
     description: Default loopback bind (port overridable via --port / --port 0)
@@ -24,18 +25,15 @@ servers:
 tags:
   - name: read     # Slice 1
   - name: jobs     # Slice 2
+  - name: chat     # SPEC-006
 
-# Bearer auth applies ONLY when a token is configured for a non-loopback bind
-# (FR-014); the loopback-default bind enforces no auth and serves /api/* with no
-# credentials — which is the contract every path below is walked against. The
-# top-level `security` below makes auth OPTIONAL (the empty `{}` = the no-auth
-# loopback default; `bearerAuth` = a token-bound non-loopback bind), documenting
-# the scheme without a per-operation 401: the token-bound 401 surface (FR-014)
-# and the Host-header 400 gate are covered by
-# __tests__/server-auth-binding.test.ts, and the top-level 500 catch is FR-015a.
+# The packaged browser UI contract is loopback-only for SPEC-006; the
+# loopback-default bind enforces no auth and serves /api/* with no credentials,
+# which is the contract every path below is walked against. The Host-header 400
+# gate is covered by __tests__/server-auth-binding.test.ts, and the top-level
+# 500 catch is FR-015a.
 security:
   - {}                 # loopback default: no credentials required (FR-012/013)
-  - bearerAuth: []     # non-loopback bind requires a valid Bearer token (FR-014)
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
@@ -81,7 +79,7 @@ components:
         repo-scoped read; omitted => the default (startup) repo. Unregistered or
         malformed => 404 not_found (details.resource: repo), never 400 (FR-011).
         First access lazily attaches that repo's daemon (Q2). Not accepted by
-        /api/status or /api/repos.
+        /api/repos.
       schema: { type: string, pattern: '^[0-9a-f]{16}$' }
   schemas:
     ErrorEnvelope:
@@ -310,6 +308,64 @@ components:
         found: { type: boolean, enum: [false] }
         state: { type: string, enum: [available, stale, empty, unavailable, disabled, not_indexed] }
         message: { type: string }
+    ChatStatus:
+      type: object
+      required: [state, message, providerConfigured, repo]
+      properties:
+        state: { type: string, enum: [enabled, dormant, misconfigured, disabled, rate_limited] }
+        message: { type: string }
+        providerConfigured: { type: boolean }
+        repo: { type: string }
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        repo: { type: string, description: Optional 16-hex repo id; omitted uses the startup repo. }
+        message: { type: string, minLength: 1 }
+        selectedNodeId: { type: string }
+        view: { type: string }
+    ChatResponse:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [answer, fallback, pending_bundle, dormant, misconfigured, rate_limited, error] }
+        answer: { type: string }
+        bundleHandle: { type: string }
+        message: { type: string }
+        context:
+          type: object
+          required: [repo, view, symbols, files, truncated]
+          properties:
+            repo:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+            view: { type: string }
+            selectedNodeId: { type: string }
+            symbols:
+              type: array
+              items:
+                type: object
+                required: [id, name, kind]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  kind: { type: string }
+                  file: { type: string }
+                  line: { type: integer }
+            files: { type: array, items: { type: string } }
+            truncated: { type: boolean }
+            insufficiencyReason: { type: string }
+        citations:
+          type: array
+          items:
+            type: object
+            properties:
+              nodeId: { type: string }
+              file: { type: string }
+              line: { type: integer }
   responses:
     NotFound:
       description: Unknown node/repo/route (FR-011/015a); details.resource discriminates.
@@ -325,10 +381,13 @@ paths:
   /api/status:
     get:
       tags: [read]
-      summary: Server + index health (the version channel, FR-005/016). Not repo-scoped — reports the default repo.
+      summary: Server + index health (the version channel, FR-005/016) for the selected or default repo.
+      parameters:
+        - { $ref: '#/components/parameters/RepoQuery' }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Status' } } } }
-        '503': { $ref: '#/components/responses/Unavailable' }      # default-repo daemon attach/spawn failure (FR-015a + Edge Cases)
+        '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011)
+        '503': { $ref: '#/components/responses/Unavailable' }      # selected/default-repo daemon attach/spawn failure (FR-015a + Edge Cases)
   /api/repos:
     get:
       tags: [read]
@@ -471,6 +530,43 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ClusterListResult' } } } }
         '404': { $ref: '#/components/responses/NotFound' }         # unknown/malformed ?repo (FR-010a/011)
         '503': { $ref: '#/components/responses/Unavailable' }      # daemon attach/spawn failure (FR-015a + Edge Cases)
+
+  # ---------- SPEC-006: same-origin browser chat adapter over SPEC-018 ----------
+  /api/chat/status:
+    get:
+      tags: [chat]
+      summary: Backend-only LLM/chat readiness for the browser UI; no provider secrets are returned.
+      parameters:
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChatStatus' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/chat/messages:
+    post:
+      tags: [chat]
+      summary: Ask a graph-grounded question through the local backend; provider calls, if any, happen server-side.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChatResponse' } } } }
+        '400': { description: Malformed JSON body or missing message, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/chat/bundles/{handle}:
+    get:
+      tags: [chat]
+      summary: Redeem or inspect an agent-mode bundle handle emitted by /api/chat/messages.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { type: string }
+        - { $ref: '#/components/parameters/RepoQuery' }
+      responses:
+        '200': { description: Completed answer or pending bundle state, content: { application/json: { schema: { $ref: '#/components/schemas/ChatResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ---------- Slice 2: re-index jobs (T041) ----------
   # These handlers run wholly in the serve process against the in-memory job
