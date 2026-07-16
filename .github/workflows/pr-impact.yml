@@ -1,0 +1,32 @@
+name: CodeGraph PR Impact
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pr-impact-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - uses: ./actions/pr-impact
+        with:
+          codegraph-version: "file:."
+          fail-on-callers: ""
+          fail-on-hubs: "false"
+          narrative: "off"

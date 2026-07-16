@@ -13,7 +13,7 @@ export class ApiClientError extends Error {
 }
 
 function fallbackEnvelope(status: number): ErrorEnvelope {
-  let code = "internal"
+  let code: ErrorEnvelope["error"]["code"] = "internal"
   let message = "The local CodeGraph server returned an unexpected response."
 
   if (status === 0) {

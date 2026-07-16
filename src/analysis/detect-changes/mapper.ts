@@ -44,8 +44,13 @@ export interface MappingResult {
   warnings: ReportWarning[];
 }
 
-export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): MappingResult {
+export function mapDiffToSymbols(
+  cg: DetectChangesGraph,
+  diff: GitDiffResult,
+  baseGraph: DetectChangesGraph | null = null,
+): MappingResult {
   const indexedFiles = new Set(cg.getFiles().map((file) => file.path));
+  const baseIndexedFiles = baseGraph ? new Set(baseGraph.getFiles().map((file) => file.path)) : null;
   const bySymbol = new Map<string, ChangedSymbol>();
   const unmappedHunks: UnmappedHunk[] = [];
   const warnings: ReportWarning[] = [];
@@ -60,22 +65,20 @@ export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): M
       continue;
     }
 
-    const reason = classifyUnmapped(hunk, indexedFiles);
+    const reason = classifyUnmapped(hunk, indexedFiles, baseIndexedFiles);
     if (reason) {
       unmappedHunks.push(toUnmapped(hunk, reason));
       warnings.push({ code: reason, message: toUnmapped(hunk, reason).message });
       continue;
     }
 
-    const filePath = mappingPath(hunk, indexedFiles);
+    const filePath = mappingPath(hunk, indexedFiles, baseIndexedFiles);
     if (!filePath) {
       unmappedHunks.push(toUnmapped(hunk, 'unindexed'));
       continue;
     }
 
-    const nodes = cg.getNodesInFile(filePath).filter(isReportableSymbol);
-    const range = hunkRange(hunk);
-    const intersecting = nodes.filter((node) => nodeIntersects(node, range));
+    const intersecting = intersectingSymbolsForHunk(hunk, filePath, cg, baseGraph, baseIndexedFiles);
 
     if (intersecting.length === 0) {
       const fallback = hunk.changeKind === 'deleted' ? 'deleted-without-span' : 'no-symbol-span';
@@ -83,8 +86,7 @@ export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): M
       continue;
     }
 
-    for (const node of intersecting) {
-      const changeType = symbolChangeType(hunk);
+    for (const { node, changeType } of intersecting) {
       const key = `${node.id}:${changeType}`;
       const existing = bySymbol.get(key);
       if (existing) {
@@ -122,19 +124,33 @@ export function mapDiffToSymbols(cg: DetectChangesGraph, diff: GitDiffResult): M
   };
 }
 
-function classifyUnmapped(hunk: ChangedHunk, indexedFiles: Set<string>): UnmappedReason | null {
+function classifyUnmapped(
+  hunk: ChangedHunk,
+  indexedFiles: Set<string>,
+  baseIndexedFiles: Set<string> | null,
+): UnmappedReason | null {
   if (hunk.reason === 'binary' || hunk.changeKind === 'binary') return 'binary';
   if (hunk.reason === 'untracked') return 'untracked';
-  const filePath = mappingPath(hunk, indexedFiles);
+  const filePath = mappingPath(hunk, indexedFiles, baseIndexedFiles);
   if (!filePath) return 'unindexed';
   if (isGenerated(filePath)) return 'generated';
   if (!isSupportedPath(filePath)) return 'unsupported';
-  if (!indexedFiles.has(filePath)) return hunk.changeKind === 'deleted' ? 'deleted-without-span' : 'unindexed';
+  if (!indexedFiles.has(filePath) && !baseIndexedFiles?.has(filePath)) {
+    return hunk.changeKind === 'deleted' ? 'deleted-without-span' : 'unindexed';
+  }
   return null;
 }
 
-function mappingPath(hunk: ChangedHunk, indexedFiles?: Set<string>): string | null {
-  if (hunk.changeKind === 'deleted') return hunk.oldPath;
+function mappingPath(
+  hunk: ChangedHunk,
+  indexedFiles?: Set<string>,
+  baseIndexedFiles?: Set<string> | null,
+): string | null {
+  if (hunk.changeKind === 'deleted') {
+    if (hunk.oldPath && indexedFiles?.has(hunk.oldPath)) return hunk.oldPath;
+    if (hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) return hunk.oldPath;
+    return hunk.oldPath;
+  }
   if ((hunk.changeKind === 'renamed' || hunk.changeKind === 'moved') && indexedFiles) {
     if (hunk.newPath && indexedFiles.has(hunk.newPath)) return hunk.newPath;
     if (hunk.oldPath && indexedFiles.has(hunk.oldPath)) return hunk.oldPath;
@@ -142,9 +158,76 @@ function mappingPath(hunk: ChangedHunk, indexedFiles?: Set<string>): string | nu
   return hunk.newPath;
 }
 
-function hunkRange(hunk: ChangedHunk): { start: number; end: number } {
-  const start = hunk.changeKind === 'deleted' ? hunk.oldStart : hunk.newStart;
-  const lines = hunk.changeKind === 'deleted' ? hunk.oldLines : hunk.newLines;
+function intersectingSymbolsForHunk(
+  hunk: ChangedHunk,
+  filePath: string,
+  headGraph: DetectChangesGraph,
+  baseGraph: DetectChangesGraph | null,
+  baseIndexedFiles: Set<string> | null,
+): Array<{ node: Node; changeType: ChangedSymbol['changeType'] }> {
+  if (hunk.oldStart === null && hunk.newStart === null) return [];
+
+  if (hunk.changeKind === 'deleted') {
+    const graph = baseGraph && baseIndexedFiles?.has(filePath) ? baseGraph : headGraph;
+    return symbolsIntersecting(graph, filePath, hunkRange(hunk, 'old'))
+      .map((node) => ({ node, changeType: 'deleted' }));
+  }
+
+  const results: Array<{ node: Node; changeType: ChangedSymbol['changeType'] }> = [];
+  const oldSideOnlyHunk = hunk.changeKind !== 'added'
+    && (hunk.oldLines ?? 0) > 0
+    && (hunk.newLines ?? 0) === 0;
+
+  if (!oldSideOnlyHunk) {
+    for (const node of symbolsIntersecting(headGraph, filePath, hunkRange(hunk, 'new'))) {
+      results.push({ node, changeType: symbolChangeType(hunk) });
+    }
+  }
+
+  if (
+    hunk.changeKind !== 'added'
+    && (hunk.oldLines ?? 0) > 0
+    && baseGraph
+    && hunk.oldPath
+    && baseIndexedFiles?.has(hunk.oldPath)
+  ) {
+    const headNodes = headGraph.getNodesInFile(filePath).filter(isReportableSymbol);
+    for (const node of symbolsIntersecting(baseGraph, hunk.oldPath, hunkRange(hunk, 'old'))) {
+      const equivalent = findHeadEquivalent(node, headNodes);
+      if (!equivalent) {
+        results.push({ node, changeType: 'deleted' });
+        continue;
+      }
+      if (!results.some((result) => result.node.id === equivalent.id)) {
+        results.push({ node: equivalent, changeType: symbolChangeType(hunk) });
+      }
+    }
+  }
+
+  return results;
+}
+
+function findHeadEquivalent(baseNode: Node, headNodes: Node[]): Node | null {
+  const baseQualifiedName = baseNode.qualifiedName || baseNode.name;
+  return headNodes.find((node) =>
+    node.kind === baseNode.kind
+    && (node.qualifiedName || node.name) === baseQualifiedName
+  ) ?? null;
+}
+
+function symbolsIntersecting(
+  graph: DetectChangesGraph,
+  filePath: string,
+  range: { start: number; end: number },
+): Node[] {
+  return graph.getNodesInFile(filePath)
+    .filter(isReportableSymbol)
+    .filter((node) => nodeIntersects(node, range));
+}
+
+function hunkRange(hunk: ChangedHunk, side: 'old' | 'new' = hunk.changeKind === 'deleted' ? 'old' : 'new'): { start: number; end: number } {
+  const start = side === 'old' ? hunk.oldStart : hunk.newStart;
+  const lines = side === 'old' ? hunk.oldLines : hunk.newLines;
   const safeStart = Math.max(1, start ?? 1);
   const safeLines = Math.max(1, lines ?? 1);
   return { start: safeStart, end: safeStart + safeLines - 1 };

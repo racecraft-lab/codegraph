@@ -1,0 +1,254 @@
+name: CodeGraph PR Impact
+description: Publish a deterministic CodeGraph blast-radius report for pull requests.
+
+inputs:
+  codegraph-version:
+    description: Reproducible @colbymchenry/codegraph CLI/runtime version used for analysis.
+    required: false
+    default: "1.5.0"
+  base-ref:
+    description: Comparison target for detect-changes --mode base-ref.
+    required: false
+    default: ""
+  fail-on-callers:
+    description: Optional integer caller threshold. Empty means advisory.
+    required: false
+    default: ""
+  fail-on-hubs:
+    description: Whether hub threshold breaches should fail the action.
+    required: false
+    default: "false"
+  caller-depth:
+    description: Caller traversal depth.
+    required: false
+    default: "1"
+  max-callers:
+    description: Maximum caller rows.
+    required: false
+    default: "20"
+  narrative:
+    description: Optional prose narrative mode. Use off or trusted.
+    required: false
+    default: "off"
+  comment-write:
+    description: "Set true only when the caller grants GITHUB_TOKEN pull-requests: write."
+    required: false
+    default: "false"
+
+outputs:
+  summary-status:
+    description: Detector summary status.
+    value: ${{ steps.finalize-pr-impact.outputs.summary-status }}
+  detector-exit-code:
+    description: Raw detector exit code captured by the helper.
+    value: ${{ steps.finalize-pr-impact.outputs.detector-exit-code }}
+  conclusion:
+    description: Final action conclusion after SPEC-020 policy mapping.
+    value: ${{ steps.finalize-pr-impact.outputs.conclusion }}
+  threshold-breached:
+    description: Whether configured policy was breached.
+    value: ${{ steps.finalize-pr-impact.outputs.threshold-breached }}
+  cache-status:
+    description: Cache path taken before analysis.
+    value: ${{ steps.finalize-pr-impact.outputs.cache-status }}
+  delivery-status:
+    description: Durable delivery path.
+    value: ${{ steps.finalize-pr-impact.outputs.delivery-status }}
+  comment-url:
+    description: Current action-owned comment when available.
+    value: ${{ steps.finalize-pr-impact.outputs.comment-url }}
+  report-path:
+    description: Deterministic markdown report path.
+    value: ${{ steps.finalize-pr-impact.outputs.report-path }}
+  artifact-name:
+    description: Uploaded report artifact name.
+    value: ${{ steps.finalize-pr-impact.outputs.artifact-name }}
+  narrative-status:
+    description: Optional narrative outcome.
+    value: ${{ steps.finalize-pr-impact.outputs.narrative-status }}
+  codegraph-version:
+    description: Resolved CodeGraph runtime version.
+    value: ${{ steps.finalize-pr-impact.outputs.codegraph-version }}
+  helper-version:
+    description: Resolved action helper version.
+    value: ${{ steps.finalize-pr-impact.outputs.helper-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install CodeGraph CLI
+      id: install-codegraph
+      shell: bash
+      env:
+        INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}
+      run: |
+        write_env_line() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "Refusing to write multi-line value for $name" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+        }
+        write_output_line() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "Refusing to write multi-line value for $name" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$name" "$value" >> "$GITHUB_OUTPUT"
+        }
+        codegraph_spec="$INPUT_CODEGRAPH_VERSION"
+        if [[ ! "$codegraph_spec" =~ ^[A-Za-z0-9._~:/@+-]+$ ]]; then
+          echo "Unsupported codegraph-version package spec" >&2
+          exit 1
+        fi
+        npm install --global "@colbymchenry/codegraph@$codegraph_spec"
+        codegraph_bin="$(npm prefix --global)/bin/codegraph"
+        if [[ ! -x "$codegraph_bin" ]]; then
+          codegraph_bin="$(command -v codegraph || true)"
+        fi
+        if [[ -z "$codegraph_bin" ]]; then
+          echo "Unable to resolve installed codegraph binary" >&2
+          exit 1
+        fi
+        codegraph_version="$("$codegraph_bin" --version)"
+        if [[ -z "$codegraph_version" || "$codegraph_version" == *$'\n'* || "$codegraph_version" == *$'\r'* || ! "$codegraph_version" =~ ^[A-Za-z0-9][A-Za-z0-9._~:+/-]*$ ]]; then
+          echo "Unable to resolve installed codegraph version" >&2
+          exit 1
+        fi
+        write_env_line "PR_IMPACT_CODEGRAPH_BIN" "$codegraph_bin"
+        write_env_line "PR_IMPACT_CODEGRAPH_RESOLVED_VERSION" "$codegraph_version"
+        write_output_line "codegraph-version" "$codegraph_version"
+
+    - name: Restore CodeGraph index cache
+      id: codegraph-cache
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: .codegraph
+        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}
+        restore-keys: |
+          codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}-
+          codegraph-${{ runner.os }}-${{ github.repository }}-
+
+    - name: Run PR impact helper
+      id: pr-impact
+      shell: bash
+      env:
+        INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}
+        INPUT_BASE_REF: ${{ inputs.base-ref }}
+        INPUT_FAIL_ON_CALLERS: ${{ inputs.fail-on-callers }}
+        INPUT_FAIL_ON_HUBS: ${{ inputs.fail-on-hubs }}
+        INPUT_CALLER_DEPTH: ${{ inputs.caller-depth }}
+        INPUT_MAX_CALLERS: ${{ inputs.max-callers }}
+        INPUT_NARRATIVE: ${{ inputs.narrative }}
+        INPUT_COMMENT_WRITE: ${{ inputs.comment-write }}
+        PR_IMPACT_CACHE_STATUS: ""
+        PR_IMPACT_CACHE_RESTORE_HIT: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'true' || 'false' }}
+        PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: ${{ steps.install-codegraph.outputs.codegraph-version }}
+        PR_IMPACT_PREPARE_BASE_INDEX: "true"
+        PR_IMPACT_VALIDATE_HEAD: "true"
+        PR_IMPACT_TRUSTED_CONTEXT: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && 'true' || 'false' }}
+        PR_IMPACT_TOKEN_WRITE: ${{ inputs.comment-write == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && 'true' || 'false' }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: node "${{ github.action_path }}/dist/run.mjs"
+
+    - name: Upload PR impact report
+      id: upload-report
+      if: always() && steps.pr-impact.outputs.report-path != ''
+      continue-on-error: true
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ steps.pr-impact.outputs.artifact-name }}
+        path: ${{ steps.pr-impact.outputs.report-path }}
+        if-no-files-found: error
+
+    - name: Finalize PR impact outputs
+      id: finalize-pr-impact
+      if: always()
+      shell: bash
+      env:
+        PR_IMPACT_SUMMARY_STATUS: ${{ steps.pr-impact.outputs.summary-status }}
+        PR_IMPACT_DETECTOR_EXIT_CODE: ${{ steps.pr-impact.outputs.detector-exit-code }}
+        PR_IMPACT_INITIAL_CONCLUSION: ${{ steps.pr-impact.outputs.conclusion }}
+        PR_IMPACT_THRESHOLD_BREACHED: ${{ steps.pr-impact.outputs.threshold-breached }}
+        PR_IMPACT_CACHE_STATUS: ${{ steps.pr-impact.outputs.cache-status }}
+        PR_IMPACT_INITIAL_DELIVERY_STATUS: ${{ steps.pr-impact.outputs.delivery-status }}
+        PR_IMPACT_SUMMARY_WRITE_STATUS: ${{ steps.pr-impact.outputs.summary-write-status }}
+        PR_IMPACT_COMMENT_URL: ${{ steps.pr-impact.outputs.comment-url }}
+        PR_IMPACT_REPORT_PATH: ${{ steps.pr-impact.outputs.report-path }}
+        PR_IMPACT_ARTIFACT_NAME: ${{ steps.pr-impact.outputs.artifact-name }}
+        PR_IMPACT_NARRATIVE_STATUS: ${{ steps.pr-impact.outputs.narrative-status }}
+        PR_IMPACT_CODEGRAPH_VERSION: ${{ steps.pr-impact.outputs.codegraph-version }}
+        PR_IMPACT_FALLBACK_CODEGRAPH_VERSION: ${{ steps.install-codegraph.outputs.codegraph-version || inputs.codegraph-version }}
+        PR_IMPACT_HELPER_VERSION: ${{ steps.pr-impact.outputs.helper-version }}
+        PR_IMPACT_UPLOAD_OUTCOME: ${{ steps.upload-report.outcome }}
+      run: |
+        write_output_line() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "Refusing to write multi-line value for $name" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$name" "$value" >> "$GITHUB_OUTPUT"
+        }
+        summary_status="${PR_IMPACT_SUMMARY_STATUS:-unavailable}"
+        detector_exit_code="${PR_IMPACT_DETECTOR_EXIT_CODE:-3}"
+        conclusion="${PR_IMPACT_INITIAL_CONCLUSION:-fail-analysis-unavailable}"
+        threshold_breached="${PR_IMPACT_THRESHOLD_BREACHED:-false}"
+        cache_status="${PR_IMPACT_CACHE_STATUS:-unavailable}"
+        delivery_status="${PR_IMPACT_INITIAL_DELIVERY_STATUS:-failed}"
+        comment_url="${PR_IMPACT_COMMENT_URL:-}"
+        report_path="${PR_IMPACT_REPORT_PATH:-}"
+        artifact_name="${PR_IMPACT_ARTIFACT_NAME:-codegraph-pr-impact}"
+        narrative_status="${PR_IMPACT_NARRATIVE_STATUS:-unavailable}"
+        codegraph_version="${PR_IMPACT_CODEGRAPH_VERSION:-$PR_IMPACT_FALLBACK_CODEGRAPH_VERSION}"
+        helper_version="${PR_IMPACT_HELPER_VERSION:-unknown}"
+        durable_report_available=false
+
+        if [[ "$delivery_status" == "comment" ]]; then
+          durable_report_available=true
+        fi
+        if [[ "$PR_IMPACT_SUMMARY_WRITE_STATUS" == "written" ]]; then
+          durable_report_available=true
+        fi
+        if [[ -n "$report_path" && "$PR_IMPACT_UPLOAD_OUTCOME" == "success" ]]; then
+          durable_report_available=true
+        fi
+
+        if [[ "$durable_report_available" != "true" ]]; then
+          delivery_status="failed"
+          if [[ "$conclusion" == "pass" ]]; then
+            conclusion="fail-report-unavailable"
+          fi
+        fi
+
+        write_output_line "summary-status" "$summary_status"
+        write_output_line "detector-exit-code" "$detector_exit_code"
+        write_output_line "conclusion" "$conclusion"
+        write_output_line "threshold-breached" "$threshold_breached"
+        write_output_line "cache-status" "$cache_status"
+        write_output_line "delivery-status" "$delivery_status"
+        write_output_line "comment-url" "$comment_url"
+        write_output_line "report-path" "$report_path"
+        write_output_line "artifact-name" "$artifact_name"
+        write_output_line "narrative-status" "$narrative_status"
+        write_output_line "codegraph-version" "$codegraph_version"
+        write_output_line "helper-version" "$helper_version"
+
+    - name: Save CodeGraph index cache
+      if: always() && steps.pr-impact.outputs.cache-status == 'rebuilt'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: .codegraph
+        key: codegraph-${{ runner.os }}-${{ github.repository }}-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ steps.install-codegraph.outputs.codegraph-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: Enforce PR impact conclusion
+      if: always() && steps.finalize-pr-impact.outputs.conclusion != 'pass'
+      shell: bash
+      run: |
+        echo "CodeGraph PR impact conclusion: ${{ steps.finalize-pr-impact.outputs.conclusion }}" >&2
+        exit 1

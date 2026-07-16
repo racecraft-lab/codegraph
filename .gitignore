@@ -3,6 +3,8 @@ node_modules/
 
 # Build output
 dist/
+!actions/pr-impact/dist/
+!actions/pr-impact/dist/run.mjs
 
 .cmem
 
