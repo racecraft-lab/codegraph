@@ -802,10 +802,58 @@ describe('PR impact report delivery', () => {
     }
   });
 
+  it('continues comment pagination beyond ten pages before updating the sticky comment', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    const stickyComment = { id: 1101, body: `${ACTION_MARKER}\n${CURRENT_RUN_MARKER}\ncurrent`, created_at: '2026-07-15T00:00:01Z', html_url: 'current', user: { login: 'github-actions[bot]' } };
+    try {
+      await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
+          const page = Number(new URL(url).searchParams.get('page') ?? '0');
+          if ((init?.method ?? 'GET') === 'GET' && page <= 10) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => Array.from({ length: 100 }, (_, id) => ({
+                id: (page - 1) * 100 + id,
+                body: 'unrelated',
+                created_at: '2026-07-15T00:00:00Z',
+                html_url: `unrelated-${page}-${id}`,
+                user: { login: 'github-actions[bot]' },
+              })),
+            };
+          }
+          if ((init?.method ?? 'GET') === 'GET') {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [stickyComment],
+            };
+          }
+          stickyComment.body = JSON.parse(String(init?.body ?? '{}')).body;
+          return { ok: true, status: 200, json: async () => stickyComment };
+        },
+      }));
+
+      expect(calls.some((call) => call.method === 'GET' && call.url.includes('&page=11'))).toBe(true);
+      expect(calls.some((call) => call.method === 'POST')).toBe(false);
+      expect(calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/1101'))).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('falls back when GitHub comment fetch or JSON parsing fails', async () => {
     for (const fetch of [
       async () => { throw new Error('network down'); },
       async () => ({ ok: true, status: 200, json: async () => { throw new Error('bad json'); } }),
+      async () => ({ ok: true, status: 200, json: async () => ({ message: 'not an array' }) }),
     ]) {
       const tmp = tmpDir();
       try {
@@ -825,6 +873,41 @@ describe('PR impact report delivery', () => {
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('falls back without mutating comments when comment pagination reaches the safety cap', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string }> = [];
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+        },
+        fetch: async (url: string, init?: { method?: string }) => {
+          calls.push({ method: init?.method ?? 'GET', url });
+          return {
+            ok: true,
+            status: 200,
+            json: async () => Array.from({ length: 100 }, (_, id) => ({
+              id,
+              body: 'unrelated',
+              created_at: '2026-07-15T00:00:00Z',
+              html_url: `unrelated-${id}`,
+              user: { login: 'github-actions[bot]' },
+            })),
+          };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('permission-denied');
+      expect(calls.some((call) => call.method === 'GET' && call.url.includes('&page=100'))).toBe(true);
+      expect(calls.some((call) => call.method !== 'GET')).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 

@@ -14,6 +14,8 @@ const MAX_CALLER_DEPTH = 3;
 const MIN_MAX_CALLERS = 1;
 const MAX_MAX_CALLERS = 100;
 const GIT_DIFF_MAX_BUFFER = 20 * 1024 * 1024;
+const GITHUB_COMMENT_PAGE_SIZE = 100;
+const GITHUB_COMMENT_PAGE_CAP = 100;
 export function createRunDependencies() {
     return {
         env: process.env,
@@ -1144,20 +1146,20 @@ function formatNarrativeText(text) {
 }
 async function listComments(deps, context) {
     const comments = [];
-    for (let page = 1; page <= 10; page++) {
-        const result = await fetchJson(deps, `${issueCommentsUrl(deps, context)}?per_page=100&page=${page}`, {
+    for (let page = 1; page <= GITHUB_COMMENT_PAGE_CAP; page++) {
+        const result = await fetchJson(deps, `${issueCommentsUrl(deps, context)}?per_page=${GITHUB_COMMENT_PAGE_SIZE}&page=${page}`, {
             method: 'GET',
             headers: githubHeaders(deps),
         });
         if (!result.ok)
             return null;
         if (!Array.isArray(result.json))
-            return [];
+            return null;
         comments.push(...result.json.filter(isGitHubComment));
-        if (result.json.length < 100)
-            break;
+        if (result.json.length < GITHUB_COMMENT_PAGE_SIZE)
+            return comments;
     }
-    return comments;
+    return null;
 }
 async function fetchJson(deps, url, init) {
     try {
