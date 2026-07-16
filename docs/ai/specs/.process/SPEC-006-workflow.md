@@ -36,7 +36,7 @@ decisions captured during scaffold.
 | Analyze | `/speckit-analyze` | Complete | Resolved chat OpenAPI and self-repo UAT coverage gaps before implementation. |
 | Confidence Gate | G6.5 | Complete | Advisory soft-skip: no confidence emit found. |
 | Implement | `/speckit-implement` | Complete | Implemented all 96 tasks with automated verification and Playwright MCP browser UAT evidence. |
-| Post | Post | Blocked before PR side effects | All canonical post gates are complete or explicitly skipped; PR creation is blocked because no feature-local PR packet exists and packet emission is deferred. |
+| Post | Post | Complete via manual PR recovery | All canonical post gates are complete or explicitly skipped; draft PR #153 was opened manually because installed packet emission is still deferred. |
 
 ### Canonical Post Gates
 
@@ -568,10 +568,10 @@ For each task:
 - Final Reviewability Backstop: warn/proceed using committed reviewability evidence at `4df3b13` because `final-reviewability-backstop` is deferred. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/final-reviewability-backstop.md`.
 - PR Packet/Body Generation: skipped before PR side effects because no current feature-local PR packet exists and packet emission is deferred. Evidence lives at `specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md`.
 - PR Body Generation: skipped because no packet-owned body file exists.
-- PR Creation: skipped; no `gh pr create` side effect was allowed without a current validated PR packet.
-- Review Remediation: skipped because no PR was opened.
+- PR Creation: manual recovery draft PR opened outside the packet helper because the installed SpecKit Pro packet-emission helpers remain deferred: https://github.com/racecraft-lab/codegraph/pull/153
+- Review Remediation: skipped because the draft PR was opened during recovery and no review feedback was available in this turn.
 - Retrospective: complete. `specs/006-web-ui-graph-browser/retrospective.md` reports 100% task completion, 100% spec adherence, and 0 critical findings.
-- Completion blocker: no current feature-local PR packet exists at `specs/006-web-ui-graph-browser/.process/pr-packets/<packet-id>.json`, and `pr-packet-output` is deferred. No PR was opened.
+- Packet-gate note: no current feature-local PR packet exists at `specs/006-web-ui-graph-browser/.process/pr-packets/<packet-id>.json`, and `pr-packet-output` is deferred. The PR was opened through explicit manual recovery, not through the official packet helper path.
 - Canvas pixel check proves graph is nonblank and correctly framed: Cytoscape canvas layer 2 sampled 356 nonblank points out of 7,055.
 - Accessibility checks pass through Playwright/axe coverage; no residual accessibility issue is documented.
 - Offline/no-CDN network audit passes through Playwright package-offline coverage.

@@ -4,8 +4,8 @@
   "feature_dir": "specs/006-web-ui-graph-browser",
   "branch": "006-web-ui-graph-browser",
   "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/006-web-ui-graph-browser",
-  "status": "blocked",
-  "active_step": "Blocked: PR packet emission deferred",
+  "status": "complete",
+  "active_step": "Complete: PR opened by manual recovery",
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -186,12 +186,13 @@
     {
       "step": "Post: PR Creation",
       "status": "completed",
-      "skipped": "no gh pr create side effect allowed without a current validated PR packet"
+      "result": "manual recovery draft PR opened outside packet helper because packet emission is still deferred",
+      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/153"
     },
     {
       "step": "Post: Review Remediation",
       "status": "completed",
-      "skipped": "no PR was opened, so there are no review comments to remediate"
+      "skipped": "draft PR opened during recovery; no review feedback was available in this turn"
     },
     {
       "step": "Post: Retrospective",
@@ -200,13 +201,23 @@
       "result": "completed: 100% task completion, 100% spec adherence, 0 critical findings"
     }
   ],
-  "updated_at": "2026-07-15T23:59:00Z",
+  "updated_at": "2026-07-16T00:12:00Z",
   "completion_blocker": {
     "type": "deferred_pr_packet_emission",
-    "status": "blocked_before_pr_side_effects",
+    "status": "resolved_by_manual_recovery",
     "reason": "No current feature-local PR packet exists at specs/006-web-ui-graph-browser/.process/pr-packets/<packet-id>.json, and pr-packet-output is deferred.",
     "evidence": "specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md",
-    "implementation_commit": "4df3b13"
+    "implementation_commit": "4df3b13",
+    "manual_recovery_pr": "https://github.com/racecraft-lab/codegraph/pull/153"
+  },
+  "manual_pr_recovery": {
+    "status": "opened",
+    "pr_url": "https://github.com/racecraft-lab/codegraph/pull/153",
+    "mode": "draft",
+    "base": "main",
+    "head": "006-web-ui-graph-browser",
+    "reason": "User requested recovery while the installed SpecKit Pro packet-emission helpers remained deferred.",
+    "body_file": "specs/006-web-ui-graph-browser/review-packet.md"
   },
   "confidence_gate_mode": "advisory",
   "preflight": {
@@ -793,14 +804,15 @@
     {
       "id": "post_pr_creation",
       "title": "PR Creation",
-      "status": "skipped",
-      "reason": "no gh pr create side effect allowed without a current validated PR packet"
+      "status": "completed",
+      "result": "manual recovery draft PR opened outside packet helper because packet emission is still deferred",
+      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/153"
     },
     {
       "id": "post_review_remediation",
       "title": "Review Remediation",
       "status": "skipped",
-      "reason": "no PR was opened, so there are no review comments to remediate"
+      "reason": "draft PR opened during recovery; no review feedback was available in this turn"
     },
     {
       "id": "post_retrospective",
