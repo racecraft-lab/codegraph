@@ -1146,22 +1146,22 @@ async function deliverReportComment(
   if (current && isSameRunComment(current, context)) {
     const patched = await patchComment(deps, context, current.id, report);
     if (!patched) return { ...base, comment: 'failed' };
+    const knownPatched = { ...current, body: report };
     const refreshed = await listComments(deps, context);
-    markedAfterWrite = refreshed === null
-      ? [{ ...current, body: report }]
-      : sortActionOwnedComments(refreshed);
-    markedAfterWrite = markedAfterWrite.map((comment) => String(comment.id) === String(current.id)
-      ? { ...comment, body: report }
-      : comment);
+    markedAfterWrite = sortActionOwnedComments(refreshed === null
+      ? [knownPatched]
+      : mergeKnownComment(refreshed, knownPatched));
     writtenComment = markedAfterWrite.find((comment) => String(comment.id) === String(current.id))
       ?? markedAfterWrite[0]
-      ?? { ...current, body: report };
+      ?? knownPatched;
     commentStatus = 'updated';
   } else {
     const created = await createComment(deps, context, report);
     if (!created) return { ...base, comment: 'failed' };
     const refreshed = await listComments(deps, context);
-    markedAfterWrite = refreshed === null ? [created] : sortActionOwnedComments(refreshed);
+    markedAfterWrite = sortActionOwnedComments(refreshed === null
+      ? [created]
+      : mergeKnownComment(refreshed, created));
     writtenComment = markedAfterWrite.find((comment) => String(comment.id) === String(created.id))
       ?? markedAfterWrite[0]
       ?? created;
@@ -1246,6 +1246,18 @@ async function retireCurrentRunComments(
     else failed.push(String(comment.id));
   }
   return { retired, failed };
+}
+
+function mergeKnownComment(comments: GitHubComment[], known: GitHubComment): GitHubComment[] {
+  const knownId = String(known.id);
+  let found = false;
+  const merged = comments.map((comment) => {
+    if (String(comment.id) !== knownId) return comment;
+    found = true;
+    return { ...comment, ...known };
+  });
+  if (!found) merged.push(known);
+  return merged;
 }
 
 function writeSummary(deps: RunDependencies, report: string): DeliveryResult['summary'] {
@@ -1411,7 +1423,12 @@ async function listComments(deps: RunDependencies, context: PullRequestContext):
     });
     if (!result.ok) return null;
     if (!Array.isArray(result.json)) return null;
-    comments.push(...result.json.filter(isGitHubComment));
+    const pageComments: GitHubComment[] = [];
+    for (const entry of result.json) {
+      if (!isGitHubComment(entry)) return null;
+      pageComments.push(entry);
+    }
+    comments.push(...pageComments);
     if (result.json.length < GITHUB_COMMENT_PAGE_SIZE) return comments;
   }
   return null;

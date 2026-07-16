@@ -462,6 +462,75 @@ describe('PR impact report delivery', () => {
     }
   });
 
+  it('retains the known updated comment when post-update refresh omits it', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    let getCount = 0;
+    const stickyComment = {
+      id: 500,
+      body: [
+        ACTION_MARKER,
+        '<!-- codegraph-pr-impact-run:200:1:0000000000000000000000000000000000000002 -->',
+        '',
+        '# CodeGraph PR Impact',
+      ].join('\n'),
+      created_at: '2026-07-15T00:00:01Z',
+      html_url: 'sticky',
+      user: { login: 'github-actions[bot]' },
+    };
+    const newerComment = {
+      id: 501,
+      body: [
+        ACTION_MARKER,
+        '<!-- codegraph-pr-impact-run:201:1:newer-head -->',
+        '',
+        '# CodeGraph PR Impact',
+      ].join('\n'),
+      created_at: '2026-07-15T00:00:02Z',
+      html_url: 'newer',
+      user: { login: 'github-actions[bot]' },
+    };
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_RUN_ATTEMPT: '1',
+          GITHUB_SHA: 'older-head',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ method, url, body: init?.body });
+          if (method === 'GET') {
+            getCount += 1;
+            return {
+              ok: true,
+              status: 200,
+              json: async () => getCount === 1 ? [stickyComment] : [newerComment],
+            };
+          }
+          stickyComment.body = JSON.parse(String(init?.body ?? '{}')).body;
+          return { ok: true, status: 200, json: async () => stickyComment };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('skipped');
+      expect(result.delivery.duplicateCommentIds).toEqual(['500']);
+      const patches = calls.filter((call) => call.method === 'PATCH');
+      expect(patches.map((call) => call.url)).toEqual([
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/500',
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/500',
+      ]);
+      expect(patches[0]?.body).toContain('# CodeGraph PR Impact');
+      expect(patches[1]?.body).toContain('Retired duplicate');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('retires the current run comment instead of finalizing when a newer run appears before final patch', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
@@ -528,6 +597,72 @@ describe('PR impact report delivery', () => {
       ]);
       expect(patches[0]?.body).toContain('Retired duplicate');
       expect(patches[0]?.body).not.toContain('- Delivery status: comment');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('retains the known created comment when post-create refresh omits it', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    let getCount = 0;
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_RUN_ATTEMPT: '1',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ method, url, body: init?.body });
+          if (method === 'GET') {
+            getCount += 1;
+            const newerComment = {
+              id: 601,
+              body: [
+                ACTION_MARKER,
+                '<!-- codegraph-pr-impact-run:201:1:0000000000000000000000000000000000000002 -->',
+                '',
+                '# CodeGraph PR Impact',
+              ].join('\n'),
+              created_at: '2026-07-15T00:00:03Z',
+              html_url: 'newer',
+              user: { login: 'github-actions[bot]' },
+            };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => getCount === 1 ? [] : [newerComment],
+            };
+          }
+          if (method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: async () => ({
+                id: 600,
+                body: JSON.parse(String(init?.body ?? '{}')).body,
+                created_at: '2026-07-15T00:00:02Z',
+                html_url: 'created',
+                user: { login: 'github-actions[bot]' },
+              }),
+            };
+          }
+          return { ok: true, status: 200, json: async () => ({ id: Number(url.split('/').pop()), html_url: 'patched' }) };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('skipped');
+      expect(result.delivery.duplicateCommentIds).toEqual(['600']);
+      const patches = calls.filter((call) => call.method === 'PATCH');
+      expect(patches.map((call) => call.url)).toEqual([
+        'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/600',
+      ]);
+      expect(patches[0]?.body).toContain('Retired duplicate');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -854,6 +989,7 @@ describe('PR impact report delivery', () => {
       async () => { throw new Error('network down'); },
       async () => ({ ok: true, status: 200, json: async () => { throw new Error('bad json'); } }),
       async () => ({ ok: true, status: 200, json: async () => ({ message: 'not an array' }) }),
+      async () => ({ ok: true, status: 200, json: async () => [{ id: 1, body: 'missing html_url' }] }),
     ]) {
       const tmp = tmpDir();
       try {
