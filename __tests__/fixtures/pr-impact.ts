@@ -132,18 +132,42 @@ export const prImpactDetectorResults = {
       baseRef: 'main',
       changedSymbolCount: 1,
       unmappedHunkCount: 0,
-      callerCount: 25,
-      affectedFlowCount: 2,
+      callerCount: 1,
+      affectedFlowCount: 1,
       riskCount: 1,
       warningCount: 0,
     },
     exitCode: 2,
-    changedSymbols: [],
+    changedSymbols: [
+      {
+        id: 'symbol:wide-change',
+        qualifiedName: 'wideChange',
+        kind: 'function',
+        filePath: 'src/wide-change.ts',
+        changeType: 'modified',
+      },
+    ],
     unmappedHunks: [],
-    callers: [],
+    callers: [
+      {
+        changedSymbolId: 'symbol:wide-change',
+        qualifiedName: 'impactedCaller',
+        kind: 'function',
+        filePath: 'src/impacted-caller.ts',
+        depth: 1,
+      },
+    ],
     affectedFlows: {
       state: 'available',
-      items: [],
+      items: [
+        {
+          flowId: 'flow:threshold',
+          name: 'Threshold breach flow',
+          entryKind: 'function',
+          stepCount: 2,
+          truncated: false,
+        },
+      ],
       truncated: false,
     },
     risks: [

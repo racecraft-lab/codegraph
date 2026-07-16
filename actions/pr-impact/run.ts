@@ -997,6 +997,26 @@ function validatedDetectorPayload(raw: unknown): DetectorResult | null {
     return null;
   }
 
+  if (
+    changedSymbolCount !== candidate.changedSymbols.length ||
+    unmappedHunkCount !== candidate.unmappedHunks.length ||
+    callerCount !== candidate.callers.length ||
+    affectedFlowCount !== affectedFlows.items.length ||
+    riskCount !== candidate.risks.length ||
+    warningCount !== candidate.warnings.length
+  ) {
+    return null;
+  }
+
+  if (status !== 'unavailable') {
+    const expectedStatus = candidate.risks.some((risk) => riskCode(risk) === 'threshold-breach')
+      ? 'threshold_breach'
+      : candidate.changedSymbols.length > 0 || candidate.unmappedHunks.length > 0
+        ? 'impact'
+        : 'clean';
+    if (status !== expectedStatus) return null;
+  }
+
   return {
     schemaVersion: 1,
     summary: {
@@ -1650,6 +1670,11 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 
 function objectField(value: Record<string, unknown>, field: string): Record<string, unknown> | null {
   return objectValue(value[field]);
+}
+
+function riskCode(value: unknown): string | null {
+  const risk = objectValue(value);
+  return typeof risk?.code === 'string' ? risk.code : null;
 }
 
 function requiredStringField(value: Record<string, unknown>, field: string): string | null {

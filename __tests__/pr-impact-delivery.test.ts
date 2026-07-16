@@ -157,6 +157,10 @@ describe('PR impact report delivery', () => {
       const result = await runAction(deps(tmp, {
         execFileSync: () => JSON.stringify({
           ...prImpactDetectorResults.impact,
+          summary: {
+            ...prImpactDetectorResults.impact.summary,
+            riskCount: 1,
+          },
           changedSymbols: [{
             qualifiedName: 'bad\n## Injected | \\ <b>',
             kind: 'function',
@@ -259,6 +263,12 @@ describe('PR impact report delivery', () => {
       const result = await runAction(deps(tmp, {
         execFileSync: () => JSON.stringify({
           ...prImpactDetectorResults.impact,
+          summary: {
+            ...prImpactDetectorResults.impact.summary,
+            unmappedHunkCount: 1,
+            riskCount: 1,
+            warningCount: 1,
+          },
           changedSymbols: [null],
           unmappedHunks: [null],
           callers: [null],

@@ -145,6 +145,7 @@ runs:
         INPUT_MAX_CALLERS: ${{ inputs.max-callers }}
         INPUT_NARRATIVE: ${{ inputs.narrative }}
         INPUT_COMMENT_WRITE: ${{ inputs.comment-write }}
+        PR_IMPACT_CACHE_STATUS: ""
         PR_IMPACT_CACHE_RESTORE_HIT: ${{ steps.codegraph-cache.outputs.cache-hit == 'true' && 'true' || 'false' }}
         PR_IMPACT_CODEGRAPH_RESOLVED_VERSION: ${{ steps.install-codegraph.outputs.codegraph-version }}
         PR_IMPACT_PREPARE_BASE_INDEX: "true"

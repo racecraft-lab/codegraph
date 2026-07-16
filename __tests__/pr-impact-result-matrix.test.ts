@@ -144,6 +144,41 @@ describe('PR impact result matrix', () => {
       { summary: { status: 'clean' }, exitCode: 0 },
       { ...prImpactDetectorResults.clean, exitCode: 1 },
       { ...prImpactDetectorResults.clean, changedSymbols: undefined },
+      {
+        ...prImpactDetectorResults.clean,
+        changedSymbols: [
+          {
+            id: 'symbol:unexpected',
+            qualifiedName: 'unexpected',
+            kind: 'function',
+            filePath: 'src/unexpected.ts',
+            changeType: 'modified',
+          },
+        ],
+      },
+      {
+        ...prImpactDetectorResults.clean,
+        summary: {
+          ...prImpactDetectorResults.clean.summary,
+          riskCount: 1,
+        },
+        risks: [
+          {
+            code: 'threshold-breach',
+            severity: 'error',
+            targetId: 'symbol:unexpected',
+            policy: 'callers>0',
+          },
+        ],
+      },
+      {
+        ...prImpactDetectorResults.impact,
+        summary: {
+          ...prImpactDetectorResults.impact.summary,
+          status: 'clean',
+        },
+        exitCode: 0,
+      },
     ]) {
       const { outputs, report } = await runMatrixCase(detector);
 

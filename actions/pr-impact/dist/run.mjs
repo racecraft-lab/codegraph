@@ -804,6 +804,23 @@ function validatedDetectorPayload(raw) {
         !limits) {
         return null;
     }
+    if (changedSymbolCount !== candidate.changedSymbols.length ||
+        unmappedHunkCount !== candidate.unmappedHunks.length ||
+        callerCount !== candidate.callers.length ||
+        affectedFlowCount !== affectedFlows.items.length ||
+        riskCount !== candidate.risks.length ||
+        warningCount !== candidate.warnings.length) {
+        return null;
+    }
+    if (status !== 'unavailable') {
+        const expectedStatus = candidate.risks.some((risk) => riskCode(risk) === 'threshold-breach')
+            ? 'threshold_breach'
+            : candidate.changedSymbols.length > 0 || candidate.unmappedHunks.length > 0
+                ? 'impact'
+                : 'clean';
+        if (status !== expectedStatus)
+            return null;
+    }
     return {
         schemaVersion: 1,
         summary: {
@@ -1368,6 +1385,10 @@ function objectValue(value) {
 }
 function objectField(value, field) {
     return objectValue(value[field]);
+}
+function riskCode(value) {
+    const risk = objectValue(value);
+    return typeof risk?.code === 'string' ? risk.code : null;
 }
 function requiredStringField(value, field) {
     return typeof value[field] === 'string' && value[field] !== '' ? value[field] : null;

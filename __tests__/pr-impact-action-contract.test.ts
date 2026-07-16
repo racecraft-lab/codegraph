@@ -99,6 +99,7 @@ describe('PR impact action contract', () => {
     expect(action).toContain('! "$codegraph_version" =~ ^[A-Za-z0-9][A-Za-z0-9._~:+/-]*$');
     expect(action).toContain('$GITHUB_ENV');
     expect(action).toContain('node "${{ github.action_path }}/dist/run.mjs"');
+    expect(action).toContain('PR_IMPACT_CACHE_STATUS: ""');
     expect(action).toContain('PR_IMPACT_CACHE_RESTORE_HIT:');
     expect(action).toContain('PR_IMPACT_TRUSTED_CONTEXT:');
     expect(action).toContain('PR_IMPACT_TOKEN_WRITE:');
