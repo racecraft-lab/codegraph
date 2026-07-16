@@ -4,8 +4,8 @@
   "feature_dir": "specs/006-web-ui-graph-browser",
   "branch": "006-web-ui-graph-browser",
   "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/006-web-ui-graph-browser",
-  "status": "complete",
-  "active_step": "Complete: PR opened by manual recovery",
+  "status": "completed_archived",
+  "active_step": "Archived",
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -199,9 +199,47 @@
       "status": "completed",
       "report": "specs/006-web-ui-graph-browser/retrospective.md",
       "result": "completed: 100% task completion, 100% spec adherence, 0 critical findings"
+    },
+    {
+      "step": "Post: Archive Cleanup",
+      "status": "completed",
+      "result": "repository-wide merged-spec sweep archived SPEC-006 and SPEC-020"
     }
   ],
-  "updated_at": "2026-07-16T00:12:00Z",
+  "updated_at": "2026-07-16T16:06:50Z",
+  "archive_sweep": {
+    "status": "applied",
+    "execution_path": "extension_contract",
+    "cleanup_mode": "post-merge-active-spec-archive-sweep",
+    "eligible_previous_specs": [
+      "specs/006-web-ui-graph-browser",
+      "specs/020-pr-blast-radius-review-action"
+    ],
+    "archived_specs": [
+      {
+        "spec_id": "SPEC-006",
+        "feature_dir": "specs/006-web-ui-graph-browser",
+        "archive_report": ".specify/memory/archive-reports/2026-07-16-SPEC-006.md",
+        "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/153",
+        "merge_commit": "098e49e0315b107af8f9a26181d0548a890b87d1"
+      },
+      {
+        "spec_id": "SPEC-020",
+        "feature_dir": "specs/020-pr-blast-radius-review-action",
+        "archive_report": ".specify/memory/archive-reports/2026-07-16-SPEC-020.md",
+        "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/154",
+        "merge_commit": "316ca16714fa5ccfb6b1aa0211573a534d1f7a7e"
+      }
+    ],
+    "excluded_current_spec": null,
+    "safeToApplyCleanup": true,
+    "cleanupApplied": true,
+    "worktree_status": "clean dedicated cleanup worktree on codex/archive-merged-specs-2026-07-16",
+    "remotes": {
+      "origin": "https://github.com/racecraft-lab/codegraph.git",
+      "upstream": "https://github.com/colbymchenry/codegraph.git"
+    }
+  },
   "completion_blocker": {
     "type": "deferred_pr_packet_emission",
     "status": "resolved_by_manual_recovery",
@@ -618,7 +656,9 @@
       "skipped_existing": 0,
       "first_issue": "https://github.com/racecraft-lab/codegraph/issues/57",
       "last_issue": "https://github.com/racecraft-lab/codegraph/issues/152",
-      "result": "Created GitHub issues for T001 through T096 in racecraft-lab/codegraph."
+      "result": "Created GitHub issues for T001 through T096 in racecraft-lab/codegraph.",
+      "cleanup_status": "permanently_deleted",
+      "cleanup_reason": "Task-to-issue publishing was accidental and not requested; issues 57 through 152 were deleted after merge."
     },
     {
       "id": "phase_6_analyze",
@@ -1035,7 +1075,10 @@
       "issue_range": {
         "first": "https://github.com/racecraft-lab/codegraph/issues/57",
         "last": "https://github.com/racecraft-lab/codegraph/issues/152"
-      }
+      },
+      "cleanup_status": "permanently_deleted",
+      "deleted_issue_count": 96,
+      "cleanup_reason": "Task-to-issue publishing was accidental and not requested; issues 57 through 152 were deleted after merge."
     },
     "phase_6_analyze": {
       "findings": 2,
