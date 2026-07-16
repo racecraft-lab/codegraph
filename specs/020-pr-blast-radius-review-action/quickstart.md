@@ -103,14 +103,14 @@ Expected:
 
 ## Final SPEC-020 validation evidence
 
-Recorded on 2026-07-16 from the SPEC-020 worktree with Node 24.11.1 after code-review remediation and PR check pinning remediation.
+Recorded on 2026-07-16 from the SPEC-020 worktree with Node 24.11.1 after code-review remediation, PR check pinning remediation, and cold-cache initialization remediation.
 
 Commands:
 
-- `npm test -- __tests__/pr-impact-action-contract.test.ts __tests__/pr-impact-cache.test.ts __tests__/pr-impact-delivery.test.ts __tests__/pr-impact-narrative.test.ts __tests__/pr-impact-result-matrix.test.ts __tests__/pr-impact-runtime-freshness.test.ts`: PASS — 6 files, 25 tests.
+- `npm test -- __tests__/pr-impact-action-contract.test.ts __tests__/pr-impact-cache.test.ts __tests__/pr-impact-delivery.test.ts __tests__/pr-impact-narrative.test.ts __tests__/pr-impact-result-matrix.test.ts __tests__/pr-impact-runtime-freshness.test.ts`: PASS — 6 files, 26 tests.
 - `npm run build`: PASS — TypeScript build, asset copy, and `actions/pr-impact/dist/run.mjs` regeneration completed.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files passed; 3,952 tests passed; 7 skipped; duration 76.55s.
+- `npm test`: PASS — 240 files passed; 3,953 tests passed; 7 skipped; duration 65.54s.
 
 Generated runtime freshness:
 
@@ -134,5 +134,5 @@ Warm-cache evidence:
 Median eligible duration: 149s, which is below the 180s target.
 
 Exclusions: none in the deterministic self-repository sample set. Live GitHub
-dogfood artifact URL is pending until GitHub Actions reruns after the full-SHA
-pinning remediation.
+dogfood artifact URL is pending until GitHub Actions reruns after the
+cold-cache initialization remediation.

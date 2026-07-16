@@ -22,13 +22,16 @@ Passed after remediation.
 
 ## Verification after remediation
 
-- Focused PR-impact suite: PASS — 6 files, 25 tests.
+- Focused PR-impact suite: PASS — 6 files, 26 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,952 tests passed, 7 skipped; duration 76.55s.
+- `npm test`: PASS — 240 files, 3,953 tests passed, 7 skipped; duration 65.54s.
 
 ## PR check remediation
 
 - Finding: GitHub rejected mutable external action references in the dogfood workflow/action because organization policy requires full commit SHA pins.
 - Fix: pinned `actions/checkout`, `actions/cache/restore`, `actions/cache/save`, and `actions/upload-artifact` to full 40-character commit SHAs.
 - Test: `pr-impact-action-contract.test.ts` now verifies external `actions/*` references are pinned to full commit SHAs.
+- Finding: the dogfood action failed with `fail-analysis-unavailable` on a cold cache because the helper tried `codegraph index` before initialization.
+- Fix: cache misses now run `codegraph init`, restored/stale caches still run `codegraph index`, and the helper restores any advisory `.gitignore` mutation from initialization.
+- Test: `pr-impact-cache.test.ts` now verifies cold-cache initialization, detector execution, metadata write, and `.gitignore` restoration.

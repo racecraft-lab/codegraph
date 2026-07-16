@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,9 @@ export function createRunDependencies() {
         stderr: process.stderr,
         now: () => new Date(),
         appendFileSync,
+        existsSync,
         mkdirSync,
+        rmSync,
         writeFileSync,
         readFileSync,
         execFileSync,
@@ -153,7 +155,7 @@ function prepareCache(deps, inputs, context) {
     const restoredStatus = restoreHit ? validateCacheMetadata(deps, metadataPath, identity) : 'miss';
     if (restoredStatus === 'warm-valid')
         return restoredStatus;
-    if (!rebuildCodeGraphIndex(deps))
+    if (!rebuildCodeGraphIndex(deps, restoredStatus === 'miss' ? 'init' : 'index'))
         return 'unavailable';
     writeCacheMetadata(deps, metadataPath, identity);
     return 'rebuilt';
@@ -226,9 +228,11 @@ function validateWarmIndexHealth(deps, expected) {
         return 'stale';
     return 'warm-valid';
 }
-function rebuildCodeGraphIndex(deps) {
+function rebuildCodeGraphIndex(deps, mode) {
+    const gitignorePath = deps.env.PR_IMPACT_GITIGNORE_PATH ?? '.gitignore';
+    const gitignore = mode === 'init' ? readOptionalFile(deps, gitignorePath) : null;
     try {
-        deps.execFileSync('codegraph', ['index'], {
+        deps.execFileSync('codegraph', [mode], {
             encoding: 'utf8',
             env: deps.env,
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -237,6 +241,34 @@ function rebuildCodeGraphIndex(deps) {
     }
     catch {
         return false;
+    }
+    finally {
+        if (gitignore)
+            restoreOptionalFile(deps, gitignorePath, gitignore);
+    }
+}
+function readOptionalFile(deps, path) {
+    try {
+        return deps.existsSync(path)
+            ? { exists: true, content: String(deps.readFileSync(path, 'utf8')) }
+            : { exists: false, content: '' };
+    }
+    catch {
+        return { exists: false, content: '' };
+    }
+}
+function restoreOptionalFile(deps, path, snapshot) {
+    try {
+        if (snapshot.exists) {
+            deps.writeFileSync(path, snapshot.content, 'utf8');
+        }
+        else if (deps.existsSync(path)) {
+            deps.rmSync(path, { force: true });
+        }
+    }
+    catch {
+        // Restoring the advisory .gitignore mutation is best-effort; the action
+        // still reports through the deterministic detector result below.
     }
 }
 function writeCacheMetadata(deps, metadataPath, identity) {

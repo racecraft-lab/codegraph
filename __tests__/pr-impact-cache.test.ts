@@ -183,6 +183,65 @@ describe('PR impact cache handling', () => {
     expect(updatedMetadata.identity.headSha).toBe('0000000000000000000000000000000000000002');
   });
 
+  it('initializes the CodeGraph index on a cold cache miss without leaving .gitignore noise', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-cold-cache-'));
+    const originalGitignore = 'node_modules/\n.codegraph/\n';
+    try {
+      const eventPath = path.join(tmp, 'event.json');
+      const metadataPath = path.join(tmp, 'pr-impact-cache.json');
+      const gitignorePath = path.join(tmp, '.gitignore');
+      fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
+      fs.writeFileSync(gitignorePath, originalGitignore, 'utf8');
+      const calls: string[][] = [];
+
+      await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.4.1',
+          INPUT_BASE_REF: 'main',
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+          PR_IMPACT_CACHE_METADATA_PATH: metadataPath,
+          PR_IMPACT_GITIGNORE_PATH: gitignorePath,
+          PR_IMPACT_MERGE_BASE: '0000000000000000000000000000000000000001',
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        existsSync: fs.existsSync,
+        mkdirSync: fs.mkdirSync,
+        rmSync: fs.rmSync,
+        writeFileSync: fs.writeFileSync,
+        readFileSync: (target: fs.PathOrFileDescriptor, options?: BufferEncoding | { encoding?: BufferEncoding | null; flag?: string } | null) => {
+          if (String(target) === 'package-lock.json') return '{"lockfileVersion":3}';
+          return fs.readFileSync(target, options as BufferEncoding);
+        },
+        execFileSync: (_command: string, args: string[]) => {
+          calls.push(args);
+          if (args[0] === 'init') {
+            fs.appendFileSync(gitignorePath, '.codegraph/\n', 'utf8');
+            return '';
+          }
+          return args.includes('json')
+            ? JSON.stringify(prImpactDetectorResults.impact)
+            : '## Markdown detector report';
+        },
+        fetch: async () => ({ ok: false, status: 403, json: async () => ({}) }),
+      } as any);
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(outputs['cache-status']).toBe('rebuilt');
+      expect(outputs.conclusion).toBe('pass');
+      expect(calls.map((args) => args[0])).toEqual(['init', 'detect-changes', 'detect-changes']);
+      expect(fs.readFileSync(gitignorePath, 'utf8')).toBe(originalGitignore);
+      expect(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).identity.headSha).toBe('0000000000000000000000000000000000000002');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('rebuilds matching restored metadata when index health reports worktree mismatch or pending changes', async () => {
     const lockfile = '{"lockfileVersion":3}';
     const identity = {

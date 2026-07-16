@@ -31,18 +31,19 @@
 
 ## Verification evidence
 
-- Focused PR-impact tests: PASS — 6 files, 25 tests.
+- Focused PR-impact tests: PASS — 6 files, 26 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,952 tests, 7 skipped.
+- `npm test`: PASS — 240 files, 3,953 tests, 7 skipped.
 - Warm-cache deterministic sample median: 149s, below 180s target.
 - Code review remediation: PASS — event-base defaulting, final delivery metadata consistency, and merge-base metadata fixed.
 - PR check remediation: PASS locally — external `actions/*` references are pinned to full commit SHAs.
+- PR check remediation: PASS locally — cold cache misses initialize the CodeGraph index before analysis.
 
 ## Known gaps
 
 - Live GitHub dogfood artifact URL is pending until GitHub Actions reruns after
-  the full-SHA pinning remediation.
+  the cold-cache initialization remediation.
 - Optional narrative is represented by deterministic local seams in this spec;
   endpoint/agent narrative quality remains owned by SPEC-018.
 
