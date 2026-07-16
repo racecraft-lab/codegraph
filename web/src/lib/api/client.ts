@@ -13,10 +13,23 @@ export class ApiClientError extends Error {
 }
 
 function fallbackEnvelope(status: number): ErrorEnvelope {
+  let code = "internal"
+  let message = "The local CodeGraph server returned an unexpected response."
+
+  if (status === 0) {
+    message = "The local CodeGraph server is unreachable."
+  } else if (status === 401) {
+    code = "unauthorized"
+    message = "The local CodeGraph server requires authentication."
+  } else if (status === 503) {
+    code = "unavailable"
+    message = "The local CodeGraph server is temporarily unavailable."
+  }
+
   return {
     error: {
-      code: status === 401 ? "unauthorized" : status === 503 ? "unavailable" : "internal",
-      message: status === 0 ? "The local CodeGraph server is unreachable." : "The local CodeGraph server returned an unexpected response.",
+      code,
+      message,
     },
   }
 }
@@ -44,7 +57,9 @@ export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const envelope = await parseJson<ErrorEnvelope>(response).catch(() => fallbackEnvelope(response.status))
+    const envelope = await parseJson<ErrorEnvelope>(response).catch(() =>
+      fallbackEnvelope(response.status)
+    )
     throw new ApiClientError(response.status, envelope)
   }
 
@@ -67,14 +82,20 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   }
 
   if (!response.ok) {
-    const envelope = await parseJson<ErrorEnvelope>(response).catch(() => fallbackEnvelope(response.status))
+    const envelope = await parseJson<ErrorEnvelope>(response).catch(() =>
+      fallbackEnvelope(response.status)
+    )
     throw new ApiClientError(response.status, envelope)
   }
 
   return parseJson<T>(response)
 }
 
-export function errorState(error: unknown): { code: string; message: string; status: number } {
+export function errorState(error: unknown): {
+  code: string
+  message: string
+  status: number
+} {
   if (error instanceof ApiClientError) {
     return {
       code: error.envelope.error.code,
