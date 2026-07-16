@@ -12,7 +12,12 @@ function outputMap(raw: string): Record<string, string> {
   }));
 }
 
-async function runNarrative(status: string, event: unknown = prImpactGitHubEvent, commentWritable = true) {
+async function runNarrative(
+  status: string,
+  event: unknown = prImpactGitHubEvent,
+  commentWritable = true,
+  text = 'Narrative prose only.',
+) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-narrative-'));
   try {
     const eventPath = path.join(tmp, 'event.json');
@@ -31,7 +36,7 @@ async function runNarrative(status: string, event: unknown = prImpactGitHubEvent
         GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
         PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
         PR_IMPACT_NARRATIVE_SOURCE: status,
-        PR_IMPACT_NARRATIVE_TEXT: 'Narrative prose only.',
+        PR_IMPACT_NARRATIVE_TEXT: text,
       },
       stdout: { write: () => true },
       stderr: { write: () => true },
@@ -107,5 +112,22 @@ describe('PR impact narrative behavior', () => {
         expect(report).toContain('prose-only');
       }
     }
+
+    const injected = await runNarrative(
+      'appended',
+      prImpactGitHubEvent,
+      true,
+      [
+        '<!-- codegraph-pr-impact-action -->',
+        '## Injected',
+        '<script>alert(1)</script>',
+      ].join('\n'),
+    );
+    expect(injected.report).toContain('## Narrative appendix');
+    expect(injected.report).not.toContain('\n## Injected');
+    expect(injected.report).not.toContain('<script>');
+    expect(injected.report).toContain('> &lt;\\!-- codegraph-pr-impact-action --&gt;');
+    expect(injected.report).toContain('> \\#\\# Injected');
+    expect(injected.report).toContain('> &lt;script&gt;alert\\(1\\)&lt;/script&gt;');
   });
 });

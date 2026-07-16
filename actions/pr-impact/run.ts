@@ -142,6 +142,11 @@ export interface RunResult {
   report: string;
 }
 
+interface ParsedActionInputs {
+  inputs: ActionInputs;
+  error: string | null;
+}
+
 export interface RunDependencies {
   env: NodeJS.ProcessEnv;
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -190,16 +195,27 @@ export function createRunDependencies(): RunDependencies {
 }
 
 export function parseActionInputs(env: NodeJS.ProcessEnv): ActionInputs {
+  const parsed = parseActionInputsForRun(env);
+  if (parsed.error) throw new Error(parsed.error);
+  return parsed.inputs;
+}
+
+function parseActionInputsForRun(env: NodeJS.ProcessEnv): ParsedActionInputs {
   const narrative = readInput(env, 'NARRATIVE', 'off');
   const requestedCodegraphVersion = readInput(env, 'CODEGRAPH_VERSION', DEFAULT_CODEGRAPH_VERSION);
+  const failOnCallersRaw = readInput(env, 'FAIL_ON_CALLERS', '');
+  const parsedFailOnCallers = parseOptionalInteger(failOnCallersRaw, 'fail-on-callers');
   return {
-    codegraphVersion: env.PR_IMPACT_CODEGRAPH_RESOLVED_VERSION || requestedCodegraphVersion,
-    baseRef: readInput(env, 'BASE_REF', ''),
-    failOnCallers: parseOptionalInteger(readInput(env, 'FAIL_ON_CALLERS', '')),
-    failOnHubs: parseBoolean(readInput(env, 'FAIL_ON_HUBS', 'false')),
-    callerDepth: clampInteger(parseInteger(readInput(env, 'CALLER_DEPTH', '1'), 1), MIN_CALLER_DEPTH, MAX_CALLER_DEPTH),
-    maxCallers: clampInteger(parseInteger(readInput(env, 'MAX_CALLERS', '20'), 20), MIN_MAX_CALLERS, MAX_MAX_CALLERS),
-    narrative: narrative === 'trusted' ? 'trusted' : 'off',
+    inputs: {
+      codegraphVersion: env.PR_IMPACT_CODEGRAPH_RESOLVED_VERSION || requestedCodegraphVersion,
+      baseRef: readInput(env, 'BASE_REF', ''),
+      failOnCallers: parsedFailOnCallers.value,
+      failOnHubs: parseBoolean(readInput(env, 'FAIL_ON_HUBS', 'false')),
+      callerDepth: clampInteger(parseInteger(readInput(env, 'CALLER_DEPTH', '1'), 1), MIN_CALLER_DEPTH, MAX_CALLER_DEPTH),
+      maxCallers: clampInteger(parseInteger(readInput(env, 'MAX_CALLERS', '20'), 20), MIN_MAX_CALLERS, MAX_MAX_CALLERS),
+      narrative: narrative === 'trusted' ? 'trusted' : 'off',
+    },
+    error: parsedFailOnCallers.error,
   };
 }
 
@@ -220,11 +236,13 @@ export function determineConclusion(
 }
 
 export async function runAction(deps: RunDependencies = createRunDependencies()): Promise<RunResult> {
-  const inputs = parseActionInputs(deps.env);
+  const parsedInputs = parseActionInputsForRun(deps.env);
+  const inputs = parsedInputs.inputs;
   const context = readPullRequestContext(deps, inputs);
+  const recordedAt = deps.now().toISOString();
   const reportPath = deps.env.PR_IMPACT_REPORT_PATH ?? 'pr-impact-report.md';
   const artifactName = deps.env.PR_IMPACT_ARTIFACT_NAME ?? 'codegraph-pr-impact';
-  const workspaceHeadError = validateWorkspaceHead(deps, context);
+  const workspaceHeadError = parsedInputs.error ?? validateWorkspaceHead(deps, context);
   const cacheStatus = workspaceHeadError ? 'unavailable' : prepareCache(deps, inputs, context);
   const effectiveBaseRef = resolveBaseRef(inputs, context);
   const baseIndex = cacheStatus === 'unavailable'
@@ -249,7 +267,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
     conclusion,
     cacheStatus,
     artifactName,
-    recordedAt: deps.now().toISOString(),
+    recordedAt,
   });
 
   const preliminaryReportFileWritten = writeReportFile(deps, reportPath, preliminaryReport);
@@ -265,7 +283,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
     conclusion,
     cacheStatus,
     artifactName,
-    recordedAt: deps.now().toISOString(),
+    recordedAt,
   });
   if (delivery.status === 'comment') {
     const finalizedComment = await patchDeliveredComment(deps, context, delivery, report);
@@ -286,7 +304,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
         conclusion,
         cacheStatus,
         artifactName,
-        recordedAt: deps.now().toISOString(),
+        recordedAt,
       });
     }
   }
@@ -310,10 +328,34 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
     conclusion,
     cacheStatus,
     artifactName,
-    recordedAt: deps.now().toISOString(),
+    recordedAt,
   });
+  let finalReportFileWritten = reportFileWritten;
+  if (finalReportFileWritten) {
+    finalReportFileWritten = writeReportFile(deps, reportPath, report);
+    if (!finalReportFileWritten) {
+      const summaryCanCarryReport = delivery.status !== 'comment' && Boolean(deps.env.GITHUB_STEP_SUMMARY);
+      delivery = {
+        ...delivery,
+        status: delivery.status === 'comment' ? 'comment' : summaryCanCarryReport ? 'fallback' : 'failed',
+        artifact: 'failed',
+      };
+      conclusion = determineConclusion(detector, delivery.status !== 'failed');
+      report = renderReport({
+        inputs,
+        context,
+        detector,
+        delivery,
+        narrative,
+        conclusion,
+        cacheStatus,
+        artifactName,
+        recordedAt,
+      });
+    }
+  }
   delivery = { ...delivery, summary: writeSummary(deps, report) };
-  if (delivery.status === 'fallback' && !reportFileWritten && delivery.summary !== 'written') {
+  if (delivery.status === 'fallback' && !finalReportFileWritten && delivery.summary !== 'written') {
     delivery = { ...delivery, status: 'failed' };
     conclusion = determineConclusion(detector, false);
     report = renderReport({
@@ -325,10 +367,9 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
       conclusion,
       cacheStatus,
       artifactName,
-      recordedAt: deps.now().toISOString(),
+      recordedAt,
     });
   }
-  if (reportFileWritten) writeReportFile(deps, reportPath, report);
 
   emitOutput(deps, 'summary-status', detector.summary.status);
   emitOutput(deps, 'detector-exit-code', String(detector.exitCode));
@@ -337,7 +378,7 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   emitOutput(deps, 'cache-status', cacheStatus);
   emitOutput(deps, 'delivery-status', delivery.status);
   emitOutput(deps, 'comment-url', delivery.commentUrl);
-  emitOutput(deps, 'report-path', reportFileWritten ? reportPath : '');
+  emitOutput(deps, 'report-path', finalReportFileWritten ? reportPath : '');
   emitOutput(deps, 'artifact-name', artifactName);
   emitOutput(deps, 'narrative-status', narrative.status);
   emitOutput(deps, 'codegraph-version', inputs.codegraphVersion);
@@ -712,8 +753,8 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
     isForkLike,
     tokenPermissions: {
       contentsRead: true,
-      issuesWrite: hasTrustedToken,
-      pullRequestsWrite: false,
+      issuesWrite: false,
+      pullRequestsWrite: hasTrustedToken,
     },
   };
 }
@@ -1176,11 +1217,16 @@ function renderReport(args: {
       '',
       '_prose-only narrative. Deterministic facts and final conclusion above remain authoritative._',
       '',
-      narrative.text,
+      ...formatNarrativeText(narrative.text),
       '',
     );
   }
   return lines.join('\n');
+}
+
+function formatNarrativeText(text: string): string[] {
+  const lines = text.split(/\r\n|\r|\n/);
+  return lines.map((line) => `> ${line ? markdownInline(line) : ' '}`);
 }
 
 interface GitHubComment {
@@ -1476,10 +1522,16 @@ function isCacheStatus(value: unknown): value is CacheStatus {
   );
 }
 
-function parseOptionalInteger(raw: string): number | null {
-  if (raw.trim() === '') return null;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
+function parseOptionalInteger(raw: string, label: string): { value: number | null; error: string | null } {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { value: null, error: null };
+  if (!/^\d+$/.test(trimmed)) {
+    return {
+      value: null,
+      error: `Invalid ${label}: expected a non-negative integer or an empty value, received ${JSON.stringify(raw)}.`,
+    };
+  }
+  return { value: Number(trimmed), error: null };
 }
 
 function parseInteger(raw: string, fallback: number): number {

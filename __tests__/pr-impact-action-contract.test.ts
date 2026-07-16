@@ -109,6 +109,8 @@ describe('PR impact action contract', () => {
     expect(action).toContain("steps.pr-impact.outputs.cache-status == 'rebuilt'");
     expect(readme).toContain('codegraph-version: "1.5.0"');
     expect(readme).toContain('uses: racecraft-lab/codegraph/actions/pr-impact@<immutable-ref>');
+    expect(readme).toContain('pull-requests: write');
+    expect(readme).not.toContain('issues: write');
     expect(readme).toContain('| `codegraph-version` | `1.5.0` |');
     expect(readme).not.toContain('1.4.1');
     expect(pkg.files).toContain('actions');
@@ -153,6 +155,10 @@ describe('PR impact action contract', () => {
     });
     expect(bounded.callerDepth).toBe(3);
     expect(bounded.maxCallers).toBe(1);
+
+    for (const invalid of ['abc', '10junk', '-1']) {
+      expect(() => parseActionInputs({ INPUT_FAIL_ON_CALLERS: invalid })).toThrow('Invalid fail-on-callers');
+    }
   });
 
   it('emits required metadata outputs from the helper seam', async () => {
@@ -230,6 +236,42 @@ describe('PR impact action contract', () => {
       expect(calls).toEqual([]);
       expect(removes).not.toContain('.gitignore');
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('CodeGraph cache/index is unavailable.');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('emits unavailable analysis instead of silently disabling malformed threshold enforcement', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-invalid-threshold-'));
+    try {
+      const calls: Array<{ command: string; args: string[] }> = [];
+      const result = await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.5.0',
+          INPUT_FAIL_ON_CALLERS: '10junk',
+          INPUT_NARRATIVE: 'off',
+          PR_IMPACT_CACHE_STATUS: 'warm-valid',
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        mkdirSync: fs.mkdirSync,
+        writeFileSync: fs.writeFileSync,
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          throw new Error('detector should not run');
+        },
+      } as any);
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(result.detector.summary.status).toBe('unavailable');
+      expect(result.conclusion).toBe('fail-analysis-unavailable');
+      expect(outputs.conclusion).toBe('fail-analysis-unavailable');
+      expect(calls).toEqual([]);
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('Invalid fail-on-callers');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

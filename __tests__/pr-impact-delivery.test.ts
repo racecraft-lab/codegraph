@@ -628,6 +628,40 @@ describe('PR impact report delivery', () => {
     }
   });
 
+  it('treats the authoritative final report rewrite as the report-path gate', async () => {
+    const tmp = tmpDir();
+    try {
+      const reportPath = path.join(tmp, 'report.md');
+      let reportWrites = 0;
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          PR_IMPACT_REPORT_PATH: reportPath,
+        },
+        writeFileSync: (target: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+          if (String(target) === reportPath) {
+            reportWrites += 1;
+            if (reportWrites === 3) throw new Error('final canonical report unavailable');
+          }
+          fs.writeFileSync(target, data);
+        },
+      }));
+
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.artifact).toBe('failed');
+      expect(result.delivery.summary).toBe('written');
+      expect(result.conclusion).toBe('pass');
+      expect(outputs.conclusion).toBe('pass');
+      expect(outputs['report-path']).toBe('');
+      const summary = fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8');
+      expect(summary).toContain('- Delivery status: fallback');
+      expect(summary).toContain('- Final conclusion: pass');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('fails report availability when preliminary write succeeds but final report and summary writes fail', async () => {
     const tmp = tmpDir();
     try {
