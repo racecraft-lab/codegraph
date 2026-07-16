@@ -842,4 +842,33 @@ describe('detect changes', () => {
     expect(markdown).toContain('src/multi\\|line.ts');
     expect(markdown).toContain('bad\\\\path \\| message next');
   });
+
+  it('renders deletion-only unmapped hunks with old-side markdown ranges', () => {
+    const report = buildInitialReport({
+      mode: 'all',
+      baseRef: null,
+      headRef: null,
+      format: 'markdown',
+      failOn: null,
+      callerDepth: 1,
+      maxCallers: 20,
+      projectPath: undefined,
+    }, [], [
+      {
+        hunkId: 'delete-only',
+        oldPath: 'src/deleted.ts',
+        newPath: null,
+        oldStart: 44,
+        oldLines: 2,
+        newStart: 0,
+        newLines: 0,
+        reason: 'deleted-without-span',
+        message: 'Deleted hunk has no mapped symbol span.',
+      },
+    ], []);
+
+    const markdown = renderMarkdownReport(report);
+
+    expect(markdown).toContain('| src/deleted.ts | 44+2 | deleted-without-span |');
+  });
 });

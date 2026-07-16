@@ -507,6 +507,10 @@ describe('PR impact report delivery', () => {
 
       expect(result.delivery.status).toBe('fallback');
       expect(result.delivery.comment).toBe('failed');
+      expect(result.delivery.currentCommentId).toBeNull();
+      expect(result.delivery.commentUrl).toBe('');
+      const outputs = outputMap(fs.readFileSync(path.join(tmp, 'outputs.txt'), 'utf8'));
+      expect(outputs['comment-url']).toBe('');
       const patches = calls.filter((call) => call.method === 'PATCH');
       expect(patches.map((call) => call.url)).toEqual([
         'https://api.github.com/repos/racecraft-lab/codegraph/issues/comments/400',

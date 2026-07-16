@@ -65,6 +65,7 @@ export interface ActionInputs {
 }
 
 export interface DetectorResult {
+  schemaVersion: 1;
   summary: {
     status: SummaryStatus;
     baseRef: string | null;
@@ -302,6 +303,8 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
         ...delivery,
         status: preliminaryReportFileWritten ? 'fallback' : 'failed',
         comment: 'failed',
+        currentCommentId: null,
+        commentUrl: '',
       };
       narrative = createInitialNarrative(inputs, context, deps, false);
       conclusion = determineConclusion(detector, delivery.status !== 'failed');
@@ -914,30 +917,109 @@ function codegraphBin(deps: RunDependencies): string {
 }
 
 function normalizeDetectorResult(raw: unknown, inputs: ActionInputs, baseRef: string): DetectorResult {
-  const candidate = raw as Partial<DetectorResult>;
-  const summary = (candidate.summary ?? {}) as Partial<DetectorResult['summary']>;
+  const candidate = validatedDetectorPayload(raw);
+  if (!candidate) {
+    return createUnavailableDetector(inputs, 'Detector returned malformed detect-changes JSON.', baseRef);
+  }
+  const { summary } = candidate;
   return {
+    schemaVersion: 1,
     summary: {
-      status: isSummaryStatus(summary.status) ? summary.status : 'unavailable',
-      baseRef: typeof summary.baseRef === 'string' ? summary.baseRef : baseRef || null,
-      changedSymbolCount: numberOr(summary.changedSymbolCount, 0),
-      unmappedHunkCount: numberOr(summary.unmappedHunkCount, 0),
-      callerCount: numberOr(summary.callerCount, 0),
-      affectedFlowCount: numberOr(summary.affectedFlowCount, 0),
-      riskCount: numberOr(summary.riskCount, 0),
-      warningCount: numberOr(summary.warningCount, 0),
+      status: summary.status,
+      baseRef: (summary.baseRef ?? baseRef) || null,
+      changedSymbolCount: summary.changedSymbolCount,
+      unmappedHunkCount: summary.unmappedHunkCount,
+      callerCount: summary.callerCount,
+      affectedFlowCount: summary.affectedFlowCount,
+      riskCount: summary.riskCount,
+      warningCount: summary.warningCount,
     },
-    exitCode: isDetectorExitCode(candidate.exitCode) ? candidate.exitCode : 3,
-    changedSymbols: Array.isArray(candidate.changedSymbols) ? candidate.changedSymbols : [],
-    unmappedHunks: Array.isArray(candidate.unmappedHunks) ? candidate.unmappedHunks : [],
-    callers: Array.isArray(candidate.callers) ? candidate.callers : [],
+    exitCode: candidate.exitCode,
+    changedSymbols: candidate.changedSymbols,
+    unmappedHunks: candidate.unmappedHunks,
+    callers: candidate.callers,
     affectedFlows: normalizeAffectedFlows(candidate.affectedFlows),
-    risks: Array.isArray(candidate.risks) ? candidate.risks : [],
-    warnings: Array.isArray(candidate.warnings) ? candidate.warnings : [],
-    limits: typeof candidate.limits === 'object' && candidate.limits !== null ? candidate.limits : {
-      callerDepth: inputs.callerDepth,
-      maxCallers: inputs.maxCallers,
+    risks: candidate.risks,
+    warnings: candidate.warnings,
+    limits: candidate.limits,
+  };
+}
+
+function validatedDetectorPayload(raw: unknown): DetectorResult | null {
+  const candidate = objectValue(raw);
+  if (!candidate || candidate.schemaVersion !== 1) return null;
+
+  const summary = objectField(candidate, 'summary');
+  if (!summary) return null;
+
+  const status = summary.status;
+  const exitCode = candidate.exitCode;
+  if (!isSummaryStatus(status) || !isDetectorExitCode(exitCode)) return null;
+  if (exitCode !== exitCodeForSummaryStatus(status)) return null;
+
+  const rawBaseRef = summary.baseRef;
+  if (!hasOwn(summary, 'baseRef')) return null;
+  if (!(typeof rawBaseRef === 'string' || rawBaseRef === null)) return null;
+  const baseRef = rawBaseRef as string | null;
+
+  const changedSymbolCount = requiredCountField(summary, 'changedSymbolCount');
+  const unmappedHunkCount = requiredCountField(summary, 'unmappedHunkCount');
+  const callerCount = requiredCountField(summary, 'callerCount');
+  const affectedFlowCount = requiredCountField(summary, 'affectedFlowCount');
+  const riskCount = requiredCountField(summary, 'riskCount');
+  const warningCount = requiredCountField(summary, 'warningCount');
+  if (
+    changedSymbolCount === null ||
+    unmappedHunkCount === null ||
+    callerCount === null ||
+    affectedFlowCount === null ||
+    riskCount === null ||
+    warningCount === null
+  ) {
+    return null;
+  }
+
+  const affectedFlows = objectField(candidate, 'affectedFlows');
+  const limits = objectField(candidate, 'limits');
+  if (
+    !Array.isArray(candidate.changedSymbols) ||
+    !Array.isArray(candidate.unmappedHunks) ||
+    !Array.isArray(candidate.callers) ||
+    !affectedFlows ||
+    typeof affectedFlows.state !== 'string' ||
+    !Array.isArray(affectedFlows.items) ||
+    typeof affectedFlows.truncated !== 'boolean' ||
+    !Array.isArray(candidate.risks) ||
+    !Array.isArray(candidate.warnings) ||
+    !limits
+  ) {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    summary: {
+      status,
+      baseRef,
+      changedSymbolCount,
+      unmappedHunkCount,
+      callerCount,
+      affectedFlowCount,
+      riskCount,
+      warningCount,
     },
+    exitCode,
+    changedSymbols: candidate.changedSymbols,
+    unmappedHunks: candidate.unmappedHunks,
+    callers: candidate.callers,
+    affectedFlows: {
+      state: affectedFlows.state,
+      items: affectedFlows.items,
+      truncated: affectedFlows.truncated,
+    },
+    risks: candidate.risks,
+    warnings: candidate.warnings,
+    limits,
   };
 }
 
@@ -947,6 +1029,7 @@ function createUnavailableDetector(
   baseRef = inputs.baseRef,
 ): DetectorResult {
   return {
+    schemaVersion: 1,
     summary: {
       status: 'unavailable',
       baseRef: baseRef || null,
@@ -1530,6 +1613,13 @@ function requiredNumberField(value: Record<string, unknown>, field: string): num
   return typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? fieldValue : null;
 }
 
+function requiredCountField(value: Record<string, unknown>, field: string): number | null {
+  const fieldValue = value[field];
+  return typeof fieldValue === 'number' && Number.isSafeInteger(fieldValue) && fieldValue >= 0
+    ? fieldValue
+    : null;
+}
+
 function hasOwn(value: Record<string, unknown>, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, field);
 }
@@ -1556,6 +1646,13 @@ function isSummaryStatus(value: unknown): value is SummaryStatus {
 
 function isDetectorExitCode(value: unknown): value is DetectorExitCode {
   return value === 0 || value === 1 || value === 2 || value === 3;
+}
+
+function exitCodeForSummaryStatus(status: SummaryStatus): DetectorExitCode {
+  if (status === 'unavailable') return 3;
+  if (status === 'threshold_breach') return 2;
+  if (status === 'impact') return 1;
+  return 0;
 }
 
 function isCacheStatus(value: unknown): value is CacheStatus {

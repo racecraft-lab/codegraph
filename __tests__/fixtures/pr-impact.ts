@@ -38,6 +38,7 @@ export const prImpactForkEvent = {
 
 export const prImpactDetectorResults = {
   clean: {
+    schemaVersion: 1,
     summary: {
       status: 'clean',
       baseRef: 'main',
@@ -69,6 +70,7 @@ export const prImpactDetectorResults = {
     },
   },
   impact: {
+    schemaVersion: 1,
     summary: {
       status: 'impact',
       baseRef: 'main',
@@ -124,6 +126,7 @@ export const prImpactDetectorResults = {
     },
   },
   thresholdBreach: {
+    schemaVersion: 1,
     summary: {
       status: 'threshold_breach',
       baseRef: 'main',
@@ -162,6 +165,7 @@ export const prImpactDetectorResults = {
     },
   },
   unavailable: {
+    schemaVersion: 1,
     summary: {
       status: 'unavailable',
       baseRef: 'main',

@@ -320,6 +320,7 @@ describe('PR impact action contract', () => {
           calls.push({ command, args });
           return args.includes('json')
             ? JSON.stringify({
+              schemaVersion: 1,
               summary: {
                 status: 'impact',
                 baseRef: 'origin/main',
@@ -394,6 +395,7 @@ describe('PR impact action contract', () => {
           if (command === 'git' && args[0] === 'worktree') return '';
           if (command === '/tmp/codegraph-bin' && args[0] === 'init') return '';
           return JSON.stringify({
+            schemaVersion: 1,
             summary: {
               status: 'impact',
               baseRef: 'origin/main',
@@ -478,6 +480,7 @@ describe('PR impact action contract', () => {
           if (command === 'git' && args[0] === 'worktree') return '';
           if (command === '/tmp/codegraph-bin' && args[0] === 'init') return '';
           return JSON.stringify({
+            schemaVersion: 1,
             summary: {
               status: 'impact',
               baseRef: 'origin/main',
@@ -548,6 +551,7 @@ describe('PR impact action contract', () => {
           ].join('\n');
           if (command === 'git' && args[0] === 'worktree') throw new Error('base worktree should not be prepared');
           return JSON.stringify({
+            schemaVersion: 1,
             summary: {
               status: 'impact',
               baseRef: 'origin/main',
@@ -696,6 +700,7 @@ describe('PR impact action contract', () => {
           calls.push({ command, args });
           return args.includes('json')
             ? JSON.stringify({
+              schemaVersion: 1,
               summary: {
                 status: 'impact',
                 baseRef: 'main',
@@ -763,6 +768,7 @@ describe('PR impact action contract', () => {
             throw new Error('base ref unavailable');
           }
           return JSON.stringify({
+            schemaVersion: 1,
             summary: {
               status: 'impact',
               baseRef: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -836,6 +842,7 @@ describe('PR impact action contract', () => {
             throw new Error(`unexpected merge-base candidate ${args[1]}`);
           }
           return JSON.stringify({
+            schemaVersion: 1,
             summary: {
               status: 'impact',
               baseRef: 'release/next',
@@ -945,6 +952,7 @@ const typeSurface: {
     },
   },
   detector: {
+    schemaVersion: 1,
     summary: {
       status: 'clean',
       baseRef: 'main',

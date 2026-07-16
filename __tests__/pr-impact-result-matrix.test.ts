@@ -139,6 +139,21 @@ describe('PR impact result matrix', () => {
     expect(report).toContain('Index unavailable');
   });
 
+  it('fails closed when detector JSON is schema-drifted or internally inconsistent', async () => {
+    for (const detector of [
+      { summary: { status: 'clean' }, exitCode: 0 },
+      { ...prImpactDetectorResults.clean, exitCode: 1 },
+      { ...prImpactDetectorResults.clean, changedSymbols: undefined },
+    ]) {
+      const { outputs, report } = await runMatrixCase(detector);
+
+      expect(outputs['summary-status']).toBe('unavailable');
+      expect(outputs['detector-exit-code']).toBe('3');
+      expect(outputs.conclusion).toBe('fail-analysis-unavailable');
+      expect(report).toContain('Detector returned malformed detect-changes JSON.');
+    }
+  });
+
   it('does not let comment failure rewrite deterministic impact status or conclusion', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-matrix-'));
     try {

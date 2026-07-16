@@ -285,8 +285,9 @@ function lineRange(start?: number, end?: number): string {
 }
 
 function hunkRange(hunk: UnmappedHunk): string {
-  const start = hunk.newStart ?? hunk.oldStart;
-  const lines = hunk.newLines ?? hunk.oldLines;
+  const useNewRange = Boolean(hunk.newStart && hunk.newLines !== 0);
+  const start = useNewRange ? hunk.newStart : hunk.oldStart;
+  const lines = useNewRange ? hunk.newLines : hunk.oldLines;
   if (!start) return '';
   return lines && lines > 1 ? `${start}+${lines}` : String(start);
 }
