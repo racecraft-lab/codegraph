@@ -52,8 +52,8 @@ export async function runAction(deps = createRunDependencies()) {
     const detector = runDetector(deps, inputs);
     const narrative = createInitialNarrative(inputs, context, deps);
     let delivery = createInitialDelivery(reportPath);
-    const conclusion = determineConclusion(detector, delivery.status !== 'failed');
-    const report = renderReport({
+    let conclusion = determineConclusion(detector, delivery.status !== 'failed');
+    let report = renderReport({
         inputs,
         context,
         detector,
@@ -63,9 +63,21 @@ export async function runAction(deps = createRunDependencies()) {
         artifactName,
         recordedAt: deps.now().toISOString(),
     });
-    deps.mkdirSync(dirname(reportPath), { recursive: true });
-    deps.writeFileSync(reportPath, report, 'utf8');
-    delivery = await deliverReport(deps, context, report, reportPath);
+    const reportFileWritten = writeReportFile(deps, reportPath, report);
+    delivery = await deliverReport(deps, context, report, reportPath, reportFileWritten);
+    conclusion = determineConclusion(detector, delivery.status !== 'failed');
+    report = renderReport({
+        inputs,
+        context,
+        detector,
+        delivery,
+        narrative,
+        conclusion,
+        artifactName,
+        recordedAt: deps.now().toISOString(),
+    });
+    if (reportFileWritten)
+        writeReportFile(deps, reportPath, report);
     emitOutput(deps, 'summary-status', detector.summary.status);
     emitOutput(deps, 'detector-exit-code', String(detector.exitCode));
     emitOutput(deps, 'conclusion', conclusion);
@@ -79,6 +91,16 @@ export async function runAction(deps = createRunDependencies()) {
     emitOutput(deps, 'codegraph-version', inputs.codegraphVersion);
     emitOutput(deps, 'helper-version', HELPER_VERSION);
     return { inputs, detector, delivery, narrative, conclusion, report };
+}
+function writeReportFile(deps, reportPath, report) {
+    try {
+        deps.mkdirSync(dirname(reportPath), { recursive: true });
+        deps.writeFileSync(reportPath, report, 'utf8');
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
 function readPullRequestContext(deps, inputs) {
     const event = readGitHubEvent(deps);
@@ -246,7 +268,7 @@ function createInitialDelivery(reportPath) {
         commentUrl: '',
     };
 }
-async function deliverReport(deps, context, report, reportPath) {
+async function deliverReport(deps, context, report, reportPath, reportFileWritten) {
     let summary = 'failed';
     try {
         if (deps.env.GITHUB_STEP_SUMMARY) {
@@ -258,10 +280,10 @@ async function deliverReport(deps, context, report, reportPath) {
         summary = 'failed';
     }
     const base = {
-        status: summary === 'written' ? 'fallback' : 'failed',
+        status: summary === 'written' || reportFileWritten ? 'fallback' : 'failed',
         comment: 'skipped',
         summary,
-        artifact: 'uploaded',
+        artifact: reportFileWritten ? 'uploaded' : 'failed',
         currentCommentId: null,
         duplicateCommentIds: [],
         reportPath,

@@ -185,8 +185,8 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   const detector = runDetector(deps, inputs);
   const narrative = createInitialNarrative(inputs, context, deps);
   let delivery = createInitialDelivery(reportPath);
-  const conclusion = determineConclusion(detector, delivery.status !== 'failed');
-  const report = renderReport({
+  let conclusion = determineConclusion(detector, delivery.status !== 'failed');
+  let report = renderReport({
     inputs,
     context,
     detector,
@@ -197,9 +197,20 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
     recordedAt: deps.now().toISOString(),
   });
 
-  deps.mkdirSync(dirname(reportPath), { recursive: true });
-  deps.writeFileSync(reportPath, report, 'utf8');
-  delivery = await deliverReport(deps, context, report, reportPath);
+  const reportFileWritten = writeReportFile(deps, reportPath, report);
+  delivery = await deliverReport(deps, context, report, reportPath, reportFileWritten);
+  conclusion = determineConclusion(detector, delivery.status !== 'failed');
+  report = renderReport({
+    inputs,
+    context,
+    detector,
+    delivery,
+    narrative,
+    conclusion,
+    artifactName,
+    recordedAt: deps.now().toISOString(),
+  });
+  if (reportFileWritten) writeReportFile(deps, reportPath, report);
 
   emitOutput(deps, 'summary-status', detector.summary.status);
   emitOutput(deps, 'detector-exit-code', String(detector.exitCode));
@@ -215,6 +226,16 @@ export async function runAction(deps: RunDependencies = createRunDependencies())
   emitOutput(deps, 'helper-version', HELPER_VERSION);
 
   return { inputs, detector, delivery, narrative, conclusion, report };
+}
+
+function writeReportFile(deps: RunDependencies, reportPath: string, report: string): boolean {
+  try {
+    deps.mkdirSync(dirname(reportPath), { recursive: true });
+    deps.writeFileSync(reportPath, report, 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): PullRequestContext {
@@ -391,6 +412,7 @@ async function deliverReport(
   context: PullRequestContext,
   report: string,
   reportPath: string,
+  reportFileWritten: boolean,
 ): Promise<DeliveryResult> {
   let summary: DeliveryResult['summary'] = 'failed';
   try {
@@ -403,10 +425,10 @@ async function deliverReport(
   }
 
   const base: DeliveryResult = {
-    status: summary === 'written' ? 'fallback' : 'failed',
+    status: summary === 'written' || reportFileWritten ? 'fallback' : 'failed',
     comment: 'skipped',
     summary,
-    artifact: 'uploaded',
+    artifact: reportFileWritten ? 'uploaded' : 'failed',
     currentCommentId: null,
     duplicateCommentIds: [],
     reportPath,

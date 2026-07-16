@@ -110,17 +110,17 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation.**
 
-- [ ] T033 [P] [US3] Add failing result-matrix tests for clean, ordinary impact, caller threshold breach, hub threshold breach, analysis unavailable, and report unavailable in `__tests__/pr-impact-result-matrix.test.ts` (Q2, Q3)
-- [ ] T034 [P] [US3] Add failing threshold input mapping tests for `fail-on-callers` and `fail-on-hubs` detector arguments in `__tests__/pr-impact-action-contract.test.ts` (Q2)
-- [ ] T035 [P] [US3] Add failing unavailable-analysis report tests proving detector exit 3 publishes an unavailable report and failing conclusion in `__tests__/pr-impact-result-matrix.test.ts` (Q3)
+- [X] T033 [P] [US3] Add failing result-matrix tests for clean, ordinary impact, caller threshold breach, hub threshold breach, analysis unavailable, and report unavailable in `__tests__/pr-impact-result-matrix.test.ts` (Q2, Q3)
+- [X] T034 [P] [US3] Add failing threshold input mapping tests for `fail-on-callers` and `fail-on-hubs` detector arguments in `__tests__/pr-impact-action-contract.test.ts` (Q2)
+- [X] T035 [P] [US3] Add failing unavailable-analysis report tests proving detector exit 3 publishes an unavailable report and failing conclusion in `__tests__/pr-impact-result-matrix.test.ts` (Q3)
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Implement final conclusion mapping for clean, impact, threshold breach, analysis unavailable, and report unavailable in `actions/pr-impact/run.ts`
-- [ ] T037 [US3] Map `fail-on-callers` and `fail-on-hubs` inputs to detector `--fail-on` arguments without a second policy engine in `actions/pr-impact/run.ts`
-- [ ] T038 [US3] Capture detector exit codes 0, 1, 2, and 3 and preserve detector JSON as canonical in `actions/pr-impact/run.ts`
-- [ ] T039 [US3] Implement unavailable-analysis report rendering and failing conclusion output in `actions/pr-impact/run.ts`
-- [ ] T040 [US3] Regenerate `actions/pr-impact/dist/run.mjs` and verify US3 policy freshness in `actions/pr-impact/dist/run.mjs`
+- [X] T036 [US3] Implement final conclusion mapping for clean, impact, threshold breach, analysis unavailable, and report unavailable in `actions/pr-impact/run.ts`
+- [X] T037 [US3] Map `fail-on-callers` and `fail-on-hubs` inputs to detector `--fail-on` arguments without a second policy engine in `actions/pr-impact/run.ts`
+- [X] T038 [US3] Capture detector exit codes 0, 1, 2, and 3 and preserve detector JSON as canonical in `actions/pr-impact/run.ts`
+- [X] T039 [US3] Implement unavailable-analysis report rendering and failing conclusion output in `actions/pr-impact/run.ts`
+- [X] T040 [US3] Regenerate `actions/pr-impact/dist/run.mjs` and verify US3 policy freshness in `actions/pr-impact/dist/run.mjs`
 
 **Checkpoint**: Policy enforcement is deterministic, threshold-only, and independently testable.
 
