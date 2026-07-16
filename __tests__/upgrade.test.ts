@@ -380,6 +380,18 @@ describe('runUpgrade', () => {
     expect(calls.runs[0].args).toEqual(['install', '-g', `${NPM_PACKAGE}@0.9.8`]);
   });
 
+  it('rejects an injected version pin before spawning an installer', async () => {
+    const { deps, calls } = makeDeps({
+      method: { kind: 'npm', scope: 'global' },
+      currentVersion: '0.9.9',
+      platform: 'win32',
+    });
+    const code = await runUpgrade({ version: '1.2.3 & calc.exe' }, deps);
+    expect(code).toBe(1);
+    expect(calls.runs).toHaveLength(0);
+    expect(calls.errors.join('\n')).toMatch(/valid release version/i);
+  });
+
   it('npm: surfaces a non-zero exit as failure', async () => {
     const { deps, calls } = makeDeps(
       { method: { kind: 'npm', scope: 'global' }, currentVersion: '0.9.8' },

@@ -326,7 +326,11 @@ export async function runUpgrade(opts: UpgradeOptions, deps: UpgradeDeps): Promi
   // Resolve the target version (pinned or latest).
   let latest: string;
   try {
-    latest = normalizeVersion(opts.version || (await deps.resolveLatest()));
+    const target = opts.version || (await deps.resolveLatest());
+    if (!/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(target.trim())) {
+      throw new Error('Target must be a valid release version such as 1.2.3 or v1.2.3-rc.1.');
+    }
+    latest = normalizeVersion(target);
   } catch (err) {
     deps.error(err instanceof Error ? err.message : String(err));
     return 1;
@@ -620,6 +624,12 @@ function upgradeWindowsBundle(
  */
 export function npmInvocation(platform: NodeJS.Platform, npmArgs: string[]): { cmd: string; args: string[] } {
   if (platform === 'win32') {
+    // cmd.exe parses the /c payload as shell syntax. Keep every interpolated
+    // argument to npm's package/flag/version alphabet so metacharacters can
+    // never become a second command, variable expansion, or redirection.
+    if (npmArgs.some((arg) => !/^[0-9A-Za-z@._/+:-]+$/.test(arg))) {
+      throw new Error('Windows npm arguments may contain only safe characters.');
+    }
     return { cmd: 'cmd.exe', args: ['/d', '/s', '/c', ['npm', ...npmArgs].join(' ')] };
   }
   return { cmd: 'npm', args: npmArgs };
