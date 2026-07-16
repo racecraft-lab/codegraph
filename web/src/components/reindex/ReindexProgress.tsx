@@ -2,6 +2,12 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import type { ReindexJob, ReindexProgressEvent } from "@/lib/api/types"
 
+const JOB_REASON_MESSAGES: Record<NonNullable<ReindexJob["reason"]>, string> = {
+  aborted: "Re-analysis was canceled before it finished.",
+  lock_unavailable: "The index is busy with another process. Try re-analysis again after it finishes.",
+  index_failed: "Re-analysis failed while updating the index. Check the server logs and try again.",
+}
+
 function numberField(result: Record<string, unknown> | undefined, key: string): number | undefined {
   const value = result?.[key]
   return typeof value === "number" ? value : undefined
@@ -9,7 +15,7 @@ function numberField(result: Record<string, unknown> | undefined, key: string): 
 
 function statusMessage(job?: ReindexJob, progress?: ReindexProgressEvent): string {
   if (job?.status === "error") {
-    return job.reason ?? `${job.mode} job failed.`
+    return job.reason ? JOB_REASON_MESSAGES[job.reason] : `${job.mode} job failed.`
   }
   if (job?.status === "done") {
     const checked = numberField(job.result, "filesChecked")

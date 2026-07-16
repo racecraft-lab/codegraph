@@ -37,6 +37,33 @@ describe("reindex panel", () => {
     expect(screen.getByText("extract")).toBeInTheDocument()
   })
 
+  it("maps terminal error reason codes to user-facing copy", () => {
+    const cases = [
+      ["aborted", "Re-analysis was canceled before it finished."],
+      ["lock_unavailable", "The index is busy with another process. Try re-analysis again after it finishes."],
+      ["index_failed", "Re-analysis failed while updating the index. Check the server logs and try again."],
+    ] as const
+
+    for (const [reason, message] of cases) {
+      const { unmount } = render(
+        <ReindexProgress
+          job={{
+            id: `job-${reason}`,
+            repo: "0123456789abcdef",
+            mode: "sync",
+            status: "error",
+            startedAt: new Date().toISOString(),
+            reason,
+          }}
+        />,
+      )
+
+      expect(screen.getByText(message)).toBeInTheDocument()
+      expect(screen.queryByText(reason)).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it("recovers a terminal snapshot after the event stream disconnects", async () => {
     Object.defineProperty(globalThis, "EventSource", {
       value: TestEventSource,
