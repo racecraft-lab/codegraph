@@ -201,21 +201,31 @@ export function parseActionInputs(env: NodeJS.ProcessEnv): ActionInputs {
 }
 
 function parseActionInputsForRun(env: NodeJS.ProcessEnv): ParsedActionInputs {
-  const narrative = readInput(env, 'NARRATIVE', 'off');
+  const parsedNarrative = parseNarrativeInput(readInput(env, 'NARRATIVE', 'off'), 'narrative');
   const requestedCodegraphVersion = readInput(env, 'CODEGRAPH_VERSION', DEFAULT_CODEGRAPH_VERSION);
   const failOnCallersRaw = readInput(env, 'FAIL_ON_CALLERS', '');
   const parsedFailOnCallers = parseOptionalInteger(failOnCallersRaw, 'fail-on-callers');
+  const parsedFailOnHubs = parseBooleanInput(readInput(env, 'FAIL_ON_HUBS', 'false'), 'fail-on-hubs');
+  const parsedCallerDepth = parseIntegerInput(readInput(env, 'CALLER_DEPTH', '1'), 'caller-depth', 1);
+  const parsedMaxCallers = parseIntegerInput(readInput(env, 'MAX_CALLERS', '20'), 'max-callers', 20);
+  const inputError = [
+    parsedFailOnCallers.error,
+    parsedFailOnHubs.error,
+    parsedCallerDepth.error,
+    parsedMaxCallers.error,
+    parsedNarrative.error,
+  ].filter((error): error is string => Boolean(error)).join(' ');
   return {
     inputs: {
       codegraphVersion: env.PR_IMPACT_CODEGRAPH_RESOLVED_VERSION || requestedCodegraphVersion,
       baseRef: readInput(env, 'BASE_REF', ''),
       failOnCallers: parsedFailOnCallers.value,
-      failOnHubs: parseBoolean(readInput(env, 'FAIL_ON_HUBS', 'false')),
-      callerDepth: clampInteger(parseInteger(readInput(env, 'CALLER_DEPTH', '1'), 1), MIN_CALLER_DEPTH, MAX_CALLER_DEPTH),
-      maxCallers: clampInteger(parseInteger(readInput(env, 'MAX_CALLERS', '20'), 20), MIN_MAX_CALLERS, MAX_MAX_CALLERS),
-      narrative: narrative === 'trusted' ? 'trusted' : 'off',
+      failOnHubs: parsedFailOnHubs.value,
+      callerDepth: clampInteger(parsedCallerDepth.value, MIN_CALLER_DEPTH, MAX_CALLER_DEPTH),
+      maxCallers: clampInteger(parsedMaxCallers.value, MIN_MAX_CALLERS, MAX_MAX_CALLERS),
+      narrative: parsedNarrative.value,
     },
-    error: parsedFailOnCallers.error,
+    error: inputError || null,
   };
 }
 
@@ -740,7 +750,9 @@ function readPullRequestContext(deps: RunDependencies, inputs: ActionInputs): Pu
   const baseRepo = stringAt(event, ['pull_request', 'base', 'repo', 'full_name']) || repository;
   const isForkLike = headRepo !== '' && baseRepo !== '' && headRepo !== baseRepo;
   const hasTrustedContext = trustedContextFor(deps, isForkLike);
-  const hasTrustedToken = Boolean(deps.env.GITHUB_TOKEN) && hasTrustedContext && parseBoolean(deps.env.PR_IMPACT_TOKEN_WRITE ?? 'false');
+  const hasTrustedToken = Boolean(deps.env.GITHUB_TOKEN) &&
+    hasTrustedContext &&
+    parseBooleanInput(deps.env.PR_IMPACT_TOKEN_WRITE ?? 'false', 'PR_IMPACT_TOKEN_WRITE').value;
 
   return {
     repository,
@@ -812,7 +824,7 @@ function baseRefMergeCandidates(baseRef: string): string[] {
 function trustedContextFor(deps: RunDependencies, isForkLike: boolean): boolean {
   if (deps.env.GITHUB_ACTOR === 'dependabot[bot]') return false;
   const raw = deps.env.PR_IMPACT_TRUSTED_CONTEXT;
-  if (raw !== undefined) return parseBoolean(raw);
+  if (raw !== undefined) return parseBooleanInput(raw, 'PR_IMPACT_TRUSTED_CONTEXT').value;
   return !isForkLike;
 }
 
@@ -1015,36 +1027,8 @@ async function deliverReportComment(
 
   const marked = sortActionOwnedComments(comments);
   const current = marked[0];
-  const duplicates = marked.slice(1);
-  const duplicateIds: string[] = [];
-  const failedDuplicateIds: string[] = [];
 
-  if (current) {
-    if (isNewerRunComment(current, context)) return { ...base, comment: 'skipped' };
-    const updated = await patchComment(deps, context, current.id, report);
-    for (const duplicate of duplicates) {
-      const retired = await patchComment(
-        deps,
-        context,
-        duplicate.id,
-        `${ACTION_MARKER}\n\n_Retired duplicate CodeGraph PR impact report._`,
-      );
-      if (retired) duplicateIds.push(String(duplicate.id));
-      else failedDuplicateIds.push(String(duplicate.id));
-    }
-    if (updated) {
-      return {
-        ...base,
-        status: 'comment',
-        comment: 'updated',
-        currentCommentId: String(current.id),
-        duplicateCommentIds: duplicateIds,
-        failedDuplicateCommentIds: failedDuplicateIds,
-        commentUrl: current.html_url,
-      };
-    }
-    return { ...base, comment: 'failed' };
-  }
+  if (current && isNewerRunComment(current, context)) return { ...base, comment: 'skipped' };
 
   const created = await createComment(deps, context, report);
   if (!created) return { ...base, comment: 'failed' };
@@ -1053,7 +1037,19 @@ async function deliverReportComment(
   const currentAfterCreate = markedAfterCreate[0] ?? created;
   const postCreateDuplicateIds: string[] = [];
   const postCreateFailedDuplicateIds: string[] = [];
+  if (isNewerRunComment(currentAfterCreate, context)) {
+    return {
+      ...base,
+      comment: 'skipped',
+      duplicateCommentIds: postCreateDuplicateIds,
+      failedDuplicateCommentIds: postCreateFailedDuplicateIds,
+    };
+  }
+  if (!isSameRunComment(currentAfterCreate, context)) {
+    return { ...base, comment: 'failed' };
+  }
   for (const duplicate of markedAfterCreate.slice(1)) {
+    if (isNewerRunComment(duplicate, context)) continue;
     const retired = await patchComment(
       deps,
       context,
@@ -1062,14 +1058,6 @@ async function deliverReportComment(
     );
     if (retired) postCreateDuplicateIds.push(String(duplicate.id));
     else postCreateFailedDuplicateIds.push(String(duplicate.id));
-  }
-  if (isNewerRunComment(currentAfterCreate, context)) {
-    return {
-      ...base,
-      comment: 'skipped',
-      duplicateCommentIds: postCreateDuplicateIds,
-      failedDuplicateCommentIds: postCreateFailedDuplicateIds,
-    };
   }
   return {
     ...base,
@@ -1092,7 +1080,7 @@ async function patchDeliveredComment(
   const comments = await listComments(deps, context);
   if (comments === null) return false;
   const current = comments.find((comment) => String(comment.id) === String(delivery.currentCommentId));
-  if (!current || isNewerRunComment(current, context)) return false;
+  if (!current || !isSameRunComment(current, context)) return false;
   return patchComment(deps, context, delivery.currentCommentId, report);
 }
 
@@ -1181,6 +1169,10 @@ function renderReport(args: {
     '## Changed symbols',
     '',
     ...formatChangedSymbols(detector.changedSymbols),
+    '',
+    '## Unmapped hunks',
+    '',
+    ...formatUnmappedHunks(detector.unmappedHunks),
     '',
     '## Impacted callers',
     '',
@@ -1388,6 +1380,16 @@ function isNewerRunComment(comment: GitHubComment, context: PullRequestContext):
   }) < 0;
 }
 
+function isSameRunComment(comment: GitHubComment, context: PullRequestContext): boolean {
+  const commentIdentity = parseActionRunIdentity(comment.body);
+  return Boolean(
+    commentIdentity &&
+    commentIdentity.runId === context.runId &&
+    commentIdentity.runAttempt === context.runAttempt &&
+    commentIdentity.headSha === context.headSha,
+  );
+}
+
 function isGitHubComment(value: unknown): value is GitHubComment {
   const candidate = value as Partial<GitHubComment>;
   return (
@@ -1404,6 +1406,19 @@ function formatChangedSymbols(items: unknown[]): string[] {
   return items.map((item) => {
     const symbol = item as Record<string, unknown>;
     return `- ${markdownInline(stringField(symbol, 'qualifiedName') || stringField(symbol, 'name') || 'unknown')} (${markdownInline(stringField(symbol, 'kind') || 'symbol')}) — ${markdownInline(stringField(symbol, 'filePath') || 'unknown path')}`;
+  });
+}
+
+function formatUnmappedHunks(items: unknown[]): string[] {
+  if (items.length === 0) return ['- None.'];
+  return items.map((item) => {
+    const hunk = item as Record<string, unknown>;
+    const path = stringField(hunk, 'newPath') || stringField(hunk, 'oldPath') || 'unknown path';
+    const range = formatHunkRange(hunk);
+    const reason = stringField(hunk, 'reason') || 'unknown';
+    const message = stringField(hunk, 'message');
+    const suffix = message ? ` — ${markdownInline(message)}` : '';
+    return `- ${markdownInline(path)}${range ? `:${markdownInline(range)}` : ''} — ${markdownInline(reason)}${suffix}`;
   });
 }
 
@@ -1534,22 +1549,53 @@ function parseOptionalInteger(raw: string, label: string): { value: number | nul
   return { value: Number(trimmed), error: null };
 }
 
-function parseInteger(raw: string, fallback: number): number {
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+function parseIntegerInput(raw: string, label: string, fallback: number): { value: number; error: string | null } {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { value: fallback, error: null };
+  if (!/^\d+$/.test(trimmed)) {
+    return {
+      value: fallback,
+      error: `Invalid ${label}: expected a non-negative integer or an empty value, received ${JSON.stringify(raw)}.`,
+    };
+  }
+  return { value: Number(trimmed), error: null };
 }
 
 function clampInteger(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function parseBoolean(raw: string): boolean {
-  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
+function parseBooleanInput(raw: string, label: string): { value: boolean; error: string | null } {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === '') return { value: false, error: null };
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return { value: true, error: null };
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return { value: false, error: null };
+  return {
+    value: false,
+    error: `Invalid ${label}: expected true, false, 1, 0, yes, no, on, off, or an empty value, received ${JSON.stringify(raw)}.`,
+  };
+}
+
+function parseNarrativeInput(raw: string, label: string): { value: ActionInputs['narrative']; error: string | null } {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === '' || normalized === 'off') return { value: 'off', error: null };
+  if (normalized === 'trusted') return { value: 'trusted', error: null };
+  return {
+    value: 'off',
+    error: `Invalid ${label}: expected off, trusted, or an empty value, received ${JSON.stringify(raw)}.`,
+  };
 }
 
 function numberLimit(limits: Record<string, unknown>, field: string, fallback: number): number {
   const value = limits[field];
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function formatHunkRange(hunk: Record<string, unknown>): string {
+  const start = numberOr(hunk.newStart, numberOr(hunk.oldStart, 0));
+  const lines = numberOr(hunk.newLines, numberOr(hunk.oldLines, 0));
+  if (!start) return '';
+  return lines && lines > 1 ? `${start}+${lines}` : String(start);
 }
 
 function markdownInline(raw: string): string {

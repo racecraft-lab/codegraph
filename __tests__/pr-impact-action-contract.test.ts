@@ -158,6 +158,14 @@ describe('PR impact action contract', () => {
 
     for (const invalid of ['abc', '10junk', '-1']) {
       expect(() => parseActionInputs({ INPUT_FAIL_ON_CALLERS: invalid })).toThrow('Invalid fail-on-callers');
+      expect(() => parseActionInputs({ INPUT_CALLER_DEPTH: invalid })).toThrow('Invalid caller-depth');
+      expect(() => parseActionInputs({ INPUT_MAX_CALLERS: invalid })).toThrow('Invalid max-callers');
+    }
+    for (const invalid of ['treu', '2', 'false-ish']) {
+      expect(() => parseActionInputs({ INPUT_FAIL_ON_HUBS: invalid })).toThrow('Invalid fail-on-hubs');
+    }
+    for (const invalid of ['append', 'trusted-ish']) {
+      expect(() => parseActionInputs({ INPUT_NARRATIVE: invalid })).toThrow('Invalid narrative');
     }
   });
 
@@ -249,7 +257,10 @@ describe('PR impact action contract', () => {
         env: {
           INPUT_CODEGRAPH_VERSION: '1.5.0',
           INPUT_FAIL_ON_CALLERS: '10junk',
-          INPUT_NARRATIVE: 'off',
+          INPUT_FAIL_ON_HUBS: 'treu',
+          INPUT_CALLER_DEPTH: '2junk',
+          INPUT_MAX_CALLERS: 'many',
+          INPUT_NARRATIVE: 'append',
           PR_IMPACT_CACHE_STATUS: 'warm-valid',
           GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
           PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
@@ -271,7 +282,12 @@ describe('PR impact action contract', () => {
       expect(result.conclusion).toBe('fail-analysis-unavailable');
       expect(outputs.conclusion).toBe('fail-analysis-unavailable');
       expect(calls).toEqual([]);
-      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('Invalid fail-on-callers');
+      const report = fs.readFileSync(path.join(tmp, 'report.md'), 'utf8');
+      expect(report).toContain('Invalid fail-on-callers');
+      expect(report).toContain('Invalid fail-on-hubs');
+      expect(report).toContain('Invalid caller-depth');
+      expect(report).toContain('Invalid max-callers');
+      expect(report).toContain('Invalid narrative');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

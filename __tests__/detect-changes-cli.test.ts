@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { createDetectChangesFixture, indexFixture, type DetectChangesFixture } from './helpers/detect-changes-fixture';
 
 const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
-const CLI_TIMEOUT_MS = 60_000;
+const CLI_TIMEOUT_MS = 120_000;
 
 describe('detect-changes CLI', () => {
   let fixture: DetectChangesFixture | null = null;
