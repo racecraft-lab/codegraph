@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import {
   Node,
+  NodeKind,
   Edge,
   FileRecord,
   ExtractionResult,
@@ -2217,6 +2218,20 @@ export class CodeGraph {
   /** Nodes whose name starts with `prefix` (index range scan, capped). */
   getNodesByNamePrefix(prefix: string, limit = 20): Node[] {
     return this.queries.getNodesByNamePrefix(prefix, limit);
+  }
+
+  /**
+   * Nodes whose name CONTAINS `substring` (LIKE scan, ASCII-case-insensitive,
+   * shortest-first). The camel-infix lookup FTS can't do — `profileInfo`
+   * inside `getProfileInfoV2` is one FTS token (#1196).
+   */
+  getNodesByNameSubstring(
+    substring: string,
+    options: { kinds?: NodeKind[]; limit?: number; excludePrefix?: boolean } = {}
+  ): Node[] {
+    return this.queries
+      .findNodesByNameSubstring(substring, options)
+      .map((r) => r.node);
   }
 
   /**
