@@ -13,10 +13,10 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 
 ## Verification
 
-- Focused PR-impact tests passed after PR-check remediation: 6 files, 27 tests.
+- Focused PR-impact tests passed after PR-check remediation: 6 files, 28 tests.
 - `npm run build` passed.
 - `npm run typecheck` passed.
-- `npm test` passed after PR-check remediation: 240 files, 3,954 tests, 7 skipped.
+- Latest `npm test` after PR-check remediation passed 239 files, with one `detect-changes-cli` timeout under full-suite load; rerunning `__tests__/detect-changes-cli.test.ts` passed 1 file, 4 tests.
 - Verify-tasks phantom check passed: 60/60 completed tasks verified.
 - Warm-cache deterministic sample median was 149s, under the 180s target.
 - Code review remediation passed for event-base defaulting, final delivery metadata consistency, and merge-base metadata.
@@ -24,6 +24,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - PR check remediation passed locally for cold-cache CodeGraph initialization.
 - PR check remediation passed locally for self-dogfood using the checked-out workspace package.
 - PR check remediation passed locally for fallback restore-key cache validation.
+- PR check remediation passed locally for explicit installed CLI path resolution and reindex-to-init fallback.
 
 ## Deviations
 
@@ -37,6 +38,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - A reusable action cannot assume an index exists on a first run; cold-cache paths need initialization, not only re-indexing.
 - Self-dogfood for unreleased CLI features must install the checked-out workspace package, not the last published package.
 - GitHub `actions/cache` restore-key hits can restore real cache contents while reporting `cache-hit=false`; runtime metadata must be validated before choosing a cold-cache initialization path.
+- Restored caches can still be unsalvageable; the action needs a cold-init fallback after failed reindexing instead of reporting unavailable immediately.
 - Advisory dogfood should remain threshold-free until enough live PR samples exist to justify blocking defaults.
 
 ## Follow-up

@@ -83,6 +83,8 @@ describe('PR impact action contract', () => {
 
     expect(action).toContain(`default: "${pkg.version}"`);
     expect(action).toContain('npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"');
+    expect(action).toContain('PR_IMPACT_CODEGRAPH_BIN=$codegraph_bin');
+    expect(action).toContain('$GITHUB_ENV');
     expect(action).toContain('node "${{ github.action_path }}/dist/run.mjs"');
     expect(action).toContain('PR_IMPACT_CACHE_RESTORE_HIT:');
     expect(action).toContain("steps.pr-impact.outputs.cache-status == 'rebuilt'");
@@ -160,6 +162,7 @@ describe('PR impact action contract', () => {
           INPUT_FAIL_ON_HUBS: 'true',
           INPUT_CALLER_DEPTH: '3',
           INPUT_MAX_CALLERS: '50',
+          PR_IMPACT_CODEGRAPH_BIN: '/tmp/codegraph-bin',
           PR_IMPACT_CACHE_STATUS: 'warm-valid',
           GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
           PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
@@ -199,7 +202,7 @@ describe('PR impact action contract', () => {
 
       expect(calls).toHaveLength(2);
       for (const call of calls) {
-        expect(call.command).toBe('codegraph');
+        expect(call.command).toBe('/tmp/codegraph-bin');
         expect(call.args).toEqual(expect.arrayContaining([
           'detect-changes',
           '--mode', 'base-ref',

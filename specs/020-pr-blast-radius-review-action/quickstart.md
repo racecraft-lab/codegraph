@@ -103,14 +103,15 @@ Expected:
 
 ## Final SPEC-020 validation evidence
 
-Recorded on 2026-07-16 from the SPEC-020 worktree with Node 24.11.1 after code-review remediation, PR check pinning remediation, cold-cache initialization remediation, self-dogfood package remediation, and fallback restore-key cache remediation.
+Recorded on 2026-07-16 from the SPEC-020 worktree with Node 24.11.1 after code-review remediation, PR check pinning remediation, cold-cache initialization remediation, self-dogfood package remediation, fallback restore-key cache remediation, explicit CLI path remediation, and reindex-to-init fallback remediation.
 
 Commands:
 
-- `npm test -- __tests__/pr-impact-action-contract.test.ts __tests__/pr-impact-cache.test.ts __tests__/pr-impact-delivery.test.ts __tests__/pr-impact-narrative.test.ts __tests__/pr-impact-result-matrix.test.ts __tests__/pr-impact-runtime-freshness.test.ts`: PASS — 6 files, 27 tests.
+- `npm test -- __tests__/pr-impact-action-contract.test.ts __tests__/pr-impact-cache.test.ts __tests__/pr-impact-delivery.test.ts __tests__/pr-impact-narrative.test.ts __tests__/pr-impact-result-matrix.test.ts __tests__/pr-impact-runtime-freshness.test.ts`: PASS — 6 files, 28 tests.
 - `npm run build`: PASS — TypeScript build, asset copy, and `actions/pr-impact/dist/run.mjs` regeneration completed.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files passed; 3,954 tests passed; 7 skipped; duration 69.25s.
+- `npm test`: PARTIAL — 239 files passed; 3,954 tests passed; 7 skipped; `detect-changes-cli` timed out under full-suite load.
+- `npm test -- __tests__/detect-changes-cli.test.ts`: PASS — 1 file, 4 tests.
 
 Generated runtime freshness:
 

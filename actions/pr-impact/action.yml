@@ -74,7 +74,17 @@ runs:
   steps:
     - name: Install CodeGraph CLI
       shell: bash
-      run: npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"
+      run: |
+        npm install --global "@colbymchenry/codegraph@${{ inputs.codegraph-version }}"
+        codegraph_bin="$(npm prefix --global)/bin/codegraph"
+        if [[ ! -x "$codegraph_bin" ]]; then
+          codegraph_bin="$(command -v codegraph || true)"
+        fi
+        if [[ -z "$codegraph_bin" ]]; then
+          echo "Unable to resolve installed codegraph binary" >&2
+          exit 1
+        fi
+        echo "PR_IMPACT_CODEGRAPH_BIN=$codegraph_bin" >> "$GITHUB_ENV"
 
     - name: Restore CodeGraph index cache
       id: codegraph-cache

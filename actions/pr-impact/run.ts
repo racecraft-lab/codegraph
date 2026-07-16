@@ -313,7 +313,12 @@ function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: Pull
     : 'miss';
   if (restoredStatus === 'warm-valid') return restoredStatus;
 
-  if (!rebuildCodeGraphIndex(deps, restoredStatus === 'miss' ? 'init' : 'index')) return 'unavailable';
+  const rebuildMode = restoredStatus === 'miss' ? 'init' : 'index';
+  if (!rebuildCodeGraphIndex(deps, rebuildMode)) {
+    if (rebuildMode !== 'index' || !resetCodeGraphIndex(deps) || !rebuildCodeGraphIndex(deps, 'init')) {
+      return 'unavailable';
+    }
+  }
   writeCacheMetadata(deps, metadataPath, identity);
   return 'rebuilt';
 }
@@ -358,7 +363,7 @@ function validateCacheMetadata(
 function validateWarmIndexHealth(deps: RunDependencies, expected: CacheIdentity): CacheStatus {
   let status: unknown;
   try {
-    status = JSON.parse(String(deps.execFileSync('codegraph', ['status', '--json'], {
+    status = JSON.parse(String(deps.execFileSync(codegraphBin(deps), ['status', '--json'], {
       encoding: 'utf8',
       env: deps.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -391,7 +396,7 @@ function rebuildCodeGraphIndex(deps: RunDependencies, mode: 'init' | 'index'): b
   const gitignorePath = deps.env.PR_IMPACT_GITIGNORE_PATH ?? '.gitignore';
   const gitignore = mode === 'init' ? readOptionalFile(deps, gitignorePath) : null;
   try {
-    deps.execFileSync('codegraph', [mode], {
+    deps.execFileSync(codegraphBin(deps), [mode], {
       encoding: 'utf8',
       env: deps.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -401,6 +406,15 @@ function rebuildCodeGraphIndex(deps: RunDependencies, mode: 'init' | 'index'): b
     return false;
   } finally {
     if (gitignore) restoreOptionalFile(deps, gitignorePath, gitignore);
+  }
+}
+
+function resetCodeGraphIndex(deps: RunDependencies): boolean {
+  try {
+    deps.rmSync(deps.env.PR_IMPACT_CODEGRAPH_PATH ?? '.codegraph', { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -577,7 +591,7 @@ function failOnPolicy(inputs: ActionInputs): string {
 
 function runDetectorCommand(deps: RunDependencies, args: string[]): string {
   try {
-    return String(deps.execFileSync('codegraph', args, {
+    return String(deps.execFileSync(codegraphBin(deps), args, {
       encoding: 'utf8',
       env: deps.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -589,6 +603,10 @@ function runDetectorCommand(deps: RunDependencies, args: string[]): string {
     }
     throw error;
   }
+}
+
+function codegraphBin(deps: RunDependencies): string {
+  return deps.env.PR_IMPACT_CODEGRAPH_BIN || 'codegraph';
 }
 
 function normalizeDetectorResult(raw: unknown, inputs: ActionInputs, baseRef: string): DetectorResult {

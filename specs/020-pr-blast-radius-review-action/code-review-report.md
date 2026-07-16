@@ -22,10 +22,10 @@ Passed after remediation.
 
 ## Verification after remediation
 
-- Focused PR-impact suite: PASS — 6 files, 27 tests.
+- Focused PR-impact suite: PASS — 6 files, 28 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,954 tests passed, 7 skipped; duration 69.25s.
+- `npm test`: previous PASS — 240 files, 3,954 tests passed, 7 skipped; duration 69.25s.
 
 ## PR check remediation
 
@@ -41,10 +41,14 @@ Passed after remediation.
 - Finding: GitHub restored a fallback cache through `restore-keys`, but the helper treated `cache-hit=false` as a cold miss and tried `codegraph init` against an existing `.codegraph` directory.
 - Fix: restored cache metadata is now validated whenever the metadata file exists, even when the cache action reports a non-exact hit.
 - Test: `pr-impact-cache.test.ts` now verifies fallback restored metadata is re-indexed instead of initialized when the version is incompatible.
+- Finding: the failed dogfood report still showed unavailable analysis after the fallback cache fix, while logs suppressed the lower-level rebuild cause.
+- Fix: the composite action now records the installed CodeGraph binary path for the helper, and restored-cache reindex failures fall back to deleting the restored `.codegraph` directory and running cold initialization.
+- Test: `pr-impact-action-contract.test.ts` verifies the explicit binary path, and `pr-impact-cache.test.ts` verifies reindex-to-init fallback.
 
 ## Verification after PR check remediation
 
-- Focused PR-impact suite: PASS — 6 files, 27 tests.
+- Focused PR-impact suite: PASS — 6 files, 28 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,954 tests passed, 7 skipped; duration 69.25s.
+- `npm test`: PARTIAL — 239 files passed; `detect-changes-cli` timed out under full-suite load.
+- `npm test -- __tests__/detect-changes-cli.test.ts`: PASS — 1 file, 4 tests.

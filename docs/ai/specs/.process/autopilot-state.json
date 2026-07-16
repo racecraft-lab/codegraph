@@ -4,7 +4,7 @@
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
   "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-16T01:19:42Z",
+  "updated_at": "2026-07-16T01:31:49Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -466,17 +466,20 @@
       "focused_pr_impact_tests": {
         "status": "passed",
         "test_files": 6,
-        "tests": 27
-      },
-      "build": "passed",
-      "typecheck": "passed",
-      "full_test": {
-        "status": "passed",
-        "test_files": 240,
-        "tests_passed": 3954,
-        "tests_skipped": 7,
-        "duration_seconds": 69.25
-      },
+                "tests": 28
+            },
+            "build": "passed",
+            "typecheck": "passed",
+            "full_test": {
+                "status": "partial_latest_run_targeted_rerun_passed",
+                "test_files_passed": 239,
+                "test_files_failed": 1,
+                "tests_passed": 3954,
+                "tests_failed": 1,
+                "tests_skipped": 7,
+                "duration_seconds": 109.49,
+                "rerun": "npm test -- __tests__/detect-changes-cli.test.ts passed: 1 file, 4 tests"
+            },
       "reviewability_gate": {
         "status": "warn",
         "pass": true,
@@ -504,7 +507,7 @@
     },
     "verify_implementation": {
       "status": "passed",
-      "evidence": "Final validation recorded in quickstart.md: focused PR-impact tests passed, npm run build passed, npm run typecheck passed, npm test passed."
+      "evidence": "Final validation recorded in quickstart.md: focused PR-impact tests passed, npm run build passed, npm run typecheck passed, latest full npm test had one detect-changes-cli timeout under load, and the targeted rerun passed."
     },
     "verify_tasks": {
       "status": "passed",
@@ -527,17 +530,17 @@
         "Merge-base metadata now uses explicit env or git merge-base before falling back to event base SHA."
       ],
       "verification": {
-        "focused_pr_impact_tests": "passed: 6 files, 27 tests",
+        "focused_pr_impact_tests": "passed: 6 files, 28 tests",
         "build": "passed",
         "typecheck": "passed",
-        "full_test": "passed: 240 files, 3954 tests passed, 7 skipped"
+        "full_test": "previously passed: 240 files, 3954 tests passed, 7 skipped; latest run partial with one detect-changes-cli timeout, targeted rerun passed 1 file and 4 tests"
       }
     },
     "integration_suite": {
       "status": "passed",
       "build": "passed",
       "typecheck": "passed",
-      "full_test": "passed"
+      "full_test": "partial_latest_run_targeted_rerun_passed"
     },
     "reviewability": {
       "status": "passed_with_warning_adjudicated",
@@ -571,7 +574,7 @@
     },
     "review_remediation": {
       "status": "checks_remediated_pending_rerun",
-      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, and restore-key fallback cache handling that treated restored metadata as a cold miss.",
+      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, a published-package mismatch for unreleased detect-changes support, restore-key fallback cache handling that treated restored metadata as a cold miss, and unavailable analysis after restored-cache reindexing failed.",
       "remediation": [
         "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
         "Added a contract test proving external actions/* references use full 40-character commit SHAs.",
@@ -580,13 +583,16 @@
         "Changed the self-repository dogfood workflow to install the checked-out workspace package via codegraph-version file:.",
         "Added a contract assertion that dogfood uses the workspace package while preserving advisory thresholds and narrative off.",
         "Changed cache preparation to validate restored metadata whenever the metadata file exists, even when actions/cache reports a non-exact restore-key hit.",
-        "Added a cache regression test proving fallback restored metadata is re-indexed instead of initialized when the restored CodeGraph version is incompatible."
+        "Added a cache regression test proving fallback restored metadata is re-indexed instead of initialized when the restored CodeGraph version is incompatible.",
+        "Changed the composite action to persist the resolved installed codegraph binary path for the helper.",
+        "Changed restored-cache rebuild handling to delete the restored .codegraph directory and retry cold initialization when reindexing fails.",
+        "Added contract/cache regressions for explicit CLI path usage and reindex-to-init fallback."
       ],
       "verification": {
-        "focused_pr_impact_tests": "passed: 6 files, 27 tests",
+        "focused_pr_impact_tests": "passed: 6 files, 28 tests",
         "build": "passed",
         "typecheck": "passed",
-        "full_test": "passed: 240 files, 3954 tests passed, 7 skipped"
+        "full_test": "partial: 239 files passed, 1 detect-changes-cli timeout under full-suite load; targeted rerun passed 1 file, 4 tests"
       },
       "next": "Push remediation and monitor PR #154 check rerun."
     },

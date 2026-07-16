@@ -31,16 +31,18 @@
 
 ## Verification evidence
 
-- Focused PR-impact tests: PASS — 6 files, 27 tests.
+- Focused PR-impact tests: PASS — 6 files, 28 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
-- `npm test`: PASS — 240 files, 3,954 tests, 7 skipped.
+- `npm test`: PARTIAL — 239 files passed; one `detect-changes-cli` test timed out under full-suite load.
+- `npm test -- __tests__/detect-changes-cli.test.ts`: PASS — 1 file, 4 tests.
 - Warm-cache deterministic sample median: 149s, below 180s target.
 - Code review remediation: PASS — event-base defaulting, final delivery metadata consistency, and merge-base metadata fixed.
 - PR check remediation: PASS locally — external `actions/*` references are pinned to full commit SHAs.
 - PR check remediation: PASS locally — cold cache misses initialize the CodeGraph index before analysis.
 - PR check remediation: PASS locally — dogfood installs the checked-out workspace package so unreleased detector commands are available.
 - PR check remediation: PASS locally — fallback restore-key caches are validated from metadata instead of treated as cold misses.
+- PR check remediation: PASS locally — helper uses the resolved installed CLI path and falls back from failed restored-cache reindex to cold initialization.
 
 ## Known gaps
 
