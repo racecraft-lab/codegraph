@@ -184,7 +184,13 @@ function intersectingSymbolsForHunk(
     }
   }
 
-  if (hunk.changeKind !== 'added' && baseGraph && hunk.oldPath && baseIndexedFiles?.has(hunk.oldPath)) {
+  if (
+    hunk.changeKind !== 'added'
+    && (hunk.oldLines ?? 0) > 0
+    && baseGraph
+    && hunk.oldPath
+    && baseIndexedFiles?.has(hunk.oldPath)
+  ) {
     const headNodes = headGraph.getNodesInFile(filePath).filter(isReportableSymbol);
     for (const node of symbolsIntersecting(baseGraph, hunk.oldPath, hunkRange(hunk, 'old'))) {
       const equivalent = findHeadEquivalent(node, headNodes);

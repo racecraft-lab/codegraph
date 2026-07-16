@@ -250,6 +250,48 @@ describe('detect changes', () => {
     }
   });
 
+  it('does not mark neighboring symbols as modified for pure insertion hunks', async () => {
+    const previousDir = process.env.CODEGRAPH_DIR;
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    await indexFixture(fx);
+    fx.write('src/calculator.ts', [
+      'export function computeTotal(value: number) {',
+      '  return value + 1;',
+      '}',
+      '',
+      'export function computeSubtotal(value: number) {',
+      '  return value - 1;',
+      '}',
+      '',
+      'export function renderTotal() {',
+      '  return computeTotal(41);',
+      '}',
+      '',
+    ].join('\n'));
+
+    process.env.CODEGRAPH_DIR = '.codegraph-head-insertion-test';
+    const headGraph = CodeGraph.initSync(fx.dir);
+    try {
+      await headGraph.indexAll();
+      const report = await detectChanges(headGraph, { mode: 'all', failOn: 'callers>0' }, { baseGraph: fx.cg });
+
+      expect(report.changedSymbols).toContainEqual(expect.objectContaining({
+        name: 'computeSubtotal',
+      }));
+      expect(report.changedSymbols).not.toContainEqual(expect.objectContaining({
+        name: 'computeTotal',
+      }));
+      expect(report.callers).toHaveLength(0);
+      expect(report.summary.status).toBe('impact');
+    } finally {
+      headGraph.close();
+      if (previousDir === undefined) delete process.env.CODEGRAPH_DIR;
+      else process.env.CODEGRAPH_DIR = previousDir;
+      fs.rmSync(path.join(fx.dir, '.codegraph-head-insertion-test'), { recursive: true, force: true });
+    }
+  });
+
   it('does not report a surviving symbol as deleted when only one line is removed', async () => {
     const previousDir = process.env.CODEGRAPH_DIR;
     fixture = createDetectChangesFixture();

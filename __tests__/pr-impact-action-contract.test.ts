@@ -114,6 +114,9 @@ describe('PR impact action contract', () => {
     expect(pkg.files).toContain('actions');
     const packNpm = fs.readFileSync(PACK_NPM, 'utf8');
     expect(packNpm).toContain('cp -R "$ROOT/actions" "$NPM/main/actions"');
+    expect(packNpm.indexOf('npm run build:pr-impact-action')).toBeLessThan(
+      packNpm.indexOf('cp -R "$ROOT/actions" "$NPM/main/actions"'),
+    );
     expect(packNpm).toContain('"actions"');
   });
 
@@ -184,6 +187,49 @@ describe('PR impact action contract', () => {
       expect(emitted.conclusion).toBe(result.conclusion);
       expect(result.report).toContain(`- Helper version: ${HELPER_VERSION}`);
       expect(result.report).toContain('- CodeGraph version: 1.4.1');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('does not mutate .gitignore when a cache init cannot safely snapshot it', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-gitignore-read-fail-'));
+    try {
+      const calls: Array<{ command: string; args: string[] }> = [];
+      const removes: string[] = [];
+      const result = await runAction({
+        env: {
+          INPUT_CODEGRAPH_VERSION: '1.5.0',
+          INPUT_NARRATIVE: 'off',
+          GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
+          PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+        },
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        appendFileSync: fs.appendFileSync,
+        existsSync: (target: fs.PathLike) => String(target) === '.gitignore' || fs.existsSync(target),
+        mkdirSync: fs.mkdirSync,
+        rmSync: (target: fs.PathLike, options?: fs.RmOptions) => {
+          removes.push(String(target));
+          fs.rmSync(target, options);
+        },
+        writeFileSync: fs.writeFileSync,
+        readFileSync: (target: fs.PathOrFileDescriptor, options?: BufferEncoding | { encoding?: BufferEncoding | null; flag?: string } | null) => {
+          if (String(target) === '.gitignore') throw new Error('permission denied');
+          return fs.readFileSync(target, options as any);
+        },
+        execFileSync: (command: string, args: string[]) => {
+          calls.push({ command, args });
+          throw new Error('cache init and detector should not run');
+        },
+      } as any);
+
+      expect(result.detector.summary.status).toBe('unavailable');
+      expect(result.conclusion).toBe('fail-analysis-unavailable');
+      expect(calls).toEqual([]);
+      expect(removes).not.toContain('.gitignore');
+      expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('CodeGraph cache/index is unavailable.');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

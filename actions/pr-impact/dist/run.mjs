@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 export const HELPER_VERSION = '0.1.0-spec-020';
 export const DEFAULT_CODEGRAPH_VERSION = '1.5.0';
 export const ACTION_MARKER = '<!-- codegraph-pr-impact-action -->';
+const ACTION_RUN_MARKER_PREFIX = '<!-- codegraph-pr-impact-run:';
 const MIN_CALLER_DEPTH = 1;
 const MAX_CALLER_DEPTH = 3;
 const MIN_MAX_CALLERS = 1;
@@ -418,6 +419,8 @@ function rebuildAndValidateCodeGraphIndex(deps, mode, metadataPath, identity) {
 function rebuildCodeGraphIndex(deps, mode) {
     const gitignorePath = deps.env.PR_IMPACT_GITIGNORE_PATH ?? '.gitignore';
     const gitignore = mode === 'init' ? readOptionalFile(deps, gitignorePath) : null;
+    if (gitignore?.state === 'read-failed')
+        return false;
     try {
         deps.execFileSync(codegraphBin(deps), [mode], {
             encoding: 'utf8',
@@ -445,12 +448,17 @@ function resetCodeGraphIndex(deps) {
 }
 function readOptionalFile(deps, path) {
     try {
-        return fileExists(deps, path)
-            ? { exists: true, content: String(deps.readFileSync(path, 'utf8')) }
-            : { exists: false, content: '' };
+        if (!deps.existsSync(path))
+            return { state: 'absent' };
     }
     catch {
-        return { exists: false, content: '' };
+        return { state: 'read-failed' };
+    }
+    try {
+        return { state: 'present', content: String(deps.readFileSync(path, 'utf8')) };
+    }
+    catch {
+        return { state: 'read-failed' };
     }
 }
 function fileExists(deps, path) {
@@ -463,10 +471,10 @@ function fileExists(deps, path) {
 }
 function restoreOptionalFile(deps, path, snapshot) {
     try {
-        if (snapshot.exists) {
+        if (snapshot.state === 'present') {
             deps.writeFileSync(path, snapshot.content, 'utf8');
         }
-        else if (deps.existsSync(path)) {
+        else if (snapshot.state === 'absent' && deps.existsSync(path)) {
             deps.rmSync(path, { force: true });
         }
     }
@@ -766,14 +774,14 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
     if (comments === null) {
         return { ...base, comment: 'permission-denied' };
     }
-    const marked = comments
-        .filter(isActionOwnedComment)
-        .sort(compareCommentNewestFirst);
+    const marked = sortActionOwnedComments(comments);
     const current = marked[0];
     const duplicates = marked.slice(1);
     const duplicateIds = [];
     const failedDuplicateIds = [];
     if (current) {
+        if (isNewerRunComment(current, context))
+            return { ...base, comment: 'skipped' };
         const updated = await patchComment(deps, context, current.id, report);
         for (const duplicate of duplicates) {
             const retired = await patchComment(deps, context, duplicate.id, `${ACTION_MARKER}\n\n_Retired duplicate CodeGraph PR impact report._`);
@@ -798,17 +806,44 @@ async function deliverReportComment(deps, context, report, reportPath, reportFil
     const created = await createComment(deps, context, report);
     if (!created)
         return { ...base, comment: 'failed' };
+    const refreshed = await listComments(deps, context);
+    const markedAfterCreate = refreshed === null ? [created] : sortActionOwnedComments(refreshed);
+    const currentAfterCreate = markedAfterCreate[0] ?? created;
+    const postCreateDuplicateIds = [];
+    const postCreateFailedDuplicateIds = [];
+    for (const duplicate of markedAfterCreate.slice(1)) {
+        const retired = await patchComment(deps, context, duplicate.id, `${ACTION_MARKER}\n\n_Retired duplicate CodeGraph PR impact report._`);
+        if (retired)
+            postCreateDuplicateIds.push(String(duplicate.id));
+        else
+            postCreateFailedDuplicateIds.push(String(duplicate.id));
+    }
+    if (isNewerRunComment(currentAfterCreate, context)) {
+        return {
+            ...base,
+            comment: 'skipped',
+            duplicateCommentIds: postCreateDuplicateIds,
+            failedDuplicateCommentIds: postCreateFailedDuplicateIds,
+        };
+    }
     return {
         ...base,
         status: 'comment',
         comment: 'created',
-        currentCommentId: String(created.id),
-        failedDuplicateCommentIds: [],
-        commentUrl: created.html_url,
+        currentCommentId: String(currentAfterCreate.id),
+        duplicateCommentIds: postCreateDuplicateIds,
+        failedDuplicateCommentIds: postCreateFailedDuplicateIds,
+        commentUrl: currentAfterCreate.html_url,
     };
 }
 async function patchDeliveredComment(deps, context, delivery, report) {
     if (delivery.currentCommentId === null)
+        return false;
+    const comments = await listComments(deps, context);
+    if (comments === null)
+        return false;
+    const current = comments.find((comment) => String(comment.id) === String(delivery.currentCommentId));
+    if (!current || isNewerRunComment(current, context))
         return false;
     return patchComment(deps, context, delivery.currentCommentId, report);
 }
@@ -856,6 +891,7 @@ function renderReport(args) {
     const maxCallers = numberLimit(detector.limits, 'maxCallers', inputs.maxCallers);
     const lines = [
         ACTION_MARKER,
+        actionRunMarker(context),
         '',
         '# CodeGraph PR Impact',
         '',
@@ -989,6 +1025,11 @@ function githubHeaders(deps) {
     return headers;
 }
 function compareCommentNewestFirst(left, right) {
+    const leftIdentity = parseActionRunIdentity(left.body);
+    const rightIdentity = parseActionRunIdentity(right.body);
+    const identityOrder = compareActionRunIdentityNewestFirst(leftIdentity, rightIdentity);
+    if (identityOrder !== 0)
+        return identityOrder;
     const leftTime = Date.parse(left.created_at ?? '');
     const rightTime = Date.parse(right.created_at ?? '');
     if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
@@ -998,6 +1039,51 @@ function compareCommentNewestFirst(left, right) {
 }
 function isActionOwnedComment(comment) {
     return comment.body.includes(ACTION_MARKER) && comment.user?.login === 'github-actions[bot]';
+}
+function sortActionOwnedComments(comments) {
+    return comments
+        .filter(isActionOwnedComment)
+        .sort(compareCommentNewestFirst);
+}
+function actionRunMarker(context) {
+    return `${ACTION_RUN_MARKER_PREFIX}${context.runId || 'unknown'}:${context.runAttempt || 'unknown'}:${context.headSha || 'unknown'} -->`;
+}
+function parseActionRunIdentity(body) {
+    const marker = body.match(/<!-- codegraph-pr-impact-run:([^:>]+):([^:>]+):([^ >]+) -->/);
+    if (marker) {
+        return {
+            runId: marker[1] ?? '',
+            runAttempt: marker[2] ?? '',
+            headSha: marker[3] ?? '',
+        };
+    }
+    const runId = body.match(/^- Action run: ([^\n]+)$/m)?.[1]?.trim();
+    const runAttempt = body.match(/^- Run attempt: ([^\n]+)$/m)?.[1]?.trim();
+    const headSha = body.match(/^- Head SHA: ([^\n]+)$/m)?.[1]?.trim();
+    return runId && runAttempt && headSha ? { runId, runAttempt, headSha } : null;
+}
+function compareActionRunIdentityNewestFirst(left, right) {
+    if (!left || !right)
+        return 0;
+    const leftRun = Number(left.runId);
+    const rightRun = Number(right.runId);
+    if (Number.isFinite(leftRun) && Number.isFinite(rightRun) && leftRun !== rightRun)
+        return rightRun - leftRun;
+    const leftAttempt = Number(left.runAttempt);
+    const rightAttempt = Number(right.runAttempt);
+    if (Number.isFinite(leftAttempt) && Number.isFinite(rightAttempt) && leftAttempt !== rightAttempt)
+        return rightAttempt - leftAttempt;
+    return 0;
+}
+function isNewerRunComment(comment, context) {
+    const commentIdentity = parseActionRunIdentity(comment.body);
+    if (!commentIdentity)
+        return false;
+    return compareActionRunIdentityNewestFirst(commentIdentity, {
+        runId: context.runId,
+        runAttempt: context.runAttempt,
+        headSha: context.headSha,
+    }) < 0;
 }
 function isGitHubComment(value) {
     const candidate = value;

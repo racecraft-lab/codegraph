@@ -202,6 +202,7 @@ describe('PR impact report delivery', () => {
   it('creates one action-owned sticky comment when none exists', async () => {
     const tmp = tmpDir();
     const calls: Array<{ method: string; url: string; body?: string }> = [];
+    let createdComment: { id: number; body: string; created_at: string; html_url: string; user: { login: string } } | null = null;
     try {
       await runAction(deps(tmp, {
         env: {
@@ -211,15 +212,24 @@ describe('PR impact report delivery', () => {
         },
         fetch: async (url: string, init?: { method?: string; body?: string }) => {
           calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
-          if ((init?.method ?? 'GET') === 'GET') return { ok: true, status: 200, json: async () => [] };
+          if ((init?.method ?? 'GET') === 'GET') {
+            return { ok: true, status: 200, json: async () => createdComment ? [createdComment] : [] };
+          }
+          if ((init?.method ?? 'GET') === 'PATCH') {
+            if (createdComment) createdComment = { ...createdComment, body: String(init?.body ?? '') };
+            return { ok: true, status: 200, json: async () => createdComment ?? {} };
+          }
+          createdComment = {
+            id: 100,
+            body: JSON.parse(String(init?.body ?? '{}')).body,
+            created_at: '2026-07-15T00:00:00Z',
+            html_url: 'https://example.test/comment/100',
+            user: { login: 'github-actions[bot]' },
+          };
           return {
             ok: true,
             status: 201,
-            json: async () => ({
-              id: 100,
-              body: String(init?.body ?? ''),
-              html_url: 'https://example.test/comment/100',
-            }),
+            json: async () => createdComment,
           };
         },
       }));
@@ -233,6 +243,113 @@ describe('PR impact report delivery', () => {
       expect(finalPatch?.body).toContain('- Delivery status: comment');
       expect(fs.readFileSync(path.join(tmp, 'summary.md'), 'utf8')).toContain('- Delivery status: comment');
       expect(fs.readFileSync(path.join(tmp, 'report.md'), 'utf8')).toContain('- Delivery status: comment');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('does not let an older run overwrite a newer action-owned sticky comment', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_RUN_ATTEMPT: '1',
+          GITHUB_SHA: 'older-head',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          calls.push({ method: init?.method ?? 'GET', url, body: init?.body });
+          if ((init?.method ?? 'GET') === 'GET') {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [
+                {
+                  id: 300,
+                  body: [
+                    ACTION_MARKER,
+                    '<!-- codegraph-pr-impact-run:201:1:newer-head -->',
+                    '',
+                    '# CodeGraph PR Impact',
+                  ].join('\n'),
+                  created_at: '2026-07-15T00:00:01Z',
+                  html_url: 'newer',
+                  user: { login: 'github-actions[bot]' },
+                },
+              ],
+            };
+          }
+          return { ok: true, status: 200, json: async () => ({}) };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('skipped');
+      expect(calls.some((call) => call.method === 'PATCH' && call.url.endsWith('/300'))).toBe(false);
+      expect(calls.some((call) => call.method === 'POST')).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('does not let an older final report patch overwrite a newer run on the same sticky comment', async () => {
+    const tmp = tmpDir();
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    let getCount = 0;
+    try {
+      const result = await runAction(deps(tmp, {
+        env: {
+          ...deps(tmp).env,
+          GITHUB_TOKEN: 'token',
+          PR_IMPACT_TOKEN_WRITE: 'true',
+          GITHUB_RUN_ID: '200',
+          GITHUB_RUN_ATTEMPT: '1',
+          GITHUB_SHA: 'older-head',
+        },
+        fetch: async (url: string, init?: { method?: string; body?: string }) => {
+          const method = init?.method ?? 'GET';
+          calls.push({ method, url, body: init?.body });
+          if (method === 'GET') {
+            getCount += 1;
+            const body = getCount === 1
+              ? [
+                ACTION_MARKER,
+                '<!-- codegraph-pr-impact-run:200:1:older-head -->',
+                '',
+                '# CodeGraph PR Impact',
+              ].join('\n')
+              : [
+                ACTION_MARKER,
+                '<!-- codegraph-pr-impact-run:201:1:newer-head -->',
+                '',
+                '# CodeGraph PR Impact',
+              ].join('\n');
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [
+                {
+                  id: 300,
+                  body,
+                  created_at: '2026-07-15T00:00:01Z',
+                  html_url: 'sticky',
+                  user: { login: 'github-actions[bot]' },
+                },
+              ],
+            };
+          }
+          return { ok: true, status: 200, json: async () => ({ id: 300, html_url: 'sticky' }) };
+        },
+      }));
+
+      expect(result.delivery.status).toBe('fallback');
+      expect(result.delivery.comment).toBe('failed');
+      expect(calls.filter((call) => call.method === 'PATCH' && call.url.endsWith('/300'))).toHaveLength(1);
+      expect(calls.find((call) => call.method === 'PATCH' && call.url.endsWith('/300'))?.body).not.toContain('- Delivery status: comment');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
