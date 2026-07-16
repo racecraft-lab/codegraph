@@ -102,6 +102,7 @@ export interface NarrativeResult {
 }
 
 export interface CacheIdentity {
+  repository: string;
   codegraphVersion: string;
   baseRef: string;
   headSha: string;
@@ -268,6 +269,7 @@ function prepareCache(deps: RunDependencies, inputs: ActionInputs, context: Pull
 
 function cacheIdentity(deps: RunDependencies, inputs: ActionInputs, context: PullRequestContext): CacheIdentity {
   return {
+    repository: context.repository || deps.env.GITHUB_REPOSITORY || 'unknown',
     codegraphVersion: inputs.codegraphVersion,
     baseRef: inputs.baseRef || context.baseRef || 'HEAD^',
     headSha: context.headSha || deps.env.GITHUB_SHA || 'unknown',
@@ -290,12 +292,47 @@ function validateCacheMetadata(
   if (metadata.schemaVersion !== 1 || metadata.identity === null || typeof metadata.identity !== 'object') {
     return 'corrupt';
   }
+  if (metadata.identity.repository !== expected.repository) {
+    return 'stale';
+  }
   if (metadata.identity.codegraphVersion !== expected.codegraphVersion) {
     return 'incompatible';
   }
   for (const field of ['baseRef', 'headSha', 'mergeBase', 'lockfileHash'] as const) {
     if (metadata.identity[field] !== expected[field]) return 'stale';
   }
+  return validateWarmIndexHealth(deps, expected);
+}
+
+function validateWarmIndexHealth(deps: RunDependencies, expected: CacheIdentity): CacheStatus {
+  let status: unknown;
+  try {
+    status = JSON.parse(String(deps.execFileSync('codegraph', ['status', '--json'], {
+      encoding: 'utf8',
+      env: deps.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })));
+  } catch {
+    return 'stale';
+  }
+  const report = status as Record<string, unknown>;
+  if (stringField(report, 'version') !== '' && stringField(report, 'version') !== expected.codegraphVersion) {
+    return 'incompatible';
+  }
+  if (report.worktreeMismatch !== null && report.worktreeMismatch !== undefined) {
+    return 'stale';
+  }
+  const pending = report.pendingChanges as Record<string, unknown> | null | undefined;
+  if (pending && (numberOr(pending.added, 0) > 0 || numberOr(pending.modified, 0) > 0 || numberOr(pending.removed, 0) > 0)) {
+    return 'stale';
+  }
+  const index = report.index as Record<string, unknown> | null | undefined;
+  if (!index) return 'stale';
+  if (numberOr(index.builtWithExtractionVersion, -1) !== numberOr(index.currentExtractionVersion, -2)) {
+    return 'incompatible';
+  }
+  if (index.reindexRecommended === true) return 'stale';
+  if (index.state !== null && index.state !== undefined && index.state !== 'complete') return 'stale';
   return 'warm-valid';
 }
 

@@ -466,7 +466,7 @@
       "focused_pr_impact_tests": {
         "status": "passed",
         "test_files": 6,
-        "tests": 22
+        "tests": 23
       },
       "build": "passed",
       "typecheck": "passed",

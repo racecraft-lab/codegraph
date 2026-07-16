@@ -50,6 +50,20 @@ function lockfileHash(lockfile: string): string {
   return createHash('sha256').update(lockfile).digest('hex');
 }
 
+function healthyStatus() {
+  return {
+    version: '1.4.1',
+    pendingChanges: { added: 0, modified: 0, removed: 0 },
+    worktreeMismatch: null,
+    index: {
+      builtWithExtractionVersion: 24,
+      currentExtractionVersion: 24,
+      reindexRecommended: false,
+      state: null,
+    },
+  };
+}
+
 function cacheMetadata(identity: Record<string, string>) {
   return {
     schemaVersion: 1,
@@ -59,7 +73,7 @@ function cacheMetadata(identity: Record<string, string>) {
   };
 }
 
-async function runWithMetadata(metadata: unknown, options: { lockfile?: string; indexFails?: boolean } = {}) {
+async function runWithMetadata(metadata: unknown, options: { lockfile?: string; indexFails?: boolean; status?: unknown } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-cache-meta-'));
   const lockfile = options.lockfile ?? '{"lockfileVersion":3}';
   try {
@@ -91,6 +105,9 @@ async function runWithMetadata(metadata: unknown, options: { lockfile?: string; 
       },
       execFileSync: (_command: string, args: string[]) => {
         calls.push(args);
+        if (args[0] === 'status') {
+          return JSON.stringify(options.status ?? healthyStatus());
+        }
         if (args[0] === 'index') {
           if (options.indexFails) throw new Error('index failed');
           return '';
@@ -132,6 +149,7 @@ describe('PR impact cache handling', () => {
   it('accepts restored cache metadata only when the identity matches the current comparison', async () => {
     const lockfile = '{"lockfileVersion":3}';
     const identity = {
+      repository: 'racecraft-lab/codegraph',
       codegraphVersion: '1.4.1',
       baseRef: 'main',
       headSha: '0000000000000000000000000000000000000002',
@@ -148,6 +166,7 @@ describe('PR impact cache handling', () => {
   it('rebuilds stale restored cache metadata before detector analysis and records the new identity', async () => {
     const lockfile = '{"lockfileVersion":3}';
     const staleIdentity = {
+      repository: 'racecraft-lab/codegraph',
       codegraphVersion: '1.4.1',
       baseRef: 'main',
       headSha: 'old-head',
@@ -160,6 +179,28 @@ describe('PR impact cache handling', () => {
     expect(outputs['cache-status']).toBe('rebuilt');
     expect(calls[0]).toEqual(['index']);
     expect(updatedMetadata.identity.headSha).toBe('0000000000000000000000000000000000000002');
+  });
+
+  it('rebuilds matching restored metadata when index health reports worktree mismatch or pending changes', async () => {
+    const lockfile = '{"lockfileVersion":3}';
+    const identity = {
+      repository: 'racecraft-lab/codegraph',
+      codegraphVersion: '1.4.1',
+      baseRef: 'main',
+      headSha: '0000000000000000000000000000000000000002',
+      mergeBase: '0000000000000000000000000000000000000001',
+      lockfileHash: lockfileHash(lockfile),
+    };
+    const unhealthy = {
+      ...healthyStatus(),
+      pendingChanges: { added: 0, modified: 1, removed: 0 },
+      worktreeMismatch: { worktreeRoot: '/worktree', indexRoot: '/main' },
+    };
+
+    const { outputs, calls } = await runWithMetadata(cacheMetadata(identity), { lockfile, status: unhealthy });
+
+    expect(outputs['cache-status']).toBe('rebuilt');
+    expect(calls.map((args) => args[0])).toEqual(['status', 'index', 'detect-changes', 'detect-changes']);
   });
 
   it('emits unavailable analysis when invalid cache cannot be rebuilt', async () => {

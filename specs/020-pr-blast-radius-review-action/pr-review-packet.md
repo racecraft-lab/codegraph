@@ -31,7 +31,7 @@
 
 ## Verification evidence
 
-- Focused PR-impact tests: PASS — 6 files, 22 tests.
+- Focused PR-impact tests: PASS — 6 files, 23 tests.
 - `npm run build`: PASS.
 - `npm run typecheck`: PASS.
 - `npm test`: PASS — 240 files, 3,949 tests, 7 skipped.

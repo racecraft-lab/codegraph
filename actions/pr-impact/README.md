@@ -71,8 +71,10 @@ jobs:
 - Restores `.codegraph/`, validates cache identity metadata, and rebuilds with
   `codegraph index` before analysis when the restored cache is missing, stale,
   corrupt, or incompatible.
-- Cache identity includes CodeGraph version, base ref, head SHA, merge base, and
-  lockfile hash.
+- Cache identity includes repository, CodeGraph version, base ref, head SHA,
+  merge base, and lockfile hash. Restored warm caches are also checked against
+  index health, extraction-version compatibility, pending changes, and worktree
+  mismatch status before use.
 - Fork-like or restricted-token PRs skip privileged comment and narrative paths
   without suppressing the deterministic report.
 - Narrative is off by default. When enabled for trusted runs, it is prose-only
