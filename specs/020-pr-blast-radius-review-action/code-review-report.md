@@ -35,3 +35,6 @@ Passed after remediation.
 - Finding: the dogfood action failed with `fail-analysis-unavailable` on a cold cache because the helper tried `codegraph index` before initialization.
 - Fix: cache misses now run `codegraph init`, restored/stale caches still run `codegraph index`, and the helper restores any advisory `.gitignore` mutation from initialization.
 - Test: `pr-impact-cache.test.ts` now verifies cold-cache initialization, detector execution, metadata write, and `.gitignore` restoration.
+- Finding: the dogfood workflow installed the published `@colbymchenry/codegraph@1.4.1`, which does not expose the unreleased `detect-changes` command required by SPEC-020.
+- Fix: the self-repository dogfood workflow installs the checked-out workspace package with `codegraph-version: "file:."`.
+- Test: `pr-impact-action-contract.test.ts` now verifies the dogfood workflow uses the workspace package while keeping thresholds advisory and narrative off.

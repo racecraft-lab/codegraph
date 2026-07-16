@@ -22,6 +22,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - Code review remediation passed for event-base defaulting, final delivery metadata consistency, and merge-base metadata.
 - PR check remediation passed locally for full-SHA external action pinning.
 - PR check remediation passed locally for cold-cache CodeGraph initialization.
+- PR check remediation passed locally for self-dogfood using the checked-out workspace package.
 
 ## Deviations
 
@@ -33,6 +34,7 @@ SPEC-020 delivered the planned reusable PR impact action with deterministic repo
 - The cache contract needed stronger runtime validation than metadata alone. Worktree mismatch, pending changes, incomplete index state, extraction-version compatibility, and reindex recommendations are now checked before warm-cache acceptance.
 - Report metadata needs action run identity to make reruns and synchronize events distinguishable.
 - A reusable action cannot assume an index exists on a first run; cold-cache paths need initialization, not only re-indexing.
+- Self-dogfood for unreleased CLI features must install the checked-out workspace package, not the last published package.
 - Advisory dogfood should remain threshold-free until enough live PR samples exist to justify blocking defaults.
 
 ## Follow-up

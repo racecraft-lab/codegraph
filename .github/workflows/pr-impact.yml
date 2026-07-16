@@ -19,7 +19,7 @@ jobs:
 
       - uses: ./actions/pr-impact
         with:
-          codegraph-version: "1.4.1"
+          codegraph-version: "file:."
           fail-on-callers: ""
           fail-on-hubs: "false"
           narrative: "off"

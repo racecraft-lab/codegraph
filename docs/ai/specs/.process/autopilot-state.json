@@ -4,7 +4,7 @@
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
   "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-16T01:09:42Z",
+  "updated_at": "2026-07-16T01:14:19Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -571,12 +571,14 @@
     },
     "review_remediation": {
       "status": "checks_remediated_pending_rerun",
-      "note": "PR #154 dogfood check exposed mutable external action refs and then cold-cache index initialization gaps.",
+      "note": "PR #154 dogfood check exposed mutable external action refs, cold-cache index initialization gaps, and a published-package mismatch for unreleased detect-changes support.",
       "remediation": [
         "Pinned actions/checkout, actions/cache/restore, actions/cache/save, and actions/upload-artifact to full commit SHAs.",
         "Added a contract test proving external actions/* references use full 40-character commit SHAs.",
         "Changed cache misses to initialize CodeGraph before detection while preserving re-index behavior for restored stale caches.",
-        "Added a cache regression test proving cold-cache initialization, metadata recording, detector execution, and .gitignore restoration."
+        "Added a cache regression test proving cold-cache initialization, metadata recording, detector execution, and .gitignore restoration.",
+        "Changed the self-repository dogfood workflow to install the checked-out workspace package via codegraph-version file:.",
+        "Added a contract assertion that dogfood uses the workspace package while preserving advisory thresholds and narrative off."
       ],
       "verification": {
         "focused_pr_impact_tests": "passed: 6 files, 26 tests",

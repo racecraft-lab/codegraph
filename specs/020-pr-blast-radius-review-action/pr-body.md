@@ -60,6 +60,7 @@ Reviewers need one current deterministic blast-radius report on pull requests. T
 - Code review remediation: PASS — event-base defaulting, final delivery metadata consistency, and merge-base metadata fixed.
 - PR check remediation: PASS locally — external `actions/*` references are pinned to full commit SHAs.
 - PR check remediation: PASS locally — cold cache misses initialize the CodeGraph index before analysis.
+- PR check remediation: PASS locally — dogfood installs the checked-out workspace package so unreleased detector commands are available.
 
 ## Known gaps
 

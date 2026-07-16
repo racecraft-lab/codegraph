@@ -284,6 +284,7 @@ describe('PR impact action contract', () => {
 
     expect(workflow).toContain('pull_request:');
     expect(workflow).toContain('uses: ./actions/pr-impact');
+    expect(workflow).toContain('codegraph-version: "file:."');
     expect(workflow).toContain('narrative: "off"');
     expect(workflow).toContain('fail-on-callers: ""');
     expect(workflow).toContain('fail-on-hubs: "false"');
