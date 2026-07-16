@@ -3,8 +3,8 @@
   "spec_id": "SPEC-020",
   "feature_dir": "specs/020-pr-blast-radius-review-action",
   "status": "running",
-  "active_step": "Post: PR Creation",
-  "updated_at": "2026-07-16T00:52:30Z",
+  "active_step": "Post: Review Remediation",
+  "updated_at": "2026-07-16T00:54:05Z",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
@@ -40,7 +40,7 @@
     {"step": "Post: Final Reviewability Backstop", "status": "completed"},
     {"step": "Post: PR Packet/Body Generation", "status": "completed"},
     {"step": "Post: PR Body Generation", "status": "completed"},
-    {"step": "Post: PR Creation", "status": "pending"},
+    {"step": "Post: PR Creation", "status": "completed"},
     {"step": "Post: Review Remediation", "status": "pending"},
     {"step": "Post: Retrospective", "status": "completed"}
   ],
@@ -496,7 +496,7 @@
   },
   "post": {
     "status": "in_progress",
-    "active_step": "Post: PR Creation",
+    "active_step": "Post: Review Remediation",
     "doctor_extension_check": {
       "status": "passed",
       "config": "defaults loaded; no local verify config file",
@@ -562,6 +562,16 @@
       "status": "ready",
       "packet": "specs/020-pr-blast-radius-review-action/pr-review-packet.md",
       "body": "specs/020-pr-blast-radius-review-action/pr-body.md"
+    },
+    "pr_creation": {
+      "status": "completed",
+      "number": 154,
+      "url": "https://github.com/racecraft-lab/codegraph/pull/154",
+      "draft": true
+    },
+    "review_remediation": {
+      "status": "pending_external_review",
+      "note": "No review feedback existed at PR creation time; monitor PR #154 for checks or reviewer comments."
     },
     "retrospective": {
       "status": "completed",
