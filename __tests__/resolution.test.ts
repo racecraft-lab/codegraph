@@ -2582,6 +2582,124 @@ func main() {
     });
   });
 
+  describe('Imported singleton instance-method calls (#1292)', () => {
+    // `reproStore.notifyJoinGuildStatus()` after `import { reproStore }` used
+    // to emit its calls edge to the CONSTANT (resolvedBy:'import'), while the
+    // identical call in the defining file resolved to the method — so callers
+    // of the method missed every cross-file use. The import path now infers
+    // the value's type from its own declaration and resolves the member on it.
+    it('cross-file call through an imported singleton resolves to the class method', async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-1292-'));
+      try {
+        fs.mkdirSync(path.join(tmpDir, 'src'));
+        fs.writeFileSync(
+          path.join(tmpDir, 'src', 'store.ts'),
+          `export class ReproStore {
+  notifyJoinGuildStatus(): void {
+    console.log('notified');
+  }
+}
+
+export const reproStore = new ReproStore();
+
+export function callInDefinitionFile(): void {
+  reproStore.notifyJoinGuildStatus();
+}
+`
+        );
+        fs.writeFileSync(
+          path.join(tmpDir, 'src', 'caller.ts'),
+          `import { reproStore } from './store';
+
+export function callFromImportedFile(): void {
+  reproStore.notifyJoinGuildStatus();
+}
+`
+        );
+
+        const cg = CodeGraph.initSync(tmpDir);
+        await cg.indexAll();
+
+        const method = (await cg.searchNodes('notifyJoinGuildStatus', { limit: 5 })).find(
+          (r) => r.node.kind === 'method'
+        );
+        expect(method).toBeDefined();
+
+        // BOTH functions call the method — the cross-file one included.
+        const callers = await cg.getCallers(method!.node.id);
+        const callerNames = callers.map((c) => c.node.name).sort();
+        expect(callerNames).toContain('callInDefinitionFile');
+        expect(callerNames).toContain('callFromImportedFile');
+        cg.close();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    }, 30000);
+  });
+
+  describe('C++ namespace-qualified static method calls to out-of-line definitions (#1291)', () => {
+    // The issue's exact shape: nested types + out-of-line static method
+    // definition inside `namespace simulator { }` in the .cpp, called via the
+    // fully-qualified path from a different file. The definition's
+    // qualifiedName previously dropped the namespace (`ManifestStartup::Apply`
+    // vs the class's `simulator::ManifestStartup`), so `callers` came up empty.
+    it('resolves simulator::ManifestStartup::Apply(...) from another file', async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-1291-'));
+      try {
+        fs.writeFileSync(
+          path.join(tmpDir, 'manifest_startup.h'),
+          `#pragma once
+namespace simulator {
+class ManifestStartup {
+public:
+    struct Input { int a; };
+    struct Output { int b; };
+    static Output Apply(const Input& input);
+};
+}
+`
+        );
+        fs.writeFileSync(
+          path.join(tmpDir, 'manifest_startup.cpp'),
+          `#include "manifest_startup.h"
+namespace simulator {
+ManifestStartup::Output ManifestStartup::Apply(const Input& input) {
+    return Output{input.a};
+}
+}
+`
+        );
+        fs.writeFileSync(
+          path.join(tmpDir, 'main.cpp'),
+          `#include "manifest_startup.h"
+int run() {
+    const auto manifest_result = simulator::ManifestStartup::Apply({1});
+    return manifest_result.b;
+}
+`
+        );
+
+        const cg = CodeGraph.initSync(tmpDir);
+        await cg.indexAll();
+
+        const applyDefs = (await cg.searchNodes('Apply', { limit: 20 })).filter(
+          (r) => r.node.name === 'Apply' && r.node.kind === 'method'
+        );
+        expect(applyDefs.length).toBeGreaterThan(0);
+        const def = applyDefs.find((r) => r.node.filePath.endsWith('manifest_startup.cpp'));
+        expect(def).toBeDefined();
+        expect(def!.node.qualifiedName).toBe('simulator::ManifestStartup::Apply');
+
+        // The qualified cross-file call resolves: run() is a caller of Apply.
+        const callers = await cg.getCallers(def!.node.id);
+        expect(callers.map((c) => c.node.name)).toContain('run');
+        cg.close();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    }, 30000);
+  });
+
   describe('C/C++ Import Resolution', () => {
     afterEach(() => {
       clearCppIncludeDirCache();

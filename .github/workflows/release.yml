@@ -13,12 +13,20 @@ name: Release
 #   5. publishes the npm thin-installer (shim + per-platform packages).
 #
 # Before triggering: bump package.json. CHANGELOG.md entries can live under
-# `## [Unreleased]` — step 2 takes care of moving them. Set the NPM_TOKEN secret.
+# `## [Unreleased]` — step 2 takes care of moving them.
+#
+# npm auth is OIDC trusted publishing (no NPM_TOKEN): every published package
+# (@colbymchenry/codegraph + the per-platform bundles) has this repo +
+# release.yml configured as its trusted publisher on npmjs.com. Adding a new
+# platform package means configuring its trusted publisher there before the
+# first release that includes it.
 on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write   # create the GitHub Release + tag, push the CHANGELOG promote
+  contents: write      # create the GitHub Release + tag, push the CHANGELOG promote
+  id-token: write      # OIDC token for npm --provenance and Sigstore signing
+  attestations: write  # store the GitHub artifact attestations for the bundles
 
 jobs:
   release:
@@ -45,7 +53,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+          # No registry-url here: it writes an .npmrc that requires a
+          # NODE_AUTH_TOKEN env var to exist, and we publish via OIDC
+          # trusted publishing instead of a token.
+
+      - name: Upgrade npm for OIDC trusted publishing
+        # Trusted publishing needs npm >= 11.5; Node 22 bundles npm 10.
+        run: npm install -g npm@11 && npm --version
 
       - name: Sync package-lock.json if version drifted
         # When the maintainer bumps the version on package.json only — for
@@ -127,6 +141,18 @@ jobs:
           ( cd release && sha256sum codegraph-* > SHA256SUMS )
           cat release/SHA256SUMS
 
+      - name: Attest build provenance for release bundles
+        # Signed, publicly-verifiable proof that each bundle (and SHA256SUMS)
+        # was built by this workflow from this repo — SHA256SUMS alone only
+        # proves integrity, not origin, since it ships next to the bundles.
+        # Verify any downloaded artifact with:
+        #   gh attestation verify <file> -R colbymchenry/codegraph
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            release/codegraph-*
+            release/SHA256SUMS
+
       - name: Release notes from CHANGELOG.md
         # The [<version>] block was guaranteed-populated by the
         # "Promote" step above, so the [Unreleased] fallback should
@@ -154,8 +180,11 @@ jobs:
           fi
 
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Auth is OIDC trusted publishing (id-token: write above) — npm mints
+        # a short-lived credential from the workflow's identity; there is no
+        # NPM_TOKEN. Provenance is generated automatically on this path; the
+        # explicit --provenance keeps the intent visible and fails loudly if
+        # OIDC is ever unavailable.
         run: |
           V="${{ steps.ver.outputs.version }}"
           bash scripts/pack-npm.sh "$V"
@@ -167,7 +196,10 @@ jobs:
               echo "skip $name@$V (already published)"
             else
               echo "publishing $name@$V"
-              ( cd "$dir" && npm publish --access public )
+              # --provenance: publish with an npm provenance attestation
+              # (needs the id-token: write permission above and the
+              # repository field pack-npm.sh writes into each package.json).
+              ( cd "$dir" && npm publish --access public --provenance )
             fi
           done
 
