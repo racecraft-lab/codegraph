@@ -31,8 +31,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 |---|---|---|---|
 | Specify | `/speckit-specify` | Complete | G1 passed: 3 stories, 23 scenarios, 45 requirements, and 12 success criteria with no unresolved markers. |
 | Clarify | `/speckit-clarify` | Complete | Three sessions and 15 decisions integrated; G2 passed with zero unresolved markers. |
-| Plan | `/speckit-plan` | In Progress | Design additive daemon reads, transports, source pane, and slice boundaries. |
-| Checklist | `/speckit-checklist` | Pending | Run API, streaming, security, and UX/accessibility checklists. |
+| Plan | `/speckit-plan` | Complete | G3 passed; seven artifacts freeze daemon authority, two slices, limits, contracts, and UAT. |
+| Checklist | `/speckit-checklist` | In Progress | Run API, streaming, security, and UX/accessibility checklists. |
 | Tasks | `/speckit-tasks` | Pending | Generate dependency-ordered work for the accepted two slices. |
 | Analyze | `/speckit-analyze` | Pending | Resolve cross-artifact gaps before implementation. |
 | Confidence Gate | G6.5 | Pending | Score pre-implementation confidence in advisory mode. |
@@ -502,11 +502,11 @@ answers; do not replace them with implementation preferences.
 
 | Artifact | Status | Required content |
 |---|---|---|
-| `plan.md` | Pending | Technical context, constitution gates, two slice file tables, execution flow, reviewability result |
-| `research.md` | Pending | `ws` integration, LSP lifecycle/error codes, UTF-16 conversion, source-viewer component choice, daemon source-read authority |
-| `data-model.md` | Pending | Session, bound repo, request state, graph location, indexed source snapshot, viewer connection state |
-| `contracts/` | Pending | LSP capability/method/error contract and typed experimental content extension; WebSocket handshake/frame contract |
-| `quickstart.md` | Pending | Build/run/test stdio and WebSocket paths, fixture client, web viewer, and self-repo UAT |
+| `plan.md` | Complete | Technical context, pre/post constitution pass, exact limits, two slice file tables, execution and PR packet flow |
+| `research.md` | Complete | Twelve decisions covering daemon/source authority, LSP 3.18, stdio, `ws`, history, accessibility, and degradation |
+| `data-model.md` | Complete | Session, bound repo, pending request, graph location, snapshot, admission, location, and viewer state models |
+| `contracts/` | Complete | LSP protocol, WebSocket transport, and focused source-viewer contracts |
+| `quickstart.md` | Complete | Focused/full tests, packaged stdio/WebSocket checks, browser and self-repo UAT |
 
 ### Plan Reviewability Gate
 
@@ -514,6 +514,15 @@ Run the installed read-only `estimate-reviewable-loc` helper against `plan.md` a
 record its exact structured result here and in the Design/Implementation Summary.
 The scaffold estimate is advisory; plan file tables are the next authoritative
 pre-implementation sizing signal.
+
+**Installed estimator result**: `status=pass`, `projected=680`,
+`production=17`, `new=11`, `modified=9`, `total_entries=20`,
+`greenfield=false`, warn threshold 400, block threshold 800. The accepted
+two-slice decomposition is 320 projected LOC for Slice 1 and 360 for Slice 2;
+each slice remains below the warning threshold independently. G3 passed with
+zero unresolved markers. Context7 was attempted first for current library docs
+but its transport was closed; planning used current official `ws`, React Router,
+and LSP primary documentation instead.
 
 ---
 
