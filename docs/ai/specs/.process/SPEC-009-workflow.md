@@ -33,8 +33,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Clarify | `/speckit-clarify` | Complete | Three sessions and 15 decisions integrated; G2 passed with zero unresolved markers. |
 | Plan | `/speckit-plan` | Complete | G3 passed; seven artifacts freeze daemon authority, two slices, limits, contracts, and UAT. |
 | Checklist | `/speckit-checklist` | Complete | 99 requirements-quality items passed across four domains; G4 passed with zero gaps. |
-| Tasks | `/speckit-tasks` | In Progress | Generate dependency-ordered work for the accepted two slices. |
-| Analyze | `/speckit-analyze` | Pending | Resolve cross-artifact gaps before implementation. |
+| Tasks | `/speckit-tasks` | Complete | G5 passed: 48 dependency-ordered tasks cover every requirement and both slice gates. |
+| Analyze | `/speckit-analyze` | In Progress | Resolve cross-artifact gaps before implementation. |
 | Confidence Gate | G6.5 | Pending | Score pre-implementation confidence in advisory mode. |
 | Implement | `/speckit-implement` | Pending | Execute both vertical slices with TDD and black-box conformance. |
 | Post | Canonical post gates | Pending | Verify, review, package, create PRs, remediate, and retrospect. |
@@ -661,10 +661,19 @@ Non-goal unless a verification task is needed to prove the exclusion.
 
 | Metric | Value |
 |---|---|
-| Total Tasks | Pending Tasks |
-| Phases | Two implementation slices plus setup/final verification |
-| Parallel Opportunities | Pending Tasks |
-| User Stories Covered | US1, US2, US3 planned |
+| Total Tasks | 48 |
+| Phases | Setup, shared protocol, US1/Slice 1, US2 viewer, US3 transport/safety, and final verification |
+| Parallel Opportunities | 8 explicitly marked tasks across independent harnesses/files |
+| User Stories Covered | US1: 12 tasks; US2: 13 tasks; US3: 8 tasks; shared/setup/final: 15 tasks |
+
+Two bounded `tasks-executor` attempts stalled without producing an artifact, so
+the documented direct recovery path generated `tasks.md` from every completed
+design artifact and the constitution. The result uses sequential `T001`–`T048`
+IDs, strict checklist syntax, exact paths, RED/GREEN/VERIFY ordering, explicit
+FR/SC coverage, independent Slice 1 and Slice 2 G7 checkpoints, package/offline
+checks, retrieval-guardian, and self-repo UAT. Installed G5 passed with 48 tasks
+and zero markers. The optional `after_tasks` git hook is fulfilled by the
+autopilot phase commit.
 
 ---
 
@@ -675,10 +684,10 @@ decision here. Leave these cells blank during scaffold and earlier phases.
 
 | Field | Value | Meaning |
 |---|---|---|
-| Route | | `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope` |
-| Releasable | | `true` or `false` |
-| Signals | | Decisive structural findings |
-| Warnings | | Release-safety warnings, if any |
+| Route | `one-navigable-PR` | One PR with review order and separately gated vertical slices |
+| Releasable | `true` | Both slices combine into one coherent released capability |
+| Signals | `change-shape:modify-heavy` | Existing daemon/server/web seams receive surgical additive integration |
+| Warnings | None | Classifier returned no release-safety warning or hint |
 
 Classifier target:
 

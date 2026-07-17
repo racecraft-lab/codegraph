@@ -6,8 +6,8 @@
   "branch": "009-lsp-server-facade",
   "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/009-lsp-server-facade",
   "status": "in_progress",
-  "active_step": "Phase 5: Tasks",
-  "updated_at": "2026-07-17T08:39:24Z",
+  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-17T08:48:41Z",
   "confidence_gate_mode": "advisory",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
@@ -28,11 +28,17 @@
     {"step": "Phase 4: Checklist - Security Consensus", "status": "completed"},
     {"step": "Phase 4: Checklist - UX and Accessibility", "status": "completed"},
     {"step": "Phase 4: Checklist - UX and Accessibility Consensus", "status": "completed"},
-    {"step": "Phase 5: Tasks", "status": "in_progress"},
-    {"step": "Phase 6: Analyze", "status": "pending"},
+    {"step": "Phase 5: Tasks", "status": "completed"},
+    {"step": "Phase 6: Analyze", "status": "in_progress"},
     {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
     {"step": "Phase 6.5: Confidence Gate", "status": "pending"},
-    {"step": "Phase 7: Implement - Pending task decomposition", "status": "pending"},
+    {"step": "Phase 7: Implement - Setup and Shared Protocol", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 1 Daemon and LSP Core", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 1 Stdio CLI and Conformance", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 1 Verification", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 2 Trusted Source and Viewer", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 2 WebSocket Safety", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 2 Verification and Polish", "status": "pending"},
     {"step": "Post: Doctor Extension Check", "status": "pending"},
     {"step": "Post: Verify Implementation", "status": "pending"},
     {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
@@ -170,6 +176,33 @@
         "status": "passed",
         "reason": "0 [Gap] markers"
       }
+    },
+    "tasks": {
+      "status": "completed",
+      "execution_path": "direct_recovery_after_two_executor_timeouts",
+      "artifact": "specs/009-lsp-server-facade/tasks.md",
+      "metrics": {
+        "total_tasks": 48,
+        "parallel_opportunities": 8,
+        "us1_tasks": 12,
+        "us2_tasks": 13,
+        "us3_tasks": 8,
+        "shared_setup_final_tasks": 15,
+        "sequential_ids": true,
+        "format_valid": true
+      },
+      "gate": {
+        "id": "G5",
+        "status": "passed",
+        "reason": "48 tasks found with 0 markers"
+      }
+    },
+    "atomicity_route": {
+      "route": "one-navigable-PR",
+      "releasable": true,
+      "signals": ["change-shape:modify-heavy"],
+      "hints": [],
+      "warnings": []
     }
   },
   "archive_sweep": {
