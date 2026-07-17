@@ -33,7 +33,7 @@ Navigation map for the CodeGraph Intelligence Platform roadmap. This home note c
 
 ### Phase 2 — LSP Precision & Rename
 - [SPEC-008 LSP Client Integration](.process/SPEC-008-workflow.md)
-- [SPEC-009 LSP Server Facade](SPEC-009-workflow.md)
+- [SPEC-009 LSP Server Facade](.process/SPEC-009-workflow.md)
 - [SPEC-010 Graph-Aware Rename](.process/SPEC-010-workflow.md)
 
 **Why:** Compiler-accurate edges (consume servers), a graph-backed LSP the web viewer consumes, and safe automated rename built on both.
