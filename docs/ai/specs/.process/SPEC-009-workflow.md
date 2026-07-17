@@ -32,8 +32,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Specify | `/speckit-specify` | Complete | G1 passed: 3 stories, 23 scenarios, 45 requirements, and 12 success criteria with no unresolved markers. |
 | Clarify | `/speckit-clarify` | Complete | Three sessions and 15 decisions integrated; G2 passed with zero unresolved markers. |
 | Plan | `/speckit-plan` | Complete | G3 passed; seven artifacts freeze daemon authority, two slices, limits, contracts, and UAT. |
-| Checklist | `/speckit-checklist` | In Progress | Run API, streaming, security, and UX/accessibility checklists. |
-| Tasks | `/speckit-tasks` | Pending | Generate dependency-ordered work for the accepted two slices. |
+| Checklist | `/speckit-checklist` | Complete | 99 requirements-quality items passed across four domains; G4 passed with zero gaps. |
+| Tasks | `/speckit-tasks` | In Progress | Generate dependency-ordered work for the accepted two slices. |
 | Analyze | `/speckit-analyze` | Pending | Resolve cross-artifact gaps before implementation. |
 | Confidence Gate | G6.5 | Pending | Score pre-implementation confidence in advisory mode. |
 | Implement | `/speckit-implement` | Pending | Execute both vertical slices with TDD and black-box conformance. |
@@ -426,6 +426,10 @@ stale/unavailable states, manual retry, and connection dormancy.
 | 13 | Privacy-safe URL and history | navigation, privacy, accessibility | 1 | 3/3 | Human accepted repo-relative serialized state with strict replace/push/pop rules | codebase, spec-context, domain, human |
 | 14 | Pointer and keyboard source interaction | interaction, accessibility | 1 | 3/3 after explicit-control correction | Human accepted single-tab-stop composite plus named hover/definition actions | codebase, spec-context, domain, human |
 | 15 | Viewer degradation and retry state machine | state-machine, lifecycle, accessibility | 1 | 3/3 | Human accepted explicit no-auto-reconnect recovery and generation guards | codebase, spec-context, domain, human |
+| 16 | API-contract checklist gaps | api-contract | 1 | No unresolved items | Consensus closed as no-op; 24/24 requirements-quality items passed | checklist executor |
+| 17 | Streaming-protocol checklist gaps | streaming | 1 | No unresolved items | Consensus closed as no-op; 25/25 requirements-quality items passed | checklist executor |
+| 18 | Security checklist gaps | security | 1 | No unresolved items | Consensus closed as no-op; 25/25 requirements-quality items passed; no new human decision | checklist executor |
+| 19 | UX/accessibility checklist gaps | ux, accessibility | 1 | No unresolved items | Consensus closed as no-op; 25/25 requirements-quality items passed | checklist executor |
 
 No Session 1 item matched the mandatory security-keyword set. Moderate consensus
 resolved every Session 1 item without human review. All Session 2 items matched
@@ -590,14 +594,20 @@ Focus on SPEC-009:
 
 | Checklist | Items | Gaps | Spec references |
 |---|---|---|---|
-| api-contracts | Pending | Pending | Pending |
-| streaming-protocol | Pending | Pending | Pending |
-| security | Pending | Pending | Pending |
-| ux | Pending | Pending | Pending |
-| Total | Pending | Pending | Pending |
+| api-contracts | 24 | 0 | FR-003–FR-024, SC-001–SC-005, LSP contract |
+| streaming-protocol | 25 | 0 | FR-021–FR-032, SC-002, SC-006–SC-007, SC-011 |
+| security | 25 | 0 | FR-002–FR-004, FR-017–FR-032, FR-045, SC-006–SC-010 |
+| ux | 25 | 0 | FR-033–FR-041, SC-008–SC-011, source-viewer contract |
+| Total | 99 | 0 | G4 passed; no remediation edits required |
 
 For each genuine gap, update `spec.md` or `plan.md`, re-run the affected
 checklist, and document intentional exclusions instead of silently deferring them.
+
+Each executor attempt used standard-depth, PR-reviewer requirements-quality
+criteria. Two bounded API executor attempts stalled without output, so the
+documented direct recovery path generated and evaluated all four checklists.
+Because no checklist emitted an unresolved gap, each mandatory consensus item
+closed without analyst fan-out. Installed G4 passed with zero `[Gap]` markers.
 
 ---
 

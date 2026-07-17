@@ -36,6 +36,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [contracts/lsp-protocol.md](contracts/lsp-protocol.md)
 - [contracts/source-viewer.md](contracts/source-viewer.md)
 - [contracts/websocket-transport.md](contracts/websocket-transport.md)
+- [checklists/api-contracts.md](checklists/api-contracts.md)
 - [checklists/requirements.md](checklists/requirements.md)
+- [checklists/security.md](checklists/security.md)
+- [checklists/streaming-protocol.md](checklists/streaming-protocol.md)
+- [checklists/ux-accessibility.md](checklists/ux-accessibility.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->
