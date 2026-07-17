@@ -26,8 +26,8 @@ separately testable slices; T002 rechecks the boundary before implementation.
 
 **Purpose**: Freeze the accepted surfaces and establish a clean TDD baseline.
 
-- [ ] T001 Verify the dedicated branch/worktree, pinned Node 24.11.1 baseline, and unchanged default CLI/server behavior using `package.json` and record evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
-- [ ] T002 Re-run the installed reviewability estimator against `specs/009-lsp-server-facade/plan.md`; stop and split if either declared slice exceeds 400 projected LOC or its accepted file table
+- [X] T001 Verify the dedicated branch/worktree, pinned Node 24.11.1 baseline, and unchanged default CLI/server behavior using `package.json` and record evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
+- [X] T002 Re-run the installed reviewability estimator against `specs/009-lsp-server-facade/plan.md`; stop and split if either declared slice exceeds 400 projected LOC or its accepted file table
 
 **Checkpoint**: Baseline and two-slice review boundary are authoritative.
 
@@ -38,9 +38,9 @@ separately testable slices; T002 rechecks the boundary before implementation.
 **Purpose**: Add only the transport-independent vocabulary shared by both
 vertical slices. No repository read is enabled in this phase.
 
-- [ ] T003 Write failing UTF-16, mixed-column evidence, stable-order, cap, JSON-RPC envelope, and closed-error tests in `__tests__/lsp-server.test.ts` for FR-005–FR-015, FR-021–FR-024, SC-002–SC-005
-- [ ] T004 Implement the minimal server-side JSON-RPC/LSP types, lifecycle/error constants, redaction-safe errors, UTF-16 converters, and stable ordering helpers in `src/lsp/protocol.ts` to make T003 pass
-- [ ] T005 Run the focused protocol cases in `__tests__/lsp-server.test.ts` and record RED/GREEN evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
+- [X] T003 Write failing UTF-16, mixed-column evidence, stable-order, cap, JSON-RPC envelope, and closed-error tests in `__tests__/lsp-protocol-read.test.ts` for FR-005–FR-015, FR-021–FR-024, SC-002–SC-005
+- [X] T004 Implement the minimal server-side JSON-RPC/LSP types, lifecycle/error constants, redaction-safe errors, UTF-16 converters, and stable ordering helpers in `src/lsp/protocol.ts` to make T003 pass
+- [X] T005 Run the focused protocol cases in `__tests__/lsp-protocol-read.test.ts` and record RED/GREEN evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
 
 **Checkpoint**: Both transports can depend on one deterministic, read-only wire
 contract without activating a listener or graph read.
@@ -58,21 +58,21 @@ checks without writing graph state.
 
 ### Tests for User Story 1
 
-- [ ] T006 [P] [US1] Extend failing real-SQLite daemon/facade tests for repository binding, exact cursor evidence, definition, references, hover, document symbols, workspace symbols, ambiguity, deduplication, and caps in `__tests__/lsp-server.test.ts` for FR-001–FR-015, FR-022–FR-024, SC-001–SC-005
-- [ ] T007 [P] [US1] Write failing built-process tests for fragmented/coalesced Content-Length frames, header/body bounds, malformed valid-frame JSON recovery, stdout purity, exit states, EOF/signals, and orphan cleanup in `__tests__/lsp-stdio-black-box.test.ts` for FR-001, FR-005–FR-007, FR-025–FR-026, FR-042, SC-001, SC-006–SC-007, SC-011
+- [X] T006 [P] [US1] Extend failing facade tests in `__tests__/lsp-server.test.ts` and real-SQLite daemon tests in `__tests__/lsp-protocol-read.test.ts` for repository binding, exact cursor evidence, definition, references, hover, document symbols, workspace symbols, ambiguity, deduplication, and caps for FR-001–FR-015, FR-022–FR-024, SC-001–SC-005
+- [X] T007 [P] [US1] Write failing built-process tests for fragmented/coalesced Content-Length frames, header/body bounds, malformed valid-frame JSON recovery, stdout purity, exit states, EOF/signals, and orphan cleanup in `__tests__/lsp-stdio-black-box.test.ts` for FR-001, FR-005–FR-007, FR-025–FR-026, FR-042, SC-001, SC-006–SC-007, SC-011
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Add closed daemon read operations for exact cursor evidence, located references, file symbols, workspace symbols, and indexed metadata in `src/mcp/read-ops.ts` for FR-007–FR-015 without schema writes or heuristic fallbacks
-- [ ] T009 [US1] Add typed repository-bound wrappers and closed error mapping for the new daemon reads in `src/server/daemon-client.ts` for FR-002, FR-007–FR-015, FR-021–FR-024
-- [ ] T010 [US1] Implement initialize-root canonicalization and the exact initialize/initialized/shutdown/exit state machine in `src/lsp/facade.ts` for FR-002–FR-006
-- [ ] T011 [US1] Implement the explicit dispatcher allowlist and exact definition/reference/hover/document-symbol/workspace-symbol handlers in `src/lsp/facade.ts` for FR-007–FR-015, FR-022–FR-024
-- [ ] T012 [US1] Implement the bounded incremental Content-Length parser/writer, stderr-only redacted diagnostics, cancellation, and idempotent cleanup in `src/lsp/stdio-server.ts` for FR-005, FR-021–FR-026
-- [ ] T013 [US1] Add the minimal lazy `codegraph lsp [path]` command and pre-session failure exit behavior in `src/bin/codegraph.ts` for FR-001–FR-002, FR-026 while preserving all existing CLI defaults
-- [ ] T014 [US1] Make all daemon/facade protocol cases pass and confirm identical requests are byte-stable in `__tests__/lsp-server.test.ts` for SC-001–SC-005
-- [ ] T015 [US1] Make the built-process framing, stdout-purity, lifecycle, signal, and cleanup suite pass in `__tests__/lsp-stdio-black-box.test.ts` for FR-025–FR-026, FR-042, SC-006–SC-007, SC-011
-- [ ] T016 [US1] Run the Slice 1 build, typecheck, focused root tests, full root suite, and packaged generic-client UAT from `specs/009-lsp-server-facade/quickstart.md`; record G7 evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
-- [ ] T017 [US1] Re-run the Slice 1 reviewability check against the actual diff and record any approved split/disposition in `specs/009-lsp-server-facade/plan.md`
+- [X] T008 [US1] Add closed daemon read operations for exact cursor evidence, located references, file symbols, workspace symbols, and indexed metadata in `src/mcp/read-ops.ts` for FR-007–FR-015 without schema writes or heuristic fallbacks
+- [X] T009 [US1] Add typed repository-bound wrappers and closed error mapping for the new daemon reads in `src/server/daemon-client.ts` for FR-002, FR-007–FR-015, FR-021–FR-024
+- [X] T010 [US1] Implement initialize-root canonicalization and the exact initialize/initialized/shutdown/exit state machine in `src/lsp/facade.ts` for FR-002–FR-006
+- [X] T011 [US1] Implement the explicit dispatcher allowlist and exact definition/reference/hover/document-symbol/workspace-symbol handlers in `src/lsp/facade.ts` for FR-007–FR-015, FR-022–FR-024
+- [X] T012 [US1] Implement the bounded incremental Content-Length parser/writer, stderr-only redacted diagnostics, cancellation, and idempotent cleanup in `src/lsp/stdio-server.ts` for FR-005, FR-021–FR-026
+- [X] T013 [US1] Add the minimal lazy `codegraph lsp [path]` command and pre-session failure exit behavior in `src/bin/codegraph.ts` for FR-001–FR-002, FR-026 while preserving all existing CLI defaults
+- [X] T014 [US1] Make all daemon/facade protocol cases pass and confirm identical requests are byte-stable in `__tests__/lsp-protocol-read.test.ts` and `__tests__/lsp-server.test.ts` for SC-001–SC-005
+- [X] T015 [US1] Make the built-process framing, stdout-purity, lifecycle, signal, and cleanup suite pass in `__tests__/lsp-stdio-black-box.test.ts` for FR-025–FR-026, FR-042, SC-006–SC-007, SC-011
+- [X] T016 [US1] Run the Slice 1 build, typecheck, focused root tests, full root suite, and packaged generic-client UAT from `specs/009-lsp-server-facade/quickstart.md`; record G7 evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
+- [X] T017 [US1] Re-run the Slice 1 reviewability check against the actual diff and record any approved split/disposition in `specs/009-lsp-server-facade/plan.md`
 
 **Checkpoint**: Slice 1 is an independently valuable, packaged read-only LSP
 MVP with G7 evidence before any browser transport is added.
@@ -92,7 +92,7 @@ handles stale/unavailable states, and leaves existing symbol metadata usable.
 ### Tests and Dependency Setup for User Story 2
 
 - [ ] T018 [US2] Add pure-JS `ws` as a runtime dependency and `@types/ws` as development-only typing in `package.json` and `package-lock.json`, preserving Node `>=20.0.0 <25.0.0` and excluding optional native addons
-- [ ] T019 [P] [US2] Extend failing content-contract tests for exact indexed metadata, opaque snapshot changes, file-only URIs, 1 MiB-plus-sentinel reads, hash/identity revalidation, and closed errors in `__tests__/lsp-server.test.ts` for FR-016–FR-020, SC-006
+- [ ] T019 [P] [US2] Extend failing content-contract tests for exact indexed metadata, opaque snapshot changes, file-only URIs, 1 MiB-plus-sentinel reads, hash/identity revalidation, and closed errors in `__tests__/lsp-protocol-read.test.ts` for FR-016–FR-020, SC-006
 - [ ] T020 [P] [US2] Write failing real HTTP/WebSocket tests for valid same-origin session parity, JSON-RPC text-message mapping, repository binding, and clean lifecycle in `__tests__/lsp-websocket.test.ts` for FR-016, FR-022–FR-028, FR-043, SC-011
 - [ ] T021 [P] [US2] Write failing browser client, source display, hover, definition/history, grouped-reference, generation-guard, state, retry, keyboard, live-region, narrow-layout, and reduced-motion tests in `web/src/tests/source-pane.test.tsx` for FR-033–FR-041, SC-008–SC-009
 - [ ] T022 [P] [US2] Add a failing controlled-WebSocket-peer browser journey for source navigation, back/forward restoration, stale/unavailable recovery, and preserved symbol metadata in `web/src/tests/source-viewer-uat.spec.ts` for FR-033–FR-041, SC-008–SC-009
@@ -197,14 +197,14 @@ self-repo value, and review traceability without expanding scope.
 ### User Story 1
 
 ```text
-T006: daemon/facade behavior tests in __tests__/lsp-server.test.ts
+T006: daemon/facade behavior tests in __tests__/lsp-protocol-read.test.ts and __tests__/lsp-server.test.ts
 T007: built stdio process tests in __tests__/lsp-stdio-black-box.test.ts
 ```
 
 ### User Story 2
 
 ```text
-T019: trusted source contract tests in __tests__/lsp-server.test.ts
+T019: trusted source contract tests in __tests__/lsp-protocol-read.test.ts
 T020: transport parity tests in __tests__/lsp-websocket.test.ts
 T021: browser component tests in web/src/tests/source-pane.test.tsx
 T022: packaged browser journey in web/src/tests/source-viewer-uat.spec.ts

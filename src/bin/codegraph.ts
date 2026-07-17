@@ -2185,6 +2185,23 @@ program
   });
 
 /**
+ * codegraph lsp
+ */
+program
+  .command('lsp [path]')
+  .description('Serve read-only CodeGraph language intelligence over standard input/output')
+  .action(async (inputPath?: string) => {
+    try {
+      const projectPath = resolveProjectPath(inputPath ?? '.');
+      const { runLspStdioServer } = await import('../lsp/stdio-server');
+      process.exitCode = await runLspStdioServer(projectPath);
+    } catch {
+      error('Unable to start the LSP facade: select an indexed CodeGraph repository.');
+      process.exitCode = 1;
+    }
+  });
+
+/**
  * codegraph serve
  */
 program
