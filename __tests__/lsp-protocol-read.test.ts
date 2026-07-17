@@ -1,0 +1,162 @@
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import CodeGraph from '../src/index';
+import { initGrammars, loadAllGrammars } from '../src/extraction/grammars';
+import { executeReadOp } from '../src/mcp/read-ops';
+import {
+  LSP_ERROR_CODE,
+  LSP_SERVER_CAPABILITIES,
+  clampUtf16Character,
+  dedupeSortAndCap,
+  formatLspDiagnostic,
+  makeJsonRpcError,
+  parseJsonRpcEnvelope,
+  resolveExactUtf16Range,
+  sortAndCapLocations,
+  type LspLocation,
+} from '../src/lsp/protocol';
+import type { Node } from '../src/types';
+
+describe('LSP server protocol helpers', () => {
+  it('accepts only JSON-RPC 2.0 request and notification envelopes', () => {
+    expect(parseJsonRpcEnvelope({ jsonrpc: '2.0', id: 7, method: 'initialize', params: {} })).toEqual({
+      ok: true,
+      message: { jsonrpc: '2.0', id: 7, method: 'initialize', params: {} },
+    });
+    expect(parseJsonRpcEnvelope({ jsonrpc: '2.0', method: 'initialized' })).toEqual({
+      ok: true,
+      message: { jsonrpc: '2.0', method: 'initialized' },
+    });
+    expect(parseJsonRpcEnvelope([{ jsonrpc: '2.0', id: 1, method: 'initialize' }])).toEqual({
+      ok: false, id: null, error: { code: LSP_ERROR_CODE.InvalidRequest, message: 'Invalid Request' },
+    });
+    expect(parseJsonRpcEnvelope({ jsonrpc: '1.0', id: 8, method: 'initialize' })).toEqual({
+      ok: false, id: 8, error: { code: LSP_ERROR_CODE.InvalidRequest, message: 'Invalid Request' },
+    });
+    expect(parseJsonRpcEnvelope({ jsonrpc: '2.0', id: true, method: 'initialize' })).toEqual({
+      ok: false, id: null, error: { code: LSP_ERROR_CODE.InvalidRequest, message: 'Invalid Request' },
+    });
+    expect(parseJsonRpcEnvelope({ jsonrpc: '2.0', id: 9, method: '' })).toEqual({
+      ok: false, id: 9, error: { code: LSP_ERROR_CODE.InvalidRequest, message: 'Invalid Request' },
+    });
+  });
+
+  it('advertises only the read-only capability surface', () => {
+    expect(LSP_SERVER_CAPABILITIES).toEqual({
+      positionEncoding: 'utf-16',
+      definitionProvider: true,
+      referencesProvider: true,
+      hoverProvider: true,
+      documentSymbolProvider: true,
+      workspaceSymbolProvider: true,
+      experimental: { codegraphTextDocumentContent: { method: 'codegraph/textDocumentContent', version: 1 } },
+    });
+  });
+
+  it('constructs closed, redaction-safe JSON-RPC errors', () => {
+    const error = makeJsonRpcError(11, LSP_ERROR_CODE.RequestFailed, 'unreadable');
+    expect(error).toEqual({
+      jsonrpc: '2.0',
+      id: 11,
+      error: { code: LSP_ERROR_CODE.RequestFailed, message: 'Request failed', data: { reason: 'unreadable' } },
+    });
+    expect(JSON.stringify(error)).not.toContain('/private/secret/repository');
+    expect(makeJsonRpcError(null, LSP_ERROR_CODE.ServerNotInitialized)).toEqual({
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: LSP_ERROR_CODE.ServerNotInitialized, message: 'Server not initialized' },
+    });
+  });
+
+  it('formats only closed diagnostic codes without accepting arbitrary details', () => {
+    expect(formatLspDiagnostic('invalid_frame')).toBe('[codegraph:lsp] invalid_frame');
+    expect(formatLspDiagnostic('internal_failure')).toBe('[codegraph:lsp] internal_failure');
+  });
+
+  it('clamps incoming character positions in UTF-16 code units', () => {
+    const line = 'a😀z';
+    expect(clampUtf16Character(line, 0)).toBe(0);
+    expect(clampUtf16Character(line, 2)).toBe(2);
+    expect(clampUtf16Character(line, 99)).toBe(4);
+  });
+
+  it('maps UTF-8-byte or UTF-16 graph columns only with exact token evidence', () => {
+    expect(resolveExactUtf16Range('😀alpha', 4, 'alpha')).toEqual({ start: 2, end: 7 });
+    expect(resolveExactUtf16Range('éalpha', 1, 'alpha')).toEqual({ start: 1, end: 6 });
+    expect(resolveExactUtf16Range('éalpha', 2, 'alpha')).toEqual({ start: 1, end: 6 });
+    expect(resolveExactUtf16Range('éalpha', 2, 'wrong')).toBeNull();
+  });
+
+  it('rejects mixed-column mappings when two distinct positions match', () => {
+    expect(resolveExactUtf16Range('éaa', 2, 'a')).toBeNull();
+  });
+
+  it('sorts, deduplicates, and caps locations after the full stable ordering', () => {
+    const locations: LspLocation[] = [
+      location('file:///repo/b.ts', 3, 0),
+      location('file:///repo/a.ts', 4, 1),
+      location('file:///repo/a.ts', 1, 2),
+      location('file:///repo/a.ts', 1, 2),
+    ];
+    expect(sortAndCapLocations(locations, 2)).toEqual([
+      location('file:///repo/a.ts', 1, 2),
+      location('file:///repo/a.ts', 4, 1),
+    ]);
+  });
+
+  it('provides a reusable stable dedupe-and-cap primitive', () => {
+    const values = [
+      { id: 'b', score: 2 }, { id: 'a', score: 1 }, { id: 'a', score: 3 }, { id: 'c', score: 0 },
+    ];
+    expect(dedupeSortAndCap(values, (value) => value.id, (left, right) => left.id.localeCompare(right.id), 2)).toEqual([
+      { id: 'a', score: 1 }, { id: 'b', score: 2 },
+    ]);
+  });
+});
+
+describe('trusted daemon LSP reads', () => {
+  const roots: string[] = [];
+
+  beforeAll(async () => {
+    await initGrammars();
+    await loadAllGrammars();
+  });
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('returns only a hash-matching indexed snapshot and fails closed after drift', async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-read-'));
+    roots.push(parent);
+    const root = path.join(parent, 'repo');
+    fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, 'sample.ts'), 'export function alpha() { return 1; }\n');
+    fs.writeFileSync(path.join(parent, 'outside.ts'), 'export const secret = 1;\n');
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      const current = await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' });
+      expect(current).toMatchObject({ ok: true, snapshot: { filePath: 'sample.ts', languageId: 'typescript' } });
+      expect((current as any).snapshot.text).toContain('function alpha');
+      expect((current as any).nodes.some((node: Node) => node.name === 'alpha')).toBe(true);
+      expect(await executeReadOp(cg, 'lspFileContext', { filePath: '../outside.ts' }))
+        .toEqual({ ok: false, reason: 'outside_repository' });
+
+      fs.writeFileSync(path.join(root, 'sample.ts'), 'export function alpha() { return 2; }\n');
+      expect(await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
+        .toEqual({ ok: false, reason: 'stale' });
+    } finally {
+      cg.close();
+    }
+  });
+});
+
+function location(uri: string, line: number, character: number): LspLocation {
+  return {
+    uri,
+    range: { start: { line, character }, end: { line, character: character + 1 } },
+  };
+}

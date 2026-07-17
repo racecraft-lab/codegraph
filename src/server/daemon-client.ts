@@ -32,7 +32,12 @@ import { SocketTransport } from '../mcp/transport';
 import { findNearestCodeGraphRoot, getCodeGraphDir } from '../directory';
 import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
 import { unavailable, DEFAULT_RETRY_AFTER_SECONDS, type ApiError } from './errors';
-import type { ReadOp } from '../mcp/read-ops';
+import type {
+  LspFileContextRead,
+  LspIncomingRead,
+  ReadOp,
+} from '../mcp/read-ops';
+import type { Node } from '../types';
 import type { ClusterListResult, FlowDetailRead, FlowListResult } from '../analysis';
 
 /**
@@ -501,6 +506,30 @@ export async function readClusters(
   offset: number,
 ): Promise<ClusterListResult> {
   return (await client.read('listClusters', { minSize, limit, offset })) as ClusterListResult;
+}
+
+/** Exact indexed source, nodes, and located semantic occurrences for one file. */
+export async function readLspFileContext(
+  client: DaemonReadClient,
+  filePath: string,
+): Promise<LspFileContextRead> {
+  return (await client.read('lspFileContext', { filePath })) as LspFileContextRead;
+}
+
+/** Exact located incoming occurrences for one stable graph target. */
+export async function readLspIncoming(
+  client: DaemonReadClient,
+  nodeId: string,
+): Promise<LspIncomingRead> {
+  return (await client.read('lspIncoming', { id: nodeId })) as LspIncomingRead;
+}
+
+/** Deterministically ranked graph symbols; the facade owns final ordering/cap. */
+export async function readLspWorkspaceSymbols(
+  client: DaemonReadClient,
+  query: string,
+): Promise<Node[]> {
+  return (await client.read('lspWorkspaceSymbols', { query })) as Node[];
 }
 
 /**

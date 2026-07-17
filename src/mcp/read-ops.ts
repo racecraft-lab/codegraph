@@ -15,6 +15,9 @@
  * @module mcp/read-ops
  */
 
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type CodeGraph from '../index';
 import type { Node, Edge, SearchMode } from '../types';
 import { resolveAutoMode } from '../search/hybrid';
@@ -39,7 +42,44 @@ export type ReadOp =
   | 'neighborhood'
   | 'listFlows'
   | 'getFlow'
-  | 'listClusters';
+  | 'listClusters'
+  | 'lspFileContext'
+  | 'lspIncoming'
+  | 'lspWorkspaceSymbols';
+
+export type LspSourceErrorReason =
+  | 'not_found'
+  | 'outside_repository'
+  | 'unindexed'
+  | 'not_regular'
+  | 'too_large'
+  | 'unreadable'
+  | 'stale';
+
+export interface LspSourceSnapshot {
+  filePath: string;
+  text: string;
+  languageId: string;
+  contentHash: string;
+  snapshotToken: string;
+}
+
+export interface LspLocatedEdge {
+  edge: Edge;
+  source: Node;
+  target: Node;
+}
+
+export type LspFileContextRead =
+  | { ok: true; snapshot: LspSourceSnapshot; nodes: Node[]; occurrences: LspLocatedEdge[]; containment: Edge[] }
+  | { ok: false; reason: LspSourceErrorReason };
+
+export interface LspIncomingRead {
+  target: Node | null;
+  occurrences: LspLocatedEdge[];
+}
+
+const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
 
 /**
  * Bounded scan ceiling used to compute a search `total` (FR-006). Matches the
@@ -112,6 +152,12 @@ export async function executeReadOp(
       return cg.getFlowById(idParam(params));
     case 'listClusters':
       return clusterListOp(cg, params);
+    case 'lspFileContext':
+      return lspFileContextOp(cg, params);
+    case 'lspIncoming':
+      return lspIncomingOp(cg, params);
+    case 'lspWorkspaceSymbols':
+      return lspWorkspaceSymbolsOp(cg, params);
     default:
       throw new UnknownReadOpError(`unknown read op: ${op}`);
   }
@@ -175,8 +221,140 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
     }
     case 'getFlow':
       return { found: false, state: 'not_indexed' };
+    case 'lspFileContext':
+      return { ok: false, reason: 'unindexed' } satisfies LspFileContextRead;
+    case 'lspIncoming':
+      return { target: null, occurrences: [] } satisfies LspIncomingRead;
+    case 'lspWorkspaceSymbols':
+      return [];
     default:
       throw new UnknownReadOpError(`unknown read op: ${op}`);
+  }
+}
+
+function lspWorkspaceSymbolsOp(cg: CodeGraph, params: Record<string, unknown>): Node[] {
+  const query = typeof params.query === 'string' ? params.query.trim() : '';
+  if (query) return cg.searchNodes(query, { limit: 500 }).map((result) => result.node);
+  const nodes: Node[] = [];
+  for (const file of cg.getFiles()) nodes.push(...cg.getNodesInFile(file.path));
+  return nodes;
+}
+
+function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncomingRead {
+  const target = cg.getNode(idParam(params));
+  if (!target) return { target: null, occurrences: [] };
+  const occurrences: LspLocatedEdge[] = [];
+  for (const edge of cg.getIncomingEdges(target.id)) {
+    if (edge.kind === 'contains' || edge.line === undefined || edge.column === undefined) continue;
+    const source = cg.getNode(edge.source);
+    if (source) occurrences.push({ edge, source, target });
+  }
+  return { target, occurrences };
+}
+
+function lspFileContextOp(cg: CodeGraph, params: Record<string, unknown>): LspFileContextRead {
+  const requested = typeof params.filePath === 'string' ? params.filePath : '';
+  const snapshot = readTrustedSnapshot(cg, requested);
+  if (!snapshot.ok) return snapshot;
+  const nodes = cg.getNodesInFile(snapshot.snapshot.filePath);
+  const occurrences: LspLocatedEdge[] = [];
+  const containment: Edge[] = [];
+  for (const source of nodes) {
+    for (const edge of cg.getOutgoingEdges(source.id)) {
+      if (edge.kind === 'contains') {
+        containment.push(edge);
+        continue;
+      }
+      if (edge.line === undefined || edge.column === undefined) continue;
+      const target = cg.getNode(edge.target);
+      if (target) occurrences.push({ edge, source, target });
+    }
+  }
+  return { ok: true, snapshot: snapshot.snapshot, nodes, occurrences, containment };
+}
+
+function readTrustedSnapshot(
+  cg: CodeGraph,
+  requested: string,
+): { ok: true; snapshot: LspSourceSnapshot } | { ok: false; reason: LspSourceErrorReason } {
+  if (!requested || path.isAbsolute(requested)) return { ok: false, reason: 'outside_repository' };
+
+  let root: string;
+  let candidate: string;
+  let rootReal: string;
+  let candidateReal: string;
+  try {
+    root = cg.getProjectRoot();
+    rootReal = fs.realpathSync(root);
+    candidate = path.resolve(rootReal, requested);
+    candidateReal = fs.realpathSync(candidate);
+  } catch {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const relative = path.relative(rootReal, candidateReal);
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return { ok: false, reason: 'outside_repository' };
+  }
+  const filePath = relative.split(path.sep).join('/');
+  const indexed = cg.getFile(filePath);
+  if (!indexed) return { ok: false, reason: 'unindexed' };
+
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(candidateReal, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    const before = fs.fstatSync(fd);
+    if (!before.isFile()) return { ok: false, reason: 'not_regular' };
+    if (before.size > LSP_SOURCE_BYTE_CAP) return { ok: false, reason: 'too_large' };
+
+    const buffer = Buffer.allocUnsafe(LSP_SOURCE_BYTE_CAP + 1);
+    let bytesRead = 0;
+    while (bytesRead <= LSP_SOURCE_BYTE_CAP) {
+      const read = fs.readSync(fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+      if (read === 0) break;
+      bytesRead += read;
+      if (bytesRead > LSP_SOURCE_BYTE_CAP) return { ok: false, reason: 'too_large' };
+    }
+    const bytes = buffer.subarray(0, bytesRead);
+    const after = fs.fstatSync(fd);
+    const finalReal = fs.realpathSync(candidate);
+    const finalRelative = path.relative(rootReal, finalReal);
+    const finalIndexed = cg.getFile(filePath);
+    if (
+      finalReal !== candidateReal ||
+      finalRelative === '..' || finalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(finalRelative) ||
+      before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      after.size !== bytesRead ||
+      !finalIndexed || finalIndexed.contentHash !== indexed.contentHash ||
+      finalIndexed.indexedAt !== indexed.indexedAt || finalIndexed.size !== indexed.size
+    ) {
+      return { ok: false, reason: 'stale' };
+    }
+
+    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+    if (digest !== indexed.contentHash) return { ok: false, reason: 'stale' };
+    const text = bytes.toString('utf8');
+    if (!Buffer.from(text, 'utf8').equals(bytes)) return { ok: false, reason: 'unreadable' };
+    const snapshotToken = crypto
+      .createHash('sha256')
+      .update(`${indexed.contentHash}\0${indexed.indexedAt}\0${indexed.size}`)
+      .digest('hex');
+    return {
+      ok: true,
+      snapshot: {
+        filePath,
+        text,
+        languageId: indexed.language,
+        contentHash: indexed.contentHash,
+        snapshotToken,
+      },
+    };
+  } catch {
+    return { ok: false, reason: 'unreadable' };
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* best-effort */ }
+    }
   }
 }
 
