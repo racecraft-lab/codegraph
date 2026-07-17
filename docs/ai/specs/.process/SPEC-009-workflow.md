@@ -29,13 +29,15 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 
 | Phase | Command | Status | Notes |
 |---|---|---|---|
-| Specify | `/speckit-specify` | Pending | Create the behavioral LSP and viewer specification. |
+| Specify | `/speckit-specify` | Complete | G1 passed: 3 stories, 23 scenarios, 45 requirements, and 12 success criteria with no unresolved markers. |
 | Clarify | `/speckit-clarify` | Pending | Confirm protocol, security, and UI edge cases left by Specify. |
 | Plan | `/speckit-plan` | Pending | Design additive daemon reads, transports, source pane, and slice boundaries. |
 | Checklist | `/speckit-checklist` | Pending | Run API, streaming, security, and UX/accessibility checklists. |
 | Tasks | `/speckit-tasks` | Pending | Generate dependency-ordered work for the accepted two slices. |
 | Analyze | `/speckit-analyze` | Pending | Resolve cross-artifact gaps before implementation. |
+| Confidence Gate | G6.5 | Pending | Score pre-implementation confidence in advisory mode. |
 | Implement | `/speckit-implement` | Pending | Execute both vertical slices with TDD and black-box conformance. |
+| Post | Canonical post gates | Pending | Verify, review, package, create PRs, remediate, and retrospect. |
 
 **Status legend:** Pending | In Progress | Complete | Blocked
 
@@ -49,6 +51,7 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | G4 | After Checklists | Every genuine gap is resolved in spec or plan; intentional exclusions are documented. |
 | G5 | After Tasks | All requirements map to dependency-ordered tasks and each slice is independently testable. |
 | G6 | After Analyze | No critical issue remains and warnings have explicit dispositions. |
+| G6.5 | Before Implement | The latest confidence emit is evaluated in advisory mode with bounded remediation. |
 | G7 | After each implementation slice | Focused tests, build/typecheck, black-box conformance, and required manual UAT pass. |
 
 ### Canonical Post Gates
@@ -70,6 +73,24 @@ explicitly skip each before final handoff:
 - Post: PR Creation
 - Post: Review Remediation
 - Post: Retrospective
+
+---
+
+## Archive Sweep
+
+| Field | Result |
+|---|---|
+| Status | Complete - no candidates |
+| Execution path | Installed archive extension contract with Codex-native worktree binding |
+| Current target excluded | `specs/009-lsp-server-facade` |
+| Eligible previous specs | None; earlier merged specs already have archive reports |
+| Cleanup | Not applied; `safeToApplyCleanup=false` |
+
+The extension prerequisite script could not resolve a pre-Specify
+`.specify/feature.json`. The already-validated worktree supplied the repository,
+feature, memory, and template paths as allowed by the Codex adapter. The current
+target was the only active directory under `specs/`, so the sweep completed as
+a successful no-op.
 
 ---
 
@@ -144,6 +165,48 @@ Apply `.specify/memory/constitution.md` throughout:
 | Local-First, Private, Zero Native Dependencies | Remain dormant until invoked, preserve loopback/same-origin behavior, and make no new network calls. | Security tests, offline/package tests, dependency review |
 
 **Constitution check at scaffold:** PASS. Re-run pre- and post-design during Plan.
+
+### Phase 0 Verification
+
+| Check | Result | Evidence |
+|---|---|---|
+| Worktree and branch | Pass | Dedicated `009-lsp-server-facade` worktree; shell branch check authoritative |
+| SpecKit prerequisites | Pass | Runner reported `all_pass=true`; workflow and constitution present |
+| Codex agents | Pass | 10/10 current, `gpt-5.5`, dry-run mutation `no_op` |
+| Build | Pass | `npm run build` on Node 24.11.1 |
+| Typecheck | Pass | `npm run typecheck` on Node 24.11.1 |
+| Lint | Skipped | No root lint command is defined |
+| Baseline tests | Pass | `npm test`: 246 files, 4,095 passed, 7 skipped |
+| Setup reviewability | Pass | Installed setup-mode gate: `status=pass`, `docs/process` surface |
+| Plan coverage audit | Pass | 37 durable items; every phase and all 14 Post rows present |
+
+The first sandboxed test attempt could not bind loopback ports or Unix sockets.
+The authoritative baseline reran with local socket permissions and passed. Git
+commit signing was disabled only for temporary fixture repositories so local
+user signing policy could not invalidate those tests.
+
+### Project Commands
+
+| Purpose | Command |
+|---|---|
+| Build | `npm run build` |
+| Typecheck | `npm run typecheck` |
+| Unit/root suite | `npm test` |
+| Web integration suite | `npm run test:web` |
+| Full verify | `npm run build && npm run typecheck && npm test && npm run test:web` |
+
+All Node commands use the repository-pinned Node 24.11.1. The runner's raw
+`npm build` and `npm typecheck` detections were corrected to the scripts
+defined by `package.json`.
+
+### Capability Path
+
+Capability path: codebase context -> `mcp__codegraph__codegraph_explore`;
+library documentation -> Context7; web/domain research and source extraction ->
+installed Tavily capabilities when needed; browser UAT -> installed Playwright
+capabilities. Evidence: live runtime tool enumeration and runner capability
+advisory. Confidence: high because each selected capability was enumerated in
+this session.
 
 ### Scoped Instructions
 
@@ -276,13 +339,19 @@ second analysis engine or allowing source mutation.
 
 | Metric | Value |
 |---|---|
-| Functional Requirements | Pending Specify |
-| User Stories | 3 planned |
-| Acceptance Criteria | Pending Specify |
+| Functional Requirements | 45 (`FR-001` through `FR-045`) |
+| User Stories | 3 (`US1`, `US2`, `US3`) |
+| Acceptance Criteria | 23 scenarios and 12 measurable success criteria |
 
 ### Files Generated
 
-- [ ] `specs/009-lsp-server-facade/spec.md`
+- [x] `specs/009-lsp-server-facade/spec.md`
+
+Specify completed through the documented direct-execution recovery path after
+two bounded `spec-executor` attempts produced no output. The requirements
+quality checklist passed on its first iteration. Installed gate G1 passed with
+zero `[NEEDS CLARIFICATION]` markers; Clarify remains mandatory as an audit and
+refinement phase.
 
 ### Required Traceability
 
@@ -602,6 +671,17 @@ Focus on:
 
 G6 requires zero critical findings. High findings should be fixed; every remaining
 warning needs an explicit disposition before implementation.
+
+---
+
+## Phase 6.5: Confidence Gate
+
+**When to run:** After Analyze consensus and before implementation.
+
+Run the installed confidence gate in advisory mode against the latest
+regex-parseable confidence emit. Attempt at most three focused remediation
+iterations when the score is below 0.90, record the lowest-scoring criterion,
+and continue only according to the installed advisory-mode contract.
 
 ---
 
