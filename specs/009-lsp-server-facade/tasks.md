@@ -95,7 +95,7 @@ handles stale/unavailable states, and leaves existing symbol metadata usable.
 - [ ] T019 [P] [US2] Extend failing content-contract tests for exact indexed metadata, opaque snapshot changes, file-only URIs, 1 MiB-plus-sentinel reads, hash/identity revalidation, and closed errors in `__tests__/lsp-server.test.ts` for FR-016–FR-020, SC-006
 - [ ] T020 [P] [US2] Write failing real HTTP/WebSocket tests for valid same-origin session parity, JSON-RPC text-message mapping, repository binding, and clean lifecycle in `__tests__/lsp-websocket.test.ts` for FR-016, FR-022–FR-028, FR-043, SC-011
 - [ ] T021 [P] [US2] Write failing browser client, source display, hover, definition/history, grouped-reference, generation-guard, state, retry, keyboard, live-region, narrow-layout, and reduced-motion tests in `web/src/tests/source-pane.test.tsx` for FR-033–FR-041, SC-008–SC-009
-- [ ] T022 [P] [US2] Add a failing packaged browser journey for source navigation, back/forward restoration, stale/unavailable recovery, and preserved symbol metadata in `web/src/tests/source-viewer-uat.spec.ts` for FR-033–FR-044, SC-008–SC-012
+- [ ] T022 [P] [US2] Add a failing controlled-WebSocket-peer browser journey for source navigation, back/forward restoration, stale/unavailable recovery, and preserved symbol metadata in `web/src/tests/source-viewer-uat.spec.ts` for FR-033–FR-041, SC-008–SC-009
 
 ### Implementation for User Story 2
 
@@ -106,7 +106,7 @@ handles stale/unavailable states, and leaves existing symbol metadata usable.
 - [ ] T027 [US2] Implement the focused single-tab-stop source composite, exact token mapping, named hover/definition actions, grouped references, live state announcements, manual retry, focus, narrow layout, and reduced-motion behavior in `web/src/components/symbol/SourcePane.tsx` for FR-033–FR-041
 - [ ] T028 [US2] Integrate Open/Close source and repo-relative path/range search history using replace for canonicalization, push for explicit navigation, and no push on POP in `web/src/routes/SymbolDetailRoute.tsx` for FR-033, FR-036–FR-040
 - [ ] T029 [US2] Make the client/source-pane interaction and accessibility suite pass in `web/src/tests/source-pane.test.tsx` for SC-008–SC-009
-- [ ] T030 [US2] Make the packaged source-viewer browser journey pass in `web/src/tests/source-viewer-uat.spec.ts` for FR-044, SC-011–SC-012
+- [ ] T030 [US2] Make the controlled-WebSocket-peer source-viewer browser journey pass in `web/src/tests/source-viewer-uat.spec.ts` for FR-033–FR-041, SC-008–SC-009; reserve packaged `/lsp` proof for T037/T042/T043 after the production adapter exists
 
 **Checkpoint**: The viewer is complete against a controlled repository-bound
 transport and remains independently testable even when source intelligence is
@@ -125,16 +125,16 @@ session isolation, dormancy, daemon loss, and ordered shutdown.
 
 ### Tests for User Story 3
 
-- [ ] T031 [US3] Extend failing WebSocket tests for handshake path, Host/normalized Origin order, absent-Origin scripts, repo/daemon admission, binary/invalid/oversized input, 16-slot overload, five-second timeout, 2 MiB backpressure, disconnect, daemon loss, redaction, isolation, and shutdown in `__tests__/lsp-websocket.test.ts` for FR-021–FR-032, FR-043, SC-006–SC-007
+- [ ] T031 [US3] Extend failing real-socket WebSocket tests for handshake path, Host/normalized Origin order, absent-Origin scripts, repo/daemon admission, redacted pre-upgrade `wsClientError`, binary/invalid/oversized input, 16-slot overload, five-second request and close-handshake timeouts, unresponsive ping/pong, 2 MiB backpressure, disconnect, daemon loss, isolation, forced termination, and cleanup in `__tests__/lsp-websocket.test.ts` for FR-021–FR-032, FR-043, SC-006–SC-007
 - [ ] T032 [P] [US3] Extend the failing package/offline suite to prove zero unopened `/lsp` connections, external requests, schema writes, and behavior drift when uninvoked in `web/src/tests/package-offline.spec.ts` for FR-040, FR-045, SC-010
 
 ### Implementation for User Story 3
 
-- [ ] T033 [US3] Implement the `ws` no-server adapter with exact `/lsp` admission order, one repo lease per session, text-only JSON-RPC mapping, 1 MiB payload cap, 16 atomic slots, five-second deadlines, 2 MiB/5-second backpressure, redaction, and idempotent teardown in `src/server/lsp-websocket.ts` for FR-021–FR-032
+- [ ] T033 [US3] Implement the `ws` no-server adapter with exact `/lsp` admission order, one repo lease per session, text-only JSON-RPC mapping, 1 MiB payload cap, 16 atomic slots, five-second request/close/backpressure deadlines, bounded ping/pong, redacted `wsClientError`, and idempotent close-or-terminate teardown in `src/server/lsp-websocket.ts` for FR-021–FR-032; type stable-runtime `closeTimeout` with a narrow local `ServerOptions & { closeTimeout: number }` intersection because current `@types/ws` omits it
 - [ ] T034 [US3] Replace only the reserved upgrade destroy hook with the LSP adapter, share the daemon pool, stop upgrades first, and close sessions before existing HTTP/daemon shutdown in `src/server/index.ts` for FR-028–FR-032
-- [ ] T035 [US3] Make all admission, close/error, resource-limit, session-isolation, redaction, daemon-loss, and cleanup cases pass in `__tests__/lsp-websocket.test.ts` for SC-006–SC-007, SC-011
+- [ ] T035 [US3] Make all admission, redacted `wsClientError`, close/error, close-timeout termination, ping/pong, resource-limit, session-isolation, daemon-loss, and timer/listener/lease cleanup cases pass in `__tests__/lsp-websocket.test.ts` for SC-006–SC-007, SC-011
 - [ ] T036 [US3] Make the dormant/offline package checks pass without opening a browser socket or making an external request in `web/src/tests/package-offline.spec.ts` for FR-040, FR-045, SC-010
-- [ ] T037 [US3] Run real stdio and WebSocket conformance plus invalid-root/path/hash/origin/frame/limit/disconnect/shutdown probes from `specs/009-lsp-server-facade/quickstart.md`; record G7 evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
+- [ ] T037 [US3] Run real packaged stdio/WebSocket conformance and packaged source-viewer UAT plus invalid-root/path/hash/origin/frame/limit/disconnect/shutdown probes from `specs/009-lsp-server-facade/quickstart.md`; record FR-042–FR-044, SC-011, and Slice 2 G7 evidence in `docs/ai/specs/.process/SPEC-009-workflow.md`
 - [ ] T038 [US3] Re-run the Slice 2 reviewability check against the actual diff and record any approved split/disposition in `specs/009-lsp-server-facade/plan.md`
 
 **Checkpoint**: Slice 2 is a dormant, bounded, same-origin local capability with
@@ -170,7 +170,8 @@ self-repo value, and review traceability without expanding scope.
 - **US1 / Slice 1 (Phase 3)**: Depends on Phase 2. It must pass its G7 checkpoint
   before Slice 2 starts.
 - **US2 Viewer (Phase 4)**: Depends on Slice 1's shared dispatcher. Its browser
-  tests can use a controlled WebSocket peer while the production adapter is red.
+  tests use a controlled WebSocket peer while the production adapter is red;
+  they do not claim packaged transport or self-repo evidence.
 - **US3 Transport/Safety (Phase 5)**: Depends on the US2 browser client contract
   and completes Slice 2 by connecting it to the real packaged server.
 - **Polish (Phase 6)**: Depends on all three stories and both slice gates.

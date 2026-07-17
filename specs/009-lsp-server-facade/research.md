@@ -148,6 +148,13 @@ contract is one JSON-RPC object per text message, not per physical frame.
 - Enable compression: rejected because local source messages gain little and
   compression adds resource/attack surface.
 
+**Stable runtime/type compatibility**: `ws` 8.21.1 accepts the documented
+`closeTimeout` server option, while the current `@types/ws` 8.18.1
+`ServerOptions` interface omits it. Keep the five-second runtime behavior and
+contain the definition lag in `src/server/lsp-websocket.ts` with a narrow local
+`ServerOptions & { closeTimeout: number }` intersection. Do not use `any`, add a
+global type augmentation, or drop the bounded close-handshake test.
+
 ## Decision 8: WebSocket Resource Ownership
 
 **Decision**: Count only ID-bearing accepted requests. Reserve one of 16 slots

@@ -34,9 +34,9 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Plan | `/speckit-plan` | Complete | G3 passed; seven artifacts freeze daemon authority, two slices, limits, contracts, and UAT. |
 | Checklist | `/speckit-checklist` | Complete | 99 requirements-quality items passed across four domains; G4 passed with zero gaps. |
 | Tasks | `/speckit-tasks` | Complete | G5 passed: 48 dependency-ordered tasks cover every requirement and both slice gates. |
-| Analyze | `/speckit-analyze` | In Progress | Resolve cross-artifact gaps before implementation. |
-| Confidence Gate | G6.5 | Pending | Score pre-implementation confidence in advisory mode. |
-| Implement | `/speckit-implement` | Pending | Execute both vertical slices with TDD and black-box conformance. |
+| Analyze | `/speckit-analyze` | Complete | G6 passed after consensus resolved one ordering issue and one dependency typing note. |
+| Confidence Gate | G6.5 | Complete | Advisory gate passed at 0.98 against the 0.90 threshold. |
+| Implement | `/speckit-implement` | In Progress | Execute both vertical slices with TDD and black-box conformance. |
 | Post | Canonical post gates | Pending | Verify, review, package, create PRs, remediate, and retrospect. |
 
 **Status legend:** Pending | In Progress | Complete | Blocked
@@ -724,7 +724,29 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |---|---|---|---|
-| Pending | Pending Analyze | Pending Analyze | Pending Analyze |
+| A1 | High | T022/T030 claimed packaged browser proof before T033/T034 created and wired the production `/lsp` adapter. | Consensus narrowed T022/T030 to controlled-peer viewer evidence and assigned real packaged transport/browser proof to post-adapter T037/T042/T043. |
+| A2 | Medium | Stable `ws` 8.21.1 supports `closeTimeout`, but current `@types/ws` 8.18.1 omits the option. | Research and T033 freeze a narrow local typed intersection; T031/T035 explicitly test close timeout, forced termination, ping/pong, redacted pre-upgrade failure, and complete cleanup. |
+
+Coverage analysis mapped all 45 functional requirements and all 12 measurable
+success criteria to substantive tests and/or implementation tasks beyond the
+summary-only traceability task. The 48 tasks remain sequential and strict-format;
+15 support tasks intentionally map to setup, reviewability, package, retrieval,
+review-packet, or final-verification obligations rather than one product FR.
+No constitution conflict, duplicate/conflicting requirement, undefined product
+file path, or unmapped buildable success criterion remains.
+
+Two bounded `analyze-executor` attempts stalled, so the documented direct
+read-only recovery path produced the report. Three independent consensus
+perspectives agreed on the ordering remediation and the contained typing
+disposition. No critical or high issue remains after remediation.
+
+📊 Confidence: 0.98
+
+- Task understanding: 0.98
+- Approach clarity: 0.96
+- Requirements alignment: 0.97
+- Risk assessment: 1.00
+- Completeness: 1.00
 
 G6 requires zero critical findings. High findings should be fixed; every remaining
 warning needs an explicit disposition before implementation.
@@ -739,6 +761,10 @@ Run the installed confidence gate in advisory mode against the latest
 regex-parseable confidence emit. Attempt at most three focused remediation
 iterations when the score is below 0.90, record the lowest-scoring criterion,
 and continue only according to the installed advisory-mode contract.
+
+**Result**: PASS on the first evaluation. Composite `0.98` exceeded threshold
+`0.90`; all five criteria were present, the lowest was Approach clarity at
+`0.96`, and the runner recommended `proceed`.
 
 ---
 
