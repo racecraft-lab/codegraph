@@ -6,20 +6,20 @@
   "branch": "009-lsp-server-facade",
   "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/009-lsp-server-facade",
   "status": "in_progress",
-  "active_step": "Phase 2: Clarify - LSP Contract",
-  "updated_at": "2026-07-17T01:48:07Z",
+  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-17T08:15:02Z",
   "confidence_gate_mode": "advisory",
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
     {"step": "Phase 1: Specify", "status": "completed"},
-    {"step": "Phase 2: Clarify - LSP Contract", "status": "in_progress"},
-    {"step": "Phase 2: Clarify - LSP Contract Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - WebSocket and Security", "status": "pending"},
-    {"step": "Phase 2: Clarify - WebSocket and Security Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Source Viewer and Degradation", "status": "pending"},
-    {"step": "Phase 2: Clarify - Source Viewer and Degradation Consensus", "status": "pending"},
-    {"step": "Phase 3: Plan", "status": "pending"},
+    {"step": "Phase 2: Clarify - LSP Contract", "status": "completed"},
+    {"step": "Phase 2: Clarify - LSP Contract Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - WebSocket and Security", "status": "completed"},
+    {"step": "Phase 2: Clarify - WebSocket and Security Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Source Viewer and Degradation", "status": "completed"},
+    {"step": "Phase 2: Clarify - Source Viewer and Degradation Consensus", "status": "completed"},
+    {"step": "Phase 3: Plan", "status": "in_progress"},
     {"step": "Phase 4: Checklist - API Contracts", "status": "pending"},
     {"step": "Phase 4: Checklist - API Contracts Consensus", "status": "pending"},
     {"step": "Phase 4: Checklist - Streaming Protocol", "status": "pending"},
@@ -68,6 +68,57 @@
         "id": "G1",
         "status": "passed",
         "reason": "spec.md exists with 0 markers"
+      }
+    },
+    "clarify": {
+      "status": "completed",
+      "gate": {
+        "id": "G2",
+        "status": "passed",
+        "reason": "0 [NEEDS CLARIFICATION] markers"
+      },
+      "sessions": {
+        "lsp_contract": {
+          "status": "completed",
+          "questions": 5,
+          "consensus": "completed",
+          "human_review_required": false,
+          "outcomes": [
+            "canonical initialize root validation",
+            "state-specific lifecycle errors and notifications",
+            "same-target overlap collapse with ambiguity fail-close",
+            "snapshot-backed UTF-16 conversion",
+            "complete deterministic ordering before caps"
+          ]
+        },
+        "websocket_security": {
+          "status": "completed",
+          "questions": 5,
+          "consensus": "completed_all_three",
+          "human_review_required": true,
+          "human_review_status": "accepted_all_recommendations",
+          "outcomes": [
+            "bounded fatal stdio framing loss with recoverable valid-frame JSON errors",
+            "protocol-specific WebSocket JSON-RPC and close-code mapping",
+            "perimeter-first Host and normalized Origin admission",
+            "atomic per-session concurrency deadline and backpressure limits",
+            "shared cross-transport redaction with required wire ID echo"
+          ]
+        },
+        "source_viewer_degradation": {
+          "status": "completed",
+          "questions": 5,
+          "consensus": "completed_all_three",
+          "human_review_required": true,
+          "human_review_status": "accepted_all_recommendations",
+          "outcomes": [
+            "custom experimental metadata content contract with closed errors",
+            "one trusted linearized source-read authority",
+            "privacy-safe repository-relative URL and history state",
+            "single-tab-stop accessible source composite with named actions",
+            "explicit no-auto-reconnect degradation and manual retry state machine"
+          ]
+        }
       }
     }
   },

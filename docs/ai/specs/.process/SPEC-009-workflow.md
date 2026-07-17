@@ -30,8 +30,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Phase | Command | Status | Notes |
 |---|---|---|---|
 | Specify | `/speckit-specify` | Complete | G1 passed: 3 stories, 23 scenarios, 45 requirements, and 12 success criteria with no unresolved markers. |
-| Clarify | `/speckit-clarify` | Pending | Confirm protocol, security, and UI edge cases left by Specify. |
-| Plan | `/speckit-plan` | Pending | Design additive daemon reads, transports, source pane, and slice boundaries. |
+| Clarify | `/speckit-clarify` | Complete | Three sessions and 15 decisions integrated; G2 passed with zero unresolved markers. |
+| Plan | `/speckit-plan` | In Progress | Design additive daemon reads, transports, source pane, and slice boundaries. |
 | Checklist | `/speckit-checklist` | Pending | Run API, streaming, security, and UX/accessibility checklists. |
 | Tasks | `/speckit-tasks` | Pending | Generate dependency-ordered work for the accepted two slices. |
 | Analyze | `/speckit-analyze` | Pending | Resolve cross-artifact gaps before implementation. |
@@ -403,9 +403,38 @@ stale/unavailable states, manual retry, and connection dormancy.
 
 | Session | Focus area | Questions | Key outcomes |
 |---|---|---|---|
-| 1 | LSP contract | Pending | Pending Clarify |
-| 2 | WebSocket and security | Pending | Pending Clarify |
-| 3 | Viewer and degradation | Pending | Pending Clarify |
+| 1 | LSP contract | 5 | Canonical root signals, lifecycle errors, exact overlap handling, snapshot-backed UTF-16 conversion, and total ordering before caps. |
+| 2 | WebSocket and security | 5 | User accepted bounded fail-closed stdio, protocol-specific WebSocket errors, perimeter-first upgrades, atomic session limits, and shared redaction. |
+| 3 | Viewer and degradation | 5 | User accepted the custom metadata API, one trusted read authority, repo-relative history, accessible composite interaction, and explicit manual recovery. |
+
+### Consensus Resolution Log
+
+| Item | Finding | Category | Round | Agreement | Outcome | Perspectives |
+|---|---|---|---|---|---|---|
+| 1 | Initialize root signal validation | ambiguous | 1 | 2/3 on absent-root detail; 3/3 on binding | Accepted absent roots plus validation of every supplied signal against the prebound repo | codebase, spec-context, domain |
+| 2 | Lifecycle errors and notifications | ambiguous | 1 | 3/3 | Added exact codes, states, notification behavior, and exit status | codebase, spec-context, domain |
+| 3 | Overlapping exact cursor evidence | ambiguous | 1 | 3/3 | Collapse same-target evidence; distinct targets fail closed | codebase, spec-context, domain |
+| 4 | UTF-16 source and boundary behavior | ambiguous | 1 | 3/3 on policy | Added snapshot-backed conversion, fail-closed outgoing boundaries, and incoming line-end normalization | codebase, spec-context, domain |
+| 5 | Deterministic ordering before caps | ambiguous | 1 | 3/3 | Added complete per-method order and pre-cap deduplication | codebase, spec-context, domain |
+| 6 | Bounded stdio framing failure | security | 1 | 3/3 with precision corrections | Human accepted bounded fatal framing loss and recoverable valid-frame JSON errors | codebase, spec-context, domain, human |
+| 7 | WebSocket input failure mapping | security | 1 | 3/3 with message/frame correction | Human accepted JSON-RPC errors for recoverable text and 1003/1007/1009 closes | codebase, spec-context, domain, human |
+| 8 | Host, Origin, repo gate order | security | 1 | 3/3 | Human accepted perimeter-first normalized-origin admission | codebase, spec-context, domain, human |
+| 9 | Concurrency, deadline, and cleanup | security | 1 | 3/3 | Human accepted atomic 16-slot, five-second, bounded-backpressure policy | codebase, spec-context, domain, human |
+| 10 | Cross-transport redaction | security | 1 | 3/3 after request-ID correction | Human accepted shared redaction with protocol-required ID echo only on wire | codebase, spec-context, domain, human |
+| 11 | Typed source-content contract | api-contract, security | 1 | 2/3 on params; 3/3 on custom boundary | Human retained custom experimental metadata request and closed errors | codebase, spec-context, domain, human |
+| 12 | Linearized trusted source read | security, consistency | 1 | 3/3 | Human accepted one authority for containment, bounded handle read, hash, and revalidation | codebase, spec-context, domain, human |
+| 13 | Privacy-safe URL and history | navigation, privacy, accessibility | 1 | 3/3 | Human accepted repo-relative serialized state with strict replace/push/pop rules | codebase, spec-context, domain, human |
+| 14 | Pointer and keyboard source interaction | interaction, accessibility | 1 | 3/3 after explicit-control correction | Human accepted single-tab-stop composite plus named hover/definition actions | codebase, spec-context, domain, human |
+| 15 | Viewer degradation and retry state machine | state-machine, lifecycle, accessibility | 1 | 3/3 | Human accepted explicit no-auto-reconnect recovery and generation guards | codebase, spec-context, domain, human |
+
+No Session 1 item matched the mandatory security-keyword set. Moderate consensus
+resolved every Session 1 item without human review. All Session 2 items matched
+the mandatory security path; the three perspectives were collected and the user
+explicitly accepted each consolidated recommendation before integration.
+
+Session 3 followed the same all-three plus human-review path for its
+security/privacy items. G2 then passed with zero unresolved clarification
+markers.
 
 ---
 
