@@ -473,6 +473,27 @@ describe('trusted daemon LSP reads', () => {
       expect(genericSearch).not.toHaveBeenCalled();
       genericSearch.mockRestore();
 
+      const workspaceScan = vi.spyOn(cg, 'iterateLspWorkspaceSymbolCandidates')
+        .mockImplementation(function* () {
+          for (let index = 0; index < 5_001; index += 1) {
+            yield {
+              node: {
+                ...alpha,
+                id: `scan-overflow-${index}`,
+                name: 'scanOverflowTarget',
+                qualifiedName: `scanOverflow::${String(index).padStart(4, '0')}`,
+              },
+              score: 1,
+            };
+          }
+        });
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'scanOverflowTarget',
+      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {}))
+        .resolves.toEqual({ ok: false, reason: 'too_large' });
+      workspaceScan.mockRestore();
+
       queries.updateNode({
         ...alpha,
         docstring: 'x'.repeat(16 * 1024),

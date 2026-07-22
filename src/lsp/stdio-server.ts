@@ -13,16 +13,26 @@ import {
 const MAX_HEADER_BYTES = 8 * 1024;
 const MAX_HEADER_LINES = 32;
 const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_QUEUED_FRAMES = 16;
+const MAX_QUEUED_BODY_BYTES = 4 * MAX_BODY_BYTES;
+const MAX_INPUT_CHUNK_BYTES = MAX_QUEUED_BODY_BYTES
+  + MAX_QUEUED_FRAMES * (MAX_HEADER_BYTES + 4);
 const DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS = 5_000;
 
 export class LspFramingError extends Error {}
 
+interface ContentLengthParserLimits {
+  maxMessages: number;
+  maxBodyBytes: number;
+}
+
 export class ContentLengthParser {
   private buffer = Buffer.alloc(0);
 
-  push(chunk: Buffer): Buffer[] {
+  push(chunk: Buffer, limits?: ContentLengthParserLimits): Buffer[] {
     if (chunk.length > 0) this.buffer = Buffer.concat([this.buffer, chunk]);
     const messages: Buffer[] = [];
+    let messageBytes = 0;
     while (this.buffer.length > 0) {
       const headerEnd = this.buffer.indexOf('\r\n\r\n');
       if (headerEnd === -1) {
@@ -52,7 +62,12 @@ export class ContentLengthParser {
       const bodyStart = headerEnd + 4;
       const bodyEnd = bodyStart + contentLength;
       if (this.buffer.length < bodyEnd) break;
+      if (limits && (messages.length >= limits.maxMessages
+        || contentLength > limits.maxBodyBytes - messageBytes)) {
+        throw new LspFramingError('message queue limit');
+      }
       messages.push(this.buffer.subarray(bodyStart, bodyEnd));
+      messageBytes += contentLength;
       this.buffer = this.buffer.subarray(bodyEnd);
     }
     return messages;
@@ -90,6 +105,9 @@ export async function serveLspStdio(
     : DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS;
   let chain = Promise.resolve();
   let settled = false;
+  let queuedFrames = 0;
+  let queuedBodyBytes = 0;
+  let cancelOutputDrain: (() => void) | null = null;
   let resolveExit!: (code: number) => void;
   const exit = new Promise<number>((resolve) => { resolveExit = resolve; });
 
@@ -116,15 +134,18 @@ export async function serveLspStdio(
           clearTimeout(timer);
           output.removeListener('drain', onDrain);
           output.removeListener('error', onDrainError);
+          if (cancelOutputDrain === cancel) cancelOutputDrain = null;
           if (error) reject(error);
           else resolve();
         };
+        const cancel = (): void => complete();
         const onDrain = (): void => complete();
         const onDrainError = (): void => complete(new Error('output stream failure'));
         const timer = setTimeout(
           () => complete(new Error('output drain timeout')),
           outputDrainTimeoutMs,
         );
+        cancelOutputDrain = cancel;
         output.once('drain', onDrain);
         output.once('error', onDrainError);
       });
@@ -133,7 +154,7 @@ export async function serveLspStdio(
       finish(1);
       return;
     }
-    if (!settled) input.resume();
+    maybeResumeInput();
   };
   const log = (code: Parameters<typeof formatLspDiagnostic>[0]): void => {
     try { diagnostics.write(`${formatLspDiagnostic(code)}\n`); } catch { /* best-effort */ }
@@ -141,6 +162,7 @@ export async function serveLspStdio(
   const finish = (code: number): void => {
     if (settled) return;
     settled = true;
+    cancelOutputDrain?.();
     try { input.pause(); } catch { /* best-effort */ }
     input.removeListener('data', onData);
     input.removeListener('end', onEnd);
@@ -176,11 +198,31 @@ export async function serveLspStdio(
   function onData(value: Buffer | string): void {
     if (settled) return;
     try {
-      for (const body of parser.push(Buffer.isBuffer(value) ? value : Buffer.from(value))) {
-        chain = chain.then(() => handleBody(body)).catch(() => {
-          log('internal_failure');
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      if (chunk.length > MAX_INPUT_CHUNK_BYTES) throw new LspFramingError('input chunk limit');
+      for (const body of parser.push(chunk, {
+        maxMessages: MAX_QUEUED_FRAMES,
+        maxBodyBytes: MAX_QUEUED_BODY_BYTES,
+      })) {
+        if (queuedFrames >= MAX_QUEUED_FRAMES
+          || body.length > MAX_QUEUED_BODY_BYTES - queuedBodyBytes) {
           finish(1);
-        });
+          break;
+        }
+        queuedFrames += 1;
+        queuedBodyBytes += body.length;
+        input.pause();
+        chain = chain
+          .then(() => handleBody(body))
+          .catch(() => {
+            log('internal_failure');
+            finish(1);
+          })
+          .finally(() => {
+            queuedFrames = Math.max(0, queuedFrames - 1);
+            queuedBodyBytes = Math.max(0, queuedBodyBytes - body.length);
+            maybeResumeInput();
+          });
       }
     } catch {
       log('invalid_frame');
@@ -202,6 +244,9 @@ export async function serveLspStdio(
   }
   function onSignal(): void {
     finish(facade.requestedExitCode ?? 1);
+  }
+  function maybeResumeInput(): void {
+    if (!settled && queuedFrames === 0 && cancelOutputDrain === null) input.resume();
   }
 
   input.on('data', onData);

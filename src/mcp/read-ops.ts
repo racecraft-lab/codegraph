@@ -80,6 +80,10 @@ export interface LspWorkspaceSymbolCandidate {
   snapshotToken: string;
 }
 
+export type LspWorkspaceSymbolsRead =
+  | LspWorkspaceSymbolCandidate[]
+  | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large'> };
+
 export type LspFileContextRead =
   | { ok: true; snapshot: LspSourceSnapshot; nodes: Node[]; occurrences: LspLocatedEdge[]; containment: Edge[] }
   | { ok: false; reason: LspSourceErrorReason };
@@ -90,6 +94,8 @@ export type LspIncomingRead =
 
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
 const LSP_WORKSPACE_CANDIDATE_CAP = 500;
+const LSP_WORKSPACE_EMPTY_SCAN_CAP = 1_000;
+const LSP_WORKSPACE_SEARCH_SCAN_CAP = 5_000;
 const LSP_REFERENCE_CAP = 500;
 const LSP_REFERENCE_SCAN_CAP = 5_000;
 const LSP_FILE_NODE_CAP = 5_000;
@@ -250,14 +256,16 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
 function lspWorkspaceSymbolsOp(
   cg: CodeGraph,
   params: Record<string, unknown>,
-): LspWorkspaceSymbolCandidate[] {
+): LspWorkspaceSymbolsRead {
   return cg.withLspReadTransaction(() => {
     const query = typeof params.query === 'string' ? params.query.trim() : '';
+    const scanCap = query ? LSP_WORKSPACE_SEARCH_SCAN_CAP : LSP_WORKSPACE_EMPTY_SCAN_CAP;
     const ranked: LspRankedWorkspaceSymbol[] = [];
     const seen = new Set<string>();
     for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query)) {
       if (seen.has(candidate.node.id)) continue;
       seen.add(candidate.node.id);
+      if (seen.size > scanCap) return { ok: false, reason: 'too_large' };
       const entry: LspRankedWorkspaceSymbol = {
         ...candidate,
         uri: normalizeLspUri(pathToFileURL(path.resolve(cg.getProjectRoot(), candidate.node.filePath)).href),

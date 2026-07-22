@@ -35,7 +35,7 @@ import { unavailable, DEFAULT_RETRY_AFTER_SECONDS, type ApiError } from './error
 import type {
   LspFileContextRead,
   LspIncomingRead,
-  LspWorkspaceSymbolCandidate,
+  LspWorkspaceSymbolsRead,
   ReadOp,
 } from '../mcp/read-ops';
 import type { ClusterListResult, FlowDetailRead, FlowListResult } from '../analysis';
@@ -534,8 +534,8 @@ export async function readLspIncoming(
 export async function readLspWorkspaceSymbols(
   client: DaemonReadClient,
   query: string,
-): Promise<LspWorkspaceSymbolCandidate[]> {
-  return (await client.read('lspWorkspaceSymbols', { query })) as LspWorkspaceSymbolCandidate[];
+): Promise<LspWorkspaceSymbolsRead> {
+  return (await client.read('lspWorkspaceSymbols', { query })) as LspWorkspaceSymbolsRead;
 }
 
 /**

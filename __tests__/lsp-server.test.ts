@@ -110,6 +110,22 @@ describe('repository-bound LSP facade', () => {
       });
   });
 
+  it('maps bounded workspace scans to closed source errors', async () => {
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async workspaceSymbols() { return { ok: false, reason: 'too_large' }; },
+    };
+    const facade = new LspFacade(reader);
+    await facade.handle(request(1, 'initialize', {}));
+    expect(await facade.handle(request(2, 'workspace/symbol', { query: 'alpha' })))
+      .toMatchObject({
+        error: {
+          code: LSP_ERROR_CODE.RequestFailed,
+          data: { reason: 'too_large' },
+        },
+      });
+  });
+
   it('derives declaration names only inside one unambiguous persisted node span', async () => {
     const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
     const source = 'export function alpha() {}; alpha();\n';
@@ -168,6 +184,40 @@ describe('repository-bound LSP facade', () => {
     expect(response.result).toHaveLength(500);
     expect(response.result.some((symbol: any) => symbol.name === 'parent')).toBe(true);
     expect(response.result.some((symbol: any) => symbol.name === 'child')).toBe(false);
+  });
+
+  it('bounds cumulative declaration-range validation work within one request', async () => {
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    const source = `${' '.repeat(1024 * 1024 - alphaNode.name.length)}${alphaNode.name}`;
+    const nodes = Array.from({ length: 17 }, (_value, index): Node => ({
+      ...alphaNode,
+      id: `wide-${index}`,
+      qualifiedName: `sample.wide${index}`,
+      startLine: 1,
+      endLine: 1,
+      startColumn: source.length - alphaNode.name.length,
+      endColumn: source.length,
+    }));
+    const context: Extract<LspFileContextRead, { ok: true }> = {
+      ...alphaContext,
+      snapshot: { ...alphaContext.snapshot, text: source },
+      nodes,
+      occurrences: [],
+    };
+    let fileReads = 0;
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async fileContext() { fileReads += 1; return context; },
+    };
+    const facade = new LspFacade(reader);
+    await facade.handle(request(1, 'initialize', {}));
+
+    expect(await facade.handle(request(2, 'textDocument/documentSymbol', {
+      textDocument: { uri },
+    }))).toMatchObject({
+      error: { code: LSP_ERROR_CODE.RequestFailed, data: { reason: 'too_large' } },
+    });
+    expect(fileReads).toBe(1);
   });
 
   it('fails closed instead of combining graph identities from different snapshots', async () => {

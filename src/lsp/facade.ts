@@ -6,7 +6,7 @@ import type {
   LspIncomingRead,
   LspLocatedEdge,
   LspSourceErrorReason,
-  LspWorkspaceSymbolCandidate,
+  LspWorkspaceSymbolsRead,
 } from '../mcp/read-ops';
 import { CodeGraphPackageVersion } from '../mcp/version';
 import type { Node, NodeKind } from '../types';
@@ -39,7 +39,7 @@ export interface LspRepositoryReader {
   root: string;
   fileContext(filePath: string): Promise<LspFileContextRead>;
   incoming(nodeId: string, filePath: string, snapshotToken: string): Promise<LspIncomingRead>;
-  workspaceSymbols(query: string): Promise<LspWorkspaceSymbolCandidate[]>;
+  workspaceSymbols(query: string): Promise<LspWorkspaceSymbolsRead>;
 }
 
 export type JsonRpcResponse =
@@ -66,6 +66,10 @@ interface LspDocumentSymbol {
   children?: LspDocumentSymbol[];
 }
 
+interface RangeValidationBudget {
+  characters: number;
+}
+
 export function createDaemonLspReader(root: string, client: DaemonReadClient): LspRepositoryReader {
   return {
     root,
@@ -81,6 +85,8 @@ export function createDaemonLspReader(root: string, client: DaemonReadClient): L
 }
 
 const MAX_VALIDATED_SOURCE_BYTES = 16 * 1024 * 1024;
+const MAX_RANGE_VALIDATION_CHARS = 16 * 1024 * 1024;
+const SOURCE_LINES = new WeakMap<object, string[]>();
 
 export class LspFacade {
   private readonly boundRoot: string;
@@ -143,17 +149,18 @@ export class LspFacade {
     if (!isRequest) return null;
 
     try {
+      const rangeBudget: RangeValidationBudget = { characters: 0 };
       switch (message.method) {
         case LSP_METHOD.Definition:
-          return this.result(requestId, await this.definition(message.params));
+          return this.result(requestId, await this.definition(message.params, rangeBudget));
         case LSP_METHOD.References:
-          return this.result(requestId, await this.references(message.params));
+          return this.result(requestId, await this.references(message.params, rangeBudget));
         case LSP_METHOD.Hover:
-          return this.result(requestId, await this.hover(message.params));
+          return this.result(requestId, await this.hover(message.params, rangeBudget));
         case LSP_METHOD.DocumentSymbol:
-          return this.result(requestId, await this.documentSymbols(message.params));
+          return this.result(requestId, await this.documentSymbols(message.params, rangeBudget));
         case LSP_METHOD.WorkspaceSymbol:
-          return this.result(requestId, await this.workspaceSymbols(message.params));
+          return this.result(requestId, await this.workspaceSymbols(message.params, rangeBudget));
         case LSP_METHOD.TextDocumentContent:
           return this.result(requestId, await this.textDocumentContent(message.params));
         default:
@@ -165,14 +172,20 @@ export class LspFacade {
     }
   }
 
-  private async definition(params: object | undefined): Promise<LspLocation | null> {
-    const selected = await this.selectTarget(params);
+  private async definition(
+    params: object | undefined,
+    rangeBudget: RangeValidationBudget,
+  ): Promise<LspLocation | null> {
+    const selected = await this.selectTarget(params, rangeBudget);
     if (!selected) return null;
-    return this.locationForNode(selected.node, selected.snapshotToken);
+    return this.locationForNode(selected.node, selected.snapshotToken, rangeBudget);
   }
 
-  private async references(params: object | undefined): Promise<LspLocation[]> {
-    const selected = await this.selectTarget(params);
+  private async references(
+    params: object | undefined,
+    rangeBudget: RangeValidationBudget,
+  ): Promise<LspLocation[]> {
+    const selected = await this.selectTarget(params, rangeBudget);
     if (!selected) return [];
     const includeDeclaration = isRecord(params)
       && isRecord(params.context)
@@ -216,18 +229,26 @@ export class LspFacade {
         currentOccurrence.edge.line,
         currentOccurrence.edge.column,
         currentOccurrence.target.name,
+        rangeBudget,
       );
       if (location) locations.push(location);
     }
     if (includeDeclaration) {
-      const declaration = await this.locationForNode(selected.node, selected.snapshotToken);
+      const declaration = await this.locationForNode(
+        selected.node,
+        selected.snapshotToken,
+        rangeBudget,
+      );
       if (declaration) locations.push(declaration);
     }
     return sortAndCapLocations(locations, 500);
   }
 
-  private async hover(params: object | undefined): Promise<unknown | null> {
-    const selected = await this.selectTarget(params);
+  private async hover(
+    params: object | undefined,
+    rangeBudget: RangeValidationBudget,
+  ): Promise<unknown | null> {
+    const selected = await this.selectTarget(params, rangeBudget);
     if (!selected) return null;
     const node = selected.node;
     const lines = [
@@ -238,7 +259,10 @@ export class LspFacade {
     return { contents: { kind: 'markdown', value: lines.join('\n\n') } };
   }
 
-  private async documentSymbols(params: object | undefined): Promise<unknown[]> {
+  private async documentSymbols(
+    params: object | undefined,
+    rangeBudget: RangeValidationBudget,
+  ): Promise<unknown[]> {
     const uri = textDocumentUri(params);
     const filePath = this.relativeFilePath(uri);
     const read = await this.reader.fileContext(filePath);
@@ -248,7 +272,7 @@ export class LspFacade {
     const nodes = [...read.nodes].sort(compareNodes);
     for (const node of nodes) {
       if (node.kind === 'file') continue;
-      const range = this.rangeForNode(read, node);
+      const range = this.rangeForNode(read, node, rangeBudget);
       if (!range) continue;
       byId.set(node.id, {
         name: node.name,
@@ -285,9 +309,13 @@ export class LspFacade {
     return capDocumentSymbolForest(roots, 500);
   }
 
-  private async workspaceSymbols(params: object | undefined): Promise<unknown[]> {
+  private async workspaceSymbols(
+    params: object | undefined,
+    rangeBudget: RangeValidationBudget,
+  ): Promise<unknown[]> {
     if (!isRecord(params) || typeof params.query !== 'string') throw invalidParams();
     const candidates = await this.reader.workspaceSymbols(params.query);
+    if (!Array.isArray(candidates)) throw sourceError(candidates.reason);
     const seen = new Set<string>();
     const symbols: unknown[] = [];
     let currentPath: string | undefined;
@@ -308,7 +336,7 @@ export class LspFacade {
       if (context.snapshot.snapshotToken !== candidate.snapshotToken) continue;
       const currentNode = context.nodes.find((entry) => entry.id === node.id);
       if (!currentNode || currentNode.filePath !== node.filePath) continue;
-      const range = this.rangeForNode(context, currentNode);
+      const range = this.rangeForNode(context, currentNode, rangeBudget);
       if (!range) continue;
       symbols.push({
         name: currentNode.name,
@@ -328,12 +356,15 @@ export class LspFacade {
     return { text, languageId, contentHash, snapshotToken };
   }
 
-  private async selectTarget(params: object | undefined): Promise<SelectedTarget | null> {
+  private async selectTarget(
+    params: object | undefined,
+    rangeBudget: RangeValidationBudget,
+  ): Promise<SelectedTarget | null> {
     const parsed = textDocumentPosition(params);
     const filePath = this.relativeFilePath(parsed.textDocument.uri);
     const read = await this.reader.fileContext(filePath);
     if (!read.ok) throw sourceError(read.reason);
-    const lineText = sourceLines(read.snapshot.text)[parsed.position.line];
+    const lineText = sourceLinesFor(read)[parsed.position.line];
     if (lineText === undefined) throw invalidParams();
     const character = clampUtf16Character(lineText, parsed.position.character);
     const candidates = new Map<string, { node: Node; snapshotToken: string }>();
@@ -345,13 +376,19 @@ export class LspFacade {
     };
 
     for (const node of read.nodes) {
-      const range = this.rangeForNode(read, node);
+      const range = this.rangeForNode(read, node, rangeBudget);
       if (range && containsPosition(range, { line: parsed.position.line, character })) {
         addCandidate(node, read.snapshot.snapshotToken);
       }
     }
     for (const occurrence of read.occurrences) {
-      const range = occurrenceRange(read, occurrence.edge.line, occurrence.edge.column, occurrence.target.name);
+      const range = occurrenceRange(
+        read,
+        occurrence.edge.line,
+        occurrence.edge.column,
+        occurrence.target.name,
+        rangeBudget,
+      );
       if (range && containsPosition(range, { line: parsed.position.line, character })) {
         addCandidate(occurrence.target, occurrence.targetSnapshotToken);
       }
@@ -360,13 +397,17 @@ export class LspFacade {
     return { ...candidates.values().next().value!, context: read };
   }
 
-  private async locationForNode(node: Node, expectedSnapshotToken: string): Promise<LspLocation | null> {
+  private async locationForNode(
+    node: Node,
+    expectedSnapshotToken: string,
+    rangeBudget: RangeValidationBudget,
+  ): Promise<LspLocation | null> {
     const read = await this.reader.fileContext(node.filePath);
     if (!read.ok) throw sourceError(read.reason);
     if (read.snapshot.snapshotToken !== expectedSnapshotToken) throw sourceError('stale');
     const currentNode = read.nodes.find((entry) => entry.id === node.id);
     if (!currentNode || currentNode.filePath !== node.filePath) throw sourceError('stale');
-    const range = this.rangeForNode(read, currentNode);
+    const range = this.rangeForNode(read, currentNode, rangeBudget);
     return range ? { uri: this.uriForFile(currentNode.filePath), range } : null;
   }
 
@@ -375,18 +416,27 @@ export class LspFacade {
     line: number | undefined,
     column: number | undefined,
     evidence: string,
+    rangeBudget: RangeValidationBudget,
   ): LspLocation | null {
-    const range = occurrenceRange(context, line, column, evidence);
+    const range = occurrenceRange(context, line, column, evidence, rangeBudget);
     return range ? { uri: this.uriForFile(context.snapshot.filePath), range } : null;
   }
 
-  private rangeForNode(context: Extract<LspFileContextRead, { ok: true }>, node: Node): LspRange | null {
+  private rangeForNode(
+    context: Extract<LspFileContextRead, { ok: true }>,
+    node: Node,
+    rangeBudget: RangeValidationBudget,
+  ): LspRange | null {
     const line = node.startLine - 1;
-    const text = sourceLines(context.snapshot.text)[line];
+    const text = sourceLinesFor(context)[line];
     if (text === undefined) return null;
+    reserveRangeValidationWork(
+      rangeBudget,
+      exactRangeValidationCharacters(text, node.startColumn, node.name),
+    );
     const span = resolveExactUtf16Range(text, node.startColumn, node.name);
     if (span) return { start: { line, character: span.start }, end: { line, character: span.end } };
-    return uniqueEvidenceRange(context.snapshot.text, node);
+    return uniqueEvidenceRange(context, node, rangeBudget);
   }
 
   private uriForFile(filePath: string): string {
@@ -516,38 +566,56 @@ function occurrenceRange(
   graphLine: number | undefined,
   graphColumn: number | undefined,
   evidence: string,
+  rangeBudget: RangeValidationBudget,
 ): LspRange | null {
   if (graphLine === undefined || graphColumn === undefined || graphLine < 1) return null;
   const line = graphLine - 1;
-  const text = sourceLines(context.snapshot.text)[line];
+  const text = sourceLinesFor(context)[line];
   if (text === undefined) return null;
+  reserveRangeValidationWork(
+    rangeBudget,
+    exactRangeValidationCharacters(text, graphColumn, evidence),
+  );
   const span = resolveExactUtf16Range(text, graphColumn, evidence);
   return span ? { start: { line, character: span.start }, end: { line, character: span.end } } : null;
 }
 
-function sourceLines(text: string): string[] {
-  return text.split(/\r\n|\n|\r/);
+function sourceLinesFor(context: Extract<LspFileContextRead, { ok: true }>): string[] {
+  let lines = SOURCE_LINES.get(context.snapshot);
+  if (!lines) {
+    lines = context.snapshot.text.split(/\r\n|\n|\r/);
+    SOURCE_LINES.set(context.snapshot, lines);
+  }
+  return lines;
 }
 
-function uniqueEvidenceRange(source: string, node: Node): LspRange | null {
+function uniqueEvidenceRange(
+  context: Extract<LspFileContextRead, { ok: true }>,
+  node: Node,
+  rangeBudget: RangeValidationBudget,
+): LspRange | null {
   if (!node.name) return null;
-  const lines = sourceLines(source);
-  const candidates = persistedNodeRangeCandidates(lines, node);
+  const lines = sourceLinesFor(context);
+  const candidates = persistedNodeRangeCandidates(lines, node, rangeBudget);
   const supported = candidates
-    .map((candidate) => uniqueEvidenceWithinRange(lines, node.name, candidate))
+    .map((candidate) => uniqueEvidenceWithinRange(lines, node.name, candidate, rangeBudget))
     .filter((candidate): candidate is LspRange => candidate !== null);
   return supported.length === 1 ? supported[0]! : null;
 }
 
-function persistedNodeRangeCandidates(lines: string[], node: Node): LspRange[] {
+function persistedNodeRangeCandidates(
+  lines: string[],
+  node: Node,
+  rangeBudget: RangeValidationBudget,
+): LspRange[] {
   const startLine = node.startLine - 1;
   const endLine = node.endLine - 1;
   const startText = lines[startLine];
   const endText = lines[endLine];
   if (startText === undefined || endText === undefined || startLine > endLine) return [];
   const candidates = new Map<string, LspRange>();
-  for (const start of graphColumnCandidates(startText, node.startColumn)) {
-    for (const end of graphColumnCandidates(endText, node.endColumn)) {
+  for (const start of graphColumnCandidates(startText, node.startColumn, rangeBudget)) {
+    for (const end of graphColumnCandidates(endText, node.endColumn, rangeBudget)) {
       const range: LspRange = {
         start: { line: startLine, character: start },
         end: { line: endLine, character: end },
@@ -559,8 +627,13 @@ function persistedNodeRangeCandidates(lines: string[], node: Node): LspRange[] {
   return [...candidates.values()];
 }
 
-function graphColumnCandidates(line: string, column: number): number[] {
+function graphColumnCandidates(
+  line: string,
+  column: number,
+  rangeBudget: RangeValidationBudget,
+): number[] {
   if (!Number.isSafeInteger(column) || column < 0) return [];
+  reserveRangeValidationWork(rangeBudget, line.length);
   const candidates = new Set<number>();
   if (column <= line.length && isUtf16Boundary(line, column)) candidates.add(column);
   const bytes = Buffer.from(line, 'utf8');
@@ -581,7 +654,12 @@ function isUtf16Boundary(line: string, column: number): boolean {
   return !(before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff);
 }
 
-function uniqueEvidenceWithinRange(lines: string[], evidence: string, range: LspRange): LspRange | null {
+function uniqueEvidenceWithinRange(
+  lines: string[],
+  evidence: string,
+  range: LspRange,
+  rangeBudget: RangeValidationBudget,
+): LspRange | null {
   const matches: LspRange[] = [];
   const identifier = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(evidence);
   for (let lineIndex = range.start.line; lineIndex <= range.end.line; lineIndex += 1) {
@@ -590,6 +668,7 @@ function uniqueEvidenceWithinRange(lines: string[], evidence: string, range: Lsp
     const from = lineIndex === range.start.line ? range.start.character : 0;
     const to = lineIndex === range.end.line ? range.end.character : line.length;
     if (from < 0 || to < from || to > line.length) return null;
+    reserveRangeValidationWork(rangeBudget, to - from);
     for (let offset = from; offset <= to - evidence.length;) {
       const found = line.indexOf(evidence, offset);
       if (found === -1 || found + evidence.length > to) break;
@@ -605,6 +684,28 @@ function uniqueEvidenceWithinRange(lines: string[], evidence: string, range: Lsp
     }
   }
   return matches.length === 1 ? matches[0]! : null;
+}
+
+function reserveRangeValidationWork(
+  rangeBudget: RangeValidationBudget,
+  characters: number,
+): void {
+  if (!Number.isSafeInteger(characters)
+    || characters < 0
+    || characters > MAX_RANGE_VALIDATION_CHARS - rangeBudget.characters) {
+    throw sourceError('too_large');
+  }
+  rangeBudget.characters += characters;
+}
+
+function exactRangeValidationCharacters(
+  text: string,
+  graphColumn: number,
+  evidence: string,
+): number {
+  if (!Number.isSafeInteger(graphColumn) || graphColumn < 0 || evidence.length === 0) return 0;
+  if (graphColumn >= text.length) return text.length;
+  return Math.min(text.length, graphColumn + evidence.length);
 }
 
 function comparePositions(left: LspPosition, right: LspPosition): number {

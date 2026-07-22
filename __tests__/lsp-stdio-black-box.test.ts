@@ -113,6 +113,49 @@ describe('LSP Content-Length transport', () => {
     expect(reads).toBe(0);
   });
 
+  it('fails closed before queued request count or body bytes can grow without bound', async () => {
+    const expectOverload = async (requests: Buffer[]): Promise<void> => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const outputChunks: Buffer[] = [];
+      let reads = 0;
+      output.on('data', (chunk) => outputChunks.push(Buffer.from(chunk)));
+      const reader: LspRepositoryReader = {
+        ...fakeReader(),
+        async workspaceSymbols() { reads += 1; return []; },
+      };
+      const result = serveLspStdio(reader, {
+        input,
+        output,
+        installSignalHandlers: false,
+      });
+
+      input.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+      await vi.waitFor(() => expect(decodeFrames(Buffer.concat(outputChunks))).toHaveLength(1));
+      await vi.waitFor(() => expect(input.isPaused()).toBe(false));
+      input.write(Buffer.concat(requests));
+
+      await expect(result).resolves.toBe(1);
+      expect(input.isPaused()).toBe(true);
+      expect(reads).toBe(0);
+    };
+
+    await expectOverload(Array.from({ length: 17 }, (_value, index) => frame({
+      jsonrpc: '2.0',
+      id: index + 2,
+      method: 'workspace/symbol',
+      params: { query: 'alpha' },
+    })));
+
+    const largeQuery = 'x'.repeat(1024 * 1024 - 256);
+    await expectOverload(Array.from({ length: 5 }, (_value, index) => frame({
+      jsonrpc: '2.0',
+      id: index + 2,
+      method: 'workspace/symbol',
+      params: { query: largeQuery },
+    })));
+  });
+
   it('fails closed on output errors and bounded backpressure', async () => {
     const erroredInput = new PassThrough();
     const erroredOutput = new PassThrough();
@@ -137,6 +180,28 @@ describe('LSP Content-Length transport', () => {
     });
     blockedInput.end(frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
     await expect(blocked).resolves.toBe(1);
+  });
+
+  it('cancels an active output-drain wait during transport teardown', async () => {
+    const input = new PassThrough();
+    const output = new Writable({
+      highWaterMark: 1,
+      write(_chunk, _encoding, _callback) { /* Intentionally never drains. */ },
+    });
+    const result = serveLspStdio(fakeReader(), {
+      input,
+      output,
+      installSignalHandlers: false,
+      outputDrainTimeoutMs: 60_000,
+    });
+
+    input.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+    await vi.waitFor(() => expect(output.listenerCount('drain')).toBe(1));
+    input.emit('error', new Error('closed input'));
+
+    await expect(result).resolves.toBe(1);
+    expect(output.listenerCount('drain')).toBe(0);
+    output.destroy();
   });
 
   it('serves the built command to a generic LSP client and exits cleanly', async () => {
