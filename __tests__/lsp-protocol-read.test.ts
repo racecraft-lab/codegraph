@@ -1,10 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import CodeGraph from '../src/index';
 import { initGrammars, loadAllGrammars } from '../src/extraction/grammars';
-import { executeReadOp } from '../src/mcp/read-ops';
+import { executeReadOp, readTrustedSnapshot } from '../src/mcp/read-ops';
+import type { QueryBuilder } from '../src/db/queries';
 import {
   LSP_ERROR_CODE,
   LSP_SERVER_CAPABILITIES,
@@ -148,6 +150,85 @@ describe('trusted daemon LSP reads', () => {
       fs.writeFileSync(path.join(root, 'sample.ts'), 'export function alpha() { return 2; }\n');
       expect(await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
         .toEqual({ ok: false, reason: 'stale' });
+    } finally {
+      cg.close();
+    }
+  });
+
+  it.runIf(process.platform !== 'win32')('rejects a FIFO source replacement without blocking', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-fifo-'));
+    roots.push(root);
+    const candidate = path.join(root, 'sample.ts');
+    fs.writeFileSync(candidate, 'export const version = 1;\n');
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      fs.unlinkSync(candidate);
+      execFileSync('mkfifo', [candidate]);
+      const startedAt = Date.now();
+      expect(readTrustedSnapshot(cg, 'sample.ts')).toEqual({ ok: false, reason: 'not_regular' });
+      expect(Date.now() - startedAt).toBeLessThan(1_000);
+    } finally {
+      cg.close();
+    }
+  });
+
+  it.runIf(process.platform !== 'win32')('rejects a path atomically replaced after its descriptor is read', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-replace-'));
+    roots.push(root);
+    const candidate = path.join(root, 'sample.ts');
+    const replacement = path.join(root, 'replacement.ts');
+    fs.writeFileSync(candidate, 'export const version = 1;\n');
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      fs.writeFileSync(replacement, 'export const version = 2;\n');
+      expect(readTrustedSnapshot(cg, 'sample.ts', () => fs.renameSync(replacement, candidate)))
+        .toEqual({ ok: false, reason: 'stale' });
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('classifies invalid UTF-8 as unreadable before checking index freshness', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-utf8-'));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, 'sample.ts'), Buffer.from([0x65, 0x78, 0x70, 0x6f, 0x72, 0x74, 0x20, 0xff]));
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      expect(cg.getFile('sample.ts')).toBeDefined();
+      await expect(executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
+        .resolves.toEqual({ ok: false, reason: 'unreadable' });
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('excludes heuristic edges from exact file and incoming occurrences', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-heuristic-'));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, 'sample.ts'), 'export function alpha() { return 1; }\n');
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      const alpha = cg.getNodesInFile('sample.ts').find((node) => node.name === 'alpha')!;
+      const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+      queries.insertEdge({
+        source: alpha.id,
+        target: alpha.id,
+        kind: 'references',
+        line: 1,
+        column: 99,
+        provenance: 'heuristic',
+        metadata: { synthesizedBy: 'test', registeredAt: 'test' },
+      });
+
+      const context = await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }) as any;
+      const incoming = await executeReadOp(cg, 'lspIncoming', { id: alpha.id }) as any;
+
+      expect(context.occurrences.every((entry: any) => entry.edge.provenance !== 'heuristic')).toBe(true);
+      expect(incoming.occurrences.every((entry: any) => entry.edge.provenance !== 'heuristic')).toBe(true);
     } finally {
       cg.close();
     }

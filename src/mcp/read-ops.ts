@@ -245,7 +245,10 @@ function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncom
   if (!target) return { target: null, occurrences: [] };
   const occurrences: LspLocatedEdge[] = [];
   for (const edge of cg.getIncomingEdges(target.id)) {
-    if (edge.kind === 'contains' || edge.line === undefined || edge.column === undefined) continue;
+    if (edge.kind === 'contains'
+      || edge.provenance === 'heuristic'
+      || edge.line === undefined
+      || edge.column === undefined) continue;
     const source = cg.getNode(edge.source);
     if (source) occurrences.push({ edge, source, target });
   }
@@ -265,7 +268,7 @@ function lspFileContextOp(cg: CodeGraph, params: Record<string, unknown>): LspFi
         containment.push(edge);
         continue;
       }
-      if (edge.line === undefined || edge.column === undefined) continue;
+      if (edge.provenance === 'heuristic' || edge.line === undefined || edge.column === undefined) continue;
       const target = cg.getNode(edge.target);
       if (target) occurrences.push({ edge, source, target });
     }
@@ -273,9 +276,11 @@ function lspFileContextOp(cg: CodeGraph, params: Record<string, unknown>): LspFi
   return { ok: true, snapshot: snapshot.snapshot, nodes, occurrences, containment };
 }
 
-function readTrustedSnapshot(
+/** @internal Exported only for deterministic filesystem-race regression coverage. */
+export function readTrustedSnapshot(
   cg: CodeGraph,
   requested: string,
+  afterRead: () => void = () => undefined,
 ): { ok: true; snapshot: LspSourceSnapshot } | { ok: false; reason: LspSourceErrorReason } {
   if (!requested || path.isAbsolute(requested)) return { ok: false, reason: 'outside_repository' };
 
@@ -302,7 +307,11 @@ function readTrustedSnapshot(
 
   let fd: number | null = null;
   try {
-    fd = fs.openSync(candidateReal, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    const nonblocking = process.platform === 'win32' ? 0 : (fs.constants.O_NONBLOCK ?? 0);
+    fd = fs.openSync(
+      candidateReal,
+      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | nonblocking,
+    );
     const before = fs.fstatSync(fd);
     if (!before.isFile()) return { ok: false, reason: 'not_regular' };
     if (before.size > LSP_SOURCE_BYTE_CAP) return { ok: false, reason: 'too_large' };
@@ -316,14 +325,26 @@ function readTrustedSnapshot(
       if (bytesRead > LSP_SOURCE_BYTE_CAP) return { ok: false, reason: 'too_large' };
     }
     const bytes = buffer.subarray(0, bytesRead);
-    const after = fs.fstatSync(fd);
-    const finalReal = fs.realpathSync(candidate);
-    const finalRelative = path.relative(rootReal, finalReal);
-    const finalIndexed = cg.getFile(filePath);
+    let after: fs.Stats;
+    let finalReal: string;
+    let finalPath: fs.Stats;
+    let finalRelative: string;
+    let finalIndexed: ReturnType<CodeGraph['getFile']>;
+    try {
+      afterRead();
+      after = fs.fstatSync(fd);
+      finalReal = fs.realpathSync(candidate);
+      finalPath = fs.statSync(finalReal);
+      finalRelative = path.relative(rootReal, finalReal);
+      finalIndexed = cg.getFile(filePath);
+    } catch {
+      return { ok: false, reason: 'stale' };
+    }
     if (
       finalReal !== candidateReal ||
       finalRelative === '..' || finalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(finalRelative) ||
       before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      after.dev !== finalPath.dev || after.ino !== finalPath.ino || !finalPath.isFile() ||
       after.size !== bytesRead ||
       !finalIndexed || finalIndexed.contentHash !== indexed.contentHash ||
       finalIndexed.indexedAt !== indexed.indexedAt || finalIndexed.size !== indexed.size
@@ -331,10 +352,10 @@ function readTrustedSnapshot(
       return { ok: false, reason: 'stale' };
     }
 
-    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
-    if (digest !== indexed.contentHash) return { ok: false, reason: 'stale' };
     const text = bytes.toString('utf8');
     if (!Buffer.from(text, 'utf8').equals(bytes)) return { ok: false, reason: 'unreadable' };
+    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+    if (digest !== indexed.contentHash) return { ok: false, reason: 'stale' };
     const snapshotToken = crypto
       .createHash('sha256')
       .update(`${indexed.contentHash}\0${indexed.indexedAt}\0${indexed.size}`)
