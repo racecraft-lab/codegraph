@@ -152,6 +152,7 @@ export class LspFacade {
       && isRecord(params.context)
       && params.context.includeDeclaration === true;
     const incoming = await this.reader.incoming(selected.node.id);
+    if ('ok' in incoming) throw sourceError(incoming.reason);
     const locations: LspLocation[] = [];
     const contexts = new Map<string, Extract<LspFileContextRead, { ok: true }>>();
     for (const occurrence of incoming.occurrences) {

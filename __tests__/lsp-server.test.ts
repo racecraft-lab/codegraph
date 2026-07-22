@@ -84,6 +84,23 @@ describe('repository-bound LSP facade', () => {
     });
     expect(reads).toBe(0);
   });
+
+  it('maps bounded incoming-read failures to closed source errors', async () => {
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async incoming() { return { ok: false, reason: 'too_large' }; },
+    };
+    const facade = new LspFacade(reader);
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    await facade.handle(request(1, 'initialize', {}));
+    expect(await facade.handle(request(2, 'textDocument/references', positionParams(uri, 1, 2))))
+      .toMatchObject({
+        error: {
+          code: LSP_ERROR_CODE.RequestFailed,
+          data: { reason: 'too_large' },
+        },
+      });
+  });
 });
 
 const alphaNode: Node = {
