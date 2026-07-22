@@ -148,6 +148,16 @@ describe('trusted daemon LSP reads', () => {
       expect(transaction).toHaveBeenCalledOnce();
       expect(await executeReadOp(cg, 'lspFileContext', { filePath: '../outside.ts' }))
         .toEqual({ ok: false, reason: 'outside_repository' });
+      expect(await executeReadOp(cg, 'lspFileContext', { filePath: '../missing.ts' }))
+        .toEqual({ ok: false, reason: 'outside_repository' });
+      if (process.platform !== 'win32') {
+        fs.symlinkSync('../outside.ts', path.join(root, 'escape-existing.ts'));
+        fs.symlinkSync('../missing.ts', path.join(root, 'escape-missing.ts'));
+        expect(await executeReadOp(cg, 'lspFileContext', { filePath: 'escape-existing.ts' }))
+          .toEqual({ ok: false, reason: 'outside_repository' });
+        expect(await executeReadOp(cg, 'lspFileContext', { filePath: 'escape-missing.ts' }))
+          .toEqual({ ok: false, reason: 'outside_repository' });
+      }
 
       fs.writeFileSync(path.join(root, 'sample.ts'), 'export function alpha() { return 2; }\n');
       expect(await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
@@ -252,6 +262,47 @@ describe('trusted daemon LSP reads', () => {
     }
   });
 
+  it('bypasses stale node-cache entries inside composite SQLite reads', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-cache-'));
+    roots.push(root);
+    fs.writeFileSync(
+      path.join(root, 'sample.ts'),
+      'export function alpha() { return beta(); }\nexport function beta() { return 1; }\n',
+    );
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    let writer: CodeGraph | undefined;
+    try {
+      await cg.indexAll();
+      const nodes = cg.getNodesInFile('sample.ts');
+      const alpha = nodes.find((node) => node.name === 'alpha')!;
+      const beta = nodes.find((node) => node.name === 'beta')!;
+      const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+      queries.insertEdge({
+        source: alpha.id,
+        target: beta.id,
+        kind: 'calls',
+        line: 1,
+        column: 33,
+        provenance: 'lsp',
+      });
+      expect(cg.getNode(beta.id)?.docstring).toBeUndefined();
+
+      writer = CodeGraph.openSync(root);
+      const writerQueries = (writer as unknown as { queries: QueryBuilder }).queries;
+      writerQueries.updateNode({ ...beta, docstring: 'fresh writer value' });
+
+      const context = await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' });
+      expect(context.ok).toBe(true);
+      if (context.ok) {
+        const occurrence = context.occurrences.find((entry) => entry.target.id === beta.id);
+        expect(occurrence?.target.docstring).toBe('fresh writer value');
+      }
+    } finally {
+      writer?.close();
+      cg.close();
+    }
+  });
+
   it('bounds workspace and incoming read materialization at the daemon boundary', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-bounds-'));
     roots.push(root);
@@ -296,10 +347,39 @@ describe('trusted daemon LSP reads', () => {
         expect(incoming.occurrences.at(-1)?.edge.line).toBe(501);
       }
 
-      queries.insertNodes([{
+      const tied = Array.from({ length: 600 }, (_value, index): Node => ({
+        ...alpha,
+        id: `tied-workspace-${index}`,
+        name: 'tiedWorkspaceTarget',
+        qualifiedName: `tied::${String(599 - index).padStart(3, '0')}`,
+        startLine: index + 1_000,
+        endLine: index + 1_000,
+      }));
+      queries.insertNodes(tied);
+      const tiedWorkspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'tiedWorkspaceTarget',
+      }) as Node[];
+      expect(tiedWorkspace).toHaveLength(500);
+      expect(tiedWorkspace.map((node) => node.qualifiedName)).toEqual(
+        tied.map((node) => node.qualifiedName).sort().slice(0, 500),
+      );
+
+      queries.updateNode({
+        ...alpha,
+        docstring: 'x'.repeat(16 * 1024),
+      });
+      const materialization = vi.spyOn(cg, 'getLspNodesByIds');
+      await expect(executeReadOp(cg, 'lspIncoming', { id: alpha.id }))
+        .resolves.toEqual({ ok: false, reason: 'too_large' });
+      await expect(executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
+        .resolves.toEqual({ ok: false, reason: 'too_large' });
+      expect(materialization).not.toHaveBeenCalled();
+      materialization.mockRestore();
+
+      queries.updateNode({
         ...alpha,
         docstring: 'x'.repeat(7 * 1024 * 1024),
-      }]);
+      });
       await expect(executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
         .resolves.toEqual({ ok: false, reason: 'too_large' });
 

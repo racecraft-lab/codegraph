@@ -103,6 +103,38 @@ interface EdgeRow {
   provenance: string | null;
 }
 
+interface LspNodeSummaryRow {
+  id: string;
+  file_path: string;
+  max_json_bytes: number;
+}
+
+/** Small, cache-independent metadata used to budget LSP responses before materializing nodes. */
+export interface LspNodeSummary {
+  id: string;
+  filePath: string;
+  maxJsonBytes: number;
+}
+
+// Conservative upper bound for one Node's JSON representation. Text can expand
+// by at most 6x when JSON-escaped (for example, a control byte becomes \u00xx).
+const LSP_NODE_MAX_JSON_BYTES_SQL = `
+  512 + 6 * (
+    length(CAST(id AS BLOB))
+    + length(CAST(kind AS BLOB))
+    + length(CAST(name AS BLOB))
+    + length(CAST(qualified_name AS BLOB))
+    + length(CAST(file_path AS BLOB))
+    + length(CAST(language AS BLOB))
+    + COALESCE(length(CAST(docstring AS BLOB)), 0)
+    + COALESCE(length(CAST(signature AS BLOB)), 0)
+    + COALESCE(length(CAST(visibility AS BLOB)), 0)
+    + COALESCE(length(CAST(decorators AS BLOB)), 0)
+    + COALESCE(length(CAST(type_parameters AS BLOB)), 0)
+    + COALESCE(length(CAST(return_type AS BLOB)), 0)
+  )
+`;
+
 interface FileRow {
   path: string;
   content_hash: string;
@@ -259,6 +291,24 @@ function rowToNode(row: NodeRow): Node {
     returnType: row.return_type ?? undefined,
     updatedAt: row.updated_at,
   };
+}
+
+function rowToLspNodeSummary(row: LspNodeSummaryRow): LspNodeSummary {
+  return {
+    id: row.id,
+    filePath: row.file_path,
+    maxJsonBytes: Number(row.max_json_bytes),
+  };
+}
+
+function compareSearchTie(left: Node, right: Node): number {
+  return (left.qualifiedName < right.qualifiedName ? -1 : left.qualifiedName > right.qualifiedName ? 1 : 0)
+    || (left.filePath < right.filePath ? -1 : left.filePath > right.filePath ? 1 : 0)
+    || left.startLine - right.startLine
+    || left.startColumn - right.startColumn
+    || left.endLine - right.endLine
+    || left.endColumn - right.endColumn
+    || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
 }
 
 /**
@@ -954,6 +1004,46 @@ export class QueryBuilder {
     return out;
   }
 
+  /** Cache-bypassing batch lookup for reads that must remain on one SQLite snapshot. */
+  getLspNodesByIdsUncached(ids: readonly string[]): Map<string, Node> {
+    const out = new Map<string, Node>();
+    const uniqueIds = [...new Set(ids)];
+    for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(`SELECT * FROM nodes WHERE id IN (${placeholders})`)
+        .all(...chunk) as NodeRow[];
+      for (const row of rows) {
+        const node = rowToNode(row);
+        out.set(node.id, node);
+      }
+    }
+    return out;
+  }
+
+  /** Cache-independent size/path summaries used before structured LSP node materialization. */
+  getLspNodeSummariesByIds(ids: readonly string[]): Map<string, LspNodeSummary> {
+    const out = new Map<string, LspNodeSummary>();
+    const uniqueIds = [...new Set(ids)];
+    for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db.prepare(`
+        SELECT id, file_path, ${LSP_NODE_MAX_JSON_BYTES_SQL} AS max_json_bytes
+        FROM nodes
+        WHERE id IN (${placeholders})
+      `).all(...chunk) as LspNodeSummaryRow[];
+      for (const row of rows) {
+        const summary = rowToLspNodeSummary(row);
+        out.set(summary.id, summary);
+      }
+    }
+    return out;
+  }
+
   private getExistingNodeIds(ids: readonly string[]): Set<string> {
     const out = new Set<string>();
     if (ids.length === 0) return out;
@@ -1212,10 +1302,11 @@ export class QueryBuilder {
     return rows.map(rowToNode);
   }
 
-  /** Bounded deterministic nodes for the foundational LSP file-context read. */
-  getBoundedLspFileNodes(filePath: string, limit: number): Node[] {
+  /** Bounded deterministic node summaries for the foundational LSP file-context read. */
+  getBoundedLspFileNodeSummaries(filePath: string, limit: number): LspNodeSummary[] {
     const rows = this.db.prepare(`
-      SELECT * FROM nodes
+      SELECT id, file_path, ${LSP_NODE_MAX_JSON_BYTES_SQL} AS max_json_bytes
+      FROM nodes
       WHERE file_path = ?
       ORDER BY start_line,
         start_column,
@@ -1224,14 +1315,15 @@ export class QueryBuilder {
         qualified_name COLLATE BINARY,
         id COLLATE BINARY
       LIMIT ?
-    `).all(filePath, Math.max(0, Math.trunc(limit))) as NodeRow[];
-    return rows.map(rowToNode);
+    `).all(filePath, Math.max(0, Math.trunc(limit))) as LspNodeSummaryRow[];
+    return rows.map(rowToLspNodeSummary);
   }
 
   /** Bounded eligible edges sourced from one file for LSP context reads. */
   getBoundedLspFileEdges(filePath: string, limit: number): Edge[] {
     const rows = this.db.prepare(`
-      SELECT e.*
+      SELECT e.id, e.source, e.target, e.kind, NULL AS metadata,
+        e.line, e.col, e.provenance
       FROM nodes source_node
       JOIN edges e INDEXED BY idx_edges_source_kind ON e.source = source_node.id
       WHERE source_node.file_path = ?
@@ -1435,7 +1527,10 @@ export class QueryBuilder {
           sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
           params.push(...languages);
         }
-        sql += ' LIMIT 20';
+        sql += ` ORDER BY qualified_name COLLATE BINARY,
+          file_path COLLATE BINARY,
+          start_line, start_column, end_line, end_column,
+          id COLLATE BINARY LIMIT 20`;
         const rows = this.db.prepare(sql).all(...params) as NodeRow[];
         for (const row of rows) {
           if (!existingIds.has(row.id)) {
@@ -1456,7 +1551,7 @@ export class QueryBuilder {
           + scorePathRelevance(r.node.filePath, scoringQuery, this.projectNameTokens)
           + nameMatchBonus(r.node.name, scoringQuery),
       }));
-      results.sort((a, b) => b.score - a.score);
+      results.sort((a, b) => b.score - a.score || compareSearchTie(a.node, b.node));
       // Trim to requested limit after rescoring
       if (results.length > limit) {
         results = results.slice(0, limit);
@@ -1507,7 +1602,11 @@ export class QueryBuilder {
       sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
       params.push(...languages);
     }
-    sql += ' ORDER BY name LIMIT ?';
+    sql += ` ORDER BY name COLLATE BINARY,
+      qualified_name COLLATE BINARY,
+      file_path COLLATE BINARY,
+      start_line, start_column, end_line, end_column,
+      id COLLATE BINARY LIMIT ?`;
     params.push(limit);
     const rows = this.db.prepare(sql).all(...params) as NodeRow[];
     return rows.map((row) => ({ node: rowToNode(row), score: 1 }));
@@ -1539,7 +1638,7 @@ export class QueryBuilder {
       const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
       if (dist <= maxDist) candidates.push({ name, dist });
     }
-    candidates.sort((a, b) => a.dist - b.dist);
+    candidates.sort((a, b) => a.dist - b.dist || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
     // Cap the per-name follow-up queries. Each survivor triggers a
     // separate `SELECT * FROM nodes WHERE name = ?`; without this cap
@@ -1563,7 +1662,10 @@ export class QueryBuilder {
         sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
         params.push(...languages);
       }
-      sql += ' LIMIT 5';
+      sql += ` ORDER BY qualified_name COLLATE BINARY,
+        file_path COLLATE BINARY,
+        start_line, start_column, end_line, end_column,
+        id COLLATE BINARY LIMIT 5`;
       const rows = this.db.prepare(sql).all(...params) as NodeRow[];
       for (const row of rows) {
         if (seen.has(row.id)) continue;
@@ -1630,7 +1732,11 @@ export class QueryBuilder {
       params.push(...languages);
     }
 
-    sql += ' ORDER BY score LIMIT ? OFFSET ?';
+    sql += ` ORDER BY score,
+      nodes.qualified_name COLLATE BINARY,
+      nodes.file_path COLLATE BINARY,
+      nodes.start_line, nodes.start_column, nodes.end_line, nodes.end_column,
+      nodes.id COLLATE BINARY LIMIT ? OFFSET ?`;
     params.push(ftsLimit, offset);
 
     try {
@@ -1694,7 +1800,11 @@ export class QueryBuilder {
       params.push(...languages);
     }
 
-    sql += ' ORDER BY score DESC, length(name) ASC LIMIT ? OFFSET ?';
+    sql += ` ORDER BY score DESC, length(name) ASC,
+      qualified_name COLLATE BINARY,
+      file_path COLLATE BINARY,
+      start_line, start_column, end_line, end_column,
+      id COLLATE BINARY LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
     const rows = this.db.prepare(sql).all(...params) as (NodeRow & { score: number })[];
@@ -2276,7 +2386,8 @@ export class QueryBuilder {
   /** Bounded exact incoming-edge candidates for the foundational LSP read. */
   getBoundedLspIncomingEdges(targetId: string, limit: number): Edge[] {
     const rows = this.db.prepare(`
-      SELECT e.*
+      SELECT e.id, e.source, e.target, e.kind, NULL AS metadata,
+        e.line, e.col, e.provenance
       FROM edges e INDEXED BY idx_edges_target_kind
       WHERE e.target = ?
         AND e.kind <> 'contains'

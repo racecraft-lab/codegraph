@@ -27,7 +27,7 @@ import {
 } from './types';
 import { DatabaseConnection, getDatabasePath, removeDatabaseFiles } from './db';
 import { WalCheckpointValve } from './db/wal-valve';
-import { QueryBuilder } from './db/queries';
+import { QueryBuilder, type LspNodeSummary } from './db/queries';
 import {
   isInitialized,
   createDirectory,
@@ -2204,9 +2204,9 @@ export class CodeGraph {
     return this.queries.getBoundedLspWorkspaceNodes(limit);
   }
 
-  /** Internal bounded nodes for the foundational LSP file-context read. */
-  getBoundedLspFileNodes(filePath: string, limit: number): Node[] {
-    return this.queries.getBoundedLspFileNodes(filePath, limit);
+  /** Internal bounded node summaries for the foundational LSP file-context read. */
+  getBoundedLspFileNodeSummaries(filePath: string, limit: number): LspNodeSummary[] {
+    return this.queries.getBoundedLspFileNodeSummaries(filePath, limit);
   }
 
   /** Internal bounded edges for the foundational LSP file-context read. */
@@ -2219,9 +2219,14 @@ export class CodeGraph {
     return this.db.transaction(read);
   }
 
-  /** Internal bounded batch lookup used by structured LSP reads. */
+  /** Cache-bypassing batch lookup used by snapshot-consistent structured LSP reads. */
   getLspNodesByIds(nodeIds: readonly string[]): Map<string, Node> {
-    return this.queries.getNodesByIds(nodeIds);
+    return this.queries.getLspNodesByIdsUncached(nodeIds);
+  }
+
+  /** Cache-independent response-budget metadata for structured LSP reads. */
+  getLspNodeSummariesByIds(nodeIds: readonly string[]): Map<string, LspNodeSummary> {
+    return this.queries.getLspNodeSummariesByIds(nodeIds);
   }
 
   /**
