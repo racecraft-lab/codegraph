@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -140,10 +140,12 @@ describe('trusted daemon LSP reads', () => {
     const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
     try {
       await cg.indexAll();
+      const transaction = vi.spyOn(cg, 'withLspReadTransaction');
       const current = await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' });
       expect(current).toMatchObject({ ok: true, snapshot: { filePath: 'sample.ts', languageId: 'typescript' } });
       expect((current as any).snapshot.text).toContain('function alpha');
       expect((current as any).nodes.some((node: Node) => node.name === 'alpha')).toBe(true);
+      expect(transaction).toHaveBeenCalledOnce();
       expect(await executeReadOp(cg, 'lspFileContext', { filePath: '../outside.ts' }))
         .toEqual({ ok: false, reason: 'outside_repository' });
 
@@ -275,12 +277,54 @@ describe('trusted daemon LSP reads', () => {
         line: index + 2,
         column: 0,
         provenance: 'lsp' as const,
-      })));
+      })).concat({
+        source: sources[0]!.id,
+        target: alpha.id,
+        kind: 'calls' as const,
+        line: 2,
+        column: 0,
+        provenance: 'lsp' as const,
+      }));
 
       const workspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {}) as Node[];
       const incoming = await executeReadOp(cg, 'lspIncoming', { id: alpha.id }) as LspIncomingRead;
       expect(workspace).toHaveLength(500);
-      expect(incoming.occurrences).toHaveLength(500);
+      expect('occurrences' in incoming).toBe(true);
+      if ('occurrences' in incoming) {
+        expect(incoming.occurrences).toHaveLength(500);
+        expect(incoming.occurrences[0]?.edge.line).toBe(2);
+        expect(incoming.occurrences.at(-1)?.edge.line).toBe(501);
+      }
+
+      queries.insertNodes([{
+        ...alpha,
+        docstring: 'x'.repeat(7 * 1024 * 1024),
+      }]);
+      await expect(executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
+        .resolves.toEqual({ ok: false, reason: 'too_large' });
+
+      queries.insertEdges(Array.from({ length: 5_001 }, (_value, index) => ({
+        source: alpha.id,
+        target: alpha.id,
+        kind: 'references' as const,
+        line: index + 10_000,
+        column: 0,
+        provenance: 'lsp' as const,
+      })));
+      await expect(executeReadOp(cg, 'lspIncoming', { id: alpha.id }))
+        .resolves.toEqual({ ok: false, reason: 'too_large' });
+
+      queries.insertNodes(Array.from({ length: 5_001 }, (_value, index) => ({
+        ...alpha,
+        id: `overflow-${index}`,
+        name: `overflow${index}`,
+        qualifiedName: `overflow${index}`,
+        docstring: undefined,
+        startLine: index + 20_000,
+        endLine: index + 20_000,
+      })));
+      await expect(executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
+        .resolves.toEqual({ ok: false, reason: 'too_large' });
     } finally {
       cg.close();
     }

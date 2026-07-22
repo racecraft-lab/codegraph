@@ -2204,6 +2204,26 @@ export class CodeGraph {
     return this.queries.getBoundedLspWorkspaceNodes(limit);
   }
 
+  /** Internal bounded nodes for the foundational LSP file-context read. */
+  getBoundedLspFileNodes(filePath: string, limit: number): Node[] {
+    return this.queries.getBoundedLspFileNodes(filePath, limit);
+  }
+
+  /** Internal bounded edges for the foundational LSP file-context read. */
+  getBoundedLspFileEdges(filePath: string, limit: number): Edge[] {
+    return this.queries.getBoundedLspFileEdges(filePath, limit);
+  }
+
+  /** Keep one composite structured LSP read on a single SQLite snapshot. */
+  withLspReadTransaction<T>(read: () => T): T {
+    return this.db.transaction(read);
+  }
+
+  /** Internal bounded batch lookup used by structured LSP reads. */
+  getLspNodesByIds(nodeIds: readonly string[]): Map<string, Node> {
+    return this.queries.getNodesByIds(nodeIds);
+  }
+
   /**
    * Get all nodes of a specific kind
    */

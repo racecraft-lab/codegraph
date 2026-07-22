@@ -1212,6 +1212,46 @@ export class QueryBuilder {
     return rows.map(rowToNode);
   }
 
+  /** Bounded deterministic nodes for the foundational LSP file-context read. */
+  getBoundedLspFileNodes(filePath: string, limit: number): Node[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM nodes
+      WHERE file_path = ?
+      ORDER BY start_line,
+        start_column,
+        end_line,
+        end_column,
+        qualified_name COLLATE BINARY,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, Math.max(0, Math.trunc(limit))) as NodeRow[];
+    return rows.map(rowToNode);
+  }
+
+  /** Bounded eligible edges sourced from one file for LSP context reads. */
+  getBoundedLspFileEdges(filePath: string, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.*
+      FROM nodes source_node
+      JOIN edges e INDEXED BY idx_edges_source_kind ON e.source = source_node.id
+      WHERE source_node.file_path = ?
+        AND ${activeEdgePredicate('e')}
+        AND (
+          e.kind = 'contains'
+          OR (
+            (e.provenance IS NULL OR e.provenance <> 'heuristic')
+            AND e.line IS NOT NULL
+            AND e.col IS NOT NULL
+          )
+        )
+      ORDER BY source_node.id COLLATE BINARY,
+        e.kind COLLATE BINARY,
+        e.id
+      LIMIT ?
+    `).all(filePath, Math.max(0, Math.trunc(limit))) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
   /**
    * Stream nodes of one language whose `decorators` JSON array contains
    * `decorator`. The LIKE on the JSON text is a cheap index-free pre-filter

@@ -18,8 +18,10 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type CodeGraph from '../index';
-import type { Node, Edge, SearchMode } from '../types';
+import type { Node, Edge, FileRecord, SearchMode } from '../types';
+import { normalizeLspUri } from '../lsp/protocol';
 import { resolveAutoMode } from '../search/hybrid';
 
 /** An unrecognized `op` — surfaced as a JSON-RPC InvalidParams by the session. */
@@ -74,15 +76,17 @@ export type LspFileContextRead =
   | { ok: true; snapshot: LspSourceSnapshot; nodes: Node[]; occurrences: LspLocatedEdge[]; containment: Edge[] }
   | { ok: false; reason: LspSourceErrorReason };
 
-export interface LspIncomingRead {
-  target: Node | null;
-  occurrences: LspLocatedEdge[];
-}
+export type LspIncomingRead =
+  | { target: Node | null; occurrences: LspLocatedEdge[] }
+  | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large' | 'stale'> };
 
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
 const LSP_WORKSPACE_CANDIDATE_CAP = 500;
 const LSP_REFERENCE_CAP = 500;
 const LSP_REFERENCE_SCAN_CAP = 5_000;
+const LSP_FILE_NODE_CAP = 5_000;
+const LSP_FILE_EDGE_CAP = 10_000;
+const LSP_DAEMON_RESPONSE_BYTE_CAP = 7 * 1024 * 1024;
 
 /**
  * Bounded scan ceiling used to compute a search `total` (FR-006). Matches the
@@ -245,47 +249,101 @@ function lspWorkspaceSymbolsOp(cg: CodeGraph, params: Record<string, unknown>): 
 }
 
 function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncomingRead {
-  const target = cg.getNode(idParam(params));
-  if (!target) return { target: null, occurrences: [] };
-  const occurrences: LspLocatedEdge[] = [];
-  const seen = new Set<string>();
-  const sources = new Map<string, Node | null>();
-  const edges = cg.getBoundedLspIncomingEdges(target.id, LSP_REFERENCE_SCAN_CAP);
-  for (const edge of edges) {
-    let source = sources.get(edge.source);
-    if (source === undefined) {
-      source = cg.getNode(edge.source);
-      sources.set(edge.source, source);
+  return cg.withLspReadTransaction(() => {
+    const target = cg.getNode(idParam(params));
+    if (!target) return { target: null, occurrences: [] };
+    const edges = cg.getBoundedLspIncomingEdges(target.id, LSP_REFERENCE_SCAN_CAP + 1);
+    if (edges.length > LSP_REFERENCE_SCAN_CAP) return { ok: false, reason: 'too_large' };
+    const sourceNodes = cg.getLspNodesByIds(edges.map((edge) => edge.source));
+    const occurrences: LspLocatedEdge[] = [];
+    for (const edge of edges) {
+      const source = sourceNodes.get(edge.source);
+      if (!source || edge.line === undefined || edge.column === undefined) continue;
+      occurrences.push({ edge, source, target });
     }
-    if (!source || edge.line === undefined || edge.column === undefined) continue;
-    const key = `${source.filePath}\0${edge.line}\0${edge.column}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    occurrences.push({ edge, source, target });
-    if (occurrences.length >= LSP_REFERENCE_CAP) break;
-  }
-  return { target, occurrences };
+    occurrences.sort((left, right) => compareLspOccurrences(cg.getProjectRoot(), left, right));
+    const unique: LspLocatedEdge[] = [];
+    const seen = new Set<string>();
+    for (const occurrence of occurrences) {
+      const key = lspOccurrenceKey(cg.getProjectRoot(), occurrence);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(occurrence);
+      if (unique.length >= LSP_REFERENCE_CAP) break;
+    }
+    const result: LspIncomingRead = { target, occurrences: unique };
+    return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
+  });
 }
 
 function lspFileContextOp(cg: CodeGraph, params: Record<string, unknown>): LspFileContextRead {
-  const requested = typeof params.filePath === 'string' ? params.filePath : '';
-  const snapshot = readTrustedSnapshot(cg, requested);
-  if (!snapshot.ok) return snapshot;
-  const nodes = cg.getNodesInFile(snapshot.snapshot.filePath);
-  const occurrences: LspLocatedEdge[] = [];
-  const containment: Edge[] = [];
-  for (const source of nodes) {
-    for (const edge of cg.getOutgoingEdges(source.id)) {
+  return cg.withLspReadTransaction(() => {
+    const requested = typeof params.filePath === 'string' ? params.filePath : '';
+    const snapshot = readTrustedSnapshot(cg, requested);
+    if (!snapshot.ok) return snapshot;
+    const nodes = cg.getBoundedLspFileNodes(snapshot.snapshot.filePath, LSP_FILE_NODE_CAP + 1);
+    if (nodes.length > LSP_FILE_NODE_CAP) return { ok: false, reason: 'too_large' };
+    const edges = cg.getBoundedLspFileEdges(snapshot.snapshot.filePath, LSP_FILE_EDGE_CAP + 1);
+    if (edges.length > LSP_FILE_EDGE_CAP) return { ok: false, reason: 'too_large' };
+    const sourceNodes = new Map(nodes.map((node) => [node.id, node]));
+    const targetNodes = cg.getLspNodesByIds(
+      edges.filter((edge) => edge.kind !== 'contains').map((edge) => edge.target),
+    );
+    const occurrences: LspLocatedEdge[] = [];
+    const containment: Edge[] = [];
+    for (const edge of edges) {
       if (edge.kind === 'contains') {
         containment.push(edge);
         continue;
       }
-      if (edge.provenance === 'heuristic' || edge.line === undefined || edge.column === undefined) continue;
-      const target = cg.getNode(edge.target);
-      if (target) occurrences.push({ edge, source, target });
+      const source = sourceNodes.get(edge.source);
+      const target = targetNodes.get(edge.target);
+      if (!source || !target) return { ok: false, reason: 'stale' };
+      occurrences.push({ edge, source, target });
     }
-  }
-  return { ok: true, snapshot: snapshot.snapshot, nodes, occurrences, containment };
+    const finalIndexed = cg.getFile(snapshot.snapshot.filePath);
+    if (!finalIndexed || indexedSnapshotToken(finalIndexed) !== snapshot.snapshot.snapshotToken) {
+      return { ok: false, reason: 'stale' };
+    }
+    const result: LspFileContextRead = {
+      ok: true,
+      snapshot: snapshot.snapshot,
+      nodes,
+      occurrences,
+      containment,
+    };
+    return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
+  });
+}
+
+function lspOccurrenceKey(root: string, occurrence: LspLocatedEdge): string {
+  const uri = lspOccurrenceUri(root, occurrence);
+  return `${uri}\0${occurrence.edge.line}\0${occurrence.edge.column}`;
+}
+
+function compareLspOccurrences(root: string, left: LspLocatedEdge, right: LspLocatedEdge): number {
+  const leftUri = lspOccurrenceUri(root, left);
+  const rightUri = lspOccurrenceUri(root, right);
+  return (leftUri < rightUri ? -1 : leftUri > rightUri ? 1 : 0)
+    || left.edge.line! - right.edge.line!
+    || left.edge.column! - right.edge.column!
+    || (left.source.id < right.source.id ? -1 : left.source.id > right.source.id ? 1 : 0)
+    || (left.edge.kind < right.edge.kind ? -1 : left.edge.kind > right.edge.kind ? 1 : 0);
+}
+
+function lspOccurrenceUri(root: string, occurrence: LspLocatedEdge): string {
+  return normalizeLspUri(pathToFileURL(path.resolve(root, occurrence.source.filePath)).href);
+}
+
+function fitsLspByteBudget(value: unknown): boolean {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8') <= LSP_DAEMON_RESPONSE_BYTE_CAP;
+}
+
+function indexedSnapshotToken(file: FileRecord): string {
+  return crypto
+    .createHash('sha256')
+    .update(`${file.contentHash}\0${file.indexedAt}\0${file.size}`)
+    .digest('hex');
 }
 
 /** @internal Exported only for deterministic filesystem-race regression coverage. */
@@ -401,10 +459,7 @@ export function readTrustedSnapshot(
     if (!Buffer.from(text, 'utf8').equals(bytes)) return { ok: false, reason: 'unreadable' };
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     if (digest !== indexed.contentHash) return { ok: false, reason: 'stale' };
-    const snapshotToken = crypto
-      .createHash('sha256')
-      .update(`${indexed.contentHash}\0${indexed.indexedAt}\0${indexed.size}`)
-      .digest('hex');
+    const snapshotToken = indexedSnapshotToken(indexed);
     return {
       ok: true,
       snapshot: {
