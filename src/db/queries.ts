@@ -116,6 +116,11 @@ export interface LspNodeSummary {
   maxJsonBytes: number;
 }
 
+export interface LspWorkspaceSymbolCandidate {
+  node: Node;
+  score: number;
+}
+
 // Conservative upper bound for one Node's JSON representation. Text can expand
 // by at most 6x when JSON-escaped (for example, a control byte becomes \u00xx).
 const LSP_NODE_MAX_JSON_BYTES_SQL = `
@@ -133,6 +138,27 @@ const LSP_NODE_MAX_JSON_BYTES_SQL = `
     + COALESCE(length(CAST(type_parameters AS BLOB)), 0)
     + COALESCE(length(CAST(return_type AS BLOB)), 0)
   )
+`;
+
+const LSP_WORKSPACE_NODE_BYTE_CAP = 7 * 1024 * 1024;
+const LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL = `
+  384 + 6 * (
+    length(CAST(nodes.id AS BLOB))
+    + length(CAST(nodes.kind AS BLOB))
+    + length(CAST(nodes.name AS BLOB))
+    + length(CAST(nodes.qualified_name AS BLOB))
+    + length(CAST(nodes.file_path AS BLOB))
+    + length(CAST(nodes.language AS BLOB))
+    + COALESCE(length(CAST(nodes.visibility AS BLOB)), 0)
+  )
+`;
+
+const LSP_WORKSPACE_NODE_PROJECTION_SQL = `
+  nodes.id, nodes.kind, nodes.name, nodes.qualified_name,
+  nodes.file_path, nodes.language,
+  nodes.start_line, nodes.end_line, nodes.start_column, nodes.end_column,
+  nodes.visibility, nodes.is_exported, nodes.is_async, nodes.is_static,
+  nodes.is_abstract, nodes.updated_at
 `;
 
 interface FileRow {
@@ -301,14 +327,36 @@ function rowToLspNodeSummary(row: LspNodeSummaryRow): LspNodeSummary {
   };
 }
 
-function compareSearchTie(left: Node, right: Node): number {
-  return (left.qualifiedName < right.qualifiedName ? -1 : left.qualifiedName > right.qualifiedName ? 1 : 0)
-    || (left.filePath < right.filePath ? -1 : left.filePath > right.filePath ? 1 : 0)
-    || left.startLine - right.startLine
-    || left.startColumn - right.startColumn
-    || left.endLine - right.endLine
-    || left.endColumn - right.endColumn
-    || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+function rowToLspWorkspaceNode(row: NodeRow): Node {
+  return {
+    id: row.id,
+    kind: row.kind as NodeKind,
+    name: row.name,
+    qualifiedName: row.qualified_name,
+    filePath: row.file_path,
+    language: row.language as Language,
+    startLine: row.start_line,
+    endLine: row.end_line,
+    startColumn: row.start_column,
+    endColumn: row.end_column,
+    visibility: row.visibility as Node['visibility'],
+    isExported: row.is_exported === 1,
+    isAsync: row.is_async === 1,
+    isStatic: row.is_static === 1,
+    isAbstract: row.is_abstract === 1,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toFtsPrefixQuery(query: string): string {
+  return query
+    .replace(/::/g, ' ')
+    .replace(/['"*():^]/g, '')
+    .split(/\s+/)
+    .filter((term) => term.length > 0)
+    .filter((term) => !/^(AND|OR|NOT|NEAR)$/i.test(term))
+    .map((term) => `"${term}"*`)
+    .join(' OR ');
 }
 
 /**
@@ -1286,22 +1334,6 @@ export class QueryBuilder {
     return rows.map(rowToNode);
   }
 
-  /** Bounded deterministic candidates for the foundational LSP workspace read. */
-  getBoundedLspWorkspaceNodes(limit: number): Node[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM nodes
-      ORDER BY qualified_name COLLATE BINARY,
-        file_path COLLATE BINARY,
-        start_line,
-        start_column,
-        end_line,
-        end_column,
-        id COLLATE BINARY
-      LIMIT ?
-    `).all(Math.max(0, Math.trunc(limit))) as NodeRow[];
-    return rows.map(rowToNode);
-  }
-
   /** Bounded deterministic node summaries for the foundational LSP file-context read. */
   getBoundedLspFileNodeSummaries(filePath: string, limit: number): LspNodeSummary[] {
     const rows = this.db.prepare(`
@@ -1451,6 +1483,158 @@ export class QueryBuilder {
   }
 
   /**
+   * Stream lightweight workspace-symbol candidates without materializing
+   * documentation/type payloads or truncating score ties before the LSP layer
+   * applies its normalized-URI ordering.
+   */
+  *iterateLspWorkspaceSymbolCandidates(query: string): IterableIterator<LspWorkspaceSymbolCandidate> {
+    const parsed = parseQuery(query);
+    const text = parsed.text;
+    const kinds = parsed.kinds.length > 0 ? parsed.kinds : undefined;
+    const languages = parsed.languages.length > 0 ? parsed.languages : undefined;
+    const pathFilters = parsed.pathFilters.map((value) => value.toLowerCase());
+    const nameFilters = parsed.nameFilters.map((value) => value.toLowerCase());
+    const scoringQuery = text || query;
+
+    const appendTypeFilters = (sql: string, params: Array<string | number>): string => {
+      if (kinds && kinds.length > 0) {
+        sql += ` AND nodes.kind IN (${kinds.map(() => '?').join(',')})`;
+        params.push(...kinds);
+      }
+      if (languages && languages.length > 0) {
+        sql += ` AND nodes.language IN (${languages.map(() => '?').join(',')})`;
+        params.push(...languages);
+      }
+      return sql;
+    };
+
+    const matchesHardFilters = (node: Node): boolean => {
+      if (pathFilters.length > 0) {
+        const filePath = node.filePath.toLowerCase();
+        if (!pathFilters.some((value) => filePath.includes(value))) return false;
+      }
+      if (nameFilters.length > 0) {
+        const name = node.name.toLowerCase();
+        if (!nameFilters.some((value) => name.includes(value))) return false;
+      }
+      return true;
+    };
+
+    const scored = (node: Node, baseScore: number): LspWorkspaceSymbolCandidate => ({
+      node,
+      score: scoringQuery
+        ? baseScore
+          + kindBonus(node.kind)
+          + scorePathRelevance(node.filePath, scoringQuery, this.projectNameTokens)
+          + nameMatchBonus(node.name, scoringQuery)
+        : baseScore,
+    });
+
+    if (!text) {
+      const params: Array<string | number> = [LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL}
+        FROM nodes
+        WHERE (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      const baseScore = query ? 1 : 0;
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        const node = rowToLspWorkspaceNode(raw as NodeRow);
+        if (matchesHardFilters(node)) yield scored(node, baseScore);
+      }
+      return;
+    }
+
+    const ftsQuery = toFtsPrefixQuery(text);
+    if (ftsQuery) {
+      const params: Array<string | number> = [ftsQuery, LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL},
+          bm25(nodes_fts, 0, 20, 5, 1, 2) AS score
+        FROM nodes_fts
+        JOIN nodes ON nodes_fts.id = nodes.id
+        WHERE nodes_fts MATCH ?
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      let hadRows = false;
+      try {
+        for (const raw of this.db.prepare(sql).iterate(...params)) {
+          hadRows = true;
+          const row = raw as NodeRow & { score: number };
+          const node = rowToLspWorkspaceNode(row);
+          if (matchesHardFilters(node)) yield scored(node, Math.abs(row.score));
+        }
+      } catch {
+        hadRows = false;
+      }
+      if (hadRows) return;
+    }
+
+    if (text.length >= 2) {
+      const exactMatch = text;
+      const startsWith = `${text}%`;
+      const contains = `%${text}%`;
+      const params: Array<string | number> = [
+        exactMatch,
+        startsWith,
+        contains,
+        contains,
+        contains,
+        contains,
+        startsWith,
+        LSP_WORKSPACE_NODE_BYTE_CAP,
+      ];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL},
+          CASE
+            WHEN nodes.name = ? THEN 1.0
+            WHEN nodes.name LIKE ? THEN 0.9
+            WHEN nodes.name LIKE ? THEN 0.8
+            WHEN nodes.qualified_name LIKE ? THEN 0.7
+            ELSE 0.5
+          END AS score
+        FROM nodes
+        WHERE (
+          nodes.name LIKE ? OR
+          nodes.qualified_name LIKE ? OR
+          nodes.name LIKE ?
+        )
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      let hadRows = false;
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        hadRows = true;
+        const row = raw as NodeRow & { score: number };
+        const node = rowToLspWorkspaceNode(row);
+        if (matchesHardFilters(node)) yield scored(node, row.score);
+      }
+      if (hadRows) return;
+    }
+
+    if (text.length < 3) return;
+    const lowered = text.toLowerCase();
+    const maxDist = lowered.length <= 4 ? 1 : 2;
+    const seen = new Set<string>();
+    for (const name of this.iterateNodeNames()) {
+      const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
+      if (dist > maxDist) continue;
+      const params: Array<string | number> = [name, LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL}
+        FROM nodes
+        WHERE nodes.name = ?
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        const node = rowToLspWorkspaceNode(raw as NodeRow);
+        if (seen.has(node.id) || !matchesHardFilters(node)) continue;
+        seen.add(node.id);
+        yield scored(node, 1 / (1 + dist));
+      }
+    }
+  }
+
+  /**
    * Search nodes by name using FTS with fallback to LIKE for better matching
    *
    * Search strategy:
@@ -1527,10 +1711,7 @@ export class QueryBuilder {
           sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
           params.push(...languages);
         }
-        sql += ` ORDER BY qualified_name COLLATE BINARY,
-          file_path COLLATE BINARY,
-          start_line, start_column, end_line, end_column,
-          id COLLATE BINARY LIMIT 20`;
+        sql += ' LIMIT 20';
         const rows = this.db.prepare(sql).all(...params) as NodeRow[];
         for (const row of rows) {
           if (!existingIds.has(row.id)) {
@@ -1551,7 +1732,7 @@ export class QueryBuilder {
           + scorePathRelevance(r.node.filePath, scoringQuery, this.projectNameTokens)
           + nameMatchBonus(r.node.name, scoringQuery),
       }));
-      results.sort((a, b) => b.score - a.score || compareSearchTie(a.node, b.node));
+      results.sort((a, b) => b.score - a.score);
       // Trim to requested limit after rescoring
       if (results.length > limit) {
         results = results.slice(0, limit);
@@ -1602,11 +1783,7 @@ export class QueryBuilder {
       sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
       params.push(...languages);
     }
-    sql += ` ORDER BY name COLLATE BINARY,
-      qualified_name COLLATE BINARY,
-      file_path COLLATE BINARY,
-      start_line, start_column, end_line, end_column,
-      id COLLATE BINARY LIMIT ?`;
+    sql += ' ORDER BY name LIMIT ?';
     params.push(limit);
     const rows = this.db.prepare(sql).all(...params) as NodeRow[];
     return rows.map((row) => ({ node: rowToNode(row), score: 1 }));
@@ -1638,7 +1815,7 @@ export class QueryBuilder {
       const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
       if (dist <= maxDist) candidates.push({ name, dist });
     }
-    candidates.sort((a, b) => a.dist - b.dist || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    candidates.sort((a, b) => a.dist - b.dist);
 
     // Cap the per-name follow-up queries. Each survivor triggers a
     // separate `SELECT * FROM nodes WHERE name = ?`; without this cap
@@ -1662,10 +1839,7 @@ export class QueryBuilder {
         sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
         params.push(...languages);
       }
-      sql += ` ORDER BY qualified_name COLLATE BINARY,
-        file_path COLLATE BINARY,
-        start_line, start_column, end_line, end_column,
-        id COLLATE BINARY LIMIT 5`;
+      sql += ' LIMIT 5';
       const rows = this.db.prepare(sql).all(...params) as NodeRow[];
       for (const row of rows) {
         if (seen.has(row.id)) continue;
@@ -1692,15 +1866,7 @@ export class QueryBuilder {
     // so treat it as whitespace before the strip step. Otherwise queries
     // like `stage_apply::run` collapse to `stage_applyrun` (the colons
     // are stripped without splitting) and find nothing. See #173.
-    const ftsQuery = query
-      .replace(/::/g, ' ') // Rust/C++/Ruby qualifier separator
-      .replace(/['"*():^]/g, '') // Remove FTS5 special chars
-      .split(/\s+/)
-      .filter(term => term.length > 0)
-      // Strip FTS5 boolean operators to prevent query manipulation
-      .filter(term => !/^(AND|OR|NOT|NEAR)$/i.test(term))
-      .map(term => `"${term}"*`) // Prefix match each term
-      .join(' OR ');
+    const ftsQuery = toFtsPrefixQuery(query);
 
     if (!ftsQuery) {
       return [];
@@ -1732,11 +1898,7 @@ export class QueryBuilder {
       params.push(...languages);
     }
 
-    sql += ` ORDER BY score,
-      nodes.qualified_name COLLATE BINARY,
-      nodes.file_path COLLATE BINARY,
-      nodes.start_line, nodes.start_column, nodes.end_line, nodes.end_column,
-      nodes.id COLLATE BINARY LIMIT ? OFFSET ?`;
+    sql += ' ORDER BY score LIMIT ? OFFSET ?';
     params.push(ftsLimit, offset);
 
     try {
@@ -1800,11 +1962,7 @@ export class QueryBuilder {
       params.push(...languages);
     }
 
-    sql += ` ORDER BY score DESC, length(name) ASC,
-      qualified_name COLLATE BINARY,
-      file_path COLLATE BINARY,
-      start_line, start_column, end_line, end_column,
-      id COLLATE BINARY LIMIT ? OFFSET ?`;
+    sql += ' ORDER BY score DESC, length(name) ASC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
     const rows = this.db.prepare(sql).all(...params) as (NodeRow & { score: number })[];

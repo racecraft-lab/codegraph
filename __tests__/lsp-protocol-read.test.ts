@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import CodeGraph from '../src/index';
 import { initGrammars, loadAllGrammars } from '../src/extraction/grammars';
 import { executeReadOp, readTrustedSnapshot, type LspIncomingRead } from '../src/mcp/read-ops';
@@ -14,6 +15,7 @@ import {
   dedupeSortAndCap,
   formatLspDiagnostic,
   makeJsonRpcError,
+  normalizeLspUri,
   parseJsonRpcEnvelope,
   resolveExactUtf16Range,
   sortAndCapLocations,
@@ -303,6 +305,26 @@ describe('trusted daemon LSP reads', () => {
     }
   });
 
+  it('preserves workspace substring and fuzzy search fallbacks with projected nodes', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-workspace-search-'));
+    roots.push(root);
+    fs.writeFileSync(
+      path.join(root, 'sample.ts'),
+      'export function camelCaseNeedle() {}\nexport function approximateName() {}\n',
+    );
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      const substring = await executeReadOp(cg, 'lspWorkspaceSymbols', { query: 'CaseNeedle' }) as Node[];
+      const fuzzy = await executeReadOp(cg, 'lspWorkspaceSymbols', { query: 'aproximateName' }) as Node[];
+      expect(substring.map((node) => node.name)).toContain('camelCaseNeedle');
+      expect(fuzzy.map((node) => node.name)).toContain('approximateName');
+      expect([...substring, ...fuzzy].every((node) => node.docstring === undefined)).toBe(true);
+    } finally {
+      cg.close();
+    }
+  });
+
   it('bounds workspace and incoming read materialization at the daemon boundary', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-bounds-'));
     roots.push(root);
@@ -347,22 +369,49 @@ describe('trusted daemon LSP reads', () => {
         expect(incoming.occurrences.at(-1)?.edge.line).toBe(501);
       }
 
-      const tied = Array.from({ length: 600 }, (_value, index): Node => ({
+      const tied = Array.from({ length: 2_601 }, (_value, index): Node => ({
         ...alpha,
         id: `tied-workspace-${index}`,
         name: 'tiedWorkspaceTarget',
-        qualifiedName: `tied::${String(599 - index).padStart(3, '0')}`,
-        startLine: index + 1_000,
-        endLine: index + 1_000,
+        qualifiedName: 'tied::same',
+        filePath: index % 2 === 0
+          ? `ties/a ${String(index).padStart(4, '0')}.ts`
+          : `ties/a$${String(index).padStart(4, '0')}.ts`,
+        startLine: 1,
+        endLine: 1,
       }));
       queries.insertNodes(tied);
       const tiedWorkspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {
         query: 'tiedWorkspaceTarget',
       }) as Node[];
       expect(tiedWorkspace).toHaveLength(500);
-      expect(tiedWorkspace.map((node) => node.qualifiedName)).toEqual(
-        tied.map((node) => node.qualifiedName).sort().slice(0, 500),
+      const byFinalLspOrder = [...tied].sort((left, right) => {
+        const leftUri = normalizeLspUri(pathToFileURL(path.resolve(root, left.filePath)).href);
+        const rightUri = normalizeLspUri(pathToFileURL(path.resolve(root, right.filePath)).href);
+        return (leftUri < rightUri ? -1 : leftUri > rightUri ? 1 : 0)
+          || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+      });
+      expect(tiedWorkspace.map((node) => node.id)).toEqual(
+        byFinalLspOrder.slice(0, 500).map((node) => node.id),
       );
+
+      const oversizedWorkspaceNodes = Array.from({ length: 600 }, (_value, index): Node => ({
+        ...alpha,
+        id: `oversized-workspace-${index}`,
+        name: 'oversizedWorkspaceTarget',
+        qualifiedName: `oversized::${String(index).padStart(3, '0')}`,
+        filePath: `oversized/${index}.ts`,
+        docstring: 'x'.repeat(16 * 1024),
+      }));
+      queries.insertNodes(oversizedWorkspaceNodes);
+      const genericSearch = vi.spyOn(cg, 'searchNodes');
+      const oversizedWorkspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'oversizedWorkspaceTarget',
+      }) as Node[];
+      expect(oversizedWorkspace).toHaveLength(500);
+      expect(oversizedWorkspace.every((node) => node.docstring === undefined)).toBe(true);
+      expect(genericSearch).not.toHaveBeenCalled();
+      genericSearch.mockRestore();
 
       queries.updateNode({
         ...alpha,
@@ -408,7 +457,7 @@ describe('trusted daemon LSP reads', () => {
     } finally {
       cg.close();
     }
-  });
+  }, 20_000);
 });
 
 function location(uri: string, line: number, character: number): LspLocation {

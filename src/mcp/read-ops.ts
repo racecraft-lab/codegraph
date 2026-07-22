@@ -242,15 +242,19 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
 
 function lspWorkspaceSymbolsOp(cg: CodeGraph, params: Record<string, unknown>): Node[] {
   const query = typeof params.query === 'string' ? params.query.trim() : '';
-  if (query) {
-    const ranked = cg.searchNodes(query, { limit: LSP_WORKSPACE_CANDIDATE_CAP });
-    ranked.sort((left, right) => right.score - left.score
-      || compareLspWorkspaceNodes(cg.getProjectRoot(), left.node, right.node));
-    return budgetLspWorkspaceNodes(ranked.map((result) => result.node));
+  const ranked: LspRankedWorkspaceSymbol[] = [];
+  const seen = new Set<string>();
+  for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query)) {
+    if (seen.has(candidate.node.id)) continue;
+    seen.add(candidate.node.id);
+    const entry: LspRankedWorkspaceSymbol = {
+      ...candidate,
+      uri: normalizeLspUri(pathToFileURL(path.resolve(cg.getProjectRoot(), candidate.node.filePath)).href),
+    };
+    retainLspWorkspaceCandidate(ranked, entry);
   }
-  const nodes = cg.getBoundedLspWorkspaceNodes(LSP_WORKSPACE_CANDIDATE_CAP)
-    .sort((left, right) => compareLspWorkspaceNodes(cg.getProjectRoot(), left, right));
-  return budgetLspWorkspaceNodes(nodes);
+  ranked.sort(compareLspRankedWorkspaceSymbols);
+  return budgetLspWorkspaceNodes(ranked.map((entry) => entry.node));
 }
 
 function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncomingRead {
@@ -389,47 +393,67 @@ function lspOccurrenceUri(root: string, occurrence: LspOccurrenceOrderable): str
   return normalizeLspUri(pathToFileURL(path.resolve(root, occurrence.source.filePath)).href);
 }
 
-function compareLspWorkspaceNodes(root: string, left: Node, right: Node): number {
-  const leftUri = normalizeLspUri(pathToFileURL(path.resolve(root, left.filePath)).href);
-  const rightUri = normalizeLspUri(pathToFileURL(path.resolve(root, right.filePath)).href);
-  return (left.qualifiedName < right.qualifiedName ? -1 : left.qualifiedName > right.qualifiedName ? 1 : 0)
-    || (leftUri < rightUri ? -1 : leftUri > rightUri ? 1 : 0)
-    || left.startLine - right.startLine
-    || left.startColumn - right.startColumn
-    || left.endLine - right.endLine
-    || left.endColumn - right.endColumn
-    || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+interface LspRankedWorkspaceSymbol {
+  node: Node;
+  score: number;
+  uri: string;
 }
 
-function lspWorkspaceNode(node: Node): Node {
-  return {
-    id: node.id,
-    kind: node.kind,
-    name: node.name,
-    qualifiedName: node.qualifiedName,
-    filePath: node.filePath,
-    language: node.language,
-    startLine: node.startLine,
-    endLine: node.endLine,
-    startColumn: node.startColumn,
-    endColumn: node.endColumn,
-    visibility: node.visibility,
-    isExported: node.isExported,
-    isAsync: node.isAsync,
-    isStatic: node.isStatic,
-    isAbstract: node.isAbstract,
-    updatedAt: node.updatedAt,
-  };
+function compareLspRankedWorkspaceSymbols(
+  left: LspRankedWorkspaceSymbol,
+  right: LspRankedWorkspaceSymbol,
+): number {
+  return right.score - left.score
+    || (left.node.qualifiedName < right.node.qualifiedName
+      ? -1
+      : left.node.qualifiedName > right.node.qualifiedName ? 1 : 0)
+    || (left.uri < right.uri ? -1 : left.uri > right.uri ? 1 : 0)
+    || left.node.startLine - right.node.startLine
+    || left.node.startColumn - right.node.startColumn
+    || left.node.endLine - right.node.endLine
+    || left.node.endColumn - right.node.endColumn
+    || (left.node.id < right.node.id ? -1 : left.node.id > right.node.id ? 1 : 0);
+}
+
+function retainLspWorkspaceCandidate(
+  heap: LspRankedWorkspaceSymbol[],
+  candidate: LspRankedWorkspaceSymbol,
+): void {
+  if (heap.length < LSP_WORKSPACE_CANDIDATE_CAP) {
+    heap.push(candidate);
+    for (let index = heap.length - 1; index > 0;) {
+      const parent = (index - 1) >>> 1;
+      if (compareLspRankedWorkspaceSymbols(heap[index]!, heap[parent]!) <= 0) break;
+      [heap[index], heap[parent]] = [heap[parent]!, heap[index]!];
+      index = parent;
+    }
+    return;
+  }
+  if (compareLspRankedWorkspaceSymbols(candidate, heap[0]!) >= 0) return;
+  heap[0] = candidate;
+  let index = 0;
+  while (true) {
+    const left = index * 2 + 1;
+    if (left >= heap.length) break;
+    const right = left + 1;
+    let worse = left;
+    if (right < heap.length
+      && compareLspRankedWorkspaceSymbols(heap[right]!, heap[left]!) > 0) {
+      worse = right;
+    }
+    if (compareLspRankedWorkspaceSymbols(heap[worse]!, heap[index]!) <= 0) break;
+    [heap[index], heap[worse]] = [heap[worse]!, heap[index]!];
+    index = worse;
+  }
 }
 
 function budgetLspWorkspaceNodes(nodes: Node[]): Node[] {
   const output: Node[] = [];
   let remaining = LSP_DAEMON_RESPONSE_BYTE_CAP - 512;
   for (const node of nodes) {
-    const bounded = lspWorkspaceNode(node);
-    const bytes = boundedJsonByteLength(bounded, remaining);
+    const bytes = boundedJsonByteLength(node, remaining);
     if (bytes + 1 > remaining) break;
-    output.push(bounded);
+    output.push(node);
     remaining -= bytes + 1;
   }
   return output;

@@ -27,7 +27,11 @@ import {
 } from './types';
 import { DatabaseConnection, getDatabasePath, removeDatabaseFiles } from './db';
 import { WalCheckpointValve } from './db/wal-valve';
-import { QueryBuilder, type LspNodeSummary } from './db/queries';
+import {
+  QueryBuilder,
+  type LspNodeSummary,
+  type LspWorkspaceSymbolCandidate,
+} from './db/queries';
 import {
   isInitialized,
   createDirectory,
@@ -2199,9 +2203,9 @@ export class CodeGraph {
     return this.queries.getNodesByFile(filePath);
   }
 
-  /** Internal bounded candidate set for the foundational LSP workspace read. */
-  getBoundedLspWorkspaceNodes(limit: number): Node[] {
-    return this.queries.getBoundedLspWorkspaceNodes(limit);
+  /** Lightweight, uncapped candidate stream for exact LSP workspace ordering. */
+  *iterateLspWorkspaceSymbolCandidates(query: string): IterableIterator<LspWorkspaceSymbolCandidate> {
+    yield* this.queries.iterateLspWorkspaceSymbolCandidates(query);
   }
 
   /** Internal bounded node summaries for the foundational LSP file-context read. */
