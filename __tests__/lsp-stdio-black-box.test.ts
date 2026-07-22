@@ -87,6 +87,7 @@ describe('LSP Content-Length transport', () => {
     input.end();
     await expect(result).resolves.toBe(1);
     expect(close).toHaveBeenCalledTimes(1);
+    expect(input.isPaused()).toBe(true);
   });
 
   it('does not dispatch queued frames after transport teardown', async () => {
@@ -178,7 +179,7 @@ function fakeReader(): LspRepositoryReader {
   return {
     root: process.cwd(),
     fileContext: async () => ({ ok: false, reason: 'unindexed' }),
-    incoming: async () => ({ target: null, occurrences: [] }),
+    incoming: async () => ({ ok: false, reason: 'stale' }),
     workspaceSymbols: async () => [],
   };
 }

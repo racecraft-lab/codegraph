@@ -1,7 +1,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { LspFileContextRead, LspIncomingRead, LspSourceErrorReason } from '../mcp/read-ops';
+import type {
+  LspFileContextRead,
+  LspIncomingRead,
+  LspLocatedEdge,
+  LspSourceErrorReason,
+  LspWorkspaceSymbolCandidate,
+} from '../mcp/read-ops';
 import { CodeGraphPackageVersion } from '../mcp/version';
 import type { Node, NodeKind } from '../types';
 import {
@@ -32,8 +38,8 @@ import {
 export interface LspRepositoryReader {
   root: string;
   fileContext(filePath: string): Promise<LspFileContextRead>;
-  incoming(nodeId: string): Promise<LspIncomingRead>;
-  workspaceSymbols(query: string): Promise<Node[]>;
+  incoming(nodeId: string, filePath: string, snapshotToken: string): Promise<LspIncomingRead>;
+  workspaceSymbols(query: string): Promise<LspWorkspaceSymbolCandidate[]>;
 }
 
 export type JsonRpcResponse =
@@ -47,6 +53,7 @@ interface TextDocumentPositionParams {
 
 interface SelectedTarget {
   node: Node;
+  snapshotToken: string;
   context: Extract<LspFileContextRead, { ok: true }>;
 }
 
@@ -63,10 +70,17 @@ export function createDaemonLspReader(root: string, client: DaemonReadClient): L
   return {
     root,
     fileContext: (filePath) => readLspFileContext(client, filePath),
-    incoming: (nodeId) => readLspIncoming(client, nodeId),
+    incoming: (nodeId, filePath, snapshotToken) => readLspIncoming(
+      client,
+      nodeId,
+      filePath,
+      snapshotToken,
+    ),
     workspaceSymbols: (query) => readLspWorkspaceSymbols(client, query),
   };
 }
+
+const MAX_VALIDATED_SOURCE_BYTES = 16 * 1024 * 1024;
 
 export class LspFacade {
   private readonly boundRoot: string;
@@ -154,7 +168,7 @@ export class LspFacade {
   private async definition(params: object | undefined): Promise<LspLocation | null> {
     const selected = await this.selectTarget(params);
     if (!selected) return null;
-    return this.locationForNode(selected.node);
+    return this.locationForNode(selected.node, selected.snapshotToken);
   }
 
   private async references(params: object | undefined): Promise<LspLocation[]> {
@@ -163,23 +177,50 @@ export class LspFacade {
     const includeDeclaration = isRecord(params)
       && isRecord(params.context)
       && params.context.includeDeclaration === true;
-    const incoming = await this.reader.incoming(selected.node.id);
+    const incoming = await this.reader.incoming(
+      selected.node.id,
+      selected.node.filePath,
+      selected.snapshotToken,
+    );
     if ('ok' in incoming) throw sourceError(incoming.reason);
+    if (incoming.target.id !== selected.node.id
+      || incoming.target.filePath !== selected.node.filePath) {
+      throw sourceError('stale');
+    }
     const locations: LspLocation[] = [];
-    const contexts = new Map<string, Extract<LspFileContextRead, { ok: true }>>();
+    let currentPath: string | undefined;
+    let currentContext: Extract<LspFileContextRead, { ok: true }> | undefined;
+    let validatedSourceBytes = 0;
     for (const occurrence of incoming.occurrences) {
-      let context = contexts.get(occurrence.source.filePath);
-      if (!context) {
-        const read = await this.reader.fileContext(occurrence.source.filePath);
-        if (!read.ok) continue;
-        context = read;
-        contexts.set(occurrence.source.filePath, context);
+      if (occurrence.target.id !== selected.node.id
+        || occurrence.targetSnapshotToken !== selected.snapshotToken) {
+        throw sourceError('stale');
       }
-      const location = this.locationForOccurrence(context, occurrence.edge.line, occurrence.edge.column, selected.node.name);
+      if (currentPath !== occurrence.source.filePath) {
+        const read = await this.reader.fileContext(occurrence.source.filePath);
+        if (!read.ok) throw sourceError(read.reason);
+        validatedSourceBytes = reserveSourceBytes(read, validatedSourceBytes);
+        currentPath = occurrence.source.filePath;
+        currentContext = read;
+      }
+      const context = currentContext!;
+      if (context.snapshot.snapshotToken !== occurrence.sourceSnapshotToken) {
+        throw sourceError('stale');
+      }
+      const currentOccurrence = context.occurrences.find((candidate) =>
+        sameOccurrence(candidate, occurrence),
+      );
+      if (!currentOccurrence) throw sourceError('stale');
+      const location = this.locationForOccurrence(
+        context,
+        currentOccurrence.edge.line,
+        currentOccurrence.edge.column,
+        currentOccurrence.target.name,
+      );
       if (location) locations.push(location);
     }
     if (includeDeclaration) {
-      const declaration = await this.locationForNode(selected.node);
+      const declaration = await this.locationForNode(selected.node, selected.snapshotToken);
       if (declaration) locations.push(declaration);
     }
     return sortAndCapLocations(locations, 500);
@@ -246,27 +287,34 @@ export class LspFacade {
 
   private async workspaceSymbols(params: object | undefined): Promise<unknown[]> {
     if (!isRecord(params) || typeof params.query !== 'string') throw invalidParams();
-    const nodes = await this.reader.workspaceSymbols(params.query);
-    const contexts = new Map<string, Extract<LspFileContextRead, { ok: true }>>();
+    const candidates = await this.reader.workspaceSymbols(params.query);
     const seen = new Set<string>();
     const symbols: unknown[] = [];
-    for (const node of nodes) {
+    let currentPath: string | undefined;
+    let currentContext: Extract<LspFileContextRead, { ok: true }> | undefined;
+    let validatedSourceBytes = 0;
+    for (const candidate of candidates) {
+      const node = candidate.node;
       if (symbols.length >= 100 || seen.has(node.id)) continue;
       seen.add(node.id);
-      let context = contexts.get(node.filePath);
-      if (!context) {
+      if (currentPath !== node.filePath) {
         const read = await this.reader.fileContext(node.filePath);
         if (!read.ok) continue;
-        context = read;
-        contexts.set(node.filePath, context);
+        validatedSourceBytes = reserveSourceBytes(read, validatedSourceBytes);
+        currentPath = node.filePath;
+        currentContext = read;
       }
-      const range = this.rangeForNode(context, node);
+      const context = currentContext!;
+      if (context.snapshot.snapshotToken !== candidate.snapshotToken) continue;
+      const currentNode = context.nodes.find((entry) => entry.id === node.id);
+      if (!currentNode || currentNode.filePath !== node.filePath) continue;
+      const range = this.rangeForNode(context, currentNode);
       if (!range) continue;
       symbols.push({
-        name: node.name,
-        kind: symbolKind(node.kind),
-        location: { uri: this.uriForFile(node.filePath), range },
-        containerName: containerName(node),
+        name: currentNode.name,
+        kind: symbolKind(currentNode.kind),
+        location: { uri: this.uriForFile(currentNode.filePath), range },
+        containerName: containerName(currentNode),
       });
     }
     return symbols;
@@ -288,29 +336,38 @@ export class LspFacade {
     const lineText = sourceLines(read.snapshot.text)[parsed.position.line];
     if (lineText === undefined) throw invalidParams();
     const character = clampUtf16Character(lineText, parsed.position.character);
-    const candidates = new Map<string, Node>();
+    const candidates = new Map<string, { node: Node; snapshotToken: string }>();
+
+    const addCandidate = (node: Node, snapshotToken: string): void => {
+      const existing = candidates.get(node.id);
+      if (existing && existing.snapshotToken !== snapshotToken) throw sourceError('stale');
+      candidates.set(node.id, { node, snapshotToken });
+    };
 
     for (const node of read.nodes) {
       const range = this.rangeForNode(read, node);
       if (range && containsPosition(range, { line: parsed.position.line, character })) {
-        candidates.set(node.id, node);
+        addCandidate(node, read.snapshot.snapshotToken);
       }
     }
     for (const occurrence of read.occurrences) {
       const range = occurrenceRange(read, occurrence.edge.line, occurrence.edge.column, occurrence.target.name);
       if (range && containsPosition(range, { line: parsed.position.line, character })) {
-        candidates.set(occurrence.target.id, occurrence.target);
+        addCandidate(occurrence.target, occurrence.targetSnapshotToken);
       }
     }
     if (candidates.size !== 1) return null;
-    return { node: candidates.values().next().value!, context: read };
+    return { ...candidates.values().next().value!, context: read };
   }
 
-  private async locationForNode(node: Node): Promise<LspLocation | null> {
+  private async locationForNode(node: Node, expectedSnapshotToken: string): Promise<LspLocation | null> {
     const read = await this.reader.fileContext(node.filePath);
-    if (!read.ok) return null;
-    const range = this.rangeForNode(read, node);
-    return range ? { uri: this.uriForFile(node.filePath), range } : null;
+    if (!read.ok) throw sourceError(read.reason);
+    if (read.snapshot.snapshotToken !== expectedSnapshotToken) throw sourceError('stale');
+    const currentNode = read.nodes.find((entry) => entry.id === node.id);
+    if (!currentNode || currentNode.filePath !== node.filePath) throw sourceError('stale');
+    const range = this.rangeForNode(read, currentNode);
+    return range ? { uri: this.uriForFile(currentNode.filePath), range } : null;
   }
 
   private locationForOccurrence(
@@ -410,6 +467,28 @@ function invalidParams(): FacadeError {
 function sourceError(reason: LspSourceErrorReason): FacadeError {
   if (reason === 'stale') return new FacadeError(LSP_ERROR_CODE.ContentModified);
   return new FacadeError(LSP_ERROR_CODE.RequestFailed, reason);
+}
+
+function reserveSourceBytes(
+  read: Extract<LspFileContextRead, { ok: true }>,
+  currentBytes: number,
+): number {
+  const nextBytes = currentBytes + Buffer.byteLength(read.snapshot.text, 'utf8');
+  if (nextBytes > MAX_VALIDATED_SOURCE_BYTES) throw sourceError('too_large');
+  return nextBytes;
+}
+
+function sameOccurrence(left: LspLocatedEdge, right: LspLocatedEdge): boolean {
+  return left.source.id === right.source.id
+    && left.target.id === right.target.id
+    && left.sourceSnapshotToken === right.sourceSnapshotToken
+    && left.targetSnapshotToken === right.targetSnapshotToken
+    && left.edge.source === right.edge.source
+    && left.edge.target === right.edge.target
+    && left.edge.kind === right.edge.kind
+    && left.edge.line === right.edge.line
+    && left.edge.column === right.edge.column
+    && left.edge.provenance === right.edge.provenance;
 }
 
 function textDocumentUri(params: object | undefined): string {

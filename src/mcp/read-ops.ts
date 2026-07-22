@@ -71,6 +71,13 @@ export interface LspLocatedEdge {
   edge: Edge;
   source: Node;
   target: Node;
+  sourceSnapshotToken: string;
+  targetSnapshotToken: string;
+}
+
+export interface LspWorkspaceSymbolCandidate {
+  node: Node;
+  snapshotToken: string;
 }
 
 export type LspFileContextRead =
@@ -78,7 +85,7 @@ export type LspFileContextRead =
   | { ok: false; reason: LspSourceErrorReason };
 
 export type LspIncomingRead =
-  | { target: Node | null; occurrences: LspLocatedEdge[] }
+  | { target: Node; occurrences: LspLocatedEdge[] }
   | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large' | 'stale'> };
 
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
@@ -232,7 +239,7 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
     case 'lspFileContext':
       return { ok: false, reason: 'unindexed' } satisfies LspFileContextRead;
     case 'lspIncoming':
-      return { target: null, occurrences: [] } satisfies LspIncomingRead;
+      return { ok: false, reason: 'stale' } satisfies LspIncomingRead;
     case 'lspWorkspaceSymbols':
       return [];
     default:
@@ -240,28 +247,50 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
   }
 }
 
-function lspWorkspaceSymbolsOp(cg: CodeGraph, params: Record<string, unknown>): Node[] {
-  const query = typeof params.query === 'string' ? params.query.trim() : '';
-  const ranked: LspRankedWorkspaceSymbol[] = [];
-  const seen = new Set<string>();
-  for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query)) {
-    if (seen.has(candidate.node.id)) continue;
-    seen.add(candidate.node.id);
-    const entry: LspRankedWorkspaceSymbol = {
-      ...candidate,
-      uri: normalizeLspUri(pathToFileURL(path.resolve(cg.getProjectRoot(), candidate.node.filePath)).href),
-    };
-    retainLspWorkspaceCandidate(ranked, entry);
-  }
-  ranked.sort(compareLspRankedWorkspaceSymbols);
-  return budgetLspWorkspaceNodes(ranked.map((entry) => entry.node));
+function lspWorkspaceSymbolsOp(
+  cg: CodeGraph,
+  params: Record<string, unknown>,
+): LspWorkspaceSymbolCandidate[] {
+  return cg.withLspReadTransaction(() => {
+    const query = typeof params.query === 'string' ? params.query.trim() : '';
+    const ranked: LspRankedWorkspaceSymbol[] = [];
+    const seen = new Set<string>();
+    for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query)) {
+      if (seen.has(candidate.node.id)) continue;
+      seen.add(candidate.node.id);
+      const entry: LspRankedWorkspaceSymbol = {
+        ...candidate,
+        uri: normalizeLspUri(pathToFileURL(path.resolve(cg.getProjectRoot(), candidate.node.filePath)).href),
+      };
+      retainLspWorkspaceCandidate(ranked, entry);
+    }
+    ranked.sort(compareLspRankedWorkspaceSymbols);
+    const tokens = new Map<string, string | null>();
+    const candidates: LspWorkspaceSymbolCandidate[] = [];
+    for (const entry of ranked) {
+      if (!tokens.has(entry.node.filePath)) {
+        tokens.set(entry.node.filePath, indexedSnapshotTokenForFile(cg, entry.node.filePath));
+      }
+      const snapshotToken = tokens.get(entry.node.filePath);
+      if (snapshotToken) candidates.push({ node: entry.node, snapshotToken });
+    }
+    return budgetLspWorkspaceCandidates(candidates);
+  });
 }
 
 function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncomingRead {
   return cg.withLspReadTransaction(() => {
     const targetId = idParam(params);
+    const targetFilePath = typeof params.filePath === 'string' ? params.filePath : '';
+    const targetSnapshotToken = typeof params.snapshotToken === 'string' ? params.snapshotToken : '';
     const targetSummary = cg.getLspNodeSummariesByIds([targetId]).get(targetId);
-    if (!targetSummary) return { target: null, occurrences: [] };
+    if (
+      !targetSummary
+      || targetSummary.filePath !== targetFilePath
+      || indexedSnapshotTokenForFile(cg, targetFilePath) !== targetSnapshotToken
+    ) {
+      return { ok: false, reason: 'stale' };
+    }
     const edges = cg.getBoundedLspIncomingEdges(targetId, LSP_REFERENCE_SCAN_CAP + 1);
     if (edges.length > LSP_REFERENCE_SCAN_CAP) return { ok: false, reason: 'too_large' };
     const sourceSummaries = cg.getLspNodeSummariesByIds(edges.map((edge) => edge.source));
@@ -291,10 +320,22 @@ function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncom
     const target = materialized.get(targetId);
     if (!target) return { ok: false, reason: 'stale' };
     const occurrences: LspLocatedEdge[] = [];
+    const sourceSnapshotTokens = new Map<string, string | null>();
     for (const candidate of unique) {
       const source = materialized.get(candidate.source.id);
       if (!source) return { ok: false, reason: 'stale' };
-      occurrences.push({ edge: candidate.edge, source, target });
+      if (!sourceSnapshotTokens.has(source.filePath)) {
+        sourceSnapshotTokens.set(source.filePath, indexedSnapshotTokenForFile(cg, source.filePath));
+      }
+      const sourceSnapshotToken = sourceSnapshotTokens.get(source.filePath);
+      if (!sourceSnapshotToken) return { ok: false, reason: 'stale' };
+      occurrences.push({
+        edge: candidate.edge,
+        source,
+        target,
+        sourceSnapshotToken,
+        targetSnapshotToken,
+      });
     }
     const result: LspIncomingRead = { target, occurrences };
     return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
@@ -343,11 +384,23 @@ function lspFileContextOp(cg: CodeGraph, params: Record<string, unknown>): LspFi
       nodes.push(node);
     }
     const occurrences: LspLocatedEdge[] = [];
+    const targetSnapshotTokens = new Map<string, string | null>();
     for (const candidate of candidates) {
       const source = materialized.get(candidate.source.id);
       const target = materialized.get(candidate.target.id);
       if (!source || !target) return { ok: false, reason: 'stale' };
-      occurrences.push({ edge: candidate.edge, source, target });
+      if (!targetSnapshotTokens.has(target.filePath)) {
+        targetSnapshotTokens.set(target.filePath, indexedSnapshotTokenForFile(cg, target.filePath));
+      }
+      const targetSnapshotToken = targetSnapshotTokens.get(target.filePath);
+      if (!targetSnapshotToken) return { ok: false, reason: 'stale' };
+      occurrences.push({
+        edge: candidate.edge,
+        source,
+        target,
+        sourceSnapshotToken: snapshot.snapshot.snapshotToken,
+        targetSnapshotToken,
+      });
     }
     const finalIndexed = cg.getFile(snapshot.snapshot.filePath);
     if (!finalIndexed || indexedSnapshotToken(finalIndexed) !== snapshot.snapshot.snapshotToken) {
@@ -447,13 +500,15 @@ function retainLspWorkspaceCandidate(
   }
 }
 
-function budgetLspWorkspaceNodes(nodes: Node[]): Node[] {
-  const output: Node[] = [];
+function budgetLspWorkspaceCandidates(
+  candidates: LspWorkspaceSymbolCandidate[],
+): LspWorkspaceSymbolCandidate[] {
+  const output: LspWorkspaceSymbolCandidate[] = [];
   let remaining = LSP_DAEMON_RESPONSE_BYTE_CAP - 512;
-  for (const node of nodes) {
-    const bytes = boundedJsonByteLength(node, remaining);
+  for (const candidate of candidates) {
+    const bytes = boundedJsonByteLength(candidate, remaining);
     if (bytes + 1 > remaining) break;
-    output.push(node);
+    output.push(candidate);
     remaining -= bytes + 1;
   }
   return output;
@@ -580,6 +635,11 @@ function indexedSnapshotToken(file: FileRecord): string {
     .createHash('sha256')
     .update(`${file.contentHash}\0${file.indexedAt}\0${file.size}`)
     .digest('hex');
+}
+
+function indexedSnapshotTokenForFile(cg: CodeGraph, filePath: string): string | null {
+  const file = cg.getFile(filePath);
+  return file ? indexedSnapshotToken(file) : null;
 }
 
 function isOutsideRepositoryRelative(relative: string): boolean {

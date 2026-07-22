@@ -35,9 +35,9 @@ import { unavailable, DEFAULT_RETRY_AFTER_SECONDS, type ApiError } from './error
 import type {
   LspFileContextRead,
   LspIncomingRead,
+  LspWorkspaceSymbolCandidate,
   ReadOp,
 } from '../mcp/read-ops';
-import type { Node } from '../types';
 import type { ClusterListResult, FlowDetailRead, FlowListResult } from '../analysis';
 
 /**
@@ -520,16 +520,22 @@ export async function readLspFileContext(
 export async function readLspIncoming(
   client: DaemonReadClient,
   nodeId: string,
+  filePath: string,
+  snapshotToken: string,
 ): Promise<LspIncomingRead> {
-  return (await client.read('lspIncoming', { id: nodeId })) as LspIncomingRead;
+  return (await client.read('lspIncoming', {
+    id: nodeId,
+    filePath,
+    snapshotToken,
+  })) as LspIncomingRead;
 }
 
 /** Deterministically ranked graph symbols; the facade owns final ordering/cap. */
 export async function readLspWorkspaceSymbols(
   client: DaemonReadClient,
   query: string,
-): Promise<Node[]> {
-  return (await client.read('lspWorkspaceSymbols', { query })) as Node[];
+): Promise<LspWorkspaceSymbolCandidate[]> {
+  return (await client.read('lspWorkspaceSymbols', { query })) as LspWorkspaceSymbolCandidate[];
 }
 
 /**

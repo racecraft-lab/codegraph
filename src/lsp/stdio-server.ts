@@ -141,6 +141,7 @@ export async function serveLspStdio(
   const finish = (code: number): void => {
     if (settled) return;
     settled = true;
+    try { input.pause(); } catch { /* best-effort */ }
     input.removeListener('data', onData);
     input.removeListener('end', onEnd);
     input.removeListener('error', onError);

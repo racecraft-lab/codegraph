@@ -169,6 +169,111 @@ describe('repository-bound LSP facade', () => {
     expect(response.result.some((symbol: any) => symbol.name === 'parent')).toBe(true);
     expect(response.result.some((symbol: any) => symbol.name === 'child')).toBe(false);
   });
+
+  it('fails closed instead of combining graph identities from different snapshots', async () => {
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    const changedContext: Extract<LspFileContextRead, { ok: true }> = {
+      ...alphaContext,
+      snapshot: { ...alphaContext.snapshot, snapshotToken: 'changed-snapshot' },
+    };
+    let definitionReads = 0;
+    const definitionReader: LspRepositoryReader = {
+      ...fakeReader(),
+      async fileContext() { return definitionReads++ === 0 ? alphaContext : changedContext; },
+    };
+    const definitionFacade = new LspFacade(definitionReader);
+    await definitionFacade.handle(request(1, 'initialize', {}));
+    expect(await definitionFacade.handle(
+      request(2, 'textDocument/definition', positionParams(uri, 0, 17)),
+    )).toMatchObject({ error: { code: LSP_ERROR_CODE.ContentModified } });
+
+    let referenceReads = 0;
+    const referenceReader: LspRepositoryReader = {
+      ...fakeReader(),
+      async fileContext() { return referenceReads++ === 0 ? alphaContext : changedContext; },
+    };
+    const referenceFacade = new LspFacade(referenceReader);
+    await referenceFacade.handle(request(3, 'initialize', {}));
+    expect(await referenceFacade.handle(request(4, 'textDocument/references', {
+      ...positionParams(uri, 0, 17),
+      context: { includeDeclaration: false },
+    }))).toMatchObject({ error: { code: LSP_ERROR_CODE.ContentModified } });
+
+    const workspaceReader: LspRepositoryReader = {
+      ...fakeReader(),
+      async fileContext() { return changedContext; },
+    };
+    const workspaceFacade = new LspFacade(workspaceReader);
+    await workspaceFacade.handle(request(5, 'initialize', {}));
+    expect(await workspaceFacade.handle(
+      request(6, 'workspace/symbol', { query: 'alpha' }),
+    )).toMatchObject({ result: [] });
+  });
+
+  it('bounds aggregate source validation without retaining every file context', async () => {
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    const occurrences = Array.from({ length: 17 }, (_value, index) => {
+      const source: Node = {
+        ...alphaNode,
+        id: `source-${index}`,
+        filePath: `source-${index}.ts`,
+        qualifiedName: `source-${index}.alpha`,
+        startColumn: 0,
+        endColumn: 5,
+      };
+      return {
+        edge: { source: source.id, target: alphaNode.id, kind: 'calls' as const, line: 1, column: 0 },
+        source,
+        target: alphaNode,
+        sourceSnapshotToken: `source-snapshot-${index}`,
+        targetSnapshotToken: alphaContext.snapshot.snapshotToken,
+      };
+    });
+    let referenceFileReads = 0;
+    const referenceReader: LspRepositoryReader = {
+      ...fakeReader(),
+      async incoming() { return { target: alphaNode, occurrences }; },
+      async fileContext(filePath) {
+        referenceFileReads += 1;
+        if (filePath === 'sample.ts') return alphaContext;
+        const occurrence = occurrences.find((entry) => entry.source.filePath === filePath)!;
+        return largeContext(occurrence.source, occurrence.sourceSnapshotToken, [occurrence]);
+      },
+    };
+    const referenceFacade = new LspFacade(referenceReader);
+    await referenceFacade.handle(request(1, 'initialize', {}));
+    expect(await referenceFacade.handle(request(2, 'textDocument/references', {
+      ...positionParams(uri, 0, 17),
+      context: { includeDeclaration: false },
+    }))).toMatchObject({
+      error: { code: LSP_ERROR_CODE.RequestFailed, data: { reason: 'too_large' } },
+    });
+    expect(referenceFileReads).toBeLessThanOrEqual(18);
+
+    const candidates = occurrences.map(({ source, sourceSnapshotToken }) => ({
+      node: source,
+      snapshotToken: sourceSnapshotToken,
+    }));
+    let workspaceFileReads = 0;
+    const workspaceReader: LspRepositoryReader = {
+      ...fakeReader(),
+      async workspaceSymbols() { return candidates; },
+      async fileContext(filePath) {
+        workspaceFileReads += 1;
+        const occurrence = occurrences.find((entry) => entry.source.filePath === filePath)!;
+        return largeContext(occurrence.source, occurrence.sourceSnapshotToken, []);
+      },
+    };
+    const workspaceFacade = new LspFacade(workspaceReader);
+    await workspaceFacade.handle(request(3, 'initialize', {}));
+    expect(await workspaceFacade.handle(
+      request(4, 'workspace/symbol', { query: 'alpha' }),
+    )).toMatchObject({
+      error: { code: LSP_ERROR_CODE.RequestFailed, data: { reason: 'too_large' } },
+    });
+    expect(workspaceFileReads).toBeGreaterThan(1);
+    expect(workspaceFileReads).toBeLessThanOrEqual(17);
+  });
 });
 
 const alphaNode: Node = {
@@ -201,6 +306,8 @@ const alphaContext: Extract<LspFileContextRead, { ok: true }> = {
     edge: { source: alphaNode.id, target: alphaNode.id, kind: 'calls', line: 2, column: 0 },
     source: alphaNode,
     target: alphaNode,
+    sourceSnapshotToken: 'snapshot',
+    targetSnapshotToken: 'snapshot',
   }],
   containment: [],
 };
@@ -210,7 +317,10 @@ function fakeReader(onRead: () => void = () => undefined): LspRepositoryReader {
     root: process.cwd(),
     async fileContext() { onRead(); return alphaContext; },
     async incoming() { onRead(); return { target: alphaNode, occurrences: alphaContext.occurrences }; },
-    async workspaceSymbols() { onRead(); return [alphaNode]; },
+    async workspaceSymbols() {
+      onRead();
+      return [{ node: alphaNode, snapshotToken: alphaContext.snapshot.snapshotToken }];
+    },
   };
 }
 
@@ -220,4 +330,24 @@ function request(id: number, method: string, params?: object) {
 
 function positionParams(uri: string, line: number, character: number) {
   return { textDocument: { uri }, position: { line, character } };
+}
+
+function largeContext(
+  node: Node,
+  snapshotToken: string,
+  occurrences: Extract<LspFileContextRead, { ok: true }>['occurrences'],
+): Extract<LspFileContextRead, { ok: true }> {
+  return {
+    ok: true,
+    snapshot: {
+      filePath: node.filePath,
+      text: `alpha();\n${'x'.repeat(1024 * 1024)}`,
+      languageId: 'typescript',
+      contentHash: `hash-${node.id}`,
+      snapshotToken,
+    },
+    nodes: [node],
+    occurrences,
+    containment: [],
+  };
 }
