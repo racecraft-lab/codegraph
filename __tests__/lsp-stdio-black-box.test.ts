@@ -1,4 +1,4 @@
-import { PassThrough } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -87,6 +87,55 @@ describe('LSP Content-Length transport', () => {
     input.end();
     await expect(result).resolves.toBe(1);
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not dispatch queued frames after transport teardown', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let reads = 0;
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async workspaceSymbols() { reads += 1; return []; },
+    };
+    const result = serveLspStdio(reader, {
+      input,
+      output,
+      installSignalHandlers: false,
+    });
+
+    input.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+    input.write(frame({ jsonrpc: '2.0', id: 2, method: 'workspace/symbol', params: { query: 'alpha' } }));
+    input.emit('error', new Error('closed input'));
+
+    await expect(result).resolves.toBe(1);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(reads).toBe(0);
+  });
+
+  it('fails closed on output errors and bounded backpressure', async () => {
+    const erroredInput = new PassThrough();
+    const erroredOutput = new PassThrough();
+    const errored = serveLspStdio(fakeReader(), {
+      input: erroredInput,
+      output: erroredOutput,
+      installSignalHandlers: false,
+    });
+    erroredOutput.emit('error', new Error('closed output'));
+    await expect(errored).resolves.toBe(1);
+
+    const blockedInput = new PassThrough();
+    const blockedOutput = new Writable({
+      highWaterMark: 1,
+      write(_chunk, _encoding, _callback) { /* Intentionally never drains. */ },
+    });
+    const blocked = serveLspStdio(fakeReader(), {
+      input: blockedInput,
+      output: blockedOutput,
+      installSignalHandlers: false,
+      outputDrainTimeoutMs: 20,
+    });
+    blockedInput.end(frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+    await expect(blocked).resolves.toBe(1);
   });
 
   it('serves the built command to a generic LSP client and exits cleanly', async () => {

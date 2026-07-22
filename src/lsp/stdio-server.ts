@@ -13,6 +13,7 @@ import {
 const MAX_HEADER_BYTES = 8 * 1024;
 const MAX_HEADER_LINES = 32;
 const MAX_BODY_BYTES = 1024 * 1024;
+const DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS = 5_000;
 
 export class LspFramingError extends Error {}
 
@@ -68,6 +69,8 @@ export interface ServeLspStdioOptions {
   diagnostics?: Writable;
   close?: () => void;
   installSignalHandlers?: boolean;
+  /** Test seam; production uses the fixed five-second output drain budget. */
+  outputDrainTimeoutMs?: number;
 }
 
 export async function serveLspStdio(
@@ -79,14 +82,58 @@ export async function serveLspStdio(
   const diagnostics = options.diagnostics ?? process.stderr;
   const parser = new ContentLengthParser();
   const facade = new LspFacade(reader);
+  const configuredDrainTimeout = options.outputDrainTimeoutMs;
+  const outputDrainTimeoutMs = typeof configuredDrainTimeout === 'number'
+    && Number.isFinite(configuredDrainTimeout)
+    && configuredDrainTimeout > 0
+    ? configuredDrainTimeout
+    : DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS;
   let chain = Promise.resolve();
   let settled = false;
   let resolveExit!: (code: number) => void;
   const exit = new Promise<number>((resolve) => { resolveExit = resolve; });
 
-  const write = (value: unknown): void => {
+  const write = async (value: unknown): Promise<void> => {
+    if (settled) return;
     const body = Buffer.from(JSON.stringify(value), 'utf8');
-    output.write(Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body]));
+    const frame = Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body]);
+    let accepted: boolean;
+    try {
+      accepted = output.write(frame);
+    } catch {
+      log('stream_failure');
+      finish(1);
+      return;
+    }
+    if (accepted || settled) return;
+    input.pause();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let completed = false;
+        const complete = (error?: Error): void => {
+          if (completed) return;
+          completed = true;
+          clearTimeout(timer);
+          output.removeListener('drain', onDrain);
+          output.removeListener('error', onDrainError);
+          if (error) reject(error);
+          else resolve();
+        };
+        const onDrain = (): void => complete();
+        const onDrainError = (): void => complete(new Error('output stream failure'));
+        const timer = setTimeout(
+          () => complete(new Error('output drain timeout')),
+          outputDrainTimeoutMs,
+        );
+        output.once('drain', onDrain);
+        output.once('error', onDrainError);
+      });
+    } catch {
+      log('stream_failure');
+      finish(1);
+      return;
+    }
+    if (!settled) input.resume();
   };
   const log = (code: Parameters<typeof formatLspDiagnostic>[0]): void => {
     try { diagnostics.write(`${formatLspDiagnostic(code)}\n`); } catch { /* best-effort */ }
@@ -97,6 +144,7 @@ export async function serveLspStdio(
     input.removeListener('data', onData);
     input.removeListener('end', onEnd);
     input.removeListener('error', onError);
+    output.removeListener('error', onOutputError);
     if (options.installSignalHandlers !== false) {
       process.removeListener('SIGINT', onSignal);
       process.removeListener('SIGTERM', onSignal);
@@ -105,20 +153,23 @@ export async function serveLspStdio(
     resolveExit(code);
   };
   const handleBody = async (body: Buffer): Promise<void> => {
+    if (settled) return;
     let value: unknown;
     try {
       value = JSON.parse(body.toString('utf8'));
     } catch {
-      write(makeJsonRpcError(null, LSP_ERROR_CODE.ParseError));
+      await write(makeJsonRpcError(null, LSP_ERROR_CODE.ParseError));
       return;
     }
     const envelope = parseJsonRpcEnvelope(value);
     if (!envelope.ok) {
-      write({ jsonrpc: '2.0', id: envelope.id, error: envelope.error });
+      await write({ jsonrpc: '2.0', id: envelope.id, error: envelope.error });
       return;
     }
+    if (settled) return;
     const response = await facade.handle(envelope.message);
-    if (response) write(response);
+    if (settled) return;
+    if (response) await write(response);
     if (facade.requestedExitCode !== null) finish(facade.requestedExitCode);
   };
   function onData(value: Buffer | string): void {
@@ -144,6 +195,10 @@ export async function serveLspStdio(
     log('stream_failure');
     finish(1);
   }
+  function onOutputError(): void {
+    log('stream_failure');
+    finish(1);
+  }
   function onSignal(): void {
     finish(facade.requestedExitCode ?? 1);
   }
@@ -151,6 +206,7 @@ export async function serveLspStdio(
   input.on('data', onData);
   input.once('end', onEnd);
   input.once('error', onError);
+  output.once('error', onOutputError);
   if (options.installSignalHandlers !== false) {
     process.once('SIGINT', onSignal);
     process.once('SIGTERM', onSignal);

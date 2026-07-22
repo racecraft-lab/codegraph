@@ -14,9 +14,17 @@ describe('repository-bound LSP facade', () => {
     expect(await facade.handle(request(2, 'initialize', {
       rootUri: pathToFileURL('/definitely/not/the/bound/root').href,
     }))).toMatchObject({ error: { code: LSP_ERROR_CODE.InvalidParams } });
-    expect(await facade.handle(request(3, 'initialize', {}))).toMatchObject({
-      result: { capabilities: { positionEncoding: 'utf-16' } },
+    const initialized = await facade.handle(request(3, 'initialize', {}));
+    expect(initialized).toMatchObject({
+      result: {
+        capabilities: { positionEncoding: 'utf-16' },
+        serverInfo: { name: 'CodeGraph', version: expect.any(String) },
+      },
     });
+    expect(await facade.handle(request(30, 'initialized'))).toMatchObject({
+      error: { code: LSP_ERROR_CODE.InvalidRequest },
+    });
+    expect(await facade.handle({ jsonrpc: '2.0', method: 'initialized' })).toBeNull();
     expect(await facade.handle(request(4, 'initialize', {}))).toMatchObject({
       error: { code: LSP_ERROR_CODE.InvalidRequest },
     });
@@ -100,6 +108,66 @@ describe('repository-bound LSP facade', () => {
           data: { reason: 'too_large' },
         },
       });
+  });
+
+  it('derives declaration names only inside one unambiguous persisted node span', async () => {
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    const source = 'export function alpha() {}; alpha();\n';
+    const context: Extract<LspFileContextRead, { ok: true }> = {
+      ...alphaContext,
+      snapshot: { ...alphaContext.snapshot, text: source },
+      nodes: [{ ...alphaNode, startColumn: 0, endColumn: 26 }],
+      occurrences: [],
+    };
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async fileContext() { return context; },
+    };
+    const facade = new LspFacade(reader);
+    await facade.handle(request(1, 'initialize', {}));
+    expect(await facade.handle(request(2, 'textDocument/definition', positionParams(uri, 0, 17))))
+      .toMatchObject({
+        result: { range: { start: { line: 0, character: 16 }, end: { line: 0, character: 21 } } },
+      });
+
+    context.nodes = [{ ...alphaNode, startColumn: 0, endColumn: 10 }];
+    expect(await facade.handle(request(3, 'textDocument/definition', positionParams(uri, 0, 17))))
+      .toMatchObject({ result: null });
+  });
+
+  it('caps document symbols by parent-before-child traversal without orphaning a child', async () => {
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    const names = ['child', ...Array.from({ length: 499 }, (_value, index) => `root${index}`), 'parent'];
+    const nodes = names.map((name, index): Node => ({
+      ...alphaNode,
+      id: name,
+      name,
+      qualifiedName: name,
+      startLine: index + 1,
+      endLine: index + 1,
+      startColumn: 0,
+      endColumn: name.length,
+    }));
+    const context: Extract<LspFileContextRead, { ok: true }> = {
+      ...alphaContext,
+      snapshot: { ...alphaContext.snapshot, text: `${names.join('\n')}\n` },
+      nodes,
+      occurrences: [],
+      containment: [{ source: 'parent', target: 'child', kind: 'contains' }],
+    };
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async fileContext() { return context; },
+    };
+    const facade = new LspFacade(reader);
+    await facade.handle(request(1, 'initialize', {}));
+    const response = await facade.handle(request(2, 'textDocument/documentSymbol', {
+      textDocument: { uri },
+    })) as any;
+
+    expect(response.result).toHaveLength(500);
+    expect(response.result.some((symbol: any) => symbol.name === 'parent')).toBe(true);
+    expect(response.result.some((symbol: any) => symbol.name === 'child')).toBe(false);
   });
 });
 
