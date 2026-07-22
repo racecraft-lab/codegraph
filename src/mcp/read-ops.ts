@@ -80,6 +80,9 @@ export interface LspIncomingRead {
 }
 
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
+const LSP_WORKSPACE_CANDIDATE_CAP = 500;
+const LSP_REFERENCE_CAP = 500;
+const LSP_REFERENCE_SCAN_CAP = 5_000;
 
 /**
  * Bounded scan ceiling used to compute a search `total` (FR-006). Matches the
@@ -234,23 +237,32 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
 
 function lspWorkspaceSymbolsOp(cg: CodeGraph, params: Record<string, unknown>): Node[] {
   const query = typeof params.query === 'string' ? params.query.trim() : '';
-  if (query) return cg.searchNodes(query, { limit: 500 }).map((result) => result.node);
-  const nodes: Node[] = [];
-  for (const file of cg.getFiles()) nodes.push(...cg.getNodesInFile(file.path));
-  return nodes;
+  if (query) {
+    return cg.searchNodes(query, { limit: LSP_WORKSPACE_CANDIDATE_CAP })
+      .map((result) => result.node);
+  }
+  return cg.getBoundedLspWorkspaceNodes(LSP_WORKSPACE_CANDIDATE_CAP);
 }
 
 function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncomingRead {
   const target = cg.getNode(idParam(params));
   if (!target) return { target: null, occurrences: [] };
   const occurrences: LspLocatedEdge[] = [];
-  for (const edge of cg.getIncomingEdges(target.id)) {
-    if (edge.kind === 'contains'
-      || edge.provenance === 'heuristic'
-      || edge.line === undefined
-      || edge.column === undefined) continue;
-    const source = cg.getNode(edge.source);
-    if (source) occurrences.push({ edge, source, target });
+  const seen = new Set<string>();
+  const sources = new Map<string, Node | null>();
+  const edges = cg.getBoundedLspIncomingEdges(target.id, LSP_REFERENCE_SCAN_CAP);
+  for (const edge of edges) {
+    let source = sources.get(edge.source);
+    if (source === undefined) {
+      source = cg.getNode(edge.source);
+      sources.set(edge.source, source);
+    }
+    if (!source || edge.line === undefined || edge.column === undefined) continue;
+    const key = `${source.filePath}\0${edge.line}\0${edge.column}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    occurrences.push({ edge, source, target });
+    if (occurrences.length >= LSP_REFERENCE_CAP) break;
   }
   return { target, occurrences };
 }
@@ -344,10 +356,43 @@ export function readTrustedSnapshot(
       finalReal !== candidateReal ||
       finalRelative === '..' || finalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(finalRelative) ||
       before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs ||
       after.dev !== finalPath.dev || after.ino !== finalPath.ino || !finalPath.isFile() ||
       after.size !== bytesRead ||
       !finalIndexed || finalIndexed.contentHash !== indexed.contentHash ||
       finalIndexed.indexedAt !== indexed.indexedAt || finalIndexed.size !== indexed.size
+    ) {
+      return { ok: false, reason: 'stale' };
+    }
+
+    // Device/inode/size alone cannot detect an equal-length in-place rewrite.
+    // Re-read the same descriptor in bounded chunks and require it to remain
+    // byte-identical through a final metadata/path identity check.
+    const verifyBuffer = Buffer.allocUnsafe(Math.min(bytesRead, 64 * 1024));
+    for (let offset = 0; offset < bytesRead;) {
+      const expected = Math.min(verifyBuffer.length, bytesRead - offset);
+      const read = fs.readSync(fd, verifyBuffer, 0, expected, offset);
+      if (read !== expected
+        || !verifyBuffer.subarray(0, read).equals(bytes.subarray(offset, offset + read))) {
+        return { ok: false, reason: 'stale' };
+      }
+      offset += read;
+    }
+    let verifiedDescriptor: fs.Stats;
+    let verifiedPath: fs.Stats;
+    try {
+      verifiedDescriptor = fs.fstatSync(fd);
+      verifiedPath = fs.statSync(finalReal);
+    } catch {
+      return { ok: false, reason: 'stale' };
+    }
+    if (
+      verifiedDescriptor.dev !== after.dev || verifiedDescriptor.ino !== after.ino ||
+      verifiedDescriptor.size !== after.size || verifiedDescriptor.mtimeMs !== after.mtimeMs ||
+      verifiedDescriptor.ctimeMs !== after.ctimeMs ||
+      verifiedPath.dev !== verifiedDescriptor.dev || verifiedPath.ino !== verifiedDescriptor.ino ||
+      verifiedPath.size !== verifiedDescriptor.size || verifiedPath.mtimeMs !== verifiedDescriptor.mtimeMs ||
+      verifiedPath.ctimeMs !== verifiedDescriptor.ctimeMs || !verifiedPath.isFile()
     ) {
       return { ok: false, reason: 'stale' };
     }

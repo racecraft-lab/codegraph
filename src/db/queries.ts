@@ -1196,6 +1196,22 @@ export class QueryBuilder {
     return rows.map(rowToNode);
   }
 
+  /** Bounded deterministic candidates for the foundational LSP workspace read. */
+  getBoundedLspWorkspaceNodes(limit: number): Node[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM nodes
+      ORDER BY qualified_name COLLATE BINARY,
+        file_path COLLATE BINARY,
+        start_line,
+        start_column,
+        end_line,
+        end_column,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(Math.max(0, Math.trunc(limit))) as NodeRow[];
+    return rows.map(rowToNode);
+  }
+
   /**
    * Stream nodes of one language whose `decorators` JSON array contains
    * `decorator`. The LIKE on the JSON text is a cheap index-free pre-filter
@@ -2214,6 +2230,24 @@ export class QueryBuilder {
       this.stmts.getEdgesByTarget = this.db.prepare(`SELECT * FROM edges WHERE target = ? AND ${activeEdgePredicate()}`);
     }
     const rows = this.stmts.getEdgesByTarget.all(targetId) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  /** Bounded exact incoming-edge candidates for the foundational LSP read. */
+  getBoundedLspIncomingEdges(targetId: string, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.*
+      FROM edges e INDEXED BY idx_edges_target_kind
+      WHERE e.target = ?
+        AND e.kind <> 'contains'
+        AND (e.provenance IS NULL OR e.provenance <> 'heuristic')
+        AND e.line IS NOT NULL
+        AND e.col IS NOT NULL
+        AND ${activeEdgePredicate('e')}
+      ORDER BY e.kind COLLATE BINARY,
+        e.id
+      LIMIT ?
+    `).all(targetId, Math.max(0, Math.trunc(limit))) as EdgeRow[];
     return rows.map(rowToEdge);
   }
 

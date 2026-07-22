@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import CodeGraph from '../src/index';
 import { initGrammars, loadAllGrammars } from '../src/extraction/grammars';
-import { executeReadOp, readTrustedSnapshot } from '../src/mcp/read-ops';
+import { executeReadOp, readTrustedSnapshot, type LspIncomingRead } from '../src/mcp/read-ops';
 import type { QueryBuilder } from '../src/db/queries';
 import {
   LSP_ERROR_CODE,
@@ -190,6 +190,22 @@ describe('trusted daemon LSP reads', () => {
     }
   });
 
+  it('rejects an equal-length in-place rewrite after its descriptor is read', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-rewrite-'));
+    roots.push(root);
+    const candidate = path.join(root, 'sample.ts');
+    fs.writeFileSync(candidate, 'export const version = 1;\n');
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      expect(readTrustedSnapshot(cg, 'sample.ts', () => {
+        fs.writeFileSync(candidate, 'export const version = 2;\n');
+      })).toEqual({ ok: false, reason: 'stale' });
+    } finally {
+      cg.close();
+    }
+  });
+
   it('classifies invalid UTF-8 as unreadable before checking index freshness', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-utf8-'));
     roots.push(root);
@@ -229,6 +245,42 @@ describe('trusted daemon LSP reads', () => {
 
       expect(context.occurrences.every((entry: any) => entry.edge.provenance !== 'heuristic')).toBe(true);
       expect(incoming.occurrences.every((entry: any) => entry.edge.provenance !== 'heuristic')).toBe(true);
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('bounds workspace and incoming read materialization at the daemon boundary', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-bounds-'));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, 'sample.ts'), 'export function alpha() { return 1; }\n');
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      const alpha = cg.getNodesInFile('sample.ts').find((node) => node.name === 'alpha')!;
+      const queries = (cg as unknown as { queries: QueryBuilder }).queries;
+      const sources = Array.from({ length: 600 }, (_value, index): Node => ({
+        ...alpha,
+        id: `bounded-source-${index}`,
+        name: `source${String(index).padStart(3, '0')}`,
+        qualifiedName: `source${String(index).padStart(3, '0')}`,
+        startLine: index + 2,
+        endLine: index + 2,
+      }));
+      queries.insertNodes(sources);
+      queries.insertEdges(sources.map((source, index) => ({
+        source: source.id,
+        target: alpha.id,
+        kind: 'references' as const,
+        line: index + 2,
+        column: 0,
+        provenance: 'lsp' as const,
+      })));
+
+      const workspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {}) as Node[];
+      const incoming = await executeReadOp(cg, 'lspIncoming', { id: alpha.id }) as LspIncomingRead;
+      expect(workspace).toHaveLength(500);
+      expect(incoming.occurrences).toHaveLength(500);
     } finally {
       cg.close();
     }

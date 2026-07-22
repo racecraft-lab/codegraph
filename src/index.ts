@@ -2199,6 +2199,11 @@ export class CodeGraph {
     return this.queries.getNodesByFile(filePath);
   }
 
+  /** Internal bounded candidate set for the foundational LSP workspace read. */
+  getBoundedLspWorkspaceNodes(limit: number): Node[] {
+    return this.queries.getBoundedLspWorkspaceNodes(limit);
+  }
+
   /**
    * Get all nodes of a specific kind
    */
@@ -2853,6 +2858,11 @@ export class CodeGraph {
    */
   getIncomingEdges(nodeId: string): Edge[] {
     return this.queries.getIncomingEdges(nodeId);
+  }
+
+  /** Internal bounded exact candidates for the foundational LSP incoming read. */
+  getBoundedLspIncomingEdges(nodeId: string, limit: number): Edge[] {
+    return this.queries.getBoundedLspIncomingEdges(nodeId, limit);
   }
 
   // ===========================================================================
