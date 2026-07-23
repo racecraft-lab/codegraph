@@ -276,6 +276,35 @@ describe('LSP Content-Length transport', () => {
     output.destroy();
   });
 
+  it('waits for accepted output writes and reports late callback failures', async () => {
+    const input = new PassThrough();
+    let completeWrite!: (error?: Error | null) => void;
+    const output = new Writable({
+      write(_chunk, _encoding, callback) { completeWrite = callback; },
+    });
+    const result = serveLspStdio(fakeReader(), {
+      input,
+      output,
+      diagnostics: new PassThrough(),
+      installSignalHandlers: false,
+      outputDrainTimeoutMs: 1_000,
+    });
+    let resolved = false;
+    void result.then(() => { resolved = true; });
+
+    input.end(Buffer.concat([
+      frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+      frame({ jsonrpc: '2.0', id: 2, method: 'shutdown' }),
+      frame({ jsonrpc: '2.0', method: 'exit' }),
+    ]));
+    await vi.waitFor(() => expect(completeWrite).toBeTypeOf('function'));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(resolved).toBe(false);
+
+    completeWrite(new Error('EPIPE'));
+    await expect(result).resolves.toBe(1);
+  });
+
   it('serves the built command to a generic LSP client and exits cleanly', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-cli-'));
     fs.writeFileSync(path.join(root, 'sample.ts'), 'export function alpha() { return 1; }\n');

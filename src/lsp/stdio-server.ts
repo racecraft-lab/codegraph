@@ -109,6 +109,10 @@ export async function serveLspStdio(
   let queuedFrames = 0;
   let queuedBodyBytes = 0;
   let inputPauseScheduled = false;
+  let pendingOutputWrites = 0;
+  let finishCode: number | null = null;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  let exitResolved = false;
   let cancelOutputDrain: (() => void) | null = null;
   let resolveExit!: (code: number) => void;
   const exit = new Promise<number>((resolve) => { resolveExit = resolve; });
@@ -118,11 +122,23 @@ export async function serveLspStdio(
     const body = Buffer.from(JSON.stringify(value), 'utf8');
     const frame = Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body]);
     let accepted: boolean;
+    let writeCompleted = false;
+    pendingOutputWrites += 1;
+    const onWriteComplete = (error?: Error | null): void => {
+      if (writeCompleted) return;
+      writeCompleted = true;
+      pendingOutputWrites = Math.max(0, pendingOutputWrites - 1);
+      if (error) {
+        log('stream_failure');
+        finish(1);
+        return;
+      }
+      completeFinish();
+    };
     try {
-      accepted = output.write(frame);
+      accepted = output.write(frame, onWriteComplete);
     } catch {
-      log('stream_failure');
-      finish(1);
+      onWriteComplete(new Error('output stream failure'));
       return;
     }
     if (accepted || settled) return;
@@ -162,7 +178,12 @@ export async function serveLspStdio(
     try { diagnostics.write(`${formatLspDiagnostic(code)}\n`); } catch { /* best-effort */ }
   };
   const finish = (code: number): void => {
-    if (settled) return;
+    if (finishCode !== null) {
+      if (code !== 0) finishCode = code;
+      completeFinish(code !== 0);
+      return;
+    }
+    finishCode = code;
     settled = true;
     cancelOutputDrain?.();
     try { input.pause(); } catch { /* best-effort */ }
@@ -170,15 +191,32 @@ export async function serveLspStdio(
     input.removeListener('end', onEnd);
     input.removeListener('error', onError);
     input.removeListener('close', onInputClose);
-    output.removeListener('error', onOutputError);
-    output.removeListener('close', onOutputClose);
     if (options.installSignalHandlers !== false) {
       process.removeListener('SIGINT', onSignal);
       process.removeListener('SIGTERM', onSignal);
     }
     try { options.close?.(); } catch { /* best-effort */ }
-    resolveExit(code);
+    if (code === 0 && pendingOutputWrites > 0) {
+      finishTimer = setTimeout(() => {
+        log('stream_failure');
+        finish(1);
+      }, outputDrainTimeoutMs);
+    }
+    completeFinish(code !== 0);
   };
+  const completeFinish = (force = false): void => {
+    if (exitResolved || finishCode === null || (!force && pendingOutputWrites > 0)) return;
+    exitResolved = true;
+    if (finishTimer) {
+      clearTimeout(finishTimer);
+      finishTimer = null;
+    }
+    output.removeListener('error', onOutputError);
+    output.removeListener('close', onOutputClose);
+    if (force || pendingOutputWrites > 0) output.on('error', ignoreLateOutputError);
+    resolveExit(finishCode);
+  };
+  const ignoreLateOutputError = (): void => { /* Prevent post-timeout stream crashes. */ };
   const handleBody = async (body: Buffer): Promise<void> => {
     if (settled) return;
     let value: unknown;
