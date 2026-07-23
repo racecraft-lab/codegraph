@@ -79,38 +79,11 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test("source navigation restores history and preserves symbol metadata", async ({ page }) => {
+test("source viewer stays hidden until the WebSocket transport ships", async ({ page }) => {
   await installApiMocks(page)
   await page.goto("/symbol/node-a")
 
   await expect(page.getByText("export async function startWebServer(options: ServerOptions): Promise<void>", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Open source" })).toHaveCount(0)
   expect(await page.evaluate(() => (window as unknown as { __sourceSockets?: unknown[] }).__sourceSockets?.length ?? 0)).toBe(0)
-  await page.getByRole("button", { name: "Open source" }).click()
-  await expect(page.getByRole("textbox", { name: "Read-only source for src/server/index.ts" })).toContainText("startWebServer")
-
-  await page.getByRole("button", { name: "Show hover details" }).click()
-  await expect(page.getByLabel("Hover details")).toContainText("Promise<void>")
-  await page.getByRole("button", { name: "Go to definition" }).click()
-  await expect(page).toHaveURL(/source=src%2Fserver%2Froutes\.ts/)
-  await expect(page.getByRole("textbox", { name: "Read-only source for src/server/routes.ts" })).toContainText("handleApiRequest")
-
-  await page.goBack()
-  await expect(page).toHaveURL(/source=src%2Fserver%2Findex\.ts/)
-  await expect(page.getByRole("textbox", { name: "Read-only source for src/server/index.ts" })).toContainText("startWebServer")
-  await expect(page.getByText("export async function startWebServer(options: ServerOptions): Promise<void>", { exact: true })).toBeVisible()
-})
-
-test("stale source requires an explicit retry and leaves symbol detail usable", async ({ page }) => {
-  await installApiMocks(page)
-  await page.goto("/symbol/node-a")
-  await page.evaluate(() => { (window as unknown as { __sourceFailure?: string }).__sourceFailure = "stale" })
-  await page.getByRole("button", { name: "Open source" }).click()
-
-  await expect(page.getByRole("alert")).toContainText("Re-index, then retry")
-  await expect(page.getByText("export async function startWebServer(options: ServerOptions): Promise<void>", { exact: true })).toBeVisible()
-  const socketsBeforeRetry = await page.evaluate(() => (window as unknown as { __sourceSockets?: unknown[] }).__sourceSockets?.length ?? 0)
-  await page.evaluate(() => { (window as unknown as { __sourceFailure?: string }).__sourceFailure = undefined })
-  await page.getByRole("button", { name: "Retry source" }).click()
-  await expect(page.getByRole("textbox")).toContainText("startWebServer")
-  expect(await page.evaluate(() => (window as unknown as { __sourceSockets?: unknown[] }).__sourceSockets?.length ?? 0)).toBe(socketsBeforeRetry + 1)
 })

@@ -16,6 +16,7 @@ import { errorState } from "@/lib/api/client"
 import { listCallees, listCallers } from "@/lib/api/relationships"
 import { getSymbol } from "@/lib/api/symbols"
 import type { ClusterSummary, CodeNode, FlowSummary } from "@/lib/api/types"
+import { SOURCE_VIEWER_TRANSPORT_AVAILABLE } from "@/lib/lsp/availability"
 import type { LspLocation, LspRange } from "@/lib/lsp/client"
 import { mark, measure } from "@/lib/perf/marks"
 
@@ -36,7 +37,9 @@ export function SymbolDetailRoute() {
   const [message, setMessage] = React.useState("Loading symbol context.")
   const [partialError, setPartialError] = React.useState<string | undefined>()
   const [durationMs, setDurationMs] = React.useState<number | null>(null)
-  const [sourceOpen, setSourceOpen] = React.useState(() => searchParams.has("source"))
+  const [sourceOpen, setSourceOpen] = React.useState(
+    () => SOURCE_VIEWER_TRANSPORT_AVAILABLE && searchParams.has("source"),
+  )
 
   React.useEffect(() => {
     let cancelled = false
@@ -110,7 +113,7 @@ export function SymbolDetailRoute() {
   const sourceLocation = restoredLocation ?? fallbackLocation
 
   React.useEffect(() => {
-    setSourceOpen(searchParams.has("source"))
+    setSourceOpen(SOURCE_VIEWER_TRANSPORT_AVAILABLE && searchParams.has("source"))
   }, [searchParams])
 
   const navigateSource = React.useCallback((location: LspLocation) => {
@@ -165,7 +168,7 @@ export function SymbolDetailRoute() {
               <BotIcon data-icon="inline-start" />
               Ask with context
             </Button>
-            {fallbackLocation ? (
+            {SOURCE_VIEWER_TRANSPORT_AVAILABLE && fallbackLocation ? (
               <Button
                 variant="outline"
                 onClick={() => {
@@ -182,7 +185,7 @@ export function SymbolDetailRoute() {
           </pre>
         </CardContent>
       </Card>
-      {sourceOpen && sourceLocation && selectedRepo ? (
+      {SOURCE_VIEWER_TRANSPORT_AVAILABLE && sourceOpen && sourceLocation && selectedRepo ? (
         <SourcePane
           key={selectedRepo.id}
           repoId={selectedRepo.id}
