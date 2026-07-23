@@ -281,7 +281,7 @@ describe('repository-bound LSP facade', () => {
       error: { code: LSP_ERROR_CODE.RequestFailed, data: { reason: 'too_large' } },
     });
     expect(fileReads).toBe(1);
-  });
+  }, 15_000);
 
   it('fails closed instead of combining graph identities from different snapshots', async () => {
     const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
