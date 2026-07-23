@@ -103,6 +103,64 @@ interface EdgeRow {
   provenance: string | null;
 }
 
+interface LspNodeSummaryRow {
+  id: string;
+  file_path: string;
+  max_json_bytes: number;
+}
+
+/** Small, cache-independent metadata used to budget LSP responses before materializing nodes. */
+export interface LspNodeSummary {
+  id: string;
+  filePath: string;
+  maxJsonBytes: number;
+}
+
+export interface LspWorkspaceSymbolCandidate {
+  node: Node;
+  score: number;
+}
+
+// Conservative upper bound for one Node's JSON representation. Text can expand
+// by at most 6x when JSON-escaped (for example, a control byte becomes \u00xx).
+const LSP_NODE_MAX_JSON_BYTES_SQL = `
+  512 + 6 * (
+    length(CAST(id AS BLOB))
+    + length(CAST(kind AS BLOB))
+    + length(CAST(name AS BLOB))
+    + length(CAST(qualified_name AS BLOB))
+    + length(CAST(file_path AS BLOB))
+    + length(CAST(language AS BLOB))
+    + COALESCE(length(CAST(docstring AS BLOB)), 0)
+    + COALESCE(length(CAST(signature AS BLOB)), 0)
+    + COALESCE(length(CAST(visibility AS BLOB)), 0)
+    + COALESCE(length(CAST(decorators AS BLOB)), 0)
+    + COALESCE(length(CAST(type_parameters AS BLOB)), 0)
+    + COALESCE(length(CAST(return_type AS BLOB)), 0)
+  )
+`;
+
+const LSP_WORKSPACE_NODE_BYTE_CAP = 7 * 1024 * 1024;
+const LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL = `
+  384 + 6 * (
+    length(CAST(nodes.id AS BLOB))
+    + length(CAST(nodes.kind AS BLOB))
+    + length(CAST(nodes.name AS BLOB))
+    + length(CAST(nodes.qualified_name AS BLOB))
+    + length(CAST(nodes.file_path AS BLOB))
+    + length(CAST(nodes.language AS BLOB))
+    + COALESCE(length(CAST(nodes.visibility AS BLOB)), 0)
+  )
+`;
+
+const LSP_WORKSPACE_NODE_PROJECTION_SQL = `
+  nodes.id, nodes.kind, nodes.name, nodes.qualified_name,
+  nodes.file_path, nodes.language,
+  nodes.start_line, nodes.end_line, nodes.start_column, nodes.end_column,
+  nodes.visibility, nodes.is_exported, nodes.is_async, nodes.is_static,
+  nodes.is_abstract, nodes.updated_at
+`;
+
 interface FileRow {
   path: string;
   content_hash: string;
@@ -259,6 +317,46 @@ function rowToNode(row: NodeRow): Node {
     returnType: row.return_type ?? undefined,
     updatedAt: row.updated_at,
   };
+}
+
+function rowToLspNodeSummary(row: LspNodeSummaryRow): LspNodeSummary {
+  return {
+    id: row.id,
+    filePath: row.file_path,
+    maxJsonBytes: Number(row.max_json_bytes),
+  };
+}
+
+function rowToLspWorkspaceNode(row: NodeRow): Node {
+  return {
+    id: row.id,
+    kind: row.kind as NodeKind,
+    name: row.name,
+    qualifiedName: row.qualified_name,
+    filePath: row.file_path,
+    language: row.language as Language,
+    startLine: row.start_line,
+    endLine: row.end_line,
+    startColumn: row.start_column,
+    endColumn: row.end_column,
+    visibility: row.visibility as Node['visibility'],
+    isExported: row.is_exported === 1,
+    isAsync: row.is_async === 1,
+    isStatic: row.is_static === 1,
+    isAbstract: row.is_abstract === 1,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toFtsPrefixQuery(query: string): string {
+  return query
+    .replace(/::/g, ' ')
+    .replace(/['"*():^]/g, '')
+    .split(/\s+/)
+    .filter((term) => term.length > 0)
+    .filter((term) => !/^(AND|OR|NOT|NEAR)$/i.test(term))
+    .map((term) => `"${term}"*`)
+    .join(' OR ');
 }
 
 /**
@@ -954,6 +1052,46 @@ export class QueryBuilder {
     return out;
   }
 
+  /** Cache-bypassing batch lookup for reads that must remain on one SQLite snapshot. */
+  getLspNodesByIdsUncached(ids: readonly string[]): Map<string, Node> {
+    const out = new Map<string, Node>();
+    const uniqueIds = [...new Set(ids)];
+    for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(`SELECT * FROM nodes WHERE id IN (${placeholders})`)
+        .all(...chunk) as NodeRow[];
+      for (const row of rows) {
+        const node = rowToNode(row);
+        out.set(node.id, node);
+      }
+    }
+    return out;
+  }
+
+  /** Cache-independent size/path summaries used before structured LSP node materialization. */
+  getLspNodeSummariesByIds(ids: readonly string[]): Map<string, LspNodeSummary> {
+    const out = new Map<string, LspNodeSummary>();
+    const uniqueIds = [...new Set(ids)];
+    for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db.prepare(`
+        SELECT id, file_path, ${LSP_NODE_MAX_JSON_BYTES_SQL} AS max_json_bytes
+        FROM nodes
+        WHERE id IN (${placeholders})
+      `).all(...chunk) as LspNodeSummaryRow[];
+      for (const row of rows) {
+        const summary = rowToLspNodeSummary(row);
+        out.set(summary.id, summary);
+      }
+    }
+    return out;
+  }
+
   private getExistingNodeIds(ids: readonly string[]): Set<string> {
     const out = new Set<string>();
     if (ids.length === 0) return out;
@@ -1196,6 +1334,48 @@ export class QueryBuilder {
     return rows.map(rowToNode);
   }
 
+  /** Bounded deterministic node summaries for the foundational LSP file-context read. */
+  getBoundedLspFileNodeSummaries(filePath: string, limit: number): LspNodeSummary[] {
+    const rows = this.db.prepare(`
+      SELECT id, file_path, ${LSP_NODE_MAX_JSON_BYTES_SQL} AS max_json_bytes
+      FROM nodes
+      WHERE file_path = ?
+      ORDER BY start_line,
+        start_column,
+        end_line,
+        end_column,
+        qualified_name COLLATE BINARY,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, Math.max(0, Math.trunc(limit))) as LspNodeSummaryRow[];
+    return rows.map(rowToLspNodeSummary);
+  }
+
+  /** Bounded eligible edges sourced from one file for LSP context reads. */
+  getBoundedLspFileEdges(filePath: string, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.id, e.source, e.target, e.kind, NULL AS metadata,
+        e.line, e.col, e.provenance
+      FROM nodes source_node
+      JOIN edges e INDEXED BY idx_edges_source_kind ON e.source = source_node.id
+      WHERE source_node.file_path = ?
+        AND ${activeEdgePredicate('e')}
+        AND (
+          e.kind = 'contains'
+          OR (
+            (e.provenance IS NULL OR e.provenance <> 'heuristic')
+            AND e.line IS NOT NULL
+            AND e.col IS NOT NULL
+          )
+        )
+      ORDER BY source_node.id COLLATE BINARY,
+        e.kind COLLATE BINARY,
+        e.id
+      LIMIT ?
+    `).all(filePath, Math.max(0, Math.trunc(limit))) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
   /**
    * Stream nodes of one language whose `decorators` JSON array contains
    * `decorator`. The LIKE on the JSON text is a cheap index-free pre-filter
@@ -1300,6 +1480,158 @@ export class QueryBuilder {
     }
     const rows = this.stmts.getNodesByLowerName.all(lowerName) as NodeRow[];
     return rows.map(rowToNode);
+  }
+
+  /**
+   * Stream lightweight workspace-symbol candidates without materializing
+   * documentation/type payloads or truncating score ties before the LSP layer
+   * applies its normalized-URI ordering.
+   */
+  *iterateLspWorkspaceSymbolCandidates(query: string): IterableIterator<LspWorkspaceSymbolCandidate> {
+    const parsed = parseQuery(query);
+    const text = parsed.text;
+    const kinds = parsed.kinds.length > 0 ? parsed.kinds : undefined;
+    const languages = parsed.languages.length > 0 ? parsed.languages : undefined;
+    const pathFilters = parsed.pathFilters.map((value) => value.toLowerCase());
+    const nameFilters = parsed.nameFilters.map((value) => value.toLowerCase());
+    const scoringQuery = text || query;
+
+    const appendTypeFilters = (sql: string, params: Array<string | number>): string => {
+      if (kinds && kinds.length > 0) {
+        sql += ` AND nodes.kind IN (${kinds.map(() => '?').join(',')})`;
+        params.push(...kinds);
+      }
+      if (languages && languages.length > 0) {
+        sql += ` AND nodes.language IN (${languages.map(() => '?').join(',')})`;
+        params.push(...languages);
+      }
+      return sql;
+    };
+
+    const matchesHardFilters = (node: Node): boolean => {
+      if (pathFilters.length > 0) {
+        const filePath = node.filePath.toLowerCase();
+        if (!pathFilters.some((value) => filePath.includes(value))) return false;
+      }
+      if (nameFilters.length > 0) {
+        const name = node.name.toLowerCase();
+        if (!nameFilters.some((value) => name.includes(value))) return false;
+      }
+      return true;
+    };
+
+    const scored = (node: Node, baseScore: number): LspWorkspaceSymbolCandidate => ({
+      node,
+      score: scoringQuery
+        ? baseScore
+          + kindBonus(node.kind)
+          + scorePathRelevance(node.filePath, scoringQuery, this.projectNameTokens)
+          + nameMatchBonus(node.name, scoringQuery)
+        : baseScore,
+    });
+
+    if (!text) {
+      const params: Array<string | number> = [LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL}
+        FROM nodes
+        WHERE (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      const baseScore = query ? 1 : 0;
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        const node = rowToLspWorkspaceNode(raw as NodeRow);
+        if (matchesHardFilters(node)) yield scored(node, baseScore);
+      }
+      return;
+    }
+
+    const ftsQuery = toFtsPrefixQuery(text);
+    if (ftsQuery) {
+      const params: Array<string | number> = [ftsQuery, LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL},
+          bm25(nodes_fts, 0, 20, 5, 1, 2) AS score
+        FROM nodes_fts
+        JOIN nodes ON nodes_fts.id = nodes.id
+        WHERE nodes_fts MATCH ?
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      let hadRows = false;
+      try {
+        for (const raw of this.db.prepare(sql).iterate(...params)) {
+          hadRows = true;
+          const row = raw as NodeRow & { score: number };
+          const node = rowToLspWorkspaceNode(row);
+          if (matchesHardFilters(node)) yield scored(node, Math.abs(row.score));
+        }
+      } catch {
+        hadRows = false;
+      }
+      if (hadRows) return;
+    }
+
+    if (text.length >= 2) {
+      const exactMatch = text;
+      const startsWith = `${text}%`;
+      const contains = `%${text}%`;
+      const params: Array<string | number> = [
+        exactMatch,
+        startsWith,
+        contains,
+        contains,
+        contains,
+        contains,
+        startsWith,
+        LSP_WORKSPACE_NODE_BYTE_CAP,
+      ];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL},
+          CASE
+            WHEN nodes.name = ? THEN 1.0
+            WHEN nodes.name LIKE ? THEN 0.9
+            WHEN nodes.name LIKE ? THEN 0.8
+            WHEN nodes.qualified_name LIKE ? THEN 0.7
+            ELSE 0.5
+          END AS score
+        FROM nodes
+        WHERE (
+          nodes.name LIKE ? OR
+          nodes.qualified_name LIKE ? OR
+          nodes.name LIKE ?
+        )
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      let hadRows = false;
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        hadRows = true;
+        const row = raw as NodeRow & { score: number };
+        const node = rowToLspWorkspaceNode(row);
+        if (matchesHardFilters(node)) yield scored(node, row.score);
+      }
+      if (hadRows) return;
+    }
+
+    if (text.length < 3) return;
+    const lowered = text.toLowerCase();
+    const maxDist = lowered.length <= 4 ? 1 : 2;
+    const seen = new Set<string>();
+    for (const name of this.iterateNodeNames()) {
+      const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
+      if (dist > maxDist) continue;
+      const params: Array<string | number> = [name, LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL}
+        FROM nodes
+        WHERE nodes.name = ?
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        const node = rowToLspWorkspaceNode(raw as NodeRow);
+        if (seen.has(node.id) || !matchesHardFilters(node)) continue;
+        seen.add(node.id);
+        yield scored(node, 1 / (1 + dist));
+      }
+    }
   }
 
   /**
@@ -1534,15 +1866,7 @@ export class QueryBuilder {
     // so treat it as whitespace before the strip step. Otherwise queries
     // like `stage_apply::run` collapse to `stage_applyrun` (the colons
     // are stripped without splitting) and find nothing. See #173.
-    const ftsQuery = query
-      .replace(/::/g, ' ') // Rust/C++/Ruby qualifier separator
-      .replace(/['"*():^]/g, '') // Remove FTS5 special chars
-      .split(/\s+/)
-      .filter(term => term.length > 0)
-      // Strip FTS5 boolean operators to prevent query manipulation
-      .filter(term => !/^(AND|OR|NOT|NEAR)$/i.test(term))
-      .map(term => `"${term}"*`) // Prefix match each term
-      .join(' OR ');
+    const ftsQuery = toFtsPrefixQuery(query);
 
     if (!ftsQuery) {
       return [];
@@ -2214,6 +2538,25 @@ export class QueryBuilder {
       this.stmts.getEdgesByTarget = this.db.prepare(`SELECT * FROM edges WHERE target = ? AND ${activeEdgePredicate()}`);
     }
     const rows = this.stmts.getEdgesByTarget.all(targetId) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  /** Bounded exact incoming-edge candidates for the foundational LSP read. */
+  getBoundedLspIncomingEdges(targetId: string, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.id, e.source, e.target, e.kind, NULL AS metadata,
+        e.line, e.col, e.provenance
+      FROM edges e INDEXED BY idx_edges_target_kind
+      WHERE e.target = ?
+        AND e.kind <> 'contains'
+        AND (e.provenance IS NULL OR e.provenance <> 'heuristic')
+        AND e.line IS NOT NULL
+        AND e.col IS NOT NULL
+        AND ${activeEdgePredicate('e')}
+      ORDER BY e.kind COLLATE BINARY,
+        e.id
+      LIMIT ?
+    `).all(targetId, Math.max(0, Math.trunc(limit))) as EdgeRow[];
     return rows.map(rowToEdge);
   }
 

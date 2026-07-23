@@ -27,7 +27,11 @@ import {
 } from './types';
 import { DatabaseConnection, getDatabasePath, removeDatabaseFiles } from './db';
 import { WalCheckpointValve } from './db/wal-valve';
-import { QueryBuilder } from './db/queries';
+import {
+  QueryBuilder,
+  type LspNodeSummary,
+  type LspWorkspaceSymbolCandidate,
+} from './db/queries';
 import {
   isInitialized,
   createDirectory,
@@ -2199,6 +2203,36 @@ export class CodeGraph {
     return this.queries.getNodesByFile(filePath);
   }
 
+  /** Lightweight, uncapped candidate stream for exact LSP workspace ordering. */
+  *iterateLspWorkspaceSymbolCandidates(query: string): IterableIterator<LspWorkspaceSymbolCandidate> {
+    yield* this.queries.iterateLspWorkspaceSymbolCandidates(query);
+  }
+
+  /** Internal bounded node summaries for the foundational LSP file-context read. */
+  getBoundedLspFileNodeSummaries(filePath: string, limit: number): LspNodeSummary[] {
+    return this.queries.getBoundedLspFileNodeSummaries(filePath, limit);
+  }
+
+  /** Internal bounded edges for the foundational LSP file-context read. */
+  getBoundedLspFileEdges(filePath: string, limit: number): Edge[] {
+    return this.queries.getBoundedLspFileEdges(filePath, limit);
+  }
+
+  /** Keep one composite structured LSP read on a single SQLite snapshot. */
+  withLspReadTransaction<T>(read: () => T): T {
+    return this.db.transaction(read);
+  }
+
+  /** Cache-bypassing batch lookup used by snapshot-consistent structured LSP reads. */
+  getLspNodesByIds(nodeIds: readonly string[]): Map<string, Node> {
+    return this.queries.getLspNodesByIdsUncached(nodeIds);
+  }
+
+  /** Cache-independent response-budget metadata for structured LSP reads. */
+  getLspNodeSummariesByIds(nodeIds: readonly string[]): Map<string, LspNodeSummary> {
+    return this.queries.getLspNodeSummariesByIds(nodeIds);
+  }
+
   /**
    * Get all nodes of a specific kind
    */
@@ -2853,6 +2887,11 @@ export class CodeGraph {
    */
   getIncomingEdges(nodeId: string): Edge[] {
     return this.queries.getIncomingEdges(nodeId);
+  }
+
+  /** Internal bounded exact candidates for the foundational LSP incoming read. */
+  getBoundedLspIncomingEdges(nodeId: string, limit: number): Edge[] {
+    return this.queries.getBoundedLspIncomingEdges(nodeId, limit);
   }
 
   // ===========================================================================
