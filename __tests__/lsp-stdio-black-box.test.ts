@@ -211,12 +211,15 @@ describe('LSP Content-Length transport', () => {
   });
 
   it('fails closed before queued request count or body bytes can grow without bound', async () => {
-    const expectOverload = async (requests: Buffer[]): Promise<void> => {
+    const expectOverload = async (requestBatches: Buffer[][]): Promise<void> => {
       const input = new PassThrough();
       const output = new PassThrough();
+      const diagnostics = new PassThrough();
       const outputChunks: Buffer[] = [];
+      const diagnosticChunks: Buffer[] = [];
       let reads = 0;
       output.on('data', (chunk) => outputChunks.push(Buffer.from(chunk)));
+      diagnostics.on('data', (chunk) => diagnosticChunks.push(Buffer.from(chunk)));
       const reader: LspRepositoryReader = {
         ...fakeReader(),
         async workspaceSymbols() { reads += 1; return []; },
@@ -224,33 +227,51 @@ describe('LSP Content-Length transport', () => {
       const result = serveLspStdio(reader, {
         input,
         output,
+        diagnostics,
         installSignalHandlers: false,
       });
 
       input.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
       await vi.waitFor(() => expect(decodeFrames(Buffer.concat(outputChunks))).toHaveLength(1));
       await vi.waitFor(() => expect(input.isPaused()).toBe(false));
-      input.write(Buffer.concat(requests));
+      for (const requests of requestBatches) input.write(Buffer.concat(requests));
 
       await expect(result).resolves.toBe(1);
       expect(input.isPaused()).toBe(true);
       expect(reads).toBe(0);
+      expect(Buffer.concat(diagnosticChunks).toString('utf8')).toBe('[codegraph:lsp] invalid_frame\n');
     };
 
-    await expectOverload(Array.from({ length: 17 }, (_value, index) => frame({
-      jsonrpc: '2.0',
-      id: index + 2,
-      method: 'workspace/symbol',
-      params: { query: 'alpha' },
-    })));
+    await expectOverload([
+      Array.from({ length: 16 }, (_value, index) => frame({
+        jsonrpc: '2.0',
+        id: index + 2,
+        method: 'workspace/symbol',
+        params: { query: 'alpha' },
+      })),
+      [frame({
+        jsonrpc: '2.0',
+        id: 18,
+        method: 'workspace/symbol',
+        params: { query: 'alpha' },
+      })],
+    ]);
 
     const largeQuery = 'x'.repeat(1024 * 1024 - 256);
-    await expectOverload(Array.from({ length: 5 }, (_value, index) => frame({
-      jsonrpc: '2.0',
-      id: index + 2,
-      method: 'workspace/symbol',
-      params: { query: largeQuery },
-    })));
+    await expectOverload([
+      Array.from({ length: 4 }, (_value, index) => frame({
+        jsonrpc: '2.0',
+        id: index + 2,
+        method: 'workspace/symbol',
+        params: { query: largeQuery },
+      })),
+      [frame({
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'workspace/symbol',
+        params: { query: largeQuery },
+      })],
+    ]);
   });
 
   it('fails closed on output errors and bounded backpressure', async () => {

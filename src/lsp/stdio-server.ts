@@ -291,6 +291,7 @@ export async function serveLspStdio(
       })) {
         if (queuedFrames >= MAX_QUEUED_FRAMES
           || body.length > MAX_QUEUED_BODY_BYTES - queuedBodyBytes) {
+          log('invalid_frame');
           finish(1);
           break;
         }
