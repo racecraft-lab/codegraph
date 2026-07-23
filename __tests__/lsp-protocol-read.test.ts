@@ -534,6 +534,22 @@ describe('trusted daemon LSP reads', () => {
         query: 'heapBudgetWorkspaceTarget',
       })).resolves.toEqual({ ok: false, reason: 'too_large' });
 
+      queries.insertNodes(Array.from({ length: 101 }, (_value, index): Node => ({
+        ...alpha,
+        id: `raw-fts-budget-${index}`,
+        kind: index === 100 ? 'class' : 'function',
+        name: `sharedFtsTerm${index}`,
+        qualifiedName: `sharedFtsTerm${index}`,
+        startLine: index + 1_000,
+        endLine: index + 1_000,
+      })));
+      const ftsFilterBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
+      expect([...cg.iterateLspWorkspaceSymbolCandidates(
+        'sharedFtsTerm kind:class',
+        ftsFilterBudget,
+      )]).toEqual([]);
+      expect(ftsFilterBudget.exceeded).toBe(true);
+
       const pathScanBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
       expect([...cg.iterateLspWorkspaceSymbolCandidates(
         'path:definitely-absent-workspace-path',

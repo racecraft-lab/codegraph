@@ -1583,8 +1583,8 @@ export class QueryBuilder {
       `, params);
       let yieldedRows = false;
       try {
+        if (!this.reserveLspWorkspaceFtsRows(ftsQuery, scanBudget)) return;
         for (const raw of this.db.prepare(sql).iterate(...params)) {
-          if (!reserveLspWorkspaceScanRow(scanBudget)) return;
           const row = raw as NodeRow & { score: number };
           const node = rowToLspWorkspaceNode(row);
           if (!matchesHardFilters(node)) continue;
@@ -1663,6 +1663,33 @@ export class QueryBuilder {
         yield scored(node, 1 / (1 + dist));
       }
     }
+  }
+
+  private reserveLspWorkspaceFtsRows(
+    ftsQuery: string,
+    scanBudget?: LspWorkspaceScanBudget,
+  ): boolean {
+    if (!scanBudget) return true;
+    const remaining = scanBudget.maxRows - scanBudget.examinedRows;
+    if (!Number.isSafeInteger(remaining) || remaining < 0 || remaining >= Number.MAX_SAFE_INTEGER) {
+      scanBudget.exceeded = true;
+      return false;
+    }
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM (
+        SELECT 1
+        FROM nodes_fts
+        WHERE nodes_fts MATCH ?
+        LIMIT ?
+      )
+    `).get(ftsQuery, remaining + 1) as { count: number };
+    if (!Number.isSafeInteger(row.count) || row.count > remaining) {
+      scanBudget.exceeded = true;
+      return false;
+    }
+    scanBudget.examinedRows += row.count;
+    return true;
   }
 
   private lspWorkspaceBroadScanExceedsBudget(scanBudget?: LspWorkspaceScanBudget): boolean {
