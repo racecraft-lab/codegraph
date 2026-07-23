@@ -383,6 +383,25 @@ describe('trusted daemon LSP reads', () => {
     }
   });
 
+  it('rejects excessive workspace query work before entering the read transaction', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-query-budget-'));
+    roots.push(root);
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    const transaction = vi.spyOn(cg, 'withLspReadTransaction');
+    try {
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: Array.from({ length: 33 }, (_, index) => `path:missing-${index}`).join(' '),
+      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'x'.repeat(4 * 1024 + 1),
+      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      transaction.mockRestore();
+      cg.close();
+    }
+  });
+
   it('bounds workspace and incoming read materialization at the daemon boundary', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-bounds-'));
     roots.push(root);

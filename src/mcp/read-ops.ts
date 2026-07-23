@@ -24,6 +24,7 @@ import type { Node, Edge, FileRecord, SearchMode } from '../types';
 import type { LspNodeSummary, LspWorkspaceScanBudget } from '../db/queries';
 import { normalizeLspUri } from '../lsp/protocol';
 import { resolveAutoMode } from '../search/hybrid';
+import { parseQuery } from '../search/query-parser';
 
 /** An unrecognized `op` — surfaced as a JSON-RPC InvalidParams by the session. */
 export class UnknownReadOpError extends Error {}
@@ -95,6 +96,8 @@ export type LspIncomingRead =
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
 const LSP_WORKSPACE_EMPTY_SCAN_CAP = 1_000;
 const LSP_WORKSPACE_SEARCH_SCAN_CAP = 5_000;
+const LSP_WORKSPACE_QUERY_BYTE_CAP = 4 * 1024;
+const LSP_WORKSPACE_FILTER_CAP = 32;
 const LSP_REFERENCE_SCAN_CAP = 5_000;
 const LSP_FILE_NODE_CAP = 5_000;
 const LSP_FILE_EDGE_CAP = 10_000;
@@ -255,8 +258,18 @@ function lspWorkspaceSymbolsOp(
   cg: CodeGraph,
   params: Record<string, unknown>,
 ): LspWorkspaceSymbolsRead {
+  const query = typeof params.query === 'string' ? params.query.trim() : '';
+  if (Buffer.byteLength(query, 'utf8') > LSP_WORKSPACE_QUERY_BYTE_CAP) {
+    return { ok: false, reason: 'too_large' };
+  }
+  const parsed = parseQuery(query);
+  const filterCount = parsed.kinds.length
+    + parsed.languages.length
+    + parsed.pathFilters.length
+    + parsed.nameFilters.length;
+  if (filterCount > LSP_WORKSPACE_FILTER_CAP) return { ok: false, reason: 'too_large' };
+
   return cg.withLspReadTransaction(() => {
-    const query = typeof params.query === 'string' ? params.query.trim() : '';
     const scanCap = query ? LSP_WORKSPACE_SEARCH_SCAN_CAP : LSP_WORKSPACE_EMPTY_SCAN_CAP;
     const scanBudget: LspWorkspaceScanBudget = {
       maxRows: scanCap,
