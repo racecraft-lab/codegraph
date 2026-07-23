@@ -39,6 +39,31 @@ describe('LSP Content-Length transport', () => {
     expect(() => incomplete.finish()).toThrow(LspFramingError);
   });
 
+  it('rejects non-ASCII and control bytes in headers', () => {
+    const highBit = Buffer.from('Content-Length: 2\r\n\r\n{}', 'ascii');
+    highBit[0] = highBit[0]! | 0x80;
+    expect(() => new ContentLengthParser().push(highBit)).toThrow(LspFramingError);
+    expect(() => new ContentLengthParser().push(
+      Buffer.from('Content-Length: 2\r\nX-Test: bad\u0001value\r\n\r\n{}'),
+    )).toThrow(LspFramingError);
+  });
+
+  it('copies fragmented body bytes once into a bounded frame buffer', () => {
+    const parser = new ContentLengthParser();
+    const body = Buffer.alloc(1024 * 1024, 0x61);
+    const input = Buffer.concat([
+      Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'),
+      body,
+    ]);
+    const messages: Buffer[] = [];
+    for (let offset = 0; offset < input.length; offset += 257) {
+      messages.push(...parser.push(input.subarray(offset, offset + 257)));
+    }
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.equals(body)).toBe(true);
+    expect(() => parser.finish()).not.toThrow();
+  });
+
   it('keeps valid-frame JSON errors recoverable and stdout protocol-only', async () => {
     const input = new PassThrough();
     const output = new PassThrough();

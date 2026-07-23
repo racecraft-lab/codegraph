@@ -93,10 +93,8 @@ export type LspIncomingRead =
   | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large' | 'stale'> };
 
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
-const LSP_WORKSPACE_CANDIDATE_CAP = 500;
 const LSP_WORKSPACE_EMPTY_SCAN_CAP = 1_000;
 const LSP_WORKSPACE_SEARCH_SCAN_CAP = 5_000;
-const LSP_REFERENCE_CAP = 500;
 const LSP_REFERENCE_SCAN_CAP = 5_000;
 const LSP_FILE_NODE_CAP = 5_000;
 const LSP_FILE_EDGE_CAP = 10_000;
@@ -276,7 +274,7 @@ function lspWorkspaceSymbolsOp(
         ...entryWithoutEstimate,
         estimatedBytes: estimateLspWorkspaceCandidateBytes(entryWithoutEstimate),
       };
-      const nextRetainedBytes = retainLspWorkspaceCandidate(ranked, entry, retainedBytes);
+      const nextRetainedBytes = retainLspWorkspaceCandidate(ranked, entry, retainedBytes, scanCap);
       if (nextRetainedBytes === null) return { ok: false, reason: 'too_large' };
       retainedBytes = nextRetainedBytes;
     }
@@ -327,7 +325,6 @@ function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncom
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(candidate);
-      if (unique.length >= LSP_REFERENCE_CAP) break;
     }
     if (!fitsLspIncomingBudget(targetSummary, unique)) return { ok: false, reason: 'too_large' };
     const materialized = cg.getLspNodesByIds([
@@ -490,8 +487,9 @@ function retainLspWorkspaceCandidate(
   heap: LspRankedWorkspaceSymbol[],
   candidate: LspRankedWorkspaceSymbol,
   retainedBytes: number,
+  candidateCap: number,
 ): number | null {
-  if (heap.length < LSP_WORKSPACE_CANDIDATE_CAP) {
+  if (heap.length < candidateCap) {
     if (candidate.estimatedBytes > LSP_DAEMON_RESPONSE_BYTE_CAP - retainedBytes) return null;
     heap.push(candidate);
     for (let index = heap.length - 1; index > 0;) {
@@ -535,12 +533,12 @@ function estimateLspWorkspaceCandidateBytes(candidate: Omit<LspRankedWorkspaceSy
 
 function budgetLspWorkspaceCandidates(
   candidates: LspWorkspaceSymbolCandidate[],
-): LspWorkspaceSymbolCandidate[] {
+): LspWorkspaceSymbolsRead {
   const output: LspWorkspaceSymbolCandidate[] = [];
   let remaining = LSP_DAEMON_RESPONSE_BYTE_CAP - 512;
   for (const candidate of candidates) {
     const bytes = boundedJsonByteLength(candidate, remaining);
-    if (bytes + 1 > remaining) break;
+    if (bytes + 1 > remaining) return { ok: false, reason: 'too_large' };
     output.push(candidate);
     remaining -= bytes + 1;
   }

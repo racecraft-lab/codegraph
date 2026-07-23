@@ -18,6 +18,7 @@ const MAX_QUEUED_BODY_BYTES = 4 * MAX_BODY_BYTES;
 const MAX_INPUT_CHUNK_BYTES = MAX_QUEUED_BODY_BYTES
   + MAX_QUEUED_FRAMES * (MAX_HEADER_BYTES + 4);
 const DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS = 5_000;
+const HEADER_DELIMITER = Buffer.from('\r\n\r\n', 'ascii');
 
 export class LspFramingError extends Error {}
 
@@ -27,55 +28,97 @@ interface ContentLengthParserLimits {
 }
 
 export class ContentLengthParser {
-  private buffer = Buffer.alloc(0);
+  private headerBuffer = Buffer.alloc(0);
+  private bodyBuffer: Buffer | null = null;
+  private bodyOffset = 0;
 
   push(chunk: Buffer, limits?: ContentLengthParserLimits): Buffer[] {
-    if (chunk.length > 0) this.buffer = Buffer.concat([this.buffer, chunk]);
     const messages: Buffer[] = [];
     let messageBytes = 0;
-    while (this.buffer.length > 0) {
-      const headerEnd = this.buffer.indexOf('\r\n\r\n');
-      if (headerEnd === -1) {
-        if (this.buffer.length > MAX_HEADER_BYTES) throw new LspFramingError('header limit');
-        break;
-      }
-      if (headerEnd > MAX_HEADER_BYTES) throw new LspFramingError('header limit');
-      const headerText = this.buffer.subarray(0, headerEnd).toString('ascii');
-      const lines = headerText.split('\r\n');
-      if (lines.length > MAX_HEADER_LINES) throw new LspFramingError('header line limit');
-      const lengths: number[] = [];
-      for (const line of lines) {
-        const separator = line.indexOf(':');
-        if (separator <= 0) throw new LspFramingError('malformed header');
-        const name = line.slice(0, separator).trim().toLowerCase();
-        const value = line.slice(separator + 1).trim();
-        if (name === 'content-length') {
-          if (!/^(0|[1-9][0-9]*)$/.test(value)) throw new LspFramingError('invalid content length');
-          lengths.push(Number(value));
+    let offset = 0;
+    while (offset < chunk.length) {
+      if (!this.bodyBuffer) {
+        const headerCapacity = MAX_HEADER_BYTES + HEADER_DELIMITER.length - this.headerBuffer.length;
+        if (headerCapacity <= 0) throw new LspFramingError('header limit');
+        const scanBytes = Math.min(headerCapacity, chunk.length - offset);
+        const nextHeaderBytes = chunk.subarray(offset, offset + scanBytes);
+        const combined = this.headerBuffer.length === 0
+          ? nextHeaderBytes
+          : Buffer.concat([this.headerBuffer, nextHeaderBytes]);
+        const headerEnd = combined.indexOf(HEADER_DELIMITER);
+        if (headerEnd === -1) {
+          if (combined.length > MAX_HEADER_BYTES + HEADER_DELIMITER.length - 1
+            || scanBytes < chunk.length - offset) {
+            throw new LspFramingError('header limit');
+          }
+          this.headerBuffer = Buffer.from(combined);
+          offset += scanBytes;
+          continue;
         }
+        if (headerEnd > MAX_HEADER_BYTES) throw new LspFramingError('header limit');
+        const contentLength = parseContentLengthHeader(combined.subarray(0, headerEnd));
+        if (contentLength > MAX_BODY_BYTES) throw new LspFramingError('body limit');
+        if (limits && (messages.length >= limits.maxMessages
+          || contentLength > limits.maxBodyBytes - messageBytes)) {
+          throw new LspFramingError('message queue limit');
+        }
+        const consumedHeaderBytes = headerEnd + HEADER_DELIMITER.length - this.headerBuffer.length;
+        offset += consumedHeaderBytes;
+        this.headerBuffer = Buffer.alloc(0);
+        if (contentLength === 0) {
+          messages.push(Buffer.alloc(0));
+          continue;
+        }
+        this.bodyBuffer = Buffer.allocUnsafe(contentLength);
+        this.bodyOffset = 0;
+        continue;
       }
-      if (lengths.length !== 1 || !Number.isSafeInteger(lengths[0])) {
-        throw new LspFramingError('missing or duplicate content length');
+
+      const remaining = this.bodyBuffer.length - this.bodyOffset;
+      const bodyBytes = Math.min(remaining, chunk.length - offset);
+      chunk.copy(this.bodyBuffer, this.bodyOffset, offset, offset + bodyBytes);
+      this.bodyOffset += bodyBytes;
+      offset += bodyBytes;
+      if (this.bodyOffset === this.bodyBuffer.length) {
+        messages.push(this.bodyBuffer);
+        messageBytes += this.bodyBuffer.length;
+        this.bodyBuffer = null;
+        this.bodyOffset = 0;
       }
-      const contentLength = lengths[0]!;
-      if (contentLength > MAX_BODY_BYTES) throw new LspFramingError('body limit');
-      const bodyStart = headerEnd + 4;
-      const bodyEnd = bodyStart + contentLength;
-      if (this.buffer.length < bodyEnd) break;
-      if (limits && (messages.length >= limits.maxMessages
-        || contentLength > limits.maxBodyBytes - messageBytes)) {
-        throw new LspFramingError('message queue limit');
-      }
-      messages.push(this.buffer.subarray(bodyStart, bodyEnd));
-      messageBytes += contentLength;
-      this.buffer = this.buffer.subarray(bodyEnd);
     }
     return messages;
   }
 
   finish(): void {
-    if (this.buffer.length > 0) throw new LspFramingError('premature eof');
+    if (this.headerBuffer.length > 0 || this.bodyBuffer !== null) {
+      throw new LspFramingError('premature eof');
+    }
   }
+}
+
+function parseContentLengthHeader(header: Buffer): number {
+  for (const byte of header) {
+    if (byte !== 0x0d && byte !== 0x0a && (byte < 0x20 || byte > 0x7e)) {
+      throw new LspFramingError('malformed header');
+    }
+  }
+  const lines = header.toString('ascii').split('\r\n');
+  if (lines.length > MAX_HEADER_LINES) throw new LspFramingError('header line limit');
+  const lengths: number[] = [];
+  for (const line of lines) {
+    const match = /^([!#$%&'*+\-.^_`|~0-9A-Za-z]+):([ -~]*)$/.exec(line);
+    if (!match) throw new LspFramingError('malformed header');
+    const name = match[1]!.toLowerCase();
+    const value = match[2]!.trim();
+    if (name === 'content-length') {
+      if (!/^(0|[1-9][0-9]*)$/.test(value)) throw new LspFramingError('invalid content length');
+      lengths.push(Number(value));
+    }
+  }
+  if (lengths.length !== 1 || !Number.isSafeInteger(lengths[0])) {
+    throw new LspFramingError('missing or duplicate content length');
+  }
+  return lengths[0]!;
 }
 
 export interface ServeLspStdioOptions {

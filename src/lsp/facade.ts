@@ -455,7 +455,7 @@ export class LspFacade {
     }
     const relative = path.relative(this.boundRoot, absolute);
     if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-      throw invalidParams();
+      throw sourceError('outside_repository');
     }
     return relative.split(path.sep).join('/');
   }

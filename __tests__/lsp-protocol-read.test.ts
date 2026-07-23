@@ -430,15 +430,15 @@ describe('trusted daemon LSP reads', () => {
         filePath: 'sample.ts',
         snapshotToken: context.snapshot.snapshotToken,
       }) as LspIncomingRead;
-      expect(workspace).toHaveLength(500);
+      expect(workspace).toHaveLength(602);
       expect('occurrences' in incoming).toBe(true);
       if ('occurrences' in incoming) {
-        expect(incoming.occurrences).toHaveLength(500);
+        expect(incoming.occurrences).toHaveLength(600);
         expect(incoming.occurrences[0]?.edge.line).toBe(2);
-        expect(incoming.occurrences.at(-1)?.edge.line).toBe(501);
+        expect(incoming.occurrences.at(-1)?.edge.line).toBe(601);
       }
 
-      const tied = Array.from({ length: 2_601 }, (_value, index): Node => ({
+      const tied = Array.from({ length: 501 }, (_value, index): Node => ({
         ...alpha,
         id: `tied-workspace-${index}`,
         name: 'tiedWorkspaceTarget',
@@ -464,7 +464,7 @@ describe('trusted daemon LSP reads', () => {
       const tiedWorkspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {
         query: 'tiedWorkspaceTarget',
       }) as LspWorkspaceSymbolCandidate[];
-      expect(tiedWorkspace).toHaveLength(500);
+      expect(tiedWorkspace).toHaveLength(501);
       const byFinalLspOrder = [...tied].sort((left, right) => {
         const leftUri = normalizeLspUri(pathToFileURL(path.resolve(root, left.filePath)).href);
         const rightUri = normalizeLspUri(pathToFileURL(path.resolve(root, right.filePath)).href);
@@ -472,7 +472,7 @@ describe('trusted daemon LSP reads', () => {
           || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
       });
       expect(tiedWorkspace.map(({ node }) => node.id)).toEqual(
-        byFinalLspOrder.slice(0, 500).map((node) => node.id),
+        byFinalLspOrder.map((node) => node.id),
       );
 
       const oversizedWorkspaceNodes = Array.from({ length: 600 }, (_value, index): Node => ({
@@ -499,7 +499,7 @@ describe('trusted daemon LSP reads', () => {
       const oversizedWorkspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {
         query: 'oversizedWorkspaceTarget',
       }) as LspWorkspaceSymbolCandidate[];
-      expect(oversizedWorkspace).toHaveLength(500);
+      expect(oversizedWorkspace).toHaveLength(600);
       expect(oversizedWorkspace.every(({ node }) => node.docstring === undefined)).toBe(true);
       expect(genericSearch).not.toHaveBeenCalled();
       genericSearch.mockRestore();

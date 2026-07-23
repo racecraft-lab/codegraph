@@ -93,6 +93,23 @@ describe('repository-bound LSP facade', () => {
     expect(reads).toBe(0);
   });
 
+  it('maps a valid outside-repository file URI to the closed source error', async () => {
+    let reads = 0;
+    const facade = new LspFacade(fakeReader(() => { reads++; }));
+    await facade.handle(request(1, 'initialize', {}));
+    const outsideUri = pathToFileURL(`${process.cwd()}/../outside.ts`).href;
+
+    expect(await facade.handle(request(2, 'codegraph/textDocumentContent', {
+      textDocument: { uri: outsideUri },
+    }))).toMatchObject({
+      error: {
+        code: LSP_ERROR_CODE.RequestFailed,
+        data: { reason: 'outside_repository' },
+      },
+    });
+    expect(reads).toBe(0);
+  });
+
   it('maps bounded incoming-read failures to closed source errors', async () => {
     const reader: LspRepositoryReader = {
       ...fakeReader(),
@@ -124,6 +141,52 @@ describe('repository-bound LSP facade', () => {
           data: { reason: 'too_large' },
         },
       });
+  });
+
+  it('collects validated results after earlier unprovable candidates', async () => {
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    const invalidOccurrences = Array.from({ length: 500 }, (_value, index) => ({
+      ...alphaContext.occurrences[0]!,
+      edge: {
+        ...alphaContext.occurrences[0]!.edge,
+        line: 10_000,
+        column: index,
+      },
+    }));
+    const occurrences = [...invalidOccurrences, alphaContext.occurrences[0]!];
+    const referenceContext: Extract<LspFileContextRead, { ok: true }> = {
+      ...alphaContext,
+      occurrences,
+    };
+    const referenceReader: LspRepositoryReader = {
+      ...fakeReader(),
+      async fileContext() { return referenceContext; },
+      async incoming() { return { target: alphaNode, occurrences }; },
+    };
+    const referenceFacade = new LspFacade(referenceReader);
+    await referenceFacade.handle(request(1, 'initialize', {}));
+    expect(await referenceFacade.handle(request(2, 'textDocument/references', {
+      ...positionParams(uri, 0, 17),
+      context: { includeDeclaration: false },
+    }))).toMatchObject({ result: [{ uri }] });
+
+    const invalidCandidates = Array.from({ length: 500 }, (_value, index) => ({
+      node: { ...alphaNode, id: `invalid-${index}`, startLine: 10_000 },
+      snapshotToken: alphaContext.snapshot.snapshotToken,
+    }));
+    const workspaceReader: LspRepositoryReader = {
+      ...fakeReader(),
+      async workspaceSymbols() {
+        return [...invalidCandidates, {
+          node: alphaNode,
+          snapshotToken: alphaContext.snapshot.snapshotToken,
+        }];
+      },
+    };
+    const workspaceFacade = new LspFacade(workspaceReader);
+    await workspaceFacade.handle(request(3, 'initialize', {}));
+    expect(await workspaceFacade.handle(request(4, 'workspace/symbol', { query: 'alpha' })))
+      .toMatchObject({ result: [{ name: 'alpha', location: { uri } }] });
   });
 
   it('derives declaration names only inside one unambiguous persisted node span', async () => {
