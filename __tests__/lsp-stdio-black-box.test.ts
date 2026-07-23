@@ -113,6 +113,48 @@ describe('LSP Content-Length transport', () => {
     expect(reads).toBe(0);
   });
 
+  it('does not dispatch queued frames after premature EOF', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const diagnostics = new PassThrough();
+    const outputChunks: Buffer[] = [];
+    const diagnosticChunks: Buffer[] = [];
+    const reads: string[] = [];
+    let releaseFirstRead!: () => void;
+    const firstRead = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+    output.on('data', (chunk) => outputChunks.push(Buffer.from(chunk)));
+    diagnostics.on('data', (chunk) => diagnosticChunks.push(Buffer.from(chunk)));
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async workspaceSymbols(query) {
+        reads.push(query);
+        if (query === 'first') await firstRead;
+        return [];
+      },
+    };
+    const result = serveLspStdio(reader, {
+      input,
+      output,
+      diagnostics,
+      installSignalHandlers: false,
+    });
+
+    input.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+    await vi.waitFor(() => expect(decodeFrames(Buffer.concat(outputChunks))).toHaveLength(1));
+    await vi.waitFor(() => expect(input.isPaused()).toBe(false));
+    input.end(Buffer.concat([
+      frame({ jsonrpc: '2.0', id: 2, method: 'workspace/symbol', params: { query: 'first' } }),
+      frame({ jsonrpc: '2.0', id: 3, method: 'workspace/symbol', params: { query: 'queued' } }),
+      Buffer.from('Content-Length: 4\r\n\r\n{}'),
+    ]));
+
+    await expect(result).resolves.toBe(1);
+    releaseFirstRead();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(reads).not.toContain('queued');
+    expect(Buffer.concat(diagnosticChunks).toString('utf8')).toBe('[codegraph:lsp] invalid_frame\n');
+  });
+
   it('fails closed before queued request count or body bytes can grow without bound', async () => {
     const expectOverload = async (requests: Buffer[]): Promise<void> => {
       const input = new PassThrough();

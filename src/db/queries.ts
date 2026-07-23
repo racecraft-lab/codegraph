@@ -1643,7 +1643,6 @@ export class QueryBuilder {
     if (this.lspWorkspaceBroadScanExceedsBudget(scanBudget)) return;
     const lowered = text.toLowerCase();
     const maxDist = lowered.length <= 4 ? 1 : 2;
-    const seen = new Set<string>();
     for (const name of this.iterateNodeNames()) {
       if (!reserveLspWorkspaceScanRow(scanBudget)) return;
       const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
@@ -1658,8 +1657,7 @@ export class QueryBuilder {
       for (const raw of this.db.prepare(sql).iterate(...params)) {
         if (!reserveLspWorkspaceScanRow(scanBudget)) return;
         const node = rowToLspWorkspaceNode(raw as NodeRow);
-        if (seen.has(node.id) || !matchesHardFilters(node)) continue;
-        seen.add(node.id);
+        if (!matchesHardFilters(node)) continue;
         yield scored(node, 1 / (1 + dist));
       }
     }

@@ -107,6 +107,7 @@ export async function serveLspStdio(
   let settled = false;
   let queuedFrames = 0;
   let queuedBodyBytes = 0;
+  let inputPauseScheduled = false;
   let cancelOutputDrain: (() => void) | null = null;
   let resolveExit!: (code: number) => void;
   const exit = new Promise<number>((resolve) => { resolveExit = resolve; });
@@ -211,7 +212,6 @@ export async function serveLspStdio(
         }
         queuedFrames += 1;
         queuedBodyBytes += body.length;
-        input.pause();
         chain = chain
           .then(() => handleBody(body))
           .catch(() => {
@@ -224,6 +224,7 @@ export async function serveLspStdio(
             maybeResumeInput();
           });
       }
+      scheduleInputPause();
     } catch {
       log('invalid_frame');
       finish(1);
@@ -231,7 +232,13 @@ export async function serveLspStdio(
   }
   function onEnd(): void {
     if (settled) return;
-    try { parser.finish(); } catch { log('invalid_frame'); }
+    try {
+      parser.finish();
+    } catch {
+      log('invalid_frame');
+      finish(1);
+      return;
+    }
     void chain.finally(() => finish(facade.requestedExitCode ?? 1));
   }
   function onError(): void {
@@ -247,6 +254,14 @@ export async function serveLspStdio(
   }
   function maybeResumeInput(): void {
     if (!settled && queuedFrames === 0 && cancelOutputDrain === null) input.resume();
+  }
+  function scheduleInputPause(): void {
+    if (settled || queuedFrames === 0 || inputPauseScheduled) return;
+    inputPauseScheduled = true;
+    setImmediate(() => {
+      inputPauseScheduled = false;
+      if (!settled && queuedFrames > 0) input.pause();
+    });
   }
 
   input.on('data', onData);

@@ -266,16 +266,19 @@ function lspWorkspaceSymbolsOp(
       exceeded: false,
     };
     const ranked: LspRankedWorkspaceSymbol[] = [];
-    const seen = new Set<string>();
+    let retainedBytes = 0;
     for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query, scanBudget)) {
-      if (seen.has(candidate.node.id)) continue;
-      seen.add(candidate.node.id);
-      if (seen.size > scanCap) return { ok: false, reason: 'too_large' };
-      const entry: LspRankedWorkspaceSymbol = {
+      const entryWithoutEstimate = {
         ...candidate,
         uri: normalizeLspUri(pathToFileURL(path.resolve(cg.getProjectRoot(), candidate.node.filePath)).href),
       };
-      retainLspWorkspaceCandidate(ranked, entry);
+      const entry: LspRankedWorkspaceSymbol = {
+        ...entryWithoutEstimate,
+        estimatedBytes: estimateLspWorkspaceCandidateBytes(entryWithoutEstimate),
+      };
+      const nextRetainedBytes = retainLspWorkspaceCandidate(ranked, entry, retainedBytes);
+      if (nextRetainedBytes === null) return { ok: false, reason: 'too_large' };
+      retainedBytes = nextRetainedBytes;
     }
     if (scanBudget.exceeded) return { ok: false, reason: 'too_large' };
     ranked.sort(compareLspRankedWorkspaceSymbols);
@@ -464,6 +467,7 @@ interface LspRankedWorkspaceSymbol {
   node: Node;
   score: number;
   uri: string;
+  estimatedBytes: number;
 }
 
 function compareLspRankedWorkspaceSymbols(
@@ -485,8 +489,10 @@ function compareLspRankedWorkspaceSymbols(
 function retainLspWorkspaceCandidate(
   heap: LspRankedWorkspaceSymbol[],
   candidate: LspRankedWorkspaceSymbol,
-): void {
+  retainedBytes: number,
+): number | null {
   if (heap.length < LSP_WORKSPACE_CANDIDATE_CAP) {
+    if (candidate.estimatedBytes > LSP_DAEMON_RESPONSE_BYTE_CAP - retainedBytes) return null;
     heap.push(candidate);
     for (let index = heap.length - 1; index > 0;) {
       const parent = (index - 1) >>> 1;
@@ -494,9 +500,12 @@ function retainLspWorkspaceCandidate(
       [heap[index], heap[parent]] = [heap[parent]!, heap[index]!];
       index = parent;
     }
-    return;
+    return retainedBytes + candidate.estimatedBytes;
   }
-  if (compareLspRankedWorkspaceSymbols(candidate, heap[0]!) >= 0) return;
+  if (compareLspRankedWorkspaceSymbols(candidate, heap[0]!) >= 0) return retainedBytes;
+  const replacedBytes = heap[0]!.estimatedBytes;
+  const nextBytes = retainedBytes - replacedBytes + candidate.estimatedBytes;
+  if (nextBytes > LSP_DAEMON_RESPONSE_BYTE_CAP) return null;
   heap[0] = candidate;
   let index = 0;
   while (true) {
@@ -512,6 +521,16 @@ function retainLspWorkspaceCandidate(
     [heap[index], heap[worse]] = [heap[worse]!, heap[index]!];
     index = worse;
   }
+  return nextBytes;
+}
+
+function estimateLspWorkspaceCandidateBytes(candidate: Omit<LspRankedWorkspaceSymbol, 'estimatedBytes'>): number {
+  const jsonBytes = boundedJsonByteLength(candidate, LSP_DAEMON_RESPONSE_BYTE_CAP);
+  if (jsonBytes > LSP_DAEMON_RESPONSE_BYTE_CAP) return jsonBytes;
+  return Math.min(
+    LSP_DAEMON_RESPONSE_BYTE_CAP + 1,
+    1_024 + 2 * jsonBytes,
+  );
 }
 
 function budgetLspWorkspaceCandidates(

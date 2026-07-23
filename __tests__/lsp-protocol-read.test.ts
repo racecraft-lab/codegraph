@@ -473,6 +473,17 @@ describe('trusted daemon LSP reads', () => {
       expect(genericSearch).not.toHaveBeenCalled();
       genericSearch.mockRestore();
 
+      queries.insertNodes(Array.from({ length: 8 }, (_value, index): Node => ({
+        ...alpha,
+        id: `heap-budget-workspace-${index}`,
+        name: 'heapBudgetWorkspaceTarget',
+        qualifiedName: `heapBudget::${index}::${'x'.repeat(512 * 1024)}`,
+        filePath: `heap-budget/${index}.ts`,
+      })));
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'heapBudgetWorkspaceTarget',
+      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+
       const pathScanBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
       expect([...cg.iterateLspWorkspaceSymbolCandidates(
         'path:definitely-absent-workspace-path',
