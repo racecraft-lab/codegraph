@@ -37,6 +37,26 @@ describe("focused source pane", () => {
     expect(client.content).toHaveBeenCalledWith(alpha.uri)
   })
 
+  it("falls back to one bounded plain-text node when interactive rendering exceeds its budget", async () => {
+    const text = "identifier ".repeat(6_000)
+    const client = fakeClient({
+      text,
+      languageId: "typescript",
+      contentHash: "hash",
+      snapshotToken: "snapshot",
+    })
+
+    renderWithProviders(
+      <SourcePane repoId="repo-1" root={root} location={alpha} onNavigate={vi.fn()} onClose={vi.fn()} createClient={() => client} />,
+    )
+
+    const source = await screen.findByRole("textbox")
+    expect(source.textContent).toBe(text)
+    expect(source.querySelector("span, mark")).toBeNull()
+    expect(source.getAttribute("aria-activedescendant")).toBeNull()
+    expect(screen.getByText("Interactive token highlighting is disabled for this large source.")).toBeTruthy()
+  })
+
   it("uses the active UTF-16 position for named hover and definition actions", async () => {
     vi.useFakeTimers()
     const navigate = vi.fn()

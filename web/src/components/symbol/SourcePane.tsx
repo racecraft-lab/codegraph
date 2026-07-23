@@ -14,6 +14,9 @@ import {
 
 type ViewerState = "connecting" | "loading" | "ready" | "empty" | "stale" | "unavailable" | "timed-out" | "disconnected"
 
+const MAX_INTERACTIVE_SOURCE_NODES = 10_000
+const SOURCE_IDENTIFIER_PATTERN = /[\p{L}_$][\p{L}\p{N}_$]*/gu
+
 interface SourcePaneProps {
   repoId: string
   root: string
@@ -187,6 +190,10 @@ export function SourcePane({ repoId, root, location, initialSymbol, onCanonicali
   }
 
   const groupedReferences = React.useMemo(() => groupReferences(root, references), [references, root])
+  const interactiveSource = React.useMemo(
+    () => snapshot !== null && canRenderSourceInteractively(snapshot.text),
+    [snapshot],
+  )
   const path = relativePathFromFileUri(root, location.uri) ?? "Indexed source"
   const message = stateMessage(state, failureReason)
 
@@ -209,19 +216,26 @@ export function SourcePane({ repoId, root, location, initialSymbol, onCanonicali
       <CardContent className="flex min-w-0 flex-col gap-3">
         <p className="sr-only" aria-live="polite">{interactionStatus || message}</p>
         {snapshot ? (
-          <pre
-            ref={sourceRef}
-            role="textbox"
-            aria-label={`Read-only source for ${path}`}
-            aria-readonly="true"
-            aria-activedescendant={snapshot.text.length > 0 ? "codegraph-active-source-token" : undefined}
-            aria-describedby={hover ? "codegraph-source-hover" : undefined}
-            tabIndex={0}
-            onKeyDown={onSourceKeyDown}
-            className="max-h-[32rem] min-w-0 overflow-auto rounded-lg bg-muted p-3 font-mono text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scroll-auto"
-          >
-            {renderSource(snapshot.text, active, activate, (position) => void goToDefinition(position))}
-          </pre>
+          <>
+            {!interactiveSource && snapshot.text.length > 0 ? (
+              <p className="text-xs text-muted-foreground">Interactive token highlighting is disabled for this large source.</p>
+            ) : null}
+            <pre
+              ref={sourceRef}
+              role="textbox"
+              aria-label={`Read-only source for ${path}`}
+              aria-readonly="true"
+              aria-activedescendant={interactiveSource && snapshot.text.length > 0 ? "codegraph-active-source-token" : undefined}
+              aria-describedby={hover ? "codegraph-source-hover" : undefined}
+              tabIndex={0}
+              onKeyDown={onSourceKeyDown}
+              className="max-h-[32rem] min-w-0 overflow-auto rounded-lg bg-muted p-3 font-mono text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scroll-auto"
+            >
+              {interactiveSource
+                ? renderSource(snapshot.text, active, activate, (position) => void goToDefinition(position))
+                : snapshot.text}
+            </pre>
+          </>
         ) : (
           <div role={isRetryable(state) ? "alert" : "status"} className="rounded-lg border p-3 text-sm">{message}</div>
         )}
@@ -313,7 +327,7 @@ function renderSource(
 
 function tokenizeLine(line: string): Array<string | { text: string; start: number; end: number }> {
   const parts: Array<string | { text: string; start: number; end: number }> = []
-  const tokens = line.matchAll(/[\p{L}_$][\p{L}\p{N}_$]*/gu)
+  const tokens = line.matchAll(SOURCE_IDENTIFIER_PATTERN)
   let offset = 0
   for (const token of tokens) {
     const start = token.index
@@ -324,6 +338,24 @@ function tokenizeLine(line: string): Array<string | { text: string; start: numbe
   }
   if (offset < line.length || parts.length === 0) parts.push(line.slice(offset))
   return parts
+}
+
+function canRenderSourceInteractively(text: string): boolean {
+  let lineCount = 1
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === "\r") {
+      if (text[index + 1] === "\n") index += 1
+      lineCount += 1
+    } else if (text[index] === "\n") lineCount += 1
+    if (lineCount * 2 + 1 > MAX_INTERACTIVE_SOURCE_NODES) return false
+  }
+
+  let estimatedNodes = lineCount * 2 + 1
+  for (const _token of text.matchAll(SOURCE_IDENTIFIER_PATTERN)) {
+    estimatedNodes += 2
+    if (estimatedNodes > MAX_INTERACTIVE_SOURCE_NODES) return false
+  }
+  return true
 }
 
 function sourceLines(text: string): string[] {
