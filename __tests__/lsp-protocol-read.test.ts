@@ -473,26 +473,22 @@ describe('trusted daemon LSP reads', () => {
       expect(genericSearch).not.toHaveBeenCalled();
       genericSearch.mockRestore();
 
-      const workspaceScan = vi.spyOn(cg, 'iterateLspWorkspaceSymbolCandidates')
-        .mockImplementation(function* () {
-          for (let index = 0; index < 5_001; index += 1) {
-            yield {
-              node: {
-                ...alpha,
-                id: `scan-overflow-${index}`,
-                name: 'scanOverflowTarget',
-                qualifiedName: `scanOverflow::${String(index).padStart(4, '0')}`,
-              },
-              score: 1,
-            };
-          }
-        });
-      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
-        query: 'scanOverflowTarget',
-      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+      const pathScanBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
+      expect([...cg.iterateLspWorkspaceSymbolCandidates(
+        'path:definitely-absent-workspace-path',
+        pathScanBudget,
+      )]).toEqual([]);
+      expect(pathScanBudget.exceeded).toBe(true);
+
+      const substringScanBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
+      expect([...cg.iterateLspWorkspaceSymbolCandidates(
+        'definitelyAbsentWorkspaceSubstring',
+        substringScanBudget,
+      )]).toEqual([]);
+      expect(substringScanBudget.exceeded).toBe(true);
+
       await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {}))
         .resolves.toEqual({ ok: false, reason: 'too_large' });
-      workspaceScan.mockRestore();
 
       queries.updateNode({
         ...alpha,

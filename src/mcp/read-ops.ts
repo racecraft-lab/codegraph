@@ -21,7 +21,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type CodeGraph from '../index';
 import type { Node, Edge, FileRecord, SearchMode } from '../types';
-import type { LspNodeSummary } from '../db/queries';
+import type { LspNodeSummary, LspWorkspaceScanBudget } from '../db/queries';
 import { normalizeLspUri } from '../lsp/protocol';
 import { resolveAutoMode } from '../search/hybrid';
 
@@ -260,9 +260,14 @@ function lspWorkspaceSymbolsOp(
   return cg.withLspReadTransaction(() => {
     const query = typeof params.query === 'string' ? params.query.trim() : '';
     const scanCap = query ? LSP_WORKSPACE_SEARCH_SCAN_CAP : LSP_WORKSPACE_EMPTY_SCAN_CAP;
+    const scanBudget: LspWorkspaceScanBudget = {
+      maxRows: scanCap,
+      examinedRows: 0,
+      exceeded: false,
+    };
     const ranked: LspRankedWorkspaceSymbol[] = [];
     const seen = new Set<string>();
-    for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query)) {
+    for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query, scanBudget)) {
       if (seen.has(candidate.node.id)) continue;
       seen.add(candidate.node.id);
       if (seen.size > scanCap) return { ok: false, reason: 'too_large' };
@@ -272,6 +277,7 @@ function lspWorkspaceSymbolsOp(
       };
       retainLspWorkspaceCandidate(ranked, entry);
     }
+    if (scanBudget.exceeded) return { ok: false, reason: 'too_large' };
     ranked.sort(compareLspRankedWorkspaceSymbols);
     const tokens = new Map<string, string | null>();
     const candidates: LspWorkspaceSymbolCandidate[] = [];

@@ -30,6 +30,7 @@ import { WalCheckpointValve } from './db/wal-valve';
 import {
   QueryBuilder,
   type LspNodeSummary,
+  type LspWorkspaceScanBudget,
   type LspWorkspaceSymbolCandidate,
 } from './db/queries';
 import {
@@ -2203,9 +2204,12 @@ export class CodeGraph {
     return this.queries.getNodesByFile(filePath);
   }
 
-  /** Lightweight, uncapped candidate stream for exact LSP workspace ordering. */
-  *iterateLspWorkspaceSymbolCandidates(query: string): IterableIterator<LspWorkspaceSymbolCandidate> {
-    yield* this.queries.iterateLspWorkspaceSymbolCandidates(query);
+  /** Lightweight candidate stream for exact LSP workspace ordering. */
+  *iterateLspWorkspaceSymbolCandidates(
+    query: string,
+    scanBudget?: LspWorkspaceScanBudget,
+  ): IterableIterator<LspWorkspaceSymbolCandidate> {
+    yield* this.queries.iterateLspWorkspaceSymbolCandidates(query, scanBudget);
   }
 
   /** Internal bounded node summaries for the foundational LSP file-context read. */

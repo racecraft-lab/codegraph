@@ -121,6 +121,26 @@ export interface LspWorkspaceSymbolCandidate {
   score: number;
 }
 
+export interface LspWorkspaceScanBudget {
+  maxRows: number;
+  examinedRows: number;
+  exceeded: boolean;
+}
+
+function reserveLspWorkspaceScanRow(scanBudget?: LspWorkspaceScanBudget): boolean {
+  if (!scanBudget) return true;
+  if (!Number.isSafeInteger(scanBudget.maxRows)
+    || scanBudget.maxRows < 0
+    || !Number.isSafeInteger(scanBudget.examinedRows)
+    || scanBudget.examinedRows < 0
+    || scanBudget.examinedRows >= scanBudget.maxRows) {
+    scanBudget.exceeded = true;
+    return false;
+  }
+  scanBudget.examinedRows += 1;
+  return true;
+}
+
 // Conservative upper bound for one Node's JSON representation. Text can expand
 // by at most 6x when JSON-escaped (for example, a control byte becomes \u00xx).
 const LSP_NODE_MAX_JSON_BYTES_SQL = `
@@ -1487,7 +1507,10 @@ export class QueryBuilder {
    * documentation/type payloads or truncating score ties before the LSP layer
    * applies its normalized-URI ordering.
    */
-  *iterateLspWorkspaceSymbolCandidates(query: string): IterableIterator<LspWorkspaceSymbolCandidate> {
+  *iterateLspWorkspaceSymbolCandidates(
+    query: string,
+    scanBudget?: LspWorkspaceScanBudget,
+  ): IterableIterator<LspWorkspaceSymbolCandidate> {
     const parsed = parseQuery(query);
     const text = parsed.text;
     const kinds = parsed.kinds.length > 0 ? parsed.kinds : undefined;
@@ -1531,6 +1554,7 @@ export class QueryBuilder {
     });
 
     if (!text) {
+      if (this.lspWorkspaceBroadScanExceedsBudget(scanBudget)) return;
       const params: Array<string | number> = [LSP_WORKSPACE_NODE_BYTE_CAP];
       const sql = appendTypeFilters(`
         SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL}
@@ -1539,6 +1563,7 @@ export class QueryBuilder {
       `, params);
       const baseScore = query ? 1 : 0;
       for (const raw of this.db.prepare(sql).iterate(...params)) {
+        if (!reserveLspWorkspaceScanRow(scanBudget)) return;
         const node = rowToLspWorkspaceNode(raw as NodeRow);
         if (matchesHardFilters(node)) yield scored(node, baseScore);
       }
@@ -1559,6 +1584,7 @@ export class QueryBuilder {
       let hadRows = false;
       try {
         for (const raw of this.db.prepare(sql).iterate(...params)) {
+          if (!reserveLspWorkspaceScanRow(scanBudget)) return;
           hadRows = true;
           const row = raw as NodeRow & { score: number };
           const node = rowToLspWorkspaceNode(row);
@@ -1571,6 +1597,7 @@ export class QueryBuilder {
     }
 
     if (text.length >= 2) {
+      if (this.lspWorkspaceBroadScanExceedsBudget(scanBudget)) return;
       const exactMatch = text;
       const startsWith = `${text}%`;
       const contains = `%${text}%`;
@@ -1603,6 +1630,7 @@ export class QueryBuilder {
       `, params);
       let hadRows = false;
       for (const raw of this.db.prepare(sql).iterate(...params)) {
+        if (!reserveLspWorkspaceScanRow(scanBudget)) return;
         hadRows = true;
         const row = raw as NodeRow & { score: number };
         const node = rowToLspWorkspaceNode(row);
@@ -1612,10 +1640,12 @@ export class QueryBuilder {
     }
 
     if (text.length < 3) return;
+    if (this.lspWorkspaceBroadScanExceedsBudget(scanBudget)) return;
     const lowered = text.toLowerCase();
     const maxDist = lowered.length <= 4 ? 1 : 2;
     const seen = new Set<string>();
     for (const name of this.iterateNodeNames()) {
+      if (!reserveLspWorkspaceScanRow(scanBudget)) return;
       const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
       if (dist > maxDist) continue;
       const params: Array<string | number> = [name, LSP_WORKSPACE_NODE_BYTE_CAP];
@@ -1626,12 +1656,30 @@ export class QueryBuilder {
           AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
       `, params);
       for (const raw of this.db.prepare(sql).iterate(...params)) {
+        if (!reserveLspWorkspaceScanRow(scanBudget)) return;
         const node = rowToLspWorkspaceNode(raw as NodeRow);
         if (seen.has(node.id) || !matchesHardFilters(node)) continue;
         seen.add(node.id);
         yield scored(node, 1 / (1 + dist));
       }
     }
+  }
+
+  private lspWorkspaceBroadScanExceedsBudget(scanBudget?: LspWorkspaceScanBudget): boolean {
+    if (!scanBudget) return false;
+    const remaining = scanBudget.maxRows - scanBudget.examinedRows;
+    if (!Number.isSafeInteger(remaining) || remaining < 0) {
+      scanBudget.exceeded = true;
+      return true;
+    }
+    // LIKE and JavaScript-only hard filters can examine the whole table while
+    // yielding no rows, so a yielded-row counter cannot bound them. This probe
+    // stops after remaining + 1 primary-table rows; broad fallback scans run
+    // only when the entire candidate universe fits inside the request budget.
+    const more = this.db.prepare('SELECT 1 AS present FROM nodes LIMIT 1 OFFSET ?').get(remaining);
+    if (!more) return false;
+    scanBudget.exceeded = true;
+    return true;
   }
 
   /**
