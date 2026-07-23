@@ -352,6 +352,37 @@ describe('trusted daemon LSP reads', () => {
     }
   });
 
+  it('continues workspace fallbacks when hard filters reject earlier search rows', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-filtered-fallback-'));
+    roots.push(root);
+    fs.mkdirSync(path.join(root, 'wanted'));
+    fs.mkdirSync(path.join(root, 'wrong'));
+    fs.writeFileSync(
+      path.join(root, 'wanted', 'sample.ts'),
+      'export function camelCaseNeedle() {}\nexport function approximateName() {}\n',
+    );
+    fs.writeFileSync(
+      path.join(root, 'wrong', 'sample.ts'),
+      'export function Needle() {}\nexport function aproximateName() {}\n',
+    );
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      const substring = await executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'Needle path:wanted',
+      }) as LspWorkspaceSymbolCandidate[];
+      const fuzzy = await executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'aproximateName path:wanted',
+      }) as LspWorkspaceSymbolCandidate[];
+
+      expect(substring.map(({ node }) => node.name)).toContain('camelCaseNeedle');
+      expect(fuzzy.map(({ node }) => node.name)).toContain('approximateName');
+      expect([...substring, ...fuzzy].every(({ node }) => node.filePath.startsWith('wanted/'))).toBe(true);
+    } finally {
+      cg.close();
+    }
+  });
+
   it('bounds workspace and incoming read materialization at the daemon boundary', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-bounds-'));
     roots.push(root);

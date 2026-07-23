@@ -105,6 +105,7 @@ export async function serveLspStdio(
     : DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS;
   let chain = Promise.resolve();
   let settled = false;
+  let inputEnded = false;
   let queuedFrames = 0;
   let queuedBodyBytes = 0;
   let inputPauseScheduled = false;
@@ -168,7 +169,9 @@ export async function serveLspStdio(
     input.removeListener('data', onData);
     input.removeListener('end', onEnd);
     input.removeListener('error', onError);
+    input.removeListener('close', onInputClose);
     output.removeListener('error', onOutputError);
+    output.removeListener('close', onOutputClose);
     if (options.installSignalHandlers !== false) {
       process.removeListener('SIGINT', onSignal);
       process.removeListener('SIGTERM', onSignal);
@@ -232,6 +235,7 @@ export async function serveLspStdio(
   }
   function onEnd(): void {
     if (settled) return;
+    inputEnded = true;
     try {
       parser.finish();
     } catch {
@@ -245,7 +249,16 @@ export async function serveLspStdio(
     log('stream_failure');
     finish(1);
   }
+  function onInputClose(): void {
+    if (inputEnded) return;
+    log('stream_failure');
+    finish(1);
+  }
   function onOutputError(): void {
+    log('stream_failure');
+    finish(1);
+  }
+  function onOutputClose(): void {
     log('stream_failure');
     finish(1);
   }
@@ -267,7 +280,9 @@ export async function serveLspStdio(
   input.on('data', onData);
   input.once('end', onEnd);
   input.once('error', onError);
+  input.once('close', onInputClose);
   output.once('error', onOutputError);
+  output.once('close', onOutputClose);
   if (options.installSignalHandlers !== false) {
     process.once('SIGINT', onSignal);
     process.once('SIGTERM', onSignal);

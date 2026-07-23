@@ -113,6 +113,36 @@ describe('LSP Content-Length transport', () => {
     expect(reads).toBe(0);
   });
 
+  it('terminates on close-only input and output teardown', async () => {
+    const input = new PassThrough();
+    const inputDiagnostics = new PassThrough();
+    const inputClose = vi.fn();
+    const inputResult = serveLspStdio(fakeReader(), {
+      input,
+      output: new PassThrough(),
+      diagnostics: inputDiagnostics,
+      close: inputClose,
+      installSignalHandlers: false,
+    });
+    input.destroy();
+    await expect(inputResult).resolves.toBe(1);
+    expect(inputClose).toHaveBeenCalledTimes(1);
+
+    const output = new PassThrough();
+    const outputDiagnostics = new PassThrough();
+    const outputClose = vi.fn();
+    const outputResult = serveLspStdio(fakeReader(), {
+      input: new PassThrough(),
+      output,
+      diagnostics: outputDiagnostics,
+      close: outputClose,
+      installSignalHandlers: false,
+    });
+    output.destroy();
+    await expect(outputResult).resolves.toBe(1);
+    expect(outputClose).toHaveBeenCalledTimes(1);
+  });
+
   it('does not dispatch queued frames after premature EOF', async () => {
     const input = new PassThrough();
     const output = new PassThrough();

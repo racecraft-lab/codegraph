@@ -1581,19 +1581,20 @@ export class QueryBuilder {
         WHERE nodes_fts MATCH ?
           AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
       `, params);
-      let hadRows = false;
+      let yieldedRows = false;
       try {
         for (const raw of this.db.prepare(sql).iterate(...params)) {
           if (!reserveLspWorkspaceScanRow(scanBudget)) return;
-          hadRows = true;
           const row = raw as NodeRow & { score: number };
           const node = rowToLspWorkspaceNode(row);
-          if (matchesHardFilters(node)) yield scored(node, Math.abs(row.score));
+          if (!matchesHardFilters(node)) continue;
+          yieldedRows = true;
+          yield scored(node, Math.abs(row.score));
         }
       } catch {
-        hadRows = false;
+        yieldedRows = false;
       }
-      if (hadRows) return;
+      if (yieldedRows) return;
     }
 
     if (text.length >= 2) {
@@ -1628,15 +1629,16 @@ export class QueryBuilder {
         )
           AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
       `, params);
-      let hadRows = false;
+      let yieldedRows = false;
       for (const raw of this.db.prepare(sql).iterate(...params)) {
         if (!reserveLspWorkspaceScanRow(scanBudget)) return;
-        hadRows = true;
         const row = raw as NodeRow & { score: number };
         const node = rowToLspWorkspaceNode(row);
-        if (matchesHardFilters(node)) yield scored(node, row.score);
+        if (!matchesHardFilters(node)) continue;
+        yieldedRows = true;
+        yield scored(node, row.score);
       }
-      if (hadRows) return;
+      if (yieldedRows) return;
     }
 
     if (text.length < 3) return;
