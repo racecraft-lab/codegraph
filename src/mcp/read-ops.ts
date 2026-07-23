@@ -91,7 +91,7 @@ export type LspFileContextRead =
 
 export type LspIncomingRead =
   | { target: Node; occurrences: LspLocatedEdge[] }
-  | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large' | 'stale'> };
+  | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large' | 'unindexed' | 'stale'> };
 
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
 const LSP_WORKSPACE_EMPTY_SCAN_CAP = 1_000;
@@ -246,7 +246,7 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
     case 'lspFileContext':
       return { ok: false, reason: 'unindexed' } satisfies LspFileContextRead;
     case 'lspIncoming':
-      return { ok: false, reason: 'stale' } satisfies LspIncomingRead;
+      return { ok: false, reason: 'unindexed' } satisfies LspIncomingRead;
     case 'lspWorkspaceSymbols':
       return [];
     default:

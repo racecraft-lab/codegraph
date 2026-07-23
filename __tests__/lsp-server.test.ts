@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import { LSP_ERROR_CODE } from '../src/lsp/protocol';
 import { LspFacade, type LspRepositoryReader } from '../src/lsp/facade';
-import type { LspFileContextRead } from '../src/mcp/read-ops';
+import {
+  readOnMissingIndex,
+  type LspFileContextRead,
+  type LspIncomingRead,
+} from '../src/mcp/read-ops';
 import type { Node } from '../src/types';
 
 describe('repository-bound LSP facade', () => {
@@ -123,6 +127,25 @@ describe('repository-bound LSP facade', () => {
         error: {
           code: LSP_ERROR_CODE.RequestFailed,
           data: { reason: 'too_large' },
+        },
+      });
+  });
+
+  it('maps a missing-index incoming read to unindexed instead of content modified', async () => {
+    const reader: LspRepositoryReader = {
+      ...fakeReader(),
+      async incoming() {
+        return readOnMissingIndex('lspIncoming') as LspIncomingRead;
+      },
+    };
+    const facade = new LspFacade(reader);
+    const uri = pathToFileURL(`${process.cwd()}/sample.ts`).href;
+    await facade.handle(request(1, 'initialize', {}));
+    expect(await facade.handle(request(2, 'textDocument/references', positionParams(uri, 1, 2))))
+      .toMatchObject({
+        error: {
+          code: LSP_ERROR_CODE.RequestFailed,
+          data: { reason: 'unindexed' },
         },
       });
   });
