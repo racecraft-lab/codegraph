@@ -1,11 +1,12 @@
 import * as React from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { BotIcon, GitBranchIcon, RadiusIcon } from "lucide-react"
 
 import { useAppState } from "@/app/state"
 import { FlowSections, type CatalogPanelState } from "@/components/symbol/FlowSections"
 import { RelationshipPanels, type RelationshipPanelState } from "@/components/symbol/RelationshipPanels"
 import { RelationshipState } from "@/components/symbol/RelationshipStates"
+import { SourcePane, fileUriForPath, relativePathFromFileUri } from "@/components/symbol/SourcePane"
 import { StatePanel } from "@/components/layout/StatePanel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,6 +16,8 @@ import { errorState } from "@/lib/api/client"
 import { listCallees, listCallers } from "@/lib/api/relationships"
 import { getSymbol } from "@/lib/api/symbols"
 import type { ClusterSummary, CodeNode, FlowSummary } from "@/lib/api/types"
+import { SOURCE_VIEWER_TRANSPORT_AVAILABLE } from "@/lib/lsp/availability"
+import type { LspLocation, LspRange } from "@/lib/lsp/client"
 import { mark, measure } from "@/lib/perf/marks"
 
 const loadingRelationships: RelationshipPanelState = { status: "loading" }
@@ -24,6 +27,7 @@ const loadingClusters: CatalogPanelState<ClusterSummary> = { status: "loading" }
 export function SymbolDetailRoute() {
   const { id = "" } = useParams()
   const nodeId = id
+  const [searchParams, setSearchParams] = useSearchParams()
   const { selectedRepo, selectNode, clearNode } = useAppState()
   const [node, setNode] = React.useState<CodeNode | null>(null)
   const [callers, setCallers] = React.useState<RelationshipPanelState>(loadingRelationships)
@@ -33,6 +37,9 @@ export function SymbolDetailRoute() {
   const [message, setMessage] = React.useState("Loading symbol context.")
   const [partialError, setPartialError] = React.useState<string | undefined>()
   const [durationMs, setDurationMs] = React.useState<number | null>(null)
+  const [sourceOpen, setSourceOpen] = React.useState(
+    () => SOURCE_VIEWER_TRANSPORT_AVAILABLE && searchParams.has("source"),
+  )
 
   React.useEffect(() => {
     let cancelled = false
@@ -90,6 +97,42 @@ export function SymbolDetailRoute() {
     }
   }, [clearNode, nodeId, selectNode, selectedRepo?.id])
 
+  const fallbackLocation = React.useMemo(() => {
+    if (!node?.file || !selectedRepo) return null
+    const line = Math.max(0, (node.line ?? 1) - 1)
+    return {
+      uri: fileUriForPath(selectedRepo.root, node.file),
+      range: { start: { line, character: 0 }, end: { line, character: 1 } },
+    } satisfies LspLocation
+  }, [node, selectedRepo])
+
+  const restoredLocation = React.useMemo(
+    () => selectedRepo ? parseViewerLocation(searchParams, selectedRepo.id, selectedRepo.root) : null,
+    [searchParams, selectedRepo],
+  )
+  const sourceLocation = restoredLocation ?? fallbackLocation
+
+  React.useEffect(() => {
+    setSourceOpen(SOURCE_VIEWER_TRANSPORT_AVAILABLE && searchParams.has("source"))
+  }, [searchParams])
+
+  const navigateSource = React.useCallback((location: LspLocation) => {
+    if (!selectedRepo || !relativePathFromFileUri(selectedRepo.root, location.uri)) return
+    setSearchParams(locationSearch(searchParams, selectedRepo.id, selectedRepo.root, location))
+  }, [searchParams, selectedRepo, setSearchParams])
+
+  const canonicalizeSource = React.useCallback((location: LspLocation) => {
+    if (!selectedRepo || !relativePathFromFileUri(selectedRepo.root, location.uri)) return
+    setSearchParams((current) => locationSearch(current, selectedRepo.id, selectedRepo.root, location), { replace: true })
+  }, [selectedRepo, setSearchParams])
+
+  const closeSource = React.useCallback(() => {
+    setSourceOpen(false)
+    const next = new URLSearchParams(searchParams)
+    for (const key of ["repo", "source", "sl", "sc", "el", "ec"]) next.delete(key)
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
   if (!node) {
     return (
       <div className="p-4">
@@ -125,6 +168,19 @@ export function SymbolDetailRoute() {
               <BotIcon data-icon="inline-start" />
               Ask with context
             </Button>
+            {SOURCE_VIEWER_TRANSPORT_AVAILABLE && fallbackLocation ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!selectedRepo) return
+                  setSearchParams((current) => (
+                    locationSearch(current, selectedRepo.id, selectedRepo.root, fallbackLocation)
+                  ))
+                }}
+              >
+                Open source
+              </Button>
+            ) : null}
           </div>
           <Separator />
           <pre className="max-h-56 overflow-auto rounded-lg bg-muted p-3 text-xs">
@@ -132,6 +188,18 @@ export function SymbolDetailRoute() {
           </pre>
         </CardContent>
       </Card>
+      {SOURCE_VIEWER_TRANSPORT_AVAILABLE && sourceOpen && sourceLocation && selectedRepo ? (
+        <SourcePane
+          key={selectedRepo.id}
+          repoId={selectedRepo.id}
+          root={selectedRepo.root}
+          location={sourceLocation}
+          initialSymbol={restoredLocation ? undefined : { id: node.id, name: node.name }}
+          onCanonicalize={canonicalizeSource}
+          onNavigate={navigateSource}
+          onClose={closeSource}
+        />
+      ) : null}
       {partialError ? (
         <StatePanel kind="degraded" title="Partial relationship context">
           {partialError}
@@ -142,4 +210,48 @@ export function SymbolDetailRoute() {
       <FlowSections flows={flows} clusters={clusters} />
     </div>
   )
+}
+
+export function parseViewerLocation(params: URLSearchParams, repoId: string, root: string): LspLocation | null {
+  const source = params.get("source")
+  if (!source || params.get("repo") !== repoId || !isSafeRelativePath(source)) return null
+  const values = ["sl", "sc", "el", "ec"].map((key) => parsePosition(params.get(key)))
+  if (values.some((value) => value === null)) return null
+  const [sl, sc, el, ec] = values as [number, number, number, number]
+  if (el < sl || (el === sl && ec < sc)) return null
+  return {
+    uri: fileUriForPath(root, source),
+    range: { start: { line: sl, character: sc }, end: { line: el, character: ec } },
+  }
+}
+
+export function locationSearch(
+  current: URLSearchParams,
+  repoId: string,
+  root: string,
+  location: LspLocation,
+): URLSearchParams {
+  const source = relativePathFromFileUri(root, location.uri)
+  if (!source || !isSafeRelativePath(source)) return new URLSearchParams(current)
+  const next = new URLSearchParams(current)
+  next.set("repo", repoId)
+  next.set("source", source)
+  setRange(next, location.range)
+  return next
+}
+
+function setRange(params: URLSearchParams, range: LspRange): void {
+  params.set("sl", String(range.start.line))
+  params.set("sc", String(range.start.character))
+  params.set("el", String(range.end.line))
+  params.set("ec", String(range.end.character))
+}
+
+function parsePosition(value: string | null): number | null {
+  return value !== null && /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null
+}
+
+function isSafeRelativePath(value: string): boolean {
+  if (!value || value.startsWith("/") || value.startsWith("\\") || /^[A-Za-z]:/.test(value) || value.startsWith("file:")) return false
+  return !value.replaceAll("\\", "/").split("/").some((segment) => segment === ".." || segment === "")
 }

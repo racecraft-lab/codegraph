@@ -852,7 +852,7 @@ emission.
   "review_order": ["M1-lsp-read-core", "M2-lsp-stdio-facade"],
   "markers": [
     {"id": "M1-lsp-read-core", "checkpoint": {"status": "committed", "commit_sha": "1cfc321db58277bc65c8d7f7866bc1a50c5778b3"}, "warnings": ["505 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]},
-    {"id": "M2-lsp-stdio-facade", "checkpoint": {"status": "pending_commit", "commit_sha": null}, "warnings": ["692 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]}
+    {"id": "M2-lsp-stdio-facade", "checkpoint": {"status": "committed", "commit_sha": "aec69f4c1207598027427598de48d1de15a9cc0e"}, "warnings": ["692 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]}
   ],
   "warnings": ["The actual Slice 1 production diff is a size-only block; marker-based PR emission is required"],
   "final_marker_split": {"status": "required", "reason": "size_only"},

@@ -309,7 +309,7 @@
         "task_ids": ["T006", "T007", "T010", "T011", "T012", "T013", "T015", "T016", "T017"],
         "verification_evidence_path": "docs/ai/specs/.process/SPEC-009-workflow.md",
         "fingerprint_status": "current",
-        "checkpoint": {"status": "pending_commit", "commit_sha": null},
+        "checkpoint": {"status": "committed", "commit_sha": "aec69f4c1207598027427598de48d1de15a9cc0e"},
         "warnings": ["692 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]
       }
     ],
