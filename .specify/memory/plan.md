@@ -143,3 +143,17 @@ normalizes the closed result matrix, and publishes one deterministic report by
 trusted comment or fork-safe artifact fallback. Optional SPEC-018 narrative is
 append-only and cannot change facts or conclusions. Full plan recoverable:
 `git show 316ca16:specs/020-pr-blast-radius-review-action/plan.md`.
+
+## SPEC-009 - LSP Server Facade (archived 2026-07-24)
+
+Plan shape that shipped: four ordered review markers over one bounded read-only
+surface. M1 established exact graph and trusted-source reads; M2 added the
+repository-bound stdio LSP facade; M3 added the dormant focused source viewer;
+M4 connected it through a same-origin WebSocket adapter with strict Host,
+Origin, repository, size, concurrency, deadline, backpressure, and teardown
+controls. The implementation reused the SPEC-005 daemon/server seam and
+SPEC-006 browser shell, added the pure-JavaScript `ws` dependency, and retained
+explicit activation with no background network behavior. The task ledger was
+not synchronized after T017; merged PRs #159-#162 and their green checks are the
+authoritative completion evidence. Full plan recoverable:
+`git show 436b183:specs/009-lsp-server-facade/plan.md`.

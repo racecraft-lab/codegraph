@@ -111,7 +111,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-006 | Web UI: Graph Browser | ✅ Complete | [SPEC-006-workflow.md](.process/SPEC-006-workflow.md) | Merged (#153); archived in `.specify/memory/archive-reports/2026-07-16-SPEC-006.md` |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Ready (SPEC-006 shipped the packaged app shell, local API clients, graph surface, and static-asset pipeline) |
 | SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
-| SPEC-009 | LSP Server Facade | 🔄 In Progress | [SPEC-009-workflow.md](.process/SPEC-009-workflow.md) | Scaffolded 2026-07-16 on `009-lsp-server-facade`; Grill Me complete, two slices accepted, next phase Specify |
+| SPEC-009 | LSP Server Facade | ✅ Complete | [SPEC-009-workflow.md](.process/SPEC-009-workflow.md) | Merged (#159-#162); archived in `.specify/memory/archive-reports/2026-07-24-SPEC-009.md` |
 | SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
 | SPEC-011 | Execution Flows & Clusters | ✅ Complete | [SPEC-011-workflow.md](.process/SPEC-011-workflow.md) | Merged (#50); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-011.md` |
 | SPEC-012 | Change Impact Detection | ✅ Complete | [SPEC-012-workflow.md](.process/SPEC-012-workflow.md) | Merged (#55); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-012.md` |
@@ -397,26 +397,36 @@ unless future parity drift creates a concrete unowned row.
 
 **Goal:** The graph answers LSP — stdio for tooling, WebSocket for the web app's code viewer — read-only by construction.
 
+**Implementation Status:** Complete. The four-marker stack merged in PRs
+#159-#162 on 2026-07-23/24; archive provenance and recovery are recorded in
+`.specify/memory/archive-reports/2026-07-24-SPEC-009.md`.
+
 **Reviewability Budget:** Primary surface: API (protocol) |
 Projected reviewable LOC: 445 (net-new) |
 Production files: ~6 |
 Total files: ~12 |
 Budget result: within greenfield allowance (estimator suggested 2 slices — advisory)
 
-**Scope:**
-- `src/lsp/facade/server.ts`: LSP server implementing initialize, textDocument/{definition,references,hover,documentSymbol}, workspace/symbol from graph queries (definitions via node spans, references via edges, hover via signature+doc); capabilities advertise read-only surface only.
-- Transports: `codegraph lsp` stdio subcommand; `src/lsp/facade/ws-bridge.ts` WebSocket endpoint mounted on the SPEC-005 server (`/lsp`).
-- Web UI code viewer integration: editor component speaks LSP over the WebSocket (go-to-def navigates the app; references panel; hover cards).
-- Conformance smoke test with a scripted generic LSP client fixture.
+**Shipped Scope:**
+- `src/lsp/protocol.ts`, `src/lsp/facade.ts`, and `src/lsp/stdio-server.ts`
+  implement the bounded read-only protocol, lifecycle, and stdio transport.
+- `src/server/lsp-websocket.ts` mounts the same facade on the SPEC-005 server
+  with same-origin admission, resource limits, and owned-session cleanup.
+- `web/src/lib/lsp/` and `web/src/components/symbol/SourcePane.tsx` provide the
+  dormant focused viewer with hover, definition/history, references, explicit
+  stale/unavailable states, and retry.
+- Root and web test suites cover scripted generic-client, WebSocket, packaged
+  browser, accessibility, and self-repository behavior.
 
 **Out of Scope:**
 - Mutating LSP methods; IDE marketing/packaging; diagnostics publishing.
 
 **Key Files:**
-- `src/lsp/facade/server.ts` — graph-backed LSP handlers
-- `src/lsp/facade/ws-bridge.ts` — WebSocket transport on serve
-- `src/bin/codegraph.ts` — `lsp` subcommand (modify)
-- `web/` — viewer wiring (modify)
+- `src/lsp/facade.ts` — graph-backed LSP handlers
+- `src/lsp/stdio-server.ts` — explicit stdio transport
+- `src/server/lsp-websocket.ts` — same-origin WebSocket transport
+- `src/bin/codegraph.ts` — `lsp` subcommand
+- `web/src/components/symbol/SourcePane.tsx` — focused source viewer
 
 ---
 

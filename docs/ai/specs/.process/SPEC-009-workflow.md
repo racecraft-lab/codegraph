@@ -36,8 +36,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Tasks | `/speckit-tasks` | Complete | G5 passed: 48 dependency-ordered tasks cover every requirement and both slice gates. |
 | Analyze | `/speckit-analyze` | Complete | G6 passed after consensus resolved one ordering issue and one dependency typing note. |
 | Confidence Gate | G6.5 | Complete | Advisory gate passed at 0.98 against the 0.90 threshold. |
-| Implement | `/speckit-implement` | In Progress | Slice 1 G7 passed; continue with trusted source, WebSocket, and viewer work. |
-| Post | Canonical post gates | Pending | Verify, review, package, create PRs, remediate, and retrospect. |
+| Implement | `/speckit-implement` | Complete | Four ordered markers merged through PRs #159-#162; active task checkboxes stopped at T017 and are reconciled from merge evidence below. |
+| Post | Canonical post gates | Complete | Stack review, remediation, required CI, UAT evidence, and retrieval-guardian review completed before the final merge. |
 
 **Status legend:** Pending | In Progress | Complete | Blocked
 
@@ -80,17 +80,16 @@ explicitly skip each before final handoff:
 
 | Field | Result |
 |---|---|
-| Status | Complete - no candidates |
-| Execution path | Installed archive extension contract with Codex-native worktree binding |
-| Current target excluded | `specs/009-lsp-server-facade` |
-| Eligible previous specs | None; earlier merged specs already have archive reports |
-| Cleanup | Not applied; `safeToApplyCleanup=false` |
+| Status | Complete - post-merge cleanup applied |
+| Execution path | Installed archive-cleanup contract from an isolated branch based on current `origin/main` |
+| Archived target | `specs/009-lsp-server-facade` |
+| Eligible merged specs | SPEC-009 only; all earlier merged specs already have archive reports |
+| Cleanup | Applied after confirming PRs #159-#162 are merged and all required checks passed |
 
-The extension prerequisite script could not resolve a pre-Specify
-`.specify/feature.json`. The already-validated worktree supplied the repository,
-feature, memory, and template paths as allowed by the Codex adapter. The current
-target was the only active directory under `specs/`, so the sweep completed as
-a successful no-op.
+The initial pre-Specify sweep correctly excluded SPEC-009 as the current target
+and found no prior candidates. The 2026-07-24 post-merge cleanup reran path
+discovery successfully, confirmed SPEC-009 was the only active spec, and archived
+it after the complete four-PR stack reached `main`.
 
 ---
 
@@ -810,8 +809,8 @@ For every behavior:
 |---|---|---|---|
 | Setup/Foundation | Complete | 5 | T001–T005 complete; protocol and UTF-16 contract verified. |
 | Slice 1 - Core and stdio | Complete | 12 | T006–T017 complete; G7 passed. Actual size-only block is decomposed into ordered markers `M1-lsp-read-core` and `M2-lsp-stdio-facade`. |
-| Slice 2 - WebSocket and viewer | Pending | 0 | Pending Tasks |
-| Polish/Post gates | Pending | 0 | Pending Tasks |
+| Slice 2 - WebSocket and viewer | Merged | 0 checked / 31 shipped | The task ledger remained stale; PRs #161/#162 and their CI/UAT are authoritative. |
+| Polish/Post gates | Merged evidence | 0 checked | PR review, remediation, CI, UAT, and retrieval-guardian evidence are recorded in the archive report. |
 
 ### Slice 1 G7 Evidence
 
@@ -865,6 +864,11 @@ emission.
 
 ## Post-Implementation Checklist
 
+The unchecked list below is preserved as the historical pre-merge ledger. It
+was not synchronized after T017 and must not be treated as the final completion
+source. The post-merge reconciliation following the list records the
+authoritative evidence.
+
 - [ ] Every task is marked complete and phantom-verified.
 - [ ] `npm run typecheck` passes.
 - [ ] `npm run build` passes and package assets still ship.
@@ -897,6 +901,36 @@ emission.
 ### Patterns to Reuse
 
 - Pending retrospective.
+
+---
+
+## Post-Merge Archive Reconciliation (2026-07-24)
+
+SPEC-009 shipped as four ordered GitHub Stack markers:
+
+| Marker | PR | Merge commit | Outcome |
+|---|---|---|---|
+| M1 read core | #159 | `2c0053b9b2662729a1b7cce68fe1b7f05ba33f11` | Exact read-only protocol and daemon source/graph operations |
+| M2 stdio facade | #160 | `29c7615eeb884462136fc7c84f6022837040e3fb` | Lifecycle-safe facade, stdio framing, and generic-client path |
+| M3 source viewer | #161 | `9a086b927887eb43d8e0d154fabf05bc8859d31e` | Focused accessible viewer, navigation/history, and recovery |
+| M4 WebSocket safety | #162 | `436b18336f9e1b45146445f4dfb8bebc68c9cf11` | Same-origin transport, limits, cleanup, and final remediation |
+
+All required checks passed on every PR. The final marker recorded 36/36 root LSP
+tests, 51/51 web tests, 16 Playwright tests with one conditional skip, 1/1
+packaged self-repository UAT, and a clean retrieval-guardian review. The feature
+is therefore complete despite the stale T018-T048 checkboxes. Full provenance,
+CI links, canonical shipped artifacts, and recovery commands live in
+`.specify/memory/archive-reports/2026-07-24-SPEC-009.md`.
+
+### Reconciled Lessons
+
+- Ordered PR markers kept the oversized implementation reviewable while
+  preserving dependency order.
+- Stack rebases exposed shared daemon/server conflicts; resolving them in the
+  owning marker and restacking downstream branches preserved the intended diff
+  sequence.
+- Workflow and task state must be synchronized at each marker merge; merge and
+  CI evidence can reconcile stale state, but should not have to replace it.
 
 ---
 

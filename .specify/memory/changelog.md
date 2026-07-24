@@ -98,3 +98,11 @@
   [archive-reports/2026-07-16-SPEC-020.md](archive-reports/2026-07-16-SPEC-020.md);
   `.specify/feature.json` cleared because the repository-wide sweep left no
   active spec directory.
+
+- **2026-07-24** - SPEC-009 archived. PRs #159 (`2c0053b`), #160 (`29c7615`),
+  #161 (`9a086b9`), and #162 (`436b183`) merged as an ordered stack (read core,
+  stdio facade, focused source viewer, WebSocket safety); roadmap row flipped to
+  complete; `specs/009-lsp-server-facade/` removed with provenance and the
+  stale T018-T048 checkbox reconciliation in
+  [archive-reports/2026-07-24-SPEC-009.md](archive-reports/2026-07-24-SPEC-009.md);
+  `.specify/feature.json` cleared because no active spec remains.

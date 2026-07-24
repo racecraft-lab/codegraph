@@ -4,436 +4,123 @@
   "spec_id": "SPEC-009",
   "feature_dir": "specs/009-lsp-server-facade",
   "branch": "009-lsp-server-facade",
-  "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/009-lsp-server-facade",
-  "status": "in_progress",
-  "active_step": "Phase 7: Implement - Slice 2 Trusted Source and Viewer",
-  "updated_at": "2026-07-17T09:25:45Z",
-  "confidence_gate_mode": "advisory",
+  "status": "completed_archived",
+  "active_step": "Archive complete",
+  "updated_at": "2026-07-24T12:32:26Z",
+  "completed_at": "2026-07-24T11:57:11Z",
+  "archive_report": ".specify/memory/archive-reports/2026-07-24-SPEC-009.md",
   "plan": [
-    {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
-    {"step": "Phase 0: Prerequisites", "status": "completed"},
-    {"step": "Phase 1: Specify", "status": "completed"},
-    {"step": "Phase 2: Clarify - LSP Contract", "status": "completed"},
-    {"step": "Phase 2: Clarify - LSP Contract Consensus", "status": "completed"},
-    {"step": "Phase 2: Clarify - WebSocket and Security", "status": "completed"},
-    {"step": "Phase 2: Clarify - WebSocket and Security Consensus", "status": "completed"},
-    {"step": "Phase 2: Clarify - Source Viewer and Degradation", "status": "completed"},
-    {"step": "Phase 2: Clarify - Source Viewer and Degradation Consensus", "status": "completed"},
-    {"step": "Phase 3: Plan", "status": "completed"},
-    {"step": "Phase 4: Checklist - API Contracts", "status": "completed"},
-    {"step": "Phase 4: Checklist - API Contracts Consensus", "status": "completed"},
-    {"step": "Phase 4: Checklist - Streaming Protocol", "status": "completed"},
-    {"step": "Phase 4: Checklist - Streaming Protocol Consensus", "status": "completed"},
-    {"step": "Phase 4: Checklist - Security", "status": "completed"},
-    {"step": "Phase 4: Checklist - Security Consensus", "status": "completed"},
-    {"step": "Phase 4: Checklist - UX and Accessibility", "status": "completed"},
-    {"step": "Phase 4: Checklist - UX and Accessibility Consensus", "status": "completed"},
-    {"step": "Phase 5: Tasks", "status": "completed"},
-    {"step": "Phase 6: Analyze", "status": "completed"},
-    {"step": "Phase 6: Analyze - Consensus", "status": "completed"},
-    {"step": "Phase 6.5: Confidence Gate", "status": "completed"},
-    {"step": "Phase 7: Implement - Setup and Shared Protocol", "status": "completed"},
-    {"step": "Phase 7: Implement - Slice 1 Daemon and LSP Core", "status": "completed"},
-    {"step": "Phase 7: Implement - Slice 1 Stdio CLI and Conformance", "status": "completed"},
-    {"step": "Phase 7: Implement - Slice 1 Verification", "status": "completed"},
-    {"step": "Phase 7: Implement - Slice 2 Trusted Source and Viewer", "status": "in_progress"},
-    {"step": "Phase 7: Implement - Slice 2 WebSocket Safety", "status": "pending"},
-    {"step": "Phase 7: Implement - Slice 2 Verification and Polish", "status": "pending"},
-    {"step": "Post: Doctor Extension Check", "status": "pending"},
-    {"step": "Post: Verify Implementation", "status": "pending"},
-    {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
-    {"step": "Post: Code Review", "status": "pending"},
-    {"step": "Post: Integration Suite", "status": "pending"},
-    {"step": "Post: Reviewability Diff Gate", "status": "pending"},
-    {"step": "Post: Self-Review", "status": "pending"},
-    {"step": "Post: UAT Runbook Generation", "status": "pending"},
-    {"step": "Post: Final Reviewability Backstop", "status": "pending"},
-    {"step": "Post: PR Packet/Body Generation", "status": "pending"},
-    {"step": "Post: PR Body Generation", "status": "pending"},
-    {"step": "Post: PR Creation", "status": "pending"},
-    {"step": "Post: Review Remediation", "status": "pending"},
-    {"step": "Post: Retrospective", "status": "pending"}
-  ],
-  "phases": {
-    "specify": {
+    {
+      "step": "Specify, clarify, plan, checklist, tasks, and analyze",
+      "status": "completed"
+    },
+    {
+      "step": "Implement ordered marker M1 - read core",
       "status": "completed",
-      "execution_path": "direct_recovery_after_two_executor_timeouts",
-      "artifacts": [
-        "specs/009-lsp-server-facade/spec.md",
-        "specs/009-lsp-server-facade/checklists/requirements.md",
-        ".specify/feature.json"
-      ],
-      "metrics": {
-        "user_stories": 3,
-        "acceptance_scenarios": 23,
-        "functional_requirements": 45,
-        "success_criteria": 12,
-        "clarification_markers": 0
-      },
-      "gate": {
-        "id": "G1",
-        "status": "passed",
-        "reason": "spec.md exists with 0 markers"
-      }
+      "pr": 159
     },
-    "clarify": {
+    {
+      "step": "Implement ordered marker M2 - stdio facade",
       "status": "completed",
-      "gate": {
-        "id": "G2",
-        "status": "passed",
-        "reason": "0 [NEEDS CLARIFICATION] markers"
-      },
-      "sessions": {
-        "lsp_contract": {
-          "status": "completed",
-          "questions": 5,
-          "consensus": "completed",
-          "human_review_required": false,
-          "outcomes": [
-            "canonical initialize root validation",
-            "state-specific lifecycle errors and notifications",
-            "same-target overlap collapse with ambiguity fail-close",
-            "snapshot-backed UTF-16 conversion",
-            "complete deterministic ordering before caps"
-          ]
-        },
-        "websocket_security": {
-          "status": "completed",
-          "questions": 5,
-          "consensus": "completed_all_three",
-          "human_review_required": true,
-          "human_review_status": "accepted_all_recommendations",
-          "outcomes": [
-            "bounded fatal stdio framing loss with recoverable valid-frame JSON errors",
-            "protocol-specific WebSocket JSON-RPC and close-code mapping",
-            "perimeter-first Host and normalized Origin admission",
-            "atomic per-session concurrency deadline and backpressure limits",
-            "shared cross-transport redaction with required wire ID echo"
-          ]
-        },
-        "source_viewer_degradation": {
-          "status": "completed",
-          "questions": 5,
-          "consensus": "completed_all_three",
-          "human_review_required": true,
-          "human_review_status": "accepted_all_recommendations",
-          "outcomes": [
-            "custom experimental metadata content contract with closed errors",
-            "one trusted linearized source-read authority",
-            "privacy-safe repository-relative URL and history state",
-            "single-tab-stop accessible source composite with named actions",
-            "explicit no-auto-reconnect degradation and manual retry state machine"
-          ]
-        }
-      }
+      "pr": 160
     },
-    "plan": {
+    {
+      "step": "Implement ordered marker M3 - focused source viewer",
       "status": "completed",
-      "execution_path": "direct_recovery_after_two_executor_timeouts",
-      "artifacts": [
-        "specs/009-lsp-server-facade/plan.md",
-        "specs/009-lsp-server-facade/research.md",
-        "specs/009-lsp-server-facade/data-model.md",
-        "specs/009-lsp-server-facade/contracts/lsp-protocol.md",
-        "specs/009-lsp-server-facade/contracts/websocket-transport.md",
-        "specs/009-lsp-server-facade/contracts/source-viewer.md",
-        "specs/009-lsp-server-facade/quickstart.md"
-      ],
-      "gate": {
-        "id": "G3",
-        "status": "passed",
-        "reason": "plan.md exists with 0 unresolved markers"
-      },
-      "reviewability": {
-        "runner_status": "pass",
-        "projected_reviewable_loc": 680,
-        "production_files": 17,
-        "new_files": 11,
-        "modified_files": 9,
-        "total_entries": 20,
-        "slice_1_projected_loc": 320,
-        "slice_2_projected_loc": 360,
-        "accepted_two_slice_warning": true
-      },
-      "documentation": {
-        "context7_status": "transport_closed",
-        "fallback": "current_official_primary_sources"
-      }
+      "pr": 161
     },
-    "checklists": {
+    {
+      "step": "Implement ordered marker M4 - WebSocket safety",
       "status": "completed",
-      "execution_path": "direct_recovery_after_two_api_executor_timeouts",
-      "total_items": 99,
-      "gaps": 0,
-      "domains": {
-        "api_contracts": {"items": 24, "gaps": 0, "consensus": "no_unresolved_items"},
-        "streaming_protocol": {"items": 25, "gaps": 0, "consensus": "no_unresolved_items"},
-        "security": {"items": 25, "gaps": 0, "consensus": "no_unresolved_items", "new_human_review": false},
-        "ux_accessibility": {"items": 25, "gaps": 0, "consensus": "no_unresolved_items"}
-      },
-      "gate": {
-        "id": "G4",
-        "status": "passed",
-        "reason": "0 [Gap] markers"
-      }
+      "pr": 162
     },
-    "tasks": {
-      "status": "completed",
-      "execution_path": "direct_recovery_after_two_executor_timeouts",
-      "artifact": "specs/009-lsp-server-facade/tasks.md",
-      "metrics": {
-        "total_tasks": 48,
-        "parallel_opportunities": 8,
-        "us1_tasks": 12,
-        "us2_tasks": 13,
-        "us3_tasks": 8,
-        "shared_setup_final_tasks": 15,
-        "sequential_ids": true,
-        "format_valid": true
-      },
-      "gate": {
-        "id": "G5",
-        "status": "passed",
-        "reason": "48 tasks found with 0 markers"
-      }
-    },
-    "atomicity_route": {
-      "route": "one-navigable-PR",
-      "releasable": true,
-      "signals": ["change-shape:modify-heavy"],
-      "hints": [],
-      "warnings": []
-    },
-    "analysis": {
-      "status": "completed",
-      "execution_path": "direct_read_only_recovery_after_two_executor_timeouts",
-      "requirements": 57,
-      "covered_requirements": 57,
-      "coverage_percent": 100,
-      "total_tasks": 48,
-      "unmapped_product_tasks": 0,
-      "support_tasks": 15,
-      "critical_remaining": 0,
-      "high_remaining": 0,
-      "medium_dispositions": 1,
-      "consensus": {
-        "perspectives": 3,
-        "ordering_remediation_agreement": "3/3",
-        "typing_disposition_agreement": "3/3"
-      },
-      "resolved_findings": [
-        "packaged viewer UAT moved after production WebSocket adapter",
-        "ws closeTimeout type lag contained by narrow local intersection and explicit cleanup tests"
-      ],
-      "gate": {
-        "id": "G6",
-        "status": "passed",
-        "reason": "0 CRITICAL/HIGH findings"
-      }
-    },
-    "confidence_gate": {
-      "status": "passed",
-      "mode": "advisory",
-      "threshold": 0.9,
-      "composite": 0.98,
-      "criteria": {
-        "task_understanding": 0.98,
-        "approach_clarity": 0.96,
-        "requirements_alignment": 0.97,
-        "risk_assessment": 1.0,
-        "completeness": 1.0
-      },
-      "iterations": 1,
-      "recommended_action": "proceed"
-    },
-    "implementation": {
-      "status": "in_progress",
-      "slice_1": {
-        "status": "completed",
-        "tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016", "T017"],
-        "gate": {
-          "id": "G7",
-          "status": "passed",
-          "focused_tests": 18,
-          "build": "passed",
-          "typecheck": "passed",
-          "generic_client_uat": "passed",
-          "full_test_files": 248,
-          "full_tests_passed": 4113,
-          "full_tests_skipped": 7,
-          "full_suite_duration_seconds": 117.02
-        },
-        "reviewability": {
-          "status": "block",
-          "reason": "size_only",
-          "production_added_lines": 1197,
-          "production_files": 6,
-          "test_added_lines": 449,
-          "evidence_path": "specs/009-lsp-server-facade/.process/reviewability/slice-1-actual.json",
-          "disposition": "marker_split_required"
-        }
-      },
-      "slice_2": {
-        "status": "in_progress",
-        "completed_tasks": []
-      }
+    {
+      "step": "Post-merge archive cleanup",
+      "status": "completed"
     }
-  },
-  "pr_marker_plan": {
-    "schema_version": "1.0",
-    "source_fingerprint": {
-      "status": "current",
-      "inputs": {
-        "spec": {"path": "specs/009-lsp-server-facade/spec.md", "sha256": "15cd7cd11bbc78434bcae0bbefbe53631178eb1c24cf27dbcc66c5a37aac6cbc", "size_bytes": 37455},
-        "plan": {"path": "specs/009-lsp-server-facade/plan.md", "sha256": "130c4ad2b6f4d884096c22f65ccc52bb2c3c811bc27919d7f0887daea8f89153", "size_bytes": 16960},
-        "tasks": {"path": "specs/009-lsp-server-facade/tasks.md", "sha256": "049ab6324aeefcb40c0b2e0f1c7a4afa8f05d11536f41a523ee9086ea8b0e5d4", "size_bytes": 19493},
-        "reviewability": {"path": "specs/009-lsp-server-facade/.process/reviewability/slice-1-actual.json", "sha256": "acfd69612cb5113c69f94d3bdeff517945276879d1ff53cd88cdc751f3ecd180", "size_bytes": 876}
-      },
-      "hazard_route": "one-navigable-PR"
+  ],
+  "merge_provenance": [
+    {
+      "marker": "M1-lsp-read-core",
+      "pr": 159,
+      "merged_at": "2026-07-23T23:34:41Z",
+      "merge_commit": "2c0053b9b2662729a1b7cce68fe1b7f05ba33f11",
+      "tree": "ec410741d21684638590bd9fe31689c8052fd44c",
+      "ci_run": "https://github.com/racecraft-lab/codegraph/actions/runs/29962442334"
     },
-    "ordered_marker_ids": ["M1-lsp-read-core", "M2-lsp-stdio-facade"],
-    "review_order": ["M1-lsp-read-core", "M2-lsp-stdio-facade"],
-    "markers": [
-      {
-        "id": "M1-lsp-read-core",
-        "review_order": 1,
-        "task_ids": ["T003", "T004", "T005", "T008", "T009", "T014"],
-        "verification_evidence_path": "docs/ai/specs/.process/SPEC-009-workflow.md",
-        "fingerprint_status": "current",
-        "checkpoint": {"status": "committed", "commit_sha": "1cfc321db58277bc65c8d7f7866bc1a50c5778b3"},
-        "warnings": ["505 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]
-      },
-      {
-        "id": "M2-lsp-stdio-facade",
-        "review_order": 2,
-        "task_ids": ["T006", "T007", "T010", "T011", "T012", "T013", "T015", "T016", "T017"],
-        "verification_evidence_path": "docs/ai/specs/.process/SPEC-009-workflow.md",
-        "fingerprint_status": "current",
-        "checkpoint": {"status": "committed", "commit_sha": "aec69f4c1207598027427598de48d1de15a9cc0e"},
-        "warnings": ["692 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]
-      }
-    ],
-    "warnings": ["The actual Slice 1 production diff is a size-only block; marker-based PR emission is required"],
-    "final_marker_split": {"status": "required", "reason": "size_only"},
-    "packet_validation": {"status": "pending"},
-    "pr_mappings": {"status": "pending", "items": []}
+    {
+      "marker": "M2-lsp-stdio-facade",
+      "pr": 160,
+      "merged_at": "2026-07-24T00:46:49Z",
+      "merge_commit": "29c7615eeb884462136fc7c84f6022837040e3fb",
+      "tree": "4381e96ca78a05168dca088d4f58f189e09427af",
+      "ci_run": "https://github.com/racecraft-lab/codegraph/actions/runs/30056235907"
+    },
+    {
+      "marker": "M3-lsp-source-viewer",
+      "pr": 161,
+      "merged_at": "2026-07-24T01:30:05Z",
+      "merge_commit": "9a086b927887eb43d8e0d154fabf05bc8859d31e",
+      "tree": "d723d9b2989d478858f33fa90f5d1ff25f17e77c",
+      "ci_run": "https://github.com/racecraft-lab/codegraph/actions/runs/30058780205"
+    },
+    {
+      "marker": "M4-lsp-websocket-safety",
+      "pr": 162,
+      "merged_at": "2026-07-24T11:57:11Z",
+      "merge_commit": "436b18336f9e1b45146445f4dfb8bebc68c9cf11",
+      "tree": "aadb0052e7ba233dc5890e1add6ea75ec970df9e",
+      "ci_run": "https://github.com/racecraft-lab/codegraph/actions/runs/30061248254"
+    }
+  ],
+  "evidence_reconciliation": {
+    "source_task_count": 48,
+    "source_checked_tasks": 17,
+    "stale_unchecked_range": "T018-T048",
+    "status": "reconciled_from_merged_prs",
+    "reason": "The active workflow and task ledger stopped updating after Slice 1. Four ordered merged PRs, shipped code, required GitHub checks, focused tests, UAT, and final retrieval-guardian review establish completion without rewriting historical checkboxes."
   },
   "archive_sweep": {
-    "status": "no_candidates",
-    "execution_path": "extension_contract",
-    "archive_extension_installed": true,
-    "invocation_available": true,
-    "prerequisite_available": true,
-    "prerequisite_mode": "codex_native_worktree_binding",
-    "eligible_previous_specs": [],
-    "excluded_current_spec": "specs/009-lsp-server-facade",
-    "cleanup_mode": "feature_branch_apply_eligibility",
-    "cleanup_applied": false,
-    "safeToApplyCleanup": false,
-    "worktree_clean_before_sweep": true,
-    "notes": "The project prerequisite script could not resolve a pre-Specify feature.json, so the Codex-native worktree binding supplied the validated repository, feature, memory, and template paths. The only active specs directory is the current target; all earlier merged specs already have archive reports."
+    "status": "cleanup_applied",
+    "execution_path": "speckit-pro:speckit-archive-cleanup",
+    "eligible_merged_specs": [
+      "specs/009-lsp-server-facade"
+    ],
+    "removed_spec_directories": [
+      "specs/009-lsp-server-facade"
+    ],
+    "cleanup_mode": "post_merge_apply_cleanup",
+    "cleanup_applied": true,
+    "safeToApplyCleanup": true,
+    "worktree": "codegraph-archive-merged-specs-2026-07-24",
+    "branch": "codex/archive-merged-specs-2026-07-24",
+    "base": "origin/main@21a474ae",
+    "notes": "SPEC-009 was the only active spec. All other merged specs already had archive reports. The user's cleanup invocation explicitly authorized removal after merge-state verification."
   },
-  "preflight": {
-    "worktree_binding": {
-      "status": "verified",
-      "branch": "009-lsp-server-facade",
-      "workflow_present": true,
-      "head_sha": "1af5d42973cd9272c7aee2d1df129c10ee6271a7",
-      "remote_head_matches": true,
-      "runner_anchor": {
-        "status": "active",
-        "path": "speckit-pro/speckit_pro_runner",
-        "tracked": false,
-        "purpose": "Keep the installed runner anchored to this nested worktree instead of its parent checkout."
-      },
-      "runner_check_prerequisites": {
-        "status": "ok",
-        "all_pass": true,
-        "reported_branch": "",
-        "reported_worktree": true,
-        "shell_branch": "009-lsp-server-facade",
-        "note": "The runner cannot read the linked-worktree gitdir outside its trust boundary, so the shell branch check is authoritative."
-      }
+  "verification": {
+    "status": "passed",
+    "json": "passed",
+    "index_write": "passed",
+    "index_check": "passed",
+    "active_spec_scan": {
+      "status": "passed",
+      "result": "specs/.gitkeep only"
     },
-    "runner": {
-      "version": "speckit-pro-runner 0.1.0",
-      "python": "3.11.0",
-      "confidence_mode": "advisory",
-      "codex_agents_dry_run": {
-        "status": "no_op",
-        "model": "gpt-5.5",
-        "agent_count": 10
-      },
-      "implementation_agent": "implement-executor",
-      "coverage_audit": "passed"
+    "diff_check": "passed",
+    "build": {
+      "status": "passed",
+      "node": "24.11.1"
     },
-    "project_commands": {
-      "BUILD": "npm run build",
-      "TYPECHECK": "npm run typecheck",
-      "LINT": "N/A",
-      "LINT_FIX": "N/A",
-      "UNIT_TEST": "npm test",
-      "INTEGRATION_TEST": "npm run test:web",
-      "SINGLE_FILE_TEST": "npx vitest run <file>",
-      "SINGLE_FILE_INTEGRATION": "npm --prefix web exec vitest run -- <file>",
-      "FULL_VERIFY": "npm run build && npm run typecheck && npm test && npm run test:web",
-      "node": "24.11.1",
-      "note": "Runner output missing npm run was corrected from package.json and AGENTS.md. Web tests are the separately-invoked integration suite."
+    "focused_root_tests": {
+      "status": "passed",
+      "files": 4,
+      "tests": 165,
+      "note": "The authoritative rerun used normal local daemon/socket permissions after the restricted sandbox attempt hit EPERM under ~/.codegraph."
     },
-    "presets": {
-      "detected": [
-        "claude-ask-questions",
-        "codegraph-project-overrides",
-        "speckit-pro-reviewability"
-      ],
-      "authoritative_resolution": {
-        "spec-template": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
-        "plan-template": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
-        "tasks-template": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
-      },
-      "token_discipline": "off"
-    },
-    "capability_coverage": {
-      "codebase_context": "mcp__codegraph__codegraph_explore",
-      "library_documentation": "mcp__context7__resolve_library_id and mcp__context7__query_docs",
-      "web_domain_research": "mcp__tavily__tavily_search or web.run when needed",
-      "source_extraction": "mcp__tavily__tavily_extract",
-      "browser_uat": "mcp__playwright__browser_*",
-      "status": "covered"
-    },
-    "baseline_verification": {
-      "node": "24.11.1",
-      "build": {
-        "command": "npm run build",
-        "status": "passed"
-      },
-      "typecheck": {
-        "command": "npm run typecheck",
-        "status": "passed"
-      },
-      "lint": {
-        "command": "N/A",
-        "status": "skipped"
-      },
-      "test": {
-        "command": "npm test",
-        "status": "passed",
-        "test_files": 246,
-        "tests_passed": 4095,
-        "tests_skipped": 7,
-        "duration_seconds": 91.02,
-        "note": "The authoritative run used local loopback/socket permissions and disabled inherited Git commit signing for temporary fixture repositories."
-      },
-      "reviewability_setup": {
-        "status": "pass",
-        "mode": "setup",
-        "primary_surface": "docs/process"
-      }
-    },
-    "grounding": {
-      "design_concept": "docs/ai/specs/.process/SPEC-009-design-concept.md",
-      "constitution": ".specify/memory/constitution.md",
-      "workflow": "docs/ai/specs/.process/SPEC-009-workflow.md"
+    "focused_web_tests": {
+      "status": "passed",
+      "files": 2,
+      "tests": 87
     }
   }
 }
