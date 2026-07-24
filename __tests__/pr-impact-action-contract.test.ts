@@ -923,12 +923,12 @@ describe('PR impact action contract', () => {
       { action: 'actions/cache/restore', ref: '0057852bfaa89a56745cba8c7296529d2fc39830' },
       { action: 'actions/upload-artifact', ref: 'ea165f8d65b6e75b540449e92b4886f43607fa02' },
       { action: 'actions/cache/save', ref: '0057852bfaa89a56745cba8c7296529d2fc39830' },
-      { action: 'actions/checkout', ref: '34e114876b0b11c390a56381ad16ebd13914f8d5' },
+      { action: 'actions/checkout', ref: '3d3c42e5aac5ba805825da76410c181273ba90b1' },
     ]);
     for (const { ref } of externalUses) {
       expect(ref).toMatch(/^[0-9a-f]{40}$/);
     }
-    expect(readme).toContain('actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5');
+    expect(readme).toContain('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1');
     expect(readme).not.toContain('actions/checkout@v4');
   });
 });
