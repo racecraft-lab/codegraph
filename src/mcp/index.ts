@@ -35,20 +35,22 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { spawn, StdioOptions } from 'child_process';
-import { findNearestCodeGraphRoot, getCodeGraphDir } from '../directory';
+import { findNearestCodeGraphRoot } from '../directory';
 import { StdioTransport } from './transport';
 import { MCPEngine } from './engine';
 import { MCPSession } from './session';
 import {
   Daemon,
   clearStaleDaemonLock,
+  isDaemonProcessAlive,
   isProcessAlive,
   tryAcquireDaemonLock,
+  tryAcquireDaemonElectionGuard,
+  waitForCompleteDaemonLock,
 } from './daemon';
 import { connectWithHello, runLocalHandshakeProxy } from './proxy';
-import { getDaemonSocketCandidates } from './daemon-paths';
+import { openDaemonLog, readTrustedDaemonLock, type DaemonLockInfo } from './daemon-paths';
 import { getTelemetry } from '../telemetry';
 import { checkForUpdateInBackground } from '../upgrade/update-check';
 import { EARLY_PPID } from './early-ppid';
@@ -57,6 +59,7 @@ import { installMainThreadWatchdog, WatchdogHandle } from './liveness-watchdog';
 import { armStartupHandshakeTimeout } from './startup-handshake';
 import { treatStdinFailureAsShutdown } from './stdin-teardown';
 import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
+import { CodeGraphPackageVersion, isShareableCodeGraphVersion } from './version';
 
 /**
  * Env var that marks a process as the *detached daemon* itself (set by
@@ -89,6 +92,7 @@ const TAKEOVER_RETRY_DELAY_MS = 100;
 // path, this narrows the "No such tool available" race window.
 const DAEMON_CONNECT_MAX_RETRIES = 240;
 const DAEMON_CONNECT_RETRY_DELAY_MS = 25;
+const DAEMON_CONNECT_TIMEOUT_MS = DAEMON_CONNECT_MAX_RETRIES * DAEMON_CONNECT_RETRY_DELAY_MS;
 
 /** Whether `CODEGRAPH_NO_DAEMON` was set to a truthy value. */
 function daemonOptOutSet(): boolean {
@@ -126,15 +130,19 @@ function resolveDaemonRoot(explicitPath: string | null): string | null {
 /**
  * Spawn the shared daemon as a fully detached background process: its own
  * session/process group (so a SIGHUP/SIGINT to the launcher's terminal can't
- * reach it) with stdio decoupled from the launcher (logs to
- * `.codegraph/daemon.log`). Re-invokes the *same* CLI faithfully across dev and
+ * reach it) with stdio decoupled from the launcher (logs to an owner-only file,
+ * in `.codegraph/` on POSIX and the user profile on Windows). Re-invokes the
+ * *same* CLI faithfully across dev and
  * bundled launches by reusing `process.argv[0]` (the right node), the current
  * `process.execArgv` (carries `--liftoff-only`, so the daemon never re-execs)
  * and `process.argv[1]` (this script). The spawned process self-arbitrates the
  * O_EXCL lock, so racing launchers may each spawn one — losers exit and every
  * launcher proxies through the single winner.
  */
-function spawnDetachedDaemon(root: string): void {
+export async function spawnDetachedDaemon(
+  root: string,
+  spawnImpl: typeof spawn = spawn,
+): Promise<boolean> {
   const scriptPath = process.argv[1];
   if (!scriptPath) {
     // No resolvable CLI entry point to re-invoke — let the caller fall back to
@@ -145,7 +153,7 @@ function spawnDetachedDaemon(root: string): void {
   let logFd: number | null = null;
   let stdio: StdioOptions = 'ignore';
   try {
-    logFd = fs.openSync(path.join(getCodeGraphDir(root), 'daemon.log'), 'a');
+    logFd = openDaemonLog(root);
     stdio = ['ignore', logFd, logFd];
   } catch {
     stdio = 'ignore'; // no log file — discard daemon output rather than fail
@@ -156,7 +164,7 @@ function spawnDetachedDaemon(root: string): void {
     // where a long-dead session's host pid would trigger spurious shutdowns.
     const env: NodeJS.ProcessEnv = { ...process.env, [DAEMON_INTERNAL_ENV]: '1' };
     delete env[HOST_PPID_ENV];
-    const child = spawn(
+    const child = spawnImpl(
       process.execPath,
       [...process.execArgv, scriptPath, 'serve', '--mcp', '--path', root],
       {
@@ -166,7 +174,23 @@ function spawnDetachedDaemon(root: string): void {
         env,
       },
     );
+    const started = new Promise<boolean>((resolve) => {
+      let settled = false;
+      child.once('spawn', () => {
+        if (settled) return;
+        settled = true;
+        resolve(true);
+      });
+      // Keep this listener for the child lifetime. Spawn failures are emitted
+      // asynchronously; without a consumer they become uncaught exceptions.
+      child.on('error', () => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      });
+    });
     child.unref();
+    return await started;
   } finally {
     // The child holds its own dup of the log fd now; the launcher doesn't need it.
     if (logFd !== null) {
@@ -240,6 +264,11 @@ export class MCPServer {
     // The detached daemon process itself. Checked before the opt-out so the
     // daemon honors the same env it was spawned with (it never sets NO_DAEMON).
     if (daemonInternalSet()) {
+      if (!isShareableCodeGraphVersion(CodeGraphPackageVersion)) {
+        process.stderr.write('[CodeGraph daemon] Package version unavailable; shared daemon disabled.\n');
+        process.exit(0);
+        return;
+      }
       return this.startDaemonProcess();
     }
 
@@ -247,6 +276,10 @@ export class MCPServer {
     // get the pre-#411 single-process behavior.
     if (daemonOptOutSet()) {
       return this.startDirect('CODEGRAPH_NO_DAEMON set');
+    }
+
+    if (!isShareableCodeGraphVersion(CodeGraphPackageVersion)) {
+      return this.startDirect('package version unavailable');
     }
 
     const root = resolveDaemonRoot(this.projectPath);
@@ -259,7 +292,9 @@ export class MCPServer {
     try {
       // Answer the MCP handshake LOCALLY (instant tool registration — no waiting
       // ~600ms for the daemon to spawn+bind, which produced the cold-start race)
-      // and forward tool CALLS to the shared daemon, connected in the background.
+      // and forward tool CALLS to the shared daemon. Connection starts when the
+      // first daemon-bound application message is buffered, so a slow host does
+      // not consume the daemon's authenticated first-message deadline.
       // Runs until the host disconnects; the proxy installs its own watchdog and
       // falls back to an in-process engine if the daemon never comes up.
       this.mode = 'proxy';
@@ -351,7 +386,8 @@ export class MCPServer {
 
   /**
    * Run as the detached shared daemon (process spawned with
-   * `CODEGRAPH_DAEMON_INTERNAL=1`). Arbitrate the O_EXCL lock, then either
+   * `CODEGRAPH_DAEMON_INTERNAL=1`). Hold the kernel election lease and
+   * arbitrate the authenticated lock, then either
    * become the daemon (bind the socket, serve forever) or — if a live daemon
    * already holds the lock — exit so we don't leak a redundant process.
    *
@@ -361,11 +397,81 @@ export class MCPServer {
   private async startDaemonProcess(): Promise<void> {
     const root = resolveDaemonRoot(this.projectPath) ?? this.projectPath ?? process.cwd();
     for (let attempt = 0; attempt < TAKEOVER_MAX_RETRIES; attempt++) {
-      const lock = tryAcquireDaemonLock(root);
+      const election = await tryAcquireDaemonElectionGuard(root);
+      if (!election) {
+        await sleep(TAKEOVER_RETRY_DELAY_MS);
+        continue;
+      }
 
-      if (lock.kind === 'acquired') {
-        const daemon = new Daemon(root);
-        await daemon.start();
+      let action: 'start' | 'retry' | 'exit-live' | 'exit-unverified';
+      let livePid: number | null = null;
+      let acquiredLock: DaemonLockInfo | null = null;
+      let transferElection = false;
+      try {
+        const lock = tryAcquireDaemonLock(root, true);
+
+        if (lock.kind === 'acquired') {
+          acquiredLock = lock.info;
+          action = 'start';
+        } else {
+          // Taken. If the holder is alive, another daemon already serves (or is
+          // binding) — we're redundant; exit cleanly so the launcher proxies to it.
+          // Current hard-link-free publishers use an atomic directory record.
+          // Keep the bounded wait for legacy O_EXCL regular-file generations that
+          // may still be completing after an installed-version overlap.
+          const existing = lock.existing ?? await waitForCompleteDaemonLock(lock.pidPath);
+          if (
+            existing &&
+            existing.electionProtocol !== 1 &&
+            existing.pid > 0 &&
+            isDaemonProcessAlive(existing)
+          ) {
+            livePid = existing.pid;
+            action = 'exit-live';
+          } else if (!existing) {
+            // A legacy publisher does not honor this process's election lease,
+            // and an incomplete record may be that publisher's write window.
+            // It cannot be safely removed by the new election protocol.
+            action = 'exit-unverified';
+          } else if (existing.electionProtocol !== 1) {
+            // A complete legacy generation does not honor the election lease,
+            // but a definitively dead or mismatched process identity is still
+            // safe to quarantine and remove without compare-delete races.
+            action = clearStaleDaemonLock(lock.pidPath, {
+              pid: existing.pid,
+              processBirthId: existing.processBirthId,
+            }, true, true)
+              ? 'retry'
+              : 'exit-unverified';
+          } else {
+            // New-protocol candidates share the election guard. Cleanup still
+            // quarantines and validates the path atomically because an older
+            // publisher may race without honoring that guard.
+            const holdsElectionLease = true;
+            action = clearStaleDaemonLock(lock.pidPath, existing ? {
+              pid: existing.pid,
+              processBirthId: existing.processBirthId,
+            } : undefined, holdsElectionLease)
+              ? 'retry'
+              : 'exit-unverified';
+          }
+        }
+        transferElection = action === 'start';
+      } finally {
+        if (!transferElection) await election.release();
+      }
+
+      if (action === 'start') {
+        const daemon = new Daemon(root, {
+          lockInfo: acquiredLock ?? undefined,
+          electionGuard: election,
+        });
+        try {
+          await daemon.start();
+        } catch (err) {
+          await election.release();
+          throw err;
+        }
         this.daemon = daemon;
         this.mode = 'daemon';
         // The detached daemon has no PPID watchdog or stdin lifeline, so a
@@ -375,19 +481,22 @@ export class MCPServer {
         return; // the net.Server keeps the process alive
       }
 
-      // Taken. If the holder is alive, another daemon already serves (or is
-      // binding) — we're redundant; exit cleanly so the launcher proxies to it.
-      const existing = lock.existing;
-      if (existing && existing.pid > 0 && isProcessAlive(existing.pid)) {
+      if (action === 'exit-live') {
         process.stderr.write(
-          `[CodeGraph daemon] Another daemon (pid ${existing.pid}) already holds the lock; exiting.\n`
+          `[CodeGraph daemon] Another daemon (pid ${livePid}) already holds the lock; exiting.\n`
         );
         process.exit(0);
+        return;
       }
 
-      // Holder is dead (or the record is unreadable) — clear it (pid-verified,
-      // so we never delete a live daemon's lock) and retry the acquire.
-      clearStaleDaemonLock(lock.pidPath, existing?.pid);
+      if (action === 'exit-unverified') {
+        process.stderr.write(
+          '[CodeGraph daemon] Lock ownership could not be verified; preserving it and exiting.\n'
+        );
+        process.exit(0);
+        return;
+      }
+
       await sleep(TAKEOVER_RETRY_DELAY_MS);
     }
 
@@ -398,44 +507,54 @@ export class MCPServer {
   /**
    * Proxy mode (the common case). Serve the MCP handshake LOCALLY for instant
    * tool registration, forwarding tool calls to the shared daemon — which is
-   * connected in the background (probed, then spawned + polled if absent) so the
-   * handshake never waits ~600ms on it. Runs until the host disconnects; the
+   * connected when the first daemon-bound message arrives (then probed, or
+   * spawned + polled if absent), so the local handshake never waits ~600ms on
+   * it. Runs until the host disconnects; the
    * proxy falls back to an in-process engine if the daemon never binds, so this
    * never wedges a session.
    */
   private async runProxyWithLocalHandshake(root: string): Promise<void> {
-    // The daemon may relocate its socket past an in-project filesystem that can't
-    // host one (ExFAT/FAT volumes, WSL2 DrvFs; #997) to the deterministic tmpdir
-    // fallback. We don't read the bound path from the lockfile — both sides walk
-    // the SAME ordered candidate list, so we converge on whichever the daemon
-    // bound with zero coordination. The in-project candidate is tried first, so a
-    // normal repo pays nothing extra (it connects on the very first probe).
-    const candidates = getDaemonSocketCandidates(root);
-    const connectAnyCandidate = async (): Promise<Awaited<ReturnType<typeof connectWithHello>>> => {
-      for (const candidate of candidates) {
-        const s = await connectWithHello(candidate);
-        // A wrong-version daemon IS up — definitive; propagate so the caller
-        // serves in-process instead of spawning + polling for 6s. Don't keep
-        // probing fallbacks past it.
-        if (s === 'version-mismatch') return s;
-        if (s) return s;
-      }
-      return null;
+    // The owner-only lock is the trust anchor for the exact daemon lifetime and
+    // points at the socket actually bound (including a tmpdir relocation).
+    const connectAnyCandidate = async (
+      signal: AbortSignal,
+    ): Promise<Awaited<ReturnType<typeof connectWithHello>>> => {
+      const identity = readTrustedDaemonLock(root);
+      if (!identity) return null;
+      return connectWithHello(identity.socketPath, undefined, {
+        signal,
+        expectedIdentity: identity,
+      });
     };
-    const getDaemonSocket = async () => {
-      // Fast path: a daemon may already be listening (on either candidate).
-      const probe = await connectAnyCandidate();
-      if (probe === 'version-mismatch') return null; // definitive — serve in-process, don't poll for 6s
-      if (probe) return probe;
-      // None reachable — spawn one (detached) and poll for its bind.
-      spawnDetachedDaemon(root);
-      for (let attempt = 0; attempt < DAEMON_CONNECT_MAX_RETRIES; attempt++) {
-        await sleep(DAEMON_CONNECT_RETRY_DELAY_MS);
-        const s = await connectAnyCandidate();
-        if (s === 'version-mismatch') return null;
-        if (s) return s;
+    const getDaemonSocket = async (ownerSignal: AbortSignal) => {
+      // One wall-clock budget covers every candidate, hello handshake, and
+      // retry. A peer that accepts but never sends hello must not multiply the
+      // nominal six-second fallback window by candidates or attempts.
+      const controller = new AbortController();
+      const abortFromOwner = (): void => controller.abort();
+      ownerSignal.addEventListener('abort', abortFromOwner, { once: true });
+      if (ownerSignal.aborted) controller.abort();
+      const timeout = setTimeout(() => controller.abort(), DAEMON_CONNECT_TIMEOUT_MS);
+      try {
+        // Fast path: a daemon may already be listening (on either candidate).
+        const probe = await connectAnyCandidate(controller.signal);
+        if (probe === 'version-mismatch') return null; // definitive — serve in-process, don't poll for 6s
+        if (probe) return probe;
+        if (controller.signal.aborted) return null;
+        // None reachable — spawn one (detached) and poll for its bind.
+        if (!(await spawnDetachedDaemon(root))) return null;
+        for (let attempt = 0; attempt < DAEMON_CONNECT_MAX_RETRIES; attempt++) {
+          await sleep(DAEMON_CONNECT_RETRY_DELAY_MS);
+          if (controller.signal.aborted) return null;
+          const s = await connectAnyCandidate(controller.signal);
+          if (s === 'version-mismatch') return null;
+          if (s) return s;
+        }
+        return null; // never bound — the proxy serves this session in-process
+      } finally {
+        clearTimeout(timeout);
+        ownerSignal.removeEventListener('abort', abortFromOwner);
       }
-      return null; // never bound — the proxy serves this session in-process
     };
     await runLocalHandshakeProxy({ getDaemonSocket, makeEngine: () => new MCPEngine(), root });
   }

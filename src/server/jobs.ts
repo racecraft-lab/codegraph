@@ -21,8 +21,9 @@ import { pathToFileURL } from 'node:url';
 import CodeGraph from '../index';
 import type { IndexProgress, IndexResult, SyncResult } from '../extraction';
 import { connectWithHello } from '../mcp/proxy';
-import { getDaemonSocketCandidates } from '../mcp/daemon-paths';
+import { readTrustedDaemonLock } from '../mcp/daemon-paths';
 import { SocketTransport } from '../mcp/transport';
+import { CodeGraphPackageVersion } from '../mcp/version';
 import { findNearestCodeGraphRoot, getCodeGraphDir } from '../directory';
 
 /** Incremental sync (default) or full rebuild (`?full=true`) — the result discriminator. */
@@ -170,10 +171,8 @@ function whitelistResult(mode: JobMode, result: SyncResult | IndexResult): JobRe
 /**
  * Whether a library result is the lock-contention SENTINEL. The library returns
  * a sentinel instead of throwing: `indexAll()` a `{success:false, durationMs:0}`
- * with a lock error message; `sync()` an all-zero `{filesChecked:0,
- * durationMs:0}` shape. The sync zero-shape is ambiguous with a genuinely-empty
- * sync, so the caller disambiguates by re-probing the lock (see
- * {@link runWithLockRetry}).
+ * with a lock error message; `sync()` carries an explicit `lockContended:true`
+ * discriminator while retaining its historical zero-valued counters.
  */
 function isContentionSentinel(mode: JobMode, result: SyncResult | IndexResult): boolean {
   if (mode === 'full') {
@@ -185,23 +184,16 @@ function isContentionSentinel(mode: JobMode, result: SyncResult | IndexResult): 
       r.errors.some((e) => /lock/i.test(e?.message ?? ''))
     );
   }
-  const r = result as SyncResult;
-  return (
-    r.filesChecked === 0 &&
-    r.durationMs === 0 &&
-    r.filesAdded === 0 &&
-    r.filesModified === 0 &&
-    r.filesRemoved === 0 &&
-    r.nodesUpdated === 0
-  );
+  return (result as SyncResult).lockContended === true;
 }
 
 /**
  * Default lock probe (FR-021a): is `.codegraph/codegraph.lock` held by a live
  * FOREIGN process? A lock file carrying OUR pid is re-entrant (not contention);
  * a missing/garbage file is free. This is the mode-agnostic PRIMARY contention
- * signal — it resolves the `sync()` zero-shape ambiguity by construction (a
- * genuinely-empty sync returns the zero-shape but leaves no foreign lock held).
+ * signal. The operation result itself carries the authoritative contention
+ * discriminator; this probe avoids starting work while a foreign holder is
+ * already visible.
  */
 export function defaultIsLockHeld(root: string): boolean {
   let content: string;
@@ -260,8 +252,8 @@ async function defaultRunIndex(
 /**
  * Run the index op with a bounded lock-retry window (FR-021a). Probes the lock
  * BEFORE each attempt (never running the op while a foreign holder has it), and
- * re-probes after a library contention sentinel to disambiguate a real race
- * from a genuinely-empty result. No queue: past the window, reports contention.
+ * trusts the library's explicit contention result after an acquire race. No
+ * queue: past the window, reports contention.
  */
 async function runWithLockRetry(
   root: string,
@@ -284,12 +276,7 @@ async function runWithLockRetry(
       continue;
     }
     const result = await runIndex(root, mode, onProgress, signal);
-    // Full mode's sentinel is UNAMBIGUOUS (the library result carries a lock error),
-    // so trust it alone — a re-probe that raced the writer's release would wrongly
-    // report the empty `success:false` result as `done`. Sync mode's all-zero
-    // sentinel IS ambiguous with a genuinely-empty sync, so it still needs the
-    // confirming lock re-probe.
-    if (isContentionSentinel(mode, result) && (mode === 'full' || isLockHeld(root))) {
+    if (isContentionSentinel(mode, result)) {
       // Race: a foreign writer took the lock between the probe and the acquire.
       if (Date.now() >= deadline) return { contended: true };
       await abortableSleep(intervalMs, signal);
@@ -323,6 +310,7 @@ export class ReindexJob {
 
   private readonly listeners = new Set<(evt: JobEvent) => void>();
   private readonly controller = new AbortController();
+  private readonly cleanupController = new AbortController();
   private readonly settled = ((): { promise: Promise<void>; resolve: () => void } => {
     let resolve!: () => void;
     const promise = new Promise<void>((res) => { resolve = res; });
@@ -371,6 +359,11 @@ export class ReindexJob {
     this.controller.abort();
   }
 
+  /** Stop best-effort post-job cleanup when the shared shutdown deadline expires. */
+  abortCleanup(): void {
+    this.cleanupController.abort();
+  }
+
   /** Resolves once run() is fully complete — terminal event emitted AND cleanup (the watcher re-arm) done; ordered shutdown (abortAll) waits on this. */
   whenSettled(): Promise<void> {
     return this.settled.promise;
@@ -411,7 +404,7 @@ export class ReindexJob {
       // lock release. Gated on the daemon side (isDegraded), so a healthy
       // watcher is a cheap no-op (FR-021a). Best-effort — never fails the job.
       try {
-        await this.deps.rearmWatcher?.(this.root, this.controller.signal);
+        await this.deps.rearmWatcher?.(this.root, this.cleanupController.signal);
       } catch {
         /* best-effort watcher restore */
       }
@@ -525,11 +518,27 @@ export class JobRegistry {
    * watcher re-arm) is still running, and one already replaced in the map by a
    * newer job (FR-026). Bounded by index.ts close()'s grace race.
    */
-  async abortAll(): Promise<void> {
+  async abortAll(deadlineAt?: number): Promise<void> {
     this.shuttingDown = true; // reject any start() that races the snapshot below
     const jobs = [...this.inFlight];
     for (const j of jobs) if (!j.isTerminal()) j.abort();
-    await Promise.all(jobs.map((j) => j.whenSettled()));
+    let cleanupTimer: NodeJS.Timeout | null = null;
+    const abortCleanup = (): void => {
+      for (const j of jobs) j.abortCleanup();
+    };
+    if (deadlineAt !== undefined) {
+      const remaining = Math.max(0, deadlineAt - Date.now());
+      if (remaining === 0) abortCleanup();
+      else {
+        cleanupTimer = setTimeout(abortCleanup, remaining);
+        cleanupTimer.unref?.();
+      }
+    }
+    try {
+      await Promise.all(jobs.map((j) => j.whenSettled()));
+    } finally {
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+    }
   }
 }
 
@@ -548,11 +557,9 @@ export class JobRegistry {
  * — this is a distinct control method. Kept minimal and fully wrapped.
  */
 export async function defaultRearmWatcher(root: string, signal?: AbortSignal): Promise<void> {
-  // Re-arm MUST run even when the indexing signal is already aborted (a shutdown
-  // abort): FR-021a requires the abort path — not just normal completion — to
-  // restore the shared daemon watcher. The signal only makes an IN-FLIGHT re-arm
-  // droppable (the abort listener below); it never SKIPS the re-arm. Bounded by
-  // index.ts close()'s grace race so it can't defer shutdown indefinitely.
+  // The operation and cleanup use different signals. An indexing abort still
+  // enters this path, while an expired cleanup deadline skips it entirely.
+  if (signal?.aborted) return;
   let indexedRoot: string;
   try {
     const real = fs.realpathSync(root);
@@ -567,15 +574,19 @@ export async function defaultRearmWatcher(root: string, signal?: AbortSignal): P
     return;
   }
 
-  let socket: Socket | null = null;
-  for (const candidate of getDaemonSocketCandidates(indexedRoot)) {
-    const s = await connectWithHello(candidate).catch(() => null);
-    if (s && s !== 'version-mismatch') {
-      socket = s;
-      break;
-    }
-  }
+  const expectedIdentity = readTrustedDaemonLock(indexedRoot);
+  if (!expectedIdentity) return;
+  const attached = await connectWithHello(
+    expectedIdentity.socketPath,
+    CodeGraphPackageVersion,
+    { hostPid: null, signal, expectedIdentity },
+  ).catch(() => null);
+  const socket: Socket | null = attached && attached !== 'version-mismatch' ? attached : null;
   if (!socket) return; // no live daemon → its watcher cannot have been degraded by us
+  if (signal?.aborted) {
+    socket.destroy();
+    return;
+  }
 
   const transport = new SocketTransport(socket, 'cg-web-rearm');
   // An abort during the initialize/rearm round-trip tears the socket down at once
@@ -584,6 +595,10 @@ export async function defaultRearmWatcher(root: string, signal?: AbortSignal): P
   // (and the stopped transport it closes over) retained on the signal.
   const onAbort = (): void => transport.stop();
   signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) {
+    onAbort();
+    return;
+  }
   const rootUri = pathToFileURL(indexedRoot).href;
   transport.start(async (msg) => {
     const m = msg as { method?: string; id?: string | number };

@@ -2,17 +2,22 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type {
-  LspFileContextRead,
+  LspDocumentContextRead,
   LspIncomingRead,
-  LspLocatedEdge,
+  LspNode,
+  LspNodeLocationRead,
+  LspPositionContextRead,
   LspSourceErrorReason,
+  LspSourceSnapshotRead,
   LspWorkspaceSymbolsRead,
 } from '../mcp/read-ops';
-import { CodeGraphPackageVersion } from '../mcp/version';
-import type { Node, NodeKind } from '../types';
+import type { NodeKind } from '../types';
 import {
-  readLspFileContext,
+  readLspDocumentContext,
   readLspIncoming,
+  readLspNodeLocation,
+  readLspPositionContext,
+  readLspSourceSnapshot,
   readLspWorkspaceSymbols,
   type DaemonReadClient,
 } from '../server/daemon-client';
@@ -21,9 +26,10 @@ import {
   LSP_LIFECYCLE_STATE,
   LSP_METHOD,
   LSP_SERVER_CAPABILITIES,
+  LSP_WORKSPACE_QUERY_BYTE_CAP,
   clampUtf16Character,
+  compareLocations,
   makeJsonRpcError,
-  resolveExactUtf16Range,
   sortAndCapLocations,
   type JsonRpcErrorResponse,
   type JsonRpcId,
@@ -34,13 +40,24 @@ import {
   type LspPosition,
   type LspRange,
 } from './protocol';
+import { compareSqliteBinaryText } from './sort-key';
 
 export interface LspRepositoryReader {
   root: string;
-  fileContext(filePath: string): Promise<LspFileContextRead>;
-  incoming(nodeId: string, filePath: string, snapshotToken: string): Promise<LspIncomingRead>;
-  workspaceSymbols(query: string): Promise<LspWorkspaceSymbolsRead>;
+  sourceSnapshot(filePath: string, signal?: AbortSignal): Promise<LspSourceSnapshotRead>;
+  positionContext(filePath: string, line: number, signal?: AbortSignal): Promise<LspPositionContextRead>;
+  documentContext(filePath: string, signal?: AbortSignal): Promise<LspDocumentContextRead>;
+  incoming(
+    nodeId: string,
+    filePath: string,
+    snapshotToken: string,
+    signal?: AbortSignal,
+  ): Promise<LspIncomingRead>;
+  nodeLocation(nodeId: string, signal?: AbortSignal): Promise<LspNodeLocationRead>;
+  workspaceSymbols(query: string, signal?: AbortSignal): Promise<LspWorkspaceSymbolsRead>;
 }
+
+export class LspDaemonUnavailableError extends Error {}
 
 export type JsonRpcResponse =
   | { jsonrpc: '2.0'; id: JsonRpcId; result: unknown }
@@ -49,12 +66,13 @@ export type JsonRpcResponse =
 interface TextDocumentPositionParams {
   textDocument: { uri: string };
   position: LspPosition;
+  snapshotToken?: string;
 }
 
 interface SelectedTarget {
-  node: Node;
+  node: LspNode;
   snapshotToken: string;
-  context: Extract<LspFileContextRead, { ok: true }>;
+  context: Extract<LspPositionContextRead, { ok: true }>;
 }
 
 interface LspDocumentSymbol {
@@ -66,34 +84,95 @@ interface LspDocumentSymbol {
   children?: LspDocumentSymbol[];
 }
 
-interface RangeValidationBudget {
-  characters: number;
+interface OrderedWorkspaceSymbol {
+  searchScore: number;
+  qualifiedName: string;
+  nodeId: string;
+  location: LspLocation;
+  result: unknown;
 }
 
-export function createDaemonLspReader(root: string, client: DaemonReadClient): LspRepositoryReader {
+interface SourceView {
+  lines: string[];
+  byteLength: number;
+  utf8Columns: Map<number, Int32Array>;
+}
+
+export interface LspValidatedSourceBudget {
+  reserve(bytes: number): (() => void) | null;
+}
+
+interface RequestSourceBudget {
+  bytes: number;
+  rangeValidationChars: number;
+  sourceSnapshotCalls: number;
+  signal?: AbortSignal;
+  readonly snapshots: WeakSet<object>;
+  readonly releases: Array<() => void>;
+}
+
+const SOURCE_VIEWS = new WeakMap<object, SourceView>();
+const MAX_VALIDATED_SOURCE_BYTES = 16 * 1024 * 1024;
+/** Per-request ceiling on synchronously rescanned UTF-16 source characters. */
+const MAX_RANGE_VALIDATION_CHARS = 16 * 1024 * 1024;
+const MAX_SOURCE_SNAPSHOT_CALLS = 512;
+const MAX_LSP_READ_REQUEST_MS = 25_000;
+const MAX_LSP_UINTEGER = 2_147_483_647;
+const MAX_REFERENCE_RESULTS = 500;
+const MAX_INITIALIZE_WORKSPACE_FOLDERS = 64;
+
+export function createDaemonLspReader(
+  root: string,
+  client: DaemonReadClient,
+  onUnavailable?: () => void,
+  detachOnAbort = false,
+): LspRepositoryReader {
+  const read = async <T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> => {
+    try { return await operation; }
+    catch {
+      if (signal?.aborted) throw new Error('LSP request aborted');
+      onUnavailable?.();
+      throw new LspDaemonUnavailableError();
+    }
+  };
   return {
     root,
-    fileContext: (filePath) => readLspFileContext(client, filePath),
-    incoming: (nodeId, filePath, snapshotToken) => readLspIncoming(
-      client,
-      nodeId,
-      filePath,
-      snapshotToken,
+    sourceSnapshot: (filePath, signal) => read(
+      readLspSourceSnapshot(client, filePath, signal, detachOnAbort),
+      signal,
     ),
-    workspaceSymbols: (query) => readLspWorkspaceSymbols(client, query),
+    positionContext: (filePath, line, signal) => read(
+      readLspPositionContext(client, filePath, line, signal, detachOnAbort),
+      signal,
+    ),
+    documentContext: (filePath, signal) => read(
+      readLspDocumentContext(client, filePath, signal, detachOnAbort),
+      signal,
+    ),
+    incoming: (nodeId, filePath, snapshotToken, signal) => read(
+      readLspIncoming(client, nodeId, filePath, snapshotToken, signal, detachOnAbort),
+      signal,
+    ),
+    nodeLocation: (nodeId, signal) => read(
+      readLspNodeLocation(client, nodeId, signal, detachOnAbort),
+      signal,
+    ),
+    workspaceSymbols: (query, signal) => read(
+      readLspWorkspaceSymbols(client, query, signal, detachOnAbort),
+      signal,
+    ),
   };
 }
-
-const MAX_VALIDATED_SOURCE_BYTES = 16 * 1024 * 1024;
-const MAX_RANGE_VALIDATION_CHARS = 16 * 1024 * 1024;
-const SOURCE_LINES = new WeakMap<object, string[]>();
 
 export class LspFacade {
   private readonly boundRoot: string;
   private state: LspLifecycleState = LSP_LIFECYCLE_STATE.Created;
   private exitCode: 0 | 1 | null = null;
 
-  constructor(private readonly reader: LspRepositoryReader) {
+  constructor(
+    private readonly reader: LspRepositoryReader,
+    private readonly validatedSourceBudget?: LspValidatedSourceBudget,
+  ) {
     this.boundRoot = safeRealpath(reader.root);
   }
 
@@ -105,19 +184,52 @@ export class LspFacade {
     return this.exitCode;
   }
 
-  async handle(message: JsonRpcMessage): Promise<JsonRpcResponse | null> {
+  /** Projects lifecycle state in wire order without mutating the live handler state. */
+  admissionLifecycleStateAfter(
+    state: LspLifecycleState,
+    message: JsonRpcMessage,
+  ): LspLifecycleState {
+    if (state === LSP_LIFECYCLE_STATE.Terminated) return state;
+    const isRequest = 'id' in message;
+    if (message.method === LSP_METHOD.Exit && !isRequest) return LSP_LIFECYCLE_STATE.Terminated;
+    if (state === LSP_LIFECYCLE_STATE.Created
+      && message.method === LSP_METHOD.Initialize
+      && isRequest
+      && this.validInitializeParams(message.params)) {
+      return LSP_LIFECYCLE_STATE.Initialized;
+    }
+    if (state === LSP_LIFECYCLE_STATE.Initialized
+      && message.method === LSP_METHOD.Shutdown
+      && isRequest) {
+      return LSP_LIFECYCLE_STATE.Shutdown;
+    }
+    return state;
+  }
+
+  async handle(
+    message: JsonRpcMessage,
+    signal?: AbortSignal,
+    admittedLifecycleState?: LspLifecycleState,
+  ): Promise<JsonRpcResponse | null> {
     if (this.state === LSP_LIFECYCLE_STATE.Terminated) return null;
     const requestId = 'id' in message ? message.id : null;
     const isRequest = requestId !== null;
+    const isLifecycleTransition = (message.method === LSP_METHOD.Initialize && isRequest)
+      || (message.method === LSP_METHOD.Shutdown && isRequest)
+      || (message.method === LSP_METHOD.Exit && !isRequest);
+    const lifecycleState = isLifecycleTransition
+      ? this.state
+      : (this.state === LSP_LIFECYCLE_STATE.Created
+        ? this.state
+        : (admittedLifecycleState ?? this.state));
 
-    if (message.method === LSP_METHOD.Exit) {
-      if (isRequest) return this.error(requestId, LSP_ERROR_CODE.InvalidRequest);
+    if (message.method === LSP_METHOD.Exit && !isRequest) {
       this.exitCode = this.state === LSP_LIFECYCLE_STATE.Shutdown ? 0 : 1;
       this.state = LSP_LIFECYCLE_STATE.Terminated;
       return null;
     }
 
-    if (this.state === LSP_LIFECYCLE_STATE.Created) {
+    if (lifecycleState === LSP_LIFECYCLE_STATE.Created) {
       if (message.method !== LSP_METHOD.Initialize || !isRequest) {
         return isRequest ? this.error(requestId, LSP_ERROR_CODE.ServerNotInitialized) : null;
       }
@@ -127,11 +239,11 @@ export class LspFacade {
       this.state = LSP_LIFECYCLE_STATE.Initialized;
       return this.result(requestId, {
         capabilities: LSP_SERVER_CAPABILITIES,
-        serverInfo: { name: 'CodeGraph', version: CodeGraphPackageVersion },
+        serverInfo: { name: 'CodeGraph', version: '1' },
       });
     }
 
-    if (this.state === LSP_LIFECYCLE_STATE.Shutdown) {
+    if (lifecycleState === LSP_LIFECYCLE_STATE.Shutdown) {
       return isRequest ? this.error(requestId, LSP_ERROR_CODE.InvalidRequest) : null;
     }
 
@@ -139,7 +251,10 @@ export class LspFacade {
       return isRequest ? this.error(requestId, LSP_ERROR_CODE.InvalidRequest) : null;
     }
     if (message.method === LSP_METHOD.Initialized) {
-      return isRequest ? this.error(requestId, LSP_ERROR_CODE.InvalidRequest) : null;
+      return isRequest ? this.error(requestId, LSP_ERROR_CODE.MethodNotFound) : null;
+    }
+    if (message.method === LSP_METHOD.Exit) {
+      return isRequest ? this.error(requestId, LSP_ERROR_CODE.MethodNotFound) : null;
     }
     if (message.method === LSP_METHOD.Shutdown) {
       if (!isRequest) return null;
@@ -148,107 +263,111 @@ export class LspFacade {
     }
     if (!isRequest) return null;
 
+    const requestController = new AbortController();
+    let deadlineExpired = false;
+    const onCallerAbort = (): void => requestController.abort();
+    if (signal?.aborted) onCallerAbort();
+    else signal?.addEventListener('abort', onCallerAbort, { once: true });
+    const deadlineTimer = setTimeout(() => {
+      deadlineExpired = true;
+      requestController.abort();
+    }, MAX_LSP_READ_REQUEST_MS);
+    deadlineTimer.unref?.();
+
+    const sourceBudget: RequestSourceBudget = {
+      bytes: 0,
+      rangeValidationChars: 0,
+      sourceSnapshotCalls: 0,
+      signal: requestController.signal,
+      snapshots: new WeakSet(),
+      releases: [],
+    };
     try {
-      const rangeBudget: RangeValidationBudget = { characters: 0 };
       switch (message.method) {
         case LSP_METHOD.Definition:
-          return this.result(requestId, await this.definition(message.params, rangeBudget));
+          return this.result(requestId, await this.definition(message.params, sourceBudget));
         case LSP_METHOD.References:
-          return this.result(requestId, await this.references(message.params, rangeBudget));
+          return this.result(requestId, await this.references(message.params, sourceBudget));
         case LSP_METHOD.Hover:
-          return this.result(requestId, await this.hover(message.params, rangeBudget));
+          return this.result(requestId, await this.hover(message.params, sourceBudget));
         case LSP_METHOD.DocumentSymbol:
-          return this.result(requestId, await this.documentSymbols(message.params, rangeBudget));
+          return this.result(requestId, await this.documentSymbols(message.params, sourceBudget));
         case LSP_METHOD.WorkspaceSymbol:
-          return this.result(requestId, await this.workspaceSymbols(message.params, rangeBudget));
+          return this.result(requestId, await this.workspaceSymbols(message.params, sourceBudget));
         case LSP_METHOD.TextDocumentContent:
-          return this.result(requestId, await this.textDocumentContent(message.params));
+          return this.result(requestId, await this.textDocumentContent(message.params, sourceBudget));
         default:
           return this.error(requestId, LSP_ERROR_CODE.MethodNotFound);
       }
     } catch (error) {
+      if (error instanceof LspDaemonUnavailableError) throw error;
       if (error instanceof FacadeError) return this.error(requestId, error.code, error.reason);
+      if (deadlineExpired && !signal?.aborted) {
+        return this.error(requestId, LSP_ERROR_CODE.RequestFailed, 'timeout');
+      }
       return this.error(requestId, LSP_ERROR_CODE.RequestFailed);
+    } finally {
+      clearTimeout(deadlineTimer);
+      signal?.removeEventListener('abort', onCallerAbort);
+      for (const release of sourceBudget.releases.reverse()) release();
     }
   }
 
-  private async definition(
-    params: object | undefined,
-    rangeBudget: RangeValidationBudget,
-  ): Promise<LspLocation | null> {
-    const selected = await this.selectTarget(params, rangeBudget);
+  private async definition(params: object | undefined, sourceBudget: RequestSourceBudget): Promise<LspLocation | null> {
+    const selected = await this.selectTarget(params, sourceBudget);
     if (!selected) return null;
-    return this.locationForNode(selected.node, selected.snapshotToken, rangeBudget);
+    return this.locationForNode(selected.node, selected.snapshotToken, sourceBudget);
   }
 
-  private async references(
-    params: object | undefined,
-    rangeBudget: RangeValidationBudget,
-  ): Promise<LspLocation[]> {
-    const selected = await this.selectTarget(params, rangeBudget);
+  private async references(params: object | undefined, sourceBudget: RequestSourceBudget): Promise<LspLocation[]> {
+    if (!isRecord(params)
+      || !isRecord(params.context)
+      || typeof params.context.includeDeclaration !== 'boolean') {
+      throw new FacadeError(LSP_ERROR_CODE.InvalidParams);
+    }
+    const includeDeclaration = params.context.includeDeclaration;
+    const selected = await this.selectTarget(params, sourceBudget);
     if (!selected) return [];
-    const includeDeclaration = isRecord(params)
-      && isRecord(params.context)
-      && params.context.includeDeclaration === true;
-    const incoming = await this.reader.incoming(
+    const locations: LspLocation[] = [];
+    const contexts = new Map<string, LspSourceSnapshotRead>();
+    const incoming: LspIncomingRead = await this.reader.incoming(
       selected.node.id,
       selected.node.filePath,
       selected.snapshotToken,
+      sourceBudget.signal,
     );
-    if ('ok' in incoming) throw sourceError(incoming.reason);
-    if (incoming.target.id !== selected.node.id
-      || incoming.target.filePath !== selected.node.filePath) {
-      throw sourceError('stale');
-    }
-    const locations: LspLocation[] = [];
-    let currentPath: string | undefined;
-    let currentContext: Extract<LspFileContextRead, { ok: true }> | undefined;
-    let validatedSourceBytes = 0;
+    if (!incoming.ok) throw sourceError(incoming.reason);
+    const expectedSnapshots = new Map(
+      incoming.sourceSnapshots.map(({ filePath, snapshotToken }) => [filePath, snapshotToken]),
+    );
     for (const occurrence of incoming.occurrences) {
-      if (occurrence.target.id !== selected.node.id
-        || occurrence.targetSnapshotToken !== selected.snapshotToken) {
+      const expectedSnapshot = expectedSnapshots.get(occurrence.sourceFilePath);
+      if (!expectedSnapshot) throw sourceError('stale');
+      let context = contexts.get(occurrence.sourceFilePath);
+      if (!context) {
+        const read = await this.sourceSnapshot(occurrence.sourceFilePath, sourceBudget);
+        if (!read.ok) {
+          throw referenceSnapshotError(read.reason);
+        }
+        this.reserveSource(read, sourceBudget);
+        contexts.set(occurrence.sourceFilePath, read);
+        context = read;
+      }
+      if (!context.ok || context.snapshot.snapshotToken !== expectedSnapshot) {
         throw sourceError('stale');
       }
-      if (currentPath !== occurrence.source.filePath) {
-        const read = await this.reader.fileContext(occurrence.source.filePath);
-        if (!read.ok) throw sourceError(read.reason);
-        validatedSourceBytes = reserveSourceBytes(read, validatedSourceBytes);
-        currentPath = occurrence.source.filePath;
-        currentContext = read;
-      }
-      const context = currentContext!;
-      if (context.snapshot.snapshotToken !== occurrence.sourceSnapshotToken) {
-        throw sourceError('stale');
-      }
-      const currentOccurrence = context.occurrences.find((candidate) =>
-        sameOccurrence(candidate, occurrence),
-      );
-      if (!currentOccurrence) throw sourceError('stale');
-      const location = this.locationForOccurrence(
-        context,
-        currentOccurrence.edge.line,
-        currentOccurrence.edge.column,
-        currentOccurrence.target.name,
-        rangeBudget,
-      );
+      const location = this.locationForOccurrence(context, occurrence.line, occurrence.column, occurrence.evidence);
       if (location) locations.push(location);
     }
     if (includeDeclaration) {
-      const declaration = await this.locationForNode(
-        selected.node,
-        selected.snapshotToken,
-        rangeBudget,
-      );
+      const declaration = await this.locationForNode(selected.node, selected.snapshotToken, sourceBudget);
       if (declaration) locations.push(declaration);
     }
-    return sortAndCapLocations(locations, 500);
+    return sortAndCapLocations(locations, MAX_REFERENCE_RESULTS);
   }
 
-  private async hover(
-    params: object | undefined,
-    rangeBudget: RangeValidationBudget,
-  ): Promise<unknown | null> {
-    const selected = await this.selectTarget(params, rangeBudget);
+  private async hover(params: object | undefined, sourceBudget: RequestSourceBudget): Promise<unknown | null> {
+    const selected = await this.selectTarget(params, sourceBudget);
     if (!selected) return null;
     const node = selected.node;
     const lines = [
@@ -259,27 +378,26 @@ export class LspFacade {
     return { contents: { kind: 'markdown', value: lines.join('\n\n') } };
   }
 
-  private async documentSymbols(
-    params: object | undefined,
-    rangeBudget: RangeValidationBudget,
-  ): Promise<unknown[]> {
+  private async documentSymbols(params: object | undefined, sourceBudget: RequestSourceBudget): Promise<unknown[]> {
     const uri = textDocumentUri(params);
     const filePath = this.relativeFilePath(uri);
-    const read = await this.reader.fileContext(filePath);
+    const read = await this.reader.documentContext(filePath, sourceBudget.signal);
     if (!read.ok) throw sourceError(read.reason);
+    this.reserveSource(read, sourceBudget);
 
     const byId = new Map<string, LspDocumentSymbol>();
     const nodes = [...read.nodes].sort(compareNodes);
     for (const node of nodes) {
       if (node.kind === 'file') continue;
-      const range = this.rangeForNode(read, node, rangeBudget);
+      const range = fullRangeForNode(read, node, sourceBudget);
       if (!range) continue;
+      const selectionRange = this.rangeForNode(read, node, sourceBudget, range) ?? range;
       byId.set(node.id, {
         name: node.name,
         ...(node.signature ? { detail: bounded(node.signature, 2_000) } : {}),
         kind: symbolKind(node.kind),
         range,
-        selectionRange: range,
+        selectionRange,
       });
     }
     const childIds = new Set<string>();
@@ -309,134 +427,222 @@ export class LspFacade {
     return capDocumentSymbolForest(roots, 500);
   }
 
-  private async workspaceSymbols(
-    params: object | undefined,
-    rangeBudget: RangeValidationBudget,
-  ): Promise<unknown[]> {
+  private async workspaceSymbols(params: object | undefined, sourceBudget: RequestSourceBudget): Promise<unknown[]> {
     if (!isRecord(params) || typeof params.query !== 'string') throw invalidParams();
-    const candidates = await this.reader.workspaceSymbols(params.query);
-    if (!Array.isArray(candidates)) throw sourceError(candidates.reason);
-    const seen = new Set<string>();
-    const symbols: unknown[] = [];
-    let currentPath: string | undefined;
-    let currentContext: Extract<LspFileContextRead, { ok: true }> | undefined;
-    let validatedSourceBytes = 0;
-    for (const candidate of candidates) {
-      const node = candidate.node;
-      if (symbols.length >= 100 || seen.has(node.id)) continue;
-      seen.add(node.id);
-      if (currentPath !== node.filePath) {
-        const read = await this.reader.fileContext(node.filePath);
-        if (!read.ok) continue;
-        validatedSourceBytes = reserveSourceBytes(read, validatedSourceBytes);
-        currentPath = node.filePath;
-        currentContext = read;
+    if (Buffer.byteLength(params.query, 'utf8') > LSP_WORKSPACE_QUERY_BYTE_CAP) throw invalidParams();
+    if (params.nodeId !== undefined) {
+      if (params.query.length !== 0 || typeof params.nodeId !== 'string' || params.nodeId.length === 0) {
+        throw invalidParams();
       }
-      const context = currentContext!;
+      const symbol = await this.workspaceSymbolByNodeId(params.nodeId, sourceBudget);
+      return symbol ? [symbol] : [];
+    }
+    const nodes = await this.reader.workspaceSymbols(params.query, sourceBudget.signal);
+    if (!Array.isArray(nodes)) throw sourceError(nodes.reason);
+    const contexts = new Map<string, LspSourceSnapshotRead>();
+    const symbols: OrderedWorkspaceSymbol[] = [];
+    for (const candidate of nodes) {
+      const node = candidate.node;
+      if (!Number.isFinite(candidate.searchScore)) continue;
+      let context = contexts.get(node.filePath);
+      if (!context) {
+        const read = await this.sourceSnapshot(node.filePath, sourceBudget);
+        if (!read.ok) {
+          contexts.set(node.filePath, read);
+          continue;
+        }
+        this.reserveSource(read, sourceBudget);
+        contexts.set(node.filePath, read);
+        context = read;
+      }
+      if (!context.ok) continue;
       if (context.snapshot.snapshotToken !== candidate.snapshotToken) continue;
-      const currentNode = context.nodes.find((entry) => entry.id === node.id);
-      if (!currentNode || currentNode.filePath !== node.filePath) continue;
-      const range = this.rangeForNode(context, currentNode, rangeBudget);
+      const range = fullRangeForNode(context, node, sourceBudget);
       if (!range) continue;
+      const location = {
+        uri: this.uriForFile(node.filePath),
+        range,
+        snapshotToken: context.snapshot.snapshotToken,
+      };
       symbols.push({
-        name: currentNode.name,
-        kind: symbolKind(currentNode.kind),
-        location: { uri: this.uriForFile(currentNode.filePath), range },
-        containerName: containerName(currentNode),
+        searchScore: candidate.searchScore,
+        qualifiedName: node.qualifiedName,
+        nodeId: node.id,
+        location,
+        result: {
+          name: node.name,
+          kind: symbolKind(node.kind),
+          location,
+          containerName: containerName(node),
+          data: { codegraphNodeId: node.id },
+        },
       });
     }
-    return symbols;
+    symbols.sort(compareWorkspaceSymbols);
+    const seen = new Set<string>();
+    const results: unknown[] = [];
+    for (const symbol of symbols) {
+      if (seen.has(symbol.nodeId)) continue;
+      seen.add(symbol.nodeId);
+      results.push(symbol.result);
+      if (results.length === 100) break;
+    }
+    return results;
   }
 
-  private async textDocumentContent(params: object | undefined): Promise<unknown> {
+  private async workspaceSymbolByNodeId(
+    nodeId: string,
+    sourceBudget: RequestSourceBudget,
+  ): Promise<unknown | null> {
+    const candidate = await this.reader.nodeLocation(nodeId, sourceBudget.signal);
+    if (!candidate.ok) {
+      if (candidate.reason === 'not_found' || candidate.reason === 'unindexed') return null;
+      throw sourceError(candidate.reason);
+    }
+    const source = await this.sourceSnapshot(candidate.node.filePath, sourceBudget);
+    if (!source.ok) throw referenceSnapshotError(source.reason);
+    this.reserveSource(source, sourceBudget);
+    if (source.snapshot.snapshotToken !== candidate.snapshotToken) throw sourceError('stale');
+    const range = this.rangeForNode(source, candidate.node, sourceBudget);
+    if (!range) return null;
+    return {
+      name: candidate.node.name,
+      kind: symbolKind(candidate.node.kind),
+      location: {
+        uri: this.uriForFile(candidate.node.filePath),
+        range,
+        snapshotToken: source.snapshot.snapshotToken,
+      },
+      containerName: containerName(candidate.node),
+      data: { codegraphNodeId: candidate.node.id },
+    };
+  }
+
+  private async textDocumentContent(params: object | undefined, sourceBudget: RequestSourceBudget): Promise<unknown> {
     const filePath = this.relativeFilePath(textDocumentUri(params));
-    const read = await this.reader.fileContext(filePath);
+    const read = await this.sourceSnapshot(filePath, sourceBudget);
     if (!read.ok) throw sourceError(read.reason);
-    const { text, languageId, contentHash, snapshotToken } = read.snapshot;
+    const text = this.reserveSource(read, sourceBudget, false) ?? read.snapshot.text;
+    const { languageId, contentHash, snapshotToken } = read.snapshot;
     return { text, languageId, contentHash, snapshotToken };
   }
 
-  private async selectTarget(
-    params: object | undefined,
-    rangeBudget: RangeValidationBudget,
-  ): Promise<SelectedTarget | null> {
+  private async selectTarget(params: object | undefined, sourceBudget: RequestSourceBudget): Promise<SelectedTarget | null> {
     const parsed = textDocumentPosition(params);
     const filePath = this.relativeFilePath(parsed.textDocument.uri);
-    const read = await this.reader.fileContext(filePath);
+    const read = await this.reader.positionContext(filePath, parsed.position.line + 1, sourceBudget.signal);
     if (!read.ok) throw sourceError(read.reason);
-    const lineText = sourceLinesFor(read)[parsed.position.line];
+    this.reserveSource(read, sourceBudget);
+    if (parsed.snapshotToken !== undefined && read.snapshot.snapshotToken !== parsed.snapshotToken) {
+      throw sourceError('stale');
+    }
+    const lineText = sourceViewFor(read).lines[parsed.position.line];
     if (lineText === undefined) throw invalidParams();
     const character = clampUtf16Character(lineText, parsed.position.character);
-    const candidates = new Map<string, { node: Node; snapshotToken: string }>();
-
-    const addCandidate = (node: Node, snapshotToken: string): void => {
-      const existing = candidates.get(node.id);
-      if (existing && existing.snapshotToken !== snapshotToken) throw sourceError('stale');
-      candidates.set(node.id, { node, snapshotToken });
-    };
+    const exactCandidates = new Map<string, { node: LspNode; snapshotToken: string }>();
+    const targets = new Map(read.targets.map((node) => [node.id, node]));
+    const targetSnapshots = new Map(read.targetSnapshots.map((entry) => [entry.nodeId, entry.snapshotToken]));
 
     for (const node of read.nodes) {
-      const range = this.rangeForNode(read, node, rangeBudget);
-      if (range && containsPosition(range, { line: parsed.position.line, character })) {
-        addCandidate(node, read.snapshot.snapshotToken);
+      const exactRange = this.rangeForNode(read, node, sourceBudget);
+      if (exactRange) {
+        if (containsPosition(exactRange, { line: parsed.position.line, character })) {
+          exactCandidates.set(node.id, { node, snapshotToken: read.snapshot.snapshotToken });
+        }
       }
     }
     for (const occurrence of read.occurrences) {
-      const range = occurrenceRange(
-        read,
-        occurrence.edge.line,
-        occurrence.edge.column,
-        occurrence.target.name,
-        rangeBudget,
-      );
+      const target = targets.get(occurrence.targetId);
+      if (!target) continue;
+      const range = occurrenceRange(read, occurrence.line, occurrence.column, occurrence.evidence);
       if (range && containsPosition(range, { line: parsed.position.line, character })) {
-        addCandidate(occurrence.target, occurrence.targetSnapshotToken);
+        const snapshotToken = targetSnapshots.get(target.id);
+        if (!snapshotToken) continue;
+        exactCandidates.set(target.id, { node: target, snapshotToken });
       }
     }
-    if (candidates.size !== 1) return null;
-    return { ...candidates.values().next().value!, context: read };
+    if (exactCandidates.size === 1) return { ...exactCandidates.values().next().value!, context: read };
+    return null;
   }
 
   private async locationForNode(
-    node: Node,
-    expectedSnapshotToken: string,
-    rangeBudget: RangeValidationBudget,
+    node: LspNode,
+    expectedSnapshotToken: string | undefined,
+    sourceBudget: RequestSourceBudget,
   ): Promise<LspLocation | null> {
-    const read = await this.reader.fileContext(node.filePath);
-    if (!read.ok) throw sourceError(read.reason);
-    if (read.snapshot.snapshotToken !== expectedSnapshotToken) throw sourceError('stale');
-    const currentNode = read.nodes.find((entry) => entry.id === node.id);
-    if (!currentNode || currentNode.filePath !== node.filePath) throw sourceError('stale');
-    const range = this.rangeForNode(read, currentNode, rangeBudget);
-    return range ? { uri: this.uriForFile(currentNode.filePath), range } : null;
+    const read = await this.sourceSnapshot(node.filePath, sourceBudget);
+    if (!read.ok) {
+      throw referenceSnapshotError(read.reason);
+    }
+    this.reserveSource(read, sourceBudget);
+    if (expectedSnapshotToken !== undefined && read.snapshot.snapshotToken !== expectedSnapshotToken) {
+      throw sourceError('stale');
+    }
+    const range = this.rangeForNode(read, node, sourceBudget);
+    return range ? {
+      uri: this.uriForFile(node.filePath),
+      range,
+      snapshotToken: read.snapshot.snapshotToken,
+    } : null;
+  }
+
+  private reserveSource(
+    read: Extract<LspSourceSnapshotRead, { ok: true }>,
+    sourceBudget: RequestSourceBudget,
+    prepareView = true,
+  ): string | undefined {
+    if (sourceBudget.snapshots.has(read.snapshot)) return undefined;
+    const text = read.snapshot.text;
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (sourceBudget.bytes + bytes > MAX_VALIDATED_SOURCE_BYTES) throw sourceError('too_large');
+    const release = this.validatedSourceBudget?.reserve(bytes);
+    if (this.validatedSourceBudget && !release) throw sourceError('too_large');
+    sourceBudget.bytes += bytes;
+    sourceBudget.snapshots.add(read.snapshot);
+    if (release) sourceBudget.releases.push(release);
+    if (prepareView) sourceViewFor(read, text);
+    return text;
+  }
+
+  private sourceSnapshot(
+    filePath: string,
+    sourceBudget: RequestSourceBudget,
+  ): Promise<LspSourceSnapshotRead> {
+    if (sourceBudget.sourceSnapshotCalls >= MAX_SOURCE_SNAPSHOT_CALLS) {
+      throw sourceError('too_large');
+    }
+    sourceBudget.sourceSnapshotCalls += 1;
+    return this.reader.sourceSnapshot(filePath, sourceBudget.signal);
   }
 
   private locationForOccurrence(
-    context: Extract<LspFileContextRead, { ok: true }>,
+    context: Extract<LspSourceSnapshotRead, { ok: true }>,
     line: number | undefined,
     column: number | undefined,
     evidence: string,
-    rangeBudget: RangeValidationBudget,
   ): LspLocation | null {
-    const range = occurrenceRange(context, line, column, evidence, rangeBudget);
-    return range ? { uri: this.uriForFile(context.snapshot.filePath), range } : null;
+    const range = occurrenceRange(context, line, column, evidence);
+    return range ? {
+      uri: this.uriForFile(context.snapshot.filePath),
+      range,
+      snapshotToken: context.snapshot.snapshotToken,
+    } : null;
   }
 
   private rangeForNode(
-    context: Extract<LspFileContextRead, { ok: true }>,
-    node: Node,
-    rangeBudget: RangeValidationBudget,
+    context: Extract<LspSourceSnapshotRead, { ok: true }>,
+    node: LspNode,
+    sourceBudget: RequestSourceBudget,
+    knownDeclaration?: LspRange,
   ): LspRange | null {
     const line = node.startLine - 1;
-    const text = sourceLinesFor(context)[line];
+    const text = sourceViewFor(context).lines[line];
     if (text === undefined) return null;
-    reserveRangeValidationWork(
-      rangeBudget,
-      exactRangeValidationCharacters(text, node.startColumn, node.name),
-    );
-    const span = resolveExactUtf16Range(text, node.startColumn, node.name);
+    const span = exactUtf16Range(context, line, node.startColumn, node.name);
     if (span) return { start: { line, character: span.start }, end: { line, character: span.end } };
-    return uniqueEvidenceRange(context, node, rangeBudget);
+
+    const declaration = knownDeclaration ?? fullRangeForNode(context, node, sourceBudget);
+    return declaration ? uniqueNameRange(context, node.name, declaration, sourceBudget) : null;
   }
 
   private uriForFile(filePath: string): string {
@@ -474,6 +680,7 @@ export class LspFacade {
     }
     if (params.workspaceFolders !== undefined && params.workspaceFolders !== null) {
       if (!Array.isArray(params.workspaceFolders)) return false;
+      if (params.workspaceFolders.length > MAX_INITIALIZE_WORKSPACE_FOLDERS) return false;
       for (const folder of params.workspaceFolders) {
         if (!isRecord(folder) || typeof folder.uri !== 'string') return false;
         candidates.push(folder.uri);
@@ -519,26 +726,10 @@ function sourceError(reason: LspSourceErrorReason): FacadeError {
   return new FacadeError(LSP_ERROR_CODE.RequestFailed, reason);
 }
 
-function reserveSourceBytes(
-  read: Extract<LspFileContextRead, { ok: true }>,
-  currentBytes: number,
-): number {
-  const nextBytes = currentBytes + Buffer.byteLength(read.snapshot.text, 'utf8');
-  if (nextBytes > MAX_VALIDATED_SOURCE_BYTES) throw sourceError('too_large');
-  return nextBytes;
-}
-
-function sameOccurrence(left: LspLocatedEdge, right: LspLocatedEdge): boolean {
-  return left.source.id === right.source.id
-    && left.target.id === right.target.id
-    && left.sourceSnapshotToken === right.sourceSnapshotToken
-    && left.targetSnapshotToken === right.targetSnapshotToken
-    && left.edge.source === right.edge.source
-    && left.edge.target === right.edge.target
-    && left.edge.kind === right.edge.kind
-    && left.edge.line === right.edge.line
-    && left.edge.column === right.edge.column
-    && left.edge.provenance === right.edge.provenance;
+function referenceSnapshotError(reason: LspSourceErrorReason): FacadeError {
+  return sourceError(
+    reason === 'not_found' || reason === 'unindexed' || reason === 'not_regular' ? 'stale' : reason,
+  );
 }
 
 function textDocumentUri(params: object | undefined): string {
@@ -553,173 +744,99 @@ function textDocumentPosition(params: object | undefined): TextDocumentPositionP
   if (!isRecord(params) || !isRecord(params.position)) throw invalidParams();
   const { line, character } = params.position;
   if (
-    typeof line !== 'number' || !Number.isSafeInteger(line) || line < 0 ||
-    typeof character !== 'number' || !Number.isSafeInteger(character) || character < 0
+    typeof line !== 'number' || !Number.isSafeInteger(line) || line < 0 || line > MAX_LSP_UINTEGER ||
+    typeof character !== 'number' || !Number.isSafeInteger(character) || character < 0 || character > MAX_LSP_UINTEGER
   ) {
     throw invalidParams();
   }
-  return { textDocument: { uri }, position: { line, character } };
+  if (params.snapshotToken !== undefined && (typeof params.snapshotToken !== 'string' || params.snapshotToken.length === 0)) {
+    throw invalidParams();
+  }
+  return {
+    textDocument: { uri },
+    position: { line, character },
+    ...(typeof params.snapshotToken === 'string' ? { snapshotToken: params.snapshotToken } : {}),
+  };
 }
 
 function occurrenceRange(
-  context: Extract<LspFileContextRead, { ok: true }>,
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
   graphLine: number | undefined,
   graphColumn: number | undefined,
   evidence: string,
-  rangeBudget: RangeValidationBudget,
 ): LspRange | null {
   if (graphLine === undefined || graphColumn === undefined || graphLine < 1) return null;
   const line = graphLine - 1;
-  const text = sourceLinesFor(context)[line];
+  const text = sourceViewFor(context).lines[line];
   if (text === undefined) return null;
-  reserveRangeValidationWork(
-    rangeBudget,
-    exactRangeValidationCharacters(text, graphColumn, evidence),
-  );
-  const span = resolveExactUtf16Range(text, graphColumn, evidence);
+  const span = exactUtf16Range(context, line, graphColumn, evidence);
   return span ? { start: { line, character: span.start }, end: { line, character: span.end } } : null;
 }
 
-function sourceLinesFor(context: Extract<LspFileContextRead, { ok: true }>): string[] {
-  let lines = SOURCE_LINES.get(context.snapshot);
-  if (!lines) {
-    lines = context.snapshot.text.split(/\r\n|\n|\r/);
-    SOURCE_LINES.set(context.snapshot, lines);
+function sourceLines(text: string): string[] {
+  return text.split(/\r\n|\n|\r/);
+}
+
+function sourceViewFor(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  sourceText?: string,
+): SourceView {
+  const key = context.snapshot;
+  let view = SOURCE_VIEWS.get(key);
+  if (!view) {
+    const text = sourceText ?? context.snapshot.text;
+    view = {
+      lines: sourceLines(text),
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      utf8Columns: new Map(),
+    };
+    SOURCE_VIEWS.set(key, view);
   }
-  return lines;
+  return view;
 }
 
-function uniqueEvidenceRange(
-  context: Extract<LspFileContextRead, { ok: true }>,
-  node: Node,
-  rangeBudget: RangeValidationBudget,
-): LspRange | null {
-  if (!node.name) return null;
-  const lines = sourceLinesFor(context);
-  const candidates = persistedNodeRangeCandidates(lines, node, rangeBudget);
-  const supported = candidates
-    .map((candidate) => uniqueEvidenceWithinRange(lines, node.name, candidate, rangeBudget))
-    .filter((candidate): candidate is LspRange => candidate !== null);
-  return supported.length === 1 ? supported[0]! : null;
-}
-
-function persistedNodeRangeCandidates(
-  lines: string[],
-  node: Node,
-  rangeBudget: RangeValidationBudget,
-): LspRange[] {
-  const startLine = node.startLine - 1;
-  const endLine = node.endLine - 1;
-  const startText = lines[startLine];
-  const endText = lines[endLine];
-  if (startText === undefined || endText === undefined || startLine > endLine) return [];
-  const candidates = new Map<string, LspRange>();
-  for (const start of graphColumnCandidates(startText, node.startColumn, rangeBudget)) {
-    for (const end of graphColumnCandidates(endText, node.endColumn, rangeBudget)) {
-      const range: LspRange = {
-        start: { line: startLine, character: start },
-        end: { line: endLine, character: end },
-      };
-      if (comparePositions(range.start, range.end) > 0) continue;
-      candidates.set(`${startLine}:${start}:${endLine}:${end}`, range);
-    }
-  }
-  return [...candidates.values()];
-}
-
-function graphColumnCandidates(
-  line: string,
-  column: number,
-  rangeBudget: RangeValidationBudget,
-): number[] {
-  if (!Number.isSafeInteger(column) || column < 0) return [];
-  reserveRangeValidationWork(rangeBudget, line.length);
-  const candidates = new Set<number>();
-  if (column <= line.length && isUtf16Boundary(line, column)) candidates.add(column);
-  const bytes = Buffer.from(line, 'utf8');
-  if (column <= bytes.length) {
-    const prefixBytes = bytes.subarray(0, column);
-    const prefix = prefixBytes.toString('utf8');
-    if (Buffer.from(prefix, 'utf8').equals(prefixBytes) && line.startsWith(prefix)) {
-      candidates.add(prefix.length);
-    }
-  }
-  return [...candidates];
-}
-
-function isUtf16Boundary(line: string, column: number): boolean {
-  if (column <= 0 || column >= line.length) return true;
-  const before = line.charCodeAt(column - 1);
-  const after = line.charCodeAt(column);
-  return !(before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff);
-}
-
-function uniqueEvidenceWithinRange(
-  lines: string[],
-  evidence: string,
-  range: LspRange,
-  rangeBudget: RangeValidationBudget,
-): LspRange | null {
-  const matches: LspRange[] = [];
-  const identifier = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(evidence);
-  for (let lineIndex = range.start.line; lineIndex <= range.end.line; lineIndex += 1) {
-    const line = lines[lineIndex];
-    if (line === undefined) return null;
-    const from = lineIndex === range.start.line ? range.start.character : 0;
-    const to = lineIndex === range.end.line ? range.end.character : line.length;
-    if (from < 0 || to < from || to > line.length) return null;
-    reserveRangeValidationWork(rangeBudget, to - from);
-    for (let offset = from; offset <= to - evidence.length;) {
-      const found = line.indexOf(evidence, offset);
-      if (found === -1 || found + evidence.length > to) break;
-      const before = found > 0 ? line[found - 1] : undefined;
-      const after = line[found + evidence.length];
-      if (!identifier || (!isIdentifierPart(before) && !isIdentifierPart(after))) {
-        matches.push({
-          start: { line: lineIndex, character: found },
-          end: { line: lineIndex, character: found + evidence.length },
-        });
-      }
-      offset = found + Math.max(1, evidence.length);
-    }
-  }
-  return matches.length === 1 ? matches[0]! : null;
-}
-
-function reserveRangeValidationWork(
-  rangeBudget: RangeValidationBudget,
-  characters: number,
-): void {
-  if (!Number.isSafeInteger(characters)
-    || characters < 0
-    || characters > MAX_RANGE_VALIDATION_CHARS - rangeBudget.characters) {
-    throw sourceError('too_large');
-  }
-  rangeBudget.characters += characters;
-}
-
-function exactRangeValidationCharacters(
-  text: string,
+function exactUtf16Range(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  lineIndex: number,
   graphColumn: number,
   evidence: string,
-): number {
-  if (!Number.isSafeInteger(graphColumn) || graphColumn < 0 || evidence.length === 0) return 0;
-  if (graphColumn >= text.length) return text.length;
-  return Math.min(text.length, graphColumn + evidence.length);
+): { start: number; end: number } | null {
+  if (!Number.isSafeInteger(graphColumn) || graphColumn < 0 || evidence.length === 0) return null;
+  const line = sourceViewFor(context).lines[lineIndex];
+  if (line === undefined) return null;
+  const utf16Start = graphColumn <= line.length
+    && line.slice(graphColumn, graphColumn + evidence.length) === evidence
+    ? graphColumn
+    : null;
+  const byteStart = utf8ColumnToUtf16(context, lineIndex, graphColumn);
+  const verifiedByteStart = byteStart !== null
+    && line.slice(byteStart, byteStart + evidence.length) === evidence
+    ? byteStart
+    : null;
+
+  // Tree-sitter columns are UTF-8 byte offsets. Adjacent punctuation can also
+  // make the raw UTF-16 offset look valid, so keep the byte boundary for that
+  // syntax-token case while textual mixed-column evidence remains fail-closed.
+  if (verifiedByteStart !== null && utf16Start !== null && verifiedByteStart !== utf16Start) {
+    if (!isPunctuationOnly(evidence)
+      || !areAdjacentOccurrences(verifiedByteStart, utf16Start, evidence.length)) return null;
+    return { start: verifiedByteStart, end: verifiedByteStart + evidence.length };
+  }
+  const start = verifiedByteStart ?? utf16Start;
+  return start === null ? null : { start, end: start + evidence.length };
 }
 
-function comparePositions(left: LspPosition, right: LspPosition): number {
-  return left.line - right.line || left.character - right.character;
+function isPunctuationOnly(value: string): boolean {
+  return /^[^\p{L}\p{N}_\s]+$/u.test(value);
 }
 
-function isIdentifierPart(value: string | undefined): boolean {
-  return value !== undefined && /[A-Za-z0-9_$]/.test(value);
+function areAdjacentOccurrences(leftStart: number, rightStart: number, length: number): boolean {
+  return Math.abs(leftStart - rightStart) <= length;
 }
 
 function containsPosition(range: LspRange, position: LspPosition): boolean {
-  return position.line === range.start.line
-    && position.character >= range.start.character
-    && position.character < range.end.character;
+  return comparePositions(range.start, position) <= 0
+    && comparePositions(position, range.end) < 0;
 }
 
 function safeRealpath(input: string): string {
@@ -730,18 +847,213 @@ function bounded(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
-function compareNodes(left: Node, right: Node): number {
+function fullRangeForNode(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  node: LspNode,
+  sourceBudget: RequestSourceBudget,
+): LspRange | null {
+  const lines = sourceViewFor(context).lines;
+  const startLine = node.startLine - 1;
+  const endLine = node.endLine - 1;
+  const startText = lines[startLine];
+  const endText = lines[endLine];
+  if (startText === undefined || endText === undefined || startLine > endLine) return null;
+
+  const candidates = fullRangeCandidates(context, node, startLine, endLine);
+
+  // A node's start/end columns come from one extractor and therefore one
+  // encoding. Score only consistently decoded pairs against exact name
+  // evidence instead of rejecting a valid byte-oriented range merely because
+  // its raw UTF-16 start also happens to be in bounds.
+  const scored = candidates.map((candidate) => ({
+    ...candidate,
+    score: rangeNameEvidenceScore(context, node, candidate.range, sourceBudget),
+  }));
+  const supported = scored.filter((candidate) => candidate.score > 0);
+  if (supported.length === 0) return null;
+  if (supported.length === 1) return supported[0]!.range;
+
+  // The position contract makes Tree-sitter's byte boundary authoritative for
+  // indistinguishable adjacent punctuation. Textual ties remain fail-closed.
+  if (isPunctuationOnly(node.name) && supported.every((candidate) => candidate.score === 2)) {
+    const utf8 = supported.find((candidate) => candidate.encodings.has('utf8'));
+    if (utf8 && supported.every((candidate) => candidate === utf8
+      || rangesStartAtAdjacentOccurrences(utf8.range, candidate.range, node.name.length))) {
+      return utf8.range;
+    }
+  }
+  return null;
+}
+
+function compareWorkspaceSymbols(left: OrderedWorkspaceSymbol, right: OrderedWorkspaceSymbol): number {
+  return right.searchScore - left.searchScore
+    || compareSqliteBinaryText(left.qualifiedName, right.qualifiedName)
+    || compareLocations(left.location, right.location)
+    || compareSqliteBinaryText(left.nodeId, right.nodeId);
+}
+
+function rangesStartAtAdjacentOccurrences(left: LspRange, right: LspRange, length: number): boolean {
+  return left.start.line === right.start.line
+    && areAdjacentOccurrences(left.start.character, right.start.character, length);
+}
+
+type GraphColumnEncoding = 'utf8' | 'utf16';
+
+function fullRangeCandidates(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  node: LspNode,
+  startLine: number,
+  endLine: number,
+): Array<{ range: LspRange; encodings: Set<GraphColumnEncoding> }> {
+  const candidates = new Map<string, { range: LspRange; encodings: Set<GraphColumnEncoding> }>();
+  for (const encoding of ['utf8', 'utf16'] as const) {
+    const start = graphColumnForEncoding(context, startLine, node.startColumn, encoding);
+    const end = graphColumnForEncoding(context, endLine, node.endColumn, encoding);
+    if (start === null || end === null) continue;
+    const range: LspRange = {
+      start: { line: startLine, character: start },
+      end: { line: endLine, character: end },
+    };
+    if (comparePositions(range.start, range.end) > 0) continue;
+    const key = `${startLine}:${start}:${endLine}:${end}`;
+    const existing = candidates.get(key);
+    if (existing) existing.encodings.add(encoding);
+    else candidates.set(key, { range, encodings: new Set([encoding]) });
+  }
+  return [...candidates.values()];
+}
+
+function graphColumnForEncoding(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  lineIndex: number,
+  graphColumn: number,
+  encoding: GraphColumnEncoding,
+): number | null {
+  if (!Number.isSafeInteger(graphColumn) || graphColumn < 0) return null;
+  if (encoding === 'utf8') return utf8ColumnToUtf16(context, lineIndex, graphColumn);
+  const line = sourceViewFor(context).lines[lineIndex];
+  return line !== undefined && graphColumn <= line.length && !splitsSurrogatePair(line, graphColumn)
+    ? graphColumn
+    : null;
+}
+
+function rangeNameEvidenceScore(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  node: LspNode,
+  range: LspRange,
+  sourceBudget: RequestSourceBudget,
+): 0 | 1 | 2 {
+  const text = sourceViewFor(context).lines[range.start.line];
+  if (text === undefined || node.name.length === 0) return 0;
+  const searchEnd = range.end.line === range.start.line ? range.end.character : text.length;
+  if (range.start.character + node.name.length <= searchEnd
+    && text.slice(range.start.character, range.start.character + node.name.length) === node.name) return 2;
+  return uniqueNameRange(context, node.name, range, sourceBudget) === null ? 0 : 1;
+}
+
+function uniqueNameRange(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  name: string,
+  range: LspRange,
+  sourceBudget: RequestSourceBudget,
+): LspRange | null {
+  if (name.length === 0) return null;
+  const lines = sourceViewFor(context).lines;
+  const identifierLike = isIdentifierLike(name);
+  let match: LspRange | null = null;
+  for (let line = range.start.line; line <= range.end.line; line += 1) {
+    const text = lines[line];
+    if (text === undefined) return null;
+    const start = line === range.start.line ? range.start.character : 0;
+    const end = line === range.end.line ? range.end.character : text.length;
+    if (start < 0 || end < start || end > text.length) return null;
+    reserveRangeValidationWork(sourceBudget, end - start);
+    let index = text.indexOf(name, start);
+    while (index >= start && index + name.length <= end) {
+      const matchEnd = index + name.length;
+      if (!identifierLike || hasIdentifierBoundaries(text, index, matchEnd)) {
+        if (match) return null;
+        match = {
+          start: { line, character: index },
+          end: { line, character: matchEnd },
+        };
+      }
+      index = text.indexOf(name, index + 1);
+    }
+  }
+  return match;
+}
+
+function reserveRangeValidationWork(sourceBudget: RequestSourceBudget, characters: number): void {
+  if (!Number.isSafeInteger(characters)
+    || characters < 0
+    || characters > MAX_RANGE_VALIDATION_CHARS - sourceBudget.rangeValidationChars) {
+    throw sourceError('too_large');
+  }
+  sourceBudget.rangeValidationChars += characters;
+}
+
+function isIdentifierLike(value: string): boolean {
+  return /^[\p{L}\p{Nl}_$][\p{L}\p{N}\p{M}\p{Pc}\u200C\u200D$]*$/u.test(value);
+}
+
+function hasIdentifierBoundaries(value: string, start: number, end: number): boolean {
+  const before = value.slice(Math.max(0, start - 2), start);
+  const after = value.slice(end, end + 2);
+  return !/[\p{L}\p{N}\p{M}\p{Pc}\u200C\u200D$]$/u.test(before)
+    && !/^[\p{L}\p{N}\p{M}\p{Pc}\u200C\u200D$]/u.test(after);
+}
+
+function utf8ColumnToUtf16(
+  context: Extract<LspSourceSnapshotRead, { ok: true }>,
+  lineIndex: number,
+  graphColumn: number,
+): number | null {
+  const view = sourceViewFor(context);
+  const line = view.lines[lineIndex];
+  if (line === undefined) return null;
+  let columns = view.utf8Columns.get(lineIndex);
+  if (!columns) {
+    columns = new Int32Array(Buffer.byteLength(line, 'utf8') + 1);
+    columns.fill(-1);
+    columns[0] = 0;
+    let byteOffset = 0;
+    let utf16Offset = 0;
+    for (const character of line) {
+      byteOffset += Buffer.byteLength(character, 'utf8');
+      utf16Offset += character.length;
+      columns[byteOffset] = utf16Offset;
+    }
+    view.utf8Columns.set(lineIndex, columns);
+  }
+  if (graphColumn >= columns.length) return null;
+  const utf16Column = columns[graphColumn]!;
+  return utf16Column >= 0 ? utf16Column : null;
+}
+
+function splitsSurrogatePair(value: string, offset: number): boolean {
+  if (offset <= 0 || offset >= value.length) return false;
+  const before = value.charCodeAt(offset - 1);
+  const after = value.charCodeAt(offset);
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+}
+
+function comparePositions(left: LspPosition, right: LspPosition): number {
+  return left.line - right.line || left.character - right.character;
+}
+
+function compareNodes(left: LspNode, right: LspNode): number {
   return left.startLine - right.startLine
     || left.startColumn - right.startColumn
     || left.endLine - right.endLine
     || left.endColumn - right.endColumn
-    || left.qualifiedName.localeCompare(right.qualifiedName);
+    || (left.qualifiedName < right.qualifiedName ? -1 : left.qualifiedName > right.qualifiedName ? 1 : 0);
 }
 
 function compareDocumentSymbols(left: { range: LspRange; name: string }, right: { range: LspRange; name: string }): number {
   return left.range.start.line - right.range.start.line
     || left.range.start.character - right.range.start.character
-    || left.name.localeCompare(right.name);
+    || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 }
 
 function capDocumentSymbolForest(roots: LspDocumentSymbol[], cap: number): LspDocumentSymbol[] {
@@ -767,7 +1079,7 @@ function capDocumentSymbolForest(roots: LspDocumentSymbol[], cap: number): LspDo
   return selected;
 }
 
-function containerName(node: Node): string | undefined {
+function containerName(node: LspNode): string | undefined {
   const separator = node.qualifiedName.lastIndexOf('.');
   return separator > 0 ? node.qualifiedName.slice(0, separator) : undefined;
 }
@@ -775,15 +1087,18 @@ function containerName(node: Node): string | undefined {
 function symbolKind(kind: NodeKind): number {
   switch (kind) {
     case 'file': return 1;
-    case 'module': case 'namespace': return 2;
-    case 'class': case 'struct': case 'component': return 5;
+    case 'module': return 2;
+    case 'namespace': return 3;
+    case 'class': case 'component': return 5;
     case 'method': return 6;
-    case 'property': case 'field': return 7;
+    case 'property': return 7;
+    case 'field': return 8;
     case 'function': case 'route': return 12;
     case 'variable': case 'parameter': return 13;
     case 'constant': return 14;
     case 'enum': return 10;
     case 'enum_member': return 22;
+    case 'struct': return 23;
     case 'interface': case 'trait': case 'protocol': return 11;
     case 'type_alias': return 26;
     default: return 13;

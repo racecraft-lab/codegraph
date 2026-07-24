@@ -126,7 +126,14 @@ export class MCPEngine {
    * a still-missing index yields an op-appropriate empty result rather than a
    * throw. Unknown ops throw {@link import('./read-ops').UnknownReadOpError}.
    */
-  async executeRead(op: string, params: Record<string, unknown>): Promise<unknown> {
+  async executeRead(
+    op: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    if (signal?.aborted) throw new Error('Request aborted');
+    // Structured reads bypass ToolHandler.execute(), but share its warm index.
+    await this.toolHandler.waitForCatchUp(signal);
     // The wire `op` is arbitrary JSON-RPC input; the ReadOp cast is compile-time
     // only. An unrecognized value falls through to the dispatcher's `default`
     // case, which throws UnknownReadOpError at runtime (→ InvalidParams).
@@ -136,7 +143,9 @@ export class MCPEngine {
     // Pick up an index replaced on disk (#925) before serving, mirroring the
     // ToolHandler read path's freshen; never fail the read over it.
     try { cg.reopenIfReplaced(); } catch { /* keep the current handle */ }
-    return executeReadOp(cg, readOp, params);
+    const result = await executeReadOp(cg, readOp, params);
+    if (signal?.aborted) throw new Error('Request aborted');
+    return result;
   }
 
   /** Whether the default project's CodeGraph is open. */
@@ -162,8 +171,7 @@ export class MCPEngine {
     if (this.closed || !cg || !cg.isWatcherDegraded()) return { rearmed: false };
     cg.unwatch();
     this.watcherStarted = false; // clear the per-engine latch so startWatching re-arms
-    this.startWatching();
-    return { rearmed: true };
+    return { rearmed: this.startWatching() };
   }
 
   /**
@@ -255,7 +263,12 @@ export class MCPEngine {
 
     this.projectPath = resolvedRoot;
     try {
-      this.cg = await loadCodeGraph().open(resolvedRoot);
+      const opened = await loadCodeGraph().open(resolvedRoot);
+      if (this.closed) {
+        try { opened.close(); } catch { /* shutdown already owns cleanup */ }
+        return;
+      }
+      this.cg = opened;
       this.toolHandler.setDefaultCodeGraph(this.cg);
       this.startWatching();
       this.catchUpSync();
@@ -273,8 +286,8 @@ export class MCPEngine {
    * exactly matches the prior in-tree implementation so log-driven dashboards
    * keep working.
    */
-  private startWatching(): void {
-    if (!this.cg || this.watcherStarted || !this.opts.watch) return;
+  private startWatching(): boolean {
+    if (!this.cg || this.watcherStarted || !this.opts.watch) return false;
 
     const disabledReason = watchDisabledReason(this.projectPath ?? process.cwd());
     if (disabledReason) {
@@ -283,7 +296,7 @@ export class MCPEngine {
         `The graph will not auto-update; run \`codegraph sync\` (or install the git sync hooks via \`codegraph init\`) to refresh.\n`
       );
       this.watcherStarted = true;
-      return;
+      return false;
     }
 
     // Optional override for the debounce window via env var (issue #403).
@@ -326,10 +339,11 @@ export class MCPEngine {
         '[CodeGraph MCP] File watcher unavailable on this platform — run `codegraph sync` to refresh the graph after changes.\n'
       );
     }
+    return started;
   }
 
   /**
-   * Reconcile the index with the current filesystem once, right after open —
+   * Reconcile the index with the current filesystem right after open —
    * catches edits, adds, deletes, and `git pull`/`checkout` changes made while
    * no watcher was running. Runs in the background, but the returned promise
    * is pushed into the ToolHandler as a one-shot gate so the *first* tool
@@ -341,19 +355,44 @@ export class MCPEngine {
   private catchUpSync(): void {
     const cg = this.cg;
     if (!cg) return;
-    const p = cg
-      .sync()
-      .then((result) => {
-        const changed = result.filesAdded + result.filesModified + result.filesRemoved;
-        if (changed > 0) {
-          process.stderr.write(`[CodeGraph MCP] Caught up ${changed} file(s) changed since last run\n`);
-        }
-      })
+    const p = this.runCatchUpSync(cg)
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[CodeGraph MCP] Catch-up sync failed: ${msg}\n`);
       });
     this.toolHandler.setCatchUpGate(p);
+  }
+
+  /**
+   * Retry a startup reconcile that lost the explicit cross-process sync lock.
+   * A contended result means no reconciliation ran, so accepting it could leave
+   * pre-watch changes stale indefinitely. The capped, unref'd backoff avoids
+   * spinning and does not keep an otherwise-idle MCP process alive.
+   */
+  private async runCatchUpSync(cg: CodeGraph): Promise<void> {
+    let retryDelayMs = 100;
+    let deferred = false;
+    while (!this.closed && this.cg === cg) {
+      const result = await cg.sync();
+      if (result.lockContended !== true) {
+        const changed = result.filesAdded + result.filesModified + result.filesRemoved;
+        if (changed > 0) {
+          process.stderr.write(`[CodeGraph MCP] Caught up ${changed} file(s) changed since last run\n`);
+        } else if (deferred) {
+          process.stderr.write('[CodeGraph MCP] Catch-up sync resumed after index lock contention\n');
+        }
+        return;
+      }
+      if (!deferred) {
+        process.stderr.write('[CodeGraph MCP] Catch-up sync deferred while another process holds the index lock\n');
+        deferred = true;
+      }
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, retryDelayMs);
+        timer.unref?.();
+      });
+      retryDelayMs = Math.min(retryDelayMs * 2, 2_000);
+    }
   }
 }
 

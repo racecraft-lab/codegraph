@@ -40,6 +40,7 @@ const WORKER_FILE = path.join(__dirname, 'query-worker.js');
 export interface PoolWorker {
   postMessage(msg: unknown): void;
   terminate(): Promise<number> | void;
+  unref?(): void;
   on(event: 'message', cb: (m: unknown) => void): void;
   on(event: 'error', cb: (e: Error) => void): void;
   on(event: 'exit', cb: (code: number) => void): void;
@@ -69,6 +70,16 @@ const CRASH_BUDGET = 12;
  */
 const MAX_CONCURRENT_SPAWN = 2;
 
+/** Backoff after a synchronous Worker constructor failure (resource pressure). */
+const INITIAL_SPAWN_RETRY_MS = 50;
+const MAX_SPAWN_RETRY_MS = 1_000;
+
+/** A stuck native call must not make pool retirement or daemon shutdown hang. */
+const DEFAULT_WORKER_TERMINATION_TIMEOUT_MS = 5_000;
+
+/** A worker that never completes its ready handshake must not hold capacity forever. */
+const DEFAULT_WORKER_STARTUP_TIMEOUT_MS = 60_000;
+
 /** Shape of a message a worker posts back (ready handshake or a tool result). */
 interface WorkerMessage {
   type?: string;
@@ -77,15 +88,24 @@ interface WorkerMessage {
   result?: ToolResult;
 }
 
+interface WorkerTermination {
+  /** The worker's actual termination result, which may settle after the deadline. */
+  settled: Promise<boolean>;
+  /** Bounded view used by shutdown and circuit-breaker decisions. */
+  deadline: Promise<boolean>;
+}
+
 interface Job {
   id: number;
   toolName: string;
   args: Record<string, unknown>;
   resolve: (r: ToolResult) => void;
+  reject: (error: Error) => void;
   retries: number;
   settled: boolean;
   enqueuedAt: number;
   softTimer?: NodeJS.Timeout;
+  abortCleanup?: () => void;
 }
 
 export interface QueryPoolOptions {
@@ -97,8 +117,20 @@ export interface QueryPoolOptions {
   softTimeoutMs?: number;
   /** Retries for an in-flight call whose worker crashed. Default 1. */
   maxRetries?: number;
+  /** Max wait for worker termination before the pool fails over in-process. */
+  terminationTimeoutMs?: number;
+  /** Max wait for a worker's ready handshake before replacing it. */
+  startupTimeoutMs?: number;
   /** Worker factory (tests inject a fake). Defaults to a real `worker_threads` Worker. */
   createWorker?: () => PoolWorker;
+}
+
+/** The worker circuit opened; the caller should retry this job in-process. */
+export class QueryPoolUnavailableError extends Error {
+  constructor() {
+    super('query pool unavailable');
+    this.name = 'QueryPoolUnavailableError';
+  }
 }
 
 /**
@@ -144,6 +176,8 @@ export class QueryPool {
   private queue: Job[] = [];
   private inflight = new Map<PoolWorker, Job>();
   private workers = new Set<PoolWorker>();
+  /** Workers no longer dispatchable but still consuming a real thread slot. */
+  private retiringWorkers = new Map<PoolWorker, WorkerTermination>();
   // Workers spawned but not yet 'ready'. Growth must count these so a single
   // first call (with the eager worker still starting) doesn't spawn the WHOLE
   // pool at once — N simultaneous cold worker starts (each a full module load +
@@ -153,10 +187,15 @@ export class QueryPool {
   private nextId = 1;
   private totalCrashes = 0;
   private destroyed = false;
+  private spawnRetryTimer: NodeJS.Timeout | null = null;
+  private startupTimers = new Map<PoolWorker, NodeJS.Timeout>();
+  private spawnRetryDelayMs = INITIAL_SPAWN_RETRY_MS;
   private readonly root: string;
   private readonly maxSize: number;
   private readonly softTimeoutMs: number;
   private readonly maxRetries: number;
+  private readonly terminationTimeoutMs: number;
+  private readonly startupTimeoutMs: number;
   private readonly createWorker: () => PoolWorker;
 
   constructor(opts: QueryPoolOptions) {
@@ -164,6 +203,8 @@ export class QueryPool {
     this.maxSize = Math.max(1, Math.min(opts.size ?? Math.max(1, os.cpus().length - 1), MAX_POOL_SIZE));
     this.softTimeoutMs = opts.softTimeoutMs ?? resolveBusyTimeoutMs();
     this.maxRetries = opts.maxRetries ?? 1;
+    this.terminationTimeoutMs = Math.max(1, opts.terminationTimeoutMs ?? DEFAULT_WORKER_TERMINATION_TIMEOUT_MS);
+    this.startupTimeoutMs = Math.max(1, opts.startupTimeoutMs ?? DEFAULT_WORKER_STARTUP_TIMEOUT_MS);
     this.createWorker = opts.createWorker ?? (() => new Worker(WORKER_FILE, { workerData: { root: this.root } }));
     this.spawnOne(); // one eager warm worker, ready for the first call
   }
@@ -172,7 +213,7 @@ export class QueryPool {
   get size(): number { return this.maxSize; }
 
   /** Live worker count (for tests/status). */
-  get liveWorkers(): number { return this.workers.size; }
+  get liveWorkers(): number { return this.workers.size + this.retiringWorkers.size; }
 
   /**
    * False once the crash budget is exhausted (or after destroy). The ToolHandler
@@ -184,44 +225,72 @@ export class QueryPool {
   }
 
   /**
-   * True once at least one worker has completed its cold start (posted the
-   * 'ready' handshake). Until then the ToolHandler serves calls IN-PROCESS:
-   * a worker cold start is a full module load + DB open — seconds normally,
-   * tens of seconds on a loaded machine — and a call queued behind it gets
-   * nothing until the 45s busy backstop. The daemon's very first tool call
-   * hitting that window was the recurring #662 test flake (and a real
-   * first-call stall for agents). The pool exists for CONCURRENT load, which
-   * by definition arrives after warm-up; the pre-pool in-process path is
-   * strictly better while nothing is warm. Stays true for the pool's
-   * lifetime — later crash-respawn gaps are covered by retry + backstop.
+   * True while at least one worker has completed its cold start (posted the
+   * 'ready' handshake) and remains dispatchable. This is diagnostic state;
+   * healthy callers enqueue through {@link run} even while workers are warming,
+   * where startup and soft-timeout backstops bound the wait without moving a
+   * CPU-heavy read back onto the daemon's event loop.
    */
   get ready(): boolean {
-    return this.everReady && !this.destroyed;
+    return this.healthy && (this.idle.length > 0 || this.inflight.size > 0);
   }
-  private everReady = false;
 
-  private spawnOne(): void {
-    if (this.destroyed || this.workers.size >= this.maxSize) return;
+  private spawnOne(): boolean {
+    if (this.destroyed || this.liveWorkers >= this.maxSize) return false;
     let w: PoolWorker;
     try {
       w = this.createWorker();
     } catch {
       this.totalCrashes++; // counts toward the circuit breaker
-      return;
+      if (!this.healthy) this.openCircuit();
+      else this.scheduleSpawnRetry();
+      return false;
     }
+    if (this.spawnRetryTimer) clearTimeout(this.spawnRetryTimer);
+    this.spawnRetryTimer = null;
+    this.spawnRetryDelayMs = INITIAL_SPAWN_RETRY_MS;
     this.workers.add(w);
     this.pendingWorkers.add(w);
     w.on('message', (m) => this.onMessage(w, (m ?? {}) as WorkerMessage));
     w.on('error', () => this.onWorkerGone(w));
-    w.on('exit', (code) => { if (code !== 0) this.onWorkerGone(w); });
+    // Any exit removes capacity. A clean exit is only expected during destroy,
+    // which clears `workers` before terminating and is ignored by the guard in
+    // onWorkerGone.
+    w.on('exit', () => this.onWorkerGone(w));
+    const startupTimer = setTimeout(() => {
+      if (this.startupTimers.get(w) !== startupTimer) return;
+      this.startupTimers.delete(w);
+      this.onWorkerGone(w);
+    }, this.startupTimeoutMs);
+    startupTimer.unref?.();
+    this.startupTimers.set(w, startupTimer);
+    return true;
+  }
+
+  private scheduleSpawnRetry(): void {
+    const needsWarmWorker = this.liveWorkers === 0;
+    if (this.destroyed || !this.healthy || (this.queue.length === 0 && !needsWarmWorker) || this.spawnRetryTimer) return;
+    const delayMs = this.spawnRetryDelayMs;
+    this.spawnRetryDelayMs = Math.min(delayMs * 2, MAX_SPAWN_RETRY_MS);
+    this.spawnRetryTimer = setTimeout(() => {
+      this.spawnRetryTimer = null;
+      if (this.liveWorkers === 0) this.spawnOne();
+      else this.drain();
+    }, delayMs);
+    this.spawnRetryTimer.unref?.();
   }
 
   private onMessage(w: PoolWorker, m: WorkerMessage): void {
-    if (!m) return;
+    if (!m || !this.workers.has(w)) return;
     if (m.type === 'ready') {
+      if (m.ok === false) {
+        // A worker that could not open the index cannot safely serve jobs.
+        // Remove it through the normal loss path so capacity is replaced.
+        this.onWorkerGone(w);
+        return;
+      }
+      this.clearStartupTimer(w);
       this.pendingWorkers.delete(w);
-      if (m.ok === false) this.totalCrashes++; // hard open failure
-      else this.everReady = true;
       this.idle.push(w);
       this.drain();
       return;
@@ -235,27 +304,30 @@ export class QueryPool {
     }
   }
 
-  // A worker died (crash hook, OOM, segfault, exit≠0). Respawn a replacement and
-  // retry its in-flight job once; a job that keeps crashing workers fails
-  // gracefully so it can't loop the pool forever.
+  // A worker was lost (error, exit, or failed initialization). Respawn a
+  // replacement and retry its in-flight job once; a job that keeps crashing
+  // workers fails gracefully so it can't loop the pool forever.
   private onWorkerGone(w: PoolWorker): void {
     if (!this.workers.has(w)) return; // already handled (error+exit both fire)
+    this.clearStartupTimer(w);
     this.workers.delete(w);
     this.pendingWorkers.delete(w);
     this.idle = this.idle.filter((x) => x !== w);
     this.totalCrashes++;
     const job = this.inflight.get(w);
     this.inflight.delete(w);
-    try { void w.terminate(); } catch { /* already gone */ }
-    if (this.healthy) this.spawnOne(); // keep capacity
-    if (job) {
-      if (job.retries < this.maxRetries && this.healthy) {
+    if (job && !job.settled) {
+      if (!this.healthy) {
+        this.rejectJob(job, new QueryPoolUnavailableError());
+      } else if (job.retries < this.maxRetries) {
         job.retries++;
         this.queue.unshift(job); // head of line — retry promptly
       } else {
         this.settle(job, { isError: true, content: [{ type: 'text', text: 'codegraph worker crashed; please retry the call.' }] });
       }
     }
+    if (!this.healthy) this.openCircuit();
+    this.trackWorkerTermination(w, true);
     this.drain();
   }
 
@@ -265,11 +337,16 @@ export class QueryPool {
     // single call whose eager worker just hasn't reported ready yet.
     while (
       this.queue.length > this.idle.length + this.pendingWorkers.size &&
-      this.workers.size < this.maxSize &&
+      this.liveWorkers < this.maxSize &&
       this.pendingWorkers.size < MAX_CONCURRENT_SPAWN &&
+      !this.spawnRetryTimer &&
       this.healthy
     ) {
-      this.spawnOne();
+      if (!this.spawnOne()) break;
+    }
+    if (!this.healthy) {
+      this.rejectQueuedWhenUnavailable();
+      return;
     }
     while (this.idle.length && this.queue.length) {
       // Skip jobs the backstop already answered.
@@ -278,31 +355,196 @@ export class QueryPool {
       if (!job || job.settled) break;
       const w = this.idle.pop()!;
       this.inflight.set(w, job);
-      w.postMessage({ type: 'call', id: job.id, toolName: job.toolName, args: job.args });
+      try {
+        w.postMessage({ type: 'call', id: job.id, toolName: job.toolName, args: job.args });
+      } catch {
+        this.onWorkerGone(w);
+        return;
+      }
     }
+  }
+
+  private openCircuit(): void {
+    if (this.healthy || this.destroyed) return;
+    if (this.spawnRetryTimer) clearTimeout(this.spawnRetryTimer);
+    this.spawnRetryTimer = null;
+    this.clearStartupTimers();
+    const workers = [...this.workers];
+    const jobs = new Set([...this.inflight.values(), ...this.queue]);
+    this.workers.clear();
+    this.pendingWorkers.clear();
+    this.idle = [];
+    this.inflight.clear();
+    this.queue = [];
+    for (const job of jobs) this.rejectJob(job, new QueryPoolUnavailableError());
+    for (const worker of workers) this.trackWorkerTermination(worker, false);
+  }
+
+  private terminateWorker(worker: PoolWorker): Promise<boolean> {
+    try {
+      return Promise.resolve(worker.terminate()).then(() => true, () => false);
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
+
+  private unrefWorker(worker: PoolWorker): void {
+    try { worker.unref?.(); } catch { /* best-effort process-liveness release */ }
+  }
+
+  private clearStartupTimer(worker: PoolWorker): void {
+    const timer = this.startupTimers.get(worker);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.startupTimers.delete(worker);
+  }
+
+  private clearStartupTimers(): void {
+    for (const timer of this.startupTimers.values()) clearTimeout(timer);
+    this.startupTimers.clear();
+  }
+
+  /** Start termination and retain both its actual and bounded completion. */
+  private terminateWorkerWithDeadline(worker: PoolWorker): WorkerTermination {
+    const settled = this.terminateWorker(worker);
+    const deadline = new Promise<boolean>((resolve) => {
+      let finished = false;
+      const finish = (terminated: boolean): void => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        if (!terminated) this.unrefWorker(worker);
+        resolve(terminated);
+      };
+      const timer = setTimeout(() => finish(false), this.terminationTimeoutMs);
+      timer.unref?.();
+      void settled.then(finish);
+    });
+    return { settled, deadline };
+  }
+
+  private trackWorkerTermination(worker: PoolWorker, replaceCapacity: boolean): void {
+    if (this.retiringWorkers.has(worker)) return;
+    const termination = this.terminateWorkerWithDeadline(worker);
+    this.retiringWorkers.set(worker, termination);
+    void termination.deadline.then(async (terminated) => {
+      if (this.retiringWorkers.get(worker) !== termination) return;
+      if (!terminated) {
+        // Decide failover before releasing the retiring slot. A rejected
+        // terminate() may leave the old thread alive, so letting drain() see
+        // free capacity first could briefly exceed the hard worker cap.
+        this.totalCrashes = CRASH_BUDGET;
+        this.openCircuit();
+        this.drain();
+        await termination.settled;
+        if (this.retiringWorkers.get(worker) !== termination) return;
+      }
+      this.retiringWorkers.delete(worker);
+      if (terminated && replaceCapacity && this.healthy) this.spawnOne();
+      this.drain();
+    });
   }
 
   private settle(job: Job, result: ToolResult): void {
     if (job.settled) return; // already answered (by backstop or worker)
     job.settled = true;
     if (job.softTimer) clearTimeout(job.softTimer);
+    job.abortCleanup?.();
     job.resolve(result);
   }
 
-  /** Run a read tool on the pool. Always resolves (never rejects). */
-  run(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
-    return new Promise<ToolResult>((resolve) => {
+  private removeQueuedJob(job: Job): void {
+    const index = this.queue.indexOf(job);
+    if (index >= 0) this.queue.splice(index, 1);
+  }
+
+  /**
+   * A synchronous worker call cannot be interrupted in place. Once its caller
+   * has abandoned the result, retire that worker so a hung call cannot consume
+   * pool capacity forever. Intentional retirement is not a crash and therefore
+   * does not spend the circuit-breaker budget.
+   */
+  private retireWorkerRunning(job: Job): void {
+    let worker: PoolWorker | undefined;
+    for (const [candidate, current] of this.inflight) {
+      if (current === job) {
+        worker = candidate;
+        break;
+      }
+    }
+    if (!worker) return;
+    this.inflight.delete(worker);
+    this.workers.delete(worker);
+    this.pendingWorkers.delete(worker);
+    this.idle = this.idle.filter((candidate) => candidate !== worker);
+    this.trackWorkerTermination(worker, true);
+  }
+
+  private rejectJob(job: Job, error: Error): void {
+    if (job.settled) return;
+    job.settled = true;
+    if (job.softTimer) clearTimeout(job.softTimer);
+    job.abortCleanup?.();
+    job.reject(error);
+  }
+
+  private rejectQueuedWhenUnavailable(): void {
+    if (this.healthy || this.queue.length === 0) return;
+    const queued = this.queue;
+    this.queue = [];
+    for (const job of queued) this.rejectJob(job, new QueryPoolUnavailableError());
+  }
+
+  private cancel(job: Job): void {
+    if (job.settled) return;
+    job.settled = true;
+    if (job.softTimer) clearTimeout(job.softTimer);
+    job.abortCleanup?.();
+    this.removeQueuedJob(job);
+    job.reject(new Error('Request aborted'));
+    this.retireWorkerRunning(job);
+    this.drain();
+  }
+
+  /** Run a read tool. Rejects on caller cancellation or when the circuit opens. */
+  run(
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolResult> {
+    if (signal?.aborted) return Promise.reject(new Error('Request aborted'));
+    if (!this.healthy) return Promise.reject(new QueryPoolUnavailableError());
+    return new Promise<ToolResult>((resolve, reject) => {
       const job: Job = {
-        id: this.nextId++, toolName, args, resolve,
+        id: this.nextId++, toolName, args, resolve, reject,
         retries: 0, settled: false, enqueuedAt: Date.now(),
       };
       // Don't let the caller wait past softTimeoutMs. The worker may still be
       // busy (we can't cancel synchronous CPU), but the CLIENT gets a prompt,
       // success-shaped "retry" instead of a hard timeout.
       job.softTimer = setTimeout(() => {
-        if (!job.settled) this.settle(job, busyGuidance(Date.now() - job.enqueuedAt));
+        if (!job.settled) {
+          // Queued work no longer has a caller once the backstop responds. Drop
+          // it immediately instead of retaining its arguments. An in-flight
+          // synchronous call cannot be interrupted, so retire its worker after
+          // settling the caller and replace that capacity without treating the
+          // intentional retirement as a crash.
+          this.removeQueuedJob(job);
+          this.settle(job, busyGuidance(Date.now() - job.enqueuedAt));
+          this.retireWorkerRunning(job);
+          this.drain();
+        }
       }, this.softTimeoutMs);
       job.softTimer.unref?.();
+      if (signal) {
+        const onAbort = (): void => this.cancel(job);
+        signal.addEventListener('abort', onAbort, { once: true });
+        job.abortCleanup = () => signal.removeEventListener('abort', onAbort);
+        if (signal.aborted) {
+          this.cancel(job);
+          return;
+        }
+      }
       this.queue.push(job);
       this.drain();
     });
@@ -312,8 +554,16 @@ export class QueryPool {
   async destroy(): Promise<void> {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.spawnRetryTimer) clearTimeout(this.spawnRetryTimer);
+    this.spawnRetryTimer = null;
+    this.clearStartupTimers();
     const ws = [...this.workers];
+    const retiring = [...this.retiringWorkers.entries()];
+    for (const worker of [...ws, ...retiring.map(([worker]) => worker)]) {
+      this.unrefWorker(worker);
+    }
     this.workers.clear();
+    this.retiringWorkers.clear();
     this.pendingWorkers.clear();
     this.idle = [];
     for (const job of [...this.inflight.values(), ...this.queue]) {
@@ -321,6 +571,9 @@ export class QueryPool {
     }
     this.inflight.clear();
     this.queue = [];
-    await Promise.all(ws.map((w) => Promise.resolve(w.terminate()).catch(() => { /* already gone */ })));
+    await Promise.all([
+      ...ws.map((w) => this.terminateWorkerWithDeadline(w).deadline),
+      ...retiring.map(([, termination]) => termination.deadline),
+    ]);
   }
 }

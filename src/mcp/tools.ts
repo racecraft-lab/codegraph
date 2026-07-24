@@ -5,7 +5,7 @@
  */
 
 import type CodeGraph from '../index';
-import type { QueryPool } from './query-pool';
+import { QueryPoolUnavailableError, type QueryPool } from './query-pool';
 import { findNearestCodeGraphRoot } from '../directory';
 // Lazy-load the heavy CodeGraph chain off the MCP startup path — see the same
 // helper in engine.ts. ToolHandler must load to answer tools/list (static
@@ -1022,8 +1022,8 @@ export class ToolHandler {
   // per-file staleness banner can't help, because `getPendingFiles()` is
   // populated by the watcher, not by catch-up. The wait is time-boxed
   // (see {@link resolveCatchUpGateTimeoutMs}) so a minutes-long reconcile on a
-  // huge repo can't hang the first call (#905); cleared on first await so
-  // subsequent calls don't pay any cost.
+  // huge repo can't hang the first call (#905). Cleared after the first wait
+  // so concurrent callers all observe the same in-flight gate.
   private catchUpGate: Promise<void> | null = null;
   // Optional worker-thread pool for off-loop read-tool dispatch (daemon mode).
   // When set + healthy, the heavy read tools run on a worker so the daemon's
@@ -1059,6 +1059,23 @@ export class ToolHandler {
    */
   setCatchUpGate(p: Promise<void> | null): void {
     this.catchUpGate = p;
+  }
+
+  /**
+   * Await the active catch-up gate. Structured reads share the warm index but
+   * bypass tool dispatch, so they call this directly. The identity check keeps
+   * an older waiter from clearing a newer gate installed during reinitialization.
+   */
+  async waitForCatchUp(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error('Request aborted');
+    const gate = this.catchUpGate;
+    if (!gate) return;
+    try {
+      await this.awaitCatchUpGate(gate);
+    } finally {
+      if (this.catchUpGate === gate) this.catchUpGate = null;
+    }
+    if (signal?.aborted) throw new Error('Request aborted');
   }
 
   /**
@@ -1552,21 +1569,23 @@ export class ToolHandler {
   /**
    * Execute a tool by name
    */
-  async execute(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolResult> {
     try {
+      if (signal?.aborted) throw new Error('Request aborted');
       // Block the first tool call on the engine's post-open reconcile so we
       // never serve rows for files deleted/edited while no MCP server was
       // running. The wait is time-boxed (#905): a huge-repo reconcile takes
       // minutes, and blocking the first call on all of it reads as a hang, so
       // we wait briefly then serve and let it finish in the background. The
-      // gate is cleared after first await — subsequent calls pay nothing.
+      // gate is cleared after the first wait — later calls pay nothing, while
+      // callers that arrive during the wait share it.
       // Catch-up failures are logged by the engine; we proceed regardless so a
       // transient sync error never breaks tools.
-      if (this.catchUpGate) {
-        const gate = this.catchUpGate;
-        this.catchUpGate = null;
-        await this.awaitCatchUpGate(gate);
-      }
+      await this.waitForCatchUp(signal);
       // Honor the optional tool allowlist (CODEGRAPH_MCP_TOOLS): a trimmed
       // surface rejects ablated tools defensively even if a client cached them.
       if (!this.isToolAllowed(toolName)) {
@@ -1597,7 +1616,9 @@ export class ToolHandler {
       // a worker (whose read connection has no watcher). It also skips the
       // auto-banner wrapper to avoid duplicating its own pending-files section.
       if (toolName === 'codegraph_status') {
-        return await this.handleStatus(args);
+        const result = await this.handleStatus(args);
+        if (signal?.aborted) throw new Error('Request aborted');
+        return result;
       }
 
       // codegraph_rename is the ONE write tool (SPEC-010). An apply mutates the
@@ -1609,29 +1630,42 @@ export class ToolHandler {
       // (SC-005 byte-parity with the CLI `--json`), so — like status — it skips
       // the worktree/staleness banner wrappers that would prepend text.
       if (toolName === 'codegraph_rename') {
-        return await this.handleRename(args);
+        const result = await this.handleRename(args);
+        if (signal?.aborted) throw new Error('Request aborted');
+        return result;
       }
 
       // Read tools: off-load the CPU-heavy dispatch to the worker pool when one
-      // is attached, healthy, AND has finished its first cold start (daemon
-      // mode), so the daemon's single event loop stays free for the MCP
+      // is attached and healthy (daemon mode), so the daemon's single event
+      // loop stays free for the MCP
       // transport under concurrent load — otherwise N concurrent explores
       // serialize AND starve the transport until the whole batch drains
-      // (clients then time out). Before the first worker is warm, calls run
-      // in-process: a call queued behind a cold start sat invisible until the
-      // 45s busy backstop — the daemon's first tool call stalling for however
-      // long a worker spawn takes on a loaded machine (the #662 flake). With
-      // no pool (direct mode) or a degraded one, dispatch runs in-process
-      // exactly as before. Either way the result flows through the
+      // (clients then time out). Calls that arrive while workers are warming
+      // remain queued off-loop behind the pool's startup and soft-timeout
+      // backstops; falling back synchronously during that gap would recreate
+      // the event-loop starvation the pool exists to prevent. With no pool
+      // (direct mode) or a degraded one, dispatch runs in-process exactly as
+      // before. Either way the result flows through the
       // cross-cutting notices — worktree-index mismatch (#155) and per-file
       // staleness (#403) — which need the watched MAIN instance and so are
       // always applied here, never in the worker.
-      const result = (this.queryPool && this.queryPool.healthy && this.queryPool.ready)
-        ? await this.queryPool.run(toolName, args)
-        : await this.executeReadTool(toolName, args);
+      let result: ToolResult;
+      if (this.queryPool && this.queryPool.healthy) {
+        try {
+          result = await this.queryPool.run(toolName, args, signal);
+        } catch (error) {
+          if (!(error instanceof QueryPoolUnavailableError)) throw error;
+          if (signal?.aborted) throw new Error('Request aborted');
+          result = await this.executeReadTool(toolName, args);
+        }
+      } else {
+        result = await this.executeReadTool(toolName, args);
+      }
+      if (signal?.aborted) throw new Error('Request aborted');
       const withWorktree = this.withWorktreeNotice(result, args.projectPath as string | undefined);
       return this.withStalenessNotice(withWorktree, args.projectPath as string | undefined);
     } catch (err) {
+      if (signal?.aborted) throw new Error('Request aborted');
       // Expected condition, not a malfunction: answer as a SUCCESS so the
       // agent keeps trusting the toolset for projects that ARE indexed.
       // (An isError here teaches session-long abandonment — see NotIndexedError.)

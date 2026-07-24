@@ -7,7 +7,8 @@
  *
  * CodeGraph ships with a bundled Node runtime, so `node:sqlite` (real SQLite,
  * with WAL + FTS5) is always available — there is no native build step and no
- * wasm fallback. When run from source instead, it requires Node >= 22.5.
+ * wasm fallback. Direct library and from-source CLI use require an FTS5-capable
+ * build: Node >= 22.16 within the 22.x line, or Node 24.x.
  */
 
 export interface SqliteStatement {
@@ -27,6 +28,11 @@ export interface SqliteDatabase {
   prepare(sql: string): SqliteStatement;
   exec(sql: string): void;
   pragma(str: string, options?: { simple?: boolean }): any;
+  function(
+    name: string,
+    options: { deterministic?: boolean; directOnly?: boolean },
+    callback: (...args: any[]) => unknown,
+  ): void;
   transaction<T>(fn: (...args: any[]) => T): (...args: any[]) => T;
   close(): void;
   readonly open: boolean;
@@ -54,7 +60,17 @@ class NodeSqliteAdapter implements SqliteDatabase {
   constructor(dbPath: string, opts?: { readOnly?: boolean }) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { DatabaseSync } = require('node:sqlite');
-    this._db = opts?.readOnly ? new DatabaseSync(dbPath, { readOnly: true }) : new DatabaseSync(dbPath);
+    const db = opts?.readOnly ? new DatabaseSync(dbPath, { readOnly: true }) : new DatabaseSync(dbPath);
+    try {
+      const row = db.prepare("SELECT sqlite_compileoption_used('ENABLE_FTS5') AS enabled").get();
+      if (Number(row?.enabled) !== 1) {
+        throw new Error('This node:sqlite build does not include the required FTS5 module');
+      }
+    } catch (error) {
+      try { if (db.isOpen) db.close(); } catch { /* preserve the capability error */ }
+      throw error;
+    }
+    this._db = db;
   }
 
   get open(): boolean {
@@ -107,6 +123,14 @@ class NodeSqliteAdapter implements SqliteDatabase {
     return row;
   }
 
+  function(
+    name: string,
+    options: { deterministic?: boolean; directOnly?: boolean },
+    callback: (...args: any[]) => unknown,
+  ): void {
+    this._db.function(name, options, callback);
+  }
+
   transaction<T>(fn: (...args: any[]) => T): (...args: any[]) => T {
     return (...args: any[]) => {
       // Nested call (a transaction()-wrapped helper invoked from inside another
@@ -130,8 +154,21 @@ class NodeSqliteAdapter implements SqliteDatabase {
         this._txDepth = 0;
         return result;
       } catch (error) {
-        this._db.exec('ROLLBACK');
-        this._txDepth = 0;
+        let rollbackError: unknown;
+        try {
+          this._db.exec('ROLLBACK');
+        } catch (caught) {
+          rollbackError = caught;
+          try { if (this._db.isOpen) this._db.close(); }
+          catch (closeError) {
+            rollbackError = new AggregateError([caught, closeError], 'SQLite rollback and close failed');
+          }
+        } finally {
+          this._txDepth = 0;
+        }
+        if (rollbackError !== undefined) {
+          throw new AggregateError([error, rollbackError], 'SQLite transaction and rollback failed');
+        }
         throw error;
       }
     };
@@ -158,8 +195,8 @@ export function createDatabase(dbPath: string, opts?: { readOnly?: boolean }): {
     const msg = error instanceof Error ? error.message : String(error);
     throw new Error(
       'Failed to open SQLite via the built-in node:sqlite module.\n' +
-      'CodeGraph requires node:sqlite (Node.js 22.5+). Install the self-contained\n' +
-      'CodeGraph release (it bundles a compatible Node), or run on Node 22.5+.\n' +
+      'CodeGraph requires node:sqlite with FTS5. Use Node 22.16+ (22.x) or Node 24.x.\n' +
+      'The self-contained CodeGraph CLI bundles a compatible runtime automatically.\n' +
       `Underlying error: ${msg}`
     );
   }

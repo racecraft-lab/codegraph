@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { JsonRpcRequest, JsonRpcNotification, JsonRpcTransport, ErrorCodes } from './transport';
 import { MCPEngine } from './engine';
 import { tools } from './tools';
-import { UnknownReadOpError } from './read-ops';
+import { InvalidReadParamsError, UnknownReadOpError } from './read-ops';
 import { SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX } from './server-instructions';
 import { CodeGraphPackageVersion } from './version';
 import { findNearestCodeGraphRoot } from '../directory';
@@ -87,6 +87,36 @@ function firstRootPath(result: unknown): string | null {
   return fileUriToPath(first.uri);
 }
 
+function requestAbortedError(): Error {
+  return new Error('Request aborted');
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw requestAbortedError();
+}
+
+function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(requestAbortedError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      reject(requestAbortedError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 export interface MCPSessionOptions {
   /**
    * Explicit project path from the `--path` CLI flag. When set, the session
@@ -94,6 +124,11 @@ export interface MCPSessionOptions {
    * where the project lives.
    */
   explicitProjectPath?: string | null;
+  /** Daemon-only authenticated lifecycle hook. Omitted for direct sessions. */
+  shutdown?: {
+    reserve(): boolean;
+    begin(): void;
+  };
 }
 
 /**
@@ -107,6 +142,7 @@ export class MCPSession {
   private rootsAttempted = false;
   private resolvePromise: Promise<void> | null = null;
   private explicitProjectPath: string | null;
+  private shutdown: MCPSessionOptions['shutdown'];
 
   constructor(
     private transport: JsonRpcTransport,
@@ -114,6 +150,7 @@ export class MCPSession {
     opts: MCPSessionOptions = {},
   ) {
     this.explicitProjectPath = opts.explicitProjectPath ?? null;
+    this.shutdown = opts.shutdown;
   }
 
   /**
@@ -137,7 +174,11 @@ export class MCPSession {
     return this.transport;
   }
 
-  private async handleMessage(message: JsonRpcRequest | JsonRpcNotification): Promise<void> {
+  private async handleMessage(
+    message: JsonRpcRequest | JsonRpcNotification,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    throwIfAborted(signal);
     const isRequest = 'id' in message;
     switch (message.method) {
       case 'initialize':
@@ -147,16 +188,16 @@ export class MCPSession {
         // Notification that client has finished initialization — no action needed.
         break;
       case 'tools/list':
-        if (isRequest) await this.handleToolsList(message as JsonRpcRequest);
+        if (isRequest) await this.handleToolsList(message as JsonRpcRequest, signal);
         break;
       case 'tools/call':
-        if (isRequest) await this.handleToolsCall(message as JsonRpcRequest);
+        if (isRequest) await this.handleToolsCall(message as JsonRpcRequest, signal);
         break;
       case 'codegraph/read':
         // SPEC-005 additive structured read-only method (FR-002/004/008). A
         // daemon *client* (the web serve process) forwards graph reads here so
         // it never opens a second in-process index copy; read-only, never indexes.
-        if (isRequest) await this.handleRead(message as JsonRpcRequest);
+        if (isRequest) await this.handleRead(message as JsonRpcRequest, signal);
         break;
       case 'codegraph/rearm-watcher':
         // SPEC-005 additive control-plane method (FR-021a). A reindex job in the
@@ -164,6 +205,9 @@ export class MCPSession {
         // degrade; re-arm it. Control only — never indexes; a no-op on a healthy
         // watcher (the engine gates on isWatcherDegraded()).
         if (isRequest) this.handleRearmWatcher(message as JsonRpcRequest);
+        break;
+      case 'codegraph/shutdown':
+        await this.handleShutdown(message);
         break;
       case 'ping':
         if (isRequest) this.transport.sendResult((message as JsonRpcRequest).id, {});
@@ -246,12 +290,13 @@ export class MCPSession {
       // Kick off engine init in the background. If another session in the
       // same daemon already opened the project, `ensureInitialized` is a
       // ~free no-op — N concurrent clients pay exactly one open.
-      this.resolvePromise = this.engine.ensureInitialized(explicitPath);
+      this.trackResolution(this.engine.ensureInitialized(explicitPath));
     }
   }
 
-  private async handleToolsList(request: JsonRpcRequest): Promise<void> {
-    await this.retryInitIfNeeded();
+  private async handleToolsList(request: JsonRpcRequest, signal?: AbortSignal): Promise<void> {
+    await this.retryInitIfNeeded(signal);
+    throwIfAborted(signal);
     // Always expose the tools — even when the server root has no index. Gating
     // availability on whether `./` is indexed (the old behavior) breaks the
     // monorepo case where only sub-projects carry a `.codegraph/` (the agent
@@ -268,7 +313,7 @@ export class MCPSession {
     });
   }
 
-  private async handleToolsCall(request: JsonRpcRequest): Promise<void> {
+  private async handleToolsCall(request: JsonRpcRequest, signal?: AbortSignal): Promise<void> {
     const params = request.params as {
       name: string;
       arguments?: Record<string, unknown>;
@@ -293,10 +338,14 @@ export class MCPSession {
     }
 
     if (process.env.CODEGRAPH_MCP_DEBUG) process.stderr.write(`[mcp-debug] toolsCall ${toolName} id=${String(request.id)} pre-init\n`);
-    await this.retryInitIfNeeded();
+    await this.retryInitIfNeeded(signal);
 
     if (process.env.CODEGRAPH_MCP_DEBUG) process.stderr.write(`[mcp-debug] toolsCall ${toolName} id=${String(request.id)} dispatch\n`);
-    const result = await this.engine.getToolHandler().execute(toolName, toolArgs);
+    const result = await awaitWithAbort(
+      this.engine.getToolHandler().execute(toolName, toolArgs, signal),
+      signal,
+    );
+    throwIfAborted(signal);
     if (process.env.CODEGRAPH_MCP_DEBUG) process.stderr.write(`[mcp-debug] toolsCall ${toolName} id=${String(request.id)} done\n`);
     this.transport.sendResult(request.id, result);
     // After the reply is on the wire — telemetry must never delay a tool
@@ -310,27 +359,29 @@ export class MCPSession {
    * then delegates to {@link MCPEngine.executeRead}. An unknown op → InvalidParams;
    * any other failure → InternalError, so a bad read never wedges the session.
    */
-  private async handleRead(request: JsonRpcRequest): Promise<void> {
+  private async handleRead(request: JsonRpcRequest, signal?: AbortSignal): Promise<void> {
     const params = request.params as { op?: unknown; params?: unknown } | undefined;
     const op = typeof params?.op === 'string' ? params.op : '';
     if (!op) {
       this.transport.sendError(request.id, ErrorCodes.InvalidParams, 'Missing read op');
       return;
     }
-    await this.retryInitIfNeeded();
     try {
+      await this.retryInitIfNeeded(signal);
       const readParams = (params?.params ?? {}) as Record<string, unknown>;
-      const result = await this.engine.executeRead(op, readParams);
+      const result = await awaitWithAbort(this.engine.executeRead(op, readParams, signal), signal);
+      throwIfAborted(signal);
       this.transport.sendResult(request.id, result);
     } catch (err) {
-      if (err instanceof UnknownReadOpError) {
+      if (signal?.aborted) return;
+      if (err instanceof UnknownReadOpError || err instanceof InvalidReadParamsError) {
         this.transport.sendError(request.id, ErrorCodes.InvalidParams, err.message);
         return;
       }
       this.transport.sendError(
         request.id,
         ErrorCodes.InternalError,
-        err instanceof Error ? err.message : 'read failed',
+        'read failed',
       );
     }
   }
@@ -353,6 +404,34 @@ export class MCPSession {
     }
   }
 
+  /** Stop the daemon reached through this already-authenticated connection. */
+  private async handleShutdown(request: JsonRpcRequest | JsonRpcNotification): Promise<void> {
+    const isRequest = 'id' in request;
+    if (!this.shutdown?.reserve()) {
+      if (isRequest) {
+        this.transport.sendError(request.id, ErrorCodes.InvalidParams, 'daemon is already stopping');
+      }
+      return;
+    }
+    if (!isRequest) {
+      this.shutdown.begin();
+      return;
+    }
+    try {
+      if (this.transport.sendResultAndWait) {
+        await this.transport.sendResultAndWait(
+          request.id,
+          { stopping: true },
+          { preserveOnOverload: true },
+        );
+      } else {
+        this.transport.sendResult(request.id, { stopping: true });
+      }
+    } finally {
+      this.shutdown.begin();
+    }
+  }
+
   /**
    * Lazy default-project resolution. Three layers:
    *   1. await the in-flight init kicked off from `handleInitialize` (if any);
@@ -361,10 +440,14 @@ export class MCPSession {
    *   3. last-resort: re-walk from the best candidate — picks up projects
    *      that were `codegraph init`'d *after* the server started.
    */
-  private async retryInitIfNeeded(): Promise<void> {
+  private async retryInitIfNeeded(signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
     if (this.resolvePromise) {
-      try { await this.resolvePromise; } catch { /* fall through to retry */ }
-      this.resolvePromise = null;
+      const resolution = this.resolvePromise;
+      try { await awaitWithAbort(resolution, signal); } catch {
+        throwIfAborted(signal);
+        /* fall through to retry */
+      }
     }
 
     if (this.engine.hasDefaultCodeGraph()) return;
@@ -372,11 +455,13 @@ export class MCPSession {
     const hint = this.explicitProjectPath ?? this.engine.getProjectPath();
     if (!hint && !this.rootsAttempted) {
       this.rootsAttempted = true;
-      this.resolvePromise = this.clientSupportsRoots
+      const resolution = this.trackResolution(this.clientSupportsRoots
         ? this.initFromRoots()
-        : this.engine.ensureInitialized(process.cwd());
-      try { await this.resolvePromise; } catch { /* fall through */ }
-      this.resolvePromise = null;
+        : this.engine.ensureInitialized(process.cwd()));
+      try { await awaitWithAbort(resolution, signal); } catch {
+        throwIfAborted(signal);
+        /* fall through */
+      }
       if (this.engine.hasDefaultCodeGraph()) return;
     }
 
@@ -384,6 +469,16 @@ export class MCPSession {
     // projects that appeared after the server started.
     const candidate = hint ?? process.cwd();
     this.engine.retryInitializeSync(candidate);
+  }
+
+  /** Keep the shared latch owned by the underlying work, not by any waiter. */
+  private trackResolution(resolution: Promise<void>): Promise<void> {
+    this.resolvePromise = resolution;
+    const release = (): void => {
+      if (this.resolvePromise === resolution) this.resolvePromise = null;
+    };
+    void resolution.then(release, release);
+    return resolution;
   }
 
   /**

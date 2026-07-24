@@ -298,10 +298,11 @@ describe('SPEC-005 slice-2 round-2 remediation', () => {
 describe('SPEC-005 slice-2 round-3 remediation', () => {
   // R3-#4 (FR-021a): the watcher re-arm MUST run even when the job was aborted
   // (shutdown) — the abort path, not just normal completion, restores the shared
-  // daemon watcher. (A prior fix wrongly early-returned on an aborted signal.)
+  // daemon watcher. Re-arm cleanup uses its own signal so aborting the index does
+  // not suppress cleanup; server shutdown bounds that signal separately.
   it('R3-#4: an aborted job still fires the watcher re-arm (FR-021a)', async () => {
     let rearmCalled = false;
-    let rearmSawAbortedSignal: boolean | undefined;
+    let rearmSawLiveCleanupSignal: boolean | undefined;
     const job = new ReindexJob({ id: 'r', root: os.tmpdir() }, 'sync', {
       runIndex: async () => ({
         filesChecked: 0,
@@ -314,7 +315,7 @@ describe('SPEC-005 slice-2 round-3 remediation', () => {
       isLockHeld: () => false,
       rearmWatcher: (_root, signal) => {
         rearmCalled = true;
-        rearmSawAbortedSignal = signal?.aborted;
+        rearmSawLiveCleanupSignal = signal !== undefined && !signal.aborted;
       },
     });
     job.abort(); // shutdown abort BEFORE run
@@ -322,7 +323,7 @@ describe('SPEC-005 slice-2 round-3 remediation', () => {
     expect(job.descriptor().status).toBe('error');
     expect(job.descriptor().reason).toBe('aborted');
     expect(rearmCalled).toBe(true); // re-arm ran despite the abort
-    expect(rearmSawAbortedSignal).toBe(true); // and received the aborted signal
+    expect(rearmSawLiveCleanupSignal).toBe(true);
   });
 
   // R3-#2 (FR-021a): a FULL-mode lock sentinel is unambiguous (the library result

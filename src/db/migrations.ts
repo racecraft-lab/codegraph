@@ -6,6 +6,9 @@
 
 import { SqliteDatabase } from './sqlite-adapter';
 
+const MIGRATION_LOCK_TIMEOUT_MS = 120_000;
+const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
+
 // Current schema version: exported below the migrations array as
 // CURRENT_SCHEMA_VERSION — derived from the array's last entry so adding a
 // migration can never leave the version-gate constant stale (the fork's
@@ -293,29 +296,67 @@ export function getCurrentVersion(db: SqliteDatabase): number {
  */
 function recordMigration(db: SqliteDatabase, version: number, description: string): void {
   db.prepare(
-    'INSERT INTO schema_versions (version, applied_at, description) VALUES (?, ?, ?)'
+    'INSERT OR IGNORE INTO schema_versions (version, applied_at, description) VALUES (?, ?, ?)'
   ).run(version, Date.now(), description);
+}
+
+function runImmediateTransaction<T>(db: SqliteDatabase, body: () => T): T {
+  let started = false;
+  let committed = false;
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    started = true;
+    const result = body();
+    db.exec('COMMIT');
+    committed = true;
+    return result;
+  } catch (error) {
+    if (started && !committed) {
+      try { db.exec('ROLLBACK'); }
+      catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], 'Migration transaction and rollback failed');
+      }
+    }
+    throw error;
+  }
 }
 
 /**
  * Run all pending migrations
  */
 export function runMigrations(db: SqliteDatabase, fromVersion: number): void {
-  const pending = migrations.filter((m) => m.version > fromVersion);
+  if (fromVersion >= CURRENT_SCHEMA_VERSION) return;
 
-  if (pending.length === 0) {
-    return;
-  }
-
-  // Sort by version
-  pending.sort((a, b) => a.version - b.version);
-
-  // Run each migration in a transaction
-  for (const migration of pending) {
-    db.transaction(() => {
-      migration.up(db);
-      recordMigration(db, migration.version, migration.description);
-    })();
+  // Serialize the version check and every pending migration across processes.
+  // A second opener waits here, then observes the version recorded by the
+  // first instead of replaying a long migration from a stale pre-lock read.
+  // The longer busy timeout is scoped to this one-time upgrade path and is
+  // restored before normal reads/writes resume.
+  const configuredBusyTimeout = Number(db.pragma('busy_timeout', { simple: true }));
+  const restoreBusyTimeout = Number.isSafeInteger(configuredBusyTimeout) && configuredBusyTimeout >= 0
+    ? configuredBusyTimeout
+    : DEFAULT_BUSY_TIMEOUT_MS;
+  db.pragma(`busy_timeout = ${MIGRATION_LOCK_TIMEOUT_MS}`);
+  let failed = false;
+  try {
+    while (true) {
+      runImmediateTransaction(db, () => {
+        const lockedVersion = Math.max(fromVersion, getCurrentVersion(db));
+        const migration = migrations
+          .filter((candidate) => candidate.version > lockedVersion)
+          .sort((left, right) => left.version - right.version)[0];
+        if (!migration) return;
+        migration.up(db);
+        recordMigration(db, migration.version, migration.description);
+      });
+      if (Math.max(fromVersion, getCurrentVersion(db)) >= CURRENT_SCHEMA_VERSION) return;
+    }
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try { db.pragma(`busy_timeout = ${restoreBusyTimeout}`); }
+    catch (error) { if (!failed) throw error; }
   }
 }
 

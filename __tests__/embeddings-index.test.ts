@@ -110,7 +110,7 @@ describe.skipIf(!HAS_SQLITE)('node_vectors schema convergence (FR-012)', () => {
     }
   });
 
-  it('CURRENT_SCHEMA_VERSION is 10 (v9 = node_vectors, renumbered at the upstream v1.4.0 sync — upstream owns v8; v10 = SPEC-011 catalog tables)', () => {
+  it('CURRENT_SCHEMA_VERSION is 10 (v10 = SPEC-011 catalogs; SPEC-009 adds no migration)', () => {
     expect(CURRENT_SCHEMA_VERSION).toBe(10);
   });
 
@@ -158,6 +158,16 @@ describe.skipIf(!HAS_SQLITE)('node_vectors schema convergence (FR-012)', () => {
     expect(() => runMigrations(raw, 7)).not.toThrow();
     expect(nodeVectorsShape(raw)).toEqual(shape);
     expect(getCurrentVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  it('rechecks the recorded version after acquiring the migration write lock', () => {
+    const raw = freshDb('cg-migration-stale-read-').getDb();
+    expect(getCurrentVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
+
+    expect(() => runMigrations(raw, CURRENT_SCHEMA_VERSION - 1)).not.toThrow();
+
+    expect(getCurrentVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(Number(raw.pragma('busy_timeout', { simple: true }))).toBe(5_000);
   });
 });
 
@@ -1817,16 +1827,16 @@ describe.skipIf(!HAS_SQLITE)('Slice A security invariants (T021)', () => {
     }
   }, 30000);
 
-  it('4. embedding adds NO unplanned runtime dependency — package.json deps are the SPEC-001 baseline plus the SPEC-002 addition of onnxruntime-web; peerDeps unchanged (FR-025/SC-008)', () => {
+  it('4. embedding adds NO unplanned runtime dependency — package.json deps include only planned feature additions; peerDeps unchanged (FR-025/SC-008)', () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')) as {
       dependencies?: Record<string, string>;
       peerDependencies?: Record<string, string>;
     };
     // The exact runtime dependency set — the SPEC-001 endpoint provider rides on the
     // built-in fetch + node:crypto alone (no telemetry SDK, no HTTP client). SPEC-002
-    // (T002) adds exactly one deliberate entry, onnxruntime-web, for the local ONNX
-    // embedding fallback. Any OTHER new entry here means an unplanned runtime dep
-    // slipped in with the feature.
+    // (T002) adds onnxruntime-web for the local ONNX embedding fallback. SPEC-009
+    // adds ws for the local LSP browser transport. Any OTHER new entry here means
+    // an unplanned runtime dependency slipped in with either feature.
     expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual([
       '@clack/prompts',
       'commander',
@@ -1839,6 +1849,7 @@ describe.skipIf(!HAS_SQLITE)('Slice A security invariants (T021)', () => {
       'sisteransi',
       'tree-sitter-wasms',
       'web-tree-sitter',
+      'ws',
     ]);
     // No peer dependencies at all (embeddings introduced none).
     expect(pkg.peerDependencies).toBeUndefined();

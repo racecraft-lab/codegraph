@@ -15,11 +15,12 @@
  * the engine-driven path (proves the engine actually pokes the gate).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import CodeGraph from '../src/index';
+import { MCPEngine } from '../src/mcp/engine';
 import { ToolHandler } from '../src/mcp/tools';
 
 describe('MCP catch-up gate', () => {
@@ -61,6 +62,80 @@ describe('MCP catch-up gate', () => {
     expect(gateResolved).toBe(true);
     expect(res.isError).toBeFalsy();
     expect(res.content[0].text).toMatch(/survivor/);
+  });
+
+  it('awaits the gate before serving a structured read', async () => {
+    const engine = new MCPEngine({ watch: false });
+    let gateResolved = false;
+    const gate = new Promise<void>((resolve) => {
+      setTimeout(() => { gateResolved = true; resolve(); }, 80);
+    });
+    engine.getToolHandler().setCatchUpGate(gate);
+
+    try {
+      await engine.executeRead('status', {});
+      expect(gateResolved).toBe(true);
+    } finally {
+      engine.stop();
+    }
+  });
+
+  it('keeps concurrent callers behind the same in-flight gate', async () => {
+    const previous = process.env.CODEGRAPH_CATCHUP_GATE_TIMEOUT_MS;
+    process.env.CODEGRAPH_CATCHUP_GATE_TIMEOUT_MS = '0';
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+    handler.setCatchUpGate(gate);
+
+    try {
+      const first = handler.execute('codegraph_status', {});
+      await Promise.resolve();
+      const second = handler.execute('codegraph_status', {});
+      const earlyOutcome = await Promise.race([
+        second.then(() => 'served' as const),
+        new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 50)),
+      ]);
+
+      expect(earlyOutcome).toBe('blocked');
+      releaseGate();
+      await Promise.all([first, second]);
+    } finally {
+      releaseGate();
+      if (previous === undefined) delete process.env.CODEGRAPH_CATCHUP_GATE_TIMEOUT_MS;
+      else process.env.CODEGRAPH_CATCHUP_GATE_TIMEOUT_MS = previous;
+    }
+  });
+
+  it('retries startup catch-up after explicit sync lock contention', async () => {
+    const engine = new MCPEngine({ watch: false });
+    const sync = vi.fn()
+      .mockResolvedValueOnce({
+        filesAdded: 0,
+        filesModified: 0,
+        filesRemoved: 0,
+        errors: [],
+        lockContended: true,
+      })
+      .mockResolvedValueOnce({
+        filesAdded: 0,
+        filesModified: 1,
+        filesRemoved: 0,
+        errors: [],
+      });
+    const fakeCodeGraph = { sync };
+    const internals = engine as unknown as {
+      cg: typeof fakeCodeGraph;
+      catchUpSync(): void;
+    };
+    internals.cg = fakeCodeGraph;
+    internals.catchUpSync();
+
+    try {
+      await engine.getToolHandler().execute('codegraph_status', {});
+      expect(sync).toHaveBeenCalledTimes(2);
+    } finally {
+      engine.stop();
+    }
   });
 
   it('drops the gate after first await — second call does not re-wait', async () => {

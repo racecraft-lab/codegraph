@@ -28,6 +28,11 @@ interface TraversalStep {
   depth: number;
 }
 
+interface EdgeWorkBudget {
+  remaining: number;
+  truncated: boolean;
+}
+
 /**
  * Graph traverser for BFS and DFS traversal
  */
@@ -45,7 +50,11 @@ export class GraphTraverser {
    * @param options - Traversal options
    * @returns Subgraph containing traversed nodes and edges
    */
-  traverseBFS(startId: string, options: TraversalOptions = {}): Subgraph {
+  traverseBFS(
+    startId: string,
+    options: TraversalOptions = {},
+    edgeLimit: number = Infinity,
+  ): Subgraph {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const startNode = this.queries.getNodeById(startId);
 
@@ -67,6 +76,10 @@ export class GraphTraverser {
     // Edge-identity dedup so a `direction:'both'` scan — which encounters A→B
     // from both endpoints — records each edge once.
     const seenEdges = new Set<string>();
+    const edgeBudget: EdgeWorkBudget = {
+      remaining: Number.isFinite(edgeLimit) ? Math.max(1, Math.floor(edgeLimit)) : Infinity,
+      truncated: false,
+    };
     const edgeKey = (e: Edge) =>
       `${e.source}|${e.target}|${e.kind}|${e.line ?? -1}|${e.column ?? -1}`;
     const queue: TraversalStep[] = [{ node: startNode, edge: null, depth: 0 }];
@@ -89,10 +102,20 @@ export class GraphTraverser {
         continue;
       }
 
+      if (edgeBudget.remaining <= 0) {
+        edgeBudget.truncated = true;
+        break;
+      }
+
       // Get adjacent edges, prioritizing structural edges (contains, calls)
       // over reference edges so BFS discovers internal structure before
       // fanning out to external references (e.g., component usages in templates).
-      const adjacentEdges = this.getAdjacentEdges(node.id, opts.direction, opts.edgeKinds);
+      const adjacentEdges = this.getAdjacentEdges(
+        node.id,
+        opts.direction,
+        opts.edgeKinds,
+        edgeBudget,
+      );
       adjacentEdges.sort((a, b) => {
         const priority = (e: Edge) => e.kind === 'contains' ? 0 : e.kind === 'calls' ? 1 : 2;
         return priority(a) - priority(b);
@@ -141,6 +164,7 @@ export class GraphTraverser {
       nodes,
       edges,
       roots: [startId],
+      ...(edgeBudget.truncated ? { truncated: true } : {}),
     };
   }
 
@@ -235,9 +259,27 @@ export class GraphTraverser {
   private getAdjacentEdges(
     nodeId: string,
     direction: 'outgoing' | 'incoming' | 'both',
-    edgeKinds?: EdgeKind[]
+    edgeKinds?: EdgeKind[],
+    edgeBudget?: EdgeWorkBudget,
   ): Edge[] {
     const kinds = edgeKinds && edgeKinds.length > 0 ? edgeKinds : undefined;
+
+    if (edgeBudget && Number.isFinite(edgeBudget.remaining)) {
+      if (edgeBudget.remaining <= 0) {
+        edgeBudget.truncated = true;
+        return [];
+      }
+      const rows = this.queries.getBoundedAdjacentEdges(
+        nodeId,
+        direction,
+        kinds,
+        edgeBudget.remaining + 1,
+      );
+      if (rows.length > edgeBudget.remaining) edgeBudget.truncated = true;
+      const included = rows.slice(0, edgeBudget.remaining);
+      edgeBudget.remaining -= included.length;
+      return included;
+    }
 
     if (direction === 'outgoing') {
       return this.queries.getOutgoingEdges(nodeId, kinds);
@@ -515,9 +557,16 @@ export class GraphTraverser {
    *
    * @param nodeId - ID of the node
    * @param maxDepth - Maximum depth to traverse (default: 3)
+   * @param limit - Maximum nodes to collect (default: unbounded)
+   * @param edgeLimit - Maximum edge rows to inspect and collect (default: unbounded)
    * @returns Subgraph containing potentially impacted nodes
    */
-  getImpactRadius(nodeId: string, maxDepth: number = 3): Subgraph {
+  getImpactRadius(
+    nodeId: string,
+    maxDepth: number = 3,
+    limit: number = Infinity,
+    edgeLimit: number = Infinity,
+  ): Subgraph {
     const focalNode = this.queries.getNodeById(nodeId);
     if (!focalNode) {
       return { nodes: new Map(), edges: [], roots: [] };
@@ -525,18 +574,27 @@ export class GraphTraverser {
 
     const nodes = new Map<string, Node>();
     const edges: Edge[] = [];
-    const visited = new Set<string>();
+    const bestDepth = new Map<string, number>();
+    const seenEdges = new Set<string>();
+    const maxNodes = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : Infinity;
+    const edgeBudget: EdgeWorkBudget = {
+      remaining: Number.isFinite(edgeLimit) ? Math.max(1, Math.floor(edgeLimit)) : Infinity,
+      truncated: false,
+    };
 
     // Add focal node
     nodes.set(focalNode.id, focalNode);
 
     // Traverse incoming edges to find all dependents
-    this.getImpactRecursive(nodeId, maxDepth, 0, nodes, edges, visited);
+    this.getImpactRecursive(
+      nodeId, maxDepth, 0, maxNodes, nodes, edges, bestDepth, seenEdges, edgeBudget,
+    );
 
     return {
       nodes,
       edges,
       roots: [nodeId],
+      ...(edgeBudget.truncated ? { truncated: true } : {}),
     };
   }
 
@@ -544,21 +602,32 @@ export class GraphTraverser {
     nodeId: string,
     maxDepth: number,
     currentDepth: number,
+    maxNodes: number,
     nodes: Map<string, Node>,
     edges: Edge[],
-    visited: Set<string>
+    bestDepth: Map<string, number>,
+    seenEdges: Set<string>,
+    edgeBudget: EdgeWorkBudget,
   ): void {
-    // Mark visited before the depth check so a node collected at the depth
-    // boundary still lands in `visited`. Otherwise it could sit in `nodes` but
-    // not `visited`, and the two loops below — which used different sets to
-    // gate re-processing — would disagree about it (#1089).
-    if (visited.has(nodeId)) {
-      return;
-    }
-    visited.add(nodeId);
+    // A DFS can first reach a node through a longer path. Re-expand it if a
+    // later path is shallower so dependents inside the remaining depth budget
+    // are not lost; equal/deeper revisits have nothing new to contribute.
+    const previousDepth = bestDepth.get(nodeId);
+    if (previousDepth !== undefined && previousDepth <= currentDepth) return;
+    bestDepth.set(nodeId, currentDepth);
     if (currentDepth >= maxDepth) {
       return;
     }
+    if (edgeBudget.remaining <= 0) {
+      edgeBudget.truncated = true;
+      return;
+    }
+    const recordEdge = (edge: Edge): void => {
+      const key = `${edge.source}\0${edge.target}\0${edge.kind}\0${edge.line ?? -1}\0${edge.column ?? -1}`;
+      if (seenEdges.has(key)) return;
+      seenEdges.add(key);
+      edges.push(edge);
+    };
 
     // For container nodes (classes, interfaces, structs, etc.), also traverse
     // into their children so that callers of contained methods appear in impact
@@ -566,17 +635,23 @@ export class GraphTraverser {
     if (focalNode) {
       const containerKinds = new Set(['class', 'interface', 'struct', 'trait', 'protocol', 'module', 'enum']);
       if (containerKinds.has(focalNode.kind)) {
-        const containsEdges = this.queries.getOutgoingEdges(nodeId, ['contains']);
+        const containsEdges = this.impactContainedEdges(nodeId, edgeBudget);
         if (containsEdges.length > 0) {
           const children = this.queries.getNodesByIds(containsEdges.map((e) => e.target));
           for (const edge of containsEdges) {
             const childNode = children.get(edge.target);
-            if (childNode && !visited.has(childNode.id)) {
-              nodes.set(childNode.id, childNode);
-              edges.push(edge);
-              // Recurse into children at the same depth (they're part of the same symbol)
-              this.getImpactRecursive(childNode.id, maxDepth, currentDepth, nodes, edges, visited);
+            if (!childNode) continue;
+            if (!nodes.has(childNode.id) && nodes.size >= maxNodes) {
+              edgeBudget.truncated = true;
+              continue;
             }
+            nodes.set(childNode.id, childNode);
+            recordEdge(edge);
+            // Recurse into children at the same depth (they're part of the same symbol)
+            this.getImpactRecursive(
+              childNode.id, maxDepth, currentDepth, maxNodes,
+              nodes, edges, bestDepth, seenEdges, edgeBudget,
+            );
           }
         }
       }
@@ -586,24 +661,60 @@ export class GraphTraverser {
     // `contains`: a container "contains" its members but does not *depend* on
     // them, so following it upward would climb to the parent class and then
     // re-expand every sibling member — exploding impact for a leaf symbol. (#536)
-    const incomingEdges = this.queries.getIncomingEdges(nodeId).filter((e) => e.kind !== 'contains');
+    const incomingEdges = this.impactIncomingEdges(nodeId, edgeBudget);
     if (incomingEdges.length === 0) return;
     const sources = this.queries.getNodesByIds(incomingEdges.map((e) => e.source));
 
     for (const edge of incomingEdges) {
       const sourceNode = sources.get(edge.source);
       if (!sourceNode) continue;
+      if (!nodes.has(sourceNode.id) && nodes.size >= maxNodes) {
+        edgeBudget.truncated = true;
+        continue;
+      }
       // Record the dependency edge unconditionally. The gate used to also gate
       // edge collection (`!nodes.has(...)`), so a second incoming edge into a
       // node already collected via another path was silently dropped from
-      // `edges` even though it's a real dependency (#1089). Each node's incoming
-      // edges are fetched once (nodes are expanded once), so no edge repeats.
-      edges.push(edge);
-      if (!visited.has(sourceNode.id)) {
-        nodes.set(sourceNode.id, sourceNode);
-        this.getImpactRecursive(sourceNode.id, maxDepth, currentDepth + 1, nodes, edges, visited);
-      }
+      // `edges` even though it's a real dependency (#1089). A shallower revisit
+      // may scan the same adjacency again, so `recordEdge` owns deduplication.
+      recordEdge(edge);
+      nodes.set(sourceNode.id, sourceNode);
+      this.getImpactRecursive(
+        sourceNode.id, maxDepth, currentDepth + 1, maxNodes,
+        nodes, edges, bestDepth, seenEdges, edgeBudget,
+      );
     }
+  }
+
+  private impactContainedEdges(nodeId: string, budget: EdgeWorkBudget): Edge[] {
+    if (!Number.isFinite(budget.remaining)) {
+      return this.queries.getOutgoingEdges(nodeId, ['contains']);
+    }
+    if (budget.remaining <= 0) {
+      budget.truncated = true;
+      return [];
+    }
+    const rows = this.queries.getImpactContainedEdges(nodeId, budget.remaining + 1);
+    return this.consumeImpactEdges(rows, budget);
+  }
+
+  private impactIncomingEdges(nodeId: string, budget: EdgeWorkBudget): Edge[] {
+    if (!Number.isFinite(budget.remaining)) {
+      return this.queries.getIncomingEdges(nodeId).filter((edge) => edge.kind !== 'contains');
+    }
+    if (budget.remaining <= 0) {
+      budget.truncated = true;
+      return [];
+    }
+    const rows = this.queries.getImpactIncomingEdges(nodeId, budget.remaining + 1);
+    return this.consumeImpactEdges(rows, budget);
+  }
+
+  private consumeImpactEdges(rows: Edge[], budget: EdgeWorkBudget): Edge[] {
+    if (rows.length > budget.remaining) budget.truncated = true;
+    const included = rows.slice(0, budget.remaining);
+    budget.remaining -= included.length;
+    return included;
   }
 
   /**
