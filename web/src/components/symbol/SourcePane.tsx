@@ -232,7 +232,14 @@ export function SourcePane({ repoId, root, location, initialSymbol, onCanonicali
               className="max-h-[32rem] min-w-0 overflow-auto rounded-lg bg-muted p-3 font-mono text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:scroll-auto"
             >
               {interactiveSource
-                ? renderSource(snapshot.text, active, activate, (position) => void goToDefinition(position))
+                ? (
+                    <RenderedSource
+                      text={snapshot.text}
+                      active={active}
+                      onActivate={activate}
+                      onActivateDefinition={goToDefinition}
+                    />
+                  )
                 : snapshot.text}
             </pre>
           </>
@@ -295,12 +302,14 @@ export function relativePathFromFileUri(root: string, uri: string): string | nul
   }
 }
 
-function renderSource(
-  text: string,
-  active: LspPosition,
-  activate: (position: LspPosition, showHover?: boolean) => void,
-  activateDefinition: (position: LspPosition) => void,
-): React.ReactNode {
+interface RenderedSourceProps {
+  text: string
+  active: LspPosition
+  onActivate(position: LspPosition, showHover?: boolean): void
+  onActivateDefinition(position: LspPosition): Promise<void>
+}
+
+function RenderedSource({ text, active, onActivate, onActivateDefinition }: RenderedSourceProps) {
   const lines = sourceLines(text)
   return lines.map((line, lineIndex) => (
     <React.Fragment key={lineIndex}>
@@ -310,8 +319,8 @@ function renderSource(
         const token = (
           <span
             key={partIndex}
-            onPointerEnter={() => activate(position, true)}
-            onDoubleClick={() => { activate(position); activateDefinition(position) }}
+            onPointerEnter={() => onActivate(position, true)}
+            onDoubleClick={() => { onActivate(position); void onActivateDefinition(position) }}
           >
             {part.text}
           </span>
@@ -351,7 +360,8 @@ function canRenderSourceInteractively(text: string): boolean {
   }
 
   let estimatedNodes = lineCount * 2 + 1
-  for (const _token of text.matchAll(SOURCE_IDENTIFIER_PATTERN)) {
+  for (const token of text.matchAll(SOURCE_IDENTIFIER_PATTERN)) {
+    if (!token[0]) continue
     estimatedNodes += 2
     if (estimatedNodes > MAX_INTERACTIVE_SOURCE_NODES) return false
   }
