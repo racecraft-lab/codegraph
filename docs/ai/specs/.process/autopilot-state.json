@@ -92,7 +92,7 @@
     "cleanup_mode": "post_merge_apply_cleanup",
     "cleanup_applied": true,
     "safeToApplyCleanup": true,
-    "worktree": "/tmp/codegraph-archive-merged-specs-2026-07-24",
+    "worktree": "codegraph-archive-merged-specs-2026-07-24",
     "branch": "codex/archive-merged-specs-2026-07-24",
     "base": "origin/main@21a474ae",
     "notes": "SPEC-009 was the only active spec. All other merged specs already had archive reports. The user's cleanup invocation explicitly authorized removal after merge-state verification."
