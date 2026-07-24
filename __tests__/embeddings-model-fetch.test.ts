@@ -849,7 +849,9 @@ describe('acquireLocalModel — verified-artifact cache avoids re-hashing on eve
       await acquireLocalModel({ env }, { fetchImpl: fetchServing(content), artifacts, defaultBaseUrl: 'http://127.0.0.1:1/base' }),
     );
 
-    fs.chmodSync(first.modelPath, 0o600); // ctime + mode change; size + mtime unchanged
+    // Downloads are already created as 0o600. Use a distinct still-private mode so this is an
+    // actual metadata change on filesystems that elide a same-mode chmod (for example overlayfs).
+    fs.chmodSync(first.modelPath, 0o400); // ctime + mode change; size + mtime unchanged
 
     const readFileSyncMock = vi.mocked(fs.readFileSync);
     readFileSyncMock.mockClear();

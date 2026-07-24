@@ -23,7 +23,8 @@ import {
 import { QueryBuilder } from '../db/queries';
 import { extractFromSource } from './tree-sitter';
 import { ParseWorkerPool, resolveParsePoolSize, resolveParseTimeoutMs } from './parse-pool';
-import { StoreWriter, StoreBundle } from './store-writer';
+import { StoreWriter, StoreBundle, finalizeStoreBundle } from './store-writer';
+import { materializeKernelResult } from './kernel';
 import { detectLanguage, isSourceFile, isLanguageSupported, isFileLevelOnlyLanguage, initGrammars, loadGrammarsForLanguages, readGrammarWasmBytes } from './grammars';
 import { loadExtensionOverrides, loadIncludeIgnoredPatterns, loadExcludePatterns, loadIncludePatterns } from '../project-config';
 import { isCodeGraphDataDir } from '../directory';
@@ -1522,7 +1523,9 @@ export class ExtractionOrchestrator {
     // in file order preserves the #1015 determinism exactly.
     storeWriterOpts?: { dbPath: string; fastInit: boolean } | null
   ): Promise<IndexResult> {
+    const tGrammar = Date.now();
     await initGrammars();
+    if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] grammar-init: ${Date.now() - tGrammar}ms`);
     const startTime = Date.now();
     const errors: ExtractionError[] = [];
     let filesIndexed = 0;
@@ -1614,8 +1617,15 @@ export class ExtractionOrchestrator {
     let pool: ParseWorkerPool | null = null;
     if (useWorker) {
       // CODEGRAPH_PARSE_WORKERS: explicit worker count; 1 = the old single-worker
-      // behaviour (the conservative rollback). Unset → clamp(cores-1, 1, 8).
-      const poolSize = resolveParsePoolSize(process.env.CODEGRAPH_PARSE_WORKERS, os.cpus().length);
+      // behaviour (the conservative rollback). Unset → clamp(cores-1, 1, 8),
+      // with cores from availableParallelism — cpuset/affinity-honest, where
+      // os.cpus() enumerates the host's CPUs and spawned 8 wasm workers (and
+      // their grammar heaps) inside a 2-CPU container for zero extra
+      // throughput (§7a.1). Floored so a 2-core box still gets 2 workers:
+      // parse is worker-side CPU, and 1 worker measured 34% slower than the
+      // old oversubscribed pool on the kernel-scale 2-cpuset envelope
+      // (493s vs 369s) — main + store-worker don't fill the second core.
+      const poolSize = resolveParsePoolSize(process.env.CODEGRAPH_PARSE_WORKERS, Math.max(3, os.availableParallelism()));
       // Read each needed grammar's WASM ONCE here and hand the bytes to every
       // worker, so spawns/respawns load grammars from memory instead of
       // re-reading them from disk (#1231: on an HDD, respawn re-reads amplify
@@ -1706,16 +1716,34 @@ export class ExtractionOrchestrator {
       const bp = walBackpressure?.();
       if (bp) await bp;
 
+      // Kernel deferred-decode results carry table sizes in kernelCounts
+      // (their object arrays are empty — decode happens at the store).
+      const nodeCount = result.kernelCounts?.nodes ?? result.nodes.length;
+      const edgeCount = result.kernelCounts?.edges ?? result.edges.length;
+
       // Store: on the writer thread when active (fresh DB — bundles applied
       // in the same file order this chain dispatches them), else on the main
       // thread (SQLite connections are per-thread).
-      if (result.nodes.length > 0 || result.errors.length === 0) {
+      if (nodeCount > 0 || result.errors.length === 0) {
         const language = detectLanguage(filePath, content, overrides);
         if (storeWriter) {
-          storeWriter.send(this.buildFreshStoreBundle(filePath, content, language, stats, result));
+          if (result.kernelBuffers) {
+            // Buffers go to the writer as-is; the worker decodes + finalizes.
+            // The main thread's only per-file work stays O(1) + the content hash.
+            storeWriter.send({
+              kernel: true,
+              filePath,
+              language,
+              buffers: result.kernelBuffers,
+              file: this.buildFileRecord(filePath, content, language, stats, nodeCount, result.errors),
+            });
+          } else {
+            storeWriter.send(this.buildFreshStoreBundle(filePath, content, language, stats, result));
+          }
           await storeWriter.waitBelow(STORE_WRITER_WINDOW);
         } else {
-          await this.storeExtractionResult(filePath, content, language, stats, result, commitYield);
+          const materialized = materializeKernelResult(result, filePath, language);
+          await this.storeExtractionResult(filePath, content, language, stats, materialized, commitYield);
         }
       }
 
@@ -1726,10 +1754,10 @@ export class ExtractionOrchestrator {
         errors.push(...result.errors);
       }
 
-      if (result.nodes.length > 0) {
+      if (nodeCount > 0) {
         filesIndexed++;
-        totalNodes += result.nodes.length;
-        totalEdges += result.edges.length;
+        totalNodes += nodeCount;
+        totalEdges += edgeCount;
       } else if (result.errors.some((e) => e.severity === 'error')) {
         filesErrored++;
       } else {
@@ -1818,6 +1846,7 @@ export class ExtractionOrchestrator {
       }
     };
 
+    const tParseLoop = Date.now();
     for (let i = 0; i < files.length; i += FILE_IO_BATCH_SIZE) {
       if (signal?.aborted) { aborted = true; break; }
 
@@ -1909,6 +1938,7 @@ export class ExtractionOrchestrator {
         }
       }
     }
+    if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] parse-loop: ${Date.now() - tParseLoop}ms`);
 
     if (signal?.aborted || aborted) {
       if (storeWriter) await storeWriter.close();
@@ -2387,6 +2417,27 @@ export class ExtractionOrchestrator {
    * check, no cross-file edge snapshot (both are re-index concerns — a fresh
    * database has neither). Filters mirror storeExtractionResult exactly.
    */
+  /** The FileRecord for a fresh-index store (nodeCount is the PRE-filter count). */
+  private buildFileRecord(
+    filePath: string,
+    content: string,
+    language: Language,
+    stats: fs.Stats,
+    nodeCount: number,
+    resultErrors: ExtractionResult['errors']
+  ): FileRecord {
+    return {
+      path: filePath,
+      contentHash: hashContent(content),
+      language,
+      size: stats.size,
+      modifiedAt: stats.mtimeMs,
+      indexedAt: Date.now(),
+      nodeCount,
+      errors: resultErrors.length > 0 ? resultErrors : undefined,
+    };
+  }
+
   private buildFreshStoreBundle(
     filePath: string,
     content: string,
@@ -2394,33 +2445,12 @@ export class ExtractionOrchestrator {
     stats: fs.Stats,
     result: ExtractionResult
   ): StoreBundle {
-    const validNodes = result.nodes.filter((n) => n.id && n.kind && n.name && n.filePath && n.language);
-    const insertedIds = new Set(validNodes.map((n) => n.id));
-    const validEdges = result.edges.filter(
-      (e) => insertedIds.has(e.source) && insertedIds.has(e.target)
+    return finalizeStoreBundle(
+      result,
+      filePath,
+      language,
+      this.buildFileRecord(filePath, content, language, stats, result.nodes.length, result.errors)
     );
-    const validRefs = result.unresolvedReferences
-      .filter((ref) => insertedIds.has(ref.fromNodeId))
-      .map((ref) => ({
-        ...ref,
-        filePath: ref.filePath ?? filePath,
-        language: ref.language ?? language,
-      }));
-    return {
-      nodes: validNodes,
-      edges: validEdges,
-      refs: validRefs,
-      file: {
-        path: filePath,
-        contentHash: hashContent(content),
-        language,
-        size: stats.size,
-        modifiedAt: stats.mtimeMs,
-        indexedAt: Date.now(),
-        nodeCount: result.nodes.length,
-        errors: result.errors.length > 0 ? result.errors : undefined,
-      },
-    };
   }
 
   /**
@@ -2465,7 +2495,19 @@ export class ExtractionOrchestrator {
    * changes. This works in non-git projects and catches committed changes from
    * `git pull`/`checkout`/`merge`/`rebase` that `git status` cannot see.
    */
-  async sync(onProgress?: (progress: IndexProgress) => void): Promise<SyncResult> {
+  async sync(
+    onProgress?: (progress: IndexProgress) => void,
+    /**
+     * Watcher fast path: the exact project-relative paths the OS reported as
+     * changed. When provided, reconciliation runs over ONLY these paths —
+     * per-path logic identical to the full walk (stat pre-filter, hash
+     * confirm, the #1240 removal/resurrection flow) — skipping the O(repo)
+     * scan and tracked-load. Callers must pass undefined whenever the change
+     * set is not exactly known (directory removals, event overflow): the full
+     * scan-diff remains the ground truth those cases need (#1285).
+     */
+    scopedPaths?: string[]
+  ): Promise<SyncResult> {
     await initGrammars(); // Initialize WASM runtime (grammars loaded lazily below)
     const startTime = Date.now();
     let filesChecked = 0;
@@ -2492,14 +2534,33 @@ export class ExtractionOrchestrator {
     // changes from `git pull`/`checkout`/`merge`/`rebase` — which `git status`
     // cannot see, because the working tree is clean afterward.
     const tSyncScan = Date.now();
-    const currentFiles = await scanDirectoryAsync(this.rootDir);
-    if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] sync-scan: ${Date.now() - tSyncScan}ms (${currentFiles.length} files)`);
-    filesChecked = currentFiles.length;
-    const currentSet = new Set(currentFiles);
+    let currentFiles: string[];
+    let trackedFiles: FileRecord[];
+    if (scopedPaths && scopedPaths.length > 0) {
+      // Scoped reconcile: stat only the reported paths. filesChecked counts
+      // the PATHS examined (not the files found) — it must stay non-zero even
+      // when every scoped path was a deletion, because CodeGraph.watch()
+      // reads `filesChecked === 0 && durationMs === 0` as the
+      // lock-unavailable signature (#449).
+      const unique = [...new Set(scopedPaths)];
+      currentFiles = unique.filter((p) => fs.existsSync(path.join(this.rootDir, p)));
+      trackedFiles = [];
+      for (const p of unique) {
+        const rec = this.queries.getFileByPath(p);
+        if (rec) trackedFiles.push(rec);
+      }
+      filesChecked = unique.length;
+      if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] sync-scoped: ${Date.now() - tSyncScan}ms (${unique.length} paths, ${trackedFiles.length} tracked)`);
+    } else {
+      currentFiles = await scanDirectoryAsync(this.rootDir);
+      if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] sync-scan: ${Date.now() - tSyncScan}ms (${currentFiles.length} files)`);
+      filesChecked = currentFiles.length;
 
-    const tTracked = Date.now();
-    const trackedFiles = this.queries.getAllFiles();
-    if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] sync-tracked-load: ${Date.now() - tTracked}ms (${trackedFiles.length} tracked)`);
+      const tTracked = Date.now();
+      trackedFiles = this.queries.getAllFiles();
+      if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] sync-tracked-load: ${Date.now() - tTracked}ms (${trackedFiles.length} tracked)`);
+    }
+    const currentSet = new Set(currentFiles);
     const trackedMap = new Map<string, FileRecord>();
     for (const f of trackedFiles) {
       trackedMap.set(f.path, f);

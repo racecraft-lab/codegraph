@@ -866,10 +866,18 @@ describe('watcher re-arm (FR-021a)', () => {
       expect(cg.watch({ debounceMs: 1, inertForTests: true })).toBe(true);
       // Drive events while the foreign lock is held → the watcher's sync keeps
       // hitting lock contention and, past MAX_LOCK_RETRIES, degrades permanently.
-      const degraded = poll(async () => {
-        __emitWatchEventForTests(fx.root, 'fixture.ts');
-        return cg.isWatcherDegraded() ? true : null;
-      }, CT(15000), 'watcher degraded');
+      // Scoped syncs can prove that an unchanged synthetic event needs no
+      // write lock. Change the file once so the automatic retry loop exercises
+      // the real write-required path while the foreign lock is held. Do not
+      // keep injecting events while polling: the adaptive debounce is
+      // trailing-edge, so repeated events correctly postpone the first sync.
+      fs.writeFileSync(path.join(fx.root, 'fixture.ts'), 'export const fixture = 1;\n');
+      __emitWatchEventForTests(fx.root, 'fixture.ts');
+      const degraded = poll(
+        async () => cg.isWatcherDegraded() ? true : null,
+        CT(15000),
+        'watcher degraded',
+      );
       await degraded;
       expect(cg.isWatcherDegraded()).toBe(true);
 
