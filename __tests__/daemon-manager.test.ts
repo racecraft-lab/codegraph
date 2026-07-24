@@ -98,6 +98,40 @@ describe('runDaemonPicker', () => {
     expect(h.getDone()).toBe('Done.');
   });
 
+  it('reports an authenticated stop failure without claiming the daemon stopped', async () => {
+    const h = harness([rec('/p/a', 42, 1)], ['/p/a']);
+    h.deps.stop = async (root) => ({ root, pid: 42, outcome: 'failed' });
+
+    await runDaemonPicker(h.deps);
+
+    expect(h.notes).toEqual(['Could not stop daemon (pid 42) — /p/a']);
+    expect(h.getDone()).toBe('Daemon is still running.');
+  });
+
+  it('reports failed members of stop-all separately from successful stops', async () => {
+    const h = harness([rec('/p/a', 1, 1), rec('/p/b', 2, 2)], [STOP_ALL]);
+    h.deps.stopAll = async () => [
+      { root: '/p/a', pid: 1, outcome: 'term' },
+      { root: '/p/b', pid: 2, outcome: 'failed' },
+    ];
+
+    await runDaemonPicker(h.deps);
+
+    expect(h.notes).toEqual(['Stopped 1 daemon; 1 could not be authenticated or did not exit.']);
+  });
+
+  it('reports daemons that were already stopped during stop-all', async () => {
+    const h = harness([rec('/p/a', 1, 1), rec('/p/b', 2, 2)], [STOP_ALL]);
+    h.deps.stopAll = async () => [
+      { root: '/p/a', pid: 1, outcome: 'not-running' },
+      { root: '/p/b', pid: null, outcome: 'no-daemon' },
+    ];
+
+    await runDaemonPicker(h.deps);
+
+    expect(h.notes).toEqual(['Stopped 0 daemons; 2 already stopped.']);
+  });
+
   it('Cancel (and Esc/Ctrl-C) stop nothing', async () => {
     const h1 = harness([rec('/p/a', 1, 1)], [CANCEL]);
     await runDaemonPicker(h1.deps);

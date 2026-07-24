@@ -1,8 +1,11 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createDaemonAuthSecret } from '../src/mcp/daemon-auth';
 import { spawn, type ChildProcess } from 'node:child_process';
 import {
   startServerFixture,
@@ -14,11 +17,17 @@ import { __emitWatchEventForTests } from '../src/sync/watcher';
 import { MCPEngine } from '../src/mcp/engine';
 import { MCPSession } from '../src/mcp/session';
 import { SseWriter } from '../src/server/sse';
-import { ReindexJob, JobRegistry, defaultIsLockHeld } from '../src/server/jobs';
+import { ReindexJob, JobRegistry, defaultIsLockHeld, defaultRearmWatcher } from '../src/server/jobs';
 import type { JobDeps, JobDescriptor } from '../src/server/jobs';
 import { buildJobRoutes, type RouteContext } from '../src/server/routes';
 import type { IndexProgress, IndexResult, SyncResult } from '../src/extraction';
 import type { JsonRpcTransport, MessageHandler } from '../src/mcp/transport';
+import {
+  encodeLockInfo,
+  getDaemonPidPath,
+  getDaemonSocketCandidates,
+} from '../src/mcp/daemon-paths';
+import { CodeGraphPackageVersion } from '../src/mcp/version';
 
 /**
  * SPEC-005 Slice-2 — re-index jobs + SSE (T033, RED phase).
@@ -182,6 +191,44 @@ function openSse(url: string): SseClient {
   };
   client.close = (): void => { try { req.destroy(); } catch { /* ignore */ } };
   return client;
+}
+
+async function openRawLsp(port: number, repoId: string): Promise<net.Socket> {
+  const socket = net.connect(port, '127.0.0.1');
+  await new Promise<void>((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('error', reject);
+  });
+  socket.write(
+    `GET /lsp?repo=${repoId} HTTP/1.1\r\n` +
+    `Host: 127.0.0.1:${port}\r\n` +
+    `Origin: http://127.0.0.1:${port}\r\n` +
+    'Connection: Upgrade\r\n' +
+    'Upgrade: websocket\r\n' +
+    'Sec-WebSocket-Version: 13\r\n' +
+    'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n',
+  );
+  const response = await new Promise<string>((resolve, reject) => {
+    let received = '';
+    const onData = (chunk: Buffer): void => {
+      received += chunk.toString('latin1');
+      if (!received.includes('\r\n\r\n')) return;
+      cleanup();
+      resolve(received);
+    };
+    const onError = (error: Error): void => { cleanup(); reject(error); };
+    const cleanup = (): void => {
+      socket.off('data', onData);
+      socket.off('error', onError);
+    };
+    socket.on('data', onData);
+    socket.on('error', onError);
+  });
+  if (!response.startsWith('HTTP/1.1 101 ')) {
+    socket.destroy();
+    throw new Error(`expected LSP upgrade, received ${response.split('\r\n', 1)[0]}`);
+  }
+  return socket;
 }
 
 async function poll<T>(fn: () => Promise<T | null>, timeoutMs: number, label: string): Promise<T> {
@@ -665,6 +712,113 @@ describe('shutdown-abort (FR-023/026)', () => {
     fixtures.splice(fixtures.indexOf(fx), 1);
     fx.teardown().catch(() => undefined);
   }, CT(30000));
+
+  it('shares one deadline across an unresponsive LSP peer and an active job', async () => {
+    const ctl = controllable();
+    const fx = await server({ jobDeps: ctl.deps });
+    await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    await ctl.started;
+    const sse = openSse(`${fx.baseURL}/api/reindex/${fx.repoId}/events`);
+    await sse.ready;
+    await sse.waitFor(() => sse.frames.some((frame) => frame.event === 'snapshot'), CT(10_000), 'snap');
+    const socket = await openRawLsp(fx.handle.port, fx.repoId);
+    const socketClosed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+
+    const started = Date.now();
+    await fx.handle.close(started + 300);
+    const elapsed = Date.now() - started;
+
+    expect(ctl.aborted()).toBe(true);
+    expect(elapsed).toBeLessThan(1_000);
+    await socketClosed;
+    await sse.waitFor(() => sse.frames.some((frame) => frame.event === 'error'), CT(5_000), 'terminal');
+    expect((sse.frames.find((frame) => frame.event === 'error')?.data as JobDescriptor).reason).toBe('aborted');
+    sse.close();
+  }, CT(30_000));
+
+  it('gives watcher re-arm a live cleanup signal, then aborts it at the close deadline', async () => {
+    const started = deferred<void>();
+    const rearmStarted = deferred<{ signal: AbortSignal; abortedOnEntry: boolean }>();
+    const fx = await server({
+      jobDeps: {
+        isLockHeld: () => false,
+        runIndex: async (_root, _mode, _progress, signal) => {
+          started.resolve();
+          return await new Promise<SyncResult>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+          });
+        },
+        rearmWatcher: async (_root, signal) => {
+          if (!signal) throw new Error('cleanup signal required');
+          rearmStarted.resolve({ signal, abortedOnEntry: signal.aborted });
+          await new Promise<void>((resolve) => {
+            signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        },
+      },
+    });
+    await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+    await started.promise;
+
+    const close = fx.handle.close(Date.now() + 200);
+    const cleanup = await rearmStarted.promise;
+    await close;
+
+    expect(cleanup.abortedOnEntry).toBe(false);
+    expect(cleanup.signal.aborted).toBe(true);
+  }, CT(30_000));
+
+  it.runIf(process.platform !== 'win32')('aborts a real watcher re-arm socket stalled during daemon hello', async () => {
+    const indexStarted = deferred<void>();
+    const fx = await server({
+      jobDeps: {
+        isLockHeld: () => false,
+        runIndex: async (_root, _mode, _progress, signal) => {
+          indexStarted.resolve();
+          return await new Promise<SyncResult>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+          });
+        },
+        rearmWatcher: defaultRearmWatcher,
+      },
+    });
+    const instanceId = randomUUID();
+    const socketPath = getDaemonSocketCandidates(fx.root, instanceId)[0]!;
+    fs.writeFileSync(getDaemonPidPath(fx.root), encodeLockInfo({
+      pid: process.pid,
+      version: CodeGraphPackageVersion,
+      socketPath,
+      startedAt: Date.now(),
+      instanceId,
+      authSecret: createDaemonAuthSecret(),
+    }), { mode: 0o600 });
+    fs.chmodSync(getDaemonPidPath(fx.root), 0o600);
+    const accepted = deferred<net.Socket>();
+    const peerClosed = deferred<void>();
+    const daemon = net.createServer((socket) => {
+      socket.once('close', () => peerClosed.resolve());
+      accepted.resolve(socket);
+      // Deliberately withhold the daemon hello so connectWithHello stays in-flight.
+    });
+    await new Promise<void>((resolve, reject) => {
+      daemon.once('error', reject);
+      daemon.listen(socketPath, resolve);
+    });
+
+    try {
+      await fetch(`${fx.baseURL}/api/reindex/${fx.repoId}`, { method: 'POST' });
+      await indexStarted.promise;
+
+      const close = fx.handle.close(Date.now() + CT(300));
+      const socket = await accepted.promise;
+      await close;
+      await peerClosed.promise;
+
+      expect(socket.destroyed).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => daemon.close(() => resolve()));
+    }
+  }, CT(30_000));
 });
 
 // ===========================================================================
@@ -683,6 +837,21 @@ describe('watcher re-arm (FR-021a)', () => {
     try {
       await engine.ensureInitialized(fx.root);
       // Freshly opened → watcher healthy → the gate makes re-arm a cheap no-op.
+      expect(engine.rearmWatcher()).toEqual({ rearmed: false });
+    } finally {
+      engine.stop();
+    }
+  }, CT(30000));
+
+  it('reports rearmed:false when the replacement watcher cannot start', async () => {
+    const fx = await server({ jobDeps: controllable().deps });
+    const engine = new MCPEngine({ watch: true });
+    try {
+      const cg = await CodeGraph.open(fx.root);
+      (engine as unknown as { cg: CodeGraph }).cg = cg;
+      vi.spyOn(cg, 'isWatcherDegraded').mockReturnValue(true);
+      vi.spyOn(cg, 'watch').mockReturnValue(false);
+
       expect(engine.rearmWatcher()).toEqual({ rearmed: false });
     } finally {
       engine.stop();
@@ -749,9 +918,17 @@ describe('watcher re-arm (FR-021a)', () => {
 // t1/t2 (contention-sentinel disambiguation), t4 (emit isolation).
 // ===========================================================================
 
-/** The all-zero incremental-sync shape the library returns on contention (or a genuinely-empty sync). */
-function zeroSync(): SyncResult {
-  return { filesChecked: 0, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 0 };
+/** The historical all-zero incremental-sync shape, with explicit contention when requested. */
+function zeroSync(lockContended = false): SyncResult {
+  return {
+    filesChecked: 0,
+    filesAdded: 0,
+    filesModified: 0,
+    filesRemoved: 0,
+    nodesUpdated: 0,
+    durationMs: 0,
+    ...(lockContended ? { lockContended: true as const } : {}),
+  };
 }
 /** A full-mode contention sentinel: success:false, durationMs:0, a lock-flavored error. */
 function fullLockSentinel(): IndexResult {
@@ -894,13 +1071,12 @@ describe('F6 — defaultIsLockHeld distinguishes ENOENT (free) from other read e
   });
 });
 
-describe('t1/t2 — contention-sentinel disambiguation (runWithLockRetry)', () => {
-  it('t1: all-zero sync sentinel + lock held on re-probe ⇒ lock_unavailable', async () => {
-    let probes = 0; // pre-probe (call #1) false, re-probe (call #2+) true
+describe('t1/t2 — explicit contention discrimination (runWithLockRetry)', () => {
+  it('t1: explicit sync contention remains lock_unavailable after the writer releases', async () => {
     const fx = await server({
       jobDeps: {
-        runIndex: async () => zeroSync(),
-        isLockHeld: () => probes++ > 0,
+        runIndex: async () => zeroSync(true),
+        isLockHeld: () => false,
         rearmWatcher: () => {},
         lockRetryWindowMs: 0,
         lockRetryIntervalMs: 1,
@@ -913,7 +1089,7 @@ describe('t1/t2 — contention-sentinel disambiguation (runWithLockRetry)', () =
     expect(term.reason).toBe('lock_unavailable');
   }, CT(20000));
 
-  it('t1: all-zero sync sentinel + lock never held ⇒ done (genuinely-empty sync)', async () => {
+  it('t1: an all-zero result without the discriminator is a genuine completed sync', async () => {
     const fx = await server({
       jobDeps: {
         runIndex: async () => zeroSync(),

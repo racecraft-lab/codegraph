@@ -4,6 +4,8 @@ import { collectExternalRequests, installApiMocks } from "./playwright-fixtures"
 
 test("packaged preview runs without CDN or external asset requests", async ({ baseURL, page }) => {
   const externalRequests = collectExternalRequests(page, baseURL ?? "http://127.0.0.1:4173")
+  const sockets: string[] = []
+  page.on("websocket", (socket) => sockets.push(socket.url()))
   await installApiMocks(page)
 
   const response = await page.goto("/")
@@ -12,4 +14,5 @@ test("packaged preview runs without CDN or external asset requests", async ({ ba
   await expect(page.getByRole("heading", { name: "Repository overview" })).toBeVisible()
   await expect(page.getByText("640 symbols and 915 edges")).toBeVisible()
   expect(externalRequests).toEqual([])
+  expect(sockets).toEqual([])
 })

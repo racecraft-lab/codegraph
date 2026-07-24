@@ -1,327 +1,408 @@
 {
-  "workflow_file": "docs/ai/specs/.process/SPEC-006-workflow.md",
-  "spec_id": "SPEC-006",
-  "feature_dir": "specs/006-web-ui-graph-browser",
-  "branch": "006-web-ui-graph-browser",
-  "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/006-web-ui-graph-browser",
-  "status": "completed_archived",
-  "active_step": "Archived",
+  "schema_version": "1.0",
+  "workflow_file": "docs/ai/specs/.process/SPEC-009-workflow.md",
+  "spec_id": "SPEC-009",
+  "feature_dir": "specs/009-lsp-server-facade",
+  "branch": "009-lsp-server-facade",
+  "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/009-lsp-server-facade",
+  "status": "in_progress",
+  "active_step": "Phase 7: Implement - Slice 2 Trusted Source and Viewer",
+  "updated_at": "2026-07-17T09:25:45Z",
+  "confidence_gate_mode": "advisory",
   "plan": [
-    {
-      "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 0: Prerequisites",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 1: Specify",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - UX and Navigation",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - UX and Navigation Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - API and Chat",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - API and Chat Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Clean-Room Parity",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify - Clean-Room Parity Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 3: Plan",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - UX",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - UX Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Accessibility",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Accessibility Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - API Contracts",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - API Contracts Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - LLM Integration",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - LLM Integration Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Performance",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 4: Checklist - Performance Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 5: Tasks",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 5: Verify Tasks",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 5: Tasks to Issues",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 5: Tasks - Atomicity and Reviewability Routing",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 6: Analyze",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 6: Analyze - Consensus",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 6.5: Confidence Gate",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Playwright MCP Browser UAT",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Doctor Extension Check",
-      "status": "completed",
-      "skipped": "doctor/speckit-utils extension not installed"
-    },
-    {
-      "step": "Post: Verify Implementation",
-      "status": "completed",
-      "result": "passed: 96/96 tasks complete, 96 task-referenced file paths, 0 missing files"
-    },
-    {
-      "step": "Post: Verify Tasks Phantom Check",
-      "status": "completed",
-      "report": "specs/006-web-ui-graph-browser/verify-tasks-report.md",
-      "result": "passed: 96 verified, 0 flagged"
-    },
-    {
-      "step": "Post: Code Review",
-      "status": "completed",
-      "report": "specs/006-web-ui-graph-browser/code-review.md",
-      "result": "passed after fixing review findings"
-    },
-    {
-      "step": "Post: Integration Suite",
-      "status": "completed",
-      "result": "passed: build, typecheck, web lint/unit/e2e, focused server/package suite, full root npm test, and Playwright MCP browser UAT all passed"
-    },
-    {
-      "step": "Post: Reviewability Diff Gate",
-      "status": "completed",
-      "result": "warn/proceed: cohesive single navigable PR with explicit review order; evidence at specs/006-web-ui-graph-browser/.process/emission/reviewability-diff-gate.md"
-    },
-    {
-      "step": "Post: Self-Review",
-      "status": "completed",
-      "result": "passed: no blocking edge-case, traceability, or tidiness gaps; evidence at specs/006-web-ui-graph-browser/.process/emission/self-review.md"
-    },
-    {
-      "step": "Post: UAT Runbook Generation",
-      "status": "completed",
-      "skipped": "generate-uat-skeleton deferred and no committed source-derived UAT runbook exists",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/uat-runbook-generation.md"
-    },
-    {
-      "step": "Post: Final Reviewability Backstop",
-      "status": "completed",
-      "result": "warn/proceed using current committed reviewability evidence at 4df3b13; helper is deferred",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/final-reviewability-backstop.md"
-    },
-    {
-      "step": "Post: PR Packet/Body Generation",
-      "status": "completed",
-      "skipped": "blocked before PR side effects: no current feature-local PR packet exists and packet emission is deferred",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md"
-    },
-    {
-      "step": "Post: PR Body Generation",
-      "status": "completed",
-      "skipped": "no packet-owned body file exists because PR packet is absent"
-    },
-    {
-      "step": "Post: PR Creation",
-      "status": "completed",
-      "result": "manual recovery draft PR opened outside packet helper because packet emission is still deferred",
-      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/153"
-    },
-    {
-      "step": "Post: Review Remediation",
-      "status": "completed",
-      "skipped": "draft PR opened during recovery; no review feedback was available in this turn"
-    },
-    {
-      "step": "Post: Retrospective",
-      "status": "completed",
-      "report": "specs/006-web-ui-graph-browser/retrospective.md",
-      "result": "completed: 100% task completion, 100% spec adherence, 0 critical findings"
-    },
-    {
-      "step": "Post: Archive Cleanup",
-      "status": "completed",
-      "result": "repository-wide merged-spec sweep archived SPEC-006 and SPEC-020"
-    }
+    {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
+    {"step": "Phase 0: Prerequisites", "status": "completed"},
+    {"step": "Phase 1: Specify", "status": "completed"},
+    {"step": "Phase 2: Clarify - LSP Contract", "status": "completed"},
+    {"step": "Phase 2: Clarify - LSP Contract Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - WebSocket and Security", "status": "completed"},
+    {"step": "Phase 2: Clarify - WebSocket and Security Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Source Viewer and Degradation", "status": "completed"},
+    {"step": "Phase 2: Clarify - Source Viewer and Degradation Consensus", "status": "completed"},
+    {"step": "Phase 3: Plan", "status": "completed"},
+    {"step": "Phase 4: Checklist - API Contracts", "status": "completed"},
+    {"step": "Phase 4: Checklist - API Contracts Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Streaming Protocol", "status": "completed"},
+    {"step": "Phase 4: Checklist - Streaming Protocol Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Security", "status": "completed"},
+    {"step": "Phase 4: Checklist - Security Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - UX and Accessibility", "status": "completed"},
+    {"step": "Phase 4: Checklist - UX and Accessibility Consensus", "status": "completed"},
+    {"step": "Phase 5: Tasks", "status": "completed"},
+    {"step": "Phase 6: Analyze", "status": "completed"},
+    {"step": "Phase 6: Analyze - Consensus", "status": "completed"},
+    {"step": "Phase 6.5: Confidence Gate", "status": "completed"},
+    {"step": "Phase 7: Implement - Setup and Shared Protocol", "status": "completed"},
+    {"step": "Phase 7: Implement - Slice 1 Daemon and LSP Core", "status": "completed"},
+    {"step": "Phase 7: Implement - Slice 1 Stdio CLI and Conformance", "status": "completed"},
+    {"step": "Phase 7: Implement - Slice 1 Verification", "status": "completed"},
+    {"step": "Phase 7: Implement - Slice 2 Trusted Source and Viewer", "status": "in_progress"},
+    {"step": "Phase 7: Implement - Slice 2 WebSocket Safety", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 2 Verification and Polish", "status": "pending"},
+    {"step": "Post: Doctor Extension Check", "status": "pending"},
+    {"step": "Post: Verify Implementation", "status": "pending"},
+    {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
+    {"step": "Post: Code Review", "status": "pending"},
+    {"step": "Post: Integration Suite", "status": "pending"},
+    {"step": "Post: Reviewability Diff Gate", "status": "pending"},
+    {"step": "Post: Self-Review", "status": "pending"},
+    {"step": "Post: UAT Runbook Generation", "status": "pending"},
+    {"step": "Post: Final Reviewability Backstop", "status": "pending"},
+    {"step": "Post: PR Packet/Body Generation", "status": "pending"},
+    {"step": "Post: PR Body Generation", "status": "pending"},
+    {"step": "Post: PR Creation", "status": "pending"},
+    {"step": "Post: Review Remediation", "status": "pending"},
+    {"step": "Post: Retrospective", "status": "pending"}
   ],
-  "updated_at": "2026-07-16T16:06:50Z",
-  "archive_sweep": {
-    "status": "applied",
-    "execution_path": "extension_contract",
-    "cleanup_mode": "post-merge-active-spec-archive-sweep",
-    "eligible_previous_specs": [
-      "specs/006-web-ui-graph-browser",
-      "specs/020-pr-blast-radius-review-action"
-    ],
-    "archived_specs": [
+  "phases": {
+    "specify": {
+      "status": "completed",
+      "execution_path": "direct_recovery_after_two_executor_timeouts",
+      "artifacts": [
+        "specs/009-lsp-server-facade/spec.md",
+        "specs/009-lsp-server-facade/checklists/requirements.md",
+        ".specify/feature.json"
+      ],
+      "metrics": {
+        "user_stories": 3,
+        "acceptance_scenarios": 23,
+        "functional_requirements": 45,
+        "success_criteria": 12,
+        "clarification_markers": 0
+      },
+      "gate": {
+        "id": "G1",
+        "status": "passed",
+        "reason": "spec.md exists with 0 markers"
+      }
+    },
+    "clarify": {
+      "status": "completed",
+      "gate": {
+        "id": "G2",
+        "status": "passed",
+        "reason": "0 [NEEDS CLARIFICATION] markers"
+      },
+      "sessions": {
+        "lsp_contract": {
+          "status": "completed",
+          "questions": 5,
+          "consensus": "completed",
+          "human_review_required": false,
+          "outcomes": [
+            "canonical initialize root validation",
+            "state-specific lifecycle errors and notifications",
+            "same-target overlap collapse with ambiguity fail-close",
+            "snapshot-backed UTF-16 conversion",
+            "complete deterministic ordering before caps"
+          ]
+        },
+        "websocket_security": {
+          "status": "completed",
+          "questions": 5,
+          "consensus": "completed_all_three",
+          "human_review_required": true,
+          "human_review_status": "accepted_all_recommendations",
+          "outcomes": [
+            "bounded fatal stdio framing loss with recoverable valid-frame JSON errors",
+            "protocol-specific WebSocket JSON-RPC and close-code mapping",
+            "perimeter-first Host and normalized Origin admission",
+            "atomic per-session concurrency deadline and backpressure limits",
+            "shared cross-transport redaction with required wire ID echo"
+          ]
+        },
+        "source_viewer_degradation": {
+          "status": "completed",
+          "questions": 5,
+          "consensus": "completed_all_three",
+          "human_review_required": true,
+          "human_review_status": "accepted_all_recommendations",
+          "outcomes": [
+            "custom experimental metadata content contract with closed errors",
+            "one trusted linearized source-read authority",
+            "privacy-safe repository-relative URL and history state",
+            "single-tab-stop accessible source composite with named actions",
+            "explicit no-auto-reconnect degradation and manual retry state machine"
+          ]
+        }
+      }
+    },
+    "plan": {
+      "status": "completed",
+      "execution_path": "direct_recovery_after_two_executor_timeouts",
+      "artifacts": [
+        "specs/009-lsp-server-facade/plan.md",
+        "specs/009-lsp-server-facade/research.md",
+        "specs/009-lsp-server-facade/data-model.md",
+        "specs/009-lsp-server-facade/contracts/lsp-protocol.md",
+        "specs/009-lsp-server-facade/contracts/websocket-transport.md",
+        "specs/009-lsp-server-facade/contracts/source-viewer.md",
+        "specs/009-lsp-server-facade/quickstart.md"
+      ],
+      "gate": {
+        "id": "G3",
+        "status": "passed",
+        "reason": "plan.md exists with 0 unresolved markers"
+      },
+      "reviewability": {
+        "runner_status": "pass",
+        "projected_reviewable_loc": 680,
+        "production_files": 17,
+        "new_files": 11,
+        "modified_files": 9,
+        "total_entries": 20,
+        "slice_1_projected_loc": 320,
+        "slice_2_projected_loc": 360,
+        "accepted_two_slice_warning": true
+      },
+      "documentation": {
+        "context7_status": "transport_closed",
+        "fallback": "current_official_primary_sources"
+      }
+    },
+    "checklists": {
+      "status": "completed",
+      "execution_path": "direct_recovery_after_two_api_executor_timeouts",
+      "total_items": 99,
+      "gaps": 0,
+      "domains": {
+        "api_contracts": {"items": 24, "gaps": 0, "consensus": "no_unresolved_items"},
+        "streaming_protocol": {"items": 25, "gaps": 0, "consensus": "no_unresolved_items"},
+        "security": {"items": 25, "gaps": 0, "consensus": "no_unresolved_items", "new_human_review": false},
+        "ux_accessibility": {"items": 25, "gaps": 0, "consensus": "no_unresolved_items"}
+      },
+      "gate": {
+        "id": "G4",
+        "status": "passed",
+        "reason": "0 [Gap] markers"
+      }
+    },
+    "tasks": {
+      "status": "completed",
+      "execution_path": "direct_recovery_after_two_executor_timeouts",
+      "artifact": "specs/009-lsp-server-facade/tasks.md",
+      "metrics": {
+        "total_tasks": 48,
+        "parallel_opportunities": 8,
+        "us1_tasks": 12,
+        "us2_tasks": 13,
+        "us3_tasks": 8,
+        "shared_setup_final_tasks": 15,
+        "sequential_ids": true,
+        "format_valid": true
+      },
+      "gate": {
+        "id": "G5",
+        "status": "passed",
+        "reason": "48 tasks found with 0 markers"
+      }
+    },
+    "atomicity_route": {
+      "route": "one-navigable-PR",
+      "releasable": true,
+      "signals": ["change-shape:modify-heavy"],
+      "hints": [],
+      "warnings": []
+    },
+    "analysis": {
+      "status": "completed",
+      "execution_path": "direct_read_only_recovery_after_two_executor_timeouts",
+      "requirements": 57,
+      "covered_requirements": 57,
+      "coverage_percent": 100,
+      "total_tasks": 48,
+      "unmapped_product_tasks": 0,
+      "support_tasks": 15,
+      "critical_remaining": 0,
+      "high_remaining": 0,
+      "medium_dispositions": 1,
+      "consensus": {
+        "perspectives": 3,
+        "ordering_remediation_agreement": "3/3",
+        "typing_disposition_agreement": "3/3"
+      },
+      "resolved_findings": [
+        "packaged viewer UAT moved after production WebSocket adapter",
+        "ws closeTimeout type lag contained by narrow local intersection and explicit cleanup tests"
+      ],
+      "gate": {
+        "id": "G6",
+        "status": "passed",
+        "reason": "0 CRITICAL/HIGH findings"
+      }
+    },
+    "confidence_gate": {
+      "status": "passed",
+      "mode": "advisory",
+      "threshold": 0.9,
+      "composite": 0.98,
+      "criteria": {
+        "task_understanding": 0.98,
+        "approach_clarity": 0.96,
+        "requirements_alignment": 0.97,
+        "risk_assessment": 1.0,
+        "completeness": 1.0
+      },
+      "iterations": 1,
+      "recommended_action": "proceed"
+    },
+    "implementation": {
+      "status": "in_progress",
+      "slice_1": {
+        "status": "completed",
+        "tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016", "T017"],
+        "gate": {
+          "id": "G7",
+          "status": "passed",
+          "focused_tests": 18,
+          "build": "passed",
+          "typecheck": "passed",
+          "generic_client_uat": "passed",
+          "full_test_files": 248,
+          "full_tests_passed": 4113,
+          "full_tests_skipped": 7,
+          "full_suite_duration_seconds": 117.02
+        },
+        "reviewability": {
+          "status": "block",
+          "reason": "size_only",
+          "production_added_lines": 1197,
+          "production_files": 6,
+          "test_added_lines": 449,
+          "evidence_path": "specs/009-lsp-server-facade/.process/reviewability/slice-1-actual.json",
+          "disposition": "marker_split_required"
+        }
+      },
+      "slice_2": {
+        "status": "in_progress",
+        "completed_tasks": []
+      }
+    }
+  },
+  "pr_marker_plan": {
+    "schema_version": "1.0",
+    "source_fingerprint": {
+      "status": "current",
+      "inputs": {
+        "spec": {"path": "specs/009-lsp-server-facade/spec.md", "sha256": "15cd7cd11bbc78434bcae0bbefbe53631178eb1c24cf27dbcc66c5a37aac6cbc", "size_bytes": 37455},
+        "plan": {"path": "specs/009-lsp-server-facade/plan.md", "sha256": "130c4ad2b6f4d884096c22f65ccc52bb2c3c811bc27919d7f0887daea8f89153", "size_bytes": 16960},
+        "tasks": {"path": "specs/009-lsp-server-facade/tasks.md", "sha256": "049ab6324aeefcb40c0b2e0f1c7a4afa8f05d11536f41a523ee9086ea8b0e5d4", "size_bytes": 19493},
+        "reviewability": {"path": "specs/009-lsp-server-facade/.process/reviewability/slice-1-actual.json", "sha256": "acfd69612cb5113c69f94d3bdeff517945276879d1ff53cd88cdc751f3ecd180", "size_bytes": 876}
+      },
+      "hazard_route": "one-navigable-PR"
+    },
+    "ordered_marker_ids": ["M1-lsp-read-core", "M2-lsp-stdio-facade"],
+    "review_order": ["M1-lsp-read-core", "M2-lsp-stdio-facade"],
+    "markers": [
       {
-        "spec_id": "SPEC-006",
-        "feature_dir": "specs/006-web-ui-graph-browser",
-        "archive_report": ".specify/memory/archive-reports/2026-07-16-SPEC-006.md",
-        "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/153",
-        "merge_commit": "098e49e0315b107af8f9a26181d0548a890b87d1"
+        "id": "M1-lsp-read-core",
+        "review_order": 1,
+        "task_ids": ["T003", "T004", "T005", "T008", "T009", "T014"],
+        "verification_evidence_path": "docs/ai/specs/.process/SPEC-009-workflow.md",
+        "fingerprint_status": "current",
+        "checkpoint": {"status": "committed", "commit_sha": "1cfc321db58277bc65c8d7f7866bc1a50c5778b3"},
+        "warnings": ["505 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]
       },
       {
-        "spec_id": "SPEC-020",
-        "feature_dir": "specs/020-pr-blast-radius-review-action",
-        "archive_report": ".specify/memory/archive-reports/2026-07-16-SPEC-020.md",
-        "merged_pr": "https://github.com/racecraft-lab/codegraph/pull/154",
-        "merge_commit": "316ca16714fa5ccfb6b1aa0211573a534d1f7a7e"
+        "id": "M2-lsp-stdio-facade",
+        "review_order": 2,
+        "task_ids": ["T006", "T007", "T010", "T011", "T012", "T013", "T015", "T016", "T017"],
+        "verification_evidence_path": "docs/ai/specs/.process/SPEC-009-workflow.md",
+        "fingerprint_status": "current",
+        "checkpoint": {"status": "committed", "commit_sha": "aec69f4c1207598027427598de48d1de15a9cc0e"},
+        "warnings": ["692 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]
       }
     ],
-    "excluded_current_spec": null,
-    "safeToApplyCleanup": true,
-    "cleanupApplied": true,
-    "worktree_status": "clean dedicated cleanup worktree on codex/archive-merged-specs-2026-07-16",
-    "remotes": {
-      "origin": "https://github.com/racecraft-lab/codegraph.git",
-      "upstream": "https://github.com/colbymchenry/codegraph.git"
-    }
+    "warnings": ["The actual Slice 1 production diff is a size-only block; marker-based PR emission is required"],
+    "final_marker_split": {"status": "required", "reason": "size_only"},
+    "packet_validation": {"status": "pending"},
+    "pr_mappings": {"status": "pending", "items": []}
   },
-  "completion_blocker": {
-    "type": "deferred_pr_packet_emission",
-    "status": "resolved_by_manual_recovery",
-    "reason": "No current feature-local PR packet exists at specs/006-web-ui-graph-browser/.process/pr-packets/<packet-id>.json, and pr-packet-output is deferred.",
-    "evidence": "specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md",
-    "implementation_commit": "4df3b13",
-    "manual_recovery_pr": "https://github.com/racecraft-lab/codegraph/pull/153"
+  "archive_sweep": {
+    "status": "no_candidates",
+    "execution_path": "extension_contract",
+    "archive_extension_installed": true,
+    "invocation_available": true,
+    "prerequisite_available": true,
+    "prerequisite_mode": "codex_native_worktree_binding",
+    "eligible_previous_specs": [],
+    "excluded_current_spec": "specs/009-lsp-server-facade",
+    "cleanup_mode": "feature_branch_apply_eligibility",
+    "cleanup_applied": false,
+    "safeToApplyCleanup": false,
+    "worktree_clean_before_sweep": true,
+    "notes": "The project prerequisite script could not resolve a pre-Specify feature.json, so the Codex-native worktree binding supplied the validated repository, feature, memory, and template paths. The only active specs directory is the current target; all earlier merged specs already have archive reports."
   },
-  "manual_pr_recovery": {
-    "status": "opened",
-    "pr_url": "https://github.com/racecraft-lab/codegraph/pull/153",
-    "mode": "draft",
-    "base": "main",
-    "head": "006-web-ui-graph-browser",
-    "reason": "User requested recovery while the installed SpecKit Pro packet-emission helpers remained deferred.",
-    "body_file": "specs/006-web-ui-graph-browser/review-packet.md"
-  },
-  "confidence_gate_mode": "advisory",
   "preflight": {
-    "archive_sweep": {
-      "status": "completed",
-      "current_spec_excluded": true,
-      "candidate_active_specs": [],
-      "archived_specs_present": [
-        "SPEC-001",
-        "SPEC-002",
-        "SPEC-003",
-        "SPEC-004",
-        "SPEC-005",
-        "SPEC-008",
-        "SPEC-010",
-        "SPEC-011",
-        "SPEC-018",
-        "SPEC-023",
-        "SPEC-025"
-      ],
-      "cleanup_applied": false,
-      "notes": "No prior active spec directories were present under specs/; current SPEC-006 was excluded from cleanup."
-    },
     "worktree_binding": {
       "status": "verified",
-      "shell_branch": "006-web-ui-graph-browser",
+      "branch": "009-lsp-server-facade",
       "workflow_present": true,
-      "runner_marker": {
-        "status": "moved_out_of_worktree",
+      "head_sha": "1af5d42973cd9272c7aee2d1df129c10ee6271a7",
+      "remote_head_matches": true,
+      "runner_anchor": {
+        "status": "active",
         "path": "speckit-pro/speckit_pro_runner",
-        "moved_to": "/private/tmp/speckit-pro-marker-cleanup-SPEC-006/speckit-pro",
-        "reason": "Nested .worktrees checkout otherwise lets the read-only runner discover the parent checkout first.",
-        "cleanup_required": false
+        "tracked": false,
+        "purpose": "Keep the installed runner anchored to this nested worktree instead of its parent checkout."
       },
       "runner_check_prerequisites": {
         "status": "ok",
         "all_pass": true,
         "reported_branch": "",
         "reported_worktree": true,
-        "note": "Runner branch parsing is empty because the worktree .git dir is outside the temporary trust boundary; shell git branch is authoritative."
+        "shell_branch": "009-lsp-server-facade",
+        "note": "The runner cannot read the linked-worktree gitdir outside its trust boundary, so the shell branch check is authoritative."
       }
     },
     "runner": {
-      "preflight": "ok",
+      "version": "speckit-pro-runner 0.1.0",
+      "python": "3.11.0",
       "confidence_mode": "advisory",
-      "codex_agents_dry_run": "no_op",
-      "detected_stack": "nodejs",
-      "detected_package_manager": "npm",
-      "command_override": {
-        "BUILD": "npm run build",
-        "TYPECHECK": "npm run typecheck",
-        "UNIT_TEST": "npm test",
-        "FULL_VERIFY": "npm run build && npm run typecheck && npm test",
-        "reason": "Runner command discovery emits npm script names without 'run' for non-lifecycle scripts."
-      }
+      "codex_agents_dry_run": {
+        "status": "no_op",
+        "model": "gpt-5.5",
+        "agent_count": 10
+      },
+      "implementation_agent": "implement-executor",
+      "coverage_audit": "passed"
+    },
+    "project_commands": {
+      "BUILD": "npm run build",
+      "TYPECHECK": "npm run typecheck",
+      "LINT": "N/A",
+      "LINT_FIX": "N/A",
+      "UNIT_TEST": "npm test",
+      "INTEGRATION_TEST": "npm run test:web",
+      "SINGLE_FILE_TEST": "npx vitest run <file>",
+      "SINGLE_FILE_INTEGRATION": "npm --prefix web exec vitest run -- <file>",
+      "FULL_VERIFY": "npm run build && npm run typecheck && npm test && npm run test:web",
+      "node": "24.11.1",
+      "note": "Runner output missing npm run was corrected from package.json and AGENTS.md. Web tests are the separately-invoked integration suite."
     },
     "presets": {
-      "runner_detect_presets": "ok",
+      "detected": [
+        "claude-ask-questions",
+        "codegraph-project-overrides",
+        "speckit-pro-reviewability"
+      ],
       "authoritative_resolution": {
         "spec-template": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
         "plan-template": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
         "tasks-template": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md"
-      }
+      },
+      "token_discipline": "off"
+    },
+    "capability_coverage": {
+      "codebase_context": "mcp__codegraph__codegraph_explore",
+      "library_documentation": "mcp__context7__resolve_library_id and mcp__context7__query_docs",
+      "web_domain_research": "mcp__tavily__tavily_search or web.run when needed",
+      "source_extraction": "mcp__tavily__tavily_extract",
+      "browser_uat": "mcp__playwright__browser_*",
+      "status": "covered"
     },
     "baseline_verification": {
-      "node_path": "/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin",
+      "node": "24.11.1",
       "build": {
         "command": "npm run build",
         "status": "passed"
@@ -330,795 +411,29 @@
         "command": "npm run typecheck",
         "status": "passed"
       },
+      "lint": {
+        "command": "N/A",
+        "status": "skipped"
+      },
       "test": {
         "command": "npm test",
-        "status": "environment_failed",
-        "summary": "Full unsandboxed suite passed 230 files and failed 1 file because an inherited local Git GPG signing setting made a temporary git commit fail.",
-        "follow_up": {
-          "command": "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false npx vitest run __tests__/exclude-config.test.ts",
-          "status": "passed",
-          "summary": "The failed suite passed with Git commit signing disabled through temporary environment config."
-        }
+        "status": "passed",
+        "test_files": 246,
+        "tests_passed": 4095,
+        "tests_skipped": 7,
+        "duration_seconds": 91.02,
+        "note": "The authoritative run used local loopback/socket permissions and disabled inherited Git commit signing for temporary fixture repositories."
+      },
+      "reviewability_setup": {
+        "status": "pass",
+        "mode": "setup",
+        "primary_surface": "docs/process"
       }
     },
     "grounding": {
-      "design_concept": "docs/ai/specs/.process/SPEC-006-design-concept.md",
-      "shadcn_skill": "/Users/fredrickgabelmann/.agents/skills/shadcn/SKILL.md",
-      "gitnexus_sources": [
-        "https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/README.md",
-        "https://raw.githubusercontent.com/abhigyanpatwari/GitNexus/main/LICENSE"
-      ],
-      "clean_room_rule": "Use public behavior inventory only; do not copy GitNexus source code, assets, CSS, UI text, visual design, or implementation structure."
+      "design_concept": "docs/ai/specs/.process/SPEC-009-design-concept.md",
+      "constitution": ".specify/memory/constitution.md",
+      "workflow": "docs/ai/specs/.process/SPEC-009-workflow.md"
     }
-  },
-  "phases": [
-    {
-      "id": "archive_sweep",
-      "title": "Archive Sweep",
-      "status": "completed"
-    },
-    {
-      "id": "phase_0_prerequisites",
-      "title": "Prerequisites",
-      "status": "completed"
-    },
-    {
-      "id": "phase_1_specify",
-      "title": "Specify",
-      "status": "completed",
-      "agent": "phase-executor",
-      "gate": {
-        "id": "G1",
-        "status": "passed",
-        "reason": "spec.md exists with 0 markers"
-      },
-      "outputs": {
-        "spec": "specs/006-web-ui-graph-browser/spec.md",
-        "requirements_checklist": "specs/006-web-ui-graph-browser/checklists/requirements.md",
-        "functional_requirements": 30,
-        "user_stories": 7,
-        "acceptance_scenarios": 15
-      }
-    },
-    {
-      "id": "phase_2_clarify_ux",
-      "title": "Clarify - UX and Navigation",
-      "status": "completed",
-      "agent": "clarify-executor",
-      "questions": 5,
-      "outputs": {
-        "spec_clarifications": "specs/006-web-ui-graph-browser/spec.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md",
-        "functional_requirements_after": 38
-      }
-    },
-    {
-      "id": "phase_2_clarify_ux_consensus",
-      "title": "Clarify - UX and Navigation Consensus",
-      "status": "completed",
-      "agents": [
-        "clarify-executor",
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ],
-      "result": "Consensus supported persistent repo-aware shell, safe repo switching, symbol-detail anchor, bounded keyboard-accessible graph controls with non-canvas mirror, explicit state taxonomy, mobile behavior, and WCAG 2.2 AA target."
-    },
-    {
-      "id": "phase_2_clarify_api_chat",
-      "title": "Clarify - API and Chat",
-      "status": "completed",
-      "agent": "clarify-executor",
-      "questions": 5,
-      "outputs": {
-        "spec_clarifications": "specs/006-web-ui-graph-browser/spec.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md",
-        "functional_requirements_after": 48
-      }
-    },
-    {
-      "id": "phase_2_clarify_api_chat_consensus",
-      "title": "Clarify - API and Chat Consensus",
-      "status": "completed",
-      "agents": [
-        "clarify-executor",
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ],
-      "result": "Consensus supported live OpenAPI as authoritative, same-origin thin chat adapter over SPEC-018, backend-owned graph context/truncation, backend-only provider secrets, existing reanalysis SSE, and existing CodeGraph ErrorEnvelope."
-    },
-    {
-      "id": "phase_2_clarify_clean_room",
-      "title": "Clarify - Clean-Room Parity",
-      "status": "completed",
-      "agent": "clarify-executor",
-      "questions": 5,
-      "outputs": {
-        "spec_clarifications": "specs/006-web-ui-graph-browser/spec.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md",
-        "functional_requirements_after": 53
-      }
-    },
-    {
-      "id": "phase_2_clarify_clean_room_consensus",
-      "title": "Clarify - Clean-Room Parity Consensus",
-      "status": "completed",
-      "agents": [
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ],
-      "result": "Security consensus selected option A for local/package serving plus docs/container recipe: validate codegraph serve --web, package assets, offline/no-CDN behavior, and existing host/port/CODEGRAPH_SERVER_TOKEN guidance; no full production Dockerfile or hosted demo path required."
-    },
-    {
-      "id": "phase_3_plan",
-      "title": "Plan",
-      "status": "completed",
-      "agent": "phase-executor",
-      "outputs": {
-        "plan": "specs/006-web-ui-graph-browser/plan.md",
-        "research": "specs/006-web-ui-graph-browser/research.md",
-        "data_model": "specs/006-web-ui-graph-browser/data-model.md",
-        "contracts": [
-          "specs/006-web-ui-graph-browser/contracts/web-api-contract.md",
-          "specs/006-web-ui-graph-browser/contracts/chat-adapter-contract.md",
-          "specs/006-web-ui-graph-browser/contracts/static-package-contract.md"
-        ],
-        "quickstart": "specs/006-web-ui-graph-browser/quickstart.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
-      },
-      "decisions": {
-        "renderer": "Cytoscape.js selected for SPEC-006 bounded graph neighborhoods; Sigma.js deferred for future large-scale WebGL spike.",
-        "shadcn_style": "base-nova with neutral base color, cssVariables true, lucide icons, Tailwind v4 @tailwindcss/vite integration, and @/ aliases.",
-        "chat": "Same-origin /api/chat/* adapter over SPEC-018; provider secrets remain backend-only.",
-        "static_package": "Build web/dist and copy to dist/web; preserve /api/* separation from SPA fallback.",
-        "clean_room": "GitNexus parity is behavior-level only from README/LICENSE inventory."
-      },
-      "reviewability_estimator": {
-        "helper_id": "estimate-reviewable-loc",
-        "mode": "read_only",
-        "status": "not_estimated",
-        "projected": null,
-        "declared_files": {
-          "production": 0,
-          "new": 0,
-          "modified": 0,
-          "total_entries": 0
-        },
-        "fallback_evidence": "Use spec.md reviewability budget: projected reviewable LOC 1115, warning accepted, three vertical implementation slices."
-      }
-    },
-    {
-      "id": "phase_4_checklist_ux",
-      "title": "Checklist - UX",
-      "status": "completed",
-      "agent": "checklist-executor",
-      "items": 31,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "outputs": {
-        "checklist": "specs/006-web-ui-graph-browser/checklists/ux.md",
-        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
-        "data_model_updates": "specs/006-web-ui-graph-browser/data-model.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
-      },
-      "result": "Unauthorized/token-required API access added to UX state taxonomy and RepositoryStatus state."
-    },
-    {
-      "id": "phase_4_checklist_ux_consensus",
-      "title": "Checklist - UX Consensus",
-      "status": "completed",
-      "agents": [
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ],
-      "result": "Consensus accepted the unauthorized/token-required UX state. Parent applied a codebase precision refinement distinguishing token-bound request 401 from non-loopback startup refusal."
-    },
-    {
-      "id": "phase_4_checklist_accessibility",
-      "title": "Checklist - Accessibility",
-      "status": "completed",
-      "agent": "checklist-executor",
-      "items": 29,
-      "gaps_found": 9,
-      "gaps_remaining": 0,
-      "outputs": {
-        "checklist": "specs/006-web-ui-graph-browser/checklists/accessibility.md",
-        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
-        "plan_updates": "specs/006-web-ui-graph-browser/plan.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
-      },
-      "result": "Added FR-054 through FR-060 and SC-012 for keyboard, focus, accessible names/status, graph/impact mirrors, contrast, target size, reduced motion, and reflow."
-    },
-    {
-      "id": "phase_4_checklist_accessibility_consensus",
-      "title": "Checklist - Accessibility Consensus",
-      "status": "completed",
-      "result": "Skipped: checklist-executor reported no unresolved consensus items."
-    },
-    {
-      "id": "phase_4_checklist_api_contracts",
-      "title": "Checklist - API Contracts",
-      "status": "completed",
-      "agent": "parent-executor",
-      "items": 35,
-      "gaps_found": 6,
-      "gaps_remaining": 0,
-      "outputs": {
-        "checklist": "specs/006-web-ui-graph-browser/checklists/api-contracts.md",
-        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
-        "data_model_updates": "specs/006-web-ui-graph-browser/data-model.md",
-        "contract_updates": [
-          "specs/006-web-ui-graph-browser/contracts/web-api-contract.md",
-          "specs/006-web-ui-graph-browser/contracts/chat-adapter-contract.md"
-        ],
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
-      },
-      "result": "Resolved SSE terminal-snapshot/slow-consumer/disconnect semantics and chat dormant/rate-limited/error-envelope contract alignment."
-    },
-    {
-      "id": "phase_4_checklist_api_contracts_consensus",
-      "title": "Checklist - API Contracts Consensus",
-      "status": "completed",
-      "result": "Skipped: all API Contracts gaps were resolved in the checklist pass; no unresolved consensus items remain."
-    },
-    {
-      "id": "phase_4_checklist_llm_integration",
-      "title": "Checklist - LLM Integration",
-      "status": "completed",
-      "agent": "parent-executor",
-      "items": 33,
-      "gaps_found": 4,
-      "gaps_remaining": 0,
-      "outputs": {
-        "checklist": "specs/006-web-ui-graph-browser/checklists/llm-integration.md",
-        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
-        "data_model_updates": "specs/006-web-ui-graph-browser/data-model.md",
-        "contract_updates": [
-          "specs/006-web-ui-graph-browser/contracts/chat-adapter-contract.md"
-        ],
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
-      },
-      "result": "Resolved SPEC-018 generation result mapping for endpoint answers, pending bundles, fallback results, dormant/misconfigured no-call behavior, and bundle-emission fallback."
-    },
-    {
-      "id": "phase_4_checklist_llm_integration_consensus",
-      "title": "Checklist - LLM Integration Consensus",
-      "status": "completed",
-      "result": "Skipped: all LLM Integration gaps were resolved in the checklist pass; no unresolved consensus items remain."
-    },
-    {
-      "id": "phase_4_checklist_performance",
-      "title": "Checklist - Performance",
-      "status": "completed",
-      "agent": "parent-executor",
-      "items": 37,
-      "gaps_found": 9,
-      "gaps_remaining": 0,
-      "outputs": {
-        "checklist": "specs/006-web-ui-graph-browser/checklists/performance.md",
-        "spec_updates": "specs/006-web-ui-graph-browser/spec.md",
-        "plan_updates": "specs/006-web-ui-graph-browser/plan.md",
-        "quickstart_updates": "specs/006-web-ui-graph-browser/quickstart.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
-      },
-      "result": "Resolved qualitative performance coverage by adding NFR-001 through NFR-006, SC-013, plan threshold coverage, and quickstart performance evidence steps."
-    },
-    {
-      "id": "phase_4_checklist_performance_consensus",
-      "title": "Checklist - Performance Consensus",
-      "status": "completed",
-      "result": "Skipped: all Performance gaps were resolved in the checklist pass; no unresolved consensus items remain."
-    },
-    {
-      "id": "phase_5_tasks",
-      "title": "Tasks",
-      "status": "completed",
-      "agent": "parent-executor",
-      "items": 96,
-      "outputs": {
-        "tasks": "specs/006-web-ui-graph-browser/tasks.md",
-        "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md"
-      },
-      "result": "Generated 96 tasks across setup, foundation, seven user stories, and polish with reviewability checkpoint and parallel execution examples."
-    },
-    {
-      "id": "phase_5_tasks_gate",
-      "title": "Tasks Gate",
-      "status": "completed",
-      "gate": "G5",
-      "result": "Passed: 96 tasks found."
-    },
-    {
-      "id": "phase_5_atomicity_route",
-      "title": "Tasks - Atomicity and Reviewability Routing",
-      "status": "completed",
-      "route": "one-navigable-PR",
-      "releasable": true,
-      "signals": [
-        "change-shape:modify-heavy"
-      ],
-      "warnings": []
-    },
-    {
-      "id": "phase_5_verify_tasks",
-      "title": "Verify Tasks",
-      "status": "completed",
-      "result": "Skipped cleanly: no completed [X] tasks found in specs/006-web-ui-graph-browser/tasks.md before implementation."
-    },
-    {
-      "id": "phase_5_tasks_to_issues",
-      "title": "Tasks to Issues",
-      "status": "completed",
-      "created": 96,
-      "skipped_existing": 0,
-      "first_issue": "https://github.com/racecraft-lab/codegraph/issues/57",
-      "last_issue": "https://github.com/racecraft-lab/codegraph/issues/152",
-      "result": "Created GitHub issues for T001 through T096 in racecraft-lab/codegraph.",
-      "cleanup_status": "permanently_deleted",
-      "cleanup_reason": "Task-to-issue publishing was accidental and not requested; issues 57 through 152 were deleted after merge."
-    },
-    {
-      "id": "phase_6_analyze",
-      "title": "Analyze",
-      "status": "completed",
-      "findings": [
-        {
-          "id": "A1",
-          "severity": "HIGH",
-          "issue": "Chat adapter route tasks lacked an explicit src/server/openapi.yaml update task.",
-          "resolution": "Added T095 to update src/server/openapi.yaml."
-        },
-        {
-          "id": "A2",
-          "severity": "CRITICAL",
-          "issue": "Self-repo dogfood UAT was not explicit in quickstart/tasks.",
-          "resolution": "Added quickstart self-repo UAT guidance and T096."
-        }
-      ],
-      "result": "Resolved all Analyze findings before implementation."
-    },
-    {
-      "id": "phase_6_analyze_consensus",
-      "title": "Analyze Consensus",
-      "status": "completed",
-      "result": "Skipped: parent remediation resolved all Analyze findings; no unresolved consensus items remain."
-    },
-    {
-      "id": "phase_6_5_confidence_gate",
-      "title": "Confidence Gate",
-      "status": "completed",
-      "mode": "advisory",
-      "pass": null,
-      "recommended_action": "soft_skip",
-      "reason": "No synthesizer confidence emit found in docs/ai/specs/.process/SPEC-006-workflow.md."
-    },
-    {
-      "id": "phase_7_implement",
-      "title": "Implement",
-      "status": "completed",
-      "tasks_completed": 96,
-      "outputs": {
-        "web_app": "web/",
-        "server_chat_adapter": "src/server/chat.ts",
-        "package_assets": "dist/web/",
-        "review_packet": "specs/006-web-ui-graph-browser/review-packet.md"
-      },
-      "verification": {
-        "web_unit": "npm --prefix web run test passed: 17 files, 19 tests",
-        "web_lint": "npm --prefix web run lint passed with 0 errors and 6 shadcn-style Fast Refresh warnings",
-        "web_typecheck": "npm --prefix web run typecheck passed",
-        "root_typecheck": "npm run typecheck passed",
-        "web_e2e": "npm --prefix web run test:e2e passed: 13 tests",
-        "root_build": "npm run build passed",
-        "server_package": "vitest focused server/package suite passed: 4 files, 100 tests",
-        "root_full": "npm test passed outside sandbox with Node 24.11.1 and temporary Git signing override: 233 files, 3922 passed, 7 skipped"
-      }
-    },
-    {
-      "id": "phase_7_playwright_mcp_browser_uat",
-      "title": "Playwright MCP Browser UAT",
-      "status": "completed",
-      "result": "Packaged self-repo UAT passed after fixing terminal re-analysis recovery and package-local favicon metadata; reran after post-review frontend fixes.",
-      "evidence": {
-        "routes": [
-          "/",
-          "/search?q=startWebServer",
-          "/symbol/<startWebServer>",
-          "/graph/<startWebServer>",
-          "/impact/<startWebServer>",
-          "/chat",
-          "/reindex"
-        ],
-        "search": "17 startWebServer matches with no-provider degraded semantic search state",
-        "impact": "20 affected symbols and 161 graph edges",
-        "chat": "dormant no-provider state; Ask disabled; no provider key-like strings exposed",
-        "graph_canvas": "nonblank Cytoscape layer: 356 sampled nonblank points out of 7055",
-        "reindex": "done with Checked 712 files; 0 changed; updated 0 nodes.",
-        "mobile": "390x844 no horizontal overflow"
-      }
-    }
-  ],
-  "post_implementation": [
-    {
-      "id": "post_doctor_extension_check",
-      "title": "Doctor Extension Check",
-      "status": "skipped",
-      "reason": "doctor/speckit-utils extension not installed in .specify/extensions/.registry or command inventory"
-    },
-    {
-      "id": "post_runner_marker_cleanup",
-      "title": "Temporary runner marker removed before commit",
-      "status": "completed",
-      "result": "Moved generated speckit-pro runner marker out of the worktree before review/PR artifacts.",
-      "moved_to": "/private/tmp/speckit-pro-marker-cleanup-SPEC-006/speckit-pro"
-    },
-    {
-      "id": "post_verify_implementation",
-      "title": "Verify Implementation",
-      "status": "completed",
-      "result": "passed",
-      "metrics": {
-        "tasks_completed": 96,
-        "tasks_total": 96,
-        "task_referenced_file_paths": 96,
-        "missing_files": 0
-      }
-    },
-    {
-      "id": "post_verify_tasks_phantom_check",
-      "title": "Verify Tasks Phantom Check",
-      "status": "completed",
-      "report": "specs/006-web-ui-graph-browser/verify-tasks-report.md",
-      "summary": "96 verified, 0 flagged"
-    },
-    {
-      "id": "post_code_review",
-      "title": "Code Review",
-      "status": "completed",
-      "report": "specs/006-web-ui-graph-browser/code-review.md",
-      "summary": "Fixed chat request discrimination, search stale responses, re-analysis stale state, chat context reset, and generated web artifact cleanup."
-    },
-    {
-      "id": "post_integration_suite",
-      "title": "Integration Suite",
-      "status": "completed",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/integration-suite.md",
-      "commands": [
-        "npm --prefix web run lint",
-        "vitest focused server/package suite",
-        "npm run typecheck",
-        "npm --prefix web run test",
-        "npm run build",
-        "npm --prefix web run test:e2e",
-        "npm test",
-        "Playwright MCP packaged browser UAT"
-      ],
-      "summary": "All integration checks passed. Full root npm test passed outside the sandbox with Node 24.11.1: 233 files, 3922 passed, 7 skipped."
-    },
-    {
-      "id": "post_reviewability_diff_gate",
-      "title": "Reviewability Diff Gate",
-      "status": "completed",
-      "status_detail": "warn/proceed",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/reviewability-diff-gate.md",
-      "summary": "Large but cohesive greenfield web workspace; proceed as one navigable PR with review order."
-    },
-    {
-      "id": "post_self_review",
-      "title": "Self-Review",
-      "status": "completed",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/self-review.md",
-      "summary": "No blocking edge-case, traceability, or tidiness gaps found; configured real-provider chat remains an explicitly documented non-blocking limitation."
-    },
-    {
-      "id": "post_uat_runbook_generation",
-      "title": "UAT Runbook Generation",
-      "status": "skipped",
-      "reason": "generate-uat-skeleton deferred and no committed source-derived UAT runbook exists",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/uat-runbook-generation.md"
-    },
-    {
-      "id": "post_final_reviewability_backstop",
-      "title": "Final Reviewability Backstop",
-      "status": "completed",
-      "status_detail": "warn/proceed",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/final-reviewability-backstop.md",
-      "summary": "Used committed reviewability evidence at 4df3b13 because final-reviewability-backstop is deferred."
-    },
-    {
-      "id": "post_pr_packet_body_generation",
-      "title": "PR Packet/Body Generation",
-      "status": "skipped",
-      "reason": "blocked before PR side effects: no current feature-local PR packet exists and packet emission is deferred",
-      "evidence": "specs/006-web-ui-graph-browser/.process/emission/pr-packet-boundary.md"
-    },
-    {
-      "id": "post_pr_body_generation",
-      "title": "PR Body Generation",
-      "status": "skipped",
-      "reason": "no packet-owned body file exists because PR packet is absent"
-    },
-    {
-      "id": "post_pr_creation",
-      "title": "PR Creation",
-      "status": "completed",
-      "result": "manual recovery draft PR opened outside packet helper because packet emission is still deferred",
-      "pr_url": "https://github.com/racecraft-lab/codegraph/pull/153"
-    },
-    {
-      "id": "post_review_remediation",
-      "title": "Review Remediation",
-      "status": "skipped",
-      "reason": "draft PR opened during recovery; no review feedback was available in this turn"
-    },
-    {
-      "id": "post_retrospective",
-      "title": "Retrospective",
-      "status": "completed",
-      "report": "specs/006-web-ui-graph-browser/retrospective.md",
-      "summary": "100% task completion, 100% spec adherence, 0 critical findings."
-    }
-  ],
-  "phase_outputs": {
-    "phase_1_specify": {
-      "spec": "specs/006-web-ui-graph-browser/spec.md",
-      "requirements_checklist": "specs/006-web-ui-graph-browser/checklists/requirements.md",
-      "gate": "G1 passed"
-    },
-    "phase_2_clarify_ux": {
-      "questions": 5,
-      "requirements_added": [
-        "FR-031",
-        "FR-032",
-        "FR-033",
-        "FR-034",
-        "FR-035",
-        "FR-036",
-        "FR-037",
-        "FR-038"
-      ],
-      "consensus_agents": [
-        "clarify-executor",
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ]
-    },
-    "phase_2_clarify_api_chat": {
-      "questions": 5,
-      "requirements_added": [
-        "FR-039",
-        "FR-040",
-        "FR-041",
-        "FR-042",
-        "FR-043",
-        "FR-044",
-        "FR-045",
-        "FR-046",
-        "FR-047",
-        "FR-048"
-      ],
-      "consensus_agents": [
-        "clarify-executor",
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ]
-    },
-    "phase_2_clarify_clean_room": {
-      "questions": 5,
-      "requirements_added": [
-        "FR-049",
-        "FR-050",
-        "FR-051",
-        "FR-052",
-        "FR-053"
-      ],
-      "consensus_agents": [
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ],
-      "security_consensus": {
-        "question": "What local/Docker serving expectation should SPEC-006 commit to?",
-        "selected_answer": "option_a_local_package_serve_docs_container_recipe",
-        "result": "3-of-3 consensus, high confidence"
-      }
-    },
-    "phase_3_plan": {
-      "artifacts": [
-        "specs/006-web-ui-graph-browser/plan.md",
-        "specs/006-web-ui-graph-browser/research.md",
-        "specs/006-web-ui-graph-browser/data-model.md",
-        "specs/006-web-ui-graph-browser/contracts/web-api-contract.md",
-        "specs/006-web-ui-graph-browser/contracts/chat-adapter-contract.md",
-        "specs/006-web-ui-graph-browser/contracts/static-package-contract.md",
-        "specs/006-web-ui-graph-browser/quickstart.md"
-      ],
-      "workflow_results": "docs/ai/specs/.process/SPEC-006-workflow.md",
-      "gate": "G3 passed",
-      "reviewability_estimator": {
-        "status": "not_estimated",
-        "fallback_evidence": "spec.md reviewability budget warning accepted"
-      }
-    },
-    "phase_4_checklist_ux": {
-      "checklist": "specs/006-web-ui-graph-browser/checklists/ux.md",
-      "items": 31,
-      "gaps_found": 1,
-      "gaps_remaining": 0,
-      "consensus_agents": [
-        "codebase-analyst",
-        "spec-context-analyst",
-        "domain-researcher"
-      ],
-      "security_consensus": {
-        "question": "Is the remediated UX requirement for unauthorized/token-required API states correct and sufficient?",
-        "selected_answer": "accept_with_codebase_wording_refinement",
-        "result": "2 accepted as sufficient, 1 requested precision refinement; refinement applied."
-      }
-    },
-    "phase_4_checklist_accessibility": {
-      "checklist": "specs/006-web-ui-graph-browser/checklists/accessibility.md",
-      "items": 29,
-      "gaps_found": 9,
-      "gaps_remaining": 0,
-      "requirements_added": [
-        "FR-054",
-        "FR-055",
-        "FR-056",
-        "FR-057",
-        "FR-058",
-        "FR-059",
-        "FR-060"
-      ],
-      "success_criteria_added": [
-        "SC-012"
-      ],
-      "consensus": "none_unresolved"
-    },
-    "phase_4_checklist_api_contracts": {
-      "checklist": "specs/006-web-ui-graph-browser/checklists/api-contracts.md",
-      "items": 35,
-      "gaps_found": 6,
-      "gaps_remaining": 0,
-      "requirements_updated": [
-        "FR-045"
-      ],
-      "data_model_updates": [
-        "ReanalysisJob",
-        "ChatResponse"
-      ],
-      "contracts_updated": [
-        "web-api-contract.md",
-        "chat-adapter-contract.md"
-      ],
-      "consensus": "none_unresolved"
-    },
-    "phase_4_checklist_llm_integration": {
-      "checklist": "specs/006-web-ui-graph-browser/checklists/llm-integration.md",
-      "items": 33,
-      "gaps_found": 4,
-      "gaps_remaining": 0,
-      "requirements_updated": [
-        "FR-041"
-      ],
-      "data_model_updates": [
-        "ChatResponse"
-      ],
-      "contracts_updated": [
-        "chat-adapter-contract.md"
-      ],
-      "consensus": "none_unresolved"
-    },
-    "phase_4_checklist_performance": {
-      "checklist": "specs/006-web-ui-graph-browser/checklists/performance.md",
-      "items": 37,
-      "gaps_found": 9,
-      "gaps_remaining": 0,
-      "non_functional_requirements_added": [
-        "NFR-001",
-        "NFR-002",
-        "NFR-003",
-        "NFR-004",
-        "NFR-005",
-        "NFR-006"
-      ],
-      "success_criteria_added": [
-        "SC-013"
-      ],
-      "plan_updates": [
-        "Testing",
-        "Performance Goals",
-        "Phase 1 Design"
-      ],
-      "consensus": "none_unresolved"
-    },
-    "phase_4_checklist_gate": {
-      "gate": "G4",
-      "status": "passed",
-      "reason": "0 [Gap] markers",
-      "markers": 0
-    },
-    "phase_5_tasks": {
-      "tasks": "specs/006-web-ui-graph-browser/tasks.md",
-      "task_count": 96,
-      "phase_count": 10,
-      "user_stories_covered": "7/7",
-      "gate": "G5 passed",
-      "format_validation": {
-        "bad_format": 0,
-        "missing_paths": 0,
-        "id_gaps": 0
-      },
-      "atomicity_route": {
-        "route": "one-navigable-PR",
-        "releasable": true,
-        "signals": [
-          "change-shape:modify-heavy"
-        ],
-        "warnings": []
-      }
-    },
-    "phase_5_verify_tasks": {
-      "status": "skipped",
-      "reason": "No completed [X] tasks found to verify before implementation.",
-      "completed_task_count": 0
-    },
-    "phase_5_tasks_to_issues": {
-      "created": 96,
-      "skipped_existing": 0,
-      "repository": "racecraft-lab/codegraph",
-      "issue_range": {
-        "first": "https://github.com/racecraft-lab/codegraph/issues/57",
-        "last": "https://github.com/racecraft-lab/codegraph/issues/152"
-      },
-      "cleanup_status": "permanently_deleted",
-      "deleted_issue_count": 96,
-      "cleanup_reason": "Task-to-issue publishing was accidental and not requested; issues 57 through 152 were deleted after merge."
-    },
-    "phase_6_analyze": {
-      "findings": 2,
-      "critical": 1,
-      "high": 1,
-      "resolved": 2,
-      "remaining": 0,
-      "remediation_tasks_added": [
-        "T095",
-        "T096"
-      ],
-      "consensus": "none_unresolved"
-    },
-    "phase_6_5_confidence_gate": {
-      "mode": "advisory",
-      "status": "soft_skip",
-      "pass": null,
-      "composite": null,
-      "threshold": 0.9,
-      "recommended_action": "soft_skip",
-      "reason": "no confidence emit found"
-    },
-    "phase_7_implement": {
-      "tasks_completed": 96,
-      "tasks_file": "specs/006-web-ui-graph-browser/tasks.md",
-      "review_packet": "specs/006-web-ui-graph-browser/review-packet.md",
-      "verification": [
-        "npm --prefix web run test: passed, 17 files, 19 tests",
-        "npm --prefix web run typecheck: passed",
-        "npm run typecheck: passed",
-        "npm --prefix web run test:e2e: passed, 13 tests",
-        "npm run build: passed",
-        "npm exec -- vitest run __tests__/server-chat-adapter.test.ts __tests__/server-openapi-contract.test.ts __tests__/package-web-assets.test.ts __tests__/server-reindex-jobs.test.ts: passed, 4 files, 99 tests"
-      ]
-    },
-    "phase_7_playwright_mcp_browser_uat": {
-      "status": "passed",
-      "evidence": "specs/006-web-ui-graph-browser/review-packet.md",
-      "finding_fixed": "EventSource close after fast re-analysis terminal snapshot left UI disconnected; fixed by polling latest job on disconnect and showing terminal summary."
-    }
-  },
-  "blockers": []
+  }
 }

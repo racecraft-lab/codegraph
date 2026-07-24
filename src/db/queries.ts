@@ -22,6 +22,95 @@ import { kindBonus, nameMatchBonus, scorePathRelevance } from '../search/query-u
 import { parseQuery, boundedEditDistance } from '../search/query-parser';
 import { isGeneratedFile } from '../extraction/generated-detection';
 import { splitIdentifierSegments } from '../search/identifier-segments';
+import {
+  compareSqliteBinaryText,
+  lspExactUriSortKey,
+  lspUriSortKey,
+} from '../lsp/sort-key';
+
+export class LspWorkspaceSearchTooLargeError extends Error {}
+
+function lspNodeOrderSql(alias = ''): string {
+  const prefix = alias ? `${alias}.` : '';
+  return `${prefix}qualified_name COLLATE BINARY,
+    codegraph_lsp_uri_sort_key(${prefix}file_path) COLLATE BINARY,
+    codegraph_lsp_exact_uri_sort_key(${prefix}file_path) COLLATE BINARY,
+    ${prefix}start_line,
+    ${prefix}start_column,
+    ${prefix}end_line,
+    ${prefix}end_column,
+    ${prefix}id COLLATE BINARY`;
+}
+
+function lspNodeComparator(): (left: Node, right: Node) => number {
+  const uriKeys = new Map<string, string>();
+  const exactUriKeys = new Map<string, string>();
+  const uriKey = (filePath: string): string => {
+    let key = uriKeys.get(filePath);
+    if (key === undefined) {
+      key = lspUriSortKey(filePath);
+      uriKeys.set(filePath, key);
+    }
+    return key;
+  };
+  const exactUriKey = (filePath: string): string => {
+    let key = exactUriKeys.get(filePath);
+    if (key === undefined) {
+      key = lspExactUriSortKey(filePath);
+      exactUriKeys.set(filePath, key);
+    }
+    return key;
+  };
+  return (left, right) => compareSqliteBinaryText(left.qualifiedName, right.qualifiedName)
+    || compareSqliteBinaryText(uriKey(left.filePath), uriKey(right.filePath))
+    || compareSqliteBinaryText(exactUriKey(left.filePath), exactUriKey(right.filePath))
+    || left.startLine - right.startLine
+    || left.startColumn - right.startColumn
+    || left.endLine - right.endLine
+    || left.endColumn - right.endColumn
+    || compareSqliteBinaryText(left.id, right.id);
+}
+
+interface LspHardSearchFilters {
+  pathFilters: string[];
+  nameFilters: string[];
+}
+
+function appendLspHardSearchFilters(
+  sql: string,
+  params: (string | number)[],
+  filters: LspHardSearchFilters,
+  alias = '',
+): string {
+  const prefix = alias ? `${alias}.` : '';
+  if (filters.pathFilters.length > 0) {
+    sql += ` AND (${filters.pathFilters
+      .map(() => `codegraph_lsp_contains_ci(${prefix}file_path, ?) = 1`)
+      .join(' OR ')})`;
+    params.push(...filters.pathFilters);
+  }
+  if (filters.nameFilters.length > 0) {
+    sql += ` AND (${filters.nameFilters
+      .map(() => `codegraph_lsp_contains_ci(${prefix}name, ?) = 1`)
+      .join(' OR ')})`;
+    params.push(...filters.nameFilters);
+  }
+  return sql;
+}
+
+function filterSearchResults(
+  results: SearchResult[],
+  filters: LspHardSearchFilters,
+): SearchResult[] {
+  const pathFilters = filters.pathFilters.map((filter) => filter.toLowerCase());
+  const nameFilters = filters.nameFilters.map((filter) => filter.toLowerCase());
+  return results.filter((result) => {
+    if (pathFilters.length > 0
+      && !pathFilters.some((filter) => result.node.filePath.toLowerCase().includes(filter))) return false;
+    return nameFilters.length === 0
+      || nameFilters.some((filter) => result.node.name.toLowerCase().includes(filter));
+  });
+}
 
 /**
  * Path-only heuristic for files that should not be candidates for
@@ -103,6 +192,112 @@ interface EdgeRow {
   provenance: string | null;
 }
 
+interface LspNodeSummaryRow {
+  id: string;
+  file_path: string;
+  max_json_bytes: number;
+}
+
+interface LspPositionNodeRow {
+  id: string;
+  kind: string;
+  name: string;
+  qualified_name: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  start_column: number;
+  end_column: number;
+  signature: string | null;
+  docstring: string | null;
+}
+
+/** Small, cache-independent metadata used to budget LSP responses before materializing nodes. */
+export interface LspNodeSummary {
+  id: string;
+  filePath: string;
+  maxJsonBytes: number;
+}
+
+/** Cache-independent bounded projection used by position/hover LSP reads. */
+export type LspPositionNode = Pick<Node,
+  | 'id' | 'kind' | 'name' | 'qualifiedName' | 'filePath'
+  | 'startLine' | 'endLine' | 'startColumn' | 'endColumn'
+  | 'signature' | 'docstring'
+>;
+
+export interface LspWorkspaceSymbolCandidate {
+  node: Node;
+  score: number;
+}
+
+export interface LspWorkspaceScanBudget {
+  maxRows: number;
+  examinedRows: number;
+  exceeded: boolean;
+}
+
+function reserveLspWorkspaceScanRow(scanBudget?: LspWorkspaceScanBudget): boolean {
+  if (!scanBudget) return true;
+  if (!Number.isSafeInteger(scanBudget.maxRows)
+    || scanBudget.maxRows < 0
+    || !Number.isSafeInteger(scanBudget.examinedRows)
+    || scanBudget.examinedRows < 0
+    || scanBudget.examinedRows >= scanBudget.maxRows) {
+    scanBudget.exceeded = true;
+    return false;
+  }
+  scanBudget.examinedRows += 1;
+  return true;
+}
+
+// Conservative upper bound for one Node's JSON representation. Text can expand
+// by at most 6x when JSON-escaped (for example, a control byte becomes \u00xx).
+const LSP_NODE_MAX_JSON_BYTES_SQL = `
+  512 + 6 * (
+    length(CAST(id AS BLOB))
+    + length(CAST(kind AS BLOB))
+    + length(CAST(name AS BLOB))
+    + length(CAST(qualified_name AS BLOB))
+    + length(CAST(file_path AS BLOB))
+    + length(CAST(language AS BLOB))
+    + COALESCE(length(CAST(docstring AS BLOB)), 0)
+    + COALESCE(length(CAST(signature AS BLOB)), 0)
+    + COALESCE(length(CAST(visibility AS BLOB)), 0)
+    + COALESCE(length(CAST(decorators AS BLOB)), 0)
+    + COALESCE(length(CAST(type_parameters AS BLOB)), 0)
+    + COALESCE(length(CAST(return_type AS BLOB)), 0)
+  )
+`;
+
+const LSP_POSITION_NODE_PROJECTION_SQL = `
+  id, kind, name, qualified_name, file_path,
+  start_line, end_line, start_column, end_column,
+  CASE WHEN signature IS NULL THEN NULL ELSE substr(signature, 1, 2000) END AS signature,
+  CASE WHEN docstring IS NULL THEN NULL ELSE substr(docstring, 1, 4000) END AS docstring
+`;
+
+const LSP_WORKSPACE_NODE_BYTE_CAP = 7 * 1024 * 1024;
+const LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL = `
+  384 + 6 * (
+    length(CAST(nodes.id AS BLOB))
+    + length(CAST(nodes.kind AS BLOB))
+    + length(CAST(nodes.name AS BLOB))
+    + length(CAST(nodes.qualified_name AS BLOB))
+    + length(CAST(nodes.file_path AS BLOB))
+    + length(CAST(nodes.language AS BLOB))
+    + COALESCE(length(CAST(nodes.visibility AS BLOB)), 0)
+  )
+`;
+
+const LSP_WORKSPACE_NODE_PROJECTION_SQL = `
+  nodes.id, nodes.kind, nodes.name, nodes.qualified_name,
+  nodes.file_path, nodes.language,
+  nodes.start_line, nodes.end_line, nodes.start_column, nodes.end_column,
+  nodes.visibility, nodes.is_exported, nodes.is_async, nodes.is_static,
+  nodes.is_abstract, nodes.updated_at
+`;
+
 interface FileRow {
   path: string;
   content_hash: string;
@@ -168,6 +363,16 @@ export interface LspEdgeCandidateRow {
   targetEndColumn: number;
   targetKind: NodeKind;
   targetName: string;
+}
+
+export interface LspIncomingEdgeCursor {
+  kind: string;
+  id: number;
+}
+
+export interface LspIncomingEdgePage {
+  edges: Edge[];
+  nextCursor: LspIncomingEdgeCursor | null;
 }
 
 export interface LspEdgeCandidateCounts {
@@ -261,6 +466,62 @@ function rowToNode(row: NodeRow): Node {
   };
 }
 
+function rowToLspNodeSummary(row: LspNodeSummaryRow): LspNodeSummary {
+  return {
+    id: row.id,
+    filePath: row.file_path,
+    maxJsonBytes: Number(row.max_json_bytes),
+  };
+}
+
+function rowToLspPositionNode(row: LspPositionNodeRow): LspPositionNode {
+  return {
+    id: row.id,
+    kind: row.kind as NodeKind,
+    name: row.name,
+    qualifiedName: row.qualified_name,
+    filePath: row.file_path,
+    startLine: row.start_line,
+    endLine: row.end_line,
+    startColumn: row.start_column,
+    endColumn: row.end_column,
+    ...(row.signature ? { signature: row.signature.slice(0, 2_000) } : {}),
+    ...(row.docstring ? { docstring: row.docstring.slice(0, 4_000) } : {}),
+  };
+}
+
+function rowToLspWorkspaceNode(row: NodeRow): Node {
+  return {
+    id: row.id,
+    kind: row.kind as NodeKind,
+    name: row.name,
+    qualifiedName: row.qualified_name,
+    filePath: row.file_path,
+    language: row.language as Language,
+    startLine: row.start_line,
+    endLine: row.end_line,
+    startColumn: row.start_column,
+    endColumn: row.end_column,
+    visibility: row.visibility as Node['visibility'],
+    isExported: row.is_exported === 1,
+    isAsync: row.is_async === 1,
+    isStatic: row.is_static === 1,
+    isAbstract: row.is_abstract === 1,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toFtsPrefixQuery(query: string): string {
+  return query
+    .replace(/::/g, ' ')
+    .replace(/['"*():^]/g, '')
+    .split(/\s+/)
+    .filter((term) => term.length > 0)
+    .filter((term) => !/^(AND|OR|NOT|NEAR)$/i.test(term))
+    .map((term) => `"${term}"*`)
+    .join(' OR ');
+}
+
 /**
  * Convert database row to Edge object
  */
@@ -315,6 +576,7 @@ function rowToFileRecord(row: FileRow): FileRecord {
  */
 export class QueryBuilder {
   private db: SqliteDatabase;
+  private lspReadFunctionsRegistered = false;
 
   // Project-name tokens (go.mod / package.json / repo dir), normalized. A query
   // word matching one is dropped from path-relevance scoring — it names the
@@ -342,6 +604,11 @@ export class QueryBuilder {
     deleteEdgesByTarget?: SqliteStatement;
     getEdgesBySource?: SqliteStatement;
     getEdgesByTarget?: SqliteStatement;
+    getBoundedEdgesBySource?: SqliteStatement;
+    getBoundedEdgesByTarget?: SqliteStatement;
+    getBoundedEdgesByEndpoint?: SqliteStatement;
+    getImpactContainedEdges?: SqliteStatement;
+    getImpactIncomingEdges?: SqliteStatement;
     insertFile?: SqliteStatement;
     updateFile?: SqliteStatement;
     deleteFile?: SqliteStatement;
@@ -422,6 +689,31 @@ export class QueryBuilder {
 
   constructor(db: SqliteDatabase) {
     this.db = db;
+  }
+
+  /** Register deterministic read-only helpers only when an LSP query needs them. */
+  private ensureLspReadFunctions(): void {
+    if (this.lspReadFunctionsRegistered) return;
+    this.db.function(
+      'codegraph_lsp_uri_sort_key',
+      { deterministic: true, directOnly: true },
+      (filePath: unknown) => typeof filePath === 'string' ? lspUriSortKey(filePath) : '',
+    );
+    this.db.function(
+      'codegraph_lsp_exact_uri_sort_key',
+      { deterministic: true, directOnly: true },
+      (filePath: unknown) => typeof filePath === 'string' ? lspExactUriSortKey(filePath) : '',
+    );
+    this.db.function(
+      'codegraph_lsp_contains_ci',
+      { deterministic: true, directOnly: true },
+      (value: unknown, filter: unknown) => (
+        typeof value === 'string'
+        && typeof filter === 'string'
+        && value.toLowerCase().includes(filter.toLowerCase())
+      ) ? 1 : 0,
+    );
+    this.lspReadFunctionsRegistered = true;
   }
 
   /**
@@ -954,22 +1246,77 @@ export class QueryBuilder {
     return out;
   }
 
+  /** Cache-bypassing batch lookup for reads that must remain on one SQLite snapshot. */
+  getLspNodesByIdsUncached(ids: readonly string[]): Map<string, Node> {
+    const out = new Map<string, Node>();
+    const uniqueIds = [...new Set(ids)];
+    for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(`SELECT * FROM nodes WHERE id IN (${placeholders})`)
+        .all(...chunk) as NodeRow[];
+      for (const row of rows) {
+        const node = rowToNode(row);
+        out.set(node.id, node);
+      }
+    }
+    return out;
+  }
+
+  /** Cache-bypassing bounded hover projections for position-context targets. */
+  getLspPositionNodesByIds(ids: readonly string[]): Map<string, LspPositionNode> {
+    const out = new Map<string, LspPositionNode>();
+    const uniqueIds = [...new Set(ids)];
+    for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db.prepare(`
+        SELECT ${LSP_POSITION_NODE_PROJECTION_SQL}
+        FROM nodes
+        WHERE id IN (${placeholders})
+      `).all(...chunk) as LspPositionNodeRow[];
+      for (const row of rows) {
+        const node = rowToLspPositionNode(row);
+        out.set(node.id, node);
+      }
+    }
+    return out;
+  }
+
+  /** Cache-independent size/path summaries used before structured LSP node materialization. */
+  getLspNodeSummariesByIds(ids: readonly string[]): Map<string, LspNodeSummary> {
+    const out = new Map<string, LspNodeSummary>();
+    const uniqueIds = [...new Set(ids)];
+    for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db.prepare(`
+        SELECT id, file_path, ${LSP_NODE_MAX_JSON_BYTES_SQL} AS max_json_bytes
+        FROM nodes
+        WHERE id IN (${placeholders})
+      `).all(...chunk) as LspNodeSummaryRow[];
+      for (const row of rows) {
+        const summary = rowToLspNodeSummary(row);
+        out.set(summary.id, summary);
+      }
+    }
+    return out;
+  }
+
   private getExistingNodeIds(ids: readonly string[]): Set<string> {
     const out = new Set<string>();
-    if (ids.length === 0) return out;
-
     const uniqueIds = [...new Set(ids)];
     for (let i = 0; i < uniqueIds.length; i += SQLITE_PARAM_CHUNK_SIZE) {
       const chunk = uniqueIds.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
       const placeholders = chunk.map(() => '?').join(',');
-      const rows = this.db
-        .prepare(`SELECT id FROM nodes WHERE id IN (${placeholders})`)
-        .all(...chunk) as { id: string }[];
-      for (const row of rows) {
-        out.add(row.id);
-      }
+      const rows = this.db.prepare(`SELECT id FROM nodes WHERE id IN (${placeholders})`)
+        .all(...chunk) as Array<{ id: string }>;
+      for (const row of rows) out.add(row.id);
     }
-
     return out;
   }
 
@@ -1196,6 +1543,49 @@ export class QueryBuilder {
     return rows.map(rowToNode);
   }
 
+  /** Bounded deterministic node summaries for the foundational LSP file-context read. */
+  getBoundedLspFileNodeSummaries(filePath: string, limit: number): LspNodeSummary[] {
+    const rows = this.db.prepare(`
+      SELECT id, file_path, ${LSP_NODE_MAX_JSON_BYTES_SQL} AS max_json_bytes
+      FROM nodes
+      WHERE file_path = ?
+        AND kind <> 'file'
+      ORDER BY start_line,
+        start_column,
+        end_line,
+        end_column,
+        qualified_name COLLATE BINARY,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, Math.max(0, Math.trunc(limit))) as LspNodeSummaryRow[];
+    return rows.map(rowToLspNodeSummary);
+  }
+
+  /** Bounded eligible edges sourced from one file for LSP context reads. */
+  getBoundedLspFileEdges(filePath: string, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.id, e.source, e.target, e.kind, NULL AS metadata,
+        e.line, e.col, e.provenance
+      FROM nodes source_node
+      JOIN edges e INDEXED BY idx_edges_source_kind ON e.source = source_node.id
+      WHERE source_node.file_path = ?
+        AND ${activeEdgePredicate('e')}
+        AND (
+          e.kind = 'contains'
+          OR (
+            (e.provenance IS NULL OR e.provenance <> 'heuristic')
+            AND e.line IS NOT NULL
+            AND e.col IS NOT NULL
+          )
+        )
+      ORDER BY source_node.id COLLATE BINARY,
+        e.kind COLLATE BINARY,
+        e.id
+      LIMIT ?
+    `).all(filePath, Math.max(0, Math.trunc(limit))) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
   /**
    * Stream nodes of one language whose `decorators` JSON array contains
    * `decorator`. The LIKE on the JSON text is a cheap index-free pre-filter
@@ -1302,6 +1692,287 @@ export class QueryBuilder {
     return rows.map(rowToNode);
   }
 
+  /** Bounded deterministic symbol order for an empty LSP workspace query. */
+  getLspWorkspaceNodes(limit: number): Node[] {
+    this.ensureLspReadFunctions();
+    const rows = this.db.prepare(`
+      SELECT * FROM nodes
+      ORDER BY qualified_name COLLATE BINARY,
+        codegraph_lsp_uri_sort_key(file_path) COLLATE BINARY,
+        codegraph_lsp_exact_uri_sort_key(file_path) COLLATE BINARY,
+        start_line,
+        start_column,
+        end_line,
+        end_column,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(limit) as NodeRow[];
+    return rows.map(rowToNode);
+  }
+
+  /** Bounded deterministic nodes for one LSP document-symbol response. */
+  getLspFileNodes(filePath: string, limit: number): Node[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM nodes
+      WHERE file_path = ?
+        AND kind <> 'file'
+      ORDER BY start_line,
+        start_column,
+        end_line,
+        end_column,
+        qualified_name COLLATE BINARY,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, limit) as NodeRow[];
+    return rows.map(rowToNode);
+  }
+
+  /** Bounded deterministic nodes whose indexed span covers one 1-based line. */
+  getLspNodesAtLine(filePath: string, line: number, limit: number): Node[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM nodes
+      WHERE file_path = ?
+        AND kind <> 'file'
+        AND start_line <= ?
+        AND end_line >= ?
+      ORDER BY start_line DESC,
+        start_column,
+        end_line,
+        end_column,
+        qualified_name COLLATE BINARY,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, line, line, limit) as NodeRow[];
+    return rows.map(rowToNode);
+  }
+
+  /** Bounded hover projections whose indexed span covers one 1-based line. */
+  getLspPositionNodesAtLine(filePath: string, line: number, limit: number): LspPositionNode[] {
+    const rows = this.db.prepare(`
+      SELECT ${LSP_POSITION_NODE_PROJECTION_SQL}
+      FROM nodes
+      WHERE file_path = ?
+        AND kind <> 'file'
+        AND start_line <= ?
+        AND end_line >= ?
+      ORDER BY start_line DESC,
+        start_column,
+        end_line,
+        end_column,
+        qualified_name COLLATE BINARY,
+        id COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, line, line, Math.max(0, Math.trunc(limit))) as LspPositionNodeRow[];
+    return rows.map(rowToLspPositionNode);
+  }
+
+  /**
+   * Stream lightweight workspace-symbol candidates without materializing
+   * documentation/type payloads or truncating score ties before the LSP layer
+   * applies its normalized-URI ordering.
+   */
+  *iterateLspWorkspaceSymbolCandidates(
+    query: string,
+    scanBudget?: LspWorkspaceScanBudget,
+  ): IterableIterator<LspWorkspaceSymbolCandidate> {
+    const parsed = parseQuery(query);
+    const text = parsed.text;
+    const kinds = parsed.kinds.length > 0 ? parsed.kinds : undefined;
+    const languages = parsed.languages.length > 0 ? parsed.languages : undefined;
+    const pathFilters = parsed.pathFilters.map((value) => value.toLowerCase());
+    const nameFilters = parsed.nameFilters.map((value) => value.toLowerCase());
+    const scoringQuery = text || query;
+
+    const appendTypeFilters = (sql: string, params: Array<string | number>): string => {
+      if (kinds && kinds.length > 0) {
+        sql += ` AND nodes.kind IN (${kinds.map(() => '?').join(',')})`;
+        params.push(...kinds);
+      }
+      if (languages && languages.length > 0) {
+        sql += ` AND nodes.language IN (${languages.map(() => '?').join(',')})`;
+        params.push(...languages);
+      }
+      return sql;
+    };
+
+    const matchesHardFilters = (node: Node): boolean => {
+      if (pathFilters.length > 0) {
+        const filePath = node.filePath.toLowerCase();
+        if (!pathFilters.some((value) => filePath.includes(value))) return false;
+      }
+      if (nameFilters.length > 0) {
+        const name = node.name.toLowerCase();
+        if (!nameFilters.some((value) => name.includes(value))) return false;
+      }
+      return true;
+    };
+
+    const scored = (node: Node, baseScore: number): LspWorkspaceSymbolCandidate => ({
+      node,
+      score: scoringQuery
+        ? baseScore
+          + kindBonus(node.kind)
+          + scorePathRelevance(node.filePath, scoringQuery, this.projectNameTokens)
+          + nameMatchBonus(node.name, scoringQuery)
+        : baseScore,
+    });
+
+    if (!text) {
+      if (this.lspWorkspaceBroadScanExceedsBudget(scanBudget)) return;
+      const params: Array<string | number> = [LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL}
+        FROM nodes
+        WHERE (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      const baseScore = query ? 1 : 0;
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        if (!reserveLspWorkspaceScanRow(scanBudget)) return;
+        const node = rowToLspWorkspaceNode(raw as NodeRow);
+        if (matchesHardFilters(node)) yield scored(node, baseScore);
+      }
+      return;
+    }
+
+    const ftsQuery = toFtsPrefixQuery(text);
+    if (ftsQuery) {
+      const params: Array<string | number> = [ftsQuery, LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL},
+          bm25(nodes_fts, 0, 20, 5, 1, 2) AS score
+        FROM nodes_fts
+        JOIN nodes ON nodes_fts.id = nodes.id
+        WHERE nodes_fts MATCH ?
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      let yieldedRows = false;
+      try {
+        if (!this.reserveLspWorkspaceFtsRows(ftsQuery, scanBudget)) return;
+        for (const raw of this.db.prepare(sql).iterate(...params)) {
+          const row = raw as NodeRow & { score: number };
+          const node = rowToLspWorkspaceNode(row);
+          if (!matchesHardFilters(node)) continue;
+          yieldedRows = true;
+          yield scored(node, Math.abs(row.score));
+        }
+      } catch {
+        yieldedRows = false;
+      }
+      if (yieldedRows) return;
+    }
+
+    if (text.length >= 2) {
+      if (this.lspWorkspaceBroadScanExceedsBudget(scanBudget)) return;
+      const exactMatch = text;
+      const startsWith = `${text}%`;
+      const contains = `%${text}%`;
+      const params: Array<string | number> = [
+        exactMatch,
+        startsWith,
+        contains,
+        contains,
+        contains,
+        contains,
+        startsWith,
+        LSP_WORKSPACE_NODE_BYTE_CAP,
+      ];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL},
+          CASE
+            WHEN nodes.name = ? THEN 1.0
+            WHEN nodes.name LIKE ? THEN 0.9
+            WHEN nodes.name LIKE ? THEN 0.8
+            WHEN nodes.qualified_name LIKE ? THEN 0.7
+            ELSE 0.5
+          END AS score
+        FROM nodes
+        WHERE (
+          nodes.name LIKE ? OR
+          nodes.qualified_name LIKE ? OR
+          nodes.name LIKE ?
+        )
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      let yieldedRows = false;
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        if (!reserveLspWorkspaceScanRow(scanBudget)) return;
+        const row = raw as NodeRow & { score: number };
+        const node = rowToLspWorkspaceNode(row);
+        if (!matchesHardFilters(node)) continue;
+        yieldedRows = true;
+        yield scored(node, row.score);
+      }
+      if (yieldedRows) return;
+    }
+
+    if (text.length < 3) return;
+    if (this.lspWorkspaceBroadScanExceedsBudget(scanBudget)) return;
+    const lowered = text.toLowerCase();
+    const maxDist = lowered.length <= 4 ? 1 : 2;
+    for (const name of this.iterateNodeNames()) {
+      if (!reserveLspWorkspaceScanRow(scanBudget)) return;
+      const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
+      if (dist > maxDist) continue;
+      const params: Array<string | number> = [name, LSP_WORKSPACE_NODE_BYTE_CAP];
+      const sql = appendTypeFilters(`
+        SELECT ${LSP_WORKSPACE_NODE_PROJECTION_SQL}
+        FROM nodes
+        WHERE nodes.name = ?
+          AND (${LSP_WORKSPACE_NODE_MAX_JSON_BYTES_SQL}) <= ?
+      `, params);
+      for (const raw of this.db.prepare(sql).iterate(...params)) {
+        if (!reserveLspWorkspaceScanRow(scanBudget)) return;
+        const node = rowToLspWorkspaceNode(raw as NodeRow);
+        if (!matchesHardFilters(node)) continue;
+        yield scored(node, 1 / (1 + dist));
+      }
+    }
+  }
+
+  private reserveLspWorkspaceFtsRows(
+    ftsQuery: string,
+    scanBudget?: LspWorkspaceScanBudget,
+  ): boolean {
+    if (!scanBudget) return true;
+    const remaining = scanBudget.maxRows - scanBudget.examinedRows;
+    if (!Number.isSafeInteger(remaining) || remaining < 0 || remaining >= Number.MAX_SAFE_INTEGER) {
+      scanBudget.exceeded = true;
+      return false;
+    }
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM (
+        SELECT 1
+        FROM nodes_fts
+        WHERE nodes_fts MATCH ?
+        LIMIT ?
+      )
+    `).get(ftsQuery, remaining + 1) as { count: number };
+    if (!Number.isSafeInteger(row.count) || row.count > remaining) {
+      scanBudget.exceeded = true;
+      return false;
+    }
+    scanBudget.examinedRows += row.count;
+    return true;
+  }
+
+  private lspWorkspaceBroadScanExceedsBudget(scanBudget?: LspWorkspaceScanBudget): boolean {
+    if (!scanBudget) return false;
+    const remaining = scanBudget.maxRows - scanBudget.examinedRows;
+    if (!Number.isSafeInteger(remaining) || remaining < 0) {
+      scanBudget.exceeded = true;
+      return true;
+    }
+    // LIKE and JavaScript-only hard filters can examine the whole table while
+    // yielding no rows, so a yielded-row counter cannot bound them. This probe
+    // stops after remaining + 1 primary-table rows; broad fallback scans run
+    // only when the entire candidate universe fits inside the request budget.
+    const more = this.db.prepare('SELECT 1 AS present FROM nodes LIMIT 1 OFFSET ?').get(remaining);
+    if (!more) return false;
+    scanBudget.exceeded = true;
+    return true;
+  }
+
   /**
    * Search nodes by name using FTS with fallback to LIKE for better matching
    *
@@ -1311,7 +1982,24 @@ export class QueryBuilder {
    * 3. Score results based on match quality
    */
   searchNodes(query: string, options: SearchOptions = {}): SearchResult[] {
+    return this.searchNodesInternal(query, options, false);
+  }
+
+  /** Search candidates with the complete LSP workspace tie order before every cap. */
+  searchLspWorkspaceNodes(query: string, limit: number): SearchResult[] {
+    return this.searchNodesInternal(query, { limit }, true);
+  }
+
+  private searchNodesInternal(
+    query: string,
+    options: SearchOptions,
+    lspStableOrder: boolean,
+  ): SearchResult[] {
     const { limit = 100, offset = 0 } = options;
+    if (lspStableOrder) this.ensureLspReadFunctions();
+    const compareNodes = lspStableOrder ? lspNodeComparator() : null;
+    const compareResults = (left: SearchResult, right: SearchResult): number =>
+      right.score - left.score || compareNodes?.(left.node, right.node) || 0;
 
     // Parse field-qualified bits out of the raw query (kind:, lang:,
     // path:, name:). Anything not recognised stays in `text` and goes
@@ -1328,6 +2016,7 @@ export class QueryBuilder {
         : options.languages;
     const pathFilters = parsed.pathFilters;
     const nameFilters = parsed.nameFilters;
+    const hardFilters = { pathFilters, nameFilters };
     // The text portion drives FTS/LIKE; if all the user typed was
     // filters (`kind:function`), we still need *some* candidate set,
     // so synthesise an empty-text path that returns everything matching
@@ -1338,16 +2027,25 @@ export class QueryBuilder {
 
     // First try FTS5 with prefix matching
     let results = text
-      ? this.searchNodesFTS(text, { kinds, languages, limit, offset })
+      ? this.searchNodesFTS(text, { kinds, languages, limit, offset }, lspStableOrder, hardFilters)
       // Over-fetch by 5× when running filter-only (no text). The
       // post-scoring path: + name: filters can be very selective, so
       // a smaller multiplier risks returning fewer than `limit`
       // results despite the DB having plenty of matches.
-      : this.searchAllByFilters({ kinds, languages, limit: limit * 5 });
+      : this.searchAllByFilters(
+        { kinds, languages, limit: limit * 5 },
+        lspStableOrder,
+        hardFilters,
+      );
 
     // If no FTS results, try LIKE-based substring search
     if (results.length === 0 && text.length >= 2) {
-      results = this.searchNodesLike(text, { kinds, languages, limit, offset });
+      results = this.searchNodesLike(
+        text,
+        { kinds, languages, limit, offset },
+        lspStableOrder,
+        hardFilters,
+      );
     }
 
     // Final fuzzy fallback: scan all known names and keep those within
@@ -1355,7 +2053,12 @@ export class QueryBuilder {
     // returned nothing AND there's a text portion long enough to be
     // worth fuzzing (1-char queries would match too much).
     if (results.length === 0 && text.length >= 3) {
-      results = this.searchNodesFuzzy(text, { kinds, languages, limit });
+      results = this.searchNodesFuzzy(
+        text,
+        { kinds, languages, limit },
+        lspStableOrder,
+        hardFilters,
+      );
     }
 
     // Supplement: ensure exact name matches are always candidates.
@@ -1379,7 +2082,8 @@ export class QueryBuilder {
           sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
           params.push(...languages);
         }
-        sql += ' LIMIT 20';
+        if (lspStableOrder) sql = appendLspHardSearchFilters(sql, params, hardFilters);
+        sql += lspStableOrder ? ` ORDER BY ${lspNodeOrderSql()} LIMIT 20` : ' LIMIT 20';
         const rows = this.db.prepare(sql).all(...params) as NodeRow[];
         for (const row of rows) {
           if (!existingIds.has(row.id)) {
@@ -1400,7 +2104,8 @@ export class QueryBuilder {
           + scorePathRelevance(r.node.filePath, scoringQuery, this.projectNameTokens)
           + nameMatchBonus(r.node.name, scoringQuery),
       }));
-      results.sort((a, b) => b.score - a.score);
+      results.sort(compareResults);
+      if (lspStableOrder) results = filterSearchResults(results, hardFilters);
       // Trim to requested limit after rescoring
       if (results.length > limit) {
         results = results.slice(0, limit);
@@ -1411,20 +2116,7 @@ export class QueryBuilder {
     // path/name as a soft signal; the explicit filters here are a hard
     // gate. Done last so the FTS limit fetched plenty of candidates to
     // narrow from.
-    if (pathFilters.length > 0) {
-      const lowered = pathFilters.map((p) => p.toLowerCase());
-      results = results.filter((r) => {
-        const fp = r.node.filePath.toLowerCase();
-        return lowered.some((p) => fp.includes(p));
-      });
-    }
-    if (nameFilters.length > 0) {
-      const lowered = nameFilters.map((n) => n.toLowerCase());
-      results = results.filter((r) => {
-        const nm = r.node.name.toLowerCase();
-        return lowered.some((n) => nm.includes(n));
-      });
-    }
+    if (!lspStableOrder) results = filterSearchResults(results, hardFilters);
 
     return results;
   }
@@ -1435,11 +2127,15 @@ export class QueryBuilder {
    * candidates ordered by name; the caller's filter pass narrows to
    * what was asked for.
    */
-  private searchAllByFilters(options: {
-    kinds?: NodeKind[];
-    languages?: Language[];
-    limit: number;
-  }): SearchResult[] {
+  private searchAllByFilters(
+    options: {
+      kinds?: NodeKind[];
+      languages?: Language[];
+      limit: number;
+    },
+    lspStableOrder = false,
+    hardFilters: LspHardSearchFilters = { pathFilters: [], nameFilters: [] },
+  ): SearchResult[] {
     const { kinds, languages, limit } = options;
     let sql = 'SELECT * FROM nodes WHERE 1=1';
     const params: (string | number)[] = [];
@@ -1451,7 +2147,8 @@ export class QueryBuilder {
       sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
       params.push(...languages);
     }
-    sql += ' ORDER BY name LIMIT ?';
+    if (lspStableOrder) sql = appendLspHardSearchFilters(sql, params, hardFilters);
+    sql += lspStableOrder ? ` ORDER BY ${lspNodeOrderSql()} LIMIT ?` : ' ORDER BY name LIMIT ?';
     params.push(limit);
     const rows = this.db.prepare(sql).all(...params) as NodeRow[];
     return rows.map((row) => ({ node: rowToNode(row), score: 1 }));
@@ -1467,23 +2164,26 @@ export class QueryBuilder {
    */
   private searchNodesFuzzy(
     text: string,
-    options: { kinds?: NodeKind[]; languages?: Language[]; limit: number }
+    options: { kinds?: NodeKind[]; languages?: Language[]; limit: number },
+    lspStableOrder = false,
+    hardFilters: LspHardSearchFilters = { pathFilters: [], nameFilters: [] },
   ): SearchResult[] {
     const { kinds, languages, limit } = options;
     const lowered = text.toLowerCase();
     const maxDist = lowered.length <= 4 ? 1 : 2;
 
-    // Pull the distinct name list once. The set is cached on QueryBuilder
-    // by getAllNodeNames(); even on a 200k-node project the distinct
-    // name set is typically O(10k) because most names repeat. The
-    // candidate-cap below bounds memory regardless.
-    const allNames = this.getAllNodeNames();
+    // Generic search reuses the cached distinct-name set. LSP search instead
+    // reads one deterministic overflow row so its scan and memory stay bounded.
+    const allNames = lspStableOrder
+      ? this.getLspFilteredNodeNames(kinds, languages, hardFilters, Math.max(1, limit - 1))
+      : this.getAllNodeNames();
     const candidates: Array<{ name: string; dist: number }> = [];
     for (const name of allNames) {
       const dist = boundedEditDistance(name.toLowerCase(), lowered, maxDist);
       if (dist <= maxDist) candidates.push({ name, dist });
     }
-    candidates.sort((a, b) => a.dist - b.dist);
+    candidates.sort((a, b) => a.dist - b.dist
+      || (lspStableOrder ? compareSqliteBinaryText(a.name, b.name) : 0));
 
     // Cap the per-name follow-up queries. Each survivor triggers a
     // separate `SELECT * FROM nodes WHERE name = ?`; without this cap
@@ -1507,7 +2207,13 @@ export class QueryBuilder {
         sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
         params.push(...languages);
       }
-      sql += ' LIMIT 5';
+      if (lspStableOrder) sql = appendLspHardSearchFilters(sql, params, hardFilters);
+      if (lspStableOrder) {
+        sql += ` ORDER BY ${lspNodeOrderSql()} LIMIT ?`;
+        params.push(limit - results.length);
+      } else {
+        sql += ' LIMIT 5';
+      }
       const rows = this.db.prepare(sql).all(...params) as NodeRow[];
       for (const row of rows) {
         if (seen.has(row.id)) continue;
@@ -1521,10 +2227,39 @@ export class QueryBuilder {
     return results;
   }
 
+  private getLspFilteredNodeNames(
+    kinds: NodeKind[] | undefined,
+    languages: Language[] | undefined,
+    hardFilters: LspHardSearchFilters,
+    limit: number,
+  ): string[] {
+    let sql = 'SELECT DISTINCT name FROM nodes WHERE 1=1';
+    const params: (string | number)[] = [];
+    if (kinds && kinds.length > 0) {
+      sql += ` AND kind IN (${kinds.map(() => '?').join(',')})`;
+      params.push(...kinds);
+    }
+    if (languages && languages.length > 0) {
+      sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
+      params.push(...languages);
+    }
+    sql = appendLspHardSearchFilters(sql, params, hardFilters);
+    sql += ' ORDER BY name COLLATE BINARY LIMIT ?';
+    params.push(limit + 1);
+    const rows = this.db.prepare(sql).all(...params) as Array<{ name: string }>;
+    if (rows.length > limit) throw new LspWorkspaceSearchTooLargeError();
+    return rows.map((row) => row.name);
+  }
+
   /**
    * FTS5 search with prefix matching
    */
-  private searchNodesFTS(query: string, options: SearchOptions): SearchResult[] {
+  private searchNodesFTS(
+    query: string,
+    options: SearchOptions,
+    lspStableOrder = false,
+    hardFilters: LspHardSearchFilters = { pathFilters: [], nameFilters: [] },
+  ): SearchResult[] {
     const { kinds, languages, limit = 100, offset = 0 } = options;
 
     // Add prefix wildcard for better matching (e.g., "auth" matches "AuthService", "authenticate")
@@ -1534,15 +2269,7 @@ export class QueryBuilder {
     // so treat it as whitespace before the strip step. Otherwise queries
     // like `stage_apply::run` collapse to `stage_applyrun` (the colons
     // are stripped without splitting) and find nothing. See #173.
-    const ftsQuery = query
-      .replace(/::/g, ' ') // Rust/C++/Ruby qualifier separator
-      .replace(/['"*():^]/g, '') // Remove FTS5 special chars
-      .split(/\s+/)
-      .filter(term => term.length > 0)
-      // Strip FTS5 boolean operators to prevent query manipulation
-      .filter(term => !/^(AND|OR|NOT|NEAR)$/i.test(term))
-      .map(term => `"${term}"*`) // Prefix match each term
-      .join(' OR ');
+    const ftsQuery = toFtsPrefixQuery(query);
 
     if (!ftsQuery) {
       return [];
@@ -1573,8 +2300,11 @@ export class QueryBuilder {
       sql += ` AND nodes.language IN (${languages.map(() => '?').join(',')})`;
       params.push(...languages);
     }
+    if (lspStableOrder) sql = appendLspHardSearchFilters(sql, params, hardFilters, 'nodes');
 
-    sql += ' ORDER BY score LIMIT ? OFFSET ?';
+    sql += lspStableOrder
+      ? ` ORDER BY score, ${lspNodeOrderSql('nodes')} LIMIT ? OFFSET ?`
+      : ' ORDER BY score LIMIT ? OFFSET ?';
     params.push(ftsLimit, offset);
 
     try {
@@ -1593,7 +2323,12 @@ export class QueryBuilder {
    * LIKE-based substring search for cases where FTS doesn't match
    * Useful for camelCase matching (e.g., "signIn" finds "signInWithGoogle")
    */
-  private searchNodesLike(query: string, options: SearchOptions): SearchResult[] {
+  private searchNodesLike(
+    query: string,
+    options: SearchOptions,
+    lspStableOrder = false,
+    hardFilters: LspHardSearchFilters = { pathFilters: [], nameFilters: [] },
+  ): SearchResult[] {
     const { kinds, languages, limit = 100, offset = 0 } = options;
 
     let sql = `
@@ -1637,8 +2372,11 @@ export class QueryBuilder {
       sql += ` AND language IN (${languages.map(() => '?').join(',')})`;
       params.push(...languages);
     }
+    if (lspStableOrder) sql = appendLspHardSearchFilters(sql, params, hardFilters);
 
-    sql += ' ORDER BY score DESC, length(name) ASC LIMIT ? OFFSET ?';
+    sql += lspStableOrder
+      ? ` ORDER BY score DESC, ${lspNodeOrderSql()} LIMIT ? OFFSET ?`
+      : ' ORDER BY score DESC, length(name) ASC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
     const rows = this.db.prepare(sql).all(...params) as (NodeRow & { score: number })[];
@@ -2217,6 +2955,207 @@ export class QueryBuilder {
     return rows.map(rowToEdge);
   }
 
+  /** Bounded exact incoming-edge candidates for the foundational LSP read. */
+  getBoundedLspIncomingEdges(targetId: string, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.id, e.source, e.target, e.kind, NULL AS metadata,
+        e.line, e.col, e.provenance
+      FROM edges e INDEXED BY idx_edges_target_kind
+      WHERE e.target = ?
+        AND e.kind <> 'contains'
+        AND (e.provenance IS NULL OR e.provenance <> 'heuristic')
+        AND e.line IS NOT NULL
+        AND e.col IS NOT NULL
+        AND ${activeEdgePredicate('e')}
+      ORDER BY e.kind COLLATE BINARY,
+        e.id
+      LIMIT ?
+    `).all(targetId, Math.max(0, Math.trunc(limit))) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  /**
+   * Get a deterministic, bounded adjacency page for graph traversal.
+   *
+   * Unlike composing the unbounded outgoing and incoming helpers, the `both`
+   * query applies one shared SQL LIMIT and returns a self-loop only once. This
+   * keeps high-degree neighborhood construction proportional to its edge-work
+   * budget instead of materializing every edge before the response is capped.
+   */
+  getBoundedAdjacentEdges(
+    nodeId: string,
+    direction: 'outgoing' | 'incoming' | 'both',
+    kinds: EdgeKind[] | undefined,
+    limit: number,
+  ): Edge[] {
+    const rowLimit = Math.max(0, Math.trunc(limit));
+    if (rowLimit === 0) return [];
+
+    const hasKinds = kinds !== undefined && kinds.length > 0;
+    const endpointPredicate = direction === 'outgoing'
+      ? 'source = ?'
+      : direction === 'incoming'
+        ? 'target = ?'
+        : '(source = ? OR target = ?)';
+    const params: Array<string | number> = direction === 'both'
+      ? [nodeId, nodeId]
+      : [nodeId];
+
+    if (hasKinds) {
+      const sql = `
+        SELECT * FROM edges
+        WHERE ${endpointPredicate}
+          AND ${activeEdgePredicate()}
+          AND kind IN (${kinds.map(() => '?').join(',')})
+        ORDER BY CASE kind
+          WHEN 'contains' THEN 0
+          WHEN 'calls' THEN 1
+          ELSE 2
+        END, id
+        LIMIT ?
+      `;
+      params.push(...kinds, rowLimit);
+      const rows = this.db.prepare(sql).all(...params) as EdgeRow[];
+      return rows.map(rowToEdge);
+    }
+
+    const sql = `
+      SELECT * FROM edges
+      WHERE ${endpointPredicate}
+        AND ${activeEdgePredicate()}
+      ORDER BY CASE kind
+        WHEN 'contains' THEN 0
+        WHEN 'calls' THEN 1
+        ELSE 2
+      END, id
+      LIMIT ?
+    `;
+    let stmt: SqliteStatement;
+    if (direction === 'outgoing') {
+      this.stmts.getBoundedEdgesBySource ??= this.db.prepare(sql);
+      stmt = this.stmts.getBoundedEdgesBySource;
+    } else if (direction === 'incoming') {
+      this.stmts.getBoundedEdgesByTarget ??= this.db.prepare(sql);
+      stmt = this.stmts.getBoundedEdgesByTarget;
+    } else {
+      this.stmts.getBoundedEdgesByEndpoint ??= this.db.prepare(sql);
+      stmt = this.stmts.getBoundedEdgesByEndpoint;
+    }
+    params.push(rowLimit);
+    const rows = stmt.all(...params) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  /** Bounded, deterministic containment rows used by impact traversal. */
+  getImpactContainedEdges(sourceId: string, limit: number): Edge[] {
+    this.stmts.getImpactContainedEdges ??= this.db.prepare(`
+        SELECT * FROM edges
+        WHERE source = ?
+          AND kind = 'contains'
+          AND ${activeEdgePredicate()}
+        ORDER BY id
+        LIMIT ?
+      `);
+    const rows = this.stmts.getImpactContainedEdges
+      .all(sourceId, Math.max(0, Math.trunc(limit))) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  /** Bounded, deterministic non-containment rows used by impact traversal. */
+  getImpactIncomingEdges(targetId: string, limit: number): Edge[] {
+    this.stmts.getImpactIncomingEdges ??= this.db.prepare(`
+        SELECT * FROM edges
+        WHERE target = ?
+          AND kind <> 'contains'
+          AND ${activeEdgePredicate()}
+        ORDER BY id
+        LIMIT ?
+      `);
+    const rows = this.stmts.getImpactIncomingEdges
+      .all(targetId, Math.max(0, Math.trunc(limit))) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  /** One indexed keyset page of exact incoming-edge candidates for LSP references. */
+  getLspIncomingEdgePage(
+    targetId: string,
+    after: LspIncomingEdgeCursor | null,
+    limit: number,
+  ): LspIncomingEdgePage {
+    const pageSize = Math.max(1, Math.trunc(limit));
+    const cursorPredicate = after
+      ? `AND (e.kind, e.id) > (?, ?)`
+      : '';
+    const params: Array<string | number> = [targetId];
+    if (after) {
+      params.push(after.kind, after.id);
+    }
+    params.push(pageSize + 1);
+    const rows = this.db.prepare(`
+      SELECT e.*
+      FROM edges e INDEXED BY idx_edges_target_kind
+      WHERE e.target = ?
+        AND e.kind <> 'contains'
+        AND (e.provenance IS NULL OR e.provenance <> 'heuristic')
+        AND e.line IS NOT NULL
+        AND e.col IS NOT NULL
+        AND ${activeEdgePredicate('e')}
+        ${cursorPredicate}
+      ORDER BY e.kind COLLATE BINARY,
+        e.id
+      LIMIT ?
+    `).all(...params) as EdgeRow[];
+    const included = rows.slice(0, pageSize);
+    const last = included.at(-1);
+    return {
+      edges: included.map(rowToEdge),
+      nextCursor: rows.length > pageSize && last
+        ? {
+            kind: last.kind,
+            id: last.id,
+          }
+        : null,
+    };
+  }
+
+  /** Bounded exact occurrence edges located on one line of one source file. */
+  getLspOutgoingEdgesAtLine(filePath: string, line: number, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.*
+      FROM edges e
+      JOIN nodes source_node ON source_node.id = e.source
+      WHERE source_node.file_path = ?
+        AND e.line = ?
+        AND e.kind <> 'contains'
+        AND (e.provenance IS NULL OR e.provenance <> 'heuristic')
+        AND e.col IS NOT NULL
+        AND ${activeEdgePredicate('e')}
+      ORDER BY e.col,
+        e.source COLLATE BINARY,
+        e.kind COLLATE BINARY,
+        e.target COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, line, limit) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
+  /** Bounded exact containment edges for one LSP document-symbol response. */
+  getLspContainmentEdges(filePath: string, limit: number): Edge[] {
+    const rows = this.db.prepare(`
+      SELECT e.*
+      FROM edges e
+      JOIN nodes source_node ON source_node.id = e.source
+      WHERE source_node.file_path = ?
+        AND e.kind = 'contains'
+        AND (e.provenance IS NULL OR e.provenance <> 'heuristic')
+        AND ${activeEdgePredicate('e')}
+      ORDER BY e.source COLLATE BINARY,
+        e.target COLLATE BINARY
+      LIMIT ?
+    `).all(filePath, limit) as EdgeRow[];
+    return rows.map(rowToEdge);
+  }
+
   /**
    * SPEC-010 (graph-aware rename): every incoming name-occurrence edge to
    * `targetId` — the full {@link RENAME_RELEVANT_EDGE_KINDS} set (`references`
@@ -2450,6 +3389,23 @@ export class QueryBuilder {
     }
     const row = this.stmts.getFileByPath.get(filePath) as FileRow | undefined;
     return row ? rowToFileRecord(row) : null;
+  }
+
+  /** Batch lookup for bounded structured reads that need coherent file metadata. */
+  getFilesByPaths(filePaths: readonly string[]): Map<string, FileRecord> {
+    const out = new Map<string, FileRecord>();
+    const uniquePaths = [...new Set(filePaths)];
+    for (let i = 0; i < uniquePaths.length; i += SQLITE_PARAM_CHUNK_SIZE) {
+      const chunk = uniquePaths.slice(i, i + SQLITE_PARAM_CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = this.db.prepare(`SELECT * FROM files WHERE path IN (${placeholders})`)
+        .all(...chunk) as FileRow[];
+      for (const row of rows) {
+        const file = rowToFileRecord(row);
+        out.set(file.path, file);
+      }
+    }
+    return out;
   }
 
   /**

@@ -102,15 +102,29 @@ export async function runDaemonPicker(deps: PickerDeps): Promise<void> {
 
     if (choice === STOP_ALL) {
       const results = await deps.stopAll();
-      const n = results.filter((r) => r.outcome === 'term' || r.outcome === 'kill').length;
-      deps.note(`Stopped ${n} daemon${n === 1 ? '' : 's'}.`);
+      const n = results.filter((r) => r.outcome === 'term').length;
+      const already = results.filter((r) => r.outcome === 'not-running' || r.outcome === 'no-daemon').length;
+      const failed = results.filter((r) => r.outcome === 'failed').length;
+      const parts = [`Stopped ${n} daemon${n === 1 ? '' : 's'}`];
+      if (already > 0) parts.push(`${already} already stopped`);
+      if (failed > 0) parts.push(`${failed} could not be authenticated or did not exit`);
+      deps.note(`${parts.join('; ')}.`);
       deps.done('Done.');
       return;
     }
 
     const result = await deps.stop(String(choice));
-    const forced = result.outcome === 'kill' ? ', forced' : '';
-    deps.note(`Stopped daemon (pid ${result.pid}${forced}) — ${choice}`);
+    if (result.outcome === 'failed') {
+      deps.note(`Could not stop daemon (pid ${result.pid}) — ${choice}`);
+      deps.done('Daemon is still running.');
+      return;
+    }
+    if (result.outcome !== 'term') {
+      deps.note(`No running daemon found — ${choice}`);
+      deps.done('Daemon was already stopped.');
+      return;
+    }
+    deps.note(`Stopped daemon (pid ${result.pid}) — ${choice}`);
     // Loop: the next iteration re-lists; if more remain it re-prompts, otherwise
     // the top-of-loop empty check prints "All daemons stopped."
   }

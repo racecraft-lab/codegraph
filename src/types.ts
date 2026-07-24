@@ -363,6 +363,9 @@ export interface Subgraph {
   /** Root node IDs (entry points) */
   roots: string[];
 
+  /** True when a caller-supplied traversal budget omitted additional graph data. */
+  truncated?: boolean;
+
   /**
    * Retrieval confidence for context-style queries. `'low'` means the query
    * resolved only to isolated common-word matches (no entry point corroborated

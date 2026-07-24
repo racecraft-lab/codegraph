@@ -56,16 +56,18 @@
     "picomatch": "^4.0.4",
     "sisteransi": "^1.0.5",
     "tree-sitter-wasms": "^0.1.11",
-    "web-tree-sitter": "^0.25.3"
+    "web-tree-sitter": "^0.25.3",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^20.19.30",
     "@types/picomatch": "^4.0.2",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.0.0",
     "vitest": "^3.2.6"
   },
   "engines": {
-    "node": ">=20.0.0 <25.0.0"
+    "node": "^20.19.0 || >=22.12.0 <25.0.0"
   }
 }
