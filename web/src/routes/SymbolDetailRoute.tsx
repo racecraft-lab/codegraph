@@ -172,7 +172,10 @@ export function SymbolDetailRoute() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setSourceOpen(true)
+                  if (!selectedRepo) return
+                  setSearchParams((current) => (
+                    locationSearch(current, selectedRepo.id, selectedRepo.root, fallbackLocation)
+                  ))
                 }}
               >
                 Open source
