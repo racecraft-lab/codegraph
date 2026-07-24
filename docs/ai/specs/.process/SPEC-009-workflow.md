@@ -36,7 +36,7 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Tasks | `/speckit-tasks` | Complete | G5 passed: 48 dependency-ordered tasks cover every requirement and both slice gates. |
 | Analyze | `/speckit-analyze` | Complete | G6 passed after consensus resolved one ordering issue and one dependency typing note. |
 | Confidence Gate | G6.5 | Complete | Advisory gate passed at 0.98 against the 0.90 threshold. |
-| Implement | `/speckit-implement` | In Progress | Execute both vertical slices with TDD and black-box conformance. |
+| Implement | `/speckit-implement` | In Progress | Slice 1 G7 passed; continue with trusted source, WebSocket, and viewer work. |
 | Post | Canonical post gates | Pending | Verify, review, package, create PRs, remediate, and retrospect. |
 
 **Status legend:** Pending | In Progress | Complete | Blocked
@@ -808,10 +808,58 @@ For every behavior:
 
 | Phase | Tasks | Completed | Notes |
 |---|---|---|---|
-| Setup/Foundation | Pending | 0 | Pending Tasks |
-| Slice 1 - Core and stdio | Pending | 0 | Pending Tasks |
+| Setup/Foundation | Complete | 5 | T001–T005 complete; protocol and UTF-16 contract verified. |
+| Slice 1 - Core and stdio | Complete | 12 | T006–T017 complete; G7 passed. Actual size-only block is decomposed into ordered markers `M1-lsp-read-core` and `M2-lsp-stdio-facade`. |
 | Slice 2 - WebSocket and viewer | Pending | 0 | Pending Tasks |
 | Polish/Post gates | Pending | 0 | Pending Tasks |
+
+### Slice 1 G7 Evidence
+
+- Focused protocol/facade/stdio tests: 18 passed.
+- Root typecheck: passed on Node 24.11.1.
+- Root build and shipped-asset copy: passed on Node 24.11.1.
+- Built generic LSP client UAT: passed against a real daemon and exited cleanly.
+- Full root suite: 248 files passed; 4,113 tests passed and 7 skipped in
+  117.02 seconds.
+- Default behavior remains dormant: the new surface activates only through
+  `codegraph lsp`; no default CLI or server listener changed.
+
+### Slice 1 Reviewability Evidence
+
+The actual production diff is 1,197 additions across six files, excluding 449
+test-harness lines. This is a size-only block above 800, so the projected Slice
+1 boundary is replaced by two ordered review markers: `M1-lsp-read-core` (505
+production additions) followed by `M2-lsp-stdio-facade` (692). Both markers are
+below the hard ceiling, preserve task dependency order, and retain the verified
+Slice 1 behavior when reviewed in sequence. The authoritative marker state is
+persisted in `autopilot-state.json`; final PR preparation must use marker-based
+emission.
+
+```json
+{
+  "schema_version": "1.0",
+  "source_fingerprint": {
+    "status": "current",
+    "inputs": {
+      "spec": {"path": "specs/009-lsp-server-facade/spec.md", "sha256": "15cd7cd11bbc78434bcae0bbefbe53631178eb1c24cf27dbcc66c5a37aac6cbc", "size_bytes": 37455},
+      "plan": {"path": "specs/009-lsp-server-facade/plan.md", "sha256": "130c4ad2b6f4d884096c22f65ccc52bb2c3c811bc27919d7f0887daea8f89153", "size_bytes": 16960},
+      "tasks": {"path": "specs/009-lsp-server-facade/tasks.md", "sha256": "049ab6324aeefcb40c0b2e0f1c7a4afa8f05d11536f41a523ee9086ea8b0e5d4", "size_bytes": 19493},
+      "reviewability": {"path": "specs/009-lsp-server-facade/.process/reviewability/slice-1-actual.json", "sha256": "acfd69612cb5113c69f94d3bdeff517945276879d1ff53cd88cdc751f3ecd180", "size_bytes": 876}
+    },
+    "hazard_route": "one-navigable-PR"
+  },
+  "ordered_marker_ids": ["M1-lsp-read-core", "M2-lsp-stdio-facade"],
+  "review_order": ["M1-lsp-read-core", "M2-lsp-stdio-facade"],
+  "markers": [
+    {"id": "M1-lsp-read-core", "checkpoint": {"status": "committed", "commit_sha": "1cfc321db58277bc65c8d7f7866bc1a50c5778b3"}, "warnings": ["505 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]},
+    {"id": "M2-lsp-stdio-facade", "checkpoint": {"status": "pending_commit", "commit_sha": null}, "warnings": ["692 actual production additions exceed the 400-line warning threshold but remain below the 800-line hard ceiling"]}
+  ],
+  "warnings": ["The actual Slice 1 production diff is a size-only block; marker-based PR emission is required"],
+  "final_marker_split": {"status": "required", "reason": "size_only"},
+  "packet_validation": {"status": "pending"},
+  "pr_mappings": {"status": "pending", "items": []}
+}
+```
 
 ---
 

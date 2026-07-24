@@ -42,5 +42,6 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [checklists/security.md](checklists/security.md)
 - [checklists/streaming-protocol.md](checklists/streaming-protocol.md)
 - [checklists/ux-accessibility.md](checklists/ux-accessibility.md)
+- [.process/reviewability/slice-1-actual.json](.process/reviewability/slice-1-actual.json)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

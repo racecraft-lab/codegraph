@@ -1,0 +1,382 @@
+import type { Readable, Writable } from 'node:stream';
+import * as fs from 'node:fs';
+import { findNearestCodeGraphRoot } from '../directory';
+import { attachDaemonClient } from '../server/daemon-client';
+import { LspFacade, createDaemonLspReader, type LspRepositoryReader } from './facade';
+import {
+  LSP_ERROR_CODE,
+  formatLspDiagnostic,
+  makeJsonRpcError,
+  parseJsonRpcEnvelope,
+} from './protocol';
+
+const MAX_HEADER_BYTES = 8 * 1024;
+const MAX_HEADER_LINES = 32;
+const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_QUEUED_FRAMES = 16;
+const MAX_QUEUED_BODY_BYTES = 4 * MAX_BODY_BYTES;
+const MAX_INPUT_CHUNK_BYTES = MAX_QUEUED_BODY_BYTES
+  + MAX_QUEUED_FRAMES * (MAX_HEADER_BYTES + 4);
+const DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS = 5_000;
+const HEADER_DELIMITER = Buffer.from('\r\n\r\n', 'ascii');
+
+export class LspFramingError extends Error {}
+
+interface ContentLengthParserLimits {
+  maxMessages: number;
+  maxBodyBytes: number;
+}
+
+export class ContentLengthParser {
+  private headerBuffer = Buffer.alloc(0);
+  private bodyBuffer: Buffer | null = null;
+  private bodyOffset = 0;
+
+  push(chunk: Buffer, limits?: ContentLengthParserLimits): Buffer[] {
+    const messages: Buffer[] = [];
+    let messageBytes = 0;
+    let offset = 0;
+    while (offset < chunk.length) {
+      if (!this.bodyBuffer) {
+        const headerCapacity = MAX_HEADER_BYTES + HEADER_DELIMITER.length - this.headerBuffer.length;
+        if (headerCapacity <= 0) throw new LspFramingError('header limit');
+        const scanBytes = Math.min(headerCapacity, chunk.length - offset);
+        const nextHeaderBytes = chunk.subarray(offset, offset + scanBytes);
+        const combined = this.headerBuffer.length === 0
+          ? nextHeaderBytes
+          : Buffer.concat([this.headerBuffer, nextHeaderBytes]);
+        const headerEnd = combined.indexOf(HEADER_DELIMITER);
+        if (headerEnd === -1) {
+          if (combined.length > MAX_HEADER_BYTES + HEADER_DELIMITER.length - 1
+            || scanBytes < chunk.length - offset) {
+            throw new LspFramingError('header limit');
+          }
+          this.headerBuffer = Buffer.from(combined);
+          offset += scanBytes;
+          continue;
+        }
+        if (headerEnd > MAX_HEADER_BYTES) throw new LspFramingError('header limit');
+        const contentLength = parseContentLengthHeader(combined.subarray(0, headerEnd));
+        if (contentLength > MAX_BODY_BYTES) throw new LspFramingError('body limit');
+        if (limits && (messages.length >= limits.maxMessages
+          || contentLength > limits.maxBodyBytes - messageBytes)) {
+          throw new LspFramingError('message queue limit');
+        }
+        const consumedHeaderBytes = headerEnd + HEADER_DELIMITER.length - this.headerBuffer.length;
+        offset += consumedHeaderBytes;
+        this.headerBuffer = Buffer.alloc(0);
+        if (contentLength === 0) {
+          messages.push(Buffer.alloc(0));
+          continue;
+        }
+        this.bodyBuffer = Buffer.allocUnsafe(contentLength);
+        this.bodyOffset = 0;
+        continue;
+      }
+
+      const remaining = this.bodyBuffer.length - this.bodyOffset;
+      const bodyBytes = Math.min(remaining, chunk.length - offset);
+      chunk.copy(this.bodyBuffer, this.bodyOffset, offset, offset + bodyBytes);
+      this.bodyOffset += bodyBytes;
+      offset += bodyBytes;
+      if (this.bodyOffset === this.bodyBuffer.length) {
+        messages.push(this.bodyBuffer);
+        messageBytes += this.bodyBuffer.length;
+        this.bodyBuffer = null;
+        this.bodyOffset = 0;
+      }
+    }
+    return messages;
+  }
+
+  finish(): void {
+    if (this.headerBuffer.length > 0 || this.bodyBuffer !== null) {
+      throw new LspFramingError('premature eof');
+    }
+  }
+}
+
+function parseContentLengthHeader(header: Buffer): number {
+  for (const byte of header) {
+    if (byte !== 0x0d && byte !== 0x0a && (byte < 0x20 || byte > 0x7e)) {
+      throw new LspFramingError('malformed header');
+    }
+  }
+  const lines = header.toString('ascii').split('\r\n');
+  if (lines.length > MAX_HEADER_LINES) throw new LspFramingError('header line limit');
+  const lengths: number[] = [];
+  for (const line of lines) {
+    const match = /^([!#$%&'*+\-.^_`|~0-9A-Za-z]+):([ -~]*)$/.exec(line);
+    if (!match) throw new LspFramingError('malformed header');
+    const name = match[1]!.toLowerCase();
+    const value = match[2]!.trim();
+    if (name === 'content-length') {
+      if (!/^(0|[1-9][0-9]*)$/.test(value)) throw new LspFramingError('invalid content length');
+      lengths.push(Number(value));
+    }
+  }
+  if (lengths.length !== 1 || !Number.isSafeInteger(lengths[0])) {
+    throw new LspFramingError('missing or duplicate content length');
+  }
+  return lengths[0]!;
+}
+
+export interface ServeLspStdioOptions {
+  input?: Readable;
+  output?: Writable;
+  diagnostics?: Writable;
+  close?: () => void;
+  installSignalHandlers?: boolean;
+  /** Test seam; production uses the fixed five-second output drain budget. */
+  outputDrainTimeoutMs?: number;
+}
+
+export async function serveLspStdio(
+  reader: LspRepositoryReader,
+  options: ServeLspStdioOptions = {},
+): Promise<number> {
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stdout;
+  const diagnostics = options.diagnostics ?? process.stderr;
+  const parser = new ContentLengthParser();
+  const facade = new LspFacade(reader);
+  const configuredDrainTimeout = options.outputDrainTimeoutMs;
+  const outputDrainTimeoutMs = typeof configuredDrainTimeout === 'number'
+    && Number.isFinite(configuredDrainTimeout)
+    && configuredDrainTimeout > 0
+    ? configuredDrainTimeout
+    : DEFAULT_OUTPUT_DRAIN_TIMEOUT_MS;
+  let chain = Promise.resolve();
+  let settled = false;
+  let inputEnded = false;
+  let queuedFrames = 0;
+  let queuedBodyBytes = 0;
+  let inputPauseScheduled = false;
+  let pendingOutputWrites = 0;
+  let finishCode: number | null = null;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  let exitResolved = false;
+  let cancelOutputDrain: (() => void) | null = null;
+  let resolveExit!: (code: number) => void;
+  const exit = new Promise<number>((resolve) => { resolveExit = resolve; });
+
+  const write = async (value: unknown): Promise<void> => {
+    if (settled) return;
+    const body = Buffer.from(JSON.stringify(value), 'utf8');
+    const frame = Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body]);
+    let accepted: boolean;
+    let writeCompleted = false;
+    pendingOutputWrites += 1;
+    const onWriteComplete = (error?: Error | null): void => {
+      if (writeCompleted) return;
+      writeCompleted = true;
+      pendingOutputWrites = Math.max(0, pendingOutputWrites - 1);
+      if (error) {
+        log('stream_failure');
+        finish(1);
+        return;
+      }
+      completeFinish();
+    };
+    try {
+      accepted = output.write(frame, onWriteComplete);
+    } catch {
+      onWriteComplete(new Error('output stream failure'));
+      return;
+    }
+    if (accepted || settled) return;
+    input.pause();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let completed = false;
+        const complete = (error?: Error): void => {
+          if (completed) return;
+          completed = true;
+          clearTimeout(timer);
+          output.removeListener('drain', onDrain);
+          output.removeListener('error', onDrainError);
+          if (cancelOutputDrain === cancel) cancelOutputDrain = null;
+          if (error) reject(error);
+          else resolve();
+        };
+        const cancel = (): void => complete();
+        const onDrain = (): void => complete();
+        const onDrainError = (): void => complete(new Error('output stream failure'));
+        const timer = setTimeout(
+          () => complete(new Error('output drain timeout')),
+          outputDrainTimeoutMs,
+        );
+        cancelOutputDrain = cancel;
+        output.once('drain', onDrain);
+        output.once('error', onDrainError);
+      });
+    } catch {
+      log('stream_failure');
+      finish(1);
+      return;
+    }
+    maybeResumeInput();
+  };
+  const log = (code: Parameters<typeof formatLspDiagnostic>[0]): void => {
+    try { diagnostics.write(`${formatLspDiagnostic(code)}\n`); } catch { /* best-effort */ }
+  };
+  const finish = (code: number): void => {
+    if (finishCode !== null) {
+      if (code !== 0) finishCode = code;
+      completeFinish(code !== 0);
+      return;
+    }
+    finishCode = code;
+    settled = true;
+    cancelOutputDrain?.();
+    try { input.pause(); } catch { /* best-effort */ }
+    input.removeListener('data', onData);
+    input.removeListener('end', onEnd);
+    input.removeListener('error', onError);
+    input.removeListener('close', onInputClose);
+    if (options.installSignalHandlers !== false) {
+      process.removeListener('SIGINT', onSignal);
+      process.removeListener('SIGTERM', onSignal);
+    }
+    try { options.close?.(); } catch { /* best-effort */ }
+    if (code === 0 && pendingOutputWrites > 0) {
+      finishTimer = setTimeout(() => {
+        log('stream_failure');
+        finish(1);
+      }, outputDrainTimeoutMs);
+    }
+    completeFinish(code !== 0);
+  };
+  const completeFinish = (force = false): void => {
+    if (exitResolved || finishCode === null || (!force && pendingOutputWrites > 0)) return;
+    exitResolved = true;
+    if (finishTimer) {
+      clearTimeout(finishTimer);
+      finishTimer = null;
+    }
+    output.removeListener('error', onOutputError);
+    output.removeListener('close', onOutputClose);
+    if (force || pendingOutputWrites > 0) output.on('error', ignoreLateOutputError);
+    resolveExit(finishCode);
+  };
+  const ignoreLateOutputError = (): void => { /* Prevent post-timeout stream crashes. */ };
+  const handleBody = async (body: Buffer): Promise<void> => {
+    if (settled) return;
+    let value: unknown;
+    try {
+      value = JSON.parse(body.toString('utf8'));
+    } catch {
+      await write(makeJsonRpcError(null, LSP_ERROR_CODE.ParseError));
+      return;
+    }
+    const envelope = parseJsonRpcEnvelope(value);
+    if (!envelope.ok) {
+      await write({ jsonrpc: '2.0', id: envelope.id, error: envelope.error });
+      return;
+    }
+    if (settled) return;
+    const response = await facade.handle(envelope.message);
+    if (settled) return;
+    if (response) await write(response);
+    if (facade.requestedExitCode !== null) finish(facade.requestedExitCode);
+  };
+  function onData(value: Buffer | string): void {
+    if (settled) return;
+    try {
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      if (chunk.length > MAX_INPUT_CHUNK_BYTES) throw new LspFramingError('input chunk limit');
+      for (const body of parser.push(chunk, {
+        maxMessages: MAX_QUEUED_FRAMES,
+        maxBodyBytes: MAX_QUEUED_BODY_BYTES,
+      })) {
+        if (queuedFrames >= MAX_QUEUED_FRAMES
+          || body.length > MAX_QUEUED_BODY_BYTES - queuedBodyBytes) {
+          log('invalid_frame');
+          finish(1);
+          break;
+        }
+        queuedFrames += 1;
+        queuedBodyBytes += body.length;
+        chain = chain
+          .then(() => handleBody(body))
+          .catch(() => {
+            log('internal_failure');
+            finish(1);
+          })
+          .finally(() => {
+            queuedFrames = Math.max(0, queuedFrames - 1);
+            queuedBodyBytes = Math.max(0, queuedBodyBytes - body.length);
+            maybeResumeInput();
+          });
+      }
+      scheduleInputPause();
+    } catch {
+      log('invalid_frame');
+      finish(1);
+    }
+  }
+  function onEnd(): void {
+    if (settled) return;
+    inputEnded = true;
+    try {
+      parser.finish();
+    } catch {
+      log('invalid_frame');
+      finish(1);
+      return;
+    }
+    void chain.finally(() => finish(facade.requestedExitCode ?? 1));
+  }
+  function onError(): void {
+    log('stream_failure');
+    finish(1);
+  }
+  function onInputClose(): void {
+    if (inputEnded) return;
+    log('stream_failure');
+    finish(1);
+  }
+  function onOutputError(): void {
+    log('stream_failure');
+    finish(1);
+  }
+  function onOutputClose(): void {
+    log('stream_failure');
+    finish(1);
+  }
+  function onSignal(): void {
+    finish(facade.requestedExitCode ?? 1);
+  }
+  function maybeResumeInput(): void {
+    if (!settled && queuedFrames === 0 && cancelOutputDrain === null) input.resume();
+  }
+  function scheduleInputPause(): void {
+    if (settled || queuedFrames === 0 || inputPauseScheduled) return;
+    inputPauseScheduled = true;
+    setImmediate(() => {
+      inputPauseScheduled = false;
+      if (!settled && queuedFrames > 0) input.pause();
+    });
+  }
+
+  input.on('data', onData);
+  input.once('end', onEnd);
+  input.once('error', onError);
+  input.once('close', onInputClose);
+  output.once('error', onOutputError);
+  output.once('close', onOutputClose);
+  if (options.installSignalHandlers !== false) {
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
+  }
+  input.resume();
+  return exit;
+}
+
+export async function runLspStdioServer(projectPath = process.cwd()): Promise<number> {
+  let root = findNearestCodeGraphRoot(projectPath);
+  if (!root) throw new Error('No indexed CodeGraph repository found');
+  try { root = fs.realpathSync(root); } catch { /* resolved fallback is sufficient */ }
+  const client = await attachDaemonClient(root);
+  return serveLspStdio(createDaemonLspReader(root, client), { close: () => client.close() });
+}

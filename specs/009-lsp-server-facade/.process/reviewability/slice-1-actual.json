@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "spec_id": "SPEC-009",
+  "status": "block",
+  "mode": "actual_diff",
+  "reason": "size_only",
+  "measured_at": "2026-07-17T09:25:45Z",
+  "scope": "slice_1",
+  "production": {
+    "added_lines": 1197,
+    "files": 6,
+    "hard_ceiling": 800
+  },
+  "tests": {
+    "added_lines": 449,
+    "files": 3
+  },
+  "markers": [
+    {
+      "id": "M1-lsp-read-core",
+      "review_order": 1,
+      "task_ids": ["T003", "T004", "T005", "T008", "T009", "T014"],
+      "production_added_lines": 505,
+      "production_files": 3,
+      "status": "warn"
+    },
+    {
+      "id": "M2-lsp-stdio-facade",
+      "review_order": 2,
+      "task_ids": ["T006", "T007", "T010", "T011", "T012", "T013", "T015", "T016", "T017"],
+      "production_added_lines": 692,
+      "production_files": 3,
+      "status": "warn"
+    }
+  ],
+  "disposition": "marker_split_required"
+}

@@ -6,7 +6,12 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import CodeGraph from '../src/index';
 import { initGrammars, loadAllGrammars } from '../src/extraction/grammars';
-import { executeReadOp, readTrustedSnapshot, type LspIncomingRead } from '../src/mcp/read-ops';
+import {
+  executeReadOp,
+  readTrustedSnapshot,
+  type LspIncomingRead,
+  type LspWorkspaceSymbolCandidate,
+} from '../src/mcp/read-ops';
 import type { QueryBuilder } from '../src/db/queries';
 import {
   LSP_ERROR_CODE,
@@ -255,10 +260,23 @@ describe('trusted daemon LSP reads', () => {
       });
 
       const context = await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }) as any;
-      const incoming = await executeReadOp(cg, 'lspIncoming', { id: alpha.id }) as any;
+      const incoming = await executeReadOp(cg, 'lspIncoming', {
+        id: alpha.id,
+        filePath: 'sample.ts',
+        snapshotToken: context.snapshot.snapshotToken,
+      }) as any;
 
       expect(context.occurrences.every((entry: any) => entry.edge.provenance !== 'heuristic')).toBe(true);
       expect(incoming.occurrences.every((entry: any) => entry.edge.provenance !== 'heuristic')).toBe(true);
+      expect(incoming.occurrences.every((entry: any) =>
+        entry.sourceSnapshotToken === context.snapshot.snapshotToken
+        && entry.targetSnapshotToken === context.snapshot.snapshotToken,
+      )).toBe(true);
+      await expect(executeReadOp(cg, 'lspIncoming', {
+        id: alpha.id,
+        filePath: 'sample.ts',
+        snapshotToken: 'stale-token',
+      })).resolves.toEqual({ ok: false, reason: 'stale' });
     } finally {
       cg.close();
     }
@@ -315,12 +333,71 @@ describe('trusted daemon LSP reads', () => {
     const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
     try {
       await cg.indexAll();
-      const substring = await executeReadOp(cg, 'lspWorkspaceSymbols', { query: 'CaseNeedle' }) as Node[];
-      const fuzzy = await executeReadOp(cg, 'lspWorkspaceSymbols', { query: 'aproximateName' }) as Node[];
-      expect(substring.map((node) => node.name)).toContain('camelCaseNeedle');
-      expect(fuzzy.map((node) => node.name)).toContain('approximateName');
-      expect([...substring, ...fuzzy].every((node) => node.docstring === undefined)).toBe(true);
+      const substring = await executeReadOp(
+        cg,
+        'lspWorkspaceSymbols',
+        { query: 'CaseNeedle' },
+      ) as LspWorkspaceSymbolCandidate[];
+      const fuzzy = await executeReadOp(
+        cg,
+        'lspWorkspaceSymbols',
+        { query: 'aproximateName' },
+      ) as LspWorkspaceSymbolCandidate[];
+      expect(substring.map(({ node }) => node.name)).toContain('camelCaseNeedle');
+      expect(fuzzy.map(({ node }) => node.name)).toContain('approximateName');
+      expect([...substring, ...fuzzy].every(({ node }) => node.docstring === undefined)).toBe(true);
+      expect([...substring, ...fuzzy].every(({ snapshotToken }) => snapshotToken.length > 0)).toBe(true);
     } finally {
+      cg.close();
+    }
+  });
+
+  it('continues workspace fallbacks when hard filters reject earlier search rows', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-filtered-fallback-'));
+    roots.push(root);
+    fs.mkdirSync(path.join(root, 'wanted'));
+    fs.mkdirSync(path.join(root, 'wrong'));
+    fs.writeFileSync(
+      path.join(root, 'wanted', 'sample.ts'),
+      'export function camelCaseNeedle() {}\nexport function approximateName() {}\n',
+    );
+    fs.writeFileSync(
+      path.join(root, 'wrong', 'sample.ts'),
+      'export function Needle() {}\nexport function aproximateName() {}\n',
+    );
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      const substring = await executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'Needle path:wanted',
+      }) as LspWorkspaceSymbolCandidate[];
+      const fuzzy = await executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'aproximateName path:wanted',
+      }) as LspWorkspaceSymbolCandidate[];
+
+      expect(substring.map(({ node }) => node.name)).toContain('camelCaseNeedle');
+      expect(fuzzy.map(({ node }) => node.name)).toContain('approximateName');
+      expect([...substring, ...fuzzy].every(({ node }) => node.filePath.startsWith('wanted/'))).toBe(true);
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('rejects excessive workspace query work before entering the read transaction', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-lsp-query-budget-'));
+    roots.push(root);
+    const cg = CodeGraph.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    const transaction = vi.spyOn(cg, 'withLspReadTransaction');
+    try {
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: Array.from({ length: 33 }, (_, index) => `path:missing-${index}`).join(' '),
+      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'x'.repeat(4 * 1024 + 1),
+      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      transaction.mockRestore();
       cg.close();
     }
   });
@@ -359,17 +436,28 @@ describe('trusted daemon LSP reads', () => {
         provenance: 'lsp' as const,
       }));
 
-      const workspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {}) as Node[];
-      const incoming = await executeReadOp(cg, 'lspIncoming', { id: alpha.id }) as LspIncomingRead;
-      expect(workspace).toHaveLength(500);
+      const workspace = await executeReadOp(
+        cg,
+        'lspWorkspaceSymbols',
+        {},
+      ) as LspWorkspaceSymbolCandidate[];
+      const context = await executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' });
+      expect(context.ok).toBe(true);
+      if (!context.ok) throw new Error('expected indexed sample context');
+      const incoming = await executeReadOp(cg, 'lspIncoming', {
+        id: alpha.id,
+        filePath: 'sample.ts',
+        snapshotToken: context.snapshot.snapshotToken,
+      }) as LspIncomingRead;
+      expect(workspace).toHaveLength(602);
       expect('occurrences' in incoming).toBe(true);
       if ('occurrences' in incoming) {
-        expect(incoming.occurrences).toHaveLength(500);
+        expect(incoming.occurrences).toHaveLength(600);
         expect(incoming.occurrences[0]?.edge.line).toBe(2);
-        expect(incoming.occurrences.at(-1)?.edge.line).toBe(501);
+        expect(incoming.occurrences.at(-1)?.edge.line).toBe(601);
       }
 
-      const tied = Array.from({ length: 2_601 }, (_value, index): Node => ({
+      const tied = Array.from({ length: 501 }, (_value, index): Node => ({
         ...alpha,
         id: `tied-workspace-${index}`,
         name: 'tiedWorkspaceTarget',
@@ -381,18 +469,29 @@ describe('trusted daemon LSP reads', () => {
         endLine: 1,
       }));
       queries.insertNodes(tied);
+      for (const node of tied) {
+        queries.upsertFile({
+          path: node.filePath,
+          contentHash: `hash-${node.id}`,
+          language: 'typescript',
+          size: 1,
+          modifiedAt: 1,
+          indexedAt: 1,
+          nodeCount: 1,
+        });
+      }
       const tiedWorkspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {
         query: 'tiedWorkspaceTarget',
-      }) as Node[];
-      expect(tiedWorkspace).toHaveLength(500);
+      }) as LspWorkspaceSymbolCandidate[];
+      expect(tiedWorkspace).toHaveLength(501);
       const byFinalLspOrder = [...tied].sort((left, right) => {
         const leftUri = normalizeLspUri(pathToFileURL(path.resolve(root, left.filePath)).href);
         const rightUri = normalizeLspUri(pathToFileURL(path.resolve(root, right.filePath)).href);
         return (leftUri < rightUri ? -1 : leftUri > rightUri ? 1 : 0)
           || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
       });
-      expect(tiedWorkspace.map((node) => node.id)).toEqual(
-        byFinalLspOrder.slice(0, 500).map((node) => node.id),
+      expect(tiedWorkspace.map(({ node }) => node.id)).toEqual(
+        byFinalLspOrder.map((node) => node.id),
       );
 
       const oversizedWorkspaceNodes = Array.from({ length: 600 }, (_value, index): Node => ({
@@ -404,21 +503,80 @@ describe('trusted daemon LSP reads', () => {
         docstring: 'x'.repeat(16 * 1024),
       }));
       queries.insertNodes(oversizedWorkspaceNodes);
+      for (const node of oversizedWorkspaceNodes) {
+        queries.upsertFile({
+          path: node.filePath,
+          contentHash: `hash-${node.id}`,
+          language: 'typescript',
+          size: 1,
+          modifiedAt: 1,
+          indexedAt: 1,
+          nodeCount: 1,
+        });
+      }
       const genericSearch = vi.spyOn(cg, 'searchNodes');
       const oversizedWorkspace = await executeReadOp(cg, 'lspWorkspaceSymbols', {
         query: 'oversizedWorkspaceTarget',
-      }) as Node[];
-      expect(oversizedWorkspace).toHaveLength(500);
-      expect(oversizedWorkspace.every((node) => node.docstring === undefined)).toBe(true);
+      }) as LspWorkspaceSymbolCandidate[];
+      expect(oversizedWorkspace).toHaveLength(600);
+      expect(oversizedWorkspace.every(({ node }) => node.docstring === undefined)).toBe(true);
       expect(genericSearch).not.toHaveBeenCalled();
       genericSearch.mockRestore();
+
+      queries.insertNodes(Array.from({ length: 8 }, (_value, index): Node => ({
+        ...alpha,
+        id: `heap-budget-workspace-${index}`,
+        name: 'heapBudgetWorkspaceTarget',
+        qualifiedName: `heapBudget::${index}::${'x'.repeat(512 * 1024)}`,
+        filePath: `heap-budget/${index}.ts`,
+      })));
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {
+        query: 'heapBudgetWorkspaceTarget',
+      })).resolves.toEqual({ ok: false, reason: 'too_large' });
+
+      queries.insertNodes(Array.from({ length: 101 }, (_value, index): Node => ({
+        ...alpha,
+        id: `raw-fts-budget-${index}`,
+        kind: index === 100 ? 'class' : 'function',
+        name: `sharedFtsTerm${index}`,
+        qualifiedName: `sharedFtsTerm${index}`,
+        startLine: index + 1_000,
+        endLine: index + 1_000,
+      })));
+      const ftsFilterBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
+      expect([...cg.iterateLspWorkspaceSymbolCandidates(
+        'sharedFtsTerm kind:class',
+        ftsFilterBudget,
+      )]).toEqual([]);
+      expect(ftsFilterBudget.exceeded).toBe(true);
+
+      const pathScanBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
+      expect([...cg.iterateLspWorkspaceSymbolCandidates(
+        'path:definitely-absent-workspace-path',
+        pathScanBudget,
+      )]).toEqual([]);
+      expect(pathScanBudget.exceeded).toBe(true);
+
+      const substringScanBudget = { maxRows: 100, examinedRows: 0, exceeded: false };
+      expect([...cg.iterateLspWorkspaceSymbolCandidates(
+        'definitelyAbsentWorkspaceSubstring',
+        substringScanBudget,
+      )]).toEqual([]);
+      expect(substringScanBudget.exceeded).toBe(true);
+
+      await expect(executeReadOp(cg, 'lspWorkspaceSymbols', {}))
+        .resolves.toEqual({ ok: false, reason: 'too_large' });
 
       queries.updateNode({
         ...alpha,
         docstring: 'x'.repeat(16 * 1024),
       });
       const materialization = vi.spyOn(cg, 'getLspNodesByIds');
-      await expect(executeReadOp(cg, 'lspIncoming', { id: alpha.id }))
+      await expect(executeReadOp(cg, 'lspIncoming', {
+        id: alpha.id,
+        filePath: 'sample.ts',
+        snapshotToken: context.snapshot.snapshotToken,
+      }))
         .resolves.toEqual({ ok: false, reason: 'too_large' });
       await expect(executeReadOp(cg, 'lspFileContext', { filePath: 'sample.ts' }))
         .resolves.toEqual({ ok: false, reason: 'too_large' });
@@ -440,7 +598,11 @@ describe('trusted daemon LSP reads', () => {
         column: 0,
         provenance: 'lsp' as const,
       })));
-      await expect(executeReadOp(cg, 'lspIncoming', { id: alpha.id }))
+      await expect(executeReadOp(cg, 'lspIncoming', {
+        id: alpha.id,
+        filePath: 'sample.ts',
+        snapshotToken: context.snapshot.snapshotToken,
+      }))
         .resolves.toEqual({ ok: false, reason: 'too_large' });
 
       queries.insertNodes(Array.from({ length: 5_001 }, (_value, index) => ({

@@ -75,6 +75,25 @@ because Grill Me ratified the two independently testable slices.
 a reviewability decomposition, not a constitutional exception to product
 behavior. No Complexity Tracking row is needed.
 
+### Actual Slice 1 Reviewability Disposition
+
+The implemented Slice 1 diff contains 1,197 added production lines across six
+production files, excluding its 449-line black-box/unit test harness. That is a
+size-only block against the 800-line hard ceiling and invalidates the projected
+single-marker Slice 1 boundary. Correctness and G7 verification remain green.
+
+Autopilot therefore continues through two ordered review markers while retaining
+the ratified product scope and dependency order:
+
+| Marker | Review scope | Actual production additions | Result |
+|---|---|---:|---|
+| `M1-lsp-read-core` | Protocol helpers plus daemon read authority/wrappers (`T003`–`T005`, `T008`–`T009`, `T014`) | 505 across 3 files | Warn; below the 800-line hard ceiling |
+| `M2-lsp-stdio-facade` | Facade, stdio transport, CLI, black-box/UAT verification (`T006`–`T007`, `T010`–`T013`, `T015`–`T017`) | 692 across 3 files | Warn; below the 800-line hard ceiling |
+
+The final full diff must use the persisted marker plan and marker-based PR
+emission; it must not fall back to one all-changes PR. Slice 2 receives the same
+actual-diff check before its checkpoint.
+
 ## Research Decisions
 
 Full rationale and alternatives are in [research.md](research.md). Binding
@@ -177,7 +196,8 @@ top-level project.
 
 | Operation | Path | Coverage |
 |---|---|---|
-| NEW | `__tests__/lsp-server.test.ts` | Lifecycle, roots, methods, exact evidence, Unicode, source safety, deterministic caps. |
+| NEW | `__tests__/lsp-protocol-read.test.ts` | Protocol, Unicode, ordering, caps, and trusted daemon source-read behavior. |
+| NEW | `__tests__/lsp-server.test.ts` | Lifecycle, roots, methods, exact evidence, and deterministic facade behavior. |
 | NEW | `__tests__/lsp-stdio-black-box.test.ts` | Built process, framing, stdout purity, unsupported methods, shutdown/signals/orphan checks. |
 
 **Slice 1 estimate**: 8 TypeScript review files × 40 = 320 projected
@@ -220,6 +240,7 @@ primary surface; PASS.
 - MODIFIED src/server/daemon-client.ts
 - MODIFIED src/bin/codegraph.ts
 - NEW __tests__/lsp-server.test.ts
+- NEW __tests__/lsp-protocol-read.test.ts
 - NEW __tests__/lsp-stdio-black-box.test.ts
 - NEW src/server/lsp-websocket.ts
 - MODIFIED src/server/index.ts
