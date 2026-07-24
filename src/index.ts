@@ -26,7 +26,7 @@ import {
   FindRelevantContextOptions,
 } from './types';
 import { DatabaseConnection, getDatabasePath, removeDatabaseFiles } from './db';
-import { WalCheckpointValve } from './db/wal-valve';
+import { WalCheckpointValve, resolveWalValveMb } from './db/wal-valve';
 import {
   QueryBuilder,
   type LspIncomingEdgeCursor,
@@ -255,6 +255,9 @@ export interface IndexOptions {
 
   /** Bounded changed-file context for a watch-triggered LSP precision pass. */
   lspWatch?: LspWatchPrecisionPassOptions;
+
+  /** Watcher fast path: reconcile only these project-relative paths. */
+  paths?: string[];
 }
 
 /**
@@ -924,12 +927,15 @@ export class CodeGraph {
       const deferWal = !fastInit && process.env.CODEGRAPH_NO_WAL_DEFER !== '1' && this.db.getJournalMode() === 'wal';
       let walValve: WalCheckpointValve | null = null;
       let priorAutocheckpoint = 1000;
+      // Set when the fastInit+pool path below defers autocheckpointing, so the
+      // finally knows to restore the interval on that path too.
+      let restoreAutocheckpoint = false;
       if (deferWal) {
         priorAutocheckpoint = this.db.getWalAutocheckpoint();
         this.db.setWalAutocheckpoint(0);
         walValve = new WalCheckpointValve(
           this.db,
-          undefined,
+          resolveWalValveMb(process.env.CODEGRAPH_WAL_VALVE_MB, this.db.getDbFileSizeBytes()),
           undefined,
           options.verbose ? (m) => console.log(`[wal-valve] ${m}`) : undefined
         );
@@ -951,6 +957,11 @@ export class CodeGraph {
         // triggers, rebuild nodes_fts once from the nodes table afterwards.
         // Crash inside the window is healed on the next DatabaseConnection.open.
         this.db.beginBulkNodeLoad();
+        // Fresh-init only: also drop the parse-lane secondary indexes for the
+        // mass insert (the store-writer's B-tree-maintenance floor, plan §4d)
+        // and rebuild each in one scan afterwards. Incremental runs keep them
+        // — they delete per-file rows mid-phase through the file_path indexes.
+        if (freshDb) this.db.beginBulkParseLoad();
         let result: IndexResult;
         try {
           result = await this.orchestrator.indexAll(
@@ -964,7 +975,14 @@ export class CodeGraph {
             freshDb ? { dbPath: this.db.getPath(), fastInit } : null
           );
         } finally {
+          if (freshDb) {
+            const tIdx = Date.now();
+            await this.db.endBulkParseLoad();
+            if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] parse-index-rebuild: ${Date.now() - tIdx}ms`);
+          }
+          const tFts = Date.now();
           this.db.endBulkNodeLoad();
+          if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] fts-rebuild: ${Date.now() - tFts}ms`);
         }
 
         // Fold the parse phase's WAL BEFORE the first post-parse reads
@@ -982,10 +1000,12 @@ export class CodeGraph {
         // and silently drop themselves. Re-initializing here gives them a
         // chance to see the actual project before resolution runs.
         if (result.success && result.filesIndexed > 0) {
+          const tReinit = Date.now();
           this.resolver.initialize();
           // Cross-file finalization (e.g. NestJS RouterModule prefixes). Runs
           // before resolution so updated names show up in subsequent reads.
           this.resolver.runPostExtract();
+          if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] resolver-reinit: ${Date.now() - tReinit}ms`);
         }
 
         // Resolve references to create call/import/extends edges
@@ -1003,6 +1023,24 @@ export class CodeGraph {
             try {
               this.db.getDb().pragma('synchronous = NORMAL');
               this.db.getDb().pragma('journal_mode = WAL');
+              // Defer auto-checkpointing for the resolution phase, same
+              // rationale as the deferWal path above: at the default 1000-page
+              // interval, the persist loop's edge inserts + ref deletes make
+              // SQLite re-write hot B-tree pages into the main DB file inline
+              // on the writer over and over (#1231's pathology — measured as
+              // ~58% of the resolution phase on a 255k-ref repo). The valve
+              // bounds WAL growth off-thread; runMaintenance does the final
+              // fold and the finally restores the interval.
+              priorAutocheckpoint = this.db.getWalAutocheckpoint();
+              this.db.setWalAutocheckpoint(0);
+              restoreAutocheckpoint = true;
+              walValve = new WalCheckpointValve(
+                this.db,
+                undefined,
+                undefined,
+                options.verbose ? (m) => console.log(`[wal-valve] ${m}`) : undefined
+              );
+              walValve.start();
             } catch { /* keep current mode; resolution still works sequentially */ }
           }
 
@@ -1012,6 +1050,7 @@ export class CodeGraph {
             total: unresolvedCount,
           });
 
+          const tResolve = Date.now();
           await this.resolveReferencesBatched(
             (current, total) => {
               options.onProgress?.({
@@ -1026,8 +1065,10 @@ export class CodeGraph {
                 current: done,
                 total: totalPasses,
               });
-            }
+            },
+            walValve ? () => walValve!.backpressure() : undefined
           );
+          if (process.env.CODEGRAPH_SYNTH_TIMINGS) console.error(`[phase-timing] resolution: ${Date.now() - tResolve}ms`);
 
           // Second pass: chained calls whose method lives on a supertype the
           // receiver conforms to (protocol-extension / inherited / default-
@@ -1169,7 +1210,7 @@ export class CodeGraph {
         // (SQLite replays the WAL on the next open) and the follow-up write
         // that folds it is the known cost of a failed run.
         if (walValve) { walValve.stop(); await walValve.drain(); }
-        if (deferWal) {
+        if (deferWal || restoreAutocheckpoint) {
           try { this.db.setWalAutocheckpoint(priorAutocheckpoint); } catch { /* connection may be closing */ }
         }
         if (fastInit) {
@@ -1475,7 +1516,7 @@ export class CodeGraph {
         this.db.setWalAutocheckpoint(0);
         walValve = new WalCheckpointValve(
           this.db,
-          undefined,
+          resolveWalValveMb(process.env.CODEGRAPH_WAL_VALVE_MB, this.db.getDbFileSizeBytes()),
           undefined,
           options.verbose ? (m) => console.log(`[wal-valve] ${m}`) : undefined
         );
@@ -1491,7 +1532,7 @@ export class CodeGraph {
           try { return this.queries.isNameSegmentVocabEmpty(); } catch { return false; }
         })();
 
-        const result = await this.orchestrator.sync(options.onProgress);
+        const result = await this.orchestrator.sync(options.onProgress, options.paths);
 
         // Fold the store phase's WAL BEFORE the post-store reads below
         // (resolution reads on the main thread) — same rationale as
@@ -1755,8 +1796,9 @@ export class CodeGraph {
     this.lspWatchRestartBudget.clear();
     this.watcher = new FileWatcher(
       this.projectRoot,
-      async (context) => {
+      async (paths, context) => {
         const result = await this.sync({
+          paths,
           lspWatch: {
             changedSourceFiles: context.changedSourceFiles,
             materialBatchKey: context.materialBatchKey,
@@ -1926,10 +1968,30 @@ export class CodeGraph {
    */
   async resolveReferencesBatched(
     onProgress?: (current: number, total: number) => void,
-    onSynthesisProgress?: (done: number, total: number) => void
+    onSynthesisProgress?: (done: number, total: number) => void,
+    // The WAL valve's writer-side backstop, threaded into the batch loop's
+    // pool-idle boundaries. Without it the valve's only lever during
+    // resolution is timer-driven passive checkpoints, which the pool's
+    // continuous reads keep perpetually partial — the WAL then accretes the
+    // whole phase's write volume (22GB on a 4.6GB DB at kernel scale).
+    backpressure?: () => Promise<void> | null
   ): Promise<ResolutionResult> {
     return this.resolver.resolveAndPersistBatched(onProgress, undefined, onSynthesisProgress, {
       dbPath: this.db.getPath(),
+      // Bulk-edge-load hooks: on big runs the resolver drops the non-unique
+      // edge indexes for the batch loop and recreates them before synthesis
+      // (which reads kind-keyed). Concurrent readers (a daemon serving this
+      // project mid-index) stay CORRECT during the window — target/kind reads
+      // just degrade to scans until the recreate.
+      bulkEdgeLoad: {
+        begin: () => this.db.beginBulkEdgeLoad(),
+        end: () => this.db.endBulkEdgeLoad(),
+      },
+      refIndexLoad: {
+        begin: () => this.db.beginBulkRefLoad(),
+        end: () => this.db.endBulkRefLoad(),
+      },
+      backpressure,
     });
   }
 

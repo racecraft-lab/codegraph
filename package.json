@@ -30,6 +30,7 @@
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit && npm run typecheck:web",
     "typecheck:web": "npm --prefix web run typecheck",
+    "build:kernel": "bash scripts/build-kernel.sh",
     "cli": "npm run build && node dist/bin/codegraph.js",
     "test": "vitest run",
     "test:web": "npm --prefix web run test",

@@ -42,6 +42,20 @@ describe('detect changes', () => {
     expect(baseRef.hunks.some((h) => h.newPath === 'src/calculator.ts')).toBe(true);
   });
 
+  it('acquires hunk metadata when generated-source changes exceed the old 20 MB capture ceiling', () => {
+    fixture = createDetectChangesFixture();
+    const fx = fixture;
+    const generatedLine = `// ${'x'.repeat(1020)}\n`;
+    fx.write('src/calculator.ts', generatedLine.repeat(21_000));
+
+    const diff = acquireGitDiff(fx.dir, { mode: 'all' });
+
+    expect(diff.hunks).toContainEqual(expect.objectContaining({
+      newPath: 'src/calculator.ts',
+      changeKind: 'modified',
+    }));
+  }, 30_000);
+
   it('compares base-ref diffs against the explicit PR head instead of a synthetic merge HEAD', async () => {
     fixture = createDetectChangesFixture();
     const fx = fixture;

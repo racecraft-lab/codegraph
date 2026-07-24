@@ -30,7 +30,8 @@ try {
 import { parentPort } from 'worker_threads';
 import { QueryBuilder } from '../db/queries';
 import { createDatabase, SqliteDatabase } from '../db/sqlite-adapter';
-import type { StoreBundle } from './store-writer';
+import { finalizeStoreBundle, type KernelStoreBundle, type StoreBundle } from './store-writer';
+import { decodeExtractBuffers } from './kernel/decode';
 
 if (!parentPort) {
   throw new Error('store-worker must be run as a worker thread');
@@ -40,11 +41,37 @@ const port = parentPort;
 let db: SqliteDatabase | null = null;
 let queries: QueryBuilder | null = null;
 
+// CODEGRAPH_SYNTH_TIMINGS: split the writer lane's busy time into its two
+// halves — kernel-buffer decode+finalize (JS-object materialization, the §4d
+// buffer→bind candidate) vs the SQL bundle store — printed once at close.
+const STORE_TIMINGS = !!process.env.CODEGRAPH_SYNTH_TIMINGS;
+let decodeNs = 0n;
+let storeNs = 0n;
+let bundleCount = 0;
+let kernelBundleCount = 0;
+
 type InMessage =
   | { type: 'open'; dbPath: string; fastInit: boolean }
-  | { type: 'bundle'; bundle: StoreBundle }
+  | { type: 'bundle'; bundle: StoreBundle | KernelStoreBundle }
   | { type: 'drain'; id: number }
   | { type: 'close' };
+
+/** Decode a kernel bundle's buffers into the standard pre-filtered StoreBundle. */
+function decodeKernelBundle(bundle: KernelStoreBundle): StoreBundle {
+  const asBuf = (u: Uint8Array) => Buffer.from(u.buffer, u.byteOffset, u.byteLength);
+  const decoded = decodeExtractBuffers(
+    {
+      meta: asBuf(bundle.buffers.meta),
+      nodes: asBuf(bundle.buffers.nodes),
+      edges: asBuf(bundle.buffers.edges),
+      refs: asBuf(bundle.buffers.refs),
+      arena: asBuf(bundle.buffers.arena),
+    },
+    bundle.filePath,
+    bundle.language
+  );
+  return finalizeStoreBundle(decoded, bundle.filePath, bundle.language, bundle.file);
+}
 
 port.on('message', (msg: InMessage) => {
   try {
@@ -70,7 +97,25 @@ port.on('message', (msg: InMessage) => {
       }
       case 'bundle': {
         if (!queries) throw new Error('store-worker: bundle before open');
-        queries.storeFileBundle(msg.bundle);
+        if (STORE_TIMINGS) {
+          bundleCount++;
+          const t0 = process.hrtime.bigint();
+          let bundle: StoreBundle;
+          if ('kernel' in msg.bundle) {
+            kernelBundleCount++;
+            bundle = decodeKernelBundle(msg.bundle);
+          } else {
+            bundle = msg.bundle;
+          }
+          const t1 = process.hrtime.bigint();
+          queries.storeFileBundle(bundle);
+          decodeNs += t1 - t0;
+          storeNs += process.hrtime.bigint() - t1;
+          port.postMessage({ type: 'ack' });
+          break;
+        }
+        const bundle = 'kernel' in msg.bundle ? decodeKernelBundle(msg.bundle) : msg.bundle;
+        queries.storeFileBundle(bundle);
         port.postMessage({ type: 'ack' });
         break;
       }
@@ -79,6 +124,11 @@ port.on('message', (msg: InMessage) => {
         break;
       }
       case 'close': {
+        if (STORE_TIMINGS && bundleCount > 0) {
+          console.error(
+            `[store-timing] bundles=${bundleCount} (kernel=${kernelBundleCount}) decode=${(Number(decodeNs / 1_000_000n) / 1000).toFixed(2)}s store=${(Number(storeNs / 1_000_000n) / 1000).toFixed(2)}s`
+          );
+        }
         try {
           db?.close();
         } catch {

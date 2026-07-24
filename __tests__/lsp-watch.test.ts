@@ -117,7 +117,7 @@ describe('LSP watch verification', () => {
     const contexts: any[] = [];
     const watcher = new FileWatcher(
       dir,
-      async (context?: any) => {
+      async (_paths, context) => {
         contexts.push(context);
         return { filesChanged: 2, durationMs: 1 };
       },
@@ -145,7 +145,7 @@ describe('LSP watch verification', () => {
     const contexts: any[] = [];
     const watcher = new FileWatcher(
       dir,
-      async (context?: any) => {
+      async (_paths, context) => {
         contexts.push(context);
         return { filesChanged: 1, durationMs: 1 };
       },

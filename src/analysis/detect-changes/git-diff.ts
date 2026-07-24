@@ -1,6 +1,11 @@
 import { execFileSync } from 'child_process';
 import type { ChangedHunk, DiffRequest, UnmappedReason } from './index';
 
+// Generated parsers and other vendored sources can make an otherwise ordinary PR patch
+// exceed Node's small default capture buffer. Keep a finite ceiling, but leave enough room
+// for large source imports so detect-changes can still reduce them to compact hunk metadata.
+const GIT_DIFF_MAX_BUFFER = 128 * 1024 * 1024;
+
 export interface GitFileChange {
   status: string;
   oldPath: string | null;
@@ -93,7 +98,7 @@ function runGit(projectRoot: string, args: string[]): string {
     return execFileSync('git', args, {
       cwd: projectRoot,
       encoding: 'utf8',
-      maxBuffer: 20 * 1024 * 1024,
+      maxBuffer: GIT_DIFF_MAX_BUFFER,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (error) {
