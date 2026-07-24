@@ -11,8 +11,8 @@
  * @module server/index
  *
  * Read routes (`buildReadRoutes`) and re-index job routes (`buildJobRoutes`) are
- * both registered, and the static mount is active. The `'upgrade'` attach point
- * is exposed but wired to nothing (reserved for SPEC-009).
+ * both registered, the static mount is active, and SPEC-009 owns the bounded
+ * `/lsp` WebSocket upgrade lifecycle through server shutdown.
  */
 
 import * as http from 'http';
@@ -34,6 +34,7 @@ import { resolveBindSecurity, isAllowedHostHeader } from './auth';
 import { serveStatic } from './static';
 import { attachDaemonClient, repoIdForRoot, type DaemonReadClient } from './daemon-client';
 import { JobRegistry, defaultRearmWatcher, type JobDeps } from './jobs';
+import { attachLspWebSocket } from './lsp-websocket';
 import { CodeGraphPackageVersion } from '../mcp/version';
 import { listDaemons } from '../mcp/daemon-registry';
 import { findNearestCodeGraphRoot } from '../directory';
@@ -103,7 +104,7 @@ export interface WebServerHandle {
    */
   trackDaemonClient(client: DaemonReadClient): void;
   /** Ordered shutdown: stop accepting, close daemon clients, release the port (FR-026). */
-  close(): Promise<void>;
+  close(deadlineAt?: number): Promise<void>;
 }
 
 /**
@@ -230,6 +231,8 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   // Daemon clients attached while serving reads (lazily, FR-010) — closed on
   // shutdown to decrement each daemon's refcount, never killed (FR-026).
   const daemonClients = new Set<DaemonReadClient>();
+  const pendingClientAttaches = new Set<Promise<DaemonReadClient>>();
+  const serverLifetime = new AbortController();
   // Live connections, tracked so shutdown can release the port promptly instead
   // of waiting out idle keep-alive sockets.
   const connections = new Set<net.Socket>();
@@ -262,7 +265,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
     if (cached) return cached;
     const attach = attachDaemonClient(
       repo.root,
-      options.spawnDaemon ? { spawnDaemon: options.spawnDaemon } : {},
+      {
+        ...(options.spawnDaemon ? { spawnDaemon: options.spawnDaemon } : {}),
+        signal: serverLifetime.signal,
+      },
     ).then((client) => {
       // Shutdown may have drained daemonClients while this attach was resolving —
       // close the late client rather than leaking it back into a closed server.
@@ -273,6 +279,11 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
     // A failed attach must not pin a rejected promise in the pool — evict so a
     // later request retries (the daemon may bind on a subsequent call, FR-015a).
     attach.catch(() => clientPool.delete(repo.id));
+    void attach.then(
+      () => pendingClientAttaches.delete(attach),
+      () => pendingClientAttaches.delete(attach),
+    );
+    pendingClientAttaches.add(attach);
     clientPool.set(repo.id, attach);
     return attach;
   };
@@ -318,6 +329,30 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
     isRepoIndexed: (root) => findNearestCodeGraphRoot(root) !== null,
   };
 
+  // WebSocket sessions lease independent daemon transports. The daemon engine
+  // remains shared and warm, but a failed or disconnected browser session can
+  // close only its own socket instead of evicting the HTTP pool or another LSP
+  // session's in-flight reads.
+  const getLspClient = async (repo: RepoInfo, signal: AbortSignal): Promise<DaemonReadClient> => {
+    const client = await attachDaemonClient(
+      repo.root,
+      {
+        ...(options.spawnDaemon ? { spawnDaemon: options.spawnDaemon } : {}),
+        signal,
+      },
+    );
+    if (closing) {
+      try { client.close(); } catch { /* best-effort */ }
+      return client;
+    }
+    daemonClients.add(client);
+    return client;
+  };
+  const releaseLspClient = (_repo: RepoInfo, client: DaemonReadClient): void => {
+    if (!daemonClients.delete(client)) return;
+    try { client.close(); } catch { /* best-effort */ }
+  };
+
   // Slice-2 reindex jobs (FR-020..FR-024): an in-memory latest-job-per-repo
   // registry. Jobs run IN this serve process (FR-021); the watcher re-arm
   // (FR-021a) defaults to the socket control-message sender. Tests inject
@@ -353,12 +388,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
   server.on('connection', (socket) => {
     connections.add(socket);
     socket.on('close', () => connections.delete(socket));
-  });
-
-  // Reserved for SPEC-009 (LSP over WebSocket) — exposed but wired to nothing.
-  // Destroy the socket so an upgrade request never hangs or gets a 101.
-  server.on('upgrade', (_req, socket) => {
-    socket.destroy();
   });
 
   async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -459,11 +488,30 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
 
   const addr = server.address();
   const boundPort = typeof addr === 'object' && addr !== null ? addr.port : requestedPort;
+  const lspWebSocket = attachLspWebSocket({
+    server,
+    host,
+    port: boundPort,
+    security,
+    resolveRepo,
+    getClient: getLspClient,
+    releaseClient: releaseLspClient,
+    diagnostics: options.diagnostics,
+  });
 
-  const close = (): Promise<void> => {
+  const close = (deadlineAt = Date.now() + SHUTDOWN_GRACE_MS): Promise<void> => {
     if (closing) return closing;
+    const shutdownDeadline = Math.max(Date.now(), deadlineAt);
     closing = (async () => {
-      // FR-026 ordered shutdown. (1) stop accepting new connections and capture the
+      // FR-026 ordered shutdown. Establish one deadline, then begin every cleanup
+      // lane together so an unresponsive WebSocket cannot consume the HTTP, job,
+      // or daemon cleanup budget before those lanes even start.
+      const remaining = (): number => Math.max(0, shutdownDeadline - Date.now());
+      // Cancel pooled HTTP admissions before they can continue polling or spawn
+      // a daemon after shutdown has begun.
+      serverLifetime.abort();
+
+      // (1) stop accepting new connections and capture the
       // REAL `server.close()` callback — it fires only once EVERY connection has
       // closed, so awaiting it (step 3) guarantees the listening socket is fully
       // released before close() resolves (no rebind race). The grace backstop does
@@ -475,19 +523,39 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
       server.close(() => serverClosed());
       const backstop = setTimeout(() => {
         for (const socket of connections) { try { socket.destroy(); } catch { /* gone */ } }
-      }, SHUTDOWN_GRACE_MS);
+      }, remaining());
       backstop.unref?.();
+
+      const lspClosePromise = lspWebSocket.close(shutdownDeadline);
+      const jobAbortPromise = Promise.race([
+        jobRegistry.abortAll(shutdownDeadline),
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, remaining());
+          timer.unref?.();
+        }),
+      ]);
+      const attachAbortPromise = Promise.race([
+        Promise.allSettled([...pendingClientAttaches]).then(() => undefined),
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, remaining());
+          timer.unref?.();
+        }),
+      ]);
+
+      // Closing daemon transports is synchronous and immediately unblocks any
+      // read that outlived its HTTP or LSP peer. Session release is identity-safe,
+      // so clearing here cannot double-close a leased transport.
+      for (const client of daemonClients) {
+        try { client.close(); } catch { /* best-effort */ }
+      }
+      daemonClients.clear();
+
       // (2) abort any in-flight reindex job via its AbortSignal: the job records a
       // terminal `aborted` outcome, emits the terminal SSE event to every
       // subscriber, releases the index lock (indexAll's finally), and fires the
       // watcher re-arm (FR-023/026). Bounded by the grace window so a job that
       // will not settle can never defer shutdown past the deadline.
-      try {
-        await Promise.race([
-          jobRegistry.abortAll(),
-          new Promise<void>((r) => { const t = setTimeout(r, SHUTDOWN_GRACE_MS); t.unref?.(); }),
-        ]);
-      } catch { /* best-effort — shutdown proceeds regardless */ }
+      await Promise.allSettled([lspClosePromise, jobAbortPromise, attachAbortPromise]);
       // (3) release the bound port. GRACEFULLY end each socket first (`end()`
       // flushes the write buffer before FIN) so the terminal SSE frame written in
       // step 2 is delivered rather than dropped by an abrupt `destroy()`; then
@@ -503,12 +571,6 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
         try { socket.destroy(); } catch { /* already gone */ }
       }
       connections.clear();
-      // (4) close every daemon client socket — decrement the daemon's refcount,
-      // NEVER kill it; a shared daemon may still serve other MCP sessions.
-      for (const client of daemonClients) {
-        try { client.close(); } catch { /* best-effort */ }
-      }
-      daemonClients.clear();
     })();
     return closing;
   };
@@ -517,6 +579,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<We
     host,
     port: boundPort,
     trackDaemonClient(client: DaemonReadClient): void {
+      if (closing) {
+        try { client.close(); } catch { /* best-effort */ }
+        return;
+      }
       daemonClients.add(client);
     },
     close,
@@ -593,9 +659,8 @@ export async function runWebServerCli(options: RunWebServerCliOptions): Promise<
   const shutdown = (): void => {
     if (shuttingDown) return;
     shuttingDown = true;
-    const backstop = setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS);
-    backstop.unref?.();
-    void handle.close().finally(() => process.exit(0));
+    const deadlineAt = Date.now() + SHUTDOWN_GRACE_MS;
+    void handle.close(deadlineAt).finally(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

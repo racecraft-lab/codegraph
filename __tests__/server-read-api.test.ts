@@ -10,7 +10,7 @@
  * fixture temp dirs, never this repo's own daemon.
  */
 
-import { afterEach, afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { afterEach, afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -534,6 +534,126 @@ describe('SPEC-005 daemon client (T005, FR-002/008/015a)', () => {
     expect(retryAfter).toBeGreaterThan(0);
   }, T(15000));
 
+  it('reports asynchronous spawn faults only through a stable reason-code sink', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-daemon-diagnostic-'));
+    fs.mkdirSync(path.join(root, '.codegraph'));
+    fs.writeFileSync(path.join(root, '.codegraph', 'codegraph.db'), '');
+    cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
+    const diagnostics: string[] = [];
+
+    const rejection = await attachDaemonClient(root, {
+      connect: async () => null,
+      connectMaxRetries: 0,
+      diagnostics: (code) => diagnostics.push(code),
+      spawnDaemon: (_spawnRoot, report) => report('daemon_spawn_failed'),
+    }).then(
+      () => { throw new Error('expected attach to reject when the daemon never binds'); },
+      (error) => error as unknown,
+    );
+
+    expect(rejection).toBeInstanceOf(DaemonUnavailableError);
+    expect(diagnostics).toEqual(['daemon_spawn_failed']);
+    expect(JSON.stringify(diagnostics)).not.toContain(root);
+  });
+
+  it('contains a throwing asynchronous daemon diagnostic sink', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-daemon-diagnostic-throw-'));
+    fs.mkdirSync(path.join(root, '.codegraph'));
+    fs.writeFileSync(path.join(root, '.codegraph', 'codegraph.db'), '');
+    cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const rejection = await attachDaemonClient(root, {
+      connect: async () => null,
+      connectMaxRetries: 0,
+      diagnostics: () => { throw new Error('observer failure'); },
+      spawnDaemon: (_spawnRoot, report) => report('daemon_spawn_failed'),
+    }).then(
+      () => { throw new Error('expected attach to reject when the daemon never binds'); },
+      (error) => error as unknown,
+    );
+
+    expect(rejection).toBeInstanceOf(DaemonUnavailableError);
+  });
+
+  it('cancels daemon attach polling when its admission signal is aborted', async () => {
+    const root = await buildFixture();
+    const controller = new AbortController();
+    let spawned = false;
+    const attach = attachDaemonClient(root, {
+      connect: async () => null,
+      connectMaxRetries: 240,
+      connectRetryDelayMs: 5_000,
+      signal: controller.signal,
+      spawnDaemon: () => { spawned = true; },
+    });
+    await waitFor(() => spawned, 5_000, 'daemon spawn attempted');
+
+    const started = Date.now();
+    controller.abort();
+    const rejection = await attach.then(
+      () => { throw new Error('expected aborted attach to reject'); },
+      (error) => error as unknown,
+    );
+
+    expect(rejection).toBeInstanceOf(DaemonUnavailableError);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('closes the daemon transport when abort wins immediately after initialization', async () => {
+    const root = await buildFixture();
+    const server = net.createServer((socket) => {
+      socket.setEncoding('utf8');
+      let buffer = '';
+      socket.on('data', (chunk: string) => {
+        buffer += chunk;
+        const newline = buffer.indexOf('\n');
+        if (newline === -1) return;
+        const request = JSON.parse(buffer.slice(0, newline)) as { id: string | number };
+        socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: {} })}\n`);
+      });
+      socket.on('error', () => { /* ignore shutdown races */ });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const port = (server.address() as net.AddressInfo).port;
+    let clientSocket: net.Socket | null = null;
+    const connect = (): Promise<net.Socket> => new Promise((resolve) => {
+      const socket = net.createConnection(port, '127.0.0.1', () => resolve(socket));
+      clientSocket = socket;
+      socket.on('error', () => { /* ignore shutdown races */ });
+    });
+
+    // Model the exact race: initialization observes a live signal, resolves,
+    // then the next observation sees that shutdown won before the client escapes.
+    const backingSignal = new AbortController().signal;
+    let removedAbortListeners = 0;
+    let postInitializeReads = 0;
+    const signal = {
+      get aborted() {
+        if (removedAbortListeners < 2) return false;
+        postInitializeReads += 1;
+        return postInitializeReads > 1;
+      },
+      addEventListener: backingSignal.addEventListener.bind(backingSignal),
+      removeEventListener: (...args: Parameters<AbortSignal['removeEventListener']>) => {
+        removedAbortListeners += 1;
+        backingSignal.removeEventListener(...args);
+      },
+    } as AbortSignal;
+
+    const rejection = await attachDaemonClient(root, {
+      connect,
+      signal,
+      spawnDaemon: () => { throw new Error('spawn must not run when a daemon is reachable'); },
+    }).then(
+      () => { throw new Error('expected post-initialize abort to reject'); },
+      (error) => error as unknown,
+    );
+
+    expect(rejection).toBeInstanceOf(DaemonUnavailableError);
+    await waitFor(() => clientSocket?.destroyed === true, 5_000, 'post-initialize abort closed transport');
+  }, T(30_000));
+
   it('F2: a rejected initialize handshake closes the socket (no leak) and still maps to 503', async () => {
     const root = await buildFixture();
 
@@ -579,6 +699,86 @@ describe('SPEC-005 daemon client (T005, FR-002/008/015a)', () => {
     // … and the socket was CLOSED by makeReadClient's stop() (the F2 fix).
     await waitFor(() => clientSock?.destroyed === true, 5000, 'client socket closed by stop()');
   }, T(30000));
+
+  it('grants initialize a fresh timeout after socket discovery nearly exhausts its budget', async () => {
+    const root = await buildFixture();
+    const srv = net.createServer((socket) => {
+      socket.setEncoding('utf8');
+      let buffer = '';
+      socket.on('data', (chunk: string) => {
+        buffer += chunk;
+        const newline = buffer.indexOf('\n');
+        if (newline === -1) return;
+        const request = JSON.parse(buffer.slice(0, newline)) as { id: string | number };
+        setTimeout(() => {
+          socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: {} })}\n`);
+        }, 200);
+      });
+      socket.on('error', () => { /* ignore shutdown races */ });
+    });
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    cleanups.push(() => new Promise<void>((resolve) => srv.close(() => resolve())));
+    const port = (srv.address() as net.AddressInfo).port;
+    const socket = await new Promise<net.Socket>((resolve) => {
+      const client = net.createConnection(port, '127.0.0.1', () => resolve(client));
+      client.on('error', () => { /* ignore shutdown races */ });
+    });
+
+    let virtualNow = Date.now();
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => virtualNow);
+    let client: DaemonReadClient | undefined;
+    try {
+      client = await attachDaemonClient(root, {
+        connect: async () => {
+          virtualNow += 5_900;
+          return socket;
+        },
+        initializeTimeoutMs: 1_000,
+        spawnDaemon: () => { throw new Error('spawn must not run when a socket is reachable'); },
+      });
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(client).toBeDefined();
+    client!.close();
+  }, T(30_000));
+
+  it('bounds daemon initialize by its independent initialization timeout', async () => {
+    const root = await buildFixture();
+    let peerSocket: net.Socket | null = null;
+    const srv = net.createServer((socket) => {
+      peerSocket = socket;
+      socket.on('error', () => { /* ignore shutdown races */ });
+      // Accept and read, but never answer initialize.
+      socket.resume();
+    });
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    cleanups.push(() => new Promise<void>((resolve) => srv.close(() => resolve())));
+    const port = (srv.address() as net.AddressInfo).port;
+    let clientSocket: net.Socket | null = null;
+    const connect = (): Promise<net.Socket> => new Promise((resolve) => {
+      const socket = net.createConnection(port, '127.0.0.1', () => resolve(socket));
+      clientSocket = socket;
+      socket.on('error', () => { /* ignore shutdown races */ });
+    });
+    const startedAt = Date.now();
+
+    const rejection = await attachDaemonClient(root, {
+      connect,
+      initializeTimeoutMs: 100,
+      spawnDaemon: () => { throw new Error('spawn must not run when a socket is reachable'); },
+    }).then(
+      () => { throw new Error('expected stalled initialize to reject'); },
+      (error) => error as unknown,
+    );
+
+    expect(rejection).toBeInstanceOf(Error);
+    expect(daemonUnavailable(rejection).status).toBe(503);
+    expect(Date.now() - startedAt).toBeLessThan(T(2_000));
+    await waitFor(() => clientSocket?.destroyed === true, 5_000, 'initialize deadline closed transport');
+    await waitFor(() => peerSocket?.destroyed === true, 5_000, 'initialize deadline closed peer');
+  }, T(30_000));
 
   it('t3: an injected version-mismatch daemon → DaemonUnavailableError (503 path), no spawn', async () => {
     const root = await buildFixture();
@@ -749,10 +949,35 @@ describe('SPEC-005 web server lifecycle (T006, FR-002/026)', () => {
     expect(closed).toBe(1);
   });
 
-  it('exposes the reserved upgrade attach point wired to nothing (SPEC-009)', async () => {
+  it('ordered shutdown aborts and awaits a pooled HTTP daemon attachment', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-server-attach-shutdown-'));
+    fs.mkdirSync(path.join(root, '.codegraph'));
+    fs.writeFileSync(path.join(root, '.codegraph', 'codegraph.db'), '');
+    let spawnCalls = 0;
+    const h = await startWebServer({
+      port: 0,
+      projectPath: root,
+      spawnDaemon: () => { spawnCalls += 1; },
+    });
+    const request = fetch(`http://${h.host}:${h.port}/api/search?q=shutdown`);
+
+    try {
+      await waitFor(() => spawnCalls > 0, 5_000, 'pooled daemon attach started');
+      const started = Date.now();
+      await h.close(Date.now() + 2_000);
+      expect(Date.now() - started).toBeLessThan(1_500);
+      await Promise.allSettled([request]);
+      expect(spawnCalls).toBe(1);
+    } finally {
+      await h.close().catch(() => undefined);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, T(15_000));
+
+  it('rejects WebSocket upgrades outside the exact LSP path', async () => {
     const h = await start();
-    // A raw WebSocket-style upgrade must not get 101 Switching Protocols; the
-    // reserved handler destroys the socket (nothing is wired yet).
+    // Only exact `/lsp` requests can reach SPEC-009 admission. Another path
+    // must receive no 101 Switching Protocols response.
     const received = await new Promise<string>((resolve) => {
       const sock = net.connect(h.port, '127.0.0.1', () => {
         sock.write(

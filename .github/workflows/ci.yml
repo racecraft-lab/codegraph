@@ -159,7 +159,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
-          files=$(gh pr diff "$PR" --repo "$REPO" --name-only)
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')
           installer=$(printf '%s\n' "$files" | grep '^src/installer/' | grep -v '\.md$' || true)
           if [ -z "$installer" ]; then
             echo "No installer source changes — guard not applicable."

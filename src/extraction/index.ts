@@ -114,6 +114,8 @@ export interface SyncResult {
   nodesUpdated: number;
   durationMs: number;
   changedFilePaths?: string[];
+  /** Present only when the cross-process index lock prevented this sync from running. */
+  lockContended?: true;
 }
 
 /**

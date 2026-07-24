@@ -26,19 +26,29 @@ import * as crypto from 'crypto';
 import type { Socket } from 'net';
 import { pathToFileURL } from 'node:url';
 import { connectWithHello } from '../mcp/proxy';
-import { getDaemonSocketCandidates } from '../mcp/daemon-paths';
+import {
+  getDaemonSocketCandidates,
+  openDaemonLog,
+  readTrustedDaemonLock,
+  type DaemonLockInfo,
+} from '../mcp/daemon-paths';
 import { listDaemons } from '../mcp/daemon-registry';
 import { SocketTransport } from '../mcp/transport';
-import { findNearestCodeGraphRoot, getCodeGraphDir } from '../directory';
+import { CodeGraphPackageVersion } from '../mcp/version';
+import { findNearestCodeGraphRoot } from '../directory';
 import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
 import { unavailable, DEFAULT_RETRY_AFTER_SECONDS, type ApiError } from './errors';
 import type {
-  LspFileContextRead,
+  LspDocumentContextRead,
   LspIncomingRead,
+  LspNodeLocationRead,
+  LspPositionContextRead,
+  LspSourceSnapshotRead,
   LspWorkspaceSymbolsRead,
   ReadOp,
 } from '../mcp/read-ops';
 import type { ClusterListResult, FlowDetailRead, FlowListResult } from '../analysis';
+import { reportDiagnostic } from './diagnostics';
 
 /**
  * The `/api/repos` wire shape (FR-010, data-model "Repo"). `id` is the 16-hex
@@ -78,7 +88,12 @@ export interface DaemonReadClient {
    * library read against its warm index and returns structured data (no second
    * in-process index copy). Rejects if the daemon reports an error (unknown op).
    */
-  read(op: ReadOp, params?: Record<string, unknown>): Promise<unknown>;
+  read(
+    op: ReadOp,
+    params?: Record<string, unknown>,
+    signal?: AbortSignal,
+    detachOnAbort?: boolean,
+  ): Promise<unknown>;
   /** End the socket, decrementing the daemon's client refcount (FR-026). */
   close(): void;
 }
@@ -90,13 +105,25 @@ export interface AttachOptions {
    * the detached-CLI spawn (mirrors the MCP proxy). Injected in tests because a
    * test runner's `process.argv[1]` is the runner, not the CodeGraph CLI.
    */
-  spawnDaemon?: (root: string) => void;
+  spawnDaemon?: (root: string, diagnostics: (code: DaemonAttachDiagnosticCode) => void) => void;
+  /** Stable, redaction-safe reason codes for asynchronous daemon startup faults. */
+  diagnostics?: (code: DaemonAttachDiagnosticCode) => void;
   /** Connect to a daemon socket (defaults to the exported `connectWithHello`). */
-  connect?: (socketPath: string) => Promise<Socket | 'version-mismatch' | null>;
+  connect?: (
+    socketPath: string,
+    signal?: AbortSignal,
+    expectedIdentity?: DaemonLockInfo,
+  ) => Promise<Socket | 'version-mismatch' | null>;
   /** Poll budget after a spawn while the daemon binds its socket. */
   connectMaxRetries?: number;
   connectRetryDelayMs?: number;
+  /** Cancels an admission-scoped attach during server shutdown. */
+  signal?: AbortSignal;
+  /** Test seam; production always uses the fixed 15-second initialize budget. */
+  initializeTimeoutMs?: number;
 }
+
+export type DaemonAttachDiagnosticCode = 'daemon_spawn_failed';
 
 /**
  * A transient daemon attach/spawn failure (FR-015a): the read pipeline maps it
@@ -128,8 +155,206 @@ const ATTACH_BUDGET_MS = 6000;
 /** Timeouts for the two forwarded JSON-RPC phases (generous for a cold daemon). */
 const INITIALIZE_TIMEOUT_MS = 15_000;
 const TOOL_CALL_TIMEOUT_MS = 30_000;
+const MAX_DETACHED_DAEMON_READS = 16;
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+type DetachedRequestWaiter = {
+  resolve: (release: () => void) => void;
+  reject: (error: Error) => void;
+  signal?: AbortSignal;
+  onAbort: () => void;
+};
+
+/**
+ * Bound operations whose local caller may detach on cancellation. A detached
+ * caller rejects promptly, but its lease remains held until the underlying
+ * daemon round trip settles, preventing cancellation from multiplying work.
+ */
+export class DetachedRequestBudget {
+  private active = 0;
+  private closed = false;
+  private readonly waiters: DetachedRequestWaiter[] = [];
+
+  constructor(private readonly limit: number) {
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error('invalid detached request limit');
+  }
+
+  async run<T>(start: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const release = await this.acquire(signal);
+    if (signal?.aborted) {
+      release();
+      throw new Error('Request aborted');
+    }
+    let underlying: Promise<T>;
+    try { underlying = Promise.resolve(start()); }
+    catch (error) {
+      release();
+      throw error;
+    }
+    const tracked = underlying.finally(release);
+    if (!signal) return tracked;
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const finish = (complete: () => void): void => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        complete();
+      };
+      const onAbort = (): void => finish(() => reject(new Error('Request aborted')));
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      tracked.then(
+        (value) => finish(() => resolve(value)),
+        (error) => finish(() => reject(error)),
+      );
+    });
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    for (const waiter of this.waiters.splice(0)) {
+      waiter.signal?.removeEventListener('abort', waiter.onAbort);
+      waiter.reject(new Error('Detached request budget closed'));
+    }
+  }
+
+  private acquire(signal?: AbortSignal): Promise<() => void> {
+    if (this.closed) return Promise.reject(new Error('Detached request budget closed'));
+    if (signal?.aborted) return Promise.reject(new Error('Request aborted'));
+    if (this.active < this.limit && this.waiters.length === 0) {
+      this.active += 1;
+      return Promise.resolve(this.makeRelease());
+    }
+    return new Promise((resolve, reject) => {
+      const waiter: DetachedRequestWaiter = {
+        resolve,
+        reject,
+        signal,
+        onAbort: () => undefined,
+      };
+      waiter.onAbort = () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index < 0) return;
+        this.waiters.splice(index, 1);
+        signal?.removeEventListener('abort', waiter.onAbort);
+        reject(new Error('Request aborted'));
+      };
+      this.waiters.push(waiter);
+      signal?.addEventListener('abort', waiter.onAbort, { once: true });
+      if (signal?.aborted) waiter.onAbort();
+    });
+  }
+
+  private makeRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.active = Math.max(0, this.active - 1);
+      this.grantWaiters();
+    };
+  }
+
+  private grantWaiters(): void {
+    while (!this.closed && this.active < this.limit && this.waiters.length > 0) {
+      const waiter = this.waiters.shift()!;
+      waiter.signal?.removeEventListener('abort', waiter.onAbort);
+      if (waiter.signal?.aborted) {
+        waiter.reject(new Error('Request aborted'));
+        continue;
+      }
+      this.active += 1;
+      waiter.resolve(this.makeRelease());
+    }
+  }
+}
+
+function attachAborted(): DaemonUnavailableError {
+  return new DaemonUnavailableError('daemon attach aborted');
+}
+
+function attachDeadlineExceeded(): DaemonUnavailableError {
+  return new DaemonUnavailableError('daemon attach deadline exceeded');
+}
+
+function throwIfAttachAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw attachAborted();
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  throwIfAttachAborted(signal);
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(attachAborted());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function withAttachDeadline<T>(
+  operation: Promise<T>,
+  deadlineAt: number,
+  signal?: AbortSignal,
+  disposeLate?: (value: T) => void,
+  abortAttempt?: () => void,
+): Promise<T> {
+  const remaining = deadlineAt - Date.now();
+  if (remaining <= 0) {
+    abortAttempt?.();
+    operation.then((value) => disposeLate?.(value), () => undefined);
+    return Promise.reject(attachDeadlineExceeded());
+  }
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      fn();
+    };
+    const onAbort = (): void => finish(() => reject(attachAborted()));
+    const timer = setTimeout(() => {
+      abortAttempt?.();
+      finish(() => reject(attachDeadlineExceeded()));
+    }, remaining);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    operation.then(
+      (value) => {
+        if (settled) {
+          disposeLate?.(value);
+          return;
+        }
+        finish(() => resolve(value));
+      },
+      (error) => finish(() => reject(error)),
+    );
+  });
+}
+
+function attachAttemptSignal(
+  parent?: AbortSignal,
+): { signal: AbortSignal; abort: () => void; dispose: () => void } {
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  parent?.addEventListener('abort', abort, { once: true });
+  if (parent?.aborted) abort();
+  return {
+    signal: controller.signal,
+    abort,
+    dispose: () => {
+      parent?.removeEventListener('abort', abort);
+    },
+  };
+}
 
 /**
  * Env var that marks a spawned process as the detached daemon itself (kept in
@@ -146,7 +371,10 @@ const DAEMON_INTERNAL_ENV = 'CODEGRAPH_DAEMON_INTERNAL';
  * binary) with `serve --mcp --path <root>` and the internal-daemon marker; the
  * spawned process self-arbitrates the O_EXCL lock.
  */
-function defaultSpawnDaemon(root: string): void {
+function defaultSpawnDaemon(
+  root: string,
+  diagnostics: (code: DaemonAttachDiagnosticCode) => void,
+): void {
   const scriptPath = process.argv[1];
   if (!scriptPath) {
     throw new DaemonUnavailableError('cannot resolve CLI script path to spawn the daemon');
@@ -154,16 +382,10 @@ function defaultSpawnDaemon(root: string): void {
   let logFd: number | null = null;
   let stdio: StdioOptions = 'ignore';
   try {
-    // Owner-only mode + refuse-symlink open: `root` can point anywhere the
-    // registry knows (e.g. a repo under the OS temp dir), where a pre-planted
-    // daemon.log symlink or a group-readable log would leak daemon output
-    // (CodeQL js/insecure-temporary-file). O_NOFOLLOW is absent on Windows —
-    // there the owner-only mode alone applies.
-    logFd = fs.openSync(
-      path.join(getCodeGraphDir(root), 'daemon.log'),
-      fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW ?? 0),
-      0o600,
-    );
+    // Use the same trusted descriptor path as the MCP launcher: POSIX rejects
+    // project-controlled links, while Windows keeps the log under the current
+    // user's validated private daemon-lock directory.
+    logFd = openDaemonLog(root);
     stdio = ['ignore', logFd, logFd];
   } catch {
     stdio = 'ignore';
@@ -181,15 +403,17 @@ function defaultSpawnDaemon(root: string): void {
     // Absorb it (surfacing it to the operator via stderr, F1's diagnostic
     // channel in CLI mode) so the attach simply degrades to the poll-timeout 503
     // (FR-015a) instead of crashing the serve process.
-    child.on('error', (err) => {
-      try { process.stderr.write(`[codegraph:web] daemon spawn failed: ${err.message}\n`); } catch { /* ignore */ }
-    });
+    child.on('error', () => diagnostics('daemon_spawn_failed'));
     child.unref();
   } finally {
     if (logFd !== null) {
       try { fs.closeSync(logFd); } catch { /* ignore */ }
     }
   }
+}
+
+function defaultDaemonDiagnostics(code: DaemonAttachDiagnosticCode): void {
+  try { process.stderr.write(`[codegraph:daemon] ${code}\n`); } catch { /* ignore */ }
 }
 
 /**
@@ -205,13 +429,33 @@ function resolveIndexedRoot(inputPath: string): string | null {
   try { return fs.realpathSync(root); } catch { return root; }
 }
 
-/** Walk the ordered socket candidates once; first live daemon wins. */
+/** Try the currently trusted or injected targets once; first live daemon wins. */
 async function connectAnyCandidate(
-  candidates: readonly string[],
+  targets: () => ReadonlyArray<{ socketPath: string; expectedIdentity?: DaemonLockInfo }>,
   connect: NonNullable<AttachOptions['connect']>,
+  deadlineAt: number,
+  signal?: AbortSignal,
 ): Promise<Socket | 'version-mismatch' | null> {
-  for (const candidate of candidates) {
-    const s = await connect(candidate);
+  for (const target of targets()) {
+    throwIfAttachAborted(signal);
+    if (Date.now() >= deadlineAt) throw attachDeadlineExceeded();
+    const attempt = attachAttemptSignal(signal);
+    let s: Socket | 'version-mismatch' | null;
+    try {
+      s = await withAttachDeadline(
+        connect(target.socketPath, attempt.signal, target.expectedIdentity),
+        deadlineAt,
+        signal,
+        (late) => {
+          if (late && late !== 'version-mismatch') {
+            try { late.destroy(); } catch { /* best-effort */ }
+          }
+        },
+        attempt.abort,
+      );
+    } finally {
+      attempt.dispose();
+    }
     if (s === 'version-mismatch') return s; // definitive — a wrong-version daemon is up
     if (s) return s;
   }
@@ -223,9 +467,17 @@ async function connectAnyCandidate(
  * handshake (answering a server-initiated `roots/list` with the root), then hand
  * back `request`/`close`.
  */
-async function makeReadClient(socket: Socket, root: string): Promise<DaemonReadClient> {
+async function makeReadClient(
+  socket: Socket,
+  root: string,
+  initializeTimeoutMs: number,
+  signal?: AbortSignal,
+): Promise<DaemonReadClient> {
   const transport = new SocketTransport(socket, 'cg-web');
+  const detachedReads = new DetachedRequestBudget(MAX_DETACHED_DAEMON_READS);
   const rootUri = pathToFileURL(root).href;
+  const initializeBudgetMs = Math.max(1, initializeTimeoutMs);
+  const initializeDeadline = Date.now() + initializeBudgetMs;
   transport.start(async (msg) => {
     // The daemon session may ask us for workspace roots; answer with the root so
     // it never waits out its 5s roots/list timeout. Everything else is ignored.
@@ -236,16 +488,21 @@ async function makeReadClient(socket: Socket, root: string): Promise<DaemonReadC
   });
 
   try {
-    await transport.request(
-      'initialize',
-      {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'codegraph-web', version: '0.0.0' },
-        rootUri,
-      },
-      INITIALIZE_TIMEOUT_MS,
+    await withAttachDeadline(
+      transport.request(
+        'initialize',
+        {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'codegraph-web', version: '0.0.0' },
+          rootUri,
+        },
+        initializeBudgetMs,
+      ),
+      initializeDeadline,
+      signal,
     );
+    throwIfAttachAborted(signal);
   } catch (err) {
     // A rejected/timed-out handshake would otherwise leak the socket + its data
     // listener (the transport was started above). Close it before propagating so
@@ -264,14 +521,24 @@ async function makeReadClient(socket: Socket, root: string): Promise<DaemonReadC
       );
       return result as DaemonToolResult;
     },
-    async read(op, params) {
-      return transport.request(
+    async read(op, params, signal, detachOnAbort = false) {
+      if (signal?.aborted) throw new Error('Request aborted');
+      // Once written, retain the round trip until the daemon responds or this
+      // transport's bounded timeout fires. Rejecting only the local promise on
+      // abort would make the caller release global work accounting while the
+      // daemon operation could still be running. The stdio LSP transport has no
+      // shared admission accounting and opts into detachment so cancellation
+      // can unblock its serialized message stream; WebSocket reads retain the
+      // default until their dedicated lease is safely released.
+      const request = () => transport.request(
         'codegraph/read',
         { op, params: params ?? {} },
         TOOL_CALL_TIMEOUT_MS,
       );
+      return detachOnAbort ? detachedReads.run(request, signal) : request();
     },
     close() {
+      detachedReads.close();
       transport.stop();
     },
   };
@@ -508,12 +775,35 @@ export async function readClusters(
   return (await client.read('listClusters', { minSize, limit, offset })) as ClusterListResult;
 }
 
-/** Exact indexed source, nodes, and located semantic occurrences for one file. */
-export async function readLspFileContext(
+/** Exact indexed source with no graph payload. */
+export async function readLspSourceSnapshot(
   client: DaemonReadClient,
   filePath: string,
-): Promise<LspFileContextRead> {
-  return (await client.read('lspFileContext', { filePath })) as LspFileContextRead;
+  signal?: AbortSignal,
+  detachOnAbort = false,
+): Promise<LspSourceSnapshotRead> {
+  return (await client.read('lspSourceSnapshot', { filePath }, signal, detachOnAbort)) as LspSourceSnapshotRead;
+}
+
+/** Exact indexed source plus bounded node and occurrence candidates at one line. */
+export async function readLspPositionContext(
+  client: DaemonReadClient,
+  filePath: string,
+  line: number,
+  signal?: AbortSignal,
+  detachOnAbort = false,
+): Promise<LspPositionContextRead> {
+  return (await client.read('lspPositionContext', { filePath, line }, signal, detachOnAbort)) as LspPositionContextRead;
+}
+
+/** Exact indexed source plus bounded nodes and containment for document symbols. */
+export async function readLspDocumentContext(
+  client: DaemonReadClient,
+  filePath: string,
+  signal?: AbortSignal,
+  detachOnAbort = false,
+): Promise<LspDocumentContextRead> {
+  return (await client.read('lspDocumentContext', { filePath }, signal, detachOnAbort)) as LspDocumentContextRead;
 }
 
 /** Exact located incoming occurrences for one stable graph target. */
@@ -522,20 +812,34 @@ export async function readLspIncoming(
   nodeId: string,
   filePath: string,
   snapshotToken: string,
+  signal?: AbortSignal,
+  detachOnAbort = false,
 ): Promise<LspIncomingRead> {
   return (await client.read('lspIncoming', {
     id: nodeId,
     filePath,
     snapshotToken,
-  })) as LspIncomingRead;
+  }, signal, detachOnAbort)) as LspIncomingRead;
 }
 
-/** Deterministically ranked graph symbols; the facade owns final ordering/cap. */
+/** Exact indexed node and snapshot identity for deterministic source location. */
+export async function readLspNodeLocation(
+  client: DaemonReadClient,
+  nodeId: string,
+  signal?: AbortSignal,
+  detachOnAbort = false,
+): Promise<LspNodeLocationRead> {
+  return (await client.read('lspNodeLocation', { id: nodeId }, signal, detachOnAbort)) as LspNodeLocationRead;
+}
+
+/** Deterministically ranked and daemon-capped graph symbols. */
 export async function readLspWorkspaceSymbols(
   client: DaemonReadClient,
   query: string,
+  signal?: AbortSignal,
+  detachOnAbort = false,
 ): Promise<LspWorkspaceSymbolsRead> {
-  return (await client.read('lspWorkspaceSymbols', { query })) as LspWorkspaceSymbolsRead;
+  return (await client.read('lspWorkspaceSymbols', { query }, signal, detachOnAbort)) as LspWorkspaceSymbolsRead;
 }
 
 /**
@@ -555,35 +859,61 @@ export async function attachDaemonClient(
     throw new DaemonUnavailableError(`no indexed project at ${root}`);
   }
 
-  const connect = opts.connect ?? connectWithHello;
+  // The serve process owns this connection directly. Its launcher/parent may
+  // exit while the server remains healthy, so only advertise our durable pid.
+  const connect = opts.connect ?? ((
+    socketPath: string,
+    attachSignal?: AbortSignal,
+    expectedIdentity?: DaemonLockInfo,
+  ) =>
+    connectWithHello(socketPath, CodeGraphPackageVersion, {
+      hostPid: null,
+      signal: attachSignal,
+      expectedIdentity,
+    }));
+  const diagnosticSink = opts.diagnostics ?? defaultDaemonDiagnostics;
+  const diagnostics = (code: DaemonAttachDiagnosticCode): void => reportDiagnostic(diagnosticSink, code);
   const spawnDaemon = opts.spawnDaemon ?? defaultSpawnDaemon;
   const maxRetries = opts.connectMaxRetries ?? DEFAULT_CONNECT_MAX_RETRIES;
   const retryDelayMs = opts.connectRetryDelayMs ?? DEFAULT_CONNECT_RETRY_DELAY_MS;
+  const initializeTimeoutMs = opts.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS;
+  const signal = opts.signal;
   const candidates = getDaemonSocketCandidates(indexedRoot);
+  const targets = opts.connect
+    ? () => candidates.map((socketPath) => ({ socketPath }))
+    : () => {
+        const expectedIdentity = readTrustedDaemonLock(indexedRoot);
+        return expectedIdentity
+          ? [{ socketPath: expectedIdentity.socketPath, expectedIdentity }]
+          : [];
+      };
+  const attachDeadline = Date.now() + ATTACH_BUDGET_MS;
+  throwIfAttachAborted(signal);
 
   // Fast path: a daemon may already be listening.
-  const probe = await connectAnyCandidate(candidates, connect);
+  const probe = await connectAnyCandidate(targets, connect, attachDeadline, signal);
   if (probe === 'version-mismatch') {
     // A wrong-version daemon holds the socket; spawning can't help. Transient —
     // the user can restart the daemon — so surface it as an attach failure.
     throw new DaemonUnavailableError('daemon version mismatch');
   }
-  if (probe) return makeReadClient(probe, indexedRoot);
+  if (probe) return makeReadClient(probe, indexedRoot, initializeTimeoutMs, signal);
+  if (Date.now() >= attachDeadline) throw attachDeadlineExceeded();
 
   // None reachable — spawn one (detached) and poll for its bind, bounded by BOTH
   // the attempt count and an overall wall-clock deadline (FR-015a): a daemon that
   // never binds fails fast to a 503 instead of stalling for minutes.
-  spawnDaemon(indexedRoot);
-  const attachStart = Date.now();
+  throwIfAttachAborted(signal);
+  spawnDaemon(indexedRoot, diagnostics);
   for (
     let attempt = 0;
-    attempt < maxRetries && Date.now() - attachStart < ATTACH_BUDGET_MS;
+    attempt < maxRetries && Date.now() < attachDeadline;
     attempt++
   ) {
-    await sleep(retryDelayMs);
-    const s = await connectAnyCandidate(candidates, connect);
+    await abortableDelay(Math.min(retryDelayMs, Math.max(0, attachDeadline - Date.now())), signal);
+    const s = await connectAnyCandidate(targets, connect, attachDeadline, signal);
     if (s === 'version-mismatch') throw new DaemonUnavailableError('daemon version mismatch');
-    if (s) return makeReadClient(s, indexedRoot);
+    if (s) return makeReadClient(s, indexedRoot, initializeTimeoutMs, signal);
   }
 
   throw new DaemonUnavailableError(`daemon for ${indexedRoot} never bound its socket`);

@@ -28,9 +28,8 @@
  *   - Listening on the daemon socket and spawning per-connection sessions.
  *   - The handshake "hello" line that lets a proxy verify it found a
  *     same-version daemon before piping any JSON-RPC through it.
- *   - The lockfile (`.codegraph/daemon.pid`) competing daemons arbitrate
- *     against — atomic `O_EXCL` create with the full record written in the same
- *     breath (no empty-file window) + cleanup on exit.
+ *   - The owner-only lock competing daemons arbitrate against — under the
+ *     project on POSIX and the user profile on Windows — plus cleanup on exit.
  *   - Reference counting + idle timeout.
  *   - Graceful shutdown on SIGTERM/SIGINT and idle exit.
  *
@@ -43,19 +42,54 @@
 import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
+import { randomUUID } from 'node:crypto';
+import {
+  DAEMON_HANDSHAKE_PROTOCOL,
+  createDaemonAuthNonce,
+  createDaemonAuthSecret,
+  createDaemonClientProof,
+  createDaemonServerProof,
+  daemonProofMatches,
+  isValidDaemonAuthNonce,
+  isValidDaemonAuthProof,
+} from './daemon-auth';
 import { MCPEngine } from './engine';
 import { MCPSession } from './session';
-import { SocketTransport } from './transport';
+import {
+  ErrorCodes,
+  MAX_SOCKET_EMERGENCY_OUTPUT_BYTES,
+  SocketOutputBudget,
+  SocketRequestBudget,
+  SocketTransport,
+} from './transport';
 import {
   DaemonLockInfo,
-  decodeLockInfo,
+  DAEMON_LOCK_RECORD_NAME,
+  clearStaleDaemonLock,
+  daemonLockDirectoryIsTrusted,
   encodeLockInfo,
+  ensureDaemonLockDirectory,
+  ensureDaemonSocketDirectory,
   getDaemonPidPath,
+  getDaemonLockRecordPath,
   getDaemonSocketCandidates,
   getDaemonSocketPath,
+  recoverDaemonLockDirectory,
+  recoverDaemonLockQuarantines,
+  readDaemonLockFile,
+  readTrustedDaemonLock,
+  removeOwnedDaemonSocket,
 } from './daemon-paths';
 import { CodeGraphPackageVersion } from './version';
 import { registerDaemon, deregisterDaemon } from './daemon-registry';
+import type { DaemonElectionGuard } from './daemon-election';
+import {
+  getProcessBirthId,
+  isProcessAlive,
+} from './daemon-process';
+export { tryAcquireDaemonElectionGuard, type DaemonElectionGuard } from './daemon-election';
+export { getProcessBirthId, isDaemonProcessAlive, isProcessAlive } from './daemon-process';
+export { clearStaleDaemonLock } from './daemon-paths';
 
 /** Default idle linger after the last client disconnects. */
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
@@ -112,8 +146,23 @@ export function finalizeDaemonExit(
 /** How often the daemon sweeps connected clients for a dead peer process (#692). */
 const DEFAULT_CLIENT_SWEEP_MS = 30_000;
 
-/** How long the daemon waits for the optional client-hello before proceeding without it. */
+/** How long the daemon waits for the required authenticated client hello. */
 const CLIENT_HELLO_TIMEOUT_MS = 3_000;
+const CLIENT_FIRST_MESSAGE_TIMEOUT_MS = 3_000;
+const CONTROL_REQUEST_LINE_BYTES = 4_096;
+const CONTROL_RESPONSE_DRAIN_TIMEOUT_MS = 1_000;
+
+/** Combined ceiling for pending handshakes and active daemon sessions. */
+export const MAX_DAEMON_CLIENT_CONNECTIONS = 128;
+
+/** Aggregate daemon ceilings for authenticated request work across all peers. */
+export const MAX_DAEMON_ACTIVE_REQUESTS = 64;
+export const MAX_DAEMON_RETAINED_REQUEST_BYTES = 16 * 1024 * 1024;
+export const MAX_DAEMON_RETAINED_OUTPUT_BYTES = 64 * 1024 * 1024;
+const MAX_DAEMON_OUTPUT_OVERLOAD_BYTES =
+  MAX_DAEMON_CLIENT_CONNECTIONS * MAX_SOCKET_EMERGENCY_OUTPUT_BYTES;
+const MAX_DAEMON_REQUEST_LINE_BYTES = 1024 * 1024;
+const MAX_DAEMON_CLIENT_RETAINED_REQUEST_BYTES = 2 * 1024 * 1024;
 
 /** Bytes/parse-window for an oversized hello line — bounded against a malicious peer. */
 const MAX_HELLO_LINE_BYTES = 4096;
@@ -128,7 +177,10 @@ export interface DaemonHello {
   codegraph: string; // package version (must match the proxy's own version)
   pid: number;       // daemon pid (informational; for `ps` debugging)
   socketPath: string; // echoed back so the proxy can log it
-  protocol: 1;       // bump if the hello shape changes
+  protocol: typeof DAEMON_HANDSHAKE_PROTOCOL;
+  instanceId: string; // matches the owner-only lock record for this daemon lifetime
+  nonce: string;      // fresh challenge for this connection
+  proof: string;      // HMAC proving possession of the lockfile-only secret
 }
 
 /**
@@ -144,6 +196,9 @@ export interface DaemonClientHello {
   codegraph_client: 1;
   pid: number;             // the proxy process's own pid
   hostPid: number | null;  // the MCP host pid (past any launcher shim), if known
+  instanceId: string;
+  nonce: string;
+  proof: string;
 }
 
 export interface DaemonStartResult {
@@ -158,17 +213,24 @@ export interface DaemonStartResult {
  * listening. The Daemon owns the socket, the engine, and the lockfile until
  * `stop()` is called or it exits on idle/signal.
  *
- * Race-safe: callers must first call `tryAcquireDaemonLock(projectRoot)` and
- * only construct a Daemon if they got the lock (`kind: 'acquired'`). The atomic
- * `O_EXCL` create inside the acquire helper — which now also writes the full
- * record before returning — is the only synchronization between competing
- * daemons.
+ * Race-safe: callers hold a kernel-backed election lease for this daemon's
+ * lifetime and only construct it after `tryAcquireDaemonLock(projectRoot)`
+ * returned `kind: 'acquired'`. The atomic lock publication remains the
+ * authenticated rendezvous record; the lease excludes election and cleanup.
  */
 export class Daemon {
   private server: net.Server | null = null;
   private clients = new Set<MCPSession>();
-  /** Per-client peer pids from the optional client-hello, for the liveness sweep. */
+  /** Accepted sockets still waiting for the authenticated client hello. */
+  private pendingClientSockets = new Set<net.Socket>();
+  /** One extra authenticated first-message probe reserved for lifecycle control. */
+  private pendingControlSocket: net.Socket | null = null;
+  /** Authenticated control responses retained only until flush or a short deadline. */
+  private controlSockets = new Map<net.Socket, NodeJS.Timeout>();
+  /** Per-client peer pids from the authenticated client hello, for the liveness sweep. */
   private clientPeers = new Map<MCPSession, { pid: number | null; hostPid: number | null }>();
+  private authenticatedShutdownScheduled = false;
+  private authenticatedShutdownStarted = false;
   private idleTimer: NodeJS.Timeout | null = null;
   private idleTimeoutMs: number;
   private maxIdleMs: number;
@@ -179,15 +241,40 @@ export class Daemon {
   private stopping = false;
   private socketPath: string;
   private pidPath: string;
+  private instanceId: string;
+  private authSecret: string;
+  private startedAt: number;
+  private processBirthId: string | undefined;
+  private electionProtocol: 1 | undefined;
+  private electionGuard: DaemonElectionGuard | null;
+  private requestBudget = new SocketRequestBudget(
+    MAX_DAEMON_ACTIVE_REQUESTS,
+    MAX_DAEMON_RETAINED_REQUEST_BYTES,
+  );
+  private outputBudget = new SocketOutputBudget(
+    MAX_DAEMON_RETAINED_OUTPUT_BYTES,
+    MAX_DAEMON_OUTPUT_OVERLOAD_BYTES,
+  );
 
   constructor(
     private projectRoot: string,
-    opts: { idleTimeoutMs?: number; maxIdleMs?: number } = {},
+    opts: {
+      idleTimeoutMs?: number;
+      maxIdleMs?: number;
+      lockInfo?: DaemonLockInfo;
+      electionGuard?: DaemonElectionGuard;
+    } = {},
   ) {
-    this.socketPath = getDaemonSocketPath(projectRoot);
     this.pidPath = getDaemonPidPath(projectRoot);
     this.idleTimeoutMs = opts.idleTimeoutMs ?? resolveIdleTimeoutMs();
     this.maxIdleMs = opts.maxIdleMs ?? resolveMaxIdleMs();
+    this.instanceId = opts.lockInfo?.instanceId ?? randomUUID();
+    this.authSecret = opts.lockInfo?.authSecret ?? createDaemonAuthSecret();
+    this.socketPath = getDaemonSocketPath(projectRoot, this.instanceId);
+    this.startedAt = opts.lockInfo?.startedAt ?? Date.now();
+    this.processBirthId = opts.lockInfo?.processBirthId ?? getProcessBirthId(process.pid) ?? undefined;
+    this.electionProtocol = opts.lockInfo?.electionProtocol ?? (opts.electionGuard ? 1 : undefined);
+    this.electionGuard = opts.electionGuard ?? null;
     // Daemon mode serves many concurrent clients on one event loop, so off-load
     // read-tool dispatch to a worker pool — otherwise concurrent explores
     // serialize and starve the MCP transport (clients time out). Direct mode
@@ -204,59 +291,79 @@ export class Daemon {
    * listening — the daemon then sticks around until idle/shutdown.
    */
   async start(): Promise<DaemonStartResult> {
-    // Engine init is deliberately backgrounded — see #172. The first session
-    // to land waits on `ensureInitialized` either way, and unloaded sessions
-    // (cross-project tool calls only) shouldn't pay any open cost.
-    void this.engine.ensureInitialized(this.projectRoot);
+    const candidates = getDaemonSocketCandidates(this.projectRoot, this.instanceId);
+    try {
+      return await this.startOwned(candidates);
+    } catch (err) {
+      await this.cleanupFailedStart(candidates);
+      throw err;
+    }
+  }
 
+  private async startOwned(candidates: string[]): Promise<DaemonStartResult> {
+    ensureDaemonLockDirectory(this.projectRoot);
+    const ownedLock = readTrustedDaemonLock(this.projectRoot);
+    if (
+      !ownedLock ||
+      ownedLock.pid !== process.pid ||
+      ownedLock.instanceId !== this.instanceId ||
+      ownedLock.authSecret !== this.authSecret
+    ) {
+      throw new Error('daemon lock ownership changed before socket bind');
+    }
     // Walk the ordered socket candidates and bind the first that works. The
     // in-project path comes first; the deterministic tmpdir path is the fallback
     // for a filesystem that can't host an AF_UNIX node at all (ExFAT/FAT external
     // volumes, some network mounts, WSL2 DrvFs → ENOTSUP/EACCES; #997, #974). The
-    // `listen` closure clears a stale socket (left by a SIGKILL'd previous daemon)
-    // before each attempt — safe because we hold the lockfile, so no live daemon
-    // owns it; without it `listen` would wedge on EADDRINUSE.
-    const candidates = getDaemonSocketCandidates(this.projectRoot);
+    // `listen` closure clears a stale owner-owned socket (left by a SIGKILL'd
+    // previous daemon) before each attempt. Regular files, symlinks, and unsafe
+    // project directories are preserved and make listen fail closed.
     const listen = (socketPath: string): Promise<net.Server> =>
       new Promise<net.Server>((resolve, reject) => {
         if (process.platform !== 'win32') {
-          try { fs.unlinkSync(socketPath); } catch { /* not-exists is fine */ }
+          ensureDaemonSocketDirectory(this.projectRoot, socketPath);
+          removeOwnedDaemonSocket(this.projectRoot, socketPath);
         }
         const server = net.createServer((socket) => this.handleConnection(socket));
-        server.once('error', reject);
+        const onBindError = (error: Error): void => reject(error);
+        server.once('error', onBindError);
         server.listen(socketPath, () => {
-          // POSIX: tighten permissions to user-only — the socket lives under
-          // `.codegraph/` (git-ignored, maybe a shared FS) or tmpdir.
+          server.removeListener('error', onBindError);
           if (process.platform !== 'win32') {
-            try { fs.chmodSync(socketPath, 0o600); } catch { /* best-effort */ }
+            try {
+              fs.chmodSync(socketPath, 0o600);
+              const stat = fs.lstatSync(socketPath);
+              const uid = process.getuid?.();
+              if (
+                !stat.isSocket() ||
+                stat.isSymbolicLink() ||
+                (stat.mode & 0o077) !== 0 ||
+                (uid !== undefined && stat.uid !== uid)
+              ) throw new Error('daemon socket is not owner-only');
+            } catch (err) {
+              const finish = (): void => {
+                removeOwnedDaemonSocket(this.projectRoot, socketPath);
+                reject(err);
+              };
+              try { server.close(() => finish()); } catch { finish(); }
+              return;
+            }
           }
+          server.on('error', () => {
+            if (this.stopping) return;
+            process.stderr.write('[CodeGraph daemon] Listener failed; shutting down safely.\n');
+            void this.stop('listener error');
+          });
           resolve(server);
         });
       });
 
-    let bound: { server: net.Server; socketPath: string };
-    try {
-      bound = await bindFirstUsableSocket(candidates, listen, {
-        onRelocate: (from, to, code) =>
-          process.stderr.write(
-            `[CodeGraph daemon] Socket ${from} unusable (${code}); relocating to ${to}.\n`
-          ),
-      });
-    } catch (err) {
-      // Every candidate failed (the last one, or a non-relocatable error like a
-      // racing EADDRINUSE). We already hold the lockfile `tryAcquireDaemonLock`
-      // wrote; release it and any partial sockets so the NEXT launcher doesn't
-      // spin respawning us on a stale lock pointing at our now-dying pid. Then
-      // re-throw so the caller (the bin's try/catch) exits this detached daemon
-      // cleanly and every launcher falls back to direct mode (#974).
-      this.cleanupLockfile();
-      if (process.platform !== 'win32') {
-        for (const candidate of candidates) {
-          try { fs.unlinkSync(candidate); } catch { /* may not exist */ }
-        }
-      }
-      throw err;
-    }
+    const bound = await bindFirstUsableSocket(candidates, listen, {
+      onRelocate: (from, to, code) =>
+        process.stderr.write(
+          `[CodeGraph daemon] Socket ${from} unusable (${code}); relocating to ${to}.\n`
+        ),
+    });
 
     this.server = bound.server;
     // Adopt the path we ACTUALLY bound — it may be a tmpdir fallback past an
@@ -266,9 +373,13 @@ export class Daemon {
 
     const lock: DaemonLockInfo = {
       pid: process.pid,
+      processBirthId: this.processBirthId,
+      electionProtocol: this.electionProtocol,
       version: CodeGraphPackageVersion,
       socketPath: this.socketPath,
-      startedAt: Date.now(),
+      startedAt: this.startedAt,
+      instanceId: this.instanceId,
+      authSecret: this.authSecret,
     };
 
     // `tryAcquireDaemonLock` wrote the pidfile with the PREFERRED path (candidate
@@ -277,16 +388,32 @@ export class Daemon {
     // lock and we're alive — `clearStaleDaemonLock` pid-verifies, so no racing
     // candidate clears or clobbers a live daemon's lock.
     if (this.socketPath !== candidates[0]) {
+      const tmpPid = `${this.pidPath}.${process.pid}.${randomUUID()}.relocate`;
       try {
-        const tmpPid = `${this.pidPath}.${process.pid}.relocate`;
-        fs.writeFileSync(tmpPid, encodeLockInfo(lock), { mode: 0o600 });
-        fs.renameSync(tmpPid, this.pidPath);
-      } catch { /* best-effort; the registry record below carries the real path */ }
+        fs.writeFileSync(tmpPid, encodeLockInfo(lock), { mode: 0o600, flag: 'wx' });
+        fs.renameSync(tmpPid, getDaemonLockRecordPath(this.pidPath));
+      } finally {
+        try { fs.unlinkSync(tmpPid); } catch { /* renamed or never created */ }
+      }
     }
+
+    // Start engine initialization only after every fallible ownership/bind step
+    // has completed. The first session still awaits this same initialization,
+    // while failed starters never open watchers or database handles.
+    void this.engine.ensureInitialized(this.projectRoot);
 
     // Drop a discovery record so `codegraph list` / `stop --all` can find us.
     // Best-effort; a missing record only means list's liveness prune covers it.
-    registerDaemon({ root: this.projectRoot, ...lock });
+    registerDaemon({
+      root: this.projectRoot,
+      pid: lock.pid,
+      processBirthId: lock.processBirthId,
+      electionProtocol: lock.electionProtocol,
+      version: lock.version,
+      socketPath: lock.socketPath,
+      startedAt: lock.startedAt,
+      instanceId: lock.instanceId,
+    });
 
     process.stderr.write(
       `[CodeGraph daemon] Listening on ${this.socketPath} (pid ${process.pid}, v${CodeGraphPackageVersion}). Idle timeout ${this.idleTimeoutMs}ms.\n`
@@ -302,6 +429,49 @@ export class Daemon {
     process.on('SIGTERM', () => this.stop('SIGTERM'));
 
     return { socketPath: this.socketPath, lock };
+  }
+
+  /** Release every resource acquired before start() reached its ownership handoff. */
+  private async cleanupFailedStart(candidates: string[]): Promise<void> {
+    this.stopping = true;
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    if (this.maxIdleTimer) {
+      clearInterval(this.maxIdleTimer);
+      this.maxIdleTimer = null;
+    }
+    if (this.clientSweepTimer) {
+      clearInterval(this.clientSweepTimer);
+      this.clientSweepTimer = null;
+    }
+    this.closePendingClientSockets();
+    for (const session of [...this.clients]) {
+      try { session.stop(); } catch { /* best-effort */ }
+    }
+    this.clients.clear();
+    this.clientPeers.clear();
+    if (this.server) {
+      const server = this.server;
+      this.server = null;
+      await new Promise<void>((resolve) => {
+        try { server.close(() => resolve()); } catch { resolve(); }
+      });
+    }
+    try { this.engine.stop(); } catch { /* keep releasing ownership */ }
+    try { deregisterDaemon(this.projectRoot, process.pid, this.instanceId); } catch { /* best-effort */ }
+    if (process.platform !== 'win32') {
+      for (const candidate of candidates) {
+        try { removeOwnedDaemonSocket(this.projectRoot, candidate); } catch { /* best-effort */ }
+      }
+    }
+    this.cleanupLockfile();
+    const election = this.electionGuard;
+    this.electionGuard = null;
+    if (election) {
+      try { await election.release(); } catch { /* connection close is best-effort */ }
+    }
   }
 
   /** Currently-connected client count. Exposed for tests / status output. */
@@ -331,19 +501,50 @@ export class Daemon {
       this.clientSweepTimer = null;
     }
     process.stderr.write(`[CodeGraph daemon] Shutting down (${reason}; clients=${this.clients.size}).\n`);
+    this.closePendingClientSockets();
     for (const session of [...this.clients]) {
       try { session.stop(); } catch { /* best-effort */ }
     }
     this.clients.clear();
+    this.clientPeers.clear();
+    let cleanupFailed = false;
+    const noteCleanupFailure = (): void => {
+      if (cleanupFailed) return;
+      cleanupFailed = true;
+      try {
+        process.stderr.write('[CodeGraph daemon] Shutdown cleanup encountered an internal failure.\n');
+      } catch { /* continue releasing ownership */ }
+    };
     if (this.server) {
-      await new Promise<void>((resolve) => this.server!.close(() => resolve()));
+      const server = this.server;
       this.server = null;
+      await new Promise<void>((resolve) => {
+        try {
+          server.close((error) => {
+            if (error) noteCleanupFailure();
+            resolve();
+          });
+        } catch {
+          noteCleanupFailure();
+          resolve();
+        }
+      });
     }
-    this.engine.stop();
-    this.cleanupLockfile();
-    deregisterDaemon(this.projectRoot);
+    try { this.engine.stop(); } catch { noteCleanupFailure(); }
+    // Keep the authoritative lock until all discoverable artifacts are gone.
+    // A replacement daemon cannot acquire the lock and bind while this process
+    // is still removing its registry record or socket candidates.
+    try { deregisterDaemon(this.projectRoot, process.pid, this.instanceId); } catch { noteCleanupFailure(); }
     if (process.platform !== 'win32') {
-      try { fs.unlinkSync(this.socketPath); } catch { /* may already be gone */ }
+      for (const candidate of getDaemonSocketCandidates(this.projectRoot, this.instanceId)) {
+        try { removeOwnedDaemonSocket(this.projectRoot, candidate); } catch { noteCleanupFailure(); }
+      }
+    }
+    this.cleanupLockfile();
+    const election = this.electionGuard;
+    this.electionGuard = null;
+    if (election) {
+      try { await election.release(); } catch { noteCleanupFailure(); }
     }
     // POSIX exits here; Windows drains first (engine.stop() above began closing
     // the file watcher, and exiting mid-teardown aborts the process). See
@@ -352,24 +553,97 @@ export class Daemon {
   }
 
   private handleConnection(socket: net.Socket): void {
+    if (this.stopping || this.authenticatedShutdownScheduled || socket.destroyed) {
+      socket.destroy();
+      return;
+    }
+    const connectionLimitReached = this.pendingClientSockets.size
+      + this.clients.size
+      + this.controlSockets.size >= MAX_DAEMON_CLIENT_CONNECTIONS;
+    const controlCandidate = connectionLimitReached
+      || this.requestBudget.isSaturated(CONTROL_REQUEST_LINE_BYTES);
+    if (controlCandidate) {
+      if (this.pendingControlSocket || this.controlSockets.size > 0) {
+        socket.destroy();
+        return;
+      }
+      this.pendingControlSocket = socket;
+    } else {
+      this.pendingClientSockets.add(socket);
+    }
+    const releasePendingSocket = (): void => {
+      if (controlCandidate) {
+        if (this.pendingControlSocket === socket) this.pendingControlSocket = null;
+      } else {
+        this.pendingClientSockets.delete(socket);
+      }
+    };
     // Hello first so the proxy can verify versions before piping any
     // application bytes. The proxy reads exactly one line, then forwards.
-    const hello: DaemonHello = {
+    const nonce = createDaemonAuthNonce();
+    const helloFields = {
       codegraph: CodeGraphPackageVersion,
       pid: process.pid,
       socketPath: this.socketPath,
-      protocol: 1,
+      instanceId: this.instanceId,
     };
-    socket.write(JSON.stringify(hello) + '\n');
+    const hello: DaemonHello = {
+      ...helloFields,
+      protocol: DAEMON_HANDSHAKE_PROTOCOL,
+      nonce,
+      proof: createDaemonServerProof(this.authSecret, { ...helloFields, nonce }),
+    };
+    try {
+      socket.write(JSON.stringify(hello) + '\n');
+    } catch {
+      releasePendingSocket();
+      socket.destroy();
+      return;
+    }
 
-    // Read the optional client-hello (proxy → daemon) to learn the client's
-    // peer pids, then hand the socket to the session. Fail-safe: any problem —
-    // timeout, a non-hello first line, an early close — yields null pids and we
-    // fall back to the socket-close lifecycle exactly as before (#692).
-    void readClientHello(socket).then((peers) => {
-      const transport = new SocketTransport(socket);
+    // Require mutual proof before creating any MCP session. The pipe name and
+    // public instance id are locators; only the protected lock carries the key.
+    void (async () => {
+      const peers = await readClientHello(socket, {
+        instanceId: this.instanceId,
+        authSecret: this.authSecret,
+        serverNonce: nonce,
+      });
+      if (!peers || this.stopping || socket.destroyed) throw new Error('client authentication failed');
+      if (controlCandidate) {
+        const firstMessage = await readFirstAuthenticatedMessage(socket);
+        if (!firstMessage || this.stopping || socket.destroyed) throw new Error('missing first client message');
+        if (this.handleAuthenticatedControl(socket, firstMessage)) {
+          releasePendingSocket();
+          return;
+        }
+        if (connectionLimitReached) {
+          throw new Error('reserved control connection received ordinary traffic');
+        }
+        // Request saturation, unlike the connection cap, is transient. The
+        // first-message probe must not consume ordinary authenticated traffic
+        // when that peer is promoted to the normal queued transport path.
+        try { socket.unshift(firstMessage); }
+        catch { throw new Error('failed to restore ordinary client input'); }
+      }
+      releasePendingSocket();
+      const transport = new SocketTransport(socket, 'cg-sock', undefined, {
+        maxInputLineBytes: MAX_DAEMON_REQUEST_LINE_BYTES,
+        maxRetainedInputBytes: MAX_DAEMON_CLIENT_RETAINED_REQUEST_BYTES,
+        requestBudget: this.requestBudget,
+        outputBudget: this.outputBudget,
+        // Capacity can saturate after accept/authentication. Inspect the first
+        // application message before ordinary aggregate accounting so a fresh
+        // authenticated shutdown connection still reaches lifecycle control.
+        firstMessageProbeBytes: CONTROL_REQUEST_LINE_BYTES,
+        handleFirstMessage: (buffered) => this.handleAuthenticatedControl(socket, buffered),
+      });
       const session = new MCPSession(transport, this.engine, {
         explicitProjectPath: this.projectRoot,
+        shutdown: {
+          reserve: () => this.scheduleAuthenticatedShutdown(),
+          begin: () => this.beginAuthenticatedShutdown(),
+        },
       });
       transport.onClose(() => this.dropClient(session));
       this.clients.add(session);
@@ -380,7 +654,118 @@ export class Daemon {
       // 'data' listener that reads nothing, added AFTER the transport's so the
       // unshifted client-hello tail reaches the transport intact.
       socket.on('data', () => { this.lastActivityAt = Date.now(); });
+    })().catch(() => {
+      releasePendingSocket();
+      try { socket.destroy(); } catch { /* best-effort */ }
     });
+  }
+
+  private handleAuthenticatedControl(socket: net.Socket, buffered: Buffer): boolean {
+    const newline = buffered.indexOf(0x0a);
+    if (newline < 0 || newline > CONTROL_REQUEST_LINE_BYTES) return false;
+    let message: Record<string, unknown>;
+    try { message = JSON.parse(buffered.subarray(0, newline).toString('utf8')) as Record<string, unknown>; }
+    catch { return false; }
+    if (message.jsonrpc !== '2.0' || message.method !== 'codegraph/shutdown') return false;
+    const hasId = Object.prototype.hasOwnProperty.call(message, 'id');
+    const id = message.id === null || typeof message.id === 'string' || typeof message.id === 'number'
+      ? message.id
+      : null;
+    // Authentication already established the authority to stop this exact
+    // daemon. Only an absent JSON-RPC id denotes a notification; an explicit
+    // null id still receives a response. Neither form controls the sensitive
+    // shutdown action.
+    const accepted = this.scheduleAuthenticatedShutdown();
+    const response = !hasId
+      ? null
+      : accepted
+        ? { jsonrpc: '2.0', id, result: { stopping: true } }
+        : {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: ErrorCodes.InvalidParams,
+            message: 'daemon is already stopping',
+          },
+        };
+    let finished = false;
+    const finishAcceptedShutdown = accepted
+      ? (): void => {
+        if (finished) return;
+        finished = true;
+        this.beginAuthenticatedShutdown();
+      }
+      : undefined;
+    this.trackControlSocket(socket, finishAcceptedShutdown);
+    try {
+      const onFlushed = (): void => {
+        finishAcceptedShutdown?.();
+        try { socket.destroy(); } catch { /* already closed */ }
+      };
+      if (response === null) socket.end(onFlushed);
+      else socket.end(`${JSON.stringify(response)}\n`, onFlushed);
+    } catch {
+      finishAcceptedShutdown?.();
+      socket.destroy();
+    }
+    return true;
+  }
+
+  private trackControlSocket(socket: net.Socket, onFinished?: () => void): void {
+    const cleanup = (): void => {
+      const timer = this.controlSockets.get(socket);
+      if (timer) clearTimeout(timer);
+      this.controlSockets.delete(socket);
+      socket.removeListener('error', onError);
+      onFinished?.();
+    };
+    const onError = (): void => {
+      try { socket.destroy(); } catch { cleanup(); }
+    };
+    socket.once('close', cleanup);
+    socket.once('error', onError);
+    const timer = setTimeout(() => {
+      onFinished?.();
+      try { socket.destroy(); } catch { cleanup(); }
+    }, CONTROL_RESPONSE_DRAIN_TIMEOUT_MS);
+    timer.unref?.();
+    this.controlSockets.set(socket, timer);
+  }
+
+  private scheduleAuthenticatedShutdown(): boolean {
+    if (
+      this.stopping ||
+      this.authenticatedShutdownScheduled ||
+      this.authenticatedShutdownStarted
+    ) return false;
+    this.authenticatedShutdownScheduled = true;
+    return true;
+  }
+
+  private beginAuthenticatedShutdown(): void {
+    if (
+      !this.authenticatedShutdownScheduled ||
+      this.authenticatedShutdownStarted ||
+      this.stopping
+    ) return;
+    this.authenticatedShutdownStarted = true;
+    void this.stop('authenticated control request');
+  }
+
+  private closePendingClientSockets(): void {
+    for (const socket of this.pendingClientSockets) {
+      try { socket.destroy(); } catch { /* best-effort */ }
+    }
+    this.pendingClientSockets.clear();
+    if (this.pendingControlSocket) {
+      try { this.pendingControlSocket.destroy(); } catch { /* best-effort */ }
+      this.pendingControlSocket = null;
+    }
+    for (const [socket, timer] of [...this.controlSockets]) {
+      clearTimeout(timer);
+      this.controlSockets.delete(socket);
+      try { socket.destroy(); } catch { /* best-effort */ }
+    }
   }
 
   private dropClient(session: MCPSession): void {
@@ -397,7 +782,12 @@ export class Daemon {
       // Last-second sanity check: if a connection landed between the timer
       // firing and now, don't exit. (setImmediate-ordering is the only way
       // this races; cheap to defend against.)
-      if (this.clients.size > 0) {
+      if (
+        this.clients.size > 0
+        || this.pendingClientSockets.size > 0
+        || this.pendingControlSocket
+        || this.controlSockets.size > 0
+      ) {
         this.armIdleTimer();
         return;
       }
@@ -499,13 +889,22 @@ export class Daemon {
 
   private cleanupLockfile(): void {
     try {
+      if (!daemonLockDirectoryIsTrusted(this.projectRoot)) return;
       if (fs.existsSync(this.pidPath)) {
         // Only remove if it still belongs to us — another daemon may have
         // already taken over while we were shutting down (extremely rare).
-        const raw = fs.readFileSync(this.pidPath, 'utf8');
-        const info = decodeLockInfo(raw);
-        if (info && info.pid === process.pid) {
-          fs.unlinkSync(this.pidPath);
+        const read = readDaemonLockFile(this.pidPath);
+        const info = read.state === 'ok' ? read.info : null;
+        if (
+          info &&
+          info.pid === process.pid &&
+          info.instanceId === this.instanceId &&
+          info.authSecret === this.authSecret
+        ) {
+          clearStaleDaemonLock(this.pidPath, {
+            pid: info.pid,
+            processBirthId: info.processBirthId,
+          }, true);
         }
       }
     } catch { /* best-effort; we're exiting anyway */ }
@@ -513,7 +912,7 @@ export class Daemon {
 }
 
 /**
- * Result of `tryAcquireDaemonLock`. Either we got the lockfile (caller becomes
+ * Result of `tryAcquireDaemonLock`. Either we got the lock (caller becomes
  * the daemon), or it already existed (caller should connect to the existing
  * daemon as a proxy, or — if the holder is dead — clear it and retry).
  */
@@ -522,9 +921,11 @@ export type AcquireResult =
   | { kind: 'taken'; existing: DaemonLockInfo | null; pidPath: string };
 
 /**
- * Atomically create the daemon pidfile with its full record already in place.
- * Returns either an `acquired` result (the caller is the daemon-elect and may
- * construct a {@link Daemon}) or a `taken` result.
+ * Acquire the daemon lock. The normal hard-link path publishes its full record
+ * atomically; the no-hard-link fallback publishes the same complete record
+ * inside an exclusively created directory. Returns either an `acquired` result
+ * (the caller is the daemon-elect and may construct a {@link Daemon}) or a
+ * `taken` result.
  *
  * must-fix 1 (issue #411 review): the lockfile must appear in ONE atomic step,
  * already complete — never empty, even momentarily. The first attempt at this
@@ -542,34 +943,45 @@ export type AcquireResult =
  * There is no empty-file window at all.
  *
  * Filesystems without hard links (#997): ExFAT/FAT external volumes and some
- * network mounts can't `link()` at all — it throws ENOTSUP/EPERM, which would
- * otherwise kill the daemon before it ever reaches the socket bind. There we
- * fall back to an O_EXCL create (`acquireLockViaExclusiveOpen`): still exclusive
- * ("first writer wins"), but the full record is written through the fd in a
- * second step, so the empty-file window the link approach removed is reopened —
- * only on these filesystems, only for the microseconds between create and write
- * (far narrower than the original bug, which the file watcher's startup latency
- * widened). The race's worst case is two daemons briefly; on a single external
- * drive that's strictly better than the daemon never starting at all.
+ * network mounts can't `link()` at all. There we claim the canonical path with
+ * an exclusive owner-only directory and atomically move the complete temp record
+ * inside it. A crash can leave only an empty directory, which a later SQLite
+ * election-lease holder can remove safely; legacy file publishers cannot replace
+ * that directory or create a second daemon.
  */
-export function tryAcquireDaemonLock(projectRoot: string): AcquireResult {
+export function tryAcquireDaemonLock(
+  projectRoot: string,
+  leaseProvesStale = false,
+): AcquireResult {
+  ensureDaemonLockDirectory(projectRoot);
   const pidPath = getDaemonPidPath(projectRoot);
   // Make sure the .codegraph/ directory exists — the daemon may be the first
   // thing to touch it on a fresh-clone-but-already-initialized checkout.
   fs.mkdirSync(path.dirname(pidPath), { recursive: true });
+  if (!recoverDaemonLockDirectory(pidPath, leaseProvesStale)) {
+    return { kind: 'taken', existing: null, pidPath };
+  }
+  if (!recoverDaemonLockQuarantines(pidPath, leaseProvesStale)) {
+    return { kind: 'taken', existing: null, pidPath };
+  }
 
+  const instanceId = randomUUID();
   const info: DaemonLockInfo = {
     pid: process.pid,
+    processBirthId: getProcessBirthId(process.pid) ?? undefined,
+    electionProtocol: 1,
     version: CodeGraphPackageVersion,
-    socketPath: getDaemonSocketPath(projectRoot),
+    socketPath: getDaemonSocketPath(projectRoot, instanceId),
     startedAt: Date.now(),
+    instanceId,
+    authSecret: createDaemonAuthSecret(),
   };
 
   // Temp name is pid-scoped so racing candidates never collide on it.
-  const tmp = `${pidPath}.${process.pid}.tmp`;
+  const tmp = `${pidPath}.${process.pid}.${randomUUID()}.tmp`;
   let acquired = false;
   try {
-    fs.writeFileSync(tmp, encodeLockInfo(info), { mode: 0o600 });
+    fs.writeFileSync(tmp, encodeLockInfo(info), { mode: 0o600, flag: 'wx' });
     try {
       fs.linkSync(tmp, pidPath); // atomic + exclusive (race-free; see must-fix 1)
       acquired = true;
@@ -582,9 +994,9 @@ export function tryAcquireDaemonLock(projectRoot: string): AcquireResult {
         // which surfaces as a DIFFERENT errno on every OS: ENOTSUP on macOS, EPERM
         // on Linux, EISDIR on Windows (#997). Enumerating them is whack-a-mole and
         // unnecessary: the `tmp` write above already proved this directory is
-        // writable, so an O_EXCL create is a valid atomic+exclusive substitute. If
-        // IT fails too, that's a genuine error and propagates. EEXIST ⇒ taken.
-        acquired = acquireLockViaExclusiveOpen(pidPath, info);
+        // writable, so an exclusive canonical directory is a safe substitute. If
+        // that fails too, the genuine error propagates. EEXIST means taken.
+        acquired = acquireLockViaDirectoryFallback(pidPath, tmp);
       }
     }
   } finally {
@@ -593,84 +1005,56 @@ export function tryAcquireDaemonLock(projectRoot: string): AcquireResult {
 
   if (acquired) return { kind: 'acquired', pidPath, info };
 
-  // Taken. Because the pidfile was link'd atomically it always holds a complete
-  // record — `existing` is null only for a genuinely corrupt leftover, never a
-  // mid-write race.
+  // Taken. The regular-file hard-link path always exposes a complete record.
+  // Directory fallback publication is also atomic; waitForCompleteDaemonLock
+  // remains for legacy regular-file fallback generations already on disk.
   let existing: DaemonLockInfo | null = null;
-  try {
-    existing = decodeLockInfo(fs.readFileSync(pidPath, 'utf8'));
-  } catch { /* unreadable lockfile — treat as malformed */ }
+  const read = readDaemonLockFile(pidPath);
+  if (read.state === 'ok') existing = read.info;
   return { kind: 'taken', existing, pidPath };
 }
 
 /**
- * Exclusive-create the pidfile (O_CREAT|O_EXCL via the `wx` flag) and write the
- * full record through the same fd — the hard-link-free fallback used by
- * {@link tryAcquireDaemonLock} on filesystems without `link()`. Returns true if
- * we created it (acquired the lock), false on EEXIST (another candidate holds
- * it). Any other error propagates. Still exclusive, so "first writer wins" holds
- * exactly as the link path does; the only difference is the brief empty-file
- * window between create and write. Exported for testing.
+ * Claim the canonical pid path as an owner-only directory, then atomically move
+ * the already-complete temporary record inside it. This hard-link-free fallback
+ * avoids exposing a partial regular file and makes failed publication
+ * recoverable without any pathname compare-delete race. Returns false when
+ * another regular-file or directory generation already owns the canonical path.
+ * Exported for testing.
  */
-export function acquireLockViaExclusiveOpen(pidPath: string, info: DaemonLockInfo): boolean {
-  let fd: number;
+export function acquireLockViaDirectoryFallback(
+  pidPath: string,
+  completedRecordPath: string,
+): boolean {
   try {
-    fd = fs.openSync(pidPath, 'wx', 0o600); // O_CREAT | O_EXCL | O_WRONLY
+    fs.mkdirSync(pidPath, { mode: 0o700 });
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
     throw err;
   }
-  try {
-    fs.writeSync(fd, encodeLockInfo(info));
-  } finally {
-    fs.closeSync(fd);
-  }
+  fs.renameSync(completedRecordPath, path.join(pidPath, DAEMON_LOCK_RECORD_NAME));
   return true;
 }
 
 /**
- * Remove a stale pidfile, but only if it still names a dead process. Re-reads
- * the file immediately before unlinking so we never delete a lock that a live
- * daemon (re)acquired in the meantime.
- *
- * must-fix 1 (issue #411 review): the original unconditionally `unlink`'d,
- * which let a racing candidate delete a healthy daemon's lock. Passing
- * `expectedDeadPid` (the pid the caller believed was dead) makes the clear a
- * compare-and-delete: bail if the file now holds a different pid, or any live
- * pid. Returns true when the stale lock is gone (or was already gone).
+ * Give a legacy exclusive-open lock winner a bounded opportunity to finish
+ * writing its record. Current hard-link-free publishers use the atomic directory
+ * representation, but older installed versions may have left this regular-file
+ * generation on disk.
  */
-export function clearStaleDaemonLock(pidPath: string, expectedDeadPid?: number): boolean {
-  try {
-    const raw = fs.readFileSync(pidPath, 'utf8');
-    const info = decodeLockInfo(raw);
-    if (info) {
-      // A different pid took over since we read it — not ours to clear.
-      if (expectedDeadPid !== undefined && info.pid !== expectedDeadPid) return false;
-      // Holder is actually alive — never clear a live daemon's lock.
-      if (info.pid > 0 && isProcessAlive(info.pid)) return false;
-    }
-    fs.unlinkSync(pidPath);
-    return true;
-  } catch (err: unknown) {
-    const e = err as NodeJS.ErrnoException;
-    if (e.code === 'ENOENT') return true; // already gone
-    return false;
-  }
-}
-
-/**
- * Probe whether `pid` is currently alive (signal-0). Treats EPERM as alive on
- * every platform (the process exists, it's just not ours to signal) so we never
- * mistake a live daemon for a dead one and clear its lock.
- */
-export function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err: unknown) {
-    const e = err as NodeJS.ErrnoException;
-    if (e.code === 'EPERM') return true; // exists, just not ours to signal
-    return false;
+export async function waitForCompleteDaemonLock(
+  pidPath: string,
+  timeoutMs = 250,
+  pollMs = 10,
+): Promise<DaemonLockInfo | null> {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  for (;;) {
+    const read = readDaemonLockFile(pidPath);
+    if (read.state === 'ok') return read.info;
+    if (read.state === 'missing') return null;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
   }
 }
 
@@ -751,19 +1135,34 @@ function resolveClientSweepMs(): number {
 }
 
 /**
- * Parse one client-hello line. Returns the peer pids if `line` is a well-formed
- * client-hello (carries the `codegraph_client` marker), or null otherwise — in
- * which case the caller treats the bytes as ordinary JSON-RPC.
+ * Parse and authenticate one client-hello line. No JSON-RPC session is created
+ * until the client proves possession of the lockfile-only secret.
  */
 export function parseClientHelloLine(
   line: string,
-): { pid: number; hostPid: number | null } | null {
+  expected: { instanceId: string; authSecret: string; serverNonce: string },
+): { pid: number | null; hostPid: number | null } | null {
   let parsed: unknown;
   try { parsed = JSON.parse(line); } catch { return null; }
   if (!parsed || typeof parsed !== 'object') return null;
   const o = parsed as Record<string, unknown>;
   if (o.codegraph_client !== 1 || typeof o.pid !== 'number') return null;
-  return { pid: o.pid, hostPid: typeof o.hostPid === 'number' ? o.hostPid : null };
+  const validPid = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 1;
+  if (!validPid(o.pid)) return null;
+  if (o.hostPid !== null && o.hostPid !== undefined && !validPid(o.hostPid)) return null;
+  if (o.instanceId !== expected.instanceId || !isValidDaemonAuthNonce(o.nonce)) return null;
+  if (!isValidDaemonAuthProof(o.proof)) return null;
+  const hostPid = validPid(o.hostPid) ? o.hostPid : null;
+  const proof = createDaemonClientProof(expected.authSecret, {
+    pid: o.pid,
+    hostPid,
+    instanceId: expected.instanceId,
+    serverNonce: expected.serverNonce,
+    nonce: o.nonce,
+  });
+  if (!daemonProofMatches(o.proof, proof)) return null;
+  return { pid: o.pid, hostPid };
 }
 
 /**
@@ -782,23 +1181,20 @@ export function peerIsDead(
 }
 
 /**
- * Read the optional client-hello line a proxy sends after the daemon hello.
- * Always resolves (never rejects) — fail-safe by design, since every connection
- * funnels through here. Resolves with the peer pids when the first line is a
- * client-hello; otherwise resolves with null pids and unshifts the already-read
- * bytes so the transport parses them as the client's first JSON-RPC message(s).
- * Accumulates as Buffers and splits on the newline byte so a UTF-8 sequence
- * straddling a chunk boundary in the unshifted tail is never corrupted.
+ * Read the required authenticated client-hello line a proxy sends after the
+ * daemon hello. Always resolves rather than rejecting because every accepted
+ * socket funnels through here, but null means the caller must destroy it.
  */
 function readClientHello(
   socket: net.Socket,
-): Promise<{ pid: number | null; hostPid: number | null }> {
+  expected: { instanceId: string; authSecret: string; serverNonce: string },
+): Promise<{ pid: number | null; hostPid: number | null } | null> {
   return new Promise((resolve) => {
     let chunks: Buffer[] = [];
     let total = 0;
     let settled = false;
     const finish = (
-      peers: { pid: number | null; hostPid: number | null },
+      peers: { pid: number | null; hostPid: number | null } | null,
       putBack?: Buffer,
     ) => {
       if (settled) return;
@@ -819,7 +1215,7 @@ function readClientHello(
       socket.removeListener('close', onEnd);
       clearTimeout(timer);
       if (process.env.CODEGRAPH_MCP_DEBUG) {
-        process.stderr.write(`[mcp-debug] clientHello finish pid=${String(peers.pid)} putBack=${putBack ? putBack.length : 0} flowing=${String(socket.readableFlowing)}\n`);
+        process.stderr.write(`[mcp-debug] clientHello finish pid=${String(peers?.pid ?? null)} putBack=${putBack ? putBack.length : 0} flowing=${String(socket.readableFlowing)}\n`);
       }
       if (putBack && putBack.length > 0 && !socket.destroyed) {
         try { socket.unshift(putBack); } catch { /* stream already gone */ }
@@ -833,33 +1229,71 @@ function readClientHello(
       const all = chunks.length === 1 ? buf : Buffer.concat(chunks, total);
       const nl = all.indexOf(0x0a); // '\n'
       if (nl === -1) {
-        // No newline yet. If it's already too long to be a hello, it isn't one —
-        // hand the bytes back as data; otherwise keep accumulating.
-        if (total > MAX_HELLO_LINE_BYTES) finish({ pid: null, hostPid: null }, all);
+        if (total > MAX_HELLO_LINE_BYTES) finish(null);
         else chunks = [all];
         return;
       }
-      const peers = parseClientHelloLine(all.subarray(0, nl).toString('utf8'));
+      if (nl > MAX_HELLO_LINE_BYTES) {
+        finish(null);
+        return;
+      }
+      const peers = parseClientHelloLine(all.subarray(0, nl).toString('utf8'), expected);
       if (peers) {
         const tail = all.subarray(nl + 1);
         finish(peers, tail.length > 0 ? tail : undefined);
       } else {
-        // First line is not a client-hello (legacy/direct client) — hand the
-        // whole buffer back so the transport sees the message verbatim.
-        finish({ pid: null, hostPid: null }, all);
+        finish(null);
       }
     };
-    const onEnd = () => finish({ pid: null, hostPid: null });
-    // On timeout, hand back whatever partial bytes accumulated — discarding
-    // them would tear the first message the transport parses.
-    const timer = setTimeout(() => {
-      const partial = chunks.length === 0 ? undefined : (chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, total));
-      finish({ pid: null, hostPid: null }, partial);
-    }, CLIENT_HELLO_TIMEOUT_MS);
+    const onEnd = () => finish(null);
+    const timer = setTimeout(() => finish(null), CLIENT_HELLO_TIMEOUT_MS);
     timer.unref?.();
     socket.on('data', onData);
     socket.on('error', onEnd);
     socket.on('close', onEnd);
+  });
+}
+
+/**
+ * Read only enough authenticated application input to identify the dedicated
+ * shutdown request. Ordinary input is returned byte-for-byte for SocketTransport.
+ */
+function readFirstAuthenticatedMessage(socket: net.Socket): Promise<Buffer | null> {
+  if (socket.destroyed) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let buffered: Buffer = Buffer.alloc(0);
+    let settled = false;
+    const finish = (result: Buffer | null): void => {
+      if (settled) return;
+      settled = true;
+      try { socket.pause(); } catch { /* stream already gone */ }
+      socket.removeListener('data', onData);
+      socket.removeListener('error', onEnd);
+      socket.removeListener('close', onEnd);
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const onData = (chunk: Buffer | string): void => {
+      const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      buffered = buffered.length === 0 ? bytes : Buffer.concat([buffered, bytes]);
+      if (buffered.length > MAX_DAEMON_CLIENT_RETAINED_REQUEST_BYTES) {
+        finish(null);
+        return;
+      }
+      const newline = buffered.indexOf(0x0a);
+      if (newline > MAX_DAEMON_REQUEST_LINE_BYTES) {
+        finish(null);
+        return;
+      }
+      if (newline >= 0 || buffered.length > CONTROL_REQUEST_LINE_BYTES) finish(buffered);
+    };
+    const onEnd = (): void => finish(null);
+    const timer = setTimeout(() => finish(null), CLIENT_FIRST_MESSAGE_TIMEOUT_MS);
+    timer.unref?.();
+    socket.on('data', onData);
+    socket.on('error', onEnd);
+    socket.on('close', onEnd);
+    try { socket.resume(); } catch { finish(null); }
   });
 }
 

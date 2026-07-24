@@ -11,13 +11,20 @@
  * Resolution strategy: read the bundled `package.json` two levels up from
  * this file — same relative position whether we're loaded from `src/mcp/` or
  * the `dist/mcp/` output, since `tsc` preserves the layout. If reading fails
- * (e.g. the package was unpacked oddly), fall back to "0.0.0-unknown" — a
- * sentinel that will never match a real version, so the proxy harmlessly
- * falls back to direct mode.
+ * (e.g. the package was unpacked oddly), fall back to an explicit sentinel.
+ * Daemon sharing rejects that sentinel even when both peers report it; two
+ * unknown builds have not established compatibility.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+export const UNKNOWN_CODEGRAPH_VERSION = '0.0.0-unknown';
+
+/** Only a resolved release version is safe as a cross-process rendezvous key. */
+export function isShareableCodeGraphVersion(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value !== UNKNOWN_CODEGRAPH_VERSION;
+}
 
 function readPackageVersion(): string {
   try {
@@ -30,7 +37,7 @@ function readPackageVersion(): string {
   } catch {
     // Fall through to sentinel.
   }
-  return '0.0.0-unknown';
+  return UNKNOWN_CODEGRAPH_VERSION;
 }
 
 export const CodeGraphPackageVersion = readPackageVersion();

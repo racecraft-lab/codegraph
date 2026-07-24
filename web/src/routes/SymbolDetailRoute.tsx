@@ -6,7 +6,11 @@ import { useAppState } from "@/app/state"
 import { FlowSections, type CatalogPanelState } from "@/components/symbol/FlowSections"
 import { RelationshipPanels, type RelationshipPanelState } from "@/components/symbol/RelationshipPanels"
 import { RelationshipState } from "@/components/symbol/RelationshipStates"
-import { SourcePane, fileUriForPath, relativePathFromFileUri } from "@/components/symbol/SourcePane"
+import {
+  SourcePane,
+  fileUriForPath,
+  relativePathFromFileUri,
+} from "@/components/symbol/SourcePane"
 import { StatePanel } from "@/components/layout/StatePanel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +22,7 @@ import { getSymbol } from "@/lib/api/symbols"
 import type { ClusterSummary, CodeNode, FlowSummary } from "@/lib/api/types"
 import { SOURCE_VIEWER_TRANSPORT_AVAILABLE } from "@/lib/lsp/availability"
 import type { LspLocation, LspRange } from "@/lib/lsp/client"
+import { isWindowsRepositoryRoot } from "@/lib/lsp/path"
 import { mark, measure } from "@/lib/perf/marks"
 
 const loadingRelationships: RelationshipPanelState = { status: "loading" }
@@ -37,9 +42,11 @@ export function SymbolDetailRoute() {
   const [message, setMessage] = React.useState("Loading symbol context.")
   const [partialError, setPartialError] = React.useState<string | undefined>()
   const [durationMs, setDurationMs] = React.useState<number | null>(null)
-  const [sourceOpen, setSourceOpen] = React.useState(
-    () => SOURCE_VIEWER_TRANSPORT_AVAILABLE && searchParams.has("source"),
-  )
+  const [openSourceIntent, setOpenSourceIntent] = React.useState<{ targetKey: string; reached: boolean } | null>(null)
+  const openSourceRef = React.useRef<HTMLButtonElement>(null)
+  const sourceOpen = SOURCE_VIEWER_TRANSPORT_AVAILABLE
+    && selectedRepo !== undefined
+    && sourceSearchIsForRepo(searchParams, selectedRepo.id)
 
   React.useEffect(() => {
     let cancelled = false
@@ -111,27 +118,49 @@ export function SymbolDetailRoute() {
     [searchParams, selectedRepo],
   )
   const sourceLocation = restoredLocation ?? fallbackLocation
+  const restoredLocationKey = restoredLocation ? sourceLocationKey(restoredLocation) : null
+  const openedFromButton = openSourceIntent?.targetKey === restoredLocationKey
 
   React.useEffect(() => {
-    setSourceOpen(SOURCE_VIEWER_TRANSPORT_AVAILABLE && searchParams.has("source"))
-  }, [searchParams])
+    if (restoredLocationKey === null) return
+    setOpenSourceIntent((current) => {
+      if (!current) return null
+      if (current.targetKey === restoredLocationKey) return current.reached ? current : { ...current, reached: true }
+      return current.reached ? null : current
+    })
+  }, [restoredLocationKey])
+
+  React.useEffect(() => {
+    if (!selectedRepo || !searchParams.has("source") || sourceSearchIsForRepo(searchParams, selectedRepo.id)) return
+    setOpenSourceIntent(null)
+    setSearchParams((current) => clearSourceSearch(current), { replace: true })
+  }, [searchParams, selectedRepo, setSearchParams])
 
   const navigateSource = React.useCallback((location: LspLocation) => {
     if (!selectedRepo || !relativePathFromFileUri(selectedRepo.root, location.uri)) return
-    setSearchParams(locationSearch(searchParams, selectedRepo.id, selectedRepo.root, location))
-  }, [searchParams, selectedRepo, setSearchParams])
+    setOpenSourceIntent(null)
+    setSearchParams((current) => locationSearch(current, selectedRepo.id, selectedRepo.root, location))
+  }, [selectedRepo, setSearchParams])
 
   const canonicalizeSource = React.useCallback((location: LspLocation) => {
     if (!selectedRepo || !relativePathFromFileUri(selectedRepo.root, location.uri)) return
+    setOpenSourceIntent(null)
     setSearchParams((current) => locationSearch(current, selectedRepo.id, selectedRepo.root, location), { replace: true })
   }, [selectedRepo, setSearchParams])
 
+  React.useEffect(() => {
+    if (!sourceOpen || restoredLocation || !fallbackLocation || !selectedRepo) return
+    setSearchParams(
+      (current) => locationSearch(current, selectedRepo.id, selectedRepo.root, fallbackLocation),
+      { replace: true },
+    )
+  }, [fallbackLocation, restoredLocation, selectedRepo, setSearchParams, sourceOpen])
+
   const closeSource = React.useCallback(() => {
-    setSourceOpen(false)
-    const next = new URLSearchParams(searchParams)
-    for (const key of ["repo", "source", "sl", "sc", "el", "ec"]) next.delete(key)
-    setSearchParams(next, { replace: true })
-  }, [searchParams, setSearchParams])
+    openSourceRef.current?.focus()
+    setOpenSourceIntent(null)
+    setSearchParams((current) => clearSourceSearch(current), { replace: true })
+  }, [setSearchParams])
 
   if (!node) {
     return (
@@ -170,12 +199,14 @@ export function SymbolDetailRoute() {
             </Button>
             {SOURCE_VIEWER_TRANSPORT_AVAILABLE && fallbackLocation ? (
               <Button
+                ref={openSourceRef}
                 variant="outline"
                 onClick={() => {
                   if (!selectedRepo) return
-                  setSearchParams((current) => (
-                    locationSearch(current, selectedRepo.id, selectedRepo.root, fallbackLocation)
-                  ))
+                  setOpenSourceIntent({ targetKey: sourceLocationKey(fallbackLocation), reached: false })
+                  setSearchParams(
+                    (current) => locationSearch(current, selectedRepo.id, selectedRepo.root, fallbackLocation),
+                  )
                 }}
               >
                 Open source
@@ -190,11 +221,11 @@ export function SymbolDetailRoute() {
       </Card>
       {SOURCE_VIEWER_TRANSPORT_AVAILABLE && sourceOpen && sourceLocation && selectedRepo ? (
         <SourcePane
-          key={selectedRepo.id}
+          key={`${selectedRepo.id}:${node.id}`}
           repoId={selectedRepo.id}
           root={selectedRepo.root}
           location={sourceLocation}
-          initialSymbol={restoredLocation ? undefined : { id: node.id, name: node.name }}
+          initialSymbol={openedFromButton || !restoredLocation ? { id: node.id, name: node.name } : undefined}
           onCanonicalize={canonicalizeSource}
           onNavigate={navigateSource}
           onClose={closeSource}
@@ -214,7 +245,7 @@ export function SymbolDetailRoute() {
 
 export function parseViewerLocation(params: URLSearchParams, repoId: string, root: string): LspLocation | null {
   const source = params.get("source")
-  if (!source || params.get("repo") !== repoId || !isSafeRelativePath(source)) return null
+  if (!source || params.get("repo") !== repoId || !isSafeRelativePath(root, source)) return null
   const values = ["sl", "sc", "el", "ec"].map((key) => parsePosition(params.get(key)))
   if (values.some((value) => value === null)) return null
   const [sl, sc, el, ec] = values as [number, number, number, number]
@@ -232,11 +263,21 @@ export function locationSearch(
   location: LspLocation,
 ): URLSearchParams {
   const source = relativePathFromFileUri(root, location.uri)
-  if (!source || !isSafeRelativePath(source)) return new URLSearchParams(current)
+  if (!source || !isSafeRelativePath(root, source)) return new URLSearchParams(current)
   const next = new URLSearchParams(current)
   next.set("repo", repoId)
   next.set("source", source)
   setRange(next, location.range)
+  return next
+}
+
+export function sourceSearchIsForRepo(params: URLSearchParams, repoId: string): boolean {
+  return params.has("source") && params.get("repo") === repoId
+}
+
+export function clearSourceSearch(current: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(current)
+  for (const key of ["repo", "source", "sl", "sc", "el", "ec"]) next.delete(key)
   return next
 }
 
@@ -251,7 +292,13 @@ function parsePosition(value: string | null): number | null {
   return value !== null && /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null
 }
 
-function isSafeRelativePath(value: string): boolean {
-  if (!value || value.startsWith("/") || value.startsWith("\\") || /^[A-Za-z]:/.test(value) || value.startsWith("file:")) return false
-  return !value.replaceAll("\\", "/").split("/").some((segment) => segment === ".." || segment === "")
+function sourceLocationKey(location: LspLocation): string {
+  const { start, end } = location.range
+  return `${location.uri}:${start.line}:${start.character}:${end.line}:${end.character}`
+}
+
+function isSafeRelativePath(root: string, value: string): boolean {
+  const normalized = isWindowsRepositoryRoot(root) ? value.replaceAll("\\", "/") : value
+  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized) || normalized.startsWith("file:")) return false
+  return !normalized.split("/").some((segment) => segment === "." || segment === ".." || segment === "")
 }

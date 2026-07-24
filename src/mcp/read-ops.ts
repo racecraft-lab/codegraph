@@ -18,16 +18,21 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type CodeGraph from '../index';
 import type { Node, Edge, FileRecord, SearchMode } from '../types';
-import type { LspNodeSummary, LspWorkspaceScanBudget } from '../db/queries';
-import { normalizeLspUri } from '../lsp/protocol';
+import {
+  type LspIncomingEdgeCursor,
+  type LspNodeSummary,
+  type LspPositionNode,
+  type LspWorkspaceScanBudget,
+} from '../db/queries';
+import { LSP_WORKSPACE_QUERY_BYTE_CAP } from '../lsp/protocol';
+import { compareSqliteBinaryText, lspExactUriSortKey, lspUriSortKey } from '../lsp/sort-key';
 import { resolveAutoMode } from '../search/hybrid';
-import { parseQuery } from '../search/query-parser';
 
 /** An unrecognized `op` — surfaced as a JSON-RPC InvalidParams by the session. */
 export class UnknownReadOpError extends Error {}
+export class InvalidReadParamsError extends Error {}
 
 /**
  * The closed `codegraph/read` op vocabulary (FR-002/004/008). Shared by the
@@ -47,8 +52,11 @@ export type ReadOp =
   | 'listFlows'
   | 'getFlow'
   | 'listClusters'
-  | 'lspFileContext'
+  | 'lspSourceSnapshot'
+  | 'lspPositionContext'
+  | 'lspDocumentContext'
   | 'lspIncoming'
+  | 'lspNodeLocation'
   | 'lspWorkspaceSymbols';
 
 export type LspSourceErrorReason =
@@ -68,39 +76,81 @@ export interface LspSourceSnapshot {
   snapshotToken: string;
 }
 
-export interface LspLocatedEdge {
-  edge: Edge;
-  source: Node;
-  target: Node;
-  sourceSnapshotToken: string;
-  targetSnapshotToken: string;
+export type LspNode = LspPositionNode;
+
+export interface LspOccurrence {
+  sourceFilePath: string;
+  targetId: string;
+  line: number;
+  column: number;
+  /** Exact source spelling at line/column; persisted refName wins over legacy target-name fallback. */
+  evidence: string;
+}
+
+export interface LspNodeSnapshot {
+  nodeId: string;
+  snapshotToken: string;
+}
+
+export interface LspFileSnapshot {
+  filePath: string;
+  snapshotToken: string;
 }
 
 export interface LspWorkspaceSymbolCandidate {
-  node: Node;
+  node: LspNode;
   snapshotToken: string;
+  /** Existing graph-search relevance score; higher values sort first. */
+  searchScore: number;
 }
 
 export type LspWorkspaceSymbolsRead =
   | LspWorkspaceSymbolCandidate[]
   | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large'> };
 
-export type LspFileContextRead =
-  | { ok: true; snapshot: LspSourceSnapshot; nodes: Node[]; occurrences: LspLocatedEdge[]; containment: Edge[] }
+export type LspNodeLocationRead =
+  | { ok: true; node: LspNode; snapshotToken: string }
+  | { ok: false; reason: LspSourceErrorReason };
+
+export type LspSourceSnapshotRead =
+  | { ok: true; snapshot: LspSourceSnapshot }
+  | { ok: false; reason: LspSourceErrorReason };
+
+export type LspPositionContextRead =
+  | {
+      ok: true;
+      snapshot: LspSourceSnapshot;
+      nodes: LspNode[];
+      targets: LspNode[];
+      targetSnapshots: LspNodeSnapshot[];
+      occurrences: LspOccurrence[];
+    }
+  | { ok: false; reason: LspSourceErrorReason };
+
+export type LspDocumentContextRead =
+  | { ok: true; snapshot: LspSourceSnapshot; nodes: LspNode[]; containment: Edge[] }
   | { ok: false; reason: LspSourceErrorReason };
 
 export type LspIncomingRead =
-  | { target: Node; occurrences: LspLocatedEdge[] }
-  | { ok: false; reason: Extract<LspSourceErrorReason, 'too_large' | 'unindexed' | 'stale'> };
+  | {
+      ok: true;
+      occurrences: LspOccurrence[];
+      sourceSnapshots: LspFileSnapshot[];
+    }
+  | { ok: false; reason: Extract<LspSourceErrorReason, 'stale' | 'too_large'> };
 
 const LSP_SOURCE_BYTE_CAP = 1024 * 1024;
-const LSP_WORKSPACE_EMPTY_SCAN_CAP = 1_000;
-const LSP_WORKSPACE_SEARCH_SCAN_CAP = 5_000;
-const LSP_WORKSPACE_QUERY_BYTE_CAP = 4 * 1024;
-const LSP_WORKSPACE_FILTER_CAP = 32;
-const LSP_REFERENCE_SCAN_CAP = 5_000;
-const LSP_FILE_NODE_CAP = 5_000;
-const LSP_FILE_EDGE_CAP = 10_000;
+const LSP_WORKSPACE_EMPTY_CANDIDATE_CAP = 1_000;
+const LSP_WORKSPACE_SEARCH_CANDIDATE_CAP = 5_000;
+const LSP_REFERENCE_PAGE_SIZE = 500;
+const LSP_REFERENCE_SCAN_PAGE_CAP = 10;
+const LSP_OCCURRENCE_EVIDENCE_BYTE_CAP = 16 * 1024;
+const LSP_POSITION_CANDIDATE_CAP = 256;
+const LSP_DOCUMENT_NODE_CANDIDATE_CAP = 5_000;
+const LSP_DOCUMENT_CONTAINMENT_CANDIDATE_CAP = 10_000;
+// A valid 1 MiB UTF-8 source can expand to six bytes per byte when JSON escapes
+// control characters. Seven MiB admits that worst case while retaining at
+// least one MiB for the outer JSON-RPC envelope below each 8 MiB transport cap.
 const LSP_DAEMON_RESPONSE_BYTE_CAP = 7 * 1024 * 1024;
 
 /**
@@ -113,6 +163,8 @@ const SEARCH_SCAN_CEILING = 500;
 
 /** Hard node cap on a subgraph response; `truncated` flags a hit (FR-007). */
 const SUBGRAPH_NODE_CAP = 2000;
+/** Hard edge cap on impact construction and response serialization. */
+const SUBGRAPH_EDGE_CAP = 10_000;
 
 // Defensive re-clamp at the daemon read boundary. The HTTP routes already clamp
 // `limit`/`depth` (routes.ts MAX_LIMIT=500 / MAX_DEPTH=3), but `codegraph/read`
@@ -125,12 +177,12 @@ const MAX_DEPTH = 3;
  * Coerce a SPEC-011 catalog paging param at the daemon read boundary (FR-027/029):
  * a finite value is floored then clamped to [min,max]; missing/non-numeric → `def`.
  * Floor + clamp, never an error — the same coercion the MCP tool applies
- * (`coerceCatalogInt`+`clamp`), so a directly dispatched `codegraph/read` degrades a
+ * (`coerceBoundedInt`+`clamp`), so a directly dispatched `codegraph/read` degrades a
  * bad page param exactly as the HTTP route does (both default 100 / cap 500 here).
  * An explicit `limit=0` clamps to `min` (1) — NOT the default — and a non-integer
  * (`1.5`) floors, unlike the earlier `Number(x)||default`.
  */
-function coerceCatalogInt(raw: unknown, def: number, min: number, max: number): number {
+function coerceBoundedInt(raw: unknown, def: number, min: number, max: number): number {
   if (raw === undefined || raw === null || raw === '') return def;
   const n = Number(raw);
   if (!Number.isFinite(n)) return def;
@@ -174,12 +226,18 @@ export async function executeReadOp(
       return cg.getFlowById(idParam(params));
     case 'listClusters':
       return clusterListOp(cg, params);
-    case 'lspFileContext':
-      return lspFileContextOp(cg, params);
+    case 'lspSourceSnapshot':
+      return lspSourceSnapshotOp(cg, params);
+    case 'lspPositionContext':
+      return cg.withLspReadTransaction(() => lspPositionContextOp(cg, params));
+    case 'lspDocumentContext':
+      return cg.withLspReadTransaction(() => lspDocumentContextOp(cg, params));
     case 'lspIncoming':
-      return lspIncomingOp(cg, params);
+      return cg.withLspReadTransaction(() => lspIncomingOp(cg, params));
+    case 'lspNodeLocation':
+      return cg.withLspReadTransaction(() => lspNodeLocationOp(cg, params));
     case 'lspWorkspaceSymbols':
-      return lspWorkspaceSymbolsOp(cg, params);
+      return cg.withLspReadTransaction(() => lspWorkspaceSymbolsOp(cg, params));
     default:
       throw new UnknownReadOpError(`unknown read op: ${op}`);
   }
@@ -192,8 +250,8 @@ export async function executeReadOp(
  * catalog-store read attaches the read-time state.
  */
 function flowListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
-  const limit = coerceCatalogInt(params.limit, 100, 1, MAX_LIMIT);
-  const offset = coerceCatalogInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+  const limit = coerceBoundedInt(params.limit, 100, 1, MAX_LIMIT);
+  const offset = coerceBoundedInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
   return cg.listFlows(limit, offset);
 }
 
@@ -203,9 +261,9 @@ function flowListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
  * never an error); `minSize` defaults to 1 and clamps below-1 to 1 (FR-029).
  */
 function clusterListOp(cg: CodeGraph, params: Record<string, unknown>): unknown {
-  const limit = coerceCatalogInt(params.limit, 100, 1, MAX_LIMIT);
-  const offset = coerceCatalogInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-  const minSize = coerceCatalogInt(params.minSize, 1, 1, Number.MAX_SAFE_INTEGER);
+  const limit = coerceBoundedInt(params.limit, 100, 1, MAX_LIMIT);
+  const offset = coerceBoundedInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+  const minSize = coerceBoundedInt(params.minSize, 1, 1, Number.MAX_SAFE_INTEGER);
   return cg.listClusters(minSize, limit, offset);
 }
 
@@ -237,286 +295,101 @@ export function readOnMissingIndex(op: ReadOp, params: Record<string, unknown> =
       // codegraph/read gets a consistent envelope — not a fixed limit 0 (which a
       // client would misread as an explicit empty page) nor a fixed 100 that
       // ignores the caller's paging. Same coercion as flowListOp/clusterListOp.
-      const limit = coerceCatalogInt(params.limit, 100, 1, MAX_LIMIT);
-      const offset = coerceCatalogInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+      const limit = coerceBoundedInt(params.limit, 100, 1, MAX_LIMIT);
+      const offset = coerceBoundedInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
       return { items: [], total: 0, limit, offset, sourceVersion: 0, state: 'not_indexed' };
     }
     case 'getFlow':
       return { found: false, state: 'not_indexed' };
-    case 'lspFileContext':
-      return { ok: false, reason: 'unindexed' } satisfies LspFileContextRead;
+    case 'lspSourceSnapshot':
+      return { ok: false, reason: 'unindexed' } satisfies LspSourceSnapshotRead;
+    case 'lspPositionContext':
+      return { ok: false, reason: 'unindexed' } satisfies LspPositionContextRead;
+    case 'lspDocumentContext':
+      return { ok: false, reason: 'unindexed' } satisfies LspDocumentContextRead;
     case 'lspIncoming':
-      return { ok: false, reason: 'unindexed' } satisfies LspIncomingRead;
+      return { ok: false, reason: 'stale' } satisfies LspIncomingRead;
+    case 'lspNodeLocation':
+      return { ok: false, reason: 'unindexed' } satisfies LspNodeLocationRead;
     case 'lspWorkspaceSymbols':
+      lspWorkspaceQuery(params);
       return [];
     default:
       throw new UnknownReadOpError(`unknown read op: ${op}`);
   }
 }
 
-function lspWorkspaceSymbolsOp(
-  cg: CodeGraph,
-  params: Record<string, unknown>,
-): LspWorkspaceSymbolsRead {
-  const query = typeof params.query === 'string' ? params.query.trim() : '';
-  if (Buffer.byteLength(query, 'utf8') > LSP_WORKSPACE_QUERY_BYTE_CAP) {
-    return { ok: false, reason: 'too_large' };
+function lspNodeLocationOp(cg: CodeGraph, params: Record<string, unknown>): LspNodeLocationRead {
+  const nodeId = typeof params.id === 'string' ? params.id : '';
+  const node = nodeId ? cg.getLspNodesByIds([nodeId]).get(nodeId) : null;
+  if (!node) return { ok: false, reason: 'not_found' };
+  const snapshotToken = indexedSnapshotTokenForFile(cg, node.filePath);
+  if (!snapshotToken) return { ok: false, reason: 'stale' };
+  const result: LspNodeLocationRead = { ok: true, node: toLspNode(node), snapshotToken };
+  return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
+}
+
+function lspWorkspaceSymbolsOp(cg: CodeGraph, params: Record<string, unknown>): LspWorkspaceSymbolsRead {
+  const query = lspWorkspaceQuery(params);
+  const compareNodes = lspWorkspaceNodeComparator();
+  const compareCandidates = (left: LspRankedWorkspaceCandidate, right: LspRankedWorkspaceCandidate): number =>
+    right.searchScore - left.searchScore || compareNodes(left.node, right.node);
+  const candidateCap = query
+    ? LSP_WORKSPACE_SEARCH_CANDIDATE_CAP
+    : LSP_WORKSPACE_EMPTY_CANDIDATE_CAP;
+  const scanBudget: LspWorkspaceScanBudget = {
+    maxRows: candidateCap,
+    examinedRows: 0,
+    exceeded: false,
+  };
+  const rankedNodes: LspRankedWorkspaceCandidate[] = [];
+  const seen = new Set<string>();
+  for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query, scanBudget)) {
+    if (seen.has(candidate.node.id)) continue;
+    seen.add(candidate.node.id);
+    if (seen.size > candidateCap) return { ok: false, reason: 'too_large' };
+    retainLspWorkspaceCandidate(
+      rankedNodes,
+      { node: candidate.node, searchScore: candidate.score },
+      compareCandidates,
+      candidateCap,
+    );
   }
-  const parsed = parseQuery(query);
-  const filterCount = parsed.kinds.length
-    + parsed.languages.length
-    + parsed.pathFilters.length
-    + parsed.nameFilters.length;
-  if (filterCount > LSP_WORKSPACE_FILTER_CAP) return { ok: false, reason: 'too_large' };
-
-  return cg.withLspReadTransaction(() => {
-    const scanCap = query ? LSP_WORKSPACE_SEARCH_SCAN_CAP : LSP_WORKSPACE_EMPTY_SCAN_CAP;
-    const scanBudget: LspWorkspaceScanBudget = {
-      maxRows: scanCap,
-      examinedRows: 0,
-      exceeded: false,
-    };
-    const ranked: LspRankedWorkspaceSymbol[] = [];
-    let retainedBytes = 0;
-    for (const candidate of cg.iterateLspWorkspaceSymbolCandidates(query, scanBudget)) {
-      const entryWithoutEstimate = {
-        ...candidate,
-        uri: normalizeLspUri(pathToFileURL(path.resolve(cg.getProjectRoot(), candidate.node.filePath)).href),
-      };
-      const entry: LspRankedWorkspaceSymbol = {
-        ...entryWithoutEstimate,
-        estimatedBytes: estimateLspWorkspaceCandidateBytes(entryWithoutEstimate),
-      };
-      const nextRetainedBytes = retainLspWorkspaceCandidate(ranked, entry, retainedBytes, scanCap);
-      if (nextRetainedBytes === null) return { ok: false, reason: 'too_large' };
-      retainedBytes = nextRetainedBytes;
-    }
-    if (scanBudget.exceeded) return { ok: false, reason: 'too_large' };
-    ranked.sort(compareLspRankedWorkspaceSymbols);
-    const tokens = new Map<string, string | null>();
-    const candidates: LspWorkspaceSymbolCandidate[] = [];
-    for (const entry of ranked) {
-      if (!tokens.has(entry.node.filePath)) {
-        tokens.set(entry.node.filePath, indexedSnapshotTokenForFile(cg, entry.node.filePath));
-      }
-      const snapshotToken = tokens.get(entry.node.filePath);
-      if (snapshotToken) candidates.push({ node: entry.node, snapshotToken });
-    }
-    return budgetLspWorkspaceCandidates(candidates);
-  });
+  if (scanBudget.exceeded) return { ok: false, reason: 'too_large' };
+  rankedNodes.sort(compareCandidates);
+  const tokens = new Map<string, string | null>();
+  const candidates: LspWorkspaceSymbolCandidate[] = [];
+  for (const { node, searchScore } of rankedNodes) {
+    if (!tokens.has(node.filePath)) tokens.set(node.filePath, indexedSnapshotTokenForFile(cg, node.filePath));
+    const snapshotToken = tokens.get(node.filePath);
+    if (!snapshotToken) continue;
+    candidates.push({ node: toLspNode(node), snapshotToken, searchScore });
+  }
+  return fitsLspByteBudget(candidates) ? candidates : { ok: false, reason: 'too_large' };
 }
 
-function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncomingRead {
-  return cg.withLspReadTransaction(() => {
-    const targetId = idParam(params);
-    const targetFilePath = typeof params.filePath === 'string' ? params.filePath : '';
-    const targetSnapshotToken = typeof params.snapshotToken === 'string' ? params.snapshotToken : '';
-    const targetSummary = cg.getLspNodeSummariesByIds([targetId]).get(targetId);
-    if (
-      !targetSummary
-      || targetSummary.filePath !== targetFilePath
-      || indexedSnapshotTokenForFile(cg, targetFilePath) !== targetSnapshotToken
-    ) {
-      return { ok: false, reason: 'stale' };
-    }
-    const edges = cg.getBoundedLspIncomingEdges(targetId, LSP_REFERENCE_SCAN_CAP + 1);
-    if (edges.length > LSP_REFERENCE_SCAN_CAP) return { ok: false, reason: 'too_large' };
-    const sourceSummaries = cg.getLspNodeSummariesByIds(edges.map((edge) => edge.source));
-    const candidates: LspOccurrenceCandidate[] = [];
-    for (const edge of edges) {
-      const source = sourceSummaries.get(edge.source);
-      if (!source || edge.line === undefined || edge.column === undefined) {
-        return { ok: false, reason: 'stale' };
-      }
-      candidates.push({ edge, source, target: targetSummary });
-    }
-    candidates.sort((left, right) => compareLspOccurrences(cg.getProjectRoot(), left, right));
-    const unique: LspOccurrenceCandidate[] = [];
-    const seen = new Set<string>();
-    for (const candidate of candidates) {
-      const key = lspOccurrenceKey(cg.getProjectRoot(), candidate);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(candidate);
-    }
-    if (!fitsLspIncomingBudget(targetSummary, unique)) return { ok: false, reason: 'too_large' };
-    const materialized = cg.getLspNodesByIds([
-      targetId,
-      ...unique.map((candidate) => candidate.source.id),
-    ]);
-    const target = materialized.get(targetId);
-    if (!target) return { ok: false, reason: 'stale' };
-    const occurrences: LspLocatedEdge[] = [];
-    const sourceSnapshotTokens = new Map<string, string | null>();
-    for (const candidate of unique) {
-      const source = materialized.get(candidate.source.id);
-      if (!source) return { ok: false, reason: 'stale' };
-      if (!sourceSnapshotTokens.has(source.filePath)) {
-        sourceSnapshotTokens.set(source.filePath, indexedSnapshotTokenForFile(cg, source.filePath));
-      }
-      const sourceSnapshotToken = sourceSnapshotTokens.get(source.filePath);
-      if (!sourceSnapshotToken) return { ok: false, reason: 'stale' };
-      occurrences.push({
-        edge: candidate.edge,
-        source,
-        target,
-        sourceSnapshotToken,
-        targetSnapshotToken,
-      });
-    }
-    const result: LspIncomingRead = { target, occurrences };
-    return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
-  });
-}
-
-function lspFileContextOp(cg: CodeGraph, params: Record<string, unknown>): LspFileContextRead {
-  return cg.withLspReadTransaction(() => {
-    const requested = typeof params.filePath === 'string' ? params.filePath : '';
-    const snapshot = readTrustedSnapshot(cg, requested);
-    if (!snapshot.ok) return snapshot;
-    const nodeSummaries = cg.getBoundedLspFileNodeSummaries(
-      snapshot.snapshot.filePath,
-      LSP_FILE_NODE_CAP + 1,
-    );
-    if (nodeSummaries.length > LSP_FILE_NODE_CAP) return { ok: false, reason: 'too_large' };
-    const edges = cg.getBoundedLspFileEdges(snapshot.snapshot.filePath, LSP_FILE_EDGE_CAP + 1);
-    if (edges.length > LSP_FILE_EDGE_CAP) return { ok: false, reason: 'too_large' };
-    const sourceSummaries = new Map(nodeSummaries.map((node) => [node.id, node]));
-    const targetSummaries = cg.getLspNodeSummariesByIds(
-      edges.filter((edge) => edge.kind !== 'contains').map((edge) => edge.target),
-    );
-    const candidates: LspOccurrenceCandidate[] = [];
-    const containment: Edge[] = [];
-    for (const edge of edges) {
-      if (edge.kind === 'contains') {
-        containment.push(edge);
-        continue;
-      }
-      const source = sourceSummaries.get(edge.source);
-      const target = targetSummaries.get(edge.target);
-      if (!source || !target) return { ok: false, reason: 'stale' };
-      candidates.push({ edge, source, target });
-    }
-    if (!fitsLspFileContextBudget(snapshot.snapshot, nodeSummaries, candidates, containment)) {
-      return { ok: false, reason: 'too_large' };
-    }
-    const materialized = cg.getLspNodesByIds([
-      ...nodeSummaries.map((node) => node.id),
-      ...targetSummaries.keys(),
-    ]);
-    const nodes: Node[] = [];
-    for (const summary of nodeSummaries) {
-      const node = materialized.get(summary.id);
-      if (!node) return { ok: false, reason: 'stale' };
-      nodes.push(node);
-    }
-    const occurrences: LspLocatedEdge[] = [];
-    const targetSnapshotTokens = new Map<string, string | null>();
-    for (const candidate of candidates) {
-      const source = materialized.get(candidate.source.id);
-      const target = materialized.get(candidate.target.id);
-      if (!source || !target) return { ok: false, reason: 'stale' };
-      if (!targetSnapshotTokens.has(target.filePath)) {
-        targetSnapshotTokens.set(target.filePath, indexedSnapshotTokenForFile(cg, target.filePath));
-      }
-      const targetSnapshotToken = targetSnapshotTokens.get(target.filePath);
-      if (!targetSnapshotToken) return { ok: false, reason: 'stale' };
-      occurrences.push({
-        edge: candidate.edge,
-        source,
-        target,
-        sourceSnapshotToken: snapshot.snapshot.snapshotToken,
-        targetSnapshotToken,
-      });
-    }
-    const finalIndexed = cg.getFile(snapshot.snapshot.filePath);
-    if (!finalIndexed || indexedSnapshotToken(finalIndexed) !== snapshot.snapshot.snapshotToken) {
-      return { ok: false, reason: 'stale' };
-    }
-    const result: LspFileContextRead = {
-      ok: true,
-      snapshot: snapshot.snapshot,
-      nodes,
-      occurrences,
-      containment,
-    };
-    return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
-  });
-}
-
-interface LspOccurrenceCandidate {
-  edge: Edge;
-  source: LspNodeSummary;
-  target: LspNodeSummary;
-}
-
-type LspOccurrenceOrderable = Pick<LspOccurrenceCandidate, 'edge'> & {
-  source: Pick<LspNodeSummary, 'id' | 'filePath'>;
-};
-
-function lspOccurrenceKey(root: string, occurrence: LspOccurrenceOrderable): string {
-  const uri = lspOccurrenceUri(root, occurrence);
-  return `${uri}\0${occurrence.edge.line}\0${occurrence.edge.column}`;
-}
-
-function compareLspOccurrences(root: string, left: LspOccurrenceOrderable, right: LspOccurrenceOrderable): number {
-  const leftUri = lspOccurrenceUri(root, left);
-  const rightUri = lspOccurrenceUri(root, right);
-  return (leftUri < rightUri ? -1 : leftUri > rightUri ? 1 : 0)
-    || left.edge.line! - right.edge.line!
-    || left.edge.column! - right.edge.column!
-    || (left.source.id < right.source.id ? -1 : left.source.id > right.source.id ? 1 : 0)
-    || (left.edge.kind < right.edge.kind ? -1 : left.edge.kind > right.edge.kind ? 1 : 0);
-}
-
-function lspOccurrenceUri(root: string, occurrence: LspOccurrenceOrderable): string {
-  return normalizeLspUri(pathToFileURL(path.resolve(root, occurrence.source.filePath)).href);
-}
-
-interface LspRankedWorkspaceSymbol {
+interface LspRankedWorkspaceCandidate {
   node: Node;
-  score: number;
-  uri: string;
-  estimatedBytes: number;
-}
-
-function compareLspRankedWorkspaceSymbols(
-  left: LspRankedWorkspaceSymbol,
-  right: LspRankedWorkspaceSymbol,
-): number {
-  return right.score - left.score
-    || (left.node.qualifiedName < right.node.qualifiedName
-      ? -1
-      : left.node.qualifiedName > right.node.qualifiedName ? 1 : 0)
-    || (left.uri < right.uri ? -1 : left.uri > right.uri ? 1 : 0)
-    || left.node.startLine - right.node.startLine
-    || left.node.startColumn - right.node.startColumn
-    || left.node.endLine - right.node.endLine
-    || left.node.endColumn - right.node.endColumn
-    || (left.node.id < right.node.id ? -1 : left.node.id > right.node.id ? 1 : 0);
+  searchScore: number;
 }
 
 function retainLspWorkspaceCandidate(
-  heap: LspRankedWorkspaceSymbol[],
-  candidate: LspRankedWorkspaceSymbol,
-  retainedBytes: number,
-  candidateCap: number,
-): number | null {
-  if (heap.length < candidateCap) {
-    if (candidate.estimatedBytes > LSP_DAEMON_RESPONSE_BYTE_CAP - retainedBytes) return null;
+  heap: LspRankedWorkspaceCandidate[],
+  candidate: LspRankedWorkspaceCandidate,
+  compare: (left: LspRankedWorkspaceCandidate, right: LspRankedWorkspaceCandidate) => number,
+  cap: number,
+): void {
+  if (heap.length < cap) {
     heap.push(candidate);
     for (let index = heap.length - 1; index > 0;) {
       const parent = (index - 1) >>> 1;
-      if (compareLspRankedWorkspaceSymbols(heap[index]!, heap[parent]!) <= 0) break;
+      if (compare(heap[index]!, heap[parent]!) <= 0) break;
       [heap[index], heap[parent]] = [heap[parent]!, heap[index]!];
       index = parent;
     }
-    return retainedBytes + candidate.estimatedBytes;
+    return;
   }
-  if (compareLspRankedWorkspaceSymbols(candidate, heap[0]!) >= 0) return retainedBytes;
-  const replacedBytes = heap[0]!.estimatedBytes;
-  const nextBytes = retainedBytes - replacedBytes + candidate.estimatedBytes;
-  if (nextBytes > LSP_DAEMON_RESPONSE_BYTE_CAP) return null;
+  if (compare(candidate, heap[0]!) >= 0) return;
   heap[0] = candidate;
   let index = 0;
   while (true) {
@@ -524,38 +397,323 @@ function retainLspWorkspaceCandidate(
     if (left >= heap.length) break;
     const right = left + 1;
     let worse = left;
-    if (right < heap.length
-      && compareLspRankedWorkspaceSymbols(heap[right]!, heap[left]!) > 0) {
-      worse = right;
-    }
-    if (compareLspRankedWorkspaceSymbols(heap[worse]!, heap[index]!) <= 0) break;
+    if (right < heap.length && compare(heap[right]!, heap[left]!) > 0) worse = right;
+    if (compare(heap[worse]!, heap[index]!) <= 0) break;
     [heap[index], heap[worse]] = [heap[worse]!, heap[index]!];
     index = worse;
   }
-  return nextBytes;
 }
 
-function estimateLspWorkspaceCandidateBytes(candidate: Omit<LspRankedWorkspaceSymbol, 'estimatedBytes'>): number {
-  const jsonBytes = boundedJsonByteLength(candidate, LSP_DAEMON_RESPONSE_BYTE_CAP);
-  if (jsonBytes > LSP_DAEMON_RESPONSE_BYTE_CAP) return jsonBytes;
-  return Math.min(
-    LSP_DAEMON_RESPONSE_BYTE_CAP + 1,
-    1_024 + 2 * jsonBytes,
-  );
-}
-
-function budgetLspWorkspaceCandidates(
-  candidates: LspWorkspaceSymbolCandidate[],
-): LspWorkspaceSymbolsRead {
-  const output: LspWorkspaceSymbolCandidate[] = [];
-  let remaining = LSP_DAEMON_RESPONSE_BYTE_CAP - 512;
-  for (const candidate of candidates) {
-    const bytes = boundedJsonByteLength(candidate, remaining);
-    if (bytes + 1 > remaining) return { ok: false, reason: 'too_large' };
-    output.push(candidate);
-    remaining -= bytes + 1;
+function lspWorkspaceQuery(params: Record<string, unknown>): string {
+  const rawQuery = typeof params.query === 'string' ? params.query : '';
+  if (Buffer.byteLength(rawQuery, 'utf8') > LSP_WORKSPACE_QUERY_BYTE_CAP) {
+    throw new InvalidReadParamsError('workspace symbol query exceeds byte limit');
   }
-  return output;
+  return rawQuery.trim();
+}
+
+function lspWorkspaceNodeComparator(): (left: Node, right: Node) => number {
+  const uriKeys = new Map<string, string>();
+  const exactUriKeys = new Map<string, string>();
+  const uriKey = (filePath: string): string => {
+    let key = uriKeys.get(filePath);
+    if (key === undefined) {
+      key = lspUriSortKey(filePath);
+      uriKeys.set(filePath, key);
+    }
+    return key;
+  };
+  const exactUriKey = (filePath: string): string => {
+    let key = exactUriKeys.get(filePath);
+    if (key === undefined) {
+      key = lspExactUriSortKey(filePath);
+      exactUriKeys.set(filePath, key);
+    }
+    return key;
+  };
+  return (left, right) => compareSqliteBinaryText(left.qualifiedName, right.qualifiedName)
+    || compareSqliteBinaryText(uriKey(left.filePath), uriKey(right.filePath))
+    || compareSqliteBinaryText(exactUriKey(left.filePath), exactUriKey(right.filePath))
+    || left.startLine - right.startLine
+    || left.startColumn - right.startColumn
+    || left.endLine - right.endLine
+    || left.endColumn - right.endColumn
+    || compareSqliteBinaryText(left.id, right.id);
+}
+
+function lspIncomingOp(cg: CodeGraph, params: Record<string, unknown>): LspIncomingRead {
+  const targetFilePath = typeof params.filePath === 'string' ? params.filePath : '';
+  const targetSnapshotToken = typeof params.snapshotToken === 'string' ? params.snapshotToken : '';
+  const targetId = idParam(params);
+  const targetSummary = cg.getLspNodeSummariesByIds([targetId]).get(targetId);
+  if (!targetSummary
+    || targetSummary.filePath !== targetFilePath
+    || indexedSnapshotTokenForFile(cg, targetFilePath) !== targetSnapshotToken) {
+    return { ok: false, reason: 'stale' };
+  }
+  const target = cg.getLspNodesByIds([targetId]).get(targetId);
+  if (!target) return { ok: false, reason: 'stale' };
+  const occurrences: LspOccurrence[] = [];
+  const occurrenceEvidence = new Map<string, {
+    value: string;
+    persisted: boolean;
+    index: number;
+    byteLength: number;
+  }>();
+  const sourceSnapshots = new Map<string, string>();
+  let remainingBytes = LSP_DAEMON_RESPONSE_BYTE_CAP - 1_024;
+  let cursor: LspIncomingEdgeCursor | null = null;
+  for (let pageNumber = 0; pageNumber < LSP_REFERENCE_SCAN_PAGE_CAP; pageNumber += 1) {
+    const page = cg.getLspIncomingEdgePage(target.id, cursor, LSP_REFERENCE_PAGE_SIZE);
+    const sourceNodes = cg.getLspNodeSummariesByIds(page.edges.map((edge) => edge.source));
+    const newSourcePaths = new Set<string>();
+    for (const source of sourceNodes.values()) {
+      if (!sourceSnapshots.has(source.filePath)) newSourcePaths.add(source.filePath);
+    }
+    const sourceFiles = cg.getLspFilesByPaths([...newSourcePaths]);
+    for (const edge of page.edges) {
+      if (edge.kind === 'contains'
+        || edge.provenance === 'heuristic'
+        || edge.line === undefined
+        || edge.column === undefined) continue;
+      const evidence = lspOccurrenceEvidence(edge, target.name);
+      if (!evidence.ok) return evidence;
+      const source = sourceNodes.get(edge.source);
+      if (!source) return { ok: false, reason: 'stale' };
+      const priorToken = sourceSnapshots.get(source.filePath);
+      if (priorToken === undefined) {
+        const sourceFile = sourceFiles.get(source.filePath);
+        if (!sourceFile) return { ok: false, reason: 'stale' };
+        const snapshotToken = indexedSnapshotToken(sourceFile);
+        const snapshotBytes = boundedJsonByteLength(
+          { filePath: source.filePath, snapshotToken },
+          LSP_DAEMON_RESPONSE_BYTE_CAP,
+        );
+        if (snapshotBytes + 1 > remainingBytes) return { ok: false, reason: 'too_large' };
+        remainingBytes -= snapshotBytes + 1;
+        sourceSnapshots.set(source.filePath, snapshotToken);
+      }
+      const occurrenceKey = `${source.filePath}\0${edge.line}\0${edge.column}`;
+      const occurrence: LspOccurrence = {
+        sourceFilePath: source.filePath,
+        targetId: target.id,
+        line: edge.line,
+        column: edge.column,
+        evidence: evidence.value,
+      };
+      const occurrenceBytes = boundedJsonByteLength(occurrence, LSP_DAEMON_RESPONSE_BYTE_CAP);
+      const priorEvidence = occurrenceEvidence.get(occurrenceKey);
+      if (priorEvidence !== undefined) {
+        if (priorEvidence.value === evidence.value) continue;
+        if (priorEvidence.persisted === evidence.persisted) return { ok: false, reason: 'stale' };
+        if (evidence.persisted) {
+          const growth = occurrenceBytes - priorEvidence.byteLength;
+          if (growth > remainingBytes) return { ok: false, reason: 'too_large' };
+          remainingBytes -= growth;
+          occurrences[priorEvidence.index]!.evidence = evidence.value;
+          occurrenceEvidence.set(occurrenceKey, {
+            ...evidence,
+            index: priorEvidence.index,
+            byteLength: occurrenceBytes,
+          });
+        }
+        continue;
+      }
+      if (occurrenceBytes + 1 > remainingBytes) return { ok: false, reason: 'too_large' };
+      remainingBytes -= occurrenceBytes + 1;
+      occurrenceEvidence.set(occurrenceKey, {
+        ...evidence,
+        index: occurrences.length,
+        byteLength: occurrenceBytes,
+      });
+      occurrences.push(occurrence);
+    }
+    cursor = page.nextCursor;
+    if (!cursor) break;
+    if (pageNumber === LSP_REFERENCE_SCAN_PAGE_CAP - 1) return { ok: false, reason: 'too_large' };
+  }
+  const currentFiles = cg.getLspFilesByPaths([targetFilePath, ...sourceSnapshots.keys()]);
+  const currentTarget = currentFiles.get(targetFilePath);
+  if (!currentTarget
+    || indexedSnapshotToken(currentTarget) !== targetSnapshotToken
+    || [...sourceSnapshots].some(([filePath, token]) => {
+      const current = currentFiles.get(filePath);
+      return !current || indexedSnapshotToken(current) !== token;
+    })) {
+    return { ok: false, reason: 'stale' };
+  }
+  const result: LspIncomingRead = {
+    ok: true,
+    occurrences,
+    sourceSnapshots: [...sourceSnapshots].map(([filePath, snapshotToken]) => ({ filePath, snapshotToken })),
+  };
+  return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
+}
+
+function lspSourceSnapshotOp(cg: CodeGraph, params: Record<string, unknown>): LspSourceSnapshotRead {
+  const requested = typeof params.filePath === 'string' ? params.filePath : '';
+  const result = readTrustedSnapshot(cg, requested);
+  return result.ok && !fitsLspByteBudget(result) ? { ok: false, reason: 'too_large' } : result;
+}
+
+function lspPositionContextOp(cg: CodeGraph, params: Record<string, unknown>): LspPositionContextRead {
+  const requested = typeof params.filePath === 'string' ? params.filePath : '';
+  const line = Number.isSafeInteger(params.line) && Number(params.line) >= 1
+    ? Number(params.line)
+    : 0;
+  const snapshot = readTrustedSnapshot(cg, requested);
+  if (!snapshot.ok) return snapshot;
+  if (line === 0) return { ok: false, reason: 'unreadable' };
+  const nodes = cg.getLspPositionNodesAtLine(
+    snapshot.snapshot.filePath,
+    line,
+    LSP_POSITION_CANDIDATE_CAP + 1,
+  );
+  const edges = cg.getLspOutgoingEdgesAtLine(
+    snapshot.snapshot.filePath,
+    line,
+    LSP_POSITION_CANDIDATE_CAP + 1,
+  );
+  if (nodes.length > LSP_POSITION_CANDIDATE_CAP || edges.length > LSP_POSITION_CANDIDATE_CAP) {
+    return { ok: false, reason: 'too_large' };
+  }
+  const targetIds = new Set<string>();
+  for (const edge of edges) {
+    targetIds.add(edge.target);
+  }
+  const targets: LspNode[] = [];
+  const targetSnapshots: LspNodeSnapshot[] = [];
+  const targetNodes = cg.getLspPositionNodesByIds([...targetIds]);
+  const checkedTargetFiles = new Map<string, string>();
+  for (const id of targetIds) {
+    const node = targetNodes.get(id);
+    if (!node) return { ok: false, reason: 'stale' };
+    let snapshotToken = checkedTargetFiles.get(node.filePath);
+    if (!snapshotToken) {
+      const currentSnapshotToken = indexedSnapshotTokenForFile(cg, node.filePath);
+      if (!currentSnapshotToken) return { ok: false, reason: 'stale' };
+      snapshotToken = currentSnapshotToken;
+      checkedTargetFiles.set(node.filePath, snapshotToken);
+    }
+    targets.push(node);
+    targetSnapshots.push({ nodeId: node.id, snapshotToken });
+  }
+  const occurrences: LspOccurrence[] = [];
+  for (const edge of edges) {
+    const target = targetNodes.get(edge.target);
+    if (!target) return { ok: false, reason: 'stale' };
+    const evidence = lspOccurrenceEvidence(edge, target.name);
+    if (!evidence.ok) return evidence;
+    occurrences.push({
+      sourceFilePath: snapshot.snapshot.filePath,
+      targetId: edge.target,
+      line: edge.line!,
+      column: edge.column!,
+      evidence: evidence.value,
+    });
+  }
+  if (indexedSnapshotTokenForFile(cg, snapshot.snapshot.filePath) !== snapshot.snapshot.snapshotToken
+    || [...checkedTargetFiles].some(([filePath, token]) => indexedSnapshotTokenForFile(cg, filePath) !== token)) {
+    return { ok: false, reason: 'stale' };
+  }
+  const result: LspPositionContextRead = {
+    ok: true,
+    snapshot: snapshot.snapshot,
+    nodes,
+    targets,
+    targetSnapshots,
+    occurrences,
+  };
+  return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
+}
+
+function lspOccurrenceEvidence(
+  edge: Edge,
+  targetName: string,
+): { ok: true; value: string; persisted: boolean }
+  | { ok: false; reason: Extract<LspSourceErrorReason, 'stale' | 'too_large'> } {
+  const hasPersistedEvidence = edge.metadata !== undefined
+    && Object.prototype.hasOwnProperty.call(edge.metadata, 'refName');
+  const value = hasPersistedEvidence ? edge.metadata!.refName : targetName;
+  if (typeof value !== 'string' || value.length === 0) return { ok: false, reason: 'stale' };
+  if (Buffer.byteLength(value, 'utf8') > LSP_OCCURRENCE_EVIDENCE_BYTE_CAP) {
+    return { ok: false, reason: 'too_large' };
+  }
+  return { ok: true, value, persisted: hasPersistedEvidence };
+}
+
+function lspDocumentContextOp(cg: CodeGraph, params: Record<string, unknown>): LspDocumentContextRead {
+  const requested = typeof params.filePath === 'string' ? params.filePath : '';
+  const snapshot = readTrustedSnapshot(cg, requested);
+  if (!snapshot.ok) return snapshot;
+  const nodeSummaries = cg.getBoundedLspFileNodeSummaries(
+    snapshot.snapshot.filePath,
+    LSP_DOCUMENT_NODE_CANDIDATE_CAP + 1,
+  );
+  if (nodeSummaries.length > LSP_DOCUMENT_NODE_CANDIDATE_CAP) {
+    return { ok: false, reason: 'too_large' };
+  }
+  const containment = cg.getLspContainmentEdges(
+    snapshot.snapshot.filePath,
+    LSP_DOCUMENT_CONTAINMENT_CANDIDATE_CAP + 1,
+  );
+  if (containment.length > LSP_DOCUMENT_CONTAINMENT_CANDIDATE_CAP) {
+    return { ok: false, reason: 'too_large' };
+  }
+  if (!fitsLspDocumentBudget(snapshot.snapshot, nodeSummaries, containment)) {
+    return { ok: false, reason: 'too_large' };
+  }
+  const materialized = cg.getLspNodesByIds(nodeSummaries.map((node) => node.id));
+  const nodes: LspNode[] = [];
+  for (const summary of nodeSummaries) {
+    const node = materialized.get(summary.id);
+    if (!node) return { ok: false, reason: 'stale' };
+    nodes.push(toLspNode(node, false, true));
+  }
+  if (indexedSnapshotTokenForFile(cg, snapshot.snapshot.filePath) !== snapshot.snapshot.snapshotToken) {
+    return { ok: false, reason: 'stale' };
+  }
+  const result: LspDocumentContextRead = { ok: true, snapshot: snapshot.snapshot, nodes, containment };
+  return fitsLspByteBudget(result) ? result : { ok: false, reason: 'too_large' };
+}
+
+function toLspNode(node: Node, hoverMetadata = false, signature = false): LspNode {
+  return {
+    id: node.id,
+    kind: node.kind,
+    name: node.name,
+    qualifiedName: node.qualifiedName,
+    filePath: node.filePath,
+    startLine: node.startLine,
+    endLine: node.endLine,
+    startColumn: node.startColumn,
+    endColumn: node.endColumn,
+    ...((hoverMetadata || signature) && node.signature ? { signature: node.signature.slice(0, 2_000) } : {}),
+    ...(hoverMetadata && node.docstring ? { docstring: node.docstring.slice(0, 4_000) } : {}),
+  };
+}
+
+function fitsLspByteBudget(value: unknown): boolean {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8') <= LSP_DAEMON_RESPONSE_BYTE_CAP;
+}
+
+function fitsLspDocumentBudget(
+  snapshot: LspSourceSnapshot,
+  nodes: LspNodeSummary[],
+  containment: Edge[],
+): boolean {
+  let remaining = LSP_DAEMON_RESPONSE_BYTE_CAP
+    - 2_048
+    - boundedJsonByteLength(snapshot, LSP_DAEMON_RESPONSE_BYTE_CAP);
+  for (const node of nodes) {
+    remaining -= node.maxJsonBytes + 1;
+    if (remaining < 0) return false;
+  }
+  for (const edge of containment) {
+    remaining -= boundedJsonByteLength(edge, LSP_DAEMON_RESPONSE_BYTE_CAP) + 1;
+    if (remaining < 0) return false;
+  }
+  return true;
 }
 
 function boundedJsonByteLength(value: unknown, limit: number): number {
@@ -631,47 +789,9 @@ function jsonStringByteLength(value: string, limit: number): number {
   return bytes;
 }
 
-function fitsLspIncomingBudget(target: LspNodeSummary, occurrences: LspOccurrenceCandidate[]): boolean {
-  let remaining = LSP_DAEMON_RESPONSE_BYTE_CAP - 1_024 - target.maxJsonBytes;
-  for (const occurrence of occurrences) {
-    remaining -= 128
-      + boundedJsonByteLength(occurrence.edge, LSP_DAEMON_RESPONSE_BYTE_CAP)
-      + occurrence.source.maxJsonBytes
-      + occurrence.target.maxJsonBytes;
-    if (remaining < 0) return false;
-  }
-  return true;
-}
-
-function fitsLspFileContextBudget(
-  snapshot: LspSourceSnapshot,
-  nodes: LspNodeSummary[],
-  occurrences: LspOccurrenceCandidate[],
-  containment: Edge[],
-): boolean {
-  let remaining = LSP_DAEMON_RESPONSE_BYTE_CAP
-    - 2_048
-    - boundedJsonByteLength(snapshot, LSP_DAEMON_RESPONSE_BYTE_CAP);
-  for (const node of nodes) {
-    remaining -= node.maxJsonBytes + 1;
-    if (remaining < 0) return false;
-  }
-  for (const occurrence of occurrences) {
-    remaining -= 128
-      + boundedJsonByteLength(occurrence.edge, LSP_DAEMON_RESPONSE_BYTE_CAP)
-      + occurrence.source.maxJsonBytes
-      + occurrence.target.maxJsonBytes;
-    if (remaining < 0) return false;
-  }
-  for (const edge of containment) {
-    remaining -= boundedJsonByteLength(edge, LSP_DAEMON_RESPONSE_BYTE_CAP) + 1;
-    if (remaining < 0) return false;
-  }
-  return true;
-}
-
-function fitsLspByteBudget(value: unknown): boolean {
-  return Buffer.byteLength(JSON.stringify(value), 'utf8') <= LSP_DAEMON_RESPONSE_BYTE_CAP;
+function indexedSnapshotTokenForFile(cg: CodeGraph, filePath: string): string | null {
+  const file = cg.getFile(filePath);
+  return file ? indexedSnapshotToken(file) : null;
 }
 
 function indexedSnapshotToken(file: FileRecord): string {
@@ -679,11 +799,6 @@ function indexedSnapshotToken(file: FileRecord): string {
     .createHash('sha256')
     .update(`${file.contentHash}\0${file.indexedAt}\0${file.size}`)
     .digest('hex');
-}
-
-function indexedSnapshotTokenForFile(cg: CodeGraph, filePath: string): string | null {
-  const file = cg.getFile(filePath);
-  return file ? indexedSnapshotToken(file) : null;
 }
 
 function isOutsideRepositoryRelative(relative: string): boolean {
@@ -725,6 +840,7 @@ export function readTrustedSnapshot(
   } catch {
     return { ok: false, reason: 'not_found' };
   }
+
   candidate = path.resolve(rootReal, requested);
   const lexicalRelative = path.relative(rootReal, candidate);
   if (isOutsideRepositoryRelative(lexicalRelative)) {
@@ -756,9 +872,12 @@ export function readTrustedSnapshot(
     if (!before.isFile()) return { ok: false, reason: 'not_regular' };
     if (before.size > LSP_SOURCE_BYTE_CAP) return { ok: false, reason: 'too_large' };
 
-    const buffer = Buffer.allocUnsafe(LSP_SOURCE_BYTE_CAP + 1);
+    // Size the allocation to the observed file plus one probe byte. The probe
+    // preserves growth detection without allocating the global cap for every
+    // small source in high-cardinality references and workspace-symbol reads.
+    const buffer = Buffer.allocUnsafe(before.size + 1);
     let bytesRead = 0;
-    while (bytesRead <= LSP_SOURCE_BYTE_CAP) {
+    while (bytesRead < buffer.length) {
       const read = fs.readSync(fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead);
       if (read === 0) break;
       bytesRead += read;
@@ -769,7 +888,7 @@ export function readTrustedSnapshot(
     let finalReal: string;
     let finalPath: fs.Stats;
     let finalRelative: string;
-    let finalIndexed: ReturnType<CodeGraph['getFile']>;
+    let finalIndexed: FileRecord | null;
     try {
       afterRead();
       after = fs.fstatSync(fd);
@@ -794,8 +913,8 @@ export function readTrustedSnapshot(
     }
 
     // Device/inode/size alone cannot detect an equal-length in-place rewrite.
-    // Re-read the same descriptor in bounded chunks and require it to remain
-    // byte-identical through a final metadata/path identity check.
+    // Re-read the descriptor and require byte, metadata, and path identity to
+    // remain stable through the final validation.
     const verifyBuffer = Buffer.allocUnsafe(Math.min(bytesRead, 64 * 1024));
     for (let offset = 0; offset < bytesRead;) {
       const expected = Math.min(verifyBuffer.length, bytesRead - offset);
@@ -957,20 +1076,23 @@ function subgraphOp(
 ): unknown {
   const id = idParam(params);
   if (!cg.getNode(id)) return { found: false };
-  const depth = Math.min(MAX_DEPTH, Math.max(1, Number(params.depth) || (which === 'impact' ? 3 : 1)));
-  // Impact's Subgraph has no internal cap (cap post-hoc); the neighborhood BFS
-  // caps during traversal — scan one past the cap so a hit is detectable.
+  const depth = coerceBoundedInt(params.depth, which === 'impact' ? 3 : 1, 1, MAX_DEPTH);
+  // Both traversals cap during graph construction. Scan one past the response
+  // cap so a hit remains detectable and can be reported as `truncated`.
   const sg =
     which === 'impact'
-      ? cg.getImpactRadius(id, depth)
-      : cg.getNeighborhood(id, depth, SUBGRAPH_NODE_CAP + 1);
+      ? cg.getImpactRadius(id, depth, SUBGRAPH_NODE_CAP + 1, SUBGRAPH_EDGE_CAP + 1)
+      : cg.getNeighborhood(id, depth, SUBGRAPH_NODE_CAP + 1, SUBGRAPH_EDGE_CAP + 1);
   const allNodes = [...sg.nodes.values()];
-  const truncated = allNodes.length > SUBGRAPH_NODE_CAP;
+  const truncated = sg.truncated === true
+    || allNodes.length > SUBGRAPH_NODE_CAP
+    || sg.edges.length > SUBGRAPH_EDGE_CAP;
   const nodes = truncated ? allNodes.slice(0, SUBGRAPH_NODE_CAP) : allNodes;
   let edges: Edge[] = sg.edges;
   if (truncated) {
     const keep = new Set(nodes.map((n) => n.id));
-    edges = sg.edges.filter((e) => keep.has(e.source) && keep.has(e.target));
+    edges = edges.filter((e) => keep.has(e.source) && keep.has(e.target));
   }
+  edges = edges.slice(0, SUBGRAPH_EDGE_CAP);
   return { found: true, nodes, edges, truncated };
 }

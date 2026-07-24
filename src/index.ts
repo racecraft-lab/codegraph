@@ -29,7 +29,10 @@ import { DatabaseConnection, getDatabasePath, removeDatabaseFiles } from './db';
 import { WalCheckpointValve } from './db/wal-valve';
 import {
   QueryBuilder,
+  type LspIncomingEdgeCursor,
+  type LspIncomingEdgePage,
   type LspNodeSummary,
+  type LspPositionNode,
   type LspWorkspaceScanBudget,
   type LspWorkspaceSymbolCandidate,
 } from './db/queries';
@@ -1443,7 +1446,15 @@ export class CodeGraph {
       try {
         this.fileLock.acquire();
       } catch {
-        return { filesChecked: 0, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 0 };
+        return {
+          filesChecked: 0,
+          filesAdded: 0,
+          filesModified: 0,
+          filesRemoved: 0,
+          nodesUpdated: 0,
+          durationMs: 0,
+          lockContended: true,
+        };
       }
       // Defer WAL auto-checkpointing for the whole incremental run, exactly
       // as indexAll does for the bulk path (#1231): sync's store loop and its
@@ -1752,12 +1763,9 @@ export class CodeGraph {
             restartBudget: this.lspWatchRestartBudget,
           },
         });
-        // sync() returns this exact zero-shape iff it failed to acquire the
-        // file lock (a real empty sync always has filesChecked > 0 because
-        // scanDirectory ran). Surface that to the watcher as a typed error
-        // so it keeps pendingFiles + reschedules instead of clearing them
-        // (#449).
-        if (result.filesChecked === 0 && result.durationMs === 0) {
+        // Surface explicit lock contention to the watcher as a typed error so
+        // it keeps pendingFiles and reschedules instead of clearing them (#449).
+        if (result.lockContended === true) {
           throw new LockUnavailableError();
         }
         const filesChanged = result.filesAdded + result.filesModified + result.filesRemoved;
@@ -2232,6 +2240,11 @@ export class CodeGraph {
     return this.queries.getLspNodesByIdsUncached(nodeIds);
   }
 
+  /** Cache-bypassing bounded hover projections for position-context targets. */
+  getLspPositionNodesByIds(nodeIds: readonly string[]): Map<string, LspPositionNode> {
+    return this.queries.getLspPositionNodesByIds(nodeIds);
+  }
+
   /** Cache-independent response-budget metadata for structured LSP reads. */
   getLspNodeSummariesByIds(nodeIds: readonly string[]): Map<string, LspNodeSummary> {
     return this.queries.getLspNodeSummariesByIds(nodeIds);
@@ -2256,6 +2269,31 @@ export class CodeGraph {
   /** Nodes whose name starts with `prefix` (index range scan, capped). */
   getNodesByNamePrefix(prefix: string, limit = 20): Node[] {
     return this.queries.getNodesByNamePrefix(prefix, limit);
+  }
+
+  /** Internal bounded ordering used by an empty LSP workspace-symbol query. */
+  getLspWorkspaceNodes(limit: number): Node[] {
+    return this.queries.getLspWorkspaceNodes(limit);
+  }
+
+  /** Internal ranked candidates used by an LSP workspace-symbol read. */
+  searchLspWorkspaceNodes(query: string, limit: number): SearchResult[] {
+    return this.queries.searchLspWorkspaceNodes(query, limit);
+  }
+
+  /** Internal bounded nodes used by LSP document-symbol reads. */
+  getLspFileNodes(filePath: string, limit: number): Node[] {
+    return this.queries.getLspFileNodes(filePath, limit);
+  }
+
+  /** Internal bounded nodes used by an LSP position-target read. */
+  getLspNodesAtLine(filePath: string, line: number, limit: number): Node[] {
+    return this.queries.getLspNodesAtLine(filePath, line, limit);
+  }
+
+  /** Internal bounded hover projections used by an LSP position-context read. */
+  getLspPositionNodesAtLine(filePath: string, line: number, limit: number): LspPositionNode[] {
+    return this.queries.getLspPositionNodesAtLine(filePath, line, limit);
   }
 
   /**
@@ -2893,6 +2931,30 @@ export class CodeGraph {
     return this.queries.getIncomingEdges(nodeId);
   }
 
+  /** Internal indexed keyset page used by LSP references. */
+  getLspIncomingEdgePage(
+    nodeId: string,
+    after: LspIncomingEdgeCursor | null,
+    limit: number,
+  ): LspIncomingEdgePage {
+    return this.queries.getLspIncomingEdgePage(nodeId, after, limit);
+  }
+
+  /** Internal bounded batch used to validate LSP source generations. */
+  getLspFilesByPaths(filePaths: readonly string[]): Map<string, FileRecord> {
+    return this.queries.getFilesByPaths(filePaths);
+  }
+
+  /** Internal bounded exact occurrences used by an LSP position-target read. */
+  getLspOutgoingEdgesAtLine(filePath: string, line: number, limit: number): Edge[] {
+    return this.queries.getLspOutgoingEdgesAtLine(filePath, line, limit);
+  }
+
+  /** Internal bounded containment used by LSP document-symbol reads. */
+  getLspContainmentEdges(filePath: string, limit: number): Edge[] {
+    return this.queries.getLspContainmentEdges(filePath, limit);
+  }
+
   /** Internal bounded exact candidates for the foundational LSP incoming read. */
   getBoundedLspIncomingEdges(nodeId: string, limit: number): Edge[] {
     return this.queries.getBoundedLspIncomingEdges(nodeId, limit);
@@ -3017,25 +3079,38 @@ export class CodeGraph {
    *
    * @param nodeId - ID of the node
    * @param maxDepth - Maximum depth to traverse (default: 3)
+   * @param limit - Maximum nodes to collect (default: unbounded)
+   * @param edgeLimit - Maximum edge rows to inspect and collect (default: unbounded)
    * @returns Subgraph containing potentially impacted nodes
    */
-  getImpactRadius(nodeId: string, maxDepth: number = 3): Subgraph {
-    return this.traverser.getImpactRadius(nodeId, maxDepth);
+  getImpactRadius(
+    nodeId: string,
+    maxDepth: number = 3,
+    limit: number = Infinity,
+    edgeLimit: number = Infinity,
+  ): Subgraph {
+    return this.traverser.getImpactRadius(nodeId, maxDepth, limit, edgeLimit);
   }
 
   /**
    * Graph neighborhood around a node — a bidirectional BFS subgraph within
    * `maxDepth`, capped at `limit` nodes (SPEC-005 `GET /api/graph/:id`, FR-007).
    * A thin public delegate to the traverser's BFS, mirroring
-   * {@link getImpactRadius}; the read API caps at 2000 and flags `truncated`.
+   * {@link getImpactRadius}; the read API caps at 2000 nodes / 10000 edges and
+   * flags `truncated`.
    */
-  getNeighborhood(nodeId: string, maxDepth: number = 1, limit: number = 2000): Subgraph {
+  getNeighborhood(
+    nodeId: string,
+    maxDepth: number = 1,
+    limit: number = 2000,
+    edgeLimit: number = Infinity,
+  ): Subgraph {
     return this.traverser.traverseBFS(nodeId, {
       maxDepth,
       limit,
       direction: 'both',
       includeStart: true,
-    });
+    }, edgeLimit);
   }
 
   /**

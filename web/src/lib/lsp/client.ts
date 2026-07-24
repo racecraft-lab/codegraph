@@ -11,6 +11,7 @@ export interface LspRange {
 export interface LspLocation {
   uri: string
   range: LspRange
+  snapshotToken?: string
 }
 
 export interface SourceSnapshot {
@@ -27,10 +28,10 @@ export interface HoverResult {
 export interface BrowserLspApi {
   connect(): Promise<void>
   content(uri: string): Promise<SourceSnapshot>
-  hover(uri: string, position: LspPosition): Promise<HoverResult | null>
-  definition(uri: string, position: LspPosition): Promise<LspLocation | null>
-  references(uri: string, position: LspPosition): Promise<LspLocation[]>
-  symbolLocation(nodeId: string, name: string): Promise<LspLocation | null>
+  hover(uri: string, position: LspPosition, snapshotToken: string, signal?: AbortSignal): Promise<HoverResult | null>
+  definition(uri: string, position: LspPosition, snapshotToken: string): Promise<LspLocation | null>
+  references(uri: string, position: LspPosition, snapshotToken: string): Promise<LspLocation[]>
+  symbolLocation(nodeId: string): Promise<LspLocation | null>
   onDisconnect(listener: () => void): () => void
   close(): Promise<void>
 }
@@ -56,11 +57,17 @@ type PendingRequest = {
   resolve(value: unknown): void
   reject(error: BrowserLspError): void
   timer: ReturnType<typeof setTimeout>
+  cleanup(): void
 }
+
+const MAX_PENDING_REQUESTS = 8
+const MAX_BUFFERED_BYTES = 1024 * 1024
+const REQUEST_DEADLINE_MS = 5_000
 
 export class BrowserLspClient implements BrowserLspApi {
   private socket: WebSocket | null = null
   private connecting: Promise<void> | null = null
+  private cancelConnecting: ((error: BrowserLspError) => void) | null = null
   private nextId = 1
   private readonly pending = new Map<number, PendingRequest>()
   private deliberatelyClosing = false
@@ -77,26 +84,79 @@ export class BrowserLspClient implements BrowserLspApi {
   }
 
   connect(): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve()
     if (this.connecting) return this.connecting
+    if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve()
     this.deliberatelyClosing = false
+    let connectingSocket: WebSocket | null = null
     this.connecting = new Promise<void>((resolve, reject) => {
       const url = new URL("/lsp", window.location.href)
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
       url.searchParams.set("repo", this.repoId)
       const socket = this.socketFactory(url.href)
+      connectingSocket = socket
       this.socket = socket
-      socket.addEventListener("open", () => resolve(), { once: true })
-      socket.addEventListener("error", () => reject(new BrowserLspError("unavailable")), { once: true })
-      socket.addEventListener("message", (event) => this.receive(event.data))
-      socket.addEventListener("close", () => {
-        reject(new BrowserLspError("disconnected"))
-        this.disconnected()
+      let opened = false
+      let settled = false
+      let connectionTimer: ReturnType<typeof setTimeout> | null = null
+      const rejectConnection = (error: BrowserLspError) => {
+        if (settled) return
+        settled = true
+        if (connectionTimer) clearTimeout(connectionTimer)
+        connectionTimer = null
+        socket.removeEventListener("open", onOpen)
+        socket.removeEventListener("error", onError)
+        reject(error)
+      }
+      const onOpen = () => {
+        if (this.socket !== socket) return
+        opened = true
+        settled = true
+        if (connectionTimer) clearTimeout(connectionTimer)
+        connectionTimer = null
+        socket.removeEventListener("error", onError)
+        resolve()
+      }
+      const onError = () => {
+        if (this.socket !== socket || opened) return
+        this.socket = null
+        rejectConnection(new BrowserLspError("unavailable"))
+      }
+      this.cancelConnecting = (error) => rejectConnection(error)
+      socket.addEventListener("open", onOpen, { once: true })
+      socket.addEventListener("error", onError, { once: true })
+      socket.addEventListener("message", (event) => {
+        if (this.socket === socket) this.receive(event.data)
       })
+      socket.addEventListener("close", () => {
+        if (this.socket !== socket) return
+        if (!opened) {
+          this.socket = null
+          rejectConnection(new BrowserLspError("unavailable"))
+          return
+        }
+        this.disconnected(socket)
+      })
+      connectionTimer = setTimeout(() => {
+        if (this.socket !== socket || opened) return
+        rejectConnection(new BrowserLspError("timed-out", -32803, "timeout"))
+        try { socket.close() } catch { /* the stalled connection is unusable */ }
+      }, REQUEST_DEADLINE_MS)
     }).then(async () => {
       await this.request("initialize", {})
-      this.notify("initialized", {})
+      if (!this.notify("initialized", {})) throw new BrowserLspError("unavailable")
+    }).catch((error: unknown) => {
+      const socket = connectingSocket
+      if (socket && this.socket === socket) {
+        this.socket = null
+        this.rejectPending(new BrowserLspError("disconnected"))
+        try {
+          if (socket.readyState === WebSocket.OPEN) socket.close(1011, "initialization failed")
+          else if (socket.readyState === WebSocket.CONNECTING) socket.close()
+        } catch { /* the failed connection is already unusable */ }
+      }
+      throw error
     }).finally(() => {
+      this.cancelConnecting = null
       this.connecting = null
     })
     return this.connecting
@@ -106,24 +166,25 @@ export class BrowserLspClient implements BrowserLspApi {
     return this.request("codegraph/textDocumentContent", { textDocument: { uri } })
   }
 
-  hover(uri: string, position: LspPosition): Promise<HoverResult | null> {
-    return this.request("textDocument/hover", { textDocument: { uri }, position })
+  hover(uri: string, position: LspPosition, snapshotToken: string, signal?: AbortSignal): Promise<HoverResult | null> {
+    return this.request("textDocument/hover", { textDocument: { uri }, position, snapshotToken }, signal)
   }
 
-  definition(uri: string, position: LspPosition): Promise<LspLocation | null> {
-    return this.request("textDocument/definition", { textDocument: { uri }, position })
+  definition(uri: string, position: LspPosition, snapshotToken: string): Promise<LspLocation | null> {
+    return this.request("textDocument/definition", { textDocument: { uri }, position, snapshotToken })
   }
 
-  references(uri: string, position: LspPosition): Promise<LspLocation[]> {
+  references(uri: string, position: LspPosition, snapshotToken: string): Promise<LspLocation[]> {
     return this.request("textDocument/references", {
       textDocument: { uri },
       position,
+      snapshotToken,
       context: { includeDeclaration: true },
     })
   }
 
-  async symbolLocation(nodeId: string, name: string): Promise<LspLocation | null> {
-    const symbols = await this.request<unknown[]>("workspace/symbol", { query: name })
+  async symbolLocation(nodeId: string): Promise<LspLocation | null> {
+    const symbols = await this.request<unknown[]>("workspace/symbol", { query: "", nodeId })
     for (const symbol of symbols) {
       if (!isRecord(symbol) || !isRecord(symbol.data) || symbol.data.codegraphNodeId !== nodeId) continue
       if (isLocation(symbol.location)) return symbol.location
@@ -140,6 +201,16 @@ export class BrowserLspClient implements BrowserLspApi {
     this.deliberatelyClosing = true
     const socket = this.socket
     if (!socket) return
+    const connecting = this.connecting
+    if (connecting) {
+      const error = new BrowserLspError("disconnected")
+      this.cancelConnecting?.(error)
+      this.socket = null
+      this.rejectPending(error)
+      try { socket.close() } catch { /* the canceled connection is already unusable */ }
+      await connecting.catch(() => undefined)
+      return
+    }
     if (socket.readyState === WebSocket.OPEN) {
       try { await this.request("shutdown") } catch { /* teardown is best-effort */ }
       this.notify("exit")
@@ -151,25 +222,60 @@ export class BrowserLspClient implements BrowserLspApi {
     this.rejectPending(new BrowserLspError("disconnected"))
   }
 
-  private request<T>(method: string, params?: object): Promise<T> {
+  private request<T>(method: string, params?: object, signal?: AbortSignal): Promise<T> {
     const socket = this.socket
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return Promise.reject(new BrowserLspError("disconnected"))
     }
+    if (signal?.aborted) {
+      return Promise.reject(new BrowserLspError("unavailable", -32800, "cancelled"))
+    }
+    if (this.pending.size >= MAX_PENDING_REQUESTS) {
+      return Promise.reject(new BrowserLspError("unavailable", -32803, "busy"))
+    }
     const id = this.nextId++
+    const payload = JSON.stringify({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) })
+    if (socket.bufferedAmount + utf8Bytes(payload) > MAX_BUFFERED_BYTES) {
+      return Promise.reject(new BrowserLspError("unavailable", -32803, "backpressure"))
+    }
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(id)
+        if (!this.pending.delete(id)) return
+        cleanup()
         reject(new BrowserLspError("timed-out", -32803, "timeout"))
-      }, 5_000)
-      this.pending.set(id, { resolve, reject, timer })
-      socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) }))
+      }, REQUEST_DEADLINE_MS)
+      const onAbort = () => {
+        if (!this.pending.delete(id)) return
+        cleanup()
+        this.notify("$/cancelRequest", { id })
+        reject(new BrowserLspError("unavailable", -32800, "cancelled"))
+      }
+      const cleanup = () => {
+        clearTimeout(timer)
+        signal?.removeEventListener("abort", onAbort)
+      }
+      this.pending.set(id, { resolve, reject, timer, cleanup })
+      signal?.addEventListener("abort", onAbort, { once: true })
+      try {
+        socket.send(payload)
+      } catch {
+        if (this.pending.delete(id)) cleanup()
+        reject(new BrowserLspError("disconnected"))
+      }
     })
   }
 
-  private notify(method: string, params?: object): void {
-    if (this.socket?.readyState !== WebSocket.OPEN) return
-    this.socket.send(JSON.stringify({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) }))
+  private notify(method: string, params?: object): boolean {
+    const socket = this.socket
+    if (socket?.readyState !== WebSocket.OPEN) return false
+    const payload = JSON.stringify({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) })
+    if (socket.bufferedAmount + utf8Bytes(payload) > MAX_BUFFERED_BYTES) return false
+    try {
+      socket.send(payload)
+      return true
+    } catch {
+      return false
+    }
   }
 
   private receive(raw: unknown): void {
@@ -179,7 +285,7 @@ export class BrowserLspClient implements BrowserLspApi {
     if (!isRecord(message) || typeof message.id !== "number") return
     const pending = this.pending.get(message.id)
     if (!pending) return
-    clearTimeout(pending.timer)
+    pending.cleanup()
     this.pending.delete(message.id)
     if (isRecord(message.error)) {
       const code = typeof message.error.code === "number" ? message.error.code : undefined
@@ -192,7 +298,8 @@ export class BrowserLspClient implements BrowserLspApi {
     pending.resolve(message.result)
   }
 
-  private disconnected(): void {
+  private disconnected(socket: WebSocket): void {
+    if (this.socket !== socket) return
     this.socket = null
     this.rejectPending(new BrowserLspError("disconnected"))
     if (!this.deliberatelyClosing) {
@@ -202,7 +309,7 @@ export class BrowserLspClient implements BrowserLspApi {
 
   private rejectPending(error: BrowserLspError): void {
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer)
+      pending.cleanup()
       pending.reject(error)
     }
     this.pending.clear()
@@ -217,9 +324,14 @@ function isLocation(value: unknown): value is LspLocation {
   if (!isRecord(value) || typeof value.uri !== "string" || !isRecord(value.range)) return false
   const { start, end } = value.range
   return isPosition(start) && isPosition(end)
+    && typeof value.snapshotToken === "string" && value.snapshotToken.length > 0
 }
 
 function isPosition(value: unknown): value is LspPosition {
   return isRecord(value) && typeof value.line === "number" && Number.isSafeInteger(value.line) && value.line >= 0
     && typeof value.character === "number" && Number.isSafeInteger(value.character) && value.character >= 0
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
 }
