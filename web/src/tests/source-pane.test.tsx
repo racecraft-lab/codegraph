@@ -80,6 +80,31 @@ describe("focused source pane", () => {
     expect(navigate).toHaveBeenCalledWith(beta)
   })
 
+  it("debounces hover when the pointer enters a token without restarting on pointer movement", async () => {
+    vi.useFakeTimers()
+    const client = fakeClient({ text: "alpha beta\n", languageId: "typescript", contentHash: "hash", snapshotToken: "snapshot" })
+
+    renderWithProviders(
+      <SourcePane repoId="repo-1" root={root} location={alpha} onNavigate={vi.fn()} onClose={vi.fn()} createClient={() => client} />,
+    )
+    await act(async () => { await Promise.resolve() })
+    const source = screen.getByRole("textbox")
+    const token = [...source.querySelectorAll("span")].find((element) => element.textContent === "alpha")
+    expect(token).toBeTruthy()
+
+    fireEvent.pointerMove(token!)
+    await act(async () => { vi.advanceTimersByTime(150); await Promise.resolve() })
+    expect(client.hover).not.toHaveBeenCalled()
+
+    fireEvent.pointerEnter(token!)
+    await act(async () => { vi.advanceTimersByTime(149); await Promise.resolve() })
+    expect(client.hover).not.toHaveBeenCalled()
+    fireEvent.pointerMove(token!)
+    await act(async () => { vi.advanceTimersByTime(1); await Promise.resolve() })
+    expect(client.hover).toHaveBeenCalledOnce()
+    expect(client.hover).toHaveBeenCalledWith(alpha.uri, { line: 0, character: 0 })
+  })
+
   it("does not reconnect after a typed failure until the user retries", async () => {
     const stale = fakeClient()
     stale.content.mockRejectedValue(new BrowserLspError("stale", -32801))

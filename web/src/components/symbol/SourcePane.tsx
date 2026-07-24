@@ -310,7 +310,7 @@ function renderSource(
         const token = (
           <span
             key={partIndex}
-            onPointerMove={() => activate(position, true)}
+            onPointerEnter={() => activate(position, true)}
             onDoubleClick={() => { activate(position); activateDefinition(position) }}
           >
             {part.text}
