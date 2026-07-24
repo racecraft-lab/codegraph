@@ -198,3 +198,17 @@ optional prose-only narrative appendices. Canonical implementation lives in
 The active `specs/020-pr-blast-radius-review-action/` folder was removed because
 the shipped action, tests, consumer documentation, live dogfood evidence, and
 preserved workflow/design evidence carry the durable record.
+
+## SPEC-009 - LSP Server Facade (archived 2026-07-24)
+
+The read-only LSP facade shipped as four ordered PRs: #159 added exact
+graph/trusted-source reads and protocol helpers, #160 added the stdio facade,
+#161 added the focused accessible source viewer, and #162 added the same-origin
+WebSocket transport with bounded admission and lifecycle controls. Canonical
+implementation lives in `src/lsp/`, `src/server/lsp-websocket.ts`,
+`src/mcp/read-ops.ts`, `web/src/lib/lsp/`,
+`web/src/components/symbol/SourcePane.tsx`, and their focused root/web tests.
+Detailed provenance, stale-task-ledger reconciliation, and recovery:
+[archive-reports/2026-07-24-SPEC-009.md](archive-reports/2026-07-24-SPEC-009.md).
+The active `specs/009-lsp-server-facade/` folder was removed because merged code,
+tests, CI, UAT, and preserved workflow/design evidence carry the durable record.
