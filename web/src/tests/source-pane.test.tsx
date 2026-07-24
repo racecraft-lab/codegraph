@@ -194,6 +194,26 @@ describe("native browser LSP client", () => {
     await outcome
     expect(factory).toHaveBeenCalledOnce()
   })
+
+  it("settles a connection closed before opening and allows a retry", async () => {
+    const firstSocket = new TestWebSocket()
+    const secondSocket = new TestWebSocket()
+    const factory = vi.fn()
+      .mockReturnValueOnce(firstSocket as unknown as WebSocket)
+      .mockReturnValueOnce(secondSocket as unknown as WebSocket)
+    const client = new BrowserLspClient("repo-1", factory)
+
+    const firstAttempt = client.connect()
+    firstSocket.close()
+    await expect(firstAttempt).rejects.toMatchObject({ state: "disconnected" })
+
+    const secondAttempt = client.connect()
+    secondSocket.open()
+    await waitFor(() => expect(secondSocket.sent).toHaveLength(1))
+    secondSocket.respond(0, { capabilities: {} })
+    await expect(secondAttempt).resolves.toBeUndefined()
+    expect(factory).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe("source history state", () => {

@@ -89,7 +89,10 @@ export class BrowserLspClient implements BrowserLspApi {
       socket.addEventListener("open", () => resolve(), { once: true })
       socket.addEventListener("error", () => reject(new BrowserLspError("unavailable")), { once: true })
       socket.addEventListener("message", (event) => this.receive(event.data))
-      socket.addEventListener("close", () => this.disconnected())
+      socket.addEventListener("close", () => {
+        reject(new BrowserLspError("disconnected"))
+        this.disconnected()
+      })
     }).then(async () => {
       await this.request("initialize", {})
       this.notify("initialized", {})
