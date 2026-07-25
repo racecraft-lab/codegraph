@@ -12,8 +12,8 @@
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
   "status": "in_progress",
-  "active_step": "Phase 3: Plan",
-  "updated_at": "2026-07-25T13:49:11Z",
+  "active_step": "Phase 4: Checklist - API Contracts",
+  "updated_at": "2026-07-25T14:03:00Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -179,6 +179,40 @@
         "reason": "0 [NEEDS CLARIFICATION] markers",
         "markers": 0
       }
+    },
+    "plan": {
+      "status": "completed",
+      "agent": "phase-executor",
+      "artifacts": [
+        "specs/014-control-flow-graphs/plan.md",
+        "specs/014-control-flow-graphs/research.md",
+        "specs/014-control-flow-graphs/data-model.md",
+        "specs/014-control-flow-graphs/quickstart.md",
+        "specs/014-control-flow-graphs/contracts/cfg-shared-contract.md",
+        "specs/014-control-flow-graphs/contracts/cfg-cli.md",
+        "specs/014-control-flow-graphs/contracts/cfg-mcp.md",
+        "specs/014-control-flow-graphs/contracts/cfg-status.md"
+      ],
+      "constitution": {
+        "pre_research": "passed",
+        "post_design": "passed"
+      },
+      "reviewability": {
+        "projected_loc": 360,
+        "status": "pass",
+        "declared_production_files": 9,
+        "slice_1_estimated_loc": 390,
+        "slice_1_status": "ok",
+        "slice_2_estimated_loc": 390,
+        "slice_2_status": "ok"
+      },
+      "unresolved_markers": 0,
+      "gate": {
+        "id": "G3",
+        "status": "passed",
+        "reason": "plan.md exists with 0 unresolved markers",
+        "markers": 0
+      }
     }
   },
   "plan": [
@@ -191,8 +225,8 @@
     {"step": "Phase 2: Clarify - Language Semantics Consensus", "status": "completed"},
     {"step": "Phase 2: Clarify - Public Contracts and Bounds", "status": "completed"},
     {"step": "Phase 2: Clarify - Public Contracts and Bounds Consensus", "status": "completed"},
-    {"step": "Phase 3: Plan", "status": "in_progress"},
-    {"step": "Phase 4: Checklist - API Contracts", "status": "pending"},
+    {"step": "Phase 3: Plan", "status": "completed"},
+    {"step": "Phase 4: Checklist - API Contracts", "status": "in_progress"},
     {"step": "Phase 4: Checklist - API Contracts Consensus", "status": "pending"},
     {"step": "Phase 4: Checklist - Data Integrity", "status": "pending"},
     {"step": "Phase 4: Checklist - Data Integrity Consensus", "status": "pending"},

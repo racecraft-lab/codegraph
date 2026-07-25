@@ -78,8 +78,8 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 |---|---|---|---|
 | Specify | `/speckit-specify` | ✅ Complete | 34 FRs, 4 stories, 22 scenarios, zero unresolved markers; G1 passed. |
 | Clarify | `/speckit-clarify` | ✅ Complete | All three sessions and consensus rows complete; G2 passed with zero clarification markers. |
-| Plan | `/speckit-plan` | 🔄 In Progress | Produce the two-slice architecture, schema/lifecycle design, contracts, benchmark method, and UAT. |
-| Checklist | `/speckit-checklist` | ⏳ Pending | Run api-contracts, data-integrity, error-handling, and performance domains. |
+| Plan | `/speckit-plan` | ✅ Complete | Eight artifacts complete; constitution checks, reviewability estimate, and G3 passed. |
+| Checklist | `/speckit-checklist` | 🔄 In Progress | API Contracts is the active domain, followed by data integrity, error handling, and performance. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Generate dependency-ordered TDD tasks grouped by story and slice. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Check spec/plan/tasks/design-concept consistency and reviewability. |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement Slice 1 before Slice 2 using strict red-green-refactor evidence. |
@@ -527,11 +527,16 @@ design. Record any unavoidable complexity in the required table.
 
 | Artifact | Status | Required Content |
 |---|---|---|
-| `plan.md` | ⏳ | Two vertical slices, file tables, constitution checks |
-| `research.md` | ⏳ | Tree-sitter node mapping and safety-cap validation |
-| `data-model.md` | ⏳ | Function status, block, edge, version, and cascade rules |
-| `contracts/` | ⏳ | Shared library/CLI JSON/MCP/status schemas |
-| `quickstart.md` | ⏳ | Enable, query, paginate, sync, and disable examples |
+| `plan.md` | ✅ Complete | Two vertical slices, file tables, constitution checks |
+| `research.md` | ✅ Complete | Tree-sitter node mapping and safety-cap validation |
+| `data-model.md` | ✅ Complete | Function status, block, edge, version, and cascade rules |
+| `contracts/` | ✅ Complete | Shared library/CLI JSON/MCP/status schemas |
+| `quickstart.md` | ✅ Complete | Enable, query, paginate, sync, and disable examples |
+
+Plan reviewability evidence: authoritative `estimate-reviewable-loc` returned
+`projected=360`, `status=pass`, with 9 declared production file operations.
+Both vertical slice estimates returned 390 LOC, one suggested slice, and
+`status=ok`. G3 passed with zero unresolved plan markers.
 
 ---
 
