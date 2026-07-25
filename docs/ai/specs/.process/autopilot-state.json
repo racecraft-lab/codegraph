@@ -12,8 +12,8 @@
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)",
-  "updated_at": "2026-07-25T18:38:38Z",
+  "active_step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)",
+  "updated_at": "2026-07-25T19:32:38Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -380,8 +380,8 @@
         {"step": "Phase 7: Implement - Setup and Reviewability Baseline (T001-T003)", "task_ids": ["T001", "T002", "T003"], "status": "completed"},
         {"step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)", "task_ids": ["T004", "T005", "T006", "T007", "T008"], "status": "completed"},
         {"step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)", "task_ids": ["T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016"], "status": "completed"},
-        {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "task_ids": ["T017", "T018", "T019", "T020", "T021", "T022", "T023"], "status": "in_progress"},
-        {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "task_ids": ["T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031"], "status": "pending"},
+        {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "task_ids": ["T017", "T018", "T019", "T020", "T021", "T022", "T023"], "status": "completed"},
+        {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "task_ids": ["T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031"], "status": "in_progress"},
         {"step": "Phase 7: Implement - Slice 2 / US4 Python Parity (T032-T038)", "task_ids": ["T032", "T033", "T034", "T035", "T036", "T037", "T038"], "status": "pending"},
         {"step": "Phase 7: Implement - Polish, Gates, and Review Packet (T039-T043)", "task_ids": ["T039", "T040", "T041", "T042", "T043"], "status": "pending"}
       ],
@@ -588,6 +588,97 @@
               "the configured non-loopback HAL endpoint uses plaintext HTTP"
             ]
           }
+        },
+        "T017": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 0,
+          "initial_probe": "passed because T009 already invokes CFG analysis after every successful zero-change sync",
+          "green_passed": 58,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "build": "passed",
+          "node": "24.11.1",
+          "production_change": false,
+          "verification": "disabled initial index wrote no CFG rows; first enable followed by zero-change sync backfilled status, blocks, and edges for every current supported function"
+        },
+        "T018": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 2,
+          "green_passed": 59,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "all affected-file outcomes are precomputed before one file-scoped replacement transaction; unrelated files and later zero-change snapshots remain byte-identical",
+          "red_evidence": [
+            "changed-file sync advanced an unaffected status updated_at from 1000 to 2000",
+            "later zero-change sync advanced the first-enable snapshot to 3000"
+          ]
+        },
+        "T019": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 1,
+          "green_passed": 60,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "function and file deletions retain compact identity tombstones with null source versions and no payload; unaffected rows remain byte-identical and never-seen IDs stay unknown",
+          "deletion_scope": "changed paths plus prior CFG file paths absent from the indexed files table"
+        },
+        "T020": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 1,
+          "green_passed": 61,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "disabled reads expose no retained payload, disabled sync leaves CFG tables byte-identical, and a durable config revision forces zero-change re-enable refresh before rows become current",
+          "pre_refresh_state": "not_computed/cfg_not_computed with no payload"
+        },
+        "T021": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 2,
+          "green_passed": 63,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "first unexpected failure is payload-free unavailable; later failure retains a byte-identical snapshot projected stale through a durable per-function marker; recovery clears the marker",
+          "parent_review_remediation": "full re-enable backfill now converts prior identities missing from current nodes into tombstones atomically",
+          "failure_message": "CFG analysis result unavailable."
+        },
+        "T022": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 1,
+          "green_passed": 66,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "pre-swap cancellation writes no marker or partial CFG; prior snapshots project stale through source mismatch; post-swap cancellation preserves committed rows and config freshness",
+          "implementation": "runCfgAnalysis returns committed boolean and config revision advancement follows the commit result"
+        },
+        "T023": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 0,
+          "initial_probe": "passed because source freshness was already function-scoped by T008 and unaffected-file replacement was already scoped by T018",
+          "green_passed": 67,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "unrelated metadata and other-file source writes leave unchanged CFG rows byte-identical; a stored contract mismatch projects the complete prior payload stale without writes",
+          "group_verification": {
+            "cfg_directory_tests_passed": 67,
+            "build": "passed",
+            "full_test_files_passed": 258,
+            "full_tests_passed": 4604,
+            "full_tests_skipped": 178,
+            "dogfood_index_survived": true,
+            "dogfood_prior_embedding_coverage": "10191/10191"
+          }
         }
       }
     }
@@ -618,8 +709,8 @@
     {"step": "Phase 7: Implement - Setup and Reviewability Baseline (T001-T003)", "status": "completed"},
     {"step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)", "status": "completed"},
     {"step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)", "status": "completed"},
-    {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "status": "in_progress"},
-    {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "status": "pending"},
+    {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "status": "completed"},
+    {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "status": "in_progress"},
     {"step": "Phase 7: Implement - Slice 2 / US4 Python Parity (T032-T038)", "status": "pending"},
     {"step": "Phase 7: Implement - Polish, Gates, and Review Packet (T039-T043)", "status": "pending"},
     {"step": "Post: Doctor Extension Check", "status": "pending"},

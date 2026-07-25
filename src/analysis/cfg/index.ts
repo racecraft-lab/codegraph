@@ -159,6 +159,8 @@ export interface StoredCfgStatus {
 export interface ResolveCfgStatusInput {
   enabled: boolean;
   projectIndexed: boolean;
+  analysisFresh?: boolean;
+  refreshFailure?: boolean;
   currentSourceVersion: string | null;
   stored: StoredCfgStatus | null;
   statusVersion?: number;
@@ -187,16 +189,30 @@ export interface MakeCfgReadResultInput {
 export interface RunCfgAnalysisInput {
   projectRoot: string;
   db: SqliteDatabase;
+  filePaths?: readonly string[];
   signal?: AbortSignal;
+}
+
+export interface RunCfgAnalysisResult {
+  committed: boolean;
 }
 
 export interface ReadCfgInput {
   db: SqliteDatabase;
   functionId: string;
   enabled: boolean;
+  analysisFresh?: boolean;
   request?: CfgPageRequest;
   projectIndexed?: boolean;
 }
+
+export interface CfgComputeFailureOverrideInput {
+  functionId: string;
+  filePath: string;
+  functionName: string;
+}
+
+type CfgComputeFailureOverride = (input: CfgComputeFailureOverrideInput) => void;
 
 interface CfgFunctionRow {
   id: string;
@@ -209,6 +225,46 @@ interface CfgFunctionRow {
   end_line: number;
   end_column: number;
   content_hash: string;
+}
+
+interface CfgComputedFunctionOutcome {
+  kind: 'computed';
+  graph: CfgGraph | null;
+  row: CfgFunctionRow;
+  status: {
+    state: StoredCfgState;
+    reason: CfgReason | null;
+    message: string;
+    sourceVersion: string | null;
+  };
+}
+
+interface CfgRetainedFailureOutcome {
+  kind: 'retained_failure';
+  row: CfgFunctionRow;
+}
+
+type CfgFunctionOutcome = CfgComputedFunctionOutcome | CfgRetainedFailureOutcome;
+
+interface CfgDeletedFunctionOutcome {
+  row: CfgPriorStatusRow;
+}
+
+interface CfgFileOutcomes {
+  deleted: CfgDeletedFunctionOutcome[];
+  current: CfgFunctionOutcome[];
+}
+
+interface CfgPriorStatusRow {
+  function_id: string;
+  file_path: string;
+  language: string;
+  function_kind: string;
+  function_name: string;
+  start_line: number;
+  start_column: number;
+  end_line: number;
+  end_column: number;
 }
 
 interface StoredCfgStatusRow {
@@ -443,6 +499,8 @@ const DEFERRED_EXPRESSION_BRANCH_TYPES: ReadonlySet<string> = new Set([
   'ternary_expression',
 ]);
 const DEFERRED_BINARY_OPERATORS: ReadonlySet<string> = new Set(['&&', '||', '??']);
+const UNEXPECTED_CFG_FAILURE_MESSAGE = 'CFG analysis result unavailable.';
+const CFG_REFRESH_FAILURE_METADATA_PREFIX = 'cfg_refresh_failure:';
 const CFG_CONSERVATIVE_BLOCK_DEMAND: ReadonlyMap<string, number> = new Map([
   ['break_statement', 1],
   ['case_statement', 2],
@@ -462,6 +520,7 @@ const CFG_CONSERVATIVE_BLOCK_DEMAND: ReadonlyMap<string, number> = new Map([
 ]);
 
 const cfgParserOverridesForTests = new Map<string, CfgParser | null>();
+let cfgComputeFailureOverrideForTests: CfgComputeFailureOverride | null = null;
 
 export function setCfgParserOverrideForTests(language: string, parser: CfgParser | null | undefined): void {
   if (parser === undefined) {
@@ -471,9 +530,15 @@ export function setCfgParserOverrideForTests(language: string, parser: CfgParser
   cfgParserOverridesForTests.set(language, parser);
 }
 
-export function runCfgAnalysis(input: RunCfgAnalysisInput): void {
-  if (input.signal?.aborted) return;
+export function setCfgComputeFailureOverrideForTests(override: CfgComputeFailureOverride | null): void {
+  cfgComputeFailureOverrideForTests = override;
+}
 
+export function runCfgAnalysis(input: RunCfgAnalysisInput): RunCfgAnalysisResult {
+  if (input.signal?.aborted) return { committed: false };
+
+  const filePaths = input.filePaths && input.filePaths.length > 0 ? [...new Set(input.filePaths)].sort() : null;
+  const fileScopeSql = filePaths ? `AND nodes.file_path IN (${filePaths.map(() => '?').join(', ')})` : '';
   const functions = input.db
     .prepare(
       `
@@ -491,42 +556,106 @@ export function runCfgAnalysis(input: RunCfgAnalysisInput): void {
       FROM nodes
       INNER JOIN files ON files.path = nodes.file_path
       WHERE nodes.kind IN (${CFG_FUNCTION_KINDS.map(() => '?').join(', ')})
+        ${fileScopeSql}
       ORDER BY nodes.file_path, nodes.start_line, nodes.start_column, nodes.id
       `,
     )
-    .all(...CFG_FUNCTION_KINDS) as CfgFunctionRow[];
+    .all(...CFG_FUNCTION_KINDS, ...(filePaths ?? [])) as CfgFunctionRow[];
 
-  if (input.signal?.aborted) return;
+  if (input.signal?.aborted) return { committed: false };
 
-  const writeCfg = input.db.transaction(() => {
-    input.db.prepare('DELETE FROM cfg_status').run();
+  const priorStatusByFunction = selectStoredCfgStatuses(input.db, functions.map((row) => row.id));
+  const outcomes = functions.map((row) =>
+    computeCfgOutcome(input.projectRoot, row, priorStatusByFunction.get(row.id) ?? null)
+  );
+  const fullDeletedOutcomes = filePaths
+    ? []
+    : selectPriorCfgStatusRowsWithoutCurrentFunctions(input.db).map((row) => ({ row }));
+  if (input.signal?.aborted) return { committed: false };
 
-    for (const row of functions) {
-      writeCfgForFunction(input.db, input.projectRoot, row);
+  if (!filePaths) {
+    const writeCfg = input.db.transaction(() => {
+      for (const outcome of outcomes) {
+        writeCurrentCfgOutcome(input.db, outcome);
+      }
+      for (const outcome of fullDeletedOutcomes) {
+        deleteCfgStatus(input.db, outcome.row.function_id);
+        writeDeletedCfgOutcome(input.db, outcome);
+        clearCfgRefreshFailure(input.db, outcome.row.function_id);
+      }
+    });
+
+    if (input.signal?.aborted) return { committed: false };
+    writeCfg();
+    return { committed: true };
+  }
+
+  const currentOutcomesByFile = new Map<string, CfgFunctionOutcome[]>();
+  for (const outcome of outcomes) {
+    const rows = currentOutcomesByFile.get(outcome.row.file_path);
+    if (rows) {
+      rows.push(outcome);
+    } else {
+      currentOutcomesByFile.set(outcome.row.file_path, [outcome]);
+    }
+  }
+  const fileOutcomes = new Map<string, CfgFileOutcomes>();
+  for (const filePath of filePaths) {
+    const current = currentOutcomesByFile.get(filePath) ?? [];
+    const currentIds = new Set(current.map((outcome) => outcome.row.id));
+    fileOutcomes.set(filePath, {
+      current,
+      deleted: selectPriorCfgStatusRowsForFile(input.db, filePath)
+        .filter((row) => !currentIds.has(row.function_id))
+        .map((row) => ({ row })),
+    });
+  }
+
+  const writeFileCfg = input.db.transaction((filePath: string) => {
+    const fileOutcome = fileOutcomes.get(filePath);
+
+    for (const outcome of fileOutcome?.current ?? []) {
+      writeCurrentCfgOutcome(input.db, outcome);
+    }
+    for (const outcome of fileOutcome?.deleted ?? []) {
+      deleteCfgStatus(input.db, outcome.row.function_id);
+      writeDeletedCfgOutcome(input.db, outcome);
+      clearCfgRefreshFailure(input.db, outcome.row.function_id);
     }
   });
 
-  if (input.signal?.aborted) return;
-  writeCfg();
+  let committed = false;
+  for (const filePath of filePaths) {
+    if (input.signal?.aborted) return { committed };
+    writeFileCfg(filePath);
+    committed = true;
+  }
+  return { committed };
 }
 
 export function readCfg(input: ReadCfgInput): CfgReadResult {
   const current = selectCurrentCfgFunction(input.db, input.functionId);
   const currentSourceVersion = current ? deriveSourceVersionForFunction(current) : null;
   const stored = selectStoredCfgStatus(input.db, input.functionId);
+  const refreshFailure = selectCfgRefreshFailure(input.db, input.functionId);
   const resolved = resolveCfgStatus({
     enabled: input.enabled,
     projectIndexed: input.projectIndexed ?? true,
+    analysisFresh: input.analysisFresh ?? true,
+    refreshFailure,
     currentSourceVersion,
     stored: stored ? toStoredCfgStatus(stored) : null,
   });
+  const message = resolved.reason === 'refresh_failed_retained_stale'
+    ? UNEXPECTED_CFG_FAILURE_MESSAGE
+    : stored?.message;
 
   if (!resolved.carriesPayload) {
     return makeCfgReadResult({
       functionId: input.functionId,
       state: resolved.state,
       reason: resolved.reason,
-      message: stored?.message,
+      message,
       sourceVersion: resolved.sourceVersion,
     });
   }
@@ -542,23 +671,60 @@ export function readCfg(input: ReadCfgInput): CfgReadResult {
     functionId: input.functionId,
     state: resolved.state,
     reason: resolved.reason,
-    message: stored.message,
+    message,
     sourceVersion,
     cfg,
     page,
   });
 }
 
-function writeCfgForFunction(db: SqliteDatabase, projectRoot: string, row: CfgFunctionRow): void {
+function computeCfgOutcome(
+  projectRoot: string,
+  row: CfgFunctionRow,
+  prior: StoredCfgStatusRow | null,
+): CfgFunctionOutcome {
+  try {
+    return computeCfgForFunction(projectRoot, row);
+  } catch {
+    if (prior?.state === 'available' && prior.source_version !== null) {
+      return {
+        kind: 'retained_failure',
+        row,
+      };
+    }
+    return {
+      kind: 'computed',
+      graph: null,
+      row,
+      status: {
+        state: 'unavailable',
+        reason: 'first_refresh_failed',
+        message: UNEXPECTED_CFG_FAILURE_MESSAGE,
+        sourceVersion: deriveSourceVersionForFunction(row),
+      },
+    };
+  }
+}
+
+function computeCfgForFunction(projectRoot: string, row: CfgFunctionRow): CfgComputedFunctionOutcome {
+  cfgComputeFailureOverrideForTests?.({
+    functionId: row.id,
+    filePath: row.file_path,
+    functionName: row.name,
+  });
   const sourceVersion = deriveSourceVersionForFunction(row);
   if (!CFG_TSJS_LANGUAGE_SET.has(row.language)) {
-    writeCfgStatus(db, row, {
-      state: 'unsupported',
-      reason: 'unsupported_language',
-      message: 'CFG analysis does not support this function language.',
-      sourceVersion,
-    });
-    return;
+    return {
+      kind: 'computed',
+      graph: null,
+      row,
+      status: {
+        state: 'unsupported',
+        reason: 'unsupported_language',
+        message: 'CFG analysis does not support this function language.',
+        sourceVersion,
+      },
+    };
   }
 
   const parsed = parseCfgFunction(projectRoot, row);
@@ -594,33 +760,119 @@ function writeCfgForFunction(db: SqliteDatabase, projectRoot: string, row: CfgFu
               message: unsupportedMessage,
             };
 
-    writeCfgStatus(db, row, { ...status, sourceVersion });
-
-    if (status.state !== 'available' || !parsed.ok) return;
-
-    const graph = lowerCfgIr(row, sourceVersion, cfgIr!);
-    const insertBlock = db.prepare(
-      `
-      INSERT INTO cfg_blocks (function_id, block_id, ordinal, role, spans_json)
-      VALUES (?, ?, ?, ?, ?)
-      `,
-    );
-    const insertEdge = db.prepare(
-      `
-      INSERT INTO cfg_edges (function_id, edge_ordinal, source_block_id, target_block_id, kind)
-      VALUES (?, ?, ?, ?, ?)
-      `,
-    );
-
-    for (const block of graph.blocks) {
-      insertBlock.run(row.id, block.id, block.ordinal, block.role, JSON.stringify(block.spans));
-    }
-    graph.edges.forEach((edge, edgeOrdinal) => {
-      insertEdge.run(row.id, edgeOrdinal, edge.source, edge.target, edge.kind);
-    });
+    return {
+      kind: 'computed',
+      graph: status.state === 'available' && parsed.ok ? lowerCfgIr(row, sourceVersion, cfgIr!) : null,
+      row,
+      status: { ...status, sourceVersion },
+    };
   } finally {
     if (parsed.ok) parsed.tree.delete();
   }
+}
+
+function writeCurrentCfgOutcome(db: SqliteDatabase, outcome: CfgFunctionOutcome): void {
+  if (outcome.kind === 'retained_failure') {
+    markCfgRefreshFailure(db, outcome.row.id);
+    return;
+  }
+  deleteCfgStatus(db, outcome.row.id);
+  writeCfgOutcome(db, outcome);
+  clearCfgRefreshFailure(db, outcome.row.id);
+}
+
+function writeCfgOutcome(db: SqliteDatabase, outcome: CfgComputedFunctionOutcome): void {
+  writeCfgStatus(db, outcome.row, outcome.status);
+  if (!outcome.graph) return;
+
+  const insertBlock = db.prepare(
+    `
+    INSERT INTO cfg_blocks (function_id, block_id, ordinal, role, spans_json)
+    VALUES (?, ?, ?, ?, ?)
+    `,
+  );
+  const insertEdge = db.prepare(
+    `
+    INSERT INTO cfg_edges (function_id, edge_ordinal, source_block_id, target_block_id, kind)
+    VALUES (?, ?, ?, ?, ?)
+    `,
+  );
+
+  for (const block of outcome.graph.blocks) {
+    insertBlock.run(outcome.row.id, block.id, block.ordinal, block.role, JSON.stringify(block.spans));
+  }
+  outcome.graph.edges.forEach((edge, edgeOrdinal) => {
+    insertEdge.run(outcome.row.id, edgeOrdinal, edge.source, edge.target, edge.kind);
+  });
+}
+
+function deleteCfgStatus(db: SqliteDatabase, functionId: string): void {
+  db.prepare('DELETE FROM cfg_status WHERE function_id = ?').run(functionId);
+}
+
+function cfgRefreshFailureMetadataKey(functionId: string): string {
+  return `${CFG_REFRESH_FAILURE_METADATA_PREFIX}${functionId}`;
+}
+
+function markCfgRefreshFailure(db: SqliteDatabase, functionId: string): void {
+  db.prepare(
+    `
+    INSERT INTO project_metadata (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `,
+  ).run(cfgRefreshFailureMetadataKey(functionId), 'v1', Date.now());
+}
+
+function clearCfgRefreshFailure(db: SqliteDatabase, functionId: string): void {
+  db.prepare('DELETE FROM project_metadata WHERE key = ?').run(cfgRefreshFailureMetadataKey(functionId));
+}
+
+function writeDeletedCfgOutcome(db: SqliteDatabase, outcome: CfgDeletedFunctionOutcome): void {
+  db.prepare(
+    `
+    INSERT INTO cfg_status (
+      function_id,
+      file_path,
+      language,
+      function_kind,
+      function_name,
+      start_line,
+      start_column,
+      end_line,
+      end_column,
+      state,
+      reason,
+      message,
+      source_version,
+      status_version,
+      block_version,
+      edge_version,
+      schema_version,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+  ).run(
+    outcome.row.function_id,
+    outcome.row.file_path,
+    outcome.row.language,
+    outcome.row.function_kind,
+    outcome.row.function_name,
+    outcome.row.start_line,
+    outcome.row.start_column,
+    outcome.row.end_line,
+    outcome.row.end_column,
+    'deleted',
+    'function_deleted',
+    'Function removed from indexed source.',
+    null,
+    CFG_STATUS_CONTRACT_VERSION,
+    CFG_BLOCK_CONTRACT_VERSION,
+    CFG_EDGE_CONTRACT_VERSION,
+    CURRENT_SCHEMA_VERSION,
+    Date.now(),
+  );
 }
 
 function writeCfgStatus(
@@ -679,6 +931,55 @@ function writeCfgStatus(
   );
 }
 
+function selectPriorCfgStatusRowsForFile(db: SqliteDatabase, filePath: string): CfgPriorStatusRow[] {
+  return db
+    .prepare(
+      `
+      SELECT
+        function_id,
+        file_path,
+        language,
+        function_kind,
+        function_name,
+        start_line,
+        start_column,
+        end_line,
+        end_column
+      FROM cfg_status
+      WHERE file_path = ?
+      ORDER BY function_id
+      `,
+    )
+    .all(filePath) as CfgPriorStatusRow[];
+}
+
+function selectPriorCfgStatusRowsWithoutCurrentFunctions(db: SqliteDatabase): CfgPriorStatusRow[] {
+  return db
+    .prepare(
+      `
+      SELECT
+        function_id,
+        file_path,
+        language,
+        function_kind,
+        function_name,
+        start_line,
+        start_column,
+        end_line,
+        end_column
+      FROM cfg_status
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM nodes
+        WHERE nodes.id = cfg_status.function_id
+          AND nodes.kind IN (${CFG_FUNCTION_KINDS.map(() => '?').join(', ')})
+      )
+      ORDER BY function_id
+      `,
+    )
+    .all(...CFG_FUNCTION_KINDS) as CfgPriorStatusRow[];
+}
+
 function selectCurrentCfgFunction(db: SqliteDatabase, functionId: string): CfgFunctionRow | null {
   const row = db
     .prepare(
@@ -724,6 +1025,43 @@ function selectStoredCfgStatus(db: SqliteDatabase, functionId: string): StoredCf
     )
     .get(functionId) as StoredCfgStatusRow | undefined;
   return row ?? null;
+}
+
+function selectStoredCfgStatuses(db: SqliteDatabase, functionIds: readonly string[]): Map<string, StoredCfgStatusRow> {
+  const statuses = new Map<string, StoredCfgStatusRow>();
+  for (let offset = 0; offset < functionIds.length; offset += 500) {
+    const chunk = functionIds.slice(offset, offset + 500);
+    if (chunk.length === 0) continue;
+    const rows = db
+      .prepare(
+        `
+        SELECT
+          function_id,
+          language,
+          state,
+          reason,
+          message,
+          source_version,
+          status_version,
+          block_version,
+          edge_version
+        FROM cfg_status
+        WHERE function_id IN (${chunk.map(() => '?').join(', ')})
+        `,
+      )
+      .all(...chunk) as StoredCfgStatusRow[];
+    for (const row of rows) {
+      statuses.set(row.function_id, row);
+    }
+  }
+  return statuses;
+}
+
+function selectCfgRefreshFailure(db: SqliteDatabase, functionId: string): boolean {
+  const row = db
+    .prepare('SELECT 1 FROM project_metadata WHERE key = ?')
+    .get(cfgRefreshFailureMetadataKey(functionId)) as { 1: number } | undefined;
+  return row !== undefined;
 }
 
 function toStoredCfgStatus(row: StoredCfgStatusRow): StoredCfgStatus {
@@ -2576,6 +2914,15 @@ export function resolveCfgStatus(input: ResolveCfgStatusInput): ResolvedCfgStatu
           carriesPayload: false,
         };
   }
+  if (input.analysisFresh === false) {
+    return {
+      state: 'not_computed',
+      reason: 'cfg_not_computed',
+      stale: false,
+      sourceVersion: null,
+      carriesPayload: false,
+    };
+  }
   if (!input.stored) {
     return {
       state: 'not_computed',
@@ -2602,6 +2949,20 @@ export function resolveCfgStatus(input: ResolveCfgStatusInput): ResolvedCfgStatu
     input.stored.statusVersion !== expectedStatusVersion ||
     input.stored.blockVersion !== expectedBlockVersion ||
     input.stored.edgeVersion !== expectedEdgeVersion;
+  if (
+    input.refreshFailure === true &&
+    input.stored.state === 'available' &&
+    input.stored.sourceVersion !== null &&
+    !versionMismatch
+  ) {
+    return {
+      state: 'stale',
+      reason: 'refresh_failed_retained_stale',
+      stale: true,
+      sourceVersion: input.stored.sourceVersion,
+      carriesPayload: true,
+    };
+  }
   if (input.stored.sourceVersion !== input.currentSourceVersion || versionMismatch) {
     if (input.stored.state !== 'available') {
       return {

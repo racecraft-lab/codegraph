@@ -113,7 +113,11 @@ import {
 import { applyRename as deriveApplyRename } from './refactor/apply-engine';
 import { planRename as derivePlanRename } from './refactor/plan-engine';
 import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
-import { loadAnalysisConfig, type AnalysisConfig } from './project-config';
+import {
+  deriveProjectConfigRevision,
+  loadAnalysisConfig,
+  type AnalysisConfig,
+} from './project-config';
 import {
   maybeRunCatalogAnalysis,
   readClusterList,
@@ -131,6 +135,8 @@ import {
   type CfgReadResult,
 } from './analysis/cfg';
 import { minRefsForPool } from './resolution/resolver-pool';
+
+const CFG_CONFIG_REVISION_METADATA_KEY = 'cfg_config_revision';
 
 // Re-export types for consumers
 export * from './types';
@@ -1205,7 +1211,8 @@ export class CodeGraph {
         if (result.success) {
           try {
             const analysisConfig = loadAnalysisConfig(this.projectRoot);
-            this.maybeRunCfgAnalysis(analysisConfig, options.signal);
+            const cfgConfigRevision = this.currentCfgConfigRevision(analysisConfig);
+            this.maybeRunCfgAnalysis(analysisConfig, options.signal, undefined, cfgConfigRevision);
             await maybeRunCatalogAnalysis(
               this.catalogAnalysisGraph(),
               this.db.getDb(),
@@ -1431,13 +1438,60 @@ export class CodeGraph {
     this.queries.setMetadata(LSP_STATUS_METADATA_KEY, serializeLspStatus(status));
   }
 
-  private maybeRunCfgAnalysis(config: AnalysisConfig, signal?: AbortSignal): void {
+  private maybeRunCfgAnalysis(
+    config: AnalysisConfig,
+    signal?: AbortSignal,
+    filePaths?: readonly string[],
+    configRevision?: string | null,
+  ): void {
     if (signal?.aborted || config.cfg !== true) return;
-    runCfgAnalysis({
+    const result = runCfgAnalysis({
       projectRoot: this.projectRoot,
       db: this.queries.getDb(),
+      filePaths,
       signal,
     });
+    if (result.committed && configRevision) {
+      this.queries.setMetadata(CFG_CONFIG_REVISION_METADATA_KEY, configRevision);
+    }
+  }
+
+  private currentCfgConfigRevision(config: AnalysisConfig): string | null {
+    return config.cfg === true ? deriveProjectConfigRevision(this.projectRoot) : null;
+  }
+
+  private cfgConfigRevisionMatches(configRevision: string | null): boolean {
+    return configRevision !== null
+      && this.queries.getMetadata(CFG_CONFIG_REVISION_METADATA_KEY) === configRevision;
+  }
+
+  private needsCfgFullBackfill(): boolean {
+    const row = this.queries.getDb()
+      .prepare(
+        `
+        SELECT
+          EXISTS(SELECT 1 FROM nodes WHERE kind IN ('function', 'method')) AS has_functions,
+          EXISTS(SELECT 1 FROM cfg_status) AS has_statuses
+        `,
+      )
+      .get() as { has_functions: number; has_statuses: number };
+    return row.has_functions === 1 && row.has_statuses === 0;
+  }
+
+  private deletedCfgFilePaths(): string[] {
+    const rows = this.queries.getDb()
+      .prepare(
+        `
+        SELECT DISTINCT cfg_status.file_path
+        FROM cfg_status
+        LEFT JOIN files ON files.path = cfg_status.file_path
+        WHERE files.path IS NULL
+          AND cfg_status.state <> 'deleted'
+        ORDER BY cfg_status.file_path
+        `,
+      )
+      .all() as Array<{ file_path: string }>;
+    return rows.map((row) => row.file_path);
   }
 
   /**
@@ -1770,7 +1824,25 @@ export class CodeGraph {
         // pass with no extra wiring. The wrapping try/catch is belt-and-braces.
         try {
           const analysisConfig = loadAnalysisConfig(this.projectRoot);
-          this.maybeRunCfgAnalysis(analysisConfig, options.signal);
+          const cfgConfigRevision = this.currentCfgConfigRevision(analysisConfig);
+          const cfgFilePaths = analysisConfig.cfg === true
+            ? [
+                ...new Set([
+                  ...(result.changedFilePaths ?? []),
+                  ...this.deletedCfgFilePaths(),
+                ]),
+              ]
+            : [];
+          const cfgFullBackfillNeeded = analysisConfig.cfg === true
+            && (this.needsCfgFullBackfill() || !this.cfgConfigRevisionMatches(cfgConfigRevision));
+          if (cfgFullBackfillNeeded || cfgFilePaths.length > 0) {
+            this.maybeRunCfgAnalysis(
+              analysisConfig,
+              options.signal,
+              cfgFullBackfillNeeded ? undefined : cfgFilePaths,
+              cfgConfigRevision,
+            );
+          }
           await maybeRunCatalogAnalysis(
             this.catalogAnalysisGraph(),
             this.db.getDb(),
@@ -2289,11 +2361,14 @@ export class CodeGraph {
    * live `analysis.cfg` opt-in so disabled projects stay dormant at read time.
    */
   getCfg(functionId: string, request: CfgPageRequest = {}): CfgReadResult {
-    const enabled = loadAnalysisConfig(this.projectRoot).cfg === true;
+    const analysisConfig = loadAnalysisConfig(this.projectRoot);
+    const enabled = analysisConfig.cfg === true;
+    const cfgConfigRevision = this.currentCfgConfigRevision(analysisConfig);
     return readCfg({
       db: this.queries.getDb(),
       functionId,
       enabled,
+      analysisFresh: !enabled || this.cfgConfigRevisionMatches(cfgConfigRevision),
       request,
     });
   }
