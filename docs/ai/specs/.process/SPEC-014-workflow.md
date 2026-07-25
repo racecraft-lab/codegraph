@@ -80,8 +80,8 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Clarify | `/speckit-clarify` | ✅ Complete | All three sessions and consensus rows complete; G2 passed with zero clarification markers. |
 | Plan | `/speckit-plan` | ✅ Complete | Eight artifacts complete; constitution checks, reviewability estimate, and G3 passed. |
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
-| Tasks | `/speckit-tasks` | 🔄 In Progress | Generate dependency-ordered TDD tasks grouped by story and slice. |
-| Analyze | `/speckit-analyze` | ⏳ Pending | Check spec/plan/tasks/design-concept consistency and reviewability. |
+| Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
+| Analyze | `/speckit-analyze` | 🔄 In Progress | Check spec/plan/tasks/design-concept consistency and reviewability. |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement Slice 1 before Slice 2 using strict red-green-refactor evidence. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
@@ -655,11 +655,17 @@ each task's acceptance criteria.
 
 | Metric | Value |
 |---|---|
-| Total Tasks | Pending |
-| Slice 1 Tasks | Pending |
-| Slice 2 Tasks | Pending |
-| Parallel Opportunities | Pending |
-| Requirements Covered | Must be 100% at G5 |
+| Total Tasks | 43 |
+| Slice 1 Tasks | 23, plus 8 setup/foundational tasks |
+| Slice 2 Tasks | 7 |
+| Parallel Opportunities | 2 explicit `[P]` tasks |
+| Requirements Covered | 34/34 (100%); G5 passed |
+
+Tasks-mode `reviewability-gate` is deferred by the installed runner and was not
+invoked. The fallback evidence chain is current and permits progress: setup
+estimate `780`/`warn` below the 800-LOC block with the operator-ratified
+two-slice split; plan estimate `360`/`pass`; 43 sequential tasks with 34/34 FR
+coverage and explicit final reviewability task T043.
 
 ---
 
@@ -676,10 +682,10 @@ input; the classifier remains authoritative for PR emission and releasability.
 
 | Field | Value | Meaning |
 |---|---|---|
-| **Route** | | `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope` |
-| **Releasable** | | Whether the classified change can be released independently |
-| **Signals** | | Structural evidence behind the route |
-| **Warnings** | | Release-safety warnings, if any |
+| **Route** | `one-navigable-PR` | `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope` |
+| **Releasable** | `true` | Whether the classified change can be released independently |
+| **Signals** | `change-shape:modify-heavy` | Structural evidence behind the route |
+| **Warnings** | None | Release-safety warnings, if any |
 
 ---
 

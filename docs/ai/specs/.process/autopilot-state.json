@@ -12,8 +12,8 @@
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
   "status": "in_progress",
-  "active_step": "Phase 5: Tasks",
-  "updated_at": "2026-07-25T14:29:22Z",
+  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-25T14:50:18Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -285,6 +285,47 @@
         "reason": "0 [Gap] markers",
         "markers": 0
       }
+    },
+    "tasks": {
+      "status": "completed",
+      "agent": "phase-executor",
+      "artifact": "specs/014-control-flow-graphs/tasks.md",
+      "total": 43,
+      "setup_foundational": 8,
+      "slice_1": 23,
+      "slice_2": 7,
+      "cross_cutting_gates": 5,
+      "parallel_tasks": 2,
+      "functional_requirements_covered": 34,
+      "functional_requirements_total": 34,
+      "coverage_percent": 100,
+      "task_ids_sequential": true,
+      "story_labels_valid": true,
+      "unresolved_markers": 0,
+      "reviewability": {
+        "helper_id": "reviewability-gate",
+        "requested_mode": "tasks",
+        "status": "deferred_not_invoked",
+        "reason": "installed runner supports setup mode only",
+        "fallback_evidence": [
+          "setup estimate 780 warn below 800 block with operator-ratified two-slice split",
+          "plan estimate 360 pass",
+          "43 tasks with 34/34 FR coverage and final reviewability task T043"
+        ],
+        "proceed": true
+      },
+      "atomicity_route": {
+        "route": "one-navigable-PR",
+        "releasable": true,
+        "signals": ["change-shape:modify-heavy"],
+        "warnings": []
+      },
+      "gate": {
+        "id": "G5",
+        "status": "passed",
+        "reason": "43 tasks found; independent validation confirmed 34/34 FR coverage, sequential IDs, and valid story labels",
+        "task_count": 43
+      }
     }
   },
   "plan": [
@@ -306,8 +347,8 @@
     {"step": "Phase 4: Checklist - Error Handling Consensus", "status": "completed"},
     {"step": "Phase 4: Checklist - Performance", "status": "completed"},
     {"step": "Phase 4: Checklist - Performance Consensus", "status": "completed"},
-    {"step": "Phase 5: Tasks", "status": "in_progress"},
-    {"step": "Phase 6: Analyze", "status": "pending"},
+    {"step": "Phase 5: Tasks", "status": "completed"},
+    {"step": "Phase 6: Analyze", "status": "in_progress"},
     {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
     {"step": "Phase 6.5: Confidence Gate", "status": "pending"},
     {"step": "Phase 7: Implement - Pending task decomposition", "status": "pending"},
