@@ -130,8 +130,10 @@ import {
 } from './analysis';
 import {
   readCfg,
+  readCfgProjectStatus,
   runCfgAnalysis,
   type CfgPageRequest,
+  type CfgProjectStatus,
   type CfgReadResult,
 } from './analysis/cfg';
 import { minRefsForPool } from './resolution/resolver-pool';
@@ -166,6 +168,7 @@ export {
   type CfgEdge,
   type CfgGraph,
   type CfgPage,
+  type CfgProjectStatus,
   type CfgReadResult,
   type CfgReason,
   type CfgState,
@@ -2370,6 +2373,23 @@ export class CodeGraph {
       enabled,
       analysisFresh: !enabled || this.cfgConfigRevisionMatches(cfgConfigRevision),
       request,
+    });
+  }
+
+  /**
+   * SPEC-014 — aggregate control-flow graph project health for `codegraph status`.
+   * Read-only: inspects config, current function rows, CFG status rows, and retained
+   * failure markers without recomputing CFGs or touching the network.
+   */
+  getCfgStatus(): CfgProjectStatus {
+    const analysisConfig = loadAnalysisConfig(this.projectRoot);
+    const enabled = analysisConfig.cfg === true;
+    const cfgConfigRevision = this.currentCfgConfigRevision(analysisConfig);
+    return readCfgProjectStatus({
+      db: this.queries.getDb(),
+      enabled,
+      analysisFresh: !enabled || this.cfgConfigRevisionMatches(cfgConfigRevision),
+      projectIndexed: true,
     });
   }
 

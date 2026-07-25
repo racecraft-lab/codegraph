@@ -43,6 +43,8 @@ import {
   renderJsonReport,
   renderMarkdownReport,
 } from '../analysis/detect-changes/report';
+import type { CfgPageRequest } from '../analysis/cfg';
+import { loadAnalysisConfig } from '../project-config';
 
 /**
  * An expected, recoverable "codegraph can't serve this" condition — most
@@ -921,6 +923,22 @@ export const tools: ToolDefinition[] = [
     annotations: READ_ONLY_ANNOTATIONS,
   },
   {
+    name: 'codegraph_get_cfg',
+    description:
+      'Return one function control-flow graph by public function id. Returns the exact CfgReadResult machine object; expected states such as disabled, not_computed, stale, unknown_function, deleted, unsupported, unavailable, resource_limited, and not_indexed are success-shaped JSON with state/reason.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: { type: 'string', description: 'Absolute path to the indexed project.' },
+        functionId: { type: 'string', description: 'Public CodeGraph function id to read.' },
+        limit: { type: 'integer', description: 'Page size for CFG blocks and edges (default 100, clamped to 1-500).' },
+        offset: { type: 'integer', description: 'Zero-based page offset for CFG blocks and edges (default 0).' },
+      },
+      required: ['projectPath', 'functionId'],
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
     name: 'codegraph_list_clusters',
     description:
       'List the functional clusters of the indexed project — files grouped by their cross-file call/import structure (deterministic community detection). Returns paged summaries (id, canonicalLabel, displayLabel, memberCount, isSingleton) sorted by member count descending, then canonical label, then id, plus a machine-readable state. Every indexed file belongs to exactly one cluster; single-file clusters are flagged isSingleton. Use `minSize` (default 1) to suppress singletons: minSize=2 returns only multi-file clusters. Requires the clusters catalog to be enabled in codegraph.json ("analysis": { "clusters": true }).',
@@ -986,16 +1004,16 @@ export function getStaticTools(): ToolDefinition[] {
  * The MCP tools served by DEFAULT (short names): `codegraph_explore` — the single
  * retrieval tool that reliably earns its place (one capped call returns the
  * verbatim source of the relevant symbols grouped by file), `codegraph_detect_changes`
- * for local diff impact reports, plus `codegraph_rename`, the graph-aware write
- * tool (SPEC-010 FR-022), the first non-read-only tool on the surface. Every other
- * read tool is a narrower slice of what explore already does, and presence itself
- * steers mis-picks, so they are no longer LISTED to agents.
+ * for local diff impact reports, `codegraph_rename`, the graph-aware write tool
+ * (SPEC-010 FR-022), plus `codegraph_get_cfg` for bounded SPEC-014 CFG reads.
+ * Every other read tool is a narrower slice of what explore already does, and
+ * presence itself steers mis-picks, so they are no longer LISTED to agents.
  *
  * The other defined tools (`node`, `search`, `callers`, plus callees/impact/files/
  * status) remain fully functional — handlers stay, the library API and CLI are
  * untouched, and `CODEGRAPH_MCP_TOOLS=explore,node,...` re-enables any of them.
  */
-const DEFAULT_MCP_TOOLS = new Set(['explore', 'detect_changes', 'rename']);
+const DEFAULT_MCP_TOOLS = new Set(['explore', 'detect_changes', 'rename', 'get_cfg']);
 
 /**
  * Tool handler that executes tools against a CodeGraph instance
@@ -1217,6 +1235,9 @@ export class ToolHandler {
         // in those. Dropping it here would hide rename from tools/list on every
         // repo under the threshold (most real targets), so it must survive (C1).
         'codegraph_rename',
+        // CFG reads are point lookups by public function id with their own
+        // bounded payload/page contract, not a narrower source-retrieval tool.
+        'codegraph_get_cfg',
       ]);
       if (stats.fileCount < TINY_REPO_FILE_THRESHOLD) {
         visible = visible.filter(t => TINY_REPO_CORE_TOOLS.has(t.name));
@@ -1733,6 +1754,7 @@ export class ToolHandler {
       case 'codegraph_files': return await this.handleFiles(args);
       case 'codegraph_list_flows': return this.handleListFlows(args);
       case 'codegraph_get_flow': return this.handleGetFlow(args);
+      case 'codegraph_get_cfg': return await this.handleGetCfg(args);
       case 'codegraph_list_clusters': return this.handleListClusters(args);
       default: return this.errorResult(`Unknown tool: ${toolName}`);
     }
@@ -1749,6 +1771,14 @@ export class ToolHandler {
     if (raw === undefined || raw === null || raw === '') return def;
     const n = Number(raw);
     return Number.isFinite(n) ? Math.floor(n) : def;
+  }
+
+  private coerceOptionalInteger(raw: unknown, name: string): number | undefined | ToolResult {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || !Number.isInteger(raw)) {
+      return this.errorResult(`${name} must be an integer`);
+    }
+    return raw;
   }
 
   /**
@@ -1840,6 +1870,42 @@ export class ToolHandler {
     const live = result.state === 'available' || result.state === 'stale' || result.state === 'empty';
     const message = live ? 'unknown flow id' : `flows catalog ${result.state}`;
     return this.textResult(JSON.stringify({ found: false, state: result.state, message }, null, 2));
+  }
+
+  /**
+   * Handle codegraph_get_cfg (SPEC-014, FR-011/012/013/029). Thin pass through
+   * CodeGraph.getCfg; every expected CFG state is returned as exact
+   * CfgReadResult JSON, never as an MCP error.
+   */
+  private async handleGetCfg(args: Record<string, unknown>): Promise<ToolResult> {
+    const projectPath = this.validateString(args.projectPath, 'projectPath', MAX_PATH_LENGTH);
+    if (typeof projectPath !== 'string') return projectPath;
+    const functionId = this.validateString(args.functionId, 'functionId');
+    if (typeof functionId !== 'string') return functionId;
+    const limit = this.coerceOptionalInteger(args.limit, 'limit');
+    if (typeof limit === 'object') return limit;
+    const offset = this.coerceOptionalInteger(args.offset, 'offset');
+    if (typeof offset === 'object') return offset;
+
+    const request: CfgPageRequest = {};
+    if (limit !== undefined) request.limit = limit;
+    if (offset !== undefined) request.offset = offset;
+
+    let cg: CodeGraph;
+    try {
+      cg = this.getCodeGraph(projectPath);
+    } catch (err) {
+      if (err instanceof NotIndexedError) {
+        if (loadAnalysisConfig(projectPath).cfg === true) {
+          const { makeCfgNotIndexedReadResult } = await import('../analysis/cfg');
+          return this.textResult(JSON.stringify(makeCfgNotIndexedReadResult(functionId), null, 2));
+        }
+        return this.errorResult(err.message);
+      }
+      throw err;
+    }
+
+    return this.textResult(JSON.stringify(cg.getCfg(functionId, request), null, 2));
   }
 
   /**

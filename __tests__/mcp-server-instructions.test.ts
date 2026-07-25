@@ -3,8 +3,8 @@
  * (T047 / FR-025 / FR-028).
  *
  * `src/mcp/server-instructions.ts` is the single source of truth for
- * agent-facing tool guidance (issue #529). T046 added `codegraph_rename` as
- * the second default-served MCP tool (`DEFAULT_MCP_TOOLS`); FR-025 requires
+ * agent-facing tool guidance (issue #529). T046 added `codegraph_rename` to
+ * the default-served MCP tools (`DEFAULT_MCP_TOOLS`); FR-025 requires
  * the `initialize`-response guidance to describe it — dry-run-by-default /
  * explicit `apply` — in a SHORT paragraph that keeps `codegraph_explore` as
  * the retrieval PRIMARY and does not dilute the explore-first steering these
@@ -16,8 +16,23 @@
  * (confirmed via `grep -rl "SERVER_INSTRUCTIONS" __tests__/` — no hits), so
  * this is a new, narrowly-scoped suite rather than an extension of one.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX } from '../src/mcp/server-instructions';
+import { getStaticTools, ToolHandler } from '../src/mcp/tools';
+
+const ENV = 'CODEGRAPH_MCP_TOOLS';
+const CFG_STATES = [
+  'available',
+  'disabled',
+  'not_indexed',
+  'not_computed',
+  'stale',
+  'unavailable',
+  'unsupported',
+  'resource_limited',
+  'unknown_function',
+  'deleted',
+];
 
 /**
  * Slice out the write-tool section: from the `##` heading that introduces
@@ -31,6 +46,15 @@ function writeToolSection(text: string): string {
   expect(mention, 'SERVER_INSTRUCTIONS must mention codegraph_rename').toBeGreaterThanOrEqual(0);
   const headingStart = text.lastIndexOf('\n## ', mention);
   expect(headingStart, 'codegraph_rename must be introduced under its own ## heading').toBeGreaterThanOrEqual(0);
+  const nextHeading = text.indexOf('\n## ', headingStart + 1);
+  return nextHeading === -1 ? text.slice(headingStart) : text.slice(headingStart, nextHeading);
+}
+
+function cfgToolSection(text: string): string {
+  const mention = text.indexOf('codegraph_get_cfg');
+  expect(mention, 'SERVER_INSTRUCTIONS must mention codegraph_get_cfg').toBeGreaterThanOrEqual(0);
+  const headingStart = text.lastIndexOf('\n## ', mention);
+  expect(headingStart, 'codegraph_get_cfg must be introduced under its own ## heading').toBeGreaterThanOrEqual(0);
   const nextHeading = text.indexOf('\n## ', headingStart + 1);
   return nextHeading === -1 ? text.slice(headingStart) : text.slice(headingStart, nextHeading);
 }
@@ -89,5 +113,80 @@ describe('SERVER_INSTRUCTIONS — codegraph_rename write-tool guidance (T047)', 
     expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).toMatch(/dry-run/i);
     expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).toMatch(/\bapply\b/i);
     expect(SERVER_INSTRUCTIONS_NO_ROOT_INDEX).toMatch(/projectPath/);
+  });
+});
+
+describe('SERVER_INSTRUCTIONS — codegraph_get_cfg bounded CFG guidance (T030)', () => {
+  const original = process.env[ENV];
+  afterEach(() => {
+    if (original === undefined) delete process.env[ENV];
+    else process.env[ENV] = original;
+  });
+
+  it('serves codegraph_get_cfg by default while preserving codegraph_explore primacy', () => {
+    delete process.env[ENV];
+    const names = getStaticTools().map((tool) => tool.name);
+
+    expect(names).toEqual([
+      'codegraph_detect_changes',
+      'codegraph_explore',
+      'codegraph_rename',
+      'codegraph_get_cfg',
+    ]);
+    expect(names.indexOf('codegraph_explore')).toBeLessThan(names.indexOf('codegraph_get_cfg'));
+  });
+
+  it('keeps codegraph_get_cfg on the default live tiny-project tools/list surface', () => {
+    delete process.env[ENV];
+    const tinyProject = { getStats: () => ({ fileCount: 1 }) } as ConstructorParameters<typeof ToolHandler>[0];
+    const names = new ToolHandler(tinyProject).getTools().map((tool) => tool.name);
+
+    expect(names).toContain('codegraph_explore');
+    expect(names).toContain('codegraph_get_cfg');
+    expect(names.indexOf('codegraph_explore')).toBeLessThan(names.indexOf('codegraph_get_cfg'));
+  });
+
+  it('adds a scoped codegraph_get_cfg section to both instruction variants', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cfgToolSection(text);
+      expect(section).toMatch(/^## codegraph_get_cfg/m);
+      expect(section).toMatch(/\bprojectPath\b/);
+      expect(section).toMatch(/\bfunctionId\b/);
+    }
+  });
+
+  it('pins bounded paging, independent block/edge metadata, and nextOffset traversal', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cfgToolSection(text);
+      expect(section).toMatch(/limit[\s\S]*100/i);
+      expect(section).toMatch(/offset[\s\S]*0/i);
+      expect(section).toMatch(/1\.\.500/);
+      expect(section).toMatch(/blocks/i);
+      expect(section).toMatch(/edges/i);
+      expect(section).toMatch(/total/);
+      expect(section).toMatch(/returned/);
+      expect(section).toMatch(/hasMore/);
+      expect(section).toMatch(/nextOffset/);
+    }
+  });
+
+  it('describes every expected CFG state as a normal state/reason result, not a tool failure', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cfgToolSection(text);
+      for (const state of CFG_STATES) {
+        expect(section).toContain(state);
+      }
+      expect(section).toMatch(/normal\s+state\/reason results, not tool failures/);
+    }
+  });
+
+  it('pins the CFG payload rule and avoids Read/Grep alternatives in the CFG section', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cfgToolSection(text);
+      expect(section).toMatch(/Only `available` and retained\s+`stale` results carry `cfg` and `page`/);
+      expect(section).toMatch(/`cfg: null` and `page: null`/);
+      expect(section).not.toMatch(/\bRead\b/);
+      expect(section).not.toMatch(/\bGrep\b/);
+    }
   });
 });

@@ -14,6 +14,7 @@
  *   codegraph sync [path]        Sync changes since last index
  *   codegraph status [path]      Show index status
  *   codegraph query <search>     Search for symbols
+ *   codegraph cfg <function-id>  Read a function control-flow graph
  *   codegraph files [options]    Show project file structure
  *   codegraph context <task>     Build context for a task
  *   codegraph callers <symbol>   Find what calls a function/method
@@ -67,6 +68,14 @@ import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
 import { RENAME_EXIT_CODES, renameApplyExitCode } from '../refactor/types';
 import type { ApplyResult, RenamePlan } from '../refactor/types';
 import { formatApplyResultTable, formatRenamePlanTable, serializeApplyResultJson, serializeRenamePlanJson } from '../refactor/plan-format';
+import {
+  makeCfgNotIndexedReadResult,
+  readCfgProjectStatus,
+  safeCfgMessage,
+  type CfgProjectStatus,
+  type CfgReadResult,
+} from '../analysis/cfg';
+import { loadAnalysisConfig } from '../project-config';
 import { createUnavailableReport, detectChanges, type DiffMode, type ReportFormat } from '../analysis/detect-changes';
 import {
   normalizeDetectChangesRequest,
@@ -336,6 +345,42 @@ function validateEmbeddingsOption(value: string | undefined): EmbeddingProviderS
     process.exit(1);
   }
   return value as EmbeddingProviderSelection;
+}
+
+function parseCfgPagingOption(value: string | undefined, flag: '--limit' | '--offset'): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid ${flag} value "${value}" - must be a finite number.`);
+  }
+  return parsed;
+}
+
+function formatCfgCount(
+  label: 'blocks' | 'edges',
+  part: { returned: number; total: number; hasMore: boolean; nextOffset: number | null } | null,
+): string {
+  const returned = part?.returned ?? 0;
+  const total = part?.total ?? 0;
+  const hasMore = part?.hasMore ?? false;
+  const nextOffset = part?.nextOffset ?? 'none';
+  return `${label}: returned=${returned} total=${total} hasMore=${hasMore} nextOffset=${nextOffset}`;
+}
+
+function formatCfgHumanResult(result: CfgReadResult): string {
+  const page = result.page;
+  return [
+    'CFG',
+    `functionId: ${result.functionId}`,
+    `state: ${result.state}`,
+    `reason: ${result.reason ?? 'none'}`,
+    `sourceVersion: ${result.sourceVersion ?? 'none'}`,
+    `stale: ${result.stale}`,
+    `message: ${safeCfgMessage(result.message)}`,
+    page === null ? 'page: none' : `page: limit=${page.limit} offset=${page.offset}`,
+    formatCfgCount('blocks', page?.blocks ?? null),
+    formatCfgCount('edges', page?.edges ?? null),
+  ].join('\n');
 }
 
 /**
@@ -1110,6 +1155,30 @@ function printLlmStatusBlock(llm: LlmStatus): void {
   console.log();
 }
 
+function resolveCfgStatusForCli(projectPath: string, projectIndexed: boolean): CfgProjectStatus {
+  const analysisConfig = loadAnalysisConfig(projectPath);
+  return readCfgProjectStatus({
+    enabled: analysisConfig.cfg === true,
+    projectIndexed,
+  });
+}
+
+function formatCfgState(cfg: CfgProjectStatus): string {
+  return cfg.reason === null ? cfg.state : `${cfg.state} (${cfg.reason})`;
+}
+
+function printCfgStatusBlock(cfg: CfgProjectStatus): void {
+  console.log(chalk.bold('CFG:'));
+  console.log(`  Enabled:   ${cfg.enabled ? chalk.green('yes') : chalk.dim('no')}`);
+  console.log(`  State:     ${formatCfgState(cfg)}`);
+  console.log(`  Available: ${formatNumber(cfg.availableCount)}`);
+  console.log(`  Skipped:   ${formatNumber(cfg.skippedCount)}`);
+  console.log(`  Unsupported: ${formatNumber(cfg.unsupportedCount)}`);
+  console.log(`  Resource limited: ${formatNumber(cfg.resourceLimitedCount)}`);
+  console.log(`  Stale:     ${formatNumber(cfg.staleCount)}`);
+  console.log();
+}
+
 /**
  * codegraph status [path]
  */
@@ -1132,6 +1201,7 @@ program
         // Report the network-free, DB-free LLM snapshot here too, mirroring the initialized
         // path's `LLM:` block — resolved without opening the graph DB.
         const llm = resolveLlmStatusForCli(projectPath);
+        const cfg = resolveCfgStatusForCli(projectPath, false);
         if (options.json) {
           console.log(JSON.stringify({
             initialized: false,
@@ -1139,6 +1209,7 @@ program
             projectPath,
             indexPath: getCodeGraphDir(projectPath),
             lastIndexed: null,
+            cfg,
             llm,
           }));
           return;
@@ -1149,6 +1220,7 @@ program
         info('Run "codegraph init" to initialize');
         console.log();
         printLlmStatusBlock(llm);
+        printCfgStatusBlock(cfg);
         return;
       }
 
@@ -1175,6 +1247,7 @@ program
         const embeddingStatus = cg.getEmbeddingStatus();
         // SPEC-018 FR-006: the network-free LLM status snapshot, parallel to `embedding`.
         const llmStatus = cg.getLlmStatus();
+        const cfgStatus = cg.getCfgStatus();
         const hybrid = deriveHybridSearchAvailability(embeddingStatus);
         console.log(JSON.stringify({
           initialized: true,
@@ -1219,6 +1292,7 @@ program
           // (contracts/status-llm-json.md) — the same snapshot the human `LLM:`
           // block renders; automated probes read this machine shape.
           llm: llmStatus,
+          cfg: cfgStatus,
           lsp,
           // SPEC-003 FR-017: additive, flat, top-level query-side availability —
           // derived from `embedding` above; `hybridSearchReason` is null iff available.
@@ -1333,6 +1407,7 @@ program
       // Network-free: getLlmStatus() reads only the environment (+ the pending-bundle
       // count under .codegraph/tasks/ for agent mode).
       printLlmStatusBlock(cg.getLlmStatus());
+      printCfgStatusBlock(cg.getCfgStatus());
 
       // LSP precision. Reading status never starts language servers; this is
       // either the last persisted LSP run or the current config context.
@@ -1527,6 +1602,50 @@ program
       cg.destroy();
     } catch (err) {
       error(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+/**
+ * codegraph cfg <function-id>
+ */
+program
+  .command('cfg <functionId>')
+  .description('Read a function control-flow graph by function id')
+  .option('-p, --path <path>', 'Project path')
+  .option('-j, --json', 'Output exact CfgReadResult JSON')
+  .option('--limit <number>', 'Maximum CFG blocks and edges to return')
+  .option('--offset <number>', 'CFG block and edge offset')
+  .action(async (functionId: string, options: { path?: string; json?: boolean; limit?: string; offset?: string }) => {
+    const projectPath = resolveProjectPath(options.path);
+
+    try {
+      const request: { limit?: number; offset?: number } = {};
+      const limit = parseCfgPagingOption(options.limit, '--limit');
+      const offset = parseCfgPagingOption(options.offset, '--offset');
+      if (limit !== undefined) request.limit = limit;
+      if (offset !== undefined) request.offset = offset;
+
+      if (!isInitialized(projectPath)) {
+        if (loadAnalysisConfig(projectPath).cfg === true) {
+          const result = makeCfgNotIndexedReadResult(functionId);
+          process.stdout.write(`${options.json ? JSON.stringify(result, null, 2) : formatCfgHumanResult(result)}\n`);
+          return;
+        }
+        error(`CodeGraph not initialized in ${projectPath}`);
+        process.exit(1);
+      }
+
+      const { default: CodeGraph } = await loadCodeGraph();
+      const cg = await CodeGraph.open(projectPath);
+      try {
+        const result = cg.getCfg(functionId, request);
+        process.stdout.write(`${options.json ? JSON.stringify(result, null, 2) : formatCfgHumanResult(result)}\n`);
+      } finally {
+        cg.destroy();
+      }
+    } catch (err) {
+      error(`cfg failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
   });

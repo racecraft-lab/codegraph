@@ -25,8 +25,7 @@
  *         so MCP-driving them is disproportionate and they stay engine-covered.
  *
  *  T045 — Exposure + annotations (FR-022 / FR-028). `codegraph_rename` is a member
- *         of `DEFAULT_MCP_TOOLS` (alongside explore and detect-changes),
- *         and its annotations are its OWN write-tool object
+ *         of `DEFAULT_MCP_TOOLS`, and its annotations are its OWN write-tool object
  *         `{readOnlyHint:false, destructiveHint:true, idempotentHint:false,
  *         openWorldHint:false}` — the mirror image of the shared read-only
  *         contract — surviving every tools/list-serving path.
@@ -380,7 +379,7 @@ describe('T045 codegraph_rename — exposure + write annotations', () => {
     else process.env[ENV] = original;
   });
 
-  it('is a member of DEFAULT_MCP_TOOLS alongside explore and detect-changes', () => {
+  it('is a member of DEFAULT_MCP_TOOLS alongside explore, detect-changes, and get-cfg', () => {
     // getStaticTools() with no allowlist reflects DEFAULT_MCP_TOOLS exactly (the
     // proxy tools/list surface).
     delete process.env[ENV];
@@ -388,6 +387,7 @@ describe('T045 codegraph_rename — exposure + write annotations', () => {
       'codegraph_detect_changes',
       'codegraph_explore',
       'codegraph_rename',
+      'codegraph_get_cfg',
     ]);
   });
 
