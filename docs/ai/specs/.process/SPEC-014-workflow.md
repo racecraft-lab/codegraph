@@ -76,13 +76,14 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 
 | Phase | Command | Status | Notes |
 |---|---|---|---|
-| Specify | `/speckit-specify` | ⏳ Pending | Define four independently testable user-story groups and the two accepted slices. |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Freeze state enums, schemas, surface names, pagination, and language edge cases without reopening Grill Me decisions. |
+| Specify | `/speckit-specify` | ✅ Complete | 34 FRs, 4 stories, 22 scenarios, zero unresolved markers; G1 passed. |
+| Clarify | `/speckit-clarify` | 🔄 In Progress | State and Data Integrity is the active session. |
 | Plan | `/speckit-plan` | ⏳ Pending | Produce the two-slice architecture, schema/lifecycle design, contracts, benchmark method, and UAT. |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run api-contracts, data-integrity, error-handling, and performance domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Generate dependency-ordered TDD tasks grouped by story and slice. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Check spec/plan/tasks/design-concept consistency and reviewability. |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement Slice 1 before Slice 2 using strict red-green-refactor evidence. |
+| Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -96,6 +97,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | G4 | After Checklists | Every genuine gap is resolved in spec or plan; intentional exclusions are explicit. |
 | G5 | After Tasks | Every requirement maps to an ordered task and each vertical slice has an independent verification gate. |
 | G6 | After Analyze | No critical issue or design-concept drift remains; warnings have explicit dispositions. |
+| Confidence Gate | G6.5 | Pre-Implement confidence is measured at the configured 0.90 threshold; advisory mode records remediation guidance without blocking. |
 | G7 | After Each Slice | Focused tests, full build/test gates, reviewability checks, and required UAT evidence pass. |
 
 ---
@@ -200,16 +202,16 @@ outer detached checkout and cannot dynamically replace its MCP tool surface.
 
 Apply `.specify/memory/constitution.md` throughout:
 
-| Principle | SPEC-014 Requirement | Verification |
-|---|---|---|
-| I. Think Before Coding | Preserve Q1–Q28 as resolved decisions; surface only genuinely new ambiguities. | Traceability from spec, clarifications, and plan to the Design Concept |
-| II. Simplicity First | Persist CFG metadata, not lowering instructions; use function IDs only; model no implicit exception or async scheduler flow. | Scope review and Complexity Tracking |
-| III. Surgical Changes | Add the CFG module under `src/analysis/`; keep schema, index/config, CLI, and MCP edits focused. | Declared file-operation table and diff review |
-| IV. Goal-Driven Execution | Start each semantic/lifecycle contract from a failing golden, SQLite, CLI, or MCP test. | Red-green-refactor task evidence |
-| V. Deterministic, LLM-Free Extraction | Derive all blocks and edges from AST/static analysis; skip unsupported functions rather than inventing or truncating paths. | Re-index determinism, unsupported-function, and no-speculative-edge tests |
-| VI. Retrieval Performance | Bound and paginate MCP output; review `src/mcp/` changes with retrieval-guardian. | MCP contract tests and retrieval-guardian verdict |
-| VII. Local-First | Make no network calls; write no CFG rows while disabled; use only `node:sqlite`; ship schema assets through the existing build. | Dormancy, offline, migration, and packaged-asset tests |
-| Dogfooding | Exercise CFG reads against this repository and record results in the UAT runbook. | Self-repo library/CLI/MCP parity probe |
+| Principle | SPEC-014 Requirement | Verification | Phase 1 Status |
+|---|---|---|---|
+| I. Think Before Coding | Preserve Q1–Q28 as resolved decisions; surface only genuinely new ambiguities. | Traceability from spec, clarifications, and plan to the Design Concept | ✅ Verified |
+| II. Simplicity First | Persist CFG metadata, not lowering instructions; use function IDs only; model no implicit exception or async scheduler flow. | Scope review and Complexity Tracking | ✅ Verified |
+| III. Surgical Changes | Add the CFG module under `src/analysis/`; keep schema, index/config, CLI, and MCP edits focused. | Declared file-operation table and diff review | ✅ Verified |
+| IV. Goal-Driven Execution | Start each semantic/lifecycle contract from a failing golden, SQLite, CLI, or MCP test. | Red-green-refactor task evidence | ✅ Verified |
+| V. Deterministic, LLM-Free Extraction | Derive all blocks and edges from AST/static analysis; skip unsupported functions rather than inventing or truncating paths. | Re-index determinism, unsupported-function, and no-speculative-edge tests | ✅ Verified |
+| VI. Retrieval Performance | Bound and paginate MCP output; review `src/mcp/` changes with retrieval-guardian. | MCP contract tests and retrieval-guardian verdict | ✅ Verified |
+| VII. Local-First | Make no network calls; write no CFG rows while disabled; use only `node:sqlite`; ship schema assets through the existing build. | Dormancy, offline, migration, and packaged-asset tests | ✅ Verified |
+| Dogfooding | Exercise CFG reads against this repository and record results in the UAT runbook. | Self-repo library/CLI/MCP parity probe | ✅ Verified |
 
 **Constitution check at scaffold:** PASS for scoping. Re-run before and after
 Phase 1 design during Plan.
@@ -380,14 +382,14 @@ parity, project status, performance, the safety cap, and self-repo UAT. Leave no
 
 | Metric | Value |
 |---|---|
-| Functional Requirements | Pending |
-| User Stories | Target: 4 |
-| Acceptance Scenarios | Pending |
-| Unresolved markers | Must be 0 at G1 |
+| Functional Requirements | 34 |
+| User Stories | 4 |
+| Acceptance Scenarios | 22 |
+| Unresolved markers | 0 — G1 passed |
 
 ### Files Generated
 
-- [ ] `specs/014-control-flow-graphs/spec.md`
+- [x] `specs/014-control-flow-graphs/spec.md`
 
 ---
 
@@ -695,6 +697,20 @@ G6 requires zero unresolved critical findings.
 
 ---
 
+## Phase 6.5: Pre-Implement Confidence Gate
+
+Run after Analyze consensus and before any implementation task.
+
+| Gate | Mode | Threshold | Status |
+|---|---|---:|---|
+| G6.5 | advisory | 0.90 | ⏳ Pending |
+
+The runner reads the confidence emit produced at the end of Analyze. A failing
+advisory result triggers up to three focused remediation iterations and is
+recorded without overriding any correctness gate.
+
+---
+
 ## Phase 7: Implement
 
 ### Implement Prompt
@@ -737,6 +753,23 @@ Before any completion or merge claim:
 ---
 
 ## Post-Implementation Checklist
+
+| Item | Status | Notes |
+|---|---|---|
+| Post: Doctor Extension Check | ⏳ Pending | Skip with explicit evidence if doctor/speckit-utils is absent. |
+| Post: Verify Implementation | ⏳ Pending | Run the installed verify extension. |
+| Post: Verify Tasks Phantom Check | ⏳ Pending | Run the installed verify-tasks extension. |
+| Post: Code Review | ⏳ Pending | Run independent specialized review. |
+| Post: Integration Suite | ⏳ Pending | Run the authoritative project integration gate. |
+| Post: Reviewability Diff Gate | ⏳ Pending | Evaluate the final changed-file surface. |
+| Post: Self-Review | ⏳ Pending | Complete the four-question audit. |
+| Post: UAT Runbook Generation | ⏳ Pending | Generate and author the executable runbook. |
+| Post: Final Reviewability Backstop | ⏳ Pending | Validate current committed reviewability evidence. |
+| Post: PR Packet/Body Generation | ⏳ Pending | Emit and validate feature-local PR packets. |
+| Post: PR Body Generation | ⏳ Pending | Generate the packet-owned PR body. |
+| Post: PR Creation | ⏳ Pending | Create the authorized PR or marker stack. |
+| Post: Review Remediation | ⏳ Pending | Poll and resolve CI and review findings. |
+| Post: Retrospective | ⏳ Pending | Run last, after every other Post item. |
 
 - [ ] Every task is implemented and verified, not merely checked off.
 - [ ] `npm run build` passes under supported Node.
