@@ -110,13 +110,13 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-005 | Local HTTP Server & REST API | ✅ Complete | [SPEC-005-workflow.md](.process/SPEC-005-workflow.md) | Merged (#41, #42); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-005.md` |
 | SPEC-006 | Web UI: Graph Browser | ✅ Complete | [SPEC-006-workflow.md](.process/SPEC-006-workflow.md) | Merged (#153); archived in `.specify/memory/archive-reports/2026-07-16-SPEC-006.md` |
 | SPEC-007 | In-Browser Indexing | ⏳ Pending | [SPEC-007-workflow.md](SPEC-007-workflow.md) | Ready (SPEC-006 shipped the packaged app shell, local API clients, graph surface, and static-asset pipeline) |
-| SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged (#23-#27); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
+| SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged implementation (#23-#27) plus regression follow-up #40; archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
 | SPEC-009 | LSP Server Facade | ✅ Complete | [SPEC-009-workflow.md](.process/SPEC-009-workflow.md) | Merged (#159-#162); archived in `.specify/memory/archive-reports/2026-07-24-SPEC-009.md` |
 | SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
 | SPEC-011 | Execution Flows & Clusters | ✅ Complete | [SPEC-011-workflow.md](.process/SPEC-011-workflow.md) | Merged (#50); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-011.md` |
 | SPEC-012 | Change Impact Detection | ✅ Complete | [SPEC-012-workflow.md](.process/SPEC-012-workflow.md) | Merged (#55); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-012.md` |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
-| SPEC-014 | Control-Flow Graphs | ⏳ Pending | [SPEC-014-workflow.md](SPEC-014-workflow.md) | Specify |
+| SPEC-014 | Control-Flow Graphs | 🔄 In Progress | [SPEC-014-workflow.md](.process/SPEC-014-workflow.md) | Scaffold ready on `014-control-flow-graphs`; Specify next with two vertical language slices |
 | SPEC-015 | Dataflow Substrate | ⏳ Pending | [SPEC-015-workflow.md](SPEC-015-workflow.md) | Blocked by SPEC-014 |
 | SPEC-016 | Program Dependence Graphs | ⏳ Pending | [SPEC-016-workflow.md](SPEC-016-workflow.md) | Blocked by SPEC-015 |
 | SPEC-017 | Taint Analysis Engine | ⏳ Pending | [SPEC-017-workflow.md](SPEC-017-workflow.md) | Blocked by SPEC-016 |
@@ -126,7 +126,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-021 | Repo Groups & Contract Extraction | ⏳ Pending | [SPEC-021-workflow.md](SPEC-021-workflow.md) | Specify (parallel-safe) |
 | SPEC-022 | Cross-Repo Bridge & Impact | ⏳ Pending | [SPEC-022-workflow.md](SPEC-022-workflow.md) | Blocked by SPEC-021 |
 | SPEC-023 | OCaml Language Support | ✅ Complete | [SPEC-023-workflow.md](.process/SPEC-023-workflow.md) | Merged (#21); archived in `.specify/memory/archive-reports/2026-07-07-SPEC-023.md` |
-| SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Dormant; SPEC-008 parity gate closed with 0 unowned rows |
+| SPEC-024 | Language and Feature Parity Closure | ⏳ Pending | [SPEC-024-workflow.md](SPEC-024-workflow.md) | Parity closure audit remains; partly blocked by SPEC-013, SPEC-019, and SPEC-021/022 |
 | SPEC-027 | Markdown / OKF Knowledge Bundle Indexing | ⏳ Pending | [SPEC-027-workflow.md](SPEC-027-workflow.md) | Ready (SPEC-001 and SPEC-003 complete; gates SPEC-019) |
 | SPEC-025 | Plugin Platform Mechanics Spike | ✅ Complete | [SPEC-025-workflow.md](.process/SPEC-025-workflow.md) | Merged (#35); decision doc at `docs/design/plugin-channel-decision.md`; archived in `.specify/memory/archive-reports/2026-07-10-SPEC-025.md` |
 | SPEC-026 | Plugin-Channel Distribution | ⏳ Pending | [SPEC-026-workflow.md](SPEC-026-workflow.md) | Ready (SPEC-025 complete; implements `docs/design/plugin-channel-decision.md`) |
@@ -383,11 +383,12 @@ Budget result: warning accepted after parity expansion; use vertical slices or h
 - `src/db/schema.sql` — edge provenance column (modify)
 
 **Completion:** Merged as stacked PRs #23-#27 (`77c282b`, `53a9adf`, `096fef1`,
-`052f8b0`, `8c53f53`) and archived on 2026-07-07. The active spec folder was
-removed after `src/lsp/`, schema/query changes, sync integration, validation gates,
-public retrieval filtering, zero-unowned-row parity evidence, workflow ledger, and
-archive report became the durable record. SPEC-010 is now ready; SPEC-024 is dormant
-unless future parity drift creates a concrete unowned row.
+`052f8b0`, `8c53f53`), followed by UTF-16 position regression coverage in PR #40
+(`2dadccd`), and archived on 2026-07-07. The active spec folder was removed after
+`src/lsp/`, schema/query changes, sync integration, validation gates, public
+retrieval filtering, workflow ledger, and the archive report became the durable
+record. SPEC-010 is ready. The reproduced baseline still assigns its full
+capability/language closure audit and any concrete remainder to SPEC-024.
 
 ---
 
@@ -546,23 +547,30 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 **Goal:** Opt-in per-function CFGs (basic blocks + typed edges) built from tree-sitter ASTs through a language-neutral lowering IR, persisted and queryable — TS/JS + Python first.
 
 **Reviewability Budget:** Primary surface: schema/migration + harness/adapter |
-Projected reviewable LOC: 485 (net-new) |
-Production files: ~6 |
-Total files: ~13 |
-Budget result: within greenfield allowance (estimator suggested 2 slices — advisory)
+Projected reviewable LOC: 780 (net-new) |
+Production files: ~8 |
+Total files: ~17 |
+Budget result: advisory warning accepted; Grill Me ratified 2 vertical language slices
 
 **Scope:**
-- `src/analysis/cfg/ir.ts`: lowering IR (statements, expressions, branch/loop/try constructs) with a per-language lowering interface; `languages/typescript.ts`, `languages/python.ts` lowerings from tree-sitter ASTs.
-- `builder.ts`: basic-block construction, edge kinds (seq, true/false branch, loop-back, exception, early-exit), function-level entry/exit nodes.
-- Persistence: `cfg_blocks`, `cfg_edges` tables keyed to function node ids; library query API (`getCfg(functionId)`); `--analysis cfg` opt-in flag; overhead measurement documented.
-- Golden-file tests per construct (if/else, for/while, switch, try/finally, guard returns, break/continue).
+- `src/analysis/cfg/ir.ts`: lowering IR (statements, expressions, branch/loop/try constructs) with a per-language interface; `languages/typescript.ts` and `languages/python.ts` lower tree-sitter ASTs without persisting the IR.
+- TypeScript/JavaScript semantics include switch/fallthrough, short-circuit logic, conditional expressions, optional chaining, and nullish coalescing. Python includes `match`/`case` and comprehensions. Nested functions own separate CFGs; unreachable source remains as disconnected blocks; `await`/`yield` are ordinary intra-procedural operations.
+- `builder.ts`: function-level entry/exit nodes, deterministic same-source block ids, and distinct sequential, branch, loop-back, return, throw, break, continue, and exception edges. Exception flow comes only from explicit `throw`/`raise`.
+- Persistence: compact per-function state/reason/source-version records plus `cfg_blocks` and `cfg_edges` keyed to function node ids. Unsupported, parse-unsafe, and over-10,000-block functions persist status but no partial CFG.
+- Activation/lifecycle: `--analysis cfg` persists `analysis.cfg=true`; first enable performs a full backfill; later syncs transactionally replace affected-file CFGs and remove deleted functions. Disabled rows are inert; an unexpected refresh retains only an explicitly stale prior snapshot.
+- Read surfaces: one stateful shared contract through `getCfg(functionId)`, CLI JSON/human output, and a paginated MCP read tool. Reads accept function ids only; `codegraph status` reports aggregate CFG health and coverage.
+- Verification: golden constructs, real-SQLite lifecycle and migration tests, exact library/CLI JSON/MCP parity, deterministic repeated re-indexing, self-repo UAT, and paired-median enabled index overhead ≤20% on the committed benchmark monorepo.
+- Slice 1 delivers shared infrastructure plus TypeScript/JavaScript end-to-end through every read surface; Slice 2 adds Python semantic parity through the same path.
 
 **Out of Scope:**
 - Dataflow (SPEC-015); languages beyond TS/JS+Py (OQ-4 order: Go next).
+- Implicit exception inference; async suspension/resumption edges; persisted lowering instructions; edit-stable block matching; name/position lookup; REST; write/mutation surfaces; usable partial/truncated CFGs.
 
 **Key Files:**
 - `src/analysis/cfg/ir.ts`, `builder.ts`, `languages/{typescript,python}.ts`
 - `src/db/schema.sql` — CFG tables (modify)
+- `src/project-config.ts`, `src/index.ts` — activation, lifecycle, public API, status
+- `src/bin/codegraph.ts`, `src/mcp/tools.ts` — CLI and bounded MCP surfaces (modify)
 
 ---
 
