@@ -77,8 +77,8 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Phase | Command | Status | Notes |
 |---|---|---|---|
 | Specify | `/speckit-specify` | ✅ Complete | 34 FRs, 4 stories, 22 scenarios, zero unresolved markers; G1 passed. |
-| Clarify | `/speckit-clarify` | 🔄 In Progress | State and Data Integrity is the active session. |
-| Plan | `/speckit-plan` | ⏳ Pending | Produce the two-slice architecture, schema/lifecycle design, contracts, benchmark method, and UAT. |
+| Clarify | `/speckit-clarify` | ✅ Complete | All three sessions and consensus rows complete; G2 passed with zero clarification markers. |
+| Plan | `/speckit-plan` | 🔄 In Progress | Produce the two-slice architecture, schema/lifecycle design, contracts, benchmark method, and UAT. |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run api-contracts, data-integrity, error-handling, and performance domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Generate dependency-ordered TDD tasks grouped by story and slice. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Check spec/plan/tasks/design-concept consistency and reviewability. |
@@ -439,11 +439,24 @@ bounded MCP output. No REST or fuzzy target resolution.
 
 ### Clarify Results
 
-| Session | Focus | Completion Rule |
-|---|---|---|
-| 1 | State and data integrity | Exhaustive transition table; no ambiguous state |
-| 2 | Language semantics | Construct/edge matrix exact for both slices |
-| 3 | Public contracts and bounds | Schemas, names, ordering, and limits frozen |
+| Session | Focus | Status | Result |
+|---|---|---|---|
+| 1 | State and data integrity | ✅ Complete | Aggregate-only `empty`; opaque per-function source versions; explicit affected-file swaps and deletion tombstones; cancellation no-op; stable reason enum. No unresolved consensus item. |
+| 2 | Language semantics | ✅ Complete | Exact entry/exit roles and edge kinds; lexical `finally` routing; precise break/continue targets; ordered Python match predicates/guards; deterministic Python lambda identity. |
+| 3 | Public contracts and bounds | ✅ Complete | `CodeGraph.getCfg`, `codegraph cfg`, `codegraph_get_cfg`, exported types, exact ordering, 100/500 paging, status fields, and success-shaped exit behavior frozen. |
+
+### Consensus Resolution Log
+
+| # | Type | Question/Gap/Finding | Categories | Round | Outcome | Resolution | Analysts Used |
+|---|---|---|---|---|---|---|---|
+| 1 | Clarify | Function-like forms requiring CFG-addressable IDs | [codebase, spec] | 1 | both-agree | Every separately addressable CFG requires a deterministic CodeGraph function ID; Python lambdas gain deterministic identity in the Python slice. | codebase-analyst, spec-context-analyst |
+| 2 | Clarify | CFG page default and maximum | [codebase] | 1 | high-confidence | Default 100, maximum 500, offset 0; blocks and edges expose independent deterministic page windows. | codebase-analyst |
+| 3 | Clarify | CLI exit behavior for expected CFG states | [codebase, spec] | 1 | both-agree | Every valid typed CFG state exits 0; nonzero is reserved for failures that prevent a valid result. | codebase-analyst, spec-context-analyst |
+
+The named `consensus-synthesizer` role was installed but not exposed by this
+Codex task runtime. A dedicated default subagent performed each required
+independent synthesis; all three Round-1 results were high confidence with no
+Round-2 flag.
 
 ---
 

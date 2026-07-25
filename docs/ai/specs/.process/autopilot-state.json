@@ -12,8 +12,8 @@
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
   "status": "in_progress",
-  "active_step": "Phase 2: Clarify - State and Data Integrity",
-  "updated_at": "2026-07-25T13:17:41Z",
+  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-25T13:49:11Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -101,19 +101,97 @@
         "status": "passed",
         "reason": "spec.md exists with 0 markers"
       }
+    },
+    "clarify": {
+      "status": "completed",
+      "sessions": {
+        "state_and_data_integrity": {
+          "status": "completed",
+          "agent": "clarify-executor",
+          "decisions_applied": 5,
+          "decisions": [
+            "empty is aggregate-only; supported no-op functions return available with a complete minimal CFG",
+            "sourceVersion is an opaque per-function indexed snapshot token",
+            "affected-file replacement is atomic and uses explicit deleted tombstones rather than symbol-node cascades",
+            "caller cancellation writes no partial state and creates no failure marker",
+            "stable reason codes use a closed snake_case machine enum"
+          ],
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        },
+        "language_semantics": {
+          "status": "completed",
+          "agent": "clarify-executor",
+          "decisions_applied": 5,
+          "decisions": [
+            "all available CFGs have exact entry and exit blocks plus a closed edge-kind set",
+            "all modeled exits route through lexical finally and an abrupt finally transfer supersedes the queued transfer",
+            "break and continue use statically resolved intra-function targets",
+            "Python match cases are ordered predicates and guards use normal expression flow",
+            "every separate CFG has a deterministic function ID, including Python lambdas"
+          ],
+          "unresolved_for_consensus": 1,
+          "consensus": {
+            "categories": ["codebase", "spec"],
+            "round": 1,
+            "outcome": "both-agree",
+            "confidence": "high",
+            "analysts": ["codebase-analyst", "spec-context-analyst"],
+            "synthesizer": "default-role fallback because consensus-synthesizer was not exposed by the Codex task runtime"
+          }
+        },
+        "public_contracts_and_bounds": {
+          "status": "completed",
+          "agent": "clarify-executor",
+          "decisions_applied": 5,
+          "decisions": [
+            "public names are CodeGraph.getCfg, codegraph cfg, and codegraph_get_cfg",
+            "CfgReadResult and its supporting exported TypeScript types are frozen",
+            "paging defaults to 100, clamps to 500, and pages blocks and edges independently",
+            "block and edge ordering is deterministic and normative",
+            "expected CLI CFG states exit zero while failures that prevent a valid result exit nonzero"
+          ],
+          "unresolved_for_consensus": 2,
+          "consensus": [
+            {
+              "item": "CFG page default and maximum",
+              "categories": ["codebase"],
+              "round": 1,
+              "outcome": "high-confidence",
+              "confidence": "high",
+              "analysts": ["codebase-analyst"]
+            },
+            {
+              "item": "CLI exit behavior for expected CFG states",
+              "categories": ["codebase", "spec"],
+              "round": 1,
+              "outcome": "both-agree",
+              "confidence": "high",
+              "analysts": ["codebase-analyst", "spec-context-analyst"]
+            }
+          ],
+          "synthesizer": "default-role fallback because consensus-synthesizer was not exposed by the Codex task runtime"
+        }
+      },
+      "gate": {
+        "id": "G2",
+        "status": "passed",
+        "reason": "0 [NEEDS CLARIFICATION] markers",
+        "markers": 0
+      }
     }
   },
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
     {"step": "Phase 0: Prerequisites", "status": "completed"},
     {"step": "Phase 1: Specify", "status": "completed"},
-    {"step": "Phase 2: Clarify - State and Data Integrity", "status": "in_progress"},
-    {"step": "Phase 2: Clarify - State and Data Integrity Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Language Semantics", "status": "pending"},
-    {"step": "Phase 2: Clarify - Language Semantics Consensus", "status": "pending"},
-    {"step": "Phase 2: Clarify - Public Contracts and Bounds", "status": "pending"},
-    {"step": "Phase 2: Clarify - Public Contracts and Bounds Consensus", "status": "pending"},
-    {"step": "Phase 3: Plan", "status": "pending"},
+    {"step": "Phase 2: Clarify - State and Data Integrity", "status": "completed"},
+    {"step": "Phase 2: Clarify - State and Data Integrity Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Language Semantics", "status": "completed"},
+    {"step": "Phase 2: Clarify - Language Semantics Consensus", "status": "completed"},
+    {"step": "Phase 2: Clarify - Public Contracts and Bounds", "status": "completed"},
+    {"step": "Phase 2: Clarify - Public Contracts and Bounds Consensus", "status": "completed"},
+    {"step": "Phase 3: Plan", "status": "in_progress"},
     {"step": "Phase 4: Checklist - API Contracts", "status": "pending"},
     {"step": "Phase 4: Checklist - API Contracts Consensus", "status": "pending"},
     {"step": "Phase 4: Checklist - Data Integrity", "status": "pending"},
