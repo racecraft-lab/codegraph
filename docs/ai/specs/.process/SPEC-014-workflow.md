@@ -128,29 +128,65 @@ worktree.
 
 ### Bootstrap Status
 
-The repository documents this preflight:
+The repository now documents this nested-worktree-safe preflight:
 
 ```bash
-npm install
+set -e
+npm ci
 npm run build
-# source the main checkout's untracked .envrc.local for this process only
-node dist/bin/codegraph.js init .
-node dist/bin/codegraph.js status
+git_common_dir="$(git rev-parse --git-common-dir)"
+main_env="$(dirname "$git_common_dir")/.envrc.local"
+(
+  set -a
+  [ ! -f "$main_env" ] || . "$main_env"
+  set +a
+  node dist/bin/codegraph.js init .
+  status_json="$(node dist/bin/codegraph.js status . --json)"
+  node -e '
+    const status = JSON.parse(process.argv[1]);
+    const pending = Object.values(status.pendingChanges ?? {}).some(Boolean);
+    const healthy =
+      status.initialized === true &&
+      status.index?.state === "complete" &&
+      status.index?.reindexRecommended === false &&
+      status.index?.pendingRefs === 0 &&
+      status.worktreeMismatch === null &&
+      !pending &&
+      status.embedding?.coverage?.percent === 100 &&
+      status.hybridSearchAvailable === true &&
+      status.lsp?.enabled === true;
+    if (!healthy) {
+      console.error("CodeGraph preflight health check failed");
+      process.exit(1);
+    }
+  ' "$status_json"
+  node dist/bin/codegraph.js status .
+)
 ```
 
-Scaffold requested explicit approval twice. The native picker returned no
-selection both times, so **no bootstrap command was authorized or run**:
+The initial scaffold requested explicit approval twice, and the native picker
+returned no selection, so the worktree was deliberately left unbootstrapped.
+On 2026-07-24 the operator selected **Full repair** and authorized dependency
+installation, build/index writes, and source-derived embedding requests to the
+configured HAL endpoint. The approved recovery completed:
 
-- dependencies were not installed;
-- HEAD was not built;
-- `.envrc.local` was not sourced;
-- the worktree index was not initialized;
-- embedding/LSP health was not claimed.
+- `npm install` added 589 packages under Node 24.11.1. npm rewrote peer-only
+  lockfile metadata; that generated churn was removed and the tracked worktree
+  was clean before continuing. Future fresh-worktree runs use `npm ci`.
+- `npm run build` passed and produced the worktree-local CLI plus shipped SQL,
+  WASM, OpenAPI, and web assets without tracked changes.
+- The first sandboxed `init` built the structural index but could not reach
+  HAL. An approved network-enabled `sync` completed the embedding backfill.
+- Final status: 875 files, 15,533 nodes, 65,503 edges, embedding coverage
+  9,924/9,924 (100%), hybrid search available, LSP enabled, and the index up to
+  date. Individual unsupported/degraded language servers remain advisory.
+- The exact project MCP launcher was smoke-tested under Node 24.11.1;
+  `tools/list` returned `codegraph_explore`. The current Codex desktop process
+  has that NVM runtime ahead of Homebrew Node 26 on its inherited PATH.
 
-Phase 0 must obtain explicit operator approval before running the documented
-preflight. Use the repository-supported Node 24.11.1 runtime; the ambient Node
-26 runtime is outside the declared `>=20 <25` engine range. After each approved
-bootstrap command, verify that no unexpected tracked change appeared.
+Bootstrap is complete. Autopilot must still start in a **new Codex task rooted
+at this SPEC-014 worktree** because the current task remains attached to the
+outer detached checkout and cannot dynamically replace its MCP tool surface.
 
 ### Agent and Preset Evidence
 
@@ -192,11 +228,14 @@ Tests must use real files and real SQLite; do not mock the database.
 
 ### Capability Path
 
-At scaffold time no `codegraph_explore` capability was exposed, and the
-installed graph service had no CodeGraph repository index. Local branch files,
-Git history, and runner helpers supplied the fallback evidence. Future phases
-must enumerate the live tool surface again and prefer the repository's
-CodeGraph capability if it is healthy.
+At initial scaffold time no `codegraph_explore` capability was exposed, and the
+target worktree had no build or CodeGraph repository index. Local branch files,
+Git history, and runner helpers supplied the fallback evidence. The approved
+bootstrap later produced a 100%-embedded worktree-local index and an exact MCP
+handshake exposing `codegraph_explore`; the active outer-root task cannot adopt
+that server retroactively. Future phases must start from this worktree,
+enumerate the live tool surface again, and prefer the repository's CodeGraph
+capability when healthy.
 
 Capability path: codebase/spec context → current worktree files and Git;
 workflow gates → installed `speckit_pro_runner`; human decisions → native

@@ -1011,16 +1011,52 @@ builds on top of live, real-scale instances of everything before it.
    dogfooding outage (endpoint down, feature unconfigured) must degrade advisorily,
    never break indexing or retrieval.
 6. **Spec-session preflight:** a spec's worktree is bootstrapped BEFORE agent work
-   begins — `npm install && npm run build`, then `codegraph init` with the main
-   checkout's `.envrc.local` sourced
-   (`( . ../../.envrc.local 2>/dev/null; node dist/bin/codegraph.js init . )`), and
-   `codegraph status` confirming 100% embedding coverage with the LSP pass enabled
-   (the committed root `codegraph.json` turns it on for every index/sync). Both
-   hosts' MCP configs start the server through `scripts/mcp-dogfood.mjs` — a
-   cross-platform Node launcher that anchors to the checkout root and applies
-   `.envrc.local` to the daemon environment whether or not values are
-   `export`ed (worktrees fall back to the main checkout's copy) — so every
-   agent session serves the HEAD build with live embeddings, and query-time
+   begins. Activate the supported runtime named by `.nvmrc`, verify
+   `node --version`, then run:
+
+   ```bash
+   set -e
+   npm ci
+   npm run build
+   git_common_dir="$(git rev-parse --git-common-dir)"
+   main_env="$(dirname "$git_common_dir")/.envrc.local"
+   (
+     set -a
+     [ ! -f "$main_env" ] || . "$main_env"
+     set +a
+     node dist/bin/codegraph.js init .
+     status_json="$(node dist/bin/codegraph.js status . --json)"
+     node -e '
+       const status = JSON.parse(process.argv[1]);
+       const pending = Object.values(status.pendingChanges ?? {}).some(Boolean);
+       const healthy =
+         status.initialized === true &&
+         status.index?.state === "complete" &&
+         status.index?.reindexRecommended === false &&
+         status.index?.pendingRefs === 0 &&
+         status.worktreeMismatch === null &&
+         !pending &&
+         status.embedding?.coverage?.percent === 100 &&
+         status.hybridSearchAvailable === true &&
+         status.lsp?.enabled === true;
+       if (!healthy) {
+         console.error("CodeGraph preflight health check failed");
+         process.exit(1);
+       }
+     ' "$status_json"
+     node dist/bin/codegraph.js status .
+   )
+   ```
+
+   Resolving the main checkout through Git's common directory is binding; a
+   literal `../../.envrc.local` is invalid for nested worktree layouts. Status
+   must confirm 100% embedding coverage with the LSP pass enabled (the committed
+   root `codegraph.json` turns it on for every index/sync). Both hosts' MCP
+   configs start the server through `scripts/mcp-dogfood.mjs` — a cross-platform
+   Node launcher that anchors to the checkout root and applies `.envrc.local`
+   to the daemon environment whether or not values are `export`ed (worktrees
+   fall back to the main checkout's copy) — so every agent session serves the
+   HEAD build with live embeddings, and query-time
    semantic search is live (SPEC-003 merged 2026-07-10). Sessions in this repo treat `codegraph_explore` as the primary
    retrieval tool (steering lives in AGENTS.md). Out-of-repo
    enablement is owned in racecraft-plugins-public (PR #298): speckit-pro's
