@@ -38,6 +38,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [contracts/cfg-mcp.md](contracts/cfg-mcp.md)
 - [contracts/cfg-shared-contract.md](contracts/cfg-shared-contract.md)
 - [contracts/cfg-status.md](contracts/cfg-status.md)
+- [checklists/api-contracts.md](checklists/api-contracts.md)
+- [checklists/data-integrity.md](checklists/data-integrity.md)
+- [checklists/error-handling.md](checklists/error-handling.md)
+- [checklists/performance.md](checklists/performance.md)
 - [checklists/requirements.md](checklists/requirements.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

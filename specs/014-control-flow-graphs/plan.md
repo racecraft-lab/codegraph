@@ -175,6 +175,7 @@ Lifecycle rules:
 - Re-enable: retained rows are not served as current until a fresh backfill or affected-file refresh validates their source versions.
 - Unexpected first refresh failure: write `unavailable` with `first_refresh_failed`, no payload.
 - Unexpected refresh failure after a prior successful snapshot: keep the prior payload only as `stale` with `refresh_failed_retained_stale`.
+- CFG analysis failures are contained to CFG status handling: they do not fail otherwise successful project indexing/sync, publish partial status/block/edge rows, or change non-CFG index results.
 - Cancellation: before swap, no marker and no partial state; after atomic swap commits, the committed result stands.
 
 ### Public Surfaces
@@ -271,16 +272,17 @@ Benchmark method:
 - Materialize the same committed benchmark-monorepo fixture for both arms.
 - Arm A: `analysis.cfg=false` or absent.
 - Arm B: `analysis.cfg=true`.
-- Run at least 2 warmup pairs, then at least 10 measured pairs by default; CI may use fewer only when the existing test budget requires it, but the PR evidence must include enough samples for stable medians.
+- Record benchmark identity before timing: repository commit, benchmark fixture path, fixture content hash or fixture commit, Node version, OS, architecture, CPU model, logical core count, total memory, storage root, command line, and CFG-related environment overrides.
+- Run at least 2 warmup pairs, then at least 10 measured pairs for PR evidence. CI may use a reduced smoke mode only with at least 5 measured pairs; a reduced run over `1.20` must rerun the 10-pair method before reporting a blocking failure.
 - Alternate arms by pair to reduce drift.
 - Clean `.codegraph/` between project materializations so the comparison measures index-time analysis, not cache residue.
-- Record median(A), median(B), min/max, sample count, warmup count, and `median(B)/median(A)`.
+- Record every pair timing plus median(A), median(B), min/max, sample count, warmup count, and `median(B)/median(A)`. A single unpaired run cannot satisfy or fail the budget.
 - Pass when paired-median ratio is `<= 1.20`.
 
 Reliability constraints:
 
 - The 10,000-block cap is enforced before any CFG payload rows are written.
-- Builders check cancellation at file/function boundaries and before the final atomic swap.
+- Builders check cancellation at file/function boundaries, after bounded lowering batches of at most 500 statements, blocks, or edges, and before the final atomic swap; long CFG lowering yields between batches so generated functions do not monopolize index or sync.
 - MCP pages default to `limit=100`, clamp to `1..500`, and use `offset>=0`.
 - Expected states are success-shaped on library, CLI JSON, and MCP surfaces.
 - Messages are bounded to 240 Unicode code points and never include raw source text or raw exception strings.
@@ -291,4 +293,3 @@ Reliability constraints:
 |---|---|---|
 | Multiple read surfaces in Slice 1 | Clarified decision "Add CLI and MCP" requires library, CLI JSON/human output, MCP, and aggregate status parity. | Library-only was explicitly rejected in Q8 and would fail FR-011, FR-028, FR-029, and FR-030. |
 | Affected-file CFG refresh instead of full catalog swap | FR-004 requires changed/deleted functions in an affected file not to retain apparently current old rows while unaffected files remain unchanged. | Full project recompute was rejected in Q3; `nodes(id)` cascade would destroy stale retention and violates FR-004. |
-

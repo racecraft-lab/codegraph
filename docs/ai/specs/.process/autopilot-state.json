@@ -12,8 +12,8 @@
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
   "status": "in_progress",
-  "active_step": "Phase 4: Checklist - API Contracts",
-  "updated_at": "2026-07-25T14:03:00Z",
+  "active_step": "Phase 5: Tasks",
+  "updated_at": "2026-07-25T14:29:22Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -213,6 +213,78 @@
         "reason": "plan.md exists with 0 unresolved markers",
         "markers": 0
       }
+    },
+    "checklists": {
+      "status": "completed",
+      "domains": {
+        "api_contracts": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "artifact": "specs/014-control-flow-graphs/checklists/api-contracts.md",
+          "items": 18,
+          "gaps": 0,
+          "remediation_loops": 0,
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        },
+        "data_integrity": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "artifact": "specs/014-control-flow-graphs/checklists/data-integrity.md",
+          "items": 20,
+          "gaps_found": 2,
+          "gaps_remaining": 0,
+          "remediation_loops": 1,
+          "fixes": [
+            "added explicit SQLite schema constraints and indexes to data-model.md",
+            "clarified that unsupported and resource-limited replacement removes prior payload without stale retention"
+          ],
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        },
+        "error_handling": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "artifact": "specs/014-control-flow-graphs/checklists/error-handling.md",
+          "items": 20,
+          "gaps_found": 2,
+          "gaps_remaining": 0,
+          "remediation_loops": 1,
+          "fixes": [
+            "added exact expected state and reason mappings to the shared contract",
+            "required CFG analysis failure containment without changing non-CFG index results"
+          ],
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        },
+        "performance": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "artifact": "specs/014-control-flow-graphs/checklists/performance.md",
+          "items": 18,
+          "gaps_found": 2,
+          "gaps_remaining": 0,
+          "remediation_loops": 1,
+          "fixes": [
+            "made paired-median benchmark identity, sampling, and CI rerun rules reproducible",
+            "added bounded cooperative cancellation and yield points for long CFG lowering"
+          ],
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        }
+      },
+      "totals": {
+        "items": 76,
+        "gaps_remediated": 6,
+        "gaps_remaining": 0,
+        "unresolved_for_consensus": 0
+      },
+      "gate": {
+        "id": "G4",
+        "status": "passed",
+        "reason": "0 [Gap] markers",
+        "markers": 0
+      }
     }
   },
   "plan": [
@@ -226,15 +298,15 @@
     {"step": "Phase 2: Clarify - Public Contracts and Bounds", "status": "completed"},
     {"step": "Phase 2: Clarify - Public Contracts and Bounds Consensus", "status": "completed"},
     {"step": "Phase 3: Plan", "status": "completed"},
-    {"step": "Phase 4: Checklist - API Contracts", "status": "in_progress"},
-    {"step": "Phase 4: Checklist - API Contracts Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - Data Integrity", "status": "pending"},
-    {"step": "Phase 4: Checklist - Data Integrity Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - Error Handling", "status": "pending"},
-    {"step": "Phase 4: Checklist - Error Handling Consensus", "status": "pending"},
-    {"step": "Phase 4: Checklist - Performance", "status": "pending"},
-    {"step": "Phase 4: Checklist - Performance Consensus", "status": "pending"},
-    {"step": "Phase 5: Tasks", "status": "pending"},
+    {"step": "Phase 4: Checklist - API Contracts", "status": "completed"},
+    {"step": "Phase 4: Checklist - API Contracts Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Data Integrity", "status": "completed"},
+    {"step": "Phase 4: Checklist - Data Integrity Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Error Handling", "status": "completed"},
+    {"step": "Phase 4: Checklist - Error Handling Consensus", "status": "completed"},
+    {"step": "Phase 4: Checklist - Performance", "status": "completed"},
+    {"step": "Phase 4: Checklist - Performance Consensus", "status": "completed"},
+    {"step": "Phase 5: Tasks", "status": "in_progress"},
     {"step": "Phase 6: Analyze", "status": "pending"},
     {"step": "Phase 6: Analyze - Consensus", "status": "pending"},
     {"step": "Phase 6.5: Confidence Gate", "status": "pending"},

@@ -98,5 +98,12 @@ Do not print, copy, or persist `.envrc.local`. CFG analysis does not require emb
 
    Expected: all machine results share one shape and the CLI JSON object matches the library object. MCP pages reconstruct the complete CFG. Project status reports aggregate CFG counts.
 
-5. Record the UAT evidence in the implementation PR packet and retrospective without storing `.envrc.local` contents or any private endpoint material.
+5. Run the performance benchmark evidence capture.
 
+   ```bash
+   npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts
+   ```
+
+   Expected: evidence records repository commit, benchmark fixture identity, Node version, OS, architecture, CPU model, logical core count, total memory, storage root, command line, CFG-related environment overrides, warmup pairs, measured pair timings, disabled/enabled medians, min/max, and `median(enabled)/median(disabled)`. PR evidence uses at least 2 warmup pairs and 10 measured pairs with ratio `<= 1.20`; reduced CI smoke uses at least 5 measured pairs and reruns the 10-pair method before any blocking over-budget failure. The disabled arm records zero CFG status, block, or edge writes.
+
+6. Record the UAT evidence in the implementation PR packet and retrospective without storing `.envrc.local` contents or any private endpoint material.

@@ -130,3 +130,19 @@ export interface CfgPage {
 - `message` is bounded to 240 Unicode code points and contains no raw source text or raw exception string.
 - No response contains lowering instructions or partial CFG fragments.
 
+## Expected State and Reason Mapping
+
+| State | Allowed reasons | CFG payload | Containment outcome |
+|---|---|---|---|
+| `available` | `null` | Complete current `cfg` and `page` | Fresh success |
+| `disabled` | `analysis_disabled` | None | Retained rows are suppressed |
+| `not_indexed` | `project_not_indexed` | None | Expected absence |
+| `not_computed` | `cfg_not_computed` | None | Expected absence; retryable by enable/backfill or affected-file refresh |
+| `stale` | `refresh_failed_retained_stale`, `source_version_mismatch` | Retained stale `cfg` and `page` only | Never reported as current |
+| `unavailable` | `first_refresh_failed` | None | Failure contained to CFG status; no partial graph |
+| `unsupported` | `unsupported_language`, `unsupported_construct`, `parse_error`, `parse_unsafe_region`, `parser_unavailable` | None | Whole-function skip; no partial graph |
+| `resource_limited` | `block_limit_exceeded` | None | Whole-function skip; no partial graph |
+| `unknown_function` | `function_unknown` | None | Expected absence |
+| `deleted` | `function_deleted` | None | Tombstone only |
+
+`no_current_cfg_functions` is reserved for aggregate project CFG status, not per-function `CfgReadResult`.

@@ -135,6 +135,7 @@
 | Re-enable | Retained rows | Fresh backfill or affected-file refresh required before rows can be current |
 | Unexpected first refresh failure | No prior snapshot | `unavailable` with `first_refresh_failed`, no payload |
 | Unexpected later refresh failure | Prior available snapshot | Prior payload retained as `stale` with `refresh_failed_retained_stale` |
+| Supported function becomes unsupported or resource-limited | Prior available snapshot | Affected-file transaction replaces the prior payload with `unsupported` or `resource_limited` status and removes block/edge rows; no stale payload is retained |
 | Cancellation before swap | Any | No marker and no partial writes |
 | Cancellation after swap | Swap committed | Committed result stands |
 
@@ -146,3 +147,11 @@
 - Deleted tombstones are compact status rows and do not retain block or edge rows.
 - Schema definitions in `src/db/schema.sql` and migrations stay byte-equivalent where practical.
 
+## SQLite Schema Constraints and Indexes
+
+- `cfg_status.function_id` is the primary key; `state`, `reason`, `message`, `source_version`, and contract-version columns use SQLite constraints where row-local validation is possible.
+- `cfg_blocks` rows reference `cfg_status(function_id)` with CFG-owned cascade deletion and are unique by `(function_id, block_id)` and `(function_id, ordinal)`.
+- `cfg_edges` rows reference `cfg_status(function_id)` with CFG-owned cascade deletion; source and target block references must resolve to blocks owned by the same `function_id`.
+- Status reads and affected-file swaps require indexes on status `file_path`, status `source_version`, block `(function_id, ordinal)`, and edge `(function_id, edge_ordinal)` so current/stale resolution and ordered reads do not scan unrelated CFG rows.
+- Aggregate status counts require an indexable status/state shape; unsupported and resource-limited rows are counted from status rows only, never by probing block or edge payloads.
+- Migrations must create the same CFG constraints and indexes in real SQLite as `src/db/schema.sql`; lifecycle tests use real SQLite and must fail if migration-created databases differ from fresh schema-created databases.

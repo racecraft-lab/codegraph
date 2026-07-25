@@ -79,8 +79,8 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Specify | `/speckit-specify` | ✅ Complete | 34 FRs, 4 stories, 22 scenarios, zero unresolved markers; G1 passed. |
 | Clarify | `/speckit-clarify` | ✅ Complete | All three sessions and consensus rows complete; G2 passed with zero clarification markers. |
 | Plan | `/speckit-plan` | ✅ Complete | Eight artifacts complete; constitution checks, reviewability estimate, and G3 passed. |
-| Checklist | `/speckit-checklist` | 🔄 In Progress | API Contracts is the active domain, followed by data integrity, error handling, and performance. |
-| Tasks | `/speckit-tasks` | ⏳ Pending | Generate dependency-ordered TDD tasks grouped by story and slice. |
+| Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
+| Tasks | `/speckit-tasks` | 🔄 In Progress | Generate dependency-ordered TDD tasks grouped by story and slice. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Check spec/plan/tasks/design-concept consistency and reviewability. |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement Slice 1 before Slice 2 using strict red-green-refactor evidence. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
@@ -604,13 +604,17 @@ Focus on SPEC-014:
 
 | Checklist | Items | Gaps | Status |
 |---|---:|---:|---|
-| api-contracts | Pending | Pending | ⏳ |
-| data-integrity | Pending | Pending | ⏳ |
-| error-handling | Pending | Pending | ⏳ |
-| performance | Pending | Pending | ⏳ |
+| api-contracts | 18 | 0 | ✅ Complete — no unresolved consensus item |
+| data-integrity | 20 | 0 | ✅ Complete — 2 documentation gaps remediated; no unresolved consensus item |
+| error-handling | 20 | 0 | ✅ Complete — 2 documentation gaps remediated; no unresolved consensus item |
+| performance | 18 | 0 | ✅ Complete — 2 documentation gaps remediated; no unresolved consensus item |
 
 Every genuine `[Gap]` must update `spec.md` or `plan.md`; intentional exclusions
 must cite the Design Concept.
+
+Checklist phase result: 76 items passed across four domains, 6 first-pass
+documentation gaps were remediated, every mandatory consensus row completed
+with no unresolved item, and G4 passed with zero `[Gap]` markers.
 
 ---
 
