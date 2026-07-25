@@ -1,0 +1,744 @@
+# SpecKit Workflow: SPEC-014 — Control-Flow Graphs
+
+**Template Version**: 1.0.0
+**Created**: 2026-07-24
+**Purpose**: Prepare and execute deterministic, opt-in, per-function CFG
+analysis for TypeScript, JavaScript, and Python on branch
+`014-control-flow-graphs`.
+
+---
+
+## Design Concept
+
+This workflow was enriched from the required 28-question Grill Me interview
+completed during `$speckit-pro:speckit-scaffold-spec SPEC-014`.
+
+The full decision log, goals, non-goals, accepted scope expansion, and
+reviewability decision live at:
+
+```text
+docs/ai/specs/.process/SPEC-014-design-concept.md
+```
+
+Re-read that file before every phase. It is the source of truth for the
+decisions captured during scaffold, especially the conservative unsupported
+function policy, persisted lifecycle, exact machine-surface parity, and accepted
+two-slice decomposition. Grill Me is complete and is not part of autopilot;
+later ambiguity is handled by `/speckit-clarify` and the consensus path.
+
+---
+
+## Reviewability Budget & Split Decision
+
+The roadmap originally projected 485 net-new reviewable LOC over approximately
+six production files and suggested two slices. The final Grill Me scope adds
+CLI and MCP reads, aggregate status, explicit lifecycle states, and complete
+common expression semantics.
+
+The shared `estimate-spec-size` runner was rerun with the final setup signals:
+four independently testable user-story groups, eight production
+files/surfaces, 24 functional-requirement signals, and net-new work.
+
+```text
+estimated_loc=780
+suggested_slices=2
+status=warn
+```
+
+The warning is advisory and remains below the setup-mode 800-LOC block
+threshold. The maintainer accepted two thin vertical slices:
+
+1. **Slice 1 — TypeScript/JavaScript end-to-end:** shared lowering IR and CFG
+   builder, persistence/status lifecycle, activation and refresh wiring,
+   TypeScript/JavaScript semantics, library read, CLI read, MCP pagination,
+   aggregate status, and focused performance evidence.
+2. **Slice 2 — Python parity:** Python lowering through the same persistence and
+   read surfaces, including `match`/`case`, comprehensions, generators as
+   ordinary operations, shared diagnostics, parity fixtures, and final
+   cross-language/dogfood verification.
+
+Plan must preserve that data-variation split. If either slice exceeds the
+authoritative plan-phase reviewability gate, re-slice before implementation
+rather than hiding the overage in a single PR.
+
+### Template Resolution Record
+
+Resolved from the SPEC-014 worktree on 2026-07-24:
+
+- `spec-template` → `speckit-pro-reviewability v1.0.0`
+- `plan-template` → `speckit-pro-reviewability v1.0.0`
+- `tasks-template` → `codegraph-project-overrides v1.0.0`, an intentional
+  higher-priority project override
+
+---
+
+## Workflow Overview
+
+| Phase | Command | Status | Notes |
+|---|---|---|---|
+| Specify | `/speckit-specify` | ⏳ Pending | Define four independently testable user-story groups and the two accepted slices. |
+| Clarify | `/speckit-clarify` | ⏳ Pending | Freeze state enums, schemas, surface names, pagination, and language edge cases without reopening Grill Me decisions. |
+| Plan | `/speckit-plan` | ⏳ Pending | Produce the two-slice architecture, schema/lifecycle design, contracts, benchmark method, and UAT. |
+| Checklist | `/speckit-checklist` | ⏳ Pending | Run api-contracts, data-integrity, error-handling, and performance domains. |
+| Tasks | `/speckit-tasks` | ⏳ Pending | Generate dependency-ordered TDD tasks grouped by story and slice. |
+| Analyze | `/speckit-analyze` | ⏳ Pending | Check spec/plan/tasks/design-concept consistency and reviewability. |
+| Implement | `/speckit-implement` | ⏳ Pending | Implement Slice 1 before Slice 2 using strict red-green-refactor evidence. |
+
+**Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
+
+### Phase Gates
+
+| Gate | Checkpoint | Approval Criteria |
+|---|---|---|
+| G1 | After Specify | All stories and requirements are independently testable; no unresolved clarification marker remains. |
+| G2 | After Clarify | Function states, edge kinds, lifecycle transitions, pagination, command/tool contracts, and language constructs are exact. |
+| G3 | After Plan | Constitution checks pass; schema, two-slice file tables, migration, benchmark, and UAT are approved. |
+| G4 | After Checklists | Every genuine gap is resolved in spec or plan; intentional exclusions are explicit. |
+| G5 | After Tasks | Every requirement maps to an ordered task and each vertical slice has an independent verification gate. |
+| G6 | After Analyze | No critical issue or design-concept drift remains; warnings have explicit dispositions. |
+| G7 | After Each Slice | Focused tests, full build/test gates, reviewability checks, and required UAT evidence pass. |
+
+---
+
+## Prerequisites
+
+### Worktree Binding
+
+Run every phase from the dedicated SPEC-014 worktree. Before each phase:
+
+```bash
+git rev-parse --abbrev-ref HEAD
+git rev-parse --show-toplevel
+```
+
+The branch must be:
+
+```text
+014-control-flow-graphs
+```
+
+The top-level path must end in:
+
+```text
+/codegraph/.worktrees/014-control-flow-graphs
+```
+
+Do not run this workflow from `main`, a detached checkout, or the parent Codex
+worktree.
+
+### Bootstrap Status
+
+The repository documents this preflight:
+
+```bash
+npm install
+npm run build
+# source the main checkout's untracked .envrc.local for this process only
+node dist/bin/codegraph.js init .
+node dist/bin/codegraph.js status
+```
+
+Scaffold requested explicit approval twice. The native picker returned no
+selection both times, so **no bootstrap command was authorized or run**:
+
+- dependencies were not installed;
+- HEAD was not built;
+- `.envrc.local` was not sourced;
+- the worktree index was not initialized;
+- embedding/LSP health was not claimed.
+
+Phase 0 must obtain explicit operator approval before running the documented
+preflight. Use the repository-supported Node 24.11.1 runtime; the ambient Node
+26 runtime is outside the declared `>=20 <25` engine range. After each approved
+bootstrap command, verify that no unexpected tracked change appeared.
+
+### Agent and Preset Evidence
+
+- The installed Codex-agent dry run reported all ten required TOML files current,
+  including `uat-runbook-author.toml`; mutation status was `no_op`.
+- The SpecKit CLI is available at
+  `/Users/fredrickgabelmann/.local/bin/specify` (`0.12.12.dev0` at scaffold).
+- The three required templates resolve through the preset layers recorded above.
+
+### Constitution Validation
+
+Apply `.specify/memory/constitution.md` throughout:
+
+| Principle | SPEC-014 Requirement | Verification |
+|---|---|---|
+| I. Think Before Coding | Preserve Q1–Q28 as resolved decisions; surface only genuinely new ambiguities. | Traceability from spec, clarifications, and plan to the Design Concept |
+| II. Simplicity First | Persist CFG metadata, not lowering instructions; use function IDs only; model no implicit exception or async scheduler flow. | Scope review and Complexity Tracking |
+| III. Surgical Changes | Add the CFG module under `src/analysis/`; keep schema, index/config, CLI, and MCP edits focused. | Declared file-operation table and diff review |
+| IV. Goal-Driven Execution | Start each semantic/lifecycle contract from a failing golden, SQLite, CLI, or MCP test. | Red-green-refactor task evidence |
+| V. Deterministic, LLM-Free Extraction | Derive all blocks and edges from AST/static analysis; skip unsupported functions rather than inventing or truncating paths. | Re-index determinism, unsupported-function, and no-speculative-edge tests |
+| VI. Retrieval Performance | Bound and paginate MCP output; review `src/mcp/` changes with retrieval-guardian. | MCP contract tests and retrieval-guardian verdict |
+| VII. Local-First | Make no network calls; write no CFG rows while disabled; use only `node:sqlite`; ship schema assets through the existing build. | Dormancy, offline, migration, and packaged-asset tests |
+| Dogfooding | Exercise CFG reads against this repository and record results in the UAT runbook. | Self-repo library/CLI/MCP parity probe |
+
+**Constitution check at scaffold:** PASS for scoping. Re-run before and after
+Phase 1 design during Plan.
+
+### Scoped Instructions
+
+Before planning or changing files, read the nearest guidance:
+
+- `src/db/AGENTS.md`
+- `src/mcp/AGENTS.md`
+- `__tests__/AGENTS.md`
+- any new `src/analysis/AGENTS.md` present at implementation time
+
+Changes under `src/mcp/` require the repository's retrieval-guardian review.
+Tests must use real files and real SQLite; do not mock the database.
+
+### Capability Path
+
+At scaffold time no `codegraph_explore` capability was exposed, and the
+installed graph service had no CodeGraph repository index. Local branch files,
+Git history, and runner helpers supplied the fallback evidence. Future phases
+must enumerate the live tool surface again and prefer the repository's
+CodeGraph capability if it is healthy.
+
+Capability path: codebase/spec context → current worktree files and Git;
+workflow gates → installed `speckit_pro_runner`; human decisions → native
+`request_user_input`. Evidence: constitution, roadmap, current `src/analysis`
+patterns, runner JSON outputs, and Q1–Q28. Confidence: medium for structural
+codebase exploration because the required graph capability was unavailable;
+high for repository state and recorded decisions.
+
+---
+
+## Specification Context
+
+### Basic Information
+
+| Field | Value |
+|---|---|
+| **Spec ID** | SPEC-014 |
+| **Name** | Control-Flow Graphs |
+| **Branch** | `014-control-flow-graphs` |
+| **Dependencies** | None |
+| **Enables** | SPEC-015 → SPEC-016 → SPEC-017 |
+| **Priority** | P2 |
+| **Primary surface** | Schema/migration plus analysis harness/adapters |
+| **Accepted slices** | 2 — TypeScript/JavaScript end-to-end, then Python parity |
+| **MCP tools** | 1 planned read tool, provisionally `get_cfg`; Clarify freezes its exact contract |
+| **Design Concept** | `docs/ai/specs/.process/SPEC-014-design-concept.md` |
+| **Workflow** | `docs/ai/specs/.process/SPEC-014-workflow.md` |
+| **Spec MOC** | `specs/014-control-flow-graphs/SPEC-MOC.md` |
+
+### Roadmap and Grill Me Scope
+
+- Shared language-neutral lowering IR for statements, expressions, branches,
+  loops, explicit exceptions, abrupt transfers, and multi-way control.
+- TypeScript/JavaScript lowerer: if/else, loops, switch/fallthrough,
+  try/finally, guard exits, short-circuit logic, conditional expressions,
+  optional chaining, nullish coalescing, nested function boundaries, and
+  disconnected unreachable blocks.
+- Python lowerer: equivalent shared constructs plus `match`/`case`,
+  comprehensions, and generator expressions; `await`/`yield` remain ordinary
+  intra-procedural operations without suspension edges.
+- Unsupported, parse-unsafe, or over-10,000-block functions write no partial
+  CFG; persist a stable function status/reason code instead.
+- Persist status, block role/source spans, and distinct typed edges. Keep
+  lowering instructions in memory only. Block IDs are deterministic for
+  identical source but may change when a function changes.
+- Persist `analysis.cfg=true` through the CLI opt-in. First enable performs a
+  full supported-function backfill; later syncs transactionally replace CFGs
+  for affected files and remove deleted functions.
+- Unexpected refresh failure retains the prior atomic snapshot as explicitly
+  stale. Disabling keeps rows inert and unreadable until a fresh re-enable.
+- Export one stateful found/miss contract through `getCfg(functionId)`, CLI
+  JSON, and paginated MCP responses. Human CLI output may render differently.
+- Add aggregate enabled/freshness/available/skipped counts to
+  `codegraph status`.
+- Enforce a paired-median enabled index-time overhead budget of at most 20% on
+  the existing benchmark monorepo.
+
+### Out of Scope
+
+- Dataflow, reaching definitions, def-use, PDG, and taint work.
+- Languages beyond TypeScript, JavaScript, and Python.
+- Implicit exception inference.
+- Async scheduler/suspension/resumption edges.
+- Persisted lowering instructions or edit-stable semantic block matching.
+- Function lookup by name or source position.
+- REST endpoints and any write/mutation surface.
+- Partial or truncated CFGs presented as usable results.
+
+### Success Criteria Summary
+
+- [ ] Disabled CFG analysis makes no network calls and writes no CFG status,
+      block, or edge rows; existing indexing/query behavior remains unchanged.
+- [ ] First enable backfills every supported function even with an empty change
+      set; later sync/change/delete transitions are atomic and exact.
+- [ ] Identical source produces byte-equivalent ordered CFG responses and stable
+      block IDs across repeated re-indexing.
+- [ ] TypeScript/JavaScript and Python golden fixtures cover every accepted
+      construct and nested/unreachable boundary.
+- [ ] Unsupported, parse-unsafe, and over-limit functions return explicit,
+      deterministic success-shaped states with no partial rows.
+- [ ] Library, CLI JSON, and MCP responses pass exact shared-contract parity;
+      MCP pages reconstruct the complete ordered CFG without overlap or gaps.
+- [ ] `codegraph status` reports enabled/freshness state plus available and
+      skipped function counts without listing sensitive or unbounded diagnostics.
+- [ ] Enabled paired-median index overhead is at most 20% on the committed
+      benchmark fixture; disabled-path behavior remains within normal noise.
+- [ ] `npm run build`, focused suites, and `npm test` pass under supported Node.
+- [ ] Self-repo UAT retrieves a real TypeScript function CFG through library,
+      CLI, and MCP and proves parity; Python parity is demonstrated with a
+      committed fixture.
+
+---
+
+## Phase 1: Specify
+
+**When to run:** Start of the feature workflow. Define WHAT and WHY, not the
+implementation. Output: `specs/014-control-flow-graphs/spec.md`.
+
+### Specify Prompt
+
+```text
+/speckit-specify
+
+## Feature: SPEC-014 Control-Flow Graphs
+
+Create an implementation-independent specification for deterministic, opt-in,
+per-function CFGs for TypeScript/JavaScript and Python. Treat
+docs/ai/specs/.process/SPEC-014-design-concept.md as the source of truth.
+
+Define four independently testable user-story groups:
+1. enable CFG analysis and obtain deterministic library results;
+2. keep persisted CFG state correct through enable, sync, delete, disable,
+   stale failure, and re-enable transitions;
+3. query the same stateful contract through CLI JSON/human output and a
+   paginated MCP tool, with aggregate status visibility;
+4. obtain Python semantic parity after the TypeScript/JavaScript vertical slice.
+
+Carry every selected Q1-Q28 decision into normative requirements. In particular:
+- skip an entire unsupported or over-10,000-block function and persist a stable
+  status/reason; never expose a partial CFG;
+- model explicit throws only, real short-circuit flow, switch/match,
+  comprehensions, optional chaining/nullish flow, nested function boundaries,
+  disconnected unreachable blocks, and distinct abrupt-transfer edges;
+- persist CFG metadata but not lowering instructions;
+- use function IDs only and one exact machine response shape;
+- require first-enable full backfill and affected-file transactional refresh;
+- retain only explicitly stale snapshots on unexpected refresh failure;
+- enforce the 20% paired-median overhead budget;
+- require the accepted two vertical language slices.
+
+Out of scope: dataflow/PDG/taint, languages beyond TS/JS/Python, implicit
+exception inference, async suspension edges, edit-stable block matching,
+name/position lookup, REST, and write surfaces.
+
+Include measurable acceptance scenarios for disabled dormancy, deterministic
+re-indexing, every lifecycle transition, pagination reconstruction, cross-surface
+parity, project status, performance, the safety cap, and self-repo UAT. Leave no
+[NEEDS CLARIFICATION] marker at G1.
+```
+
+### Specify Results
+
+| Metric | Value |
+|---|---|
+| Functional Requirements | Pending |
+| User Stories | Target: 4 |
+| Acceptance Scenarios | Pending |
+| Unresolved markers | Must be 0 at G1 |
+
+### Files Generated
+
+- [ ] `specs/014-control-flow-graphs/spec.md`
+
+---
+
+## Phase 2: Clarify
+
+**When to run:** After Specify. These sessions freeze exact contracts without
+reopening choices already ratified in the Design Concept.
+
+### Clarify Session 1 — State and Data Integrity
+
+```text
+/speckit-clarify
+
+Using the SPEC-014 Design Concept as binding input, verify that spec.md defines
+an exhaustive function/project state machine for disabled, not indexed, not
+computed, available, empty, stale, unavailable, unsupported, resource-limited,
+unknown function, deleted function, cancellation, first enable, refresh failure,
+and re-enable. Confirm source-version rules, atomic replacement boundaries,
+cascade/deletion behavior, and stable machine-readable reason codes. Ask only
+questions whose answer is not already fixed by Q1-Q28.
+```
+
+### Clarify Session 2 — Language Semantics
+
+```text
+/speckit-clarify
+
+Verify exact TS/JS and Python construct coverage, block/edge semantics, entry and
+exit behavior, try/finally routing, switch fallthrough, match cases,
+break/continue targets, short-circuit evaluation, optional chaining, nullish
+coalescing, comprehensions, nested function boundaries, unreachable blocks, and
+the 10,000-block pre-persistence cap. Preserve explicit-throw-only exception
+edges and ordinary-operation await/yield semantics.
+```
+
+### Clarify Session 3 — Public Contracts and Bounds
+
+```text
+/speckit-clarify
+
+Freeze the exported TypeScript result union, CLI command/flags and exit behavior,
+the MCP tool name and schema, deterministic ordering, limit/offset clamps,
+pagination totals, human versus JSON rendering, codegraph status fields, and
+success-shaped expected-state guidance. Require exact machine-shape parity and
+bounded MCP output. No REST or fuzzy target resolution.
+```
+
+### Clarify Results
+
+| Session | Focus | Completion Rule |
+|---|---|---|
+| 1 | State and data integrity | Exhaustive transition table; no ambiguous state |
+| 2 | Language semantics | Construct/edge matrix exact for both slices |
+| 3 | Public contracts and bounds | Schemas, names, ordering, and limits frozen |
+
+---
+
+## Phase 3: Plan
+
+**When to run:** After G2. Output:
+`specs/014-control-flow-graphs/plan.md` and supporting artifacts.
+
+### Plan Prompt
+
+```text
+/speckit-plan
+
+## Tech Stack
+- Runtime: TypeScript on Node >=20 <25; source paths touching node:sqlite need
+  Node 22.5+ and project commands use Node 24.11.1.
+- Parsing: existing tree-sitter extraction and function nodes.
+- Database: node:sqlite only; schema.sql is a shipped asset copied by build.
+- Interfaces: public CodeGraph library, CLI, and MCP; no REST for SPEC-014.
+- Testing: Vitest with real files and real SQLite; deterministic golden fixtures.
+
+## Binding Inputs
+- docs/ai/specs/.process/SPEC-014-design-concept.md
+- specs/014-control-flow-graphs/spec.md
+- .specify/memory/constitution.md
+- docs/ai/specs/intelligence-platform-technical-roadmap.md
+
+## Architecture and Data Model
+Design the smallest language-neutral IR and builder that satisfy the accepted
+construct matrix. Persist a compact per-function status/source-version record,
+CFG block role and ordered source spans, and typed edges. Do not persist IR
+instructions. Use deterministic same-source block IDs. Define migration,
+foreign-key/cascade behavior, indexes, atomic affected-file swap, first-enable
+backfill, disabled inert retention, stale failure retention, cancellation
+no-op, and deleted-function cleanup.
+
+Quote and preserve the decisions "Add CLI and MCP", "Function ID only",
+"Exact shared shape", "Skip function", "Retain stale CFG", and "Two language
+slices" when they drive architecture choices.
+
+## Two-Slice Plan
+Produce separate file-operation tables and verification gates for:
+1. shared infrastructure + TS/JS end-to-end through library/CLI/MCP/status;
+2. Python match/comprehension parity through the same contracts.
+
+Do not create horizontal schema-only or interface-only slices. Run the
+authoritative reviewability estimator per slice and revise the cut if either
+slice exceeds the allowed budget.
+
+## Performance and Reliability
+Reuse the committed benchmark-monorepo paired-median method with CFG disabled
+versus enabled and a <=1.20 ratio. Specify deterministic warmup/sample handling,
+the 10,000-block cap, cooperative cancellation/yield points where needed, MCP
+pagination bounds, and disabled-path dormancy.
+
+## UAT
+Define a self-repo TypeScript probe that activates CFG, discovers a real
+function ID through existing graph queries, compares library/CLI JSON/MCP pages,
+checks status counts, mutates a controlled fixture through sync/delete, and
+records results. Add a committed Python parity fixture. Never expose or persist
+.envrc.local secrets.
+
+Run the Constitution Check before Phase 0 research and again after Phase 1
+design. Record any unavoidable complexity in the required table.
+```
+
+### Plan Results
+
+| Artifact | Status | Required Content |
+|---|---|---|
+| `plan.md` | ⏳ | Two vertical slices, file tables, constitution checks |
+| `research.md` | ⏳ | Tree-sitter node mapping and safety-cap validation |
+| `data-model.md` | ⏳ | Function status, block, edge, version, and cascade rules |
+| `contracts/` | ⏳ | Shared library/CLI JSON/MCP/status schemas |
+| `quickstart.md` | ⏳ | Enable, query, paginate, sync, and disable examples |
+
+---
+
+## Phase 4: Domain Checklists
+
+Run after Plan. Target four requirement-quality domains.
+
+### 1. API Contracts
+
+```text
+/speckit-checklist api-contracts
+
+Focus on SPEC-014:
+- exact shared found/miss/state response type;
+- CLI JSON and MCP field-for-field parity;
+- function-ID validation and expected-state guidance;
+- deterministic block/edge ordering and pagination reconstruction;
+- aggregate status fields and human-output separation.
+- Pay special attention to: no field/state drift among library, CLI JSON, and MCP.
+```
+
+### 2. Data Integrity
+
+```text
+/speckit-checklist data-integrity
+
+Focus on SPEC-014:
+- schema constraints, foreign keys, indexes, and source versions;
+- first-enable backfill and affected-file atomic replacement;
+- change/delete/disable/re-enable transitions;
+- stale snapshot retention versus unsupported replacement;
+- cancellation and migration behavior with real SQLite.
+- Pay special attention to: no stale or retained row may appear fresh.
+```
+
+### 3. Error Handling
+
+```text
+/speckit-checklist error-handling
+
+Focus on SPEC-014:
+- unsupported syntax, parse errors, explicit throws, and resource limits;
+- unexpected first-run versus later refresh failures;
+- stable reason codes with bounded safe messages;
+- success-shaped disabled/unknown/unsupported states;
+- index/sync containment and cancellation no-op behavior.
+- Pay special attention to: no failure exposes a partial CFG or fails indexing.
+```
+
+### 4. Performance
+
+```text
+/speckit-checklist performance
+
+Focus on SPEC-014:
+- <=20% paired-median enabled index overhead;
+- disabled-path dormancy and zero CFG row writes;
+- 10,000-block per-function safety cap;
+- affected-file incremental rebuild rather than full recompute;
+- bounded MCP pages and deterministic output limits.
+- Pay special attention to: benchmark methodology must be reproducible and non-flaky.
+```
+
+### Checklist Results
+
+| Checklist | Items | Gaps | Status |
+|---|---:|---:|---|
+| api-contracts | Pending | Pending | ⏳ |
+| data-integrity | Pending | Pending | ⏳ |
+| error-handling | Pending | Pending | ⏳ |
+| performance | Pending | Pending | ⏳ |
+
+Every genuine `[Gap]` must update `spec.md` or `plan.md`; intentional exclusions
+must cite the Design Concept.
+
+---
+
+## Phase 5: Tasks
+
+### Tasks Prompt
+
+```text
+/speckit-tasks
+
+Read spec.md, plan.md, every checklist, and
+docs/ai/specs/.process/SPEC-014-design-concept.md.
+
+Generate small, dependency-ordered, test-first tasks grouped by independently
+testable user story and the two accepted vertical slices. Do not organize the
+work as "all schema, then all lowering, then all interfaces."
+
+For Slice 1, order red-green tasks so a minimal TS/JS function travels through
+IR -> CFG -> SQLite -> stateful library read -> CLI JSON/human -> MCP pages ->
+status, then add lifecycle and construct cases incrementally.
+
+For Slice 2, drive Python through the already working vertical path, then add
+match/case, comprehension/generator, nested-function, and parity fixtures.
+
+Every behavior task must begin with a failing test or deterministic probe.
+Include explicit tasks for migration/package assets, first-enable empty-change
+backfill, affected-file replacement, delete, disable/re-enable, stale failure,
+unsupported/resource-limited states, deterministic re-indexing, shared response
+parity, MCP bounds, the paired benchmark, self-repo UAT, full build/test gates,
+reviewability gates, and retrieval-guardian review for src/mcp changes.
+
+Mark parallel-safe fixture/renderer work [P] only when it cannot race shared
+types, schema, or contract decisions. Reference the relevant FR and Q-number in
+each task's acceptance criteria.
+```
+
+### Tasks Results
+
+| Metric | Value |
+|---|---|
+| Total Tasks | Pending |
+| Slice 1 Tasks | Pending |
+| Slice 2 Tasks | Pending |
+| Parallel Opportunities | Pending |
+| Requirements Covered | Must be 100% at G5 |
+
+---
+
+## Atomicity Route
+
+After Tasks/G5, run:
+
+```text
+runner helper atomicity-route specs/014-control-flow-graphs
+```
+
+Record the classifier result here. The accepted two-slice design is advisory
+input; the classifier remains authoritative for PR emission and releasability.
+
+| Field | Value | Meaning |
+|---|---|---|
+| **Route** | | `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope` |
+| **Releasable** | | Whether the classified change can be released independently |
+| **Signals** | | Structural evidence behind the route |
+| **Warnings** | | Release-safety warnings, if any |
+
+---
+
+## Phase 6: Analyze
+
+### Analyze Prompt
+
+```text
+/speckit-analyze
+
+Analyze spec.md, plan.md, tasks.md, all checklists, and
+docs/ai/specs/.process/SPEC-014-design-concept.md together.
+
+Treat the Design Concept as the source of truth for Q1-Q28. Flag any drift in:
+- skip-whole-function soundness and stable reason states;
+- explicit-only exception edges and accepted expression semantics;
+- first-enable, incremental, delete, disable, re-enable, stale, and failure flow;
+- metadata-only persistence and deterministic same-source identity;
+- library/CLI JSON/MCP exact parity and pagination;
+- aggregate status and <=20% benchmark gate;
+- 10,000-block cap;
+- two vertical language slices and all non-goals.
+
+Verify every FR and acceptance scenario has a task, each task names a real
+project path, both slices are independently testable, reviewability evidence is
+current, scoped AGENTS guidance is obeyed, and no task broadens into dataflow,
+REST, fuzzy lookup, implicit exceptions, or async suspension modeling.
+```
+
+### Analysis Results
+
+| ID | Severity | Issue | Resolution |
+|---|---|---|---|
+| Pending | | | |
+
+G6 requires zero unresolved critical findings.
+
+---
+
+## Phase 7: Implement
+
+### Implement Prompt
+
+```text
+/speckit-implement
+
+Execute tasks.md in dependency order using strict red-green-refactor TDD.
+Re-read plan.md and docs/ai/specs/.process/SPEC-014-design-concept.md before
+each vertical slice.
+
+For every task:
+1. RED — add the smallest failing behavioral test or deterministic probe.
+2. GREEN — implement only enough to satisfy the requirement.
+3. REFACTOR — simplify without changing behavior.
+4. VERIFY — run the focused test and record evidence.
+
+Complete Slice 1 and its G7 evidence before Slice 2. Never persist or return a
+partial unsupported CFG. Keep all expected absence states success-shaped.
+Preserve disabled dormancy and no-network behavior. Use real SQLite tests.
+
+Before any completion or merge claim:
+- run focused CFG, schema, lifecycle, CLI, MCP, status, and parity suites;
+- run `npm run build` and `npm test` under Node 24.11.1;
+- run the paired benchmark and prove ratio <=1.20;
+- run deterministic repeated re-index probes;
+- run self-repo UAT and record the runbook outcome;
+- run reviewability gates per slice and the final backstop;
+- run retrieval-guardian because src/mcp is in scope;
+- verify shipped schema assets exist in dist.
+```
+
+### Implementation Progress
+
+| Slice | Scope | Tasks | Status |
+|---|---|---:|---|
+| 1 | Shared infrastructure + TS/JS + all read surfaces | Pending | ⏳ |
+| 2 | Python semantic parity + final hardening | Pending | ⏳ |
+
+---
+
+## Post-Implementation Checklist
+
+- [ ] Every task is implemented and verified, not merely checked off.
+- [ ] `npm run build` passes under supported Node.
+- [ ] `npm test` passes.
+- [ ] Focused CFG determinism, lifecycle, CLI, MCP, status, and schema suites pass.
+- [ ] Paired benchmark ratio is at most 1.20 with recorded samples.
+- [ ] Disabled mode makes no network calls and writes no CFG content/status rows.
+- [ ] Library, CLI JSON, and MCP parity tests pass.
+- [ ] Self-repo UAT and Python fixture UAT are recorded.
+- [ ] Retrieval-guardian returns no blocking finding.
+- [ ] Reviewability gates pass for each emitted slice/PR.
+- [ ] Roadmap/workflow/autopilot state remains synchronized.
+
+---
+
+## Project Structure Reference
+
+```text
+src/
+├── analysis/
+│   └── cfg/                       # shared IR, builder, language lowerers, store/read facade
+├── db/
+│   └── schema.sql                 # CFG function status, blocks, edges
+├── bin/
+│   └── codegraph.ts               # activation, read command, status rendering
+├── mcp/
+│   └── tools.ts                   # bounded paginated CFG read tool
+├── project-config.ts              # persisted analysis.cfg opt-in
+└── index.ts                       # public library API and index/sync integration
+__tests__/
+└── analysis/
+    └── cfg/                       # real SQLite, golden, lifecycle, parity fixtures
+scripts/
+└── bench-cfg-analysis.mjs         # paired disabled/enabled benchmark
+specs/
+└── 014-control-flow-graphs/       # CONTRACT artifacts and later UAT runbook
+docs/ai/specs/.process/
+├── SPEC-014-design-concept.md
+└── SPEC-014-workflow.md
+```
+
+Keep exact file names negotiable until Plan confirms existing seams. New
+capabilities belong under `src/analysis`; edits to upstream-owned files must
+remain minimal.
