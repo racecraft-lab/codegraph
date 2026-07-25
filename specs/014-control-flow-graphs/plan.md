@@ -30,12 +30,13 @@ The plan preserves the clarified decisions "Add CLI and MCP", "Function ID only"
 
 **Scale/Scope**: Current self-repo index scale and the committed benchmark monorepo fixture. CFG rows are per function and replaced by affected file, not by full project on every sync except first enable/backfill.
 
-**Reviewability Budget**: Primary surface: schema/migration plus analysis harness/adapters. Secondary surfaces: library read, CLI read, MCP read tool, aggregate status, deterministic fixtures, benchmark/UAT. Setup estimate remains 780 reviewable LOC with a two-slice warning accepted during Grill Me. Per-slice authoritative `estimate-spec-size` runner results:
+**Reviewability Budget**: Primary surface: schema/migration plus analysis harness/adapters. Secondary surfaces: library read, CLI read, MCP read tool, aggregate status, deterministic fixtures, benchmark/UAT. Setup estimate remains 780 reviewable LOC with a two-slice warning accepted during Grill Me. Current reviewability evidence:
 
-| Slice | Signals | Result | Disposition |
+| Evidence | Result | Disposition |
 |---|---|---|---|
-| Slice 1 shared + TS/JS end to end | `user_stories=2`, `files=4`, `frs=12`, net-new | `estimated_loc=390`, `suggested_slices=1`, `status=ok` | Keep as Slice 1 |
-| Slice 2 Python parity | `user_stories=2`, `files=4`, `frs=12`, net-new | `estimated_loc=390`, `suggested_slices=1`, `status=ok` | Keep as Slice 2 |
+| Setup `estimate-spec-size` | `estimated_loc=780`, `suggested_slices=2`, `status=warn` from final setup signals `user_stories=4`, `files=8`, `frs=24`, net-new | Preserve the operator-ratified two-slice split; warning is below the setup-mode block threshold. |
+| Plan `estimate-reviewable-loc` | `projected=360`, `status=pass`, with 9 declared production file operations | Current plan-phase reviewability evidence permits implementation to proceed. |
+| Slice boundary | Slice 1 proves shared infrastructure plus TypeScript/JavaScript through library, CLI, MCP, and status; Slice 2 carries Python through the same contracts | Re-check before implementation and again in final task `T043`; re-slice before implementation if a current gate shows either slice is too large. |
 
 ## Constitution Check
 

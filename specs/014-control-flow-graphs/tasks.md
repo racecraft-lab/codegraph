@@ -143,8 +143,8 @@
 
 ### Slice Counts
 
-- **Slice 1**: 23 tasks (`T006`-`T031`, excluding setup fixture inventories where noted)
-- **Slice 2**: 7 tasks (`T032`-`T038`)
+- **Slice 1 behavior tasks**: 23 tasks (`T009`-`T031`) after setup and foundation tasks `T001`-`T008`
+- **Slice 2 behavior tasks**: 7 tasks (`T032`-`T038`)
 - **Cross-cutting gates**: 5 tasks (`T039`-`T043`)
 
 ---

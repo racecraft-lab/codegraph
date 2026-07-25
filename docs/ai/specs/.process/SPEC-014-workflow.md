@@ -81,8 +81,8 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Plan | `/speckit-plan` | ✅ Complete | Eight artifacts complete; constitution checks, reviewability estimate, and G3 passed. |
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
-| Analyze | `/speckit-analyze` | 🔄 In Progress | Check spec/plan/tasks/design-concept consistency and reviewability. |
-| Implement | `/speckit-implement` | ⏳ Pending | Implement Slice 1 before Slice 2 using strict red-green-refactor evidence. |
+| Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
+| Implement | `/speckit-implement` | 🔄 In Progress | Setup and Reviewability Baseline (T001–T003) is the active task group. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -719,9 +719,23 @@ REST, fuzzy lookup, implicit exceptions, or async suspension modeling.
 
 | ID | Severity | Issue | Resolution |
 |---|---|---|---|
-| Pending | | | |
+| A001 | MEDIUM | Plan treated stale per-slice setup estimates as authoritative plan evidence. | Replaced with current setup 780/warn, plan 360/pass, and explicit slice re-check boundary. |
+| A002 | LOW | Slice 1 count mixed foundational T006–T008 with 23 behavior tasks. | Corrected behavior range to T009–T031 after T001–T008 setup/foundation. |
 
-G6 requires zero unresolved critical findings.
+Analyze rerun: 0 CRITICAL, 0 HIGH, 0 MEDIUM, and 0 LOW findings.
+No item remained for Analyze consensus. Direct G6 passed.
+
+The installed `consensus-synthesizer` role was not exposed by this Codex task
+runtime, so the recorded dedicated default-role fallback emitted the required
+canonical pre-implementation score:
+
+📊 Confidence: 1.00
+
+- Task understanding: 1.00
+- Approach clarity: 1.00
+- Requirements alignment: 1.00
+- Risk assessment: 1.00
+- Completeness: 1.00
 
 ---
 
@@ -731,7 +745,7 @@ Run after Analyze consensus and before any implementation task.
 
 | Gate | Mode | Threshold | Status |
 |---|---|---:|---|
-| G6.5 | advisory | 0.90 | ⏳ Pending |
+| G6.5 | advisory | 0.90 | ✅ Passed — composite 1.00; proceed |
 
 The runner reads the confidence emit produced at the end of Analyze. A failing
 advisory result triggers up to three focused remediation iterations and is
@@ -775,8 +789,20 @@ Before any completion or merge claim:
 
 | Slice | Scope | Tasks | Status |
 |---|---|---:|---|
-| 1 | Shared infrastructure + TS/JS + all read surfaces | Pending | ⏳ |
-| 2 | Python semantic parity + final hardening | Pending | ⏳ |
+| 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | 🔄 In Progress |
+| 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | ⏳ Pending |
+
+### Implementation Task Groups
+
+| Group | Task IDs | Status |
+|---|---|---|
+| Setup and Reviewability Baseline | T001–T003 | 🔄 In Progress |
+| Foundational Contract and Storage | T004–T008 | ⏳ Pending |
+| Slice 1 / US1 Library CFG | T009–T016 | ⏳ Pending |
+| Slice 1 / US2 Lifecycle | T017–T023 | ⏳ Pending |
+| Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ⏳ Pending |
+| Slice 2 / US4 Python Parity | T032–T038 | ⏳ Pending |
+| Polish, Gates, and Review Packet | T039–T043 | ⏳ Pending |
 
 ---
 
