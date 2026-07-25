@@ -12,8 +12,8 @@
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)",
-  "updated_at": "2026-07-25T15:12:36Z",
+  "active_step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)",
+  "updated_at": "2026-07-25T15:55:59Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -378,8 +378,8 @@
       "status": "in_progress",
       "groups": [
         {"step": "Phase 7: Implement - Setup and Reviewability Baseline (T001-T003)", "task_ids": ["T001", "T002", "T003"], "status": "completed"},
-        {"step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)", "task_ids": ["T004", "T005", "T006", "T007", "T008"], "status": "in_progress"},
-        {"step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)", "task_ids": ["T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016"], "status": "pending"},
+        {"step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)", "task_ids": ["T004", "T005", "T006", "T007", "T008"], "status": "completed"},
+        {"step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)", "task_ids": ["T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016"], "status": "in_progress"},
         {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "task_ids": ["T017", "T018", "T019", "T020", "T021", "T022", "T023"], "status": "pending"},
         {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "task_ids": ["T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031"], "status": "pending"},
         {"step": "Phase 7: Implement - Slice 2 / US4 Python Parity (T032-T038)", "task_ids": ["T032", "T033", "T034", "T035", "T036", "T037", "T038"], "status": "pending"},
@@ -404,6 +404,51 @@
           "red_failed": 1,
           "green_passed": 1,
           "focused_test": "__tests__/analysis/cfg/cfg-python.test.ts"
+        },
+        "T004": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 3,
+          "green_passed": 3,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+          "remediation": "updated six legacy current-schema assertions for schema v11"
+        },
+        "T005": {
+          "status": "completed",
+          "route": "orchestrator-direct",
+          "red_failed": 1,
+          "green_passed": 1,
+          "verification": "npm run build plus byte-equivalent src/dist schema assertion"
+        },
+        "T006": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 1,
+          "green_passed": 4,
+          "focused_test": "__tests__/analysis/cfg/cfg-lifecycle.test.ts"
+        },
+        "T007": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 3,
+          "green_passed": 3,
+          "focused_test": "__tests__/analysis/cfg/cfg-contract.test.ts"
+        },
+        "T008": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 7,
+          "green_passed": 10,
+          "focused_test": "__tests__/analysis/cfg/cfg-contract.test.ts",
+          "group_verification": {
+            "focused_cfg_tests_passed": 16,
+            "build": "passed",
+            "full_test_files_passed": 258,
+            "full_tests_passed": 4553,
+            "full_tests_skipped": 178,
+            "node": "24.11.1",
+            "daemon_timeout_remediation": "raised one repeated cold-parallel fallback-log wait from 6000ms to 12000ms"
+          }
         }
       }
     }
@@ -432,8 +477,8 @@
     {"step": "Phase 6: Analyze - Consensus", "status": "completed"},
     {"step": "Phase 6.5: Confidence Gate", "status": "completed"},
     {"step": "Phase 7: Implement - Setup and Reviewability Baseline (T001-T003)", "status": "completed"},
-    {"step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)", "status": "in_progress"},
-    {"step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)", "status": "pending"},
+    {"step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)", "status": "completed"},
+    {"step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)", "status": "in_progress"},
     {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "status": "pending"},
     {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "status": "pending"},
     {"step": "Phase 7: Implement - Slice 2 / US4 Python Parity (T032-T038)", "status": "pending"},

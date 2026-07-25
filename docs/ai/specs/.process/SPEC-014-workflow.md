@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T003 complete; Foundational Contract and Storage (T004–T008) is active. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T008 complete; Slice 1 / US1 Library CFG (T009–T016) is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -789,7 +789,7 @@ Before any completion or merge claim:
 
 | Slice | Scope | Tasks | Status |
 |---|---|---:|---|
-| 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | 🔄 In Progress |
+| 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | 🔄 In Progress — foundation complete; US1 active |
 | 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | ⏳ Pending |
 
 ### Implementation Task Groups
@@ -797,12 +797,21 @@ Before any completion or merge claim:
 | Group | Task IDs | Status |
 |---|---|---|
 | Setup and Reviewability Baseline | T001–T003 | ✅ Complete — fixture tests 2/2 green |
-| Foundational Contract and Storage | T004–T008 | 🔄 In Progress |
-| Slice 1 / US1 Library CFG | T009–T016 | ⏳ Pending |
+| Foundational Contract and Storage | T004–T008 | ✅ Complete — focused CFG 16/16, build, and full Node 24 suite green |
+| Slice 1 / US1 Library CFG | T009–T016 | 🔄 In Progress |
 | Slice 1 / US2 Lifecycle | T017–T023 | ⏳ Pending |
 | Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ⏳ Pending |
 | Slice 2 / US4 Python Parity | T032–T038 | ⏳ Pending |
 | Polish, Gates, and Review Packet | T039–T043 | ⏳ Pending |
+
+Foundation evidence (2026-07-25): schema v11 fresh/migration/shipped-asset
+parity, default-off CFG dormancy, frozen public contract, source-version/status
+resolution, bounded messages, no-partial payload construction, and independent
+block/edge paging are implemented. The focused CFG suites passed 16/16, the
+Node 24 build passed, and the authoritative full suite passed 258 files with
+4553 tests passed and 178 skipped. The full gate also exposed and remediated
+legacy schema/config expectations and one repeated daemon cold-parallel timeout
+budget before the group was closed.
 
 ---
 
