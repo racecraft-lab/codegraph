@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | Setup and Reviewability Baseline (T001–T003) is the active task group. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T003 complete; Foundational Contract and Storage (T004–T008) is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -796,8 +796,8 @@ Before any completion or merge claim:
 
 | Group | Task IDs | Status |
 |---|---|---|
-| Setup and Reviewability Baseline | T001–T003 | 🔄 In Progress |
-| Foundational Contract and Storage | T004–T008 | ⏳ Pending |
+| Setup and Reviewability Baseline | T001–T003 | ✅ Complete — fixture tests 2/2 green |
+| Foundational Contract and Storage | T004–T008 | 🔄 In Progress |
 | Slice 1 / US1 Library CFG | T009–T016 | ⏳ Pending |
 | Slice 1 / US2 Lifecycle | T017–T023 | ⏳ Pending |
 | Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ⏳ Pending |
