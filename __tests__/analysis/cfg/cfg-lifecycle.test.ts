@@ -1078,6 +1078,64 @@ describe('SPEC-014 CFG SQLite lifecycle schema', () => {
     }
   });
 
+  it('retains a prior successful payload when a later refresh cannot read indexed source', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-source-read-failure-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, PROJECT_CONFIG_FILENAME), JSON.stringify({ analysis: { cfg: true } }));
+    const sourcePath = path.join(dir, 'app.ts');
+    const writeSource = (increment: number): void => {
+      fs.writeFileSync(
+        sourcePath,
+        [
+          'export function sourceReadProbe(value: number): number {',
+          `  return value + ${increment};`,
+          '}',
+          '',
+        ].join('\n'),
+      );
+    };
+
+    writeSource(1);
+    const cg = CodeGraph.initSync(dir);
+    try {
+      const firstIndex = await cg.indexAll();
+      expect(firstIndex.success).toBe(true);
+
+      const db = (cg as unknown as { db: { getDb(): SqliteDatabase } }).db.getDb();
+      const row = db
+        .prepare('SELECT id FROM nodes WHERE file_path = ? AND name = ?')
+        .get('app.ts', 'sourceReadProbe') as { id: string };
+      const initialSnapshot = cfgSnapshotForFunction(db, row.id);
+      expect(initialSnapshot.statuses[0]).toMatchObject({
+        reason: null,
+        state: 'available',
+      });
+      expect(initialSnapshot.blocks.length).toBeGreaterThan(0);
+
+      writeSource(2);
+      setCfgComputeFailureOverrideForTests(({ functionName }) => {
+        if (functionName === 'sourceReadProbe' && fs.existsSync(sourcePath)) {
+          fs.unlinkSync(sourcePath);
+        }
+      });
+
+      const failedRefresh = await cg.sync();
+      expect(failedRefresh.filesModified).toBe(1);
+      expect(cfgSnapshotForFunction(db, row.id)).toEqual(initialSnapshot);
+      expect(cg.getCfg(row.id, { limit: 20, offset: 0 })).toMatchObject({
+        cfg: expect.any(Object),
+        page: expect.any(Object),
+        reason: 'refresh_failed_retained_stale',
+        sourceVersion: initialSnapshot.statuses[0]!.source_version,
+        stale: true,
+        state: 'stale',
+      });
+    } finally {
+      setCfgComputeFailureOverrideForTests(null);
+      cg.close();
+    }
+  });
+
   it('turns retained disabled CFG rows for removed functions into tombstones on re-enable full backfill', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-disabled-delete-reenable-'));
     dirs.push(dir);

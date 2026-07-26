@@ -49,4 +49,3 @@ Aggregate status resolves state in this order:
 - `skippedCount` equals `unsupportedCount + resourceLimitedCount`.
 - Status output is aggregate only and does not flood per-function diagnostics.
 - Human status may format labels differently, but values must match the JSON object.
-

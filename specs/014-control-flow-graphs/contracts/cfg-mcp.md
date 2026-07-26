@@ -15,9 +15,13 @@
     "limit": { "type": "integer" },
     "offset": { "type": "integer" }
   },
-  "required": ["projectPath", "functionId"]
+  "required": ["functionId"]
 }
 ```
+
+When the MCP session has a default indexed project, `projectPath` is optional
+and omitting it reads that project. On a no-default-project session, the
+advertised schema dynamically requires `projectPath`.
 
 ## Behavior
 
@@ -31,4 +35,3 @@
 ## Reconstruction Guarantee
 
 For an available CFG larger than one MCP page, collecting pages by increasing `offset` reconstructs the complete ordered CFG with no duplicate blocks, no duplicate edges, no gaps, and accurate totals.
-

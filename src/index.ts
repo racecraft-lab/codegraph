@@ -131,6 +131,7 @@ import {
 import {
   readCfg,
   readCfgProjectStatus,
+  loadCfgParsersForAnalysis,
   runCfgAnalysis,
   type CfgPageRequest,
   type CfgProjectStatus,
@@ -1215,7 +1216,7 @@ export class CodeGraph {
           try {
             const analysisConfig = loadAnalysisConfig(this.projectRoot);
             const cfgConfigRevision = this.currentCfgConfigRevision(analysisConfig);
-            this.maybeRunCfgAnalysis(analysisConfig, options.signal, undefined, cfgConfigRevision);
+            await this.maybeRunCfgAnalysis(analysisConfig, options.signal, undefined, cfgConfigRevision);
             await maybeRunCatalogAnalysis(
               this.catalogAnalysisGraph(),
               this.db.getDb(),
@@ -1441,13 +1442,19 @@ export class CodeGraph {
     this.queries.setMetadata(LSP_STATUS_METADATA_KEY, serializeLspStatus(status));
   }
 
-  private maybeRunCfgAnalysis(
+  private async maybeRunCfgAnalysis(
     config: AnalysisConfig,
     signal?: AbortSignal,
     filePaths?: readonly string[],
     configRevision?: string | null,
-  ): void {
+  ): Promise<void> {
     if (signal?.aborted || config.cfg !== true) return;
+    await loadCfgParsersForAnalysis({
+      projectRoot: this.projectRoot,
+      db: this.queries.getDb(),
+      filePaths,
+      signal,
+    });
     const result = runCfgAnalysis({
       projectRoot: this.projectRoot,
       db: this.queries.getDb(),
@@ -1839,7 +1846,7 @@ export class CodeGraph {
           const cfgFullBackfillNeeded = analysisConfig.cfg === true
             && (this.needsCfgFullBackfill() || !this.cfgConfigRevisionMatches(cfgConfigRevision));
           if (cfgFullBackfillNeeded || cfgFilePaths.length > 0) {
-            this.maybeRunCfgAnalysis(
+            await this.maybeRunCfgAnalysis(
               analysisConfig,
               options.signal,
               cfgFullBackfillNeeded ? undefined : cfgFilePaths,

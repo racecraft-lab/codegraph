@@ -25,6 +25,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { selectDogfoodNodeRuntime } from './lib/dogfood-node-runtime.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -65,8 +66,29 @@ if (!loadEnvFile(path.join(root, '.envrc.local'))) {
   }
 }
 
+let nodeRuntime;
+try {
+  nodeRuntime = selectDogfoodNodeRuntime({
+    currentExecutable: process.execPath,
+    currentVersion: process.versions.node,
+    pathValue: process.env.PATH,
+    pathDelimiter: path.delimiter,
+    executableName: process.platform === 'win32' ? 'node.exe' : 'node',
+    probeVersion(candidate) {
+      const probe = spawnSync(candidate, ['-p', 'process.versions.node'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      return probe.status === 0 ? probe.stdout.trim() : null;
+    },
+  });
+} catch (err) {
+  console.error(`mcp-dogfood: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
+
 const server = spawn(
-  process.execPath,
+  nodeRuntime,
   [path.join(root, 'dist', 'bin', 'codegraph.js'), 'serve', '--mcp', ...process.argv.slice(2)],
   { cwd: root, stdio: 'inherit' },
 );

@@ -26,4 +26,3 @@ Human mode renders a bounded page summary with the same `state`, `reason`, `func
 
 - Exit 0 for every expected `CfgReadResult` state: `available`, `disabled`, `not_indexed`, `not_computed`, `stale`, `unavailable`, `unsupported`, `resource_limited`, `unknown_function`, and `deleted`.
 - Use nonzero exit only for invalid usage, invalid path or workspace access, output or serialization failure, or an unexpected internal failure that prevents producing a valid `CfgReadResult`.
-

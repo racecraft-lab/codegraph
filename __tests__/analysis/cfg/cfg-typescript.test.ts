@@ -641,6 +641,45 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     ]);
   });
 
+  it('fails closed when a switch case label requires runtime evaluation', async () => {
+    const source = [
+      'function nextCase(): string {',
+      "  return 'ready';",
+      '}',
+      '',
+      'export function dynamicSwitchCaseProbe(value: string): number {',
+      '  switch (value) {',
+      '    case nextCase():',
+      '      return 1;',
+      '    default:',
+      '      return 0;',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const { db, functionId, result } = await indexFunctionResult(
+      'dynamic-switch-case-probe.ts',
+      'dynamicSwitchCaseProbe',
+      source,
+    );
+
+    expect(result).toMatchObject({
+      analysis: 'cfg',
+      cfg: null,
+      functionId,
+      page: null,
+      reason: 'unsupported_construct',
+      stale: false,
+      state: 'unsupported',
+    });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_blocks WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_edges WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
+  });
+
   it('persists branchy switch discriminants before case dispatch', async () => {
     const source = [
       'export function branchySwitchProbe(config?: { mode?: string }, fallback = \'idle\'): number {',

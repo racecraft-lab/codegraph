@@ -12,7 +12,9 @@ The plan preserves the clarified decisions "Add CLI and MCP", "Function ID only"
 
 ## Technical Context
 
-**Language/Version**: TypeScript on Node `>=20 <25`; source paths using `node:sqlite` require Node 22.5+ and project commands use Node 24.11.1.
+**Language/Version**: TypeScript on the package-supported Node range
+`^20.19.0 || >=22.12.0 <25.0.0`; this runbook's direct `node:sqlite` probes
+and project commands use Node 24.11.1.
 
 **Primary Dependencies**: Existing `web-tree-sitter`, CodeGraph extraction/query/database layers, `node:sqlite` through the local adapter. No new runtime dependency is planned.
 
@@ -169,7 +171,7 @@ CFG tables deliberately do not use a foreign key to `nodes(id)`. Function ID, fi
 Lifecycle rules:
 
 - Disabled: live config is consulted first. Reads return `disabled` with `analysis_disabled`; indexing/sync writes no CFG status, block, or edge rows.
-- First enable: an explicit CFG enable action persists `analysis.cfg=true` and schedules a full backfill even when the normal change set is empty.
+- First enable: Set `analysis.cfg=true` in `codegraph.json` and run `index` or `sync`; the run schedules a full CFG backfill even when the normal change set is empty.
 - Successful affected-file refresh: compute every current function status for the file, then one transaction replaces prior CFG status, blocks, and edges for that file.
 - Deletion: successful sync removes current payloads for deleted files/functions and retains compact `deleted` tombstones for previously known function IDs.
 - Disable: retained rows become inert and unreadable.
@@ -200,7 +202,7 @@ CLI human output may render differently but must preserve the same state and rea
 | MODIFIED | `src/db/migrations.ts` | Add the schema migration and bump current schema version. |
 | MODIFIED | `src/project-config.ts` | Extend `analysis` config with `cfg?: boolean`, default false, malformed values disabled. |
 | MODIFIED | `src/index.ts` | Wire opt-in CFG analysis after successful index/sync; expose `getCfg`; expose aggregate status. |
-| MODIFIED | `src/bin/codegraph.ts` | Add CFG activation handling, `codegraph cfg`, JSON/human output, exit-code behavior, and status output. |
+| MODIFIED | `src/bin/codegraph.ts` | Add `codegraph cfg`, JSON/human output, expected-state exit behavior, and status output; CFG activation is only through `analysis.cfg=true` in `codegraph.json` followed by `index` or `sync`. |
 | MODIFIED | `src/mcp/tools.ts` | Add bounded read-only `codegraph_get_cfg` tool returning the shared machine object. |
 | MODIFIED | `src/mcp/server-instructions.ts` | Add concise agent-facing guidance for the new CFG tool without telling agents to use Read. |
 | NEW | `__tests__/analysis/cfg/cfg-contract.test.ts` | Library/CLI JSON/MCP shape parity, paging clamps, expected-state exit behavior. |
@@ -216,7 +218,8 @@ Verification gates for Slice 1:
 | Focused TS/JS semantics | `npx vitest run __tests__/analysis/cfg/cfg-typescript.test.ts` | Deterministic CFGs, stable block IDs on same source, exact edge kinds/order, unsupported whole-function skips. |
 | Lifecycle | `npx vitest run __tests__/analysis/cfg/cfg-lifecycle.test.ts` | Every enable/sync/delete/disable/stale/failure/cancellation/re-enable state matches the contract. |
 | Public contract | `npx vitest run __tests__/analysis/cfg/cfg-contract.test.ts` | Library, CLI JSON, and MCP results are field-for-field equal for expected states. |
-| Performance | `npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` | Paired-median enabled/disabled ratio is `<= 1.20`. |
+| Performance evidence | `CODEGRAPH_CFG_PERF_EVIDENCE=1 npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` | Authoritative paired-median enabled/disabled ratio is `<= 1.20` with 2 warmup pairs and 10 measured pairs. |
+| Performance smoke | `CODEGRAPH_CFG_PERF_SMOKE=1 npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` | Non-authoritative 2 warmup plus 5 measured-pair smoke verifies benchmark shape and invariants without serving as PR timing evidence. |
 | Build and full suite | `npm run build` then `npm test` | Build assets include schema changes; full test suite remains green. |
 | Retrieval review | retrieval-guardian on `src/mcp/` diff | MCP change does not regress retrieval guidance or error shaping. |
 | Self-repo UAT | `quickstart.md` Slice 1 UAT | Real TS/JS function returns matching library/CLI/MCP results and status counts. |
@@ -239,7 +242,8 @@ Verification gates for Slice 2:
 |---|---|---|
 | Focused Python semantics | `npx vitest run __tests__/analysis/cfg/cfg-python.test.ts` | Python uses the same block, edge, status, paging, and read result contract as TS/JS. |
 | Cross-language parity | `npx vitest run __tests__/analysis/cfg/cfg-contract.test.ts` | Equivalent TS/JS and Python fixtures satisfy the same state, ordering, pagination, and skip contracts. |
-| Performance | `npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` | Combined enabled CFG overhead remains `<= 1.20` paired median. |
+| Performance evidence | `CODEGRAPH_CFG_PERF_EVIDENCE=1 npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` | Combined enabled CFG overhead remains `<= 1.20` paired median with 2 warmup pairs and 10 measured pairs. |
+| Performance smoke | `CODEGRAPH_CFG_PERF_SMOKE=1 npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` | Non-authoritative smoke verifies benchmark shape and invariants; rerun evidence mode for PR timing evidence. |
 | Build and full suite | `npm run build` then `npm test` | Full repo remains green with Python parity enabled. |
 | Self-repo and fixture UAT | `quickstart.md` Slice 2 UAT | Self-repo TS/JS probe still passes and committed Python fixture proves parity. |
 
@@ -274,7 +278,9 @@ Benchmark method:
 - Arm A: `analysis.cfg=false` or absent.
 - Arm B: `analysis.cfg=true`.
 - Record benchmark identity before timing: repository commit, benchmark fixture path, fixture content hash or fixture commit, Node version, OS, architecture, CPU model, logical core count, total memory, storage root, command line, and CFG-related environment overrides.
-- Run at least 2 warmup pairs, then at least 10 measured pairs for PR evidence. CI may use a reduced smoke mode only with at least 5 measured pairs; a reduced run over `1.20` must rerun the 10-pair method before reporting a blocking failure.
+- Run `CODEGRAPH_CFG_PERF_EVIDENCE=1 npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` for authoritative PR evidence: 2 warmup pairs, then 10 measured pairs, with paired-median ratio `<= 1.20`.
+- Run `CODEGRAPH_CFG_PERF_SMOKE=1 npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` only as non-authoritative smoke: 2 warmup pairs and 5 measured pairs, validating benchmark shape and invariants without blocking on timing.
+- Plain `npx vitest run __tests__/analysis/cfg/cfg-performance.test.ts` skips the timed benchmark and keeps deterministic non-timing parser/cache coverage in normal suites.
 - Alternate arms by pair to reduce drift.
 - Clean `.codegraph/` between project materializations so the comparison measures index-time analysis, not cache residue.
 - Record every pair timing plus median(A), median(B), min/max, sample count, warmup count, and `median(B)/median(A)`. A single unpaired run cannot satisfy or fail the budget.

@@ -1,0 +1,60 @@
+{
+  "schema_version": "spec-014-full-verification.v1",
+  "feature_id": "SPEC-014",
+  "generated_at": "2026-07-26T11:11:53Z",
+  "verified_code_commit": "db97414f07e057a346f738a5b7fb6a9400f1ef31",
+  "process_head_commit": "663ae6fb40a098c08830e3a0c4fd1b3abcc1a72f",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "commands": [
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "evidence": "The final unrestricted post-review build exited zero."
+    },
+    {
+      "command": "npm run typecheck",
+      "status": "pass",
+      "evidence": "The final unrestricted post-review typecheck exited zero."
+    },
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-typescript.test.ts __tests__/analysis/cfg/cfg-lifecycle.test.ts __tests__/analysis/cfg/cfg-contract.test.ts __tests__/analysis/cfg/cfg-python.test.ts __tests__/analysis/cfg/cfg-performance.test.ts",
+      "status": "pass",
+      "evidence": "Five focused CFG files passed 107 tests with three explicit opt-in skips."
+    },
+    {
+      "command": "npm test",
+      "status": "pass",
+      "started_at": "2026-07-26T10:59:44Z",
+      "evidence": "The authoritative unrestricted suite passed 260 files and 4,655 tests; 15 files and 181 tests were skipped."
+    },
+    {
+      "command": "git diff --check",
+      "status": "pass",
+      "evidence": "No whitespace error was reported after the final backstop artifacts."
+    }
+  ],
+  "specialized_gates": {
+    "performance": {
+      "status": "pass",
+      "ratio": 1.159,
+      "maximum": 1.2
+    },
+    "retrieval_guardian": {
+      "status": "pass",
+      "findings": 0
+    },
+    "external_retrieval_ab": {
+      "status": "pass",
+      "authorization": "The operator explicitly authorized repository-derived CodeGraph context for Claude Sonnet.",
+      "evidence_path": "specs/014-control-flow-graphs/.process/evidence/t041-retrieval-ab.json"
+    },
+    "reviewability_backstop": {
+      "status": "marker_split",
+      "correctness_findings": 0,
+      "single_aggregate_pr_forbidden": true,
+      "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+    }
+  }
+}

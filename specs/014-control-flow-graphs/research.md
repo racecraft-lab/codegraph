@@ -76,4 +76,3 @@
 
 - No CFG-specific cap: rejected because a generated function could exhaust analysis resources.
 - Persist a capped prefix: rejected because SPEC-014 forbids usable partial CFGs.
-

@@ -107,7 +107,7 @@ export interface ProjectConfig {
 export interface AnalysisConfig {
   flows: boolean;
   clusters: boolean;
-  cfg?: boolean;
+  cfg: boolean;
 }
 
 /** Parsed, validated view of a project's `codegraph.json`. */

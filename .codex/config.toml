@@ -11,4 +11,9 @@
 [mcp_servers.codegraph]
 command = "node"
 args = ["-e", "let d=process.cwd();const p=require(`path`),f=require(`fs`);while(!f.existsSync(p.join(d,`scripts`,`mcp-dogfood.mjs`))&&d!==p.dirname(d))d=p.dirname(d);const s=p.join(d,`scripts`,`mcp-dogfood.mjs`);if(!f.existsSync(s)){console.error(`mcp-dogfood.mjs not found above `+process.cwd());process.exit(1)}import(require(`url`).pathToFileURL(s).href)"]
+# Codex runs project MCP servers in a workspace sandbox. Keep the dogfood
+# server in-process so it never needs the POSIX election lease under
+# ~/.codegraph, and use explicit `codegraph sync` because sandbox watcher
+# resources are not reliable.
+env = { CODEGRAPH_NO_DAEMON = "1", CODEGRAPH_NO_WATCH = "1" }
 startup_timeout_sec = 30

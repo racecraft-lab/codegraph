@@ -18,6 +18,7 @@ import CodeGraph, {
 import {
   buildCfgPage,
   deriveCfgSourceVersion,
+  makeCfgNotIndexedReadResult,
   makeCfgReadResult,
   normalizeCfgPageRequest,
   pageCfgGraph,
@@ -106,9 +107,9 @@ const graph: CfgGraph = {
   edges: [edge],
 };
 
-function runCfgCli(args: string[], cwd: string): { stderr: string; stdout: string; status: number | null } {
+function runBuiltCli(args: string[], cwd: string): { stderr: string; stdout: string; status: number | null } {
   if (!fs.existsSync(BIN)) throw new Error(`Build the project first: ${BIN} is missing (run npm run build).`);
-  const result = spawnSync(process.execPath, [BIN, 'cfg', ...args], {
+  const result = spawnSync(process.execPath, [BIN, ...args], {
     cwd,
     encoding: 'utf8',
     env: {
@@ -126,24 +127,12 @@ function runCfgCli(args: string[], cwd: string): { stderr: string; stdout: strin
   };
 }
 
+function runCfgCli(args: string[], cwd: string): { stderr: string; stdout: string; status: number | null } {
+  return runBuiltCli(['cfg', ...args], cwd);
+}
+
 function runStatusCli(args: string[], cwd: string): { stderr: string; stdout: string; status: number | null } {
-  if (!fs.existsSync(BIN)) throw new Error(`Build the project first: ${BIN} is missing (run npm run build).`);
-  const result = spawnSync(process.execPath, [BIN, 'status', ...args], {
-    cwd,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      CODEGRAPH_NO_DAEMON: '1',
-      CODEGRAPH_WASM_RELAUNCHED: '1',
-      NO_COLOR: '1',
-      NODE_NO_WARNINGS: '1',
-    },
-  });
-  return {
-    stderr: result.stderr,
-    stdout: result.stdout,
-    status: result.status,
-  };
+  return runBuiltCli(['status', ...args], cwd);
 }
 
 function parseCfgMcp(result: ToolResult): { body: CfgReadResult; isError: boolean } {
@@ -829,7 +818,7 @@ describe('SPEC-014 public CFG contract', () => {
     const def = tools.find((tool) => tool.name === 'codegraph_get_cfg');
     expect(def, 'codegraph_get_cfg must be a defined static MCP tool').toBeDefined();
     expect(def!.inputSchema.type).toBe('object');
-    expect(def!.inputSchema.required).toEqual(['projectPath', 'functionId']);
+    expect(def!.inputSchema.required).toEqual(['functionId']);
     expect(Object.keys(def!.inputSchema.properties).sort()).toEqual(['functionId', 'limit', 'offset', 'projectPath']);
     expect(def!.inputSchema.properties.projectPath.type).toBe('string');
     expect(def!.inputSchema.properties.functionId.type).toBe('string');
@@ -842,7 +831,7 @@ describe('SPEC-014 public CFG contract', () => {
     try {
       const listed = new ToolHandler(null).getTools().find((tool) => tool.name === 'codegraph_get_cfg');
       expect(listed, 'allowlisted static no-root tool surface must include codegraph_get_cfg').toBeDefined();
-      expect(listed!.inputSchema.required).toEqual(['projectPath', 'functionId']);
+      expect(listed!.inputSchema.required).toEqual(['functionId', 'projectPath']);
     } finally {
       if (previousAllowlist === undefined) delete process.env.CODEGRAPH_MCP_TOOLS;
       else process.env.CODEGRAPH_MCP_TOOLS = previousAllowlist;
@@ -881,6 +870,25 @@ describe('SPEC-014 public CFG contract', () => {
     expect(isCfgReadResult({ ...resultFor('available', null, true), cfg: { ...graph, analysis: 'flow' } })).toBe(false);
     expect(isCfgReadResult({ ...resultFor('available', null, true), cfg: { ...graph, functionId: 'fn:other' } })).toBe(false);
     expect(isCfgReadResult({ ...resultFor('available', null, true), cfg: { ...graph, sourceVersion: 'source:v2' } })).toBe(false);
+    expect(
+      isCfgReadResult({
+        ...resultFor('available', null, true),
+        cfg: {
+          ...graph,
+          blocks: [entry, { ...exit, spans: [{ ...exit.spans[0], startLine: 0 }] }],
+        },
+      })
+    ).toBe(false);
+    expect(
+      isCfgReadResult({
+        ...resultFor('available', null, true),
+        cfg: {
+          ...graph,
+          blocks: [entry, { ...exit, spans: [{ ...exit.spans[0], startLine: 2, endLine: 1 }] }],
+        },
+      })
+    ).toBe(false);
+    expect(isCfgReadResult({ ...resultFor('available', null, true), page: { ...page, limit: 0 } })).toBe(false);
     expect(
       isCfgReadResult({
         ...resultFor('available', null, true),
@@ -1190,14 +1198,110 @@ describe('SPEC-014 public CFG contract', () => {
     }
   });
 
-  it('returns exact MCP CFG JSON deep-equal to CodeGraph.getCfg for an available function', async () => {
+  it('keeps CFG parsers available when the built CLI indexes and first-enable syncs through parse workers', async () => {
+    const nodeMajor = Number.parseInt(process.versions.node.split('.')[0]!, 10);
+    expect(nodeMajor).toBeGreaterThanOrEqual(20);
+    expect(nodeMajor).toBeLessThan(25);
+
+    const expectBuiltCfgAvailable = (dir: string, functionId: string, language: string): CfgReadResult => {
+      const cliJson = runCfgCli([functionId, '-p', dir, '--json', '--limit', '500', '--offset', '0'], dir);
+      expect(cliJson.status).toBe(0);
+      expect(cliJson.stderr).toBe('');
+      const body = JSON.parse(cliJson.stdout) as CfgReadResult;
+      expect(isCfgReadResult(body)).toBe(true);
+      expect(body).toMatchObject({
+        functionId,
+        reason: null,
+        state: 'available',
+        stale: false,
+      });
+      expect(body.cfg?.language).toBe(language);
+      expect(body.cfg?.blocks.map((block) => block.role)).toContain('entry');
+      expect(body.cfg?.blocks.map((block) => block.role)).toContain('exit');
+      expect(body.page?.blocks.total).toBeGreaterThan(0);
+      expect(body.page?.edges.total).toBeGreaterThan(0);
+      return body;
+    };
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-built-worker-'));
+    dirs.push(dir);
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    writeCfgConfig(dir, true);
+    fs.writeFileSync(
+      path.join(dir, 'src', 'baseline.ts'),
+      [
+        'export function baselineScore(input: number): number {',
+        '  let total = input;',
+        '  if (input > 10) {',
+        '    total += 5;',
+        '  } else {',
+        '    total -= 1;',
+        '  }',
+        '  return total;',
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    const init = runBuiltCli(['init', dir, '--embeddings', 'off'], dir);
+    expect(init.status).toBe(0);
+    expect(init.stderr).toBe('');
+
+    const cg = await CodeGraph.open(dir);
+    try {
+      const db = (cg as unknown as { db: { getDb(): SqliteDatabase } }).db.getDb();
+      const functionId = functionIdForRequired(db, 'src/baseline.ts', 'baselineScore');
+      expectBuiltCfgAvailable(dir, functionId, 'typescript');
+    } finally {
+      cg.close();
+    }
+
+    const firstEnableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-built-first-enable-'));
+    dirs.push(firstEnableDir);
+    fs.mkdirSync(path.join(firstEnableDir, 'src'), { recursive: true });
+    writeCfgConfig(firstEnableDir, false);
+    fs.writeFileSync(
+      path.join(firstEnableDir, 'src', 'baseline.ts'),
+      [
+        'export function baselineScore(input: number): number {',
+        '  return input > 10 ? input + 5 : input - 1;',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    fs.copyFileSync(
+      path.join(PYTHON_FIXTURE_DIR, 'parity_baseline.py'),
+      path.join(firstEnableDir, 'src', 'parity_baseline.py'),
+    );
+
+    const disabledInit = runBuiltCli(['init', firstEnableDir, '--embeddings', 'off'], firstEnableDir);
+    expect(disabledInit.status).toBe(0);
+    expect(disabledInit.stderr).toBe('');
+    writeCfgConfig(firstEnableDir, true);
+
+    const firstEnableSync = runBuiltCli(['sync', firstEnableDir, '--embeddings', 'off'], firstEnableDir);
+    expect(firstEnableSync.status).toBe(0);
+    expect(firstEnableSync.stderr).toBe('');
+
+    const firstEnableCg = await CodeGraph.open(firstEnableDir);
+    try {
+      const db = (firstEnableCg as unknown as { db: { getDb(): SqliteDatabase } }).db.getDb();
+      const tsFunctionId = functionIdForRequired(db, 'src/baseline.ts', 'baselineScore');
+      const pythonFunctionId = functionIdForRequired(db, 'src/parity_baseline.py', 'branch_loop_parity');
+      expectBuiltCfgAvailable(firstEnableDir, tsFunctionId, 'typescript');
+      expectBuiltCfgAvailable(firstEnableDir, pythonFunctionId, 'python');
+    } finally {
+      firstEnableCg.close();
+    }
+  });
+
+  it('returns exact MCP CFG JSON from the default project when projectPath is omitted', async () => {
     await withCfgMcpTool(async () => {
-      const { cg, dir, functionId } = await createCliProject(dirs, true);
+      const { cg, functionId } = await createCliProject(dirs, true);
       try {
         const expected = cg.getCfg(functionId, { limit: 1, offset: 1 });
         const actual = parseCfgMcp(
           await new ToolHandler(cg).execute('codegraph_get_cfg', {
-            projectPath: dir,
             functionId,
             limit: 1,
             offset: 1,
@@ -1676,6 +1780,63 @@ describe('SPEC-014 public CFG contract', () => {
     expect(human.stdout).toContain('State:     not_indexed (project_not_indexed)');
   });
 
+  it('returns disabled CFG read results for explicitly disabled uninitialized projects', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-read-disabled-uninitialized-'));
+    dirs.push(dir);
+    writeCfgConfig(dir, false);
+    fs.writeFileSync(path.join(dir, 'app.ts'), 'export function disabledUninitialized(value: number): number { return value; }\n');
+
+    const functionId = 'function:cfg-disabled-uninitialized';
+    const expected = makeCfgReadResult({
+      functionId,
+      state: 'disabled',
+      reason: 'analysis_disabled',
+    });
+
+    const cliJson = runCfgCli([functionId, '-p', dir, '--json', '--limit', '1', '--offset', '0'], dir);
+    expect(cliJson.status).toBe(0);
+    expect(cliJson.stderr).toBe('');
+    const cliBody = JSON.parse(cliJson.stdout) as CfgReadResult;
+    expect(cliBody).toEqual(expected);
+    expect(Object.keys(cliBody).sort()).toEqual(TOP_LEVEL_KEYS);
+
+    const cliHuman = runCfgCli([functionId, '-p', dir, '--limit', '1', '--offset', '0'], dir);
+    expect(cliHuman.status).toBe(0);
+    expect(cliHuman.stderr).toBe('');
+    expectBoundedHumanSummary(cliHuman.stdout, expected);
+
+    await withCfgMcpTool(async () => {
+      const mcp = parseCfgMcp(
+        await new ToolHandler(null).execute('codegraph_get_cfg', {
+          projectPath: dir,
+          functionId,
+          limit: 1,
+          offset: 0,
+        }),
+      );
+      expect(mcp.isError).toBe(false);
+      expect(mcp.body).toEqual(expected);
+      expect(mcp.body.cfg).toBeNull();
+      expect(mcp.body.page).toBeNull();
+    });
+
+    const invalidWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-disabled-control-invalid-'));
+    dirs.push(invalidWorkspace);
+    const invalidCli = runCfgCli(['function:cfg-invalid', '-p', invalidWorkspace, '--json'], invalidWorkspace);
+    expect(invalidCli.status).not.toBe(0);
+    expect(invalidCli.stdout).toBe('');
+
+    const invalidMcp = await new ToolHandler(null).execute('codegraph_get_cfg', {
+      projectPath: invalidWorkspace,
+      functionId: 'function:cfg-invalid',
+    });
+    const invalidMcpBody = parseCfgMcp(invalidMcp);
+    expect(invalidMcpBody.isError).toBe(false);
+    expect(invalidMcpBody.body).toEqual(makeCfgNotIndexedReadResult('function:cfg-invalid'));
+    expect(invalidMcp.content[0]?.type).toBe('text');
+    expect(invalidMcp.content[0]?.text).not.toMatch(/\b(?:Read|Grep|Glob)\b/);
+  });
+
   it('keeps expected CFG read states exact across library, built CLI JSON/human, and MCP surfaces', async () => {
     const matrix: Array<{ state: CfgState; reason: CfgReason | null }> = [
       { state: 'disabled', reason: 'analysis_disabled' },
@@ -1735,7 +1896,11 @@ describe('SPEC-014 public CFG contract', () => {
       projectPath: invalidWorkspace,
       functionId: 'function:cfg-invalid',
     });
-    expect(invalidMcp.isError).toBe(true);
+    const invalidMcpBody = parseCfgMcp(invalidMcp);
+    expect(invalidMcpBody.isError).toBe(false);
+    expect(invalidMcpBody.body).toEqual(makeCfgNotIndexedReadResult('function:cfg-invalid'));
+    expect(invalidMcp.content[0]?.type).toBe('text');
+    expect(invalidMcp.content[0]?.text).not.toMatch(/\b(?:Read|Grep|Glob)\b/);
   }, 30_000);
 
   it('T037 proves mixed TypeScript and Python CFG read/status parity across library, CLI, and MCP surfaces', async () => {
@@ -2102,6 +2267,47 @@ describe('SPEC-014 public CFG contract', () => {
     }
   });
 
+  it('escapes ANSI, OSC, C0, and C1 controls in human CFG ids/messages while preserving JSON values', async () => {
+    const { cg, db, dir, functionId } = await createCliProject(dirs, true);
+    try {
+      const hostileFunctionId = `${functionId}:missing:\u001b[31mred\u001b[0m:\u001b]52;c;clipboard\u0007:\u009b31m`;
+      const human = runCfgCli([hostileFunctionId, '-p', dir, '--limit', '1'], dir);
+
+      expect(human.status).toBe(0);
+      expect(human.stderr).toBe('');
+      expect(human.stdout).toContain(
+        `functionId: ${functionId}:missing:\\x1b[31mred\\x1b[0m:\\x1b]52;c;clipboard\\x07:\\x9b31m`,
+      );
+      // Allow line feeds used to delimit the human report, but no executable terminal controls.
+      // eslint-disable-next-line no-control-regex
+      expect(human.stdout).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+
+      const json = runCfgCli([hostileFunctionId, '-p', dir, '--json', '--limit', '1'], dir);
+      expect(json.status).toBe(0);
+      expect(json.stderr).toBe('');
+      expect((JSON.parse(json.stdout) as CfgReadResult).functionId).toBe(hostileFunctionId);
+
+      const hostileMessage = 'message:\u001b[31mred\u001b[0m:\u001b]52;c;clipboard\u0007:\u009b31m';
+      db.prepare('UPDATE cfg_status SET message = ? WHERE function_id = ?').run(hostileMessage, functionId);
+
+      const messageHuman = runCfgCli([functionId, '-p', dir, '--limit', '1'], dir);
+      expect(messageHuman.status).toBe(0);
+      expect(messageHuman.stderr).toBe('');
+      expect(messageHuman.stdout).toContain(
+        'message: message:\\x1b[31mred\\x1b[0m:\\x1b]52;c;clipboard\\x07:\\x9b31m',
+      );
+      // eslint-disable-next-line no-control-regex
+      expect(messageHuman.stdout).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+
+      const messageJson = runCfgCli([functionId, '-p', dir, '--json', '--limit', '1'], dir);
+      expect(messageJson.status).toBe(0);
+      expect(messageJson.stderr).toBe('');
+      expect((JSON.parse(messageJson.stdout) as CfgReadResult).message).toBe(hostileMessage);
+    } finally {
+      cg.close();
+    }
+  });
+
   it('exits zero and shows state/reason for every expected CFG CLI state', async () => {
     const realStates = new Set<CfgState>();
 
@@ -2202,7 +2408,7 @@ describe('SPEC-014 public CFG contract', () => {
       'unsupported',
     ]);
     expect(ZERO_EXIT_STATE_TABLE.some((item) => item.state === 'not_indexed')).toBe(true);
-  });
+  }, 30_000);
 
   it('fails invalid CFG CLI paging and invalid projects with nonzero exits', async () => {
     const { cg, dir, functionId } = await createCliProject(dirs, true);
@@ -2217,6 +2423,26 @@ describe('SPEC-014 public CFG contract', () => {
       expect(invalidOffset.stdout).toBe('');
       expect(invalidOffset.stderr).toContain('Invalid --offset');
 
+      const hostileLimit = 'not-a-number:\u001b[31mred\u001b[0m:\u0007';
+      const invalidHostileLimit = runCfgCli([functionId, '-p', dir, '--limit', hostileLimit], dir);
+      expect(invalidHostileLimit.status).not.toBe(0);
+      expect(invalidHostileLimit.stdout).toBe('');
+      expect(invalidHostileLimit.stderr).toContain(
+        'Invalid --limit value "not-a-number:\\x1b[31mred\\x1b[0m:\\x07"',
+      );
+      // eslint-disable-next-line no-control-regex
+      expect(invalidHostileLimit.stderr).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+
+      const hostileOffset = 'not-a-number:\u001b]52;c;clipboard\u0007:\u009b31m';
+      const invalidHostileOffset = runCfgCli([functionId, '-p', dir, '--offset', hostileOffset], dir);
+      expect(invalidHostileOffset.status).not.toBe(0);
+      expect(invalidHostileOffset.stdout).toBe('');
+      expect(invalidHostileOffset.stderr).toContain(
+        'Invalid --offset value "not-a-number:\\x1b]52;c;clipboard\\x07:\\x9b31m"',
+      );
+      // eslint-disable-next-line no-control-regex
+      expect(invalidHostileOffset.stderr).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+
       const invalidUsage = runCfgCli(['--json'], dir);
       expect(invalidUsage.status).not.toBe(0);
       expect(invalidUsage.stdout).toBe('');
@@ -2227,6 +2453,17 @@ describe('SPEC-014 public CFG contract', () => {
       expect(invalidProject.status).not.toBe(0);
       expect(invalidProject.stdout).toBe('');
       expect(invalidProject.stderr).toContain('CodeGraph not initialized');
+
+      const hostileRoot = path.join(invalidRoot, 'hostile-\u001b]52;c;clipboard\u0007-\u009b31m');
+      fs.mkdirSync(hostileRoot);
+      const invalidHostileProject = runCfgCli([functionId, '-p', hostileRoot], invalidRoot);
+      expect(invalidHostileProject.status).not.toBe(0);
+      expect(invalidHostileProject.stdout).toBe('');
+      expect(invalidHostileProject.stderr).toContain(
+        'hostile-\\x1b]52;c;clipboard\\x07-\\x9b31m',
+      );
+      // eslint-disable-next-line no-control-regex
+      expect(invalidHostileProject.stderr).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
     } finally {
       cg.close();
     }
