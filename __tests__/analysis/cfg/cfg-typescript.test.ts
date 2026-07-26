@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { CodeGraph } from '../../../src/index';
-import { setCfgParserOverrideForTests } from '../../../src/analysis/cfg';
+import { setCfgParserOverrideForTests, type CfgGraph, type CfgReadResult } from '../../../src/analysis/cfg';
 
 type FixtureCase = {
   readonly fileName: string;
@@ -17,6 +17,7 @@ const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'tsjs');
 const tempDirs: string[] = [];
 const openGraphs: CodeGraph[] = [];
 const OVER_LIMIT_IF_COUNT = 5_001;
+const FINALLY_CLONE_LIMIT_RETURN_COUNT = 3_000;
 
 const FIXTURES: readonly FixtureCase[] = [
   {
@@ -86,6 +87,100 @@ function generatedOverLimitFunction(): string {
   }
   lines.push('  return total;', '}', '');
   return lines.join('\n');
+}
+
+function generatedFinallyCloneOverLimitFunction(): string {
+  const lines = [
+    'export function finallyCloneBlockLimit(input: number): number {',
+    '  try {',
+  ];
+  for (let index = 0; index < FINALLY_CLONE_LIMIT_RETURN_COUNT; index++) {
+    lines.push(`    if (input === ${index}) {`, `      return ${index};`, '    }');
+  }
+  lines.push(
+    '    return input;',
+    '  } finally {',
+    '    input += 1;',
+    '    input += 2;',
+    '  }',
+    '}',
+    '',
+  );
+  return lines.join('\n');
+}
+
+function createCfgProject(files: Readonly<Record<string, string>>): string {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-tsjs-'));
+  tempDirs.push(projectRoot);
+  fs.mkdirSync(path.join(projectRoot, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(projectRoot, 'codegraph.json'),
+    JSON.stringify({ analysis: { cfg: true } }, null, 2),
+  );
+
+  for (const [fileName, source] of Object.entries(files)) {
+    fs.writeFileSync(path.join(projectRoot, 'src', fileName), source);
+  }
+
+  return projectRoot;
+}
+
+async function indexFunctionResult(
+  fileName: string,
+  functionName: string,
+  source: string,
+): Promise<{ db: any; functionId: string; result: CfgReadResult }> {
+  const projectRoot = createCfgProject({ [fileName]: source });
+  const graph = await CodeGraph.init(projectRoot, { index: true });
+  openGraphs.push(graph);
+  const db = (graph as unknown as { db: { getDb(): any } }).db.getDb();
+  const functionRow = db
+    .prepare('SELECT id FROM nodes WHERE file_path = ? AND name = ?')
+    .get(`src/${fileName}`, functionName) as { id: string } | undefined;
+
+  expect(functionRow?.id).toBeTruthy();
+
+  const result = graph.getCfg(functionRow!.id, { limit: 100, offset: 0 });
+
+  return { db, functionId: functionRow!.id, result };
+}
+
+async function indexFunctionCfg(fileName: string, functionName: string, source: string): Promise<CfgGraph> {
+  const { functionId, result } = await indexFunctionResult(fileName, functionName, source);
+
+  expect(result).toMatchObject({
+    analysis: 'cfg',
+    functionId,
+    message: '',
+    reason: null,
+    sourceVersion: expect.stringMatching(/^cfgsrc:v1:/),
+    stale: false,
+    state: 'available',
+  });
+  expect(result.cfg).not.toBeNull();
+  expect(result.page).toEqual({
+    blocks: {
+      hasMore: false,
+      nextOffset: null,
+      returned: result.cfg!.blocks.length,
+      total: result.cfg!.blocks.length,
+    },
+    edges: {
+      hasMore: false,
+      nextOffset: null,
+      returned: result.cfg!.edges.length,
+      total: result.cfg!.edges.length,
+    },
+    limit: 100,
+    offset: 0,
+  });
+
+  return result.cfg!;
+}
+
+function edgeRolePaths(cfg: CfgGraph): string[] {
+  const blockLabels = new Map(cfg.blocks.map((block) => [block.id, `${block.ordinal}:${block.role}`]));
+  return cfg.edges.map((edge) => `${blockLabels.get(edge.source)} -${edge.kind}-> ${blockLabels.get(edge.target)}`);
 }
 
 describe('TypeScript/JavaScript CFG fixtures', () => {
@@ -297,6 +392,143 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     }
   });
 
+  it('persists the committed throw/finally fixture with path-precise pending transfers', async () => {
+    const source = fs.readFileSync(path.join(FIXTURE_DIR, 'throw-finally.js'), 'utf8');
+    const cfg = await indexFunctionCfg('throw-finally.js', 'throwFinally', source);
+
+    expect(cfg.blocks.map((block) => block.role)).toEqual([
+      'entry',
+      'body',
+      'condition',
+      'body',
+      'body',
+      'body',
+      'body',
+      'body',
+      'body',
+      'exit',
+    ]);
+    expect(edgeRolePaths(cfg)).toEqual([
+      '0:entry -fallthrough-> 1:body',
+      '1:body -fallthrough-> 2:condition',
+      '2:condition -true-> 3:body',
+      '2:condition -false-> 4:body',
+      '3:body -finally-> 5:body',
+      '4:body -finally-> 7:body',
+      '5:body -fallthrough-> 6:body',
+      '6:body -throw-> 9:exit',
+      '7:body -fallthrough-> 8:body',
+      '8:body -return-> 9:exit',
+    ]);
+    expect(cfg.edges.filter((edge) => edge.kind === 'throw')).toHaveLength(1);
+    expect(cfg.edges.filter((edge) => edge.kind === 'finally')).toHaveLength(2);
+    expect(cfg.blocks.filter((block) => block.role === 'entry')).toHaveLength(1);
+    expect(cfg.blocks.filter((block) => block.role === 'exit')).toHaveLength(1);
+  });
+
+  it('materializes an empty finally block so pending transfers still enter finally', async () => {
+    const cfg = await indexFunctionCfg(
+      'empty-finally.ts',
+      'emptyFinallyStillRuns',
+      [
+        'export function emptyFinallyStillRuns(value: number): number {',
+        '  try {',
+        '    return value;',
+        '  } finally {',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    expect(cfg.blocks.map((block) => block.role)).toEqual(['entry', 'body', 'body', 'exit']);
+    expect(edgeRolePaths(cfg)).toEqual([
+      '0:entry -fallthrough-> 1:body',
+      '1:body -finally-> 2:body',
+      '2:body -return-> 3:exit',
+    ]);
+  });
+
+  it('lets a return in finally supersede a pending throw from try', async () => {
+    const cfg = await indexFunctionCfg(
+      'finally-return-overrides-throw.ts',
+      'finallyReturnOverridesThrow',
+      [
+        'export function finallyReturnOverridesThrow(value: number): number {',
+        '  try {',
+        "    throw new Error('boom');",
+        '  } finally {',
+        '    return value;',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    expect(cfg.blocks.map((block) => block.role)).toEqual(['entry', 'body', 'body', 'exit']);
+    expect(edgeRolePaths(cfg)).toEqual([
+      '0:entry -fallthrough-> 1:body',
+      '1:body -finally-> 2:body',
+      '2:body -return-> 3:exit',
+    ]);
+    expect(cfg.edges.filter((edge) => edge.kind === 'throw')).toHaveLength(0);
+    expect(cfg.edges.filter((edge) => edge.kind === 'return')).toHaveLength(1);
+  });
+
+  it('lets a throw in finally supersede a pending return from try', async () => {
+    const cfg = await indexFunctionCfg(
+      'finally-throw-overrides-return.ts',
+      'finallyThrowOverridesReturn',
+      [
+        'export function finallyThrowOverridesReturn(value: number): number {',
+        '  try {',
+        '    return value;',
+        '  } finally {',
+        "    throw new Error('cleanup');",
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    expect(cfg.blocks.map((block) => block.role)).toEqual(['entry', 'body', 'body', 'exit']);
+    expect(edgeRolePaths(cfg)).toEqual([
+      '0:entry -fallthrough-> 1:body',
+      '1:body -finally-> 2:body',
+      '2:body -throw-> 3:exit',
+    ]);
+    expect(cfg.edges.filter((edge) => edge.kind === 'return')).toHaveLength(0);
+    expect(cfg.edges.filter((edge) => edge.kind === 'throw')).toHaveLength(1);
+  });
+
+  it('persists resource_limited when finally cloning exceeds the block cap after estimation', async () => {
+    const { db, functionId, result } = await indexFunctionResult(
+      'finally-clone-limit.ts',
+      'finallyCloneBlockLimit',
+      generatedFinallyCloneOverLimitFunction(),
+    );
+
+    expect(result).toMatchObject({
+      analysis: 'cfg',
+      cfg: null,
+      functionId,
+      page: null,
+      reason: 'block_limit_exceeded',
+      sourceVersion: expect.stringMatching(/^cfgsrc:v1:/),
+      stale: false,
+      state: 'resource_limited',
+    });
+    expect(
+      db.prepare('SELECT state, reason FROM cfg_status WHERE function_id = ?').get(functionId),
+    ).toEqual({ state: 'resource_limited', reason: 'block_limit_exceeded' });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_blocks WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_edges WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
+  });
+
   it.each([
     {
       fileName: 'unsupported-language.go',
@@ -317,10 +549,10 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
       reason: 'unsupported_construct',
       source: [
         'export function unsupportedConstructSkip(input: number): number {',
-        '  if (input) {',
-        '    return input;',
+        '  for (let index = 0; index < input; index++) {',
+        '    input += index;',
         '  }',
-        '  return 0;',
+        '  return input;',
         '}',
         '',
       ].join('\n'),
@@ -356,6 +588,32 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
         'export function parseUnsafeSkip(input: number): number {',
         '  const total = ;',
         '  return input;',
+        '}',
+        '',
+      ].join('\n'),
+    },
+    {
+      fileName: 'deferred-expression-branch.ts',
+      functionName: 'deferredExpressionBranchSkip',
+      reason: 'unsupported_construct',
+      source: [
+        'export function deferredExpressionBranchSkip(input?: { count?: number; ready?: boolean }): number {',
+        '  const total = input?.ready && ((input.count ?? 0) > 0) ? input.count ?? 0 : 0;',
+        '  return total;',
+        '}',
+        '',
+      ].join('\n'),
+    },
+    {
+      fileName: 'deferred-if-condition.ts',
+      functionName: 'deferredIfConditionSkip',
+      reason: 'unsupported_construct',
+      source: [
+        'export function deferredIfConditionSkip(input: { count: number; ready: boolean }): number {',
+        '  if (input.ready && input.count > 0) {',
+        '    return input.count;',
+        '  }',
+        '  return 0;',
         '}',
         '',
       ].join('\n'),
