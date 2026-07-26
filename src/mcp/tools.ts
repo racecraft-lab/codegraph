@@ -64,7 +64,27 @@ export class NotIndexedError extends Error {}
  * retry guidance — abandoning this path is the desired agent reaction.
  */
 export class PathRefusalError extends Error {}
-import { resolve as resolvePath } from 'path';
+import { dirname as dirnamePath, parse as parsePath, resolve as resolvePath } from 'path';
+
+/**
+ * Find the nearest committed project config for an unindexed path.
+ *
+ * `projectPath` accepts any directory inside a project. When no `.codegraph/`
+ * exists yet, the index-root resolver cannot tell us which ancestor owns the
+ * activation policy, so mirror its upward walk using `codegraph.json`.
+ */
+function findNearestProjectConfigRoot(startPath: string): string | null {
+  let current = resolvePath(startPath);
+  const root = parsePath(current).root;
+
+  while (true) {
+    if (existsSync(resolvePath(current, PROJECT_CONFIG_FILENAME))) {
+      return current;
+    }
+    if (current === root) return null;
+    current = dirnamePath(current);
+  }
+}
 
 /**
  * The four accepted `codegraph_search` retrieval modes. The MCP surface default
@@ -1895,11 +1915,12 @@ export class ToolHandler {
       cg = this.getCodeGraph(projectPath);
     } catch (err) {
       if (err instanceof NotIndexedError) {
-        if (projectPath && loadAnalysisConfig(projectPath).cfg === true) {
-          const { makeCfgNotIndexedReadResult } = await import('../analysis/cfg');
-          return this.textResult(JSON.stringify(makeCfgNotIndexedReadResult(functionId), null, 2));
-        }
-        if (projectPath && existsSync(resolvePath(projectPath, PROJECT_CONFIG_FILENAME))) {
+        const configRoot = projectPath ? findNearestProjectConfigRoot(projectPath) : null;
+        if (configRoot) {
+          if (loadAnalysisConfig(configRoot).cfg === true) {
+            const { makeCfgNotIndexedReadResult } = await import('../analysis/cfg');
+            return this.textResult(JSON.stringify(makeCfgNotIndexedReadResult(functionId), null, 2));
+          }
           const { makeCfgDisabledReadResult } = await import('../analysis/cfg');
           return this.textResult(JSON.stringify(makeCfgDisabledReadResult(functionId), null, 2));
         }

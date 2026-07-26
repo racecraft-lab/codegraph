@@ -1837,6 +1837,43 @@ describe('SPEC-014 public CFG contract', () => {
     expect(invalidMcp.content[0]?.text).not.toMatch(/\b(?:Read|Grep|Glob)\b/);
   });
 
+  it('resolves unindexed CFG activation from the nearest ancestor config for nested project paths', async () => {
+    const cases = [
+      {
+        cfgEnabled: false,
+        expected: makeCfgReadResult({
+          functionId: 'function:cfg-nested-disabled',
+          state: 'disabled',
+          reason: 'analysis_disabled',
+        }),
+        functionId: 'function:cfg-nested-disabled',
+      },
+      {
+        cfgEnabled: true,
+        expected: makeCfgNotIndexedReadResult('function:cfg-nested-enabled'),
+        functionId: 'function:cfg-nested-enabled',
+      },
+    ];
+
+    for (const { cfgEnabled, expected, functionId } of cases) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), `cg-cfg-nested-config-${cfgEnabled}-`));
+      dirs.push(dir);
+      writeCfgConfig(dir, cfgEnabled);
+      const nested = path.join(dir, 'src', 'nested');
+      fs.mkdirSync(nested, { recursive: true });
+
+      const mcp = parseCfgMcp(
+        await new ToolHandler(null).execute('codegraph_get_cfg', {
+          projectPath: nested,
+          functionId,
+        }),
+      );
+
+      expect(mcp.isError).toBe(false);
+      expect(mcp.body).toEqual(expected);
+    }
+  });
+
   it('keeps expected CFG read states exact across library, built CLI JSON/human, and MCP surfaces', async () => {
     const matrix: Array<{ state: CfgState; reason: CfgReason | null }> = [
       { state: 'disabled', reason: 'analysis_disabled' },
