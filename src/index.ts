@@ -113,7 +113,7 @@ import {
 import { applyRename as deriveApplyRename } from './refactor/apply-engine';
 import { planRename as derivePlanRename } from './refactor/plan-engine';
 import type { ApplyResult, RenamePlan, TargetSelector } from './refactor/types';
-import { loadAnalysisConfig } from './project-config';
+import { loadAnalysisConfig, type AnalysisConfig } from './project-config';
 import {
   maybeRunCatalogAnalysis,
   readClusterList,
@@ -148,6 +148,16 @@ export {
   type DegradationCondition,
   type SearchNodesDetailed,
 } from './search/hybrid';
+export {
+  isCfgReadResult,
+  type CfgBlock,
+  type CfgEdge,
+  type CfgGraph,
+  type CfgPage,
+  type CfgReadResult,
+  type CfgReason,
+  type CfgState,
+} from './analysis/cfg';
 // SPEC-018 LLM access layer (slice 1): the `generate()` seam + its public types, and the
 // network-free `LlmStatus` snapshot `getLlmStatus()` returns. Re-exported from the package entry so
 // library/CLI consumers reach them without a deep `src/llm/*` import (mirrors the embeddings status
@@ -1188,10 +1198,12 @@ export class CodeGraph {
         // try/catch is belt-and-braces over that internal swallow.
         if (result.success) {
           try {
+            const analysisConfig = loadAnalysisConfig(this.projectRoot);
+            this.maybeRunCfgAnalysis(analysisConfig, options.signal);
             await maybeRunCatalogAnalysis(
               this.catalogAnalysisGraph(),
               this.db.getDb(),
-              loadAnalysisConfig(this.projectRoot),
+              analysisConfig,
               options.signal,
             );
           } catch (err) {
@@ -1411,6 +1423,12 @@ export class CodeGraph {
       watch,
     });
     this.queries.setMetadata(LSP_STATUS_METADATA_KEY, serializeLspStatus(status));
+  }
+
+  private maybeRunCfgAnalysis(config: AnalysisConfig, signal?: AbortSignal): void {
+    if (signal?.aborted || config.cfg !== true) return;
+    // CFG lowering/backfill is introduced by later SPEC-014 tasks. T006 only
+    // wires the opt-in gate so disabled projects stay fully dormant.
   }
 
   /**
@@ -1742,10 +1760,12 @@ export class CodeGraph {
         // fail a sync. The watcher and daemon drive this same sync(), inheriting the
         // pass with no extra wiring. The wrapping try/catch is belt-and-braces.
         try {
+          const analysisConfig = loadAnalysisConfig(this.projectRoot);
+          this.maybeRunCfgAnalysis(analysisConfig, options.signal);
           await maybeRunCatalogAnalysis(
             this.catalogAnalysisGraph(),
             this.db.getDb(),
-            loadAnalysisConfig(this.projectRoot),
+            analysisConfig,
             options.signal,
           );
         } catch (err) {

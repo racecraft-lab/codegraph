@@ -4,8 +4,8 @@
  * Constitution VII: new SQL ships only because `copy-assets` copies
  * `src/db/schema.sql` into `dist/db/schema.sql`. This proves (a) the shipped
  * asset carries the new DDL, (b) a fresh DB (schema.sql path) and (c) a migrated
- * DB (v9 → v10 path) both gain the tables + sort indexes, with byte-equivalent
- * table shapes across the two paths (data-model.md).
+ * DB (v9 → current path) both gain the SPEC-011 tables + sort indexes, with
+ * byte-equivalent table shapes across the two paths (data-model.md).
  *
  * Real SQLite in temp dirs (no mocking), per repo convention.
  */
@@ -58,8 +58,8 @@ describe('SPEC-011 catalog schema ships + migrates in lockstep', () => {
     while (dirs.length) fs.rmSync(dirs.pop()!, { recursive: true, force: true });
   });
 
-  it('CURRENT_SCHEMA_VERSION derives to 10', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(10);
+  it('CURRENT_SCHEMA_VERSION includes later schema migrations after SPEC-011 v10', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(11);
   });
 
   it('a fresh DB (schema.sql path) has all five catalog tables + sort indexes', () => {
@@ -74,7 +74,7 @@ describe('SPEC-011 catalog schema ships + migrates in lockstep', () => {
     for (const idx of CATALOG_INDEXES) expect(indexes.has(idx)).toBe(true);
   });
 
-  it('migrating a v9 DB to v10 creates the same tables + indexes (no cascade to shred them)', () => {
+  it('migrating a v9 DB through current schema creates the SPEC-011 tables + indexes', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-ship-mig-'));
     dirs.push(dir);
     const { db } = createDatabase(path.join(dir, 'codegraph.db'));
@@ -90,14 +90,14 @@ describe('SPEC-011 catalog schema ships + migrates in lockstep', () => {
 
     runMigrations(db, 9);
 
-    expect(getCurrentVersion(db)).toBe(10);
+    expect(getCurrentVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
     const after = objectNames(db, 'table');
     for (const t of CATALOG_TABLES) expect(after.has(t)).toBe(true);
     const indexes = objectNames(db, 'index');
     for (const idx of CATALOG_INDEXES) expect(indexes.has(idx)).toBe(true);
   });
 
-  it('schema.sql and the v10 migration define byte-equivalent table shapes', () => {
+  it('schema.sql and the migration path from v9 define byte-equivalent SPEC-011 table shapes', () => {
     // Fresh (schema.sql) DB.
     const initDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-ship-shape-init-'));
     dirs.push(initDir);
@@ -105,7 +105,7 @@ describe('SPEC-011 catalog schema ships + migrates in lockstep', () => {
     conns.push(conn);
     const initDb = conn.getDb();
 
-    // Migrated (v9 → v10) DB.
+    // Migrated (v9 → current) DB.
     const migDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-ship-shape-mig-'));
     dirs.push(migDir);
     const { db: migDb } = createDatabase(path.join(migDir, 'codegraph.db'));

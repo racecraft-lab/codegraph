@@ -309,3 +309,106 @@ CREATE INDEX IF NOT EXISTS idx_flows_name ON flows(name, id);
 CREATE INDEX IF NOT EXISTS idx_flow_steps_flow ON flow_steps(flow_id);
 CREATE INDEX IF NOT EXISTS idx_clusters_sort ON clusters(member_count DESC, canonical_label, id);
 CREATE INDEX IF NOT EXISTS idx_cluster_members_cluster ON cluster_members(cluster_id);
+
+-- =============================================================================
+-- SPEC-014 — Control-flow graph status, blocks, and edges
+-- =============================================================================
+-- CFG rows are keyed by function id and keep file/language/span metadata by
+-- value. They deliberately do not reference nodes(id): sync deletes and
+-- reinserts node rows, while CFG reads still need stale/deleted status to be
+-- derivable. Cascades are only within CFG-owned tables.
+CREATE TABLE IF NOT EXISTS cfg_status (
+    function_id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    language TEXT NOT NULL,
+    function_kind TEXT NOT NULL,
+    function_name TEXT NOT NULL,
+    start_line INTEGER NOT NULL CHECK (start_line > 0),
+    start_column INTEGER NOT NULL CHECK (start_column >= 0),
+    end_line INTEGER NOT NULL CHECK (end_line >= start_line),
+    end_column INTEGER NOT NULL CHECK (end_column >= 0),
+    state TEXT NOT NULL CHECK (state IN ('available', 'unavailable', 'unsupported', 'resource_limited', 'deleted')),
+    reason TEXT CHECK (
+        reason IS NULL OR reason IN (
+            'analysis_disabled',
+            'project_not_indexed',
+            'cfg_not_computed',
+            'function_unknown',
+            'function_deleted',
+            'unsupported_language',
+            'unsupported_construct',
+            'parse_error',
+            'parse_unsafe_region',
+            'parser_unavailable',
+            'block_limit_exceeded',
+            'first_refresh_failed',
+            'refresh_failed_retained_stale',
+            'source_version_mismatch',
+            'no_current_cfg_functions'
+        )
+    ),
+    message TEXT CHECK (message IS NULL OR length(message) <= 240),
+    source_version TEXT CHECK (state <> 'deleted' OR source_version IS NULL),
+    status_version INTEGER NOT NULL CHECK (status_version > 0),
+    block_version INTEGER NOT NULL CHECK (block_version > 0),
+    edge_version INTEGER NOT NULL CHECK (edge_version > 0),
+    schema_version INTEGER NOT NULL CHECK (schema_version > 0),
+    updated_at INTEGER NOT NULL,
+    CHECK (
+        (state = 'available' AND reason IS NULL)
+        OR (state <> 'available' AND reason IS NOT NULL)
+    )
+);
+
+CREATE TABLE IF NOT EXISTS cfg_blocks (
+    function_id TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    role TEXT NOT NULL CHECK (role IN ('entry', 'exit', 'body', 'condition', 'merge', 'unreachable')),
+    spans_json TEXT NOT NULL,
+    PRIMARY KEY (function_id, block_id),
+    FOREIGN KEY (function_id) REFERENCES cfg_status(function_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cfg_edges (
+    function_id TEXT NOT NULL,
+    edge_ordinal INTEGER NOT NULL CHECK (edge_ordinal >= 0),
+    source_block_id TEXT NOT NULL,
+    target_block_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('fallthrough', 'true', 'false', 'case', 'default', 'loop_back', 'return', 'throw', 'break', 'continue', 'finally')),
+    FOREIGN KEY (function_id) REFERENCES cfg_status(function_id) ON DELETE CASCADE,
+    FOREIGN KEY (function_id, source_block_id) REFERENCES cfg_blocks(function_id, block_id) ON DELETE CASCADE,
+    FOREIGN KEY (function_id, target_block_id) REFERENCES cfg_blocks(function_id, block_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cfg_status_file_path ON cfg_status(file_path);
+CREATE INDEX IF NOT EXISTS idx_cfg_status_source_version ON cfg_status(source_version);
+CREATE INDEX IF NOT EXISTS idx_cfg_status_state ON cfg_status(state);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cfg_blocks_function_ordinal ON cfg_blocks(function_id, ordinal);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cfg_edges_function_ordinal ON cfg_edges(function_id, edge_ordinal);
+
+CREATE TRIGGER IF NOT EXISTS cfg_blocks_require_available_status_insert
+BEFORE INSERT ON cfg_blocks
+FOR EACH ROW
+WHEN (SELECT state FROM cfg_status WHERE function_id = NEW.function_id) <> 'available'
+BEGIN
+    SELECT RAISE(ABORT, 'cfg blocks require available status');
+END;
+
+CREATE TRIGGER IF NOT EXISTS cfg_blocks_require_available_status_update
+BEFORE UPDATE OF function_id ON cfg_blocks
+FOR EACH ROW
+WHEN (SELECT state FROM cfg_status WHERE function_id = NEW.function_id) <> 'available'
+BEGIN
+    SELECT RAISE(ABORT, 'cfg blocks require available status');
+END;
+
+CREATE TRIGGER IF NOT EXISTS cfg_status_reject_non_available_payload_update
+BEFORE UPDATE OF state ON cfg_status
+FOR EACH ROW
+WHEN NEW.state <> 'available' AND EXISTS (
+    SELECT 1 FROM cfg_blocks WHERE function_id = NEW.function_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'cfg non-available status cannot retain blocks');
+END;

@@ -22,6 +22,7 @@ import {
 import { cleanupSeeds, edge, file, freshSeed, node, type SeedHandle } from '../flows/helpers';
 
 const OFF = { flows: false, clusters: false };
+const ANALYSIS_OFF = { flows: false, clusters: false, cfg: false };
 const CATALOG_TABLES = ['flows', 'flow_steps', 'clusters', 'cluster_members', 'catalog_meta'] as const;
 
 function countRows(h: SeedHandle, table: string): number {
@@ -111,26 +112,26 @@ describe('catalog dormancy — both flags off (T051, FR-025/SC-007)', () => {
 
     // No config file at all → default off.
     clearProjectConfigCache();
-    expect(loadAnalysisConfig(dir)).toEqual({ flows: false, clusters: false });
+    expect(loadAnalysisConfig(dir)).toEqual(ANALYSIS_OFF);
 
     // Config present but no `analysis` block → default off.
     fs.writeFileSync(cfg, JSON.stringify({ lsp: { enabled: true } }));
     clearProjectConfigCache();
-    expect(loadAnalysisConfig(dir)).toEqual({ flows: false, clusters: false });
+    expect(loadAnalysisConfig(dir)).toEqual(ANALYSIS_OFF);
 
     // Non-true values (false, truthy-but-non-boolean) never enable.
     fs.writeFileSync(cfg, JSON.stringify({ analysis: { flows: false, clusters: 'yes' } }));
     clearProjectConfigCache();
-    expect(loadAnalysisConfig(dir)).toEqual({ flows: false, clusters: false });
+    expect(loadAnalysisConfig(dir)).toEqual(ANALYSIS_OFF);
 
     // A literal true enables each catalog independently.
     fs.writeFileSync(cfg, JSON.stringify({ analysis: { flows: true } }));
     clearProjectConfigCache();
-    expect(loadAnalysisConfig(dir)).toEqual({ flows: true, clusters: false });
+    expect(loadAnalysisConfig(dir)).toEqual({ flows: true, clusters: false, cfg: false });
 
     fs.writeFileSync(cfg, JSON.stringify({ analysis: { flows: true, clusters: true } }));
     clearProjectConfigCache();
-    expect(loadAnalysisConfig(dir)).toEqual({ flows: true, clusters: true });
+    expect(loadAnalysisConfig(dir)).toEqual({ flows: true, clusters: true, cfg: false });
   });
 });
 

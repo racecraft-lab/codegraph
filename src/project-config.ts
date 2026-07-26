@@ -60,11 +60,11 @@ export interface ProjectConfig {
    */
   lsp?: unknown;
   /**
-   * SPEC-011 per-catalog opt-in flags. Each catalog (execution flows, functional
-   * clusters) is independently enabled here; absent/omitted is the default-off
-   * dormant state (FR-024/025). A not-opted-in project pays nothing.
+   * Per-analysis opt-in flags. Each analysis is independently enabled here;
+   * absent/omitted is the default-off dormant state. A not-opted-in project pays
+   * nothing.
    */
-  analysis?: { flows?: boolean; clusters?: boolean };
+  analysis?: { flows?: boolean; clusters?: boolean; cfg?: boolean };
   /**
    * Gitignore-style patterns for first-party source to force INTO the index even
    * when `.gitignore` would drop it — the general whitelist `includeIgnored`
@@ -85,6 +85,7 @@ export interface ProjectConfig {
 export interface AnalysisConfig {
   flows: boolean;
   clusters: boolean;
+  cfg?: boolean;
 }
 
 /** Parsed, validated view of a project's `codegraph.json`. */
@@ -112,7 +113,7 @@ const cache = new Map<string, CacheEntry>();
 
 /** Shared frozen empties so the no-config path allocates nothing. */
 const EMPTY_EXTENSIONS: Record<string, Language> = Object.freeze({});
-const EMPTY_ANALYSIS: AnalysisConfig = Object.freeze({ flows: false, clusters: false });
+const EMPTY_ANALYSIS: AnalysisConfig = Object.freeze({ flows: false, clusters: false, cfg: false });
 const EMPTY_CONFIG: ParsedConfig = Object.freeze({
   extensions: EMPTY_EXTENSIONS,
   includeIgnored: Object.freeze([]) as unknown as string[],
@@ -188,16 +189,17 @@ function parseConfig(file: string): ParsedConfig {
 }
 
 /**
- * Validate the SPEC-011 `analysis` opt-in flags. Only a literal `true` enables a
- * catalog; any other value (absent, false, non-boolean) is default-off (FR-024).
- * Never throws — a malformed value degrades to disabled.
+ * Validate the `analysis` opt-in flags. Only a literal `true` enables an
+ * analysis; any other value (absent, false, non-boolean) is default-off. Never
+ * throws — a malformed value degrades to disabled.
  */
 function extractAnalysis(parsed: object): AnalysisConfig {
   const raw = (parsed as ProjectConfig).analysis;
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return EMPTY_ANALYSIS;
   const flows = (raw as { flows?: unknown }).flows === true;
   const clusters = (raw as { clusters?: unknown }).clusters === true;
-  return flows || clusters ? { flows, clusters } : EMPTY_ANALYSIS;
+  const cfg = (raw as { cfg?: unknown }).cfg === true;
+  return flows || clusters || cfg ? { flows, clusters, cfg } : EMPTY_ANALYSIS;
 }
 
 /**
@@ -375,9 +377,8 @@ export function loadLspProjectConfig(rootDir: string): unknown {
 }
 
 /**
- * Load the SPEC-011 per-catalog opt-in flags for a project, mtime-cached. Both
- * default to `false` (dormant) when there is no `codegraph.json` or no `analysis`
- * block (FR-024/025).
+ * Load the analysis opt-in flags for a project, mtime-cached. Flags default to
+ * `false` (dormant) when there is no `codegraph.json` or no `analysis` block.
  */
 export function loadAnalysisConfig(rootDir: string): AnalysisConfig {
   return loadParsedConfig(rootDir).analysis;

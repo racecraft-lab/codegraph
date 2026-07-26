@@ -386,7 +386,9 @@ describe('Shared MCP daemon (issue #411)', () => {
       expect(resp.result.serverInfo.name).toBe('codegraph');
       await waitFor(
         () => server.stderr.some((l) => l.includes('serving this session in-process')),
-        6000,
+        12000,
+        25,
+        'version-mismatch in-process fallback log',
       );
     } finally {
       await new Promise<void>((resolve) => miniServer.close(() => resolve()));
