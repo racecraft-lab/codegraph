@@ -37,7 +37,7 @@ export function deriveProjectConfigRevision(rootDir: string): string {
   const file = path.resolve(rootDir, PROJECT_CONFIG_FILENAME);
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const descriptor = fs.openSync(file, 'r');
+      const descriptor = fs.openSync(file, 'r', 0o600);
       try {
         const before = fs.fstatSync(descriptor, { bigint: true });
         const identity = projectConfigStatIdentity(before);
