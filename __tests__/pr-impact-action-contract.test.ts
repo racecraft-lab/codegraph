@@ -229,6 +229,7 @@ describe('PR impact action contract', () => {
   it('does not mutate .gitignore when a cache init cannot safely snapshot it', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pr-impact-gitignore-read-fail-'));
     try {
+      const codegraphPath = path.join(tmp, '.codegraph');
       const calls: Array<{ command: string; args: string[] }> = [];
       const removes: string[] = [];
       const result = await runAction({
@@ -237,6 +238,7 @@ describe('PR impact action contract', () => {
           INPUT_NARRATIVE: 'off',
           GITHUB_OUTPUT: path.join(tmp, 'outputs.txt'),
           PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
+          PR_IMPACT_CODEGRAPH_PATH: codegraphPath,
         },
         stdout: { write: () => true },
         stderr: { write: () => true },

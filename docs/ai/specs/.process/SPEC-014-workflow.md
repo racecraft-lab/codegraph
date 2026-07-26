@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T015 complete; Slice 1 / US1 Library CFG (T016) is active. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T016 complete; Slice 1 / US2 Lifecycle (T017) is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -186,9 +186,28 @@ configured HAL endpoint. The approved recovery completed:
   `tools/list` returned `codegraph_explore`. The current Codex desktop process
   has that NVM runtime ahead of Homebrew Node 26 on its inherited PATH.
 
-Bootstrap is complete. Autopilot must still start in a **new Codex task rooted
-at this SPEC-014 worktree** because the current task remains attached to the
-outer detached checkout and cannot dynamically replace its MCP tool surface.
+On 2026-07-25 the live index unexpectedly reported `initialized: false`. The
+authoritative suite reproduced the root cause: two PR-impact fixtures consulted
+the real worktree `.codegraph`, and one invalid-cache path recursively removed
+it. Those fixtures now use isolated temporary index paths. Their focused suite
+passed 29/29; the authoritative suite then passed with the live index present,
+and the index survived.
+
+The dogfood index was rebuilt and synchronized after that repair. With the main
+checkout environment loaded, final health showed 898 files, 15,869 nodes,
+67,115 edges, extraction version 24 current, zero pending changes or references,
+embedding coverage 10,191/10,191 (100%), and hybrid search available. A live
+hybrid query returned CFG boundary implementation results, and the exact MCP
+launcher returned three tools including `codegraph_explore`. Without the
+embedding environment loaded, structural status remains healthy but hybrid
+search correctly reports that no provider is configured.
+
+Bootstrap is healthy. This already-open Codex task remains attached to the
+outer checkout and cannot dynamically replace its MCP tool surface, so commands
+and agents continue under the operator-approved nested execution root. A
+remaining deployment risk is that the configured HAL embedding endpoint uses
+plaintext HTTP on a non-loopback host; source-derived query text crosses the
+local network without transport encryption.
 
 ### Agent and Preset Evidence
 
@@ -789,7 +808,7 @@ Before any completion or merge claim:
 
 | Slice | Scope | Tasks | Status |
 |---|---|---:|---|
-| 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | 🔄 In Progress — foundation complete; US1 active |
+| 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | 🔄 In Progress — foundation and US1 complete; US2 active |
 | 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | ⏳ Pending |
 
 ### Implementation Task Groups
@@ -798,8 +817,8 @@ Before any completion or merge claim:
 |---|---|---|
 | Setup and Reviewability Baseline | T001–T003 | ✅ Complete — fixture tests 2/2 green |
 | Foundational Contract and Storage | T004–T008 | ✅ Complete — focused CFG 16/16, build, and full Node 24 suite green |
-| Slice 1 / US1 Library CFG | T009–T016 | 🔄 In Progress — T009–T015 complete; T016 function boundaries/unreachable flow active |
-| Slice 1 / US2 Lifecycle | T017–T023 | ⏳ Pending |
+| Slice 1 / US1 Library CFG | T009–T016 | ✅ Complete — complete CFG directory 57/57, build, and full Node 24 suite green |
+| Slice 1 / US2 Lifecycle | T017–T023 | 🔄 In Progress — T017 first-enable empty-change backfill active |
 | Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ⏳ Pending |
 | Slice 2 / US4 Python Parity | T032–T038 | ⏳ Pending |
 | Polish, Gates, and Review Packet | T039–T043 | ⏳ Pending |
@@ -862,6 +881,23 @@ evaluation, while `for (;;)` exposes no synthetic false exit and non-loop
 continue labels stay unsupported. Parent-review regressions failed before each
 fix; the focused CFG/contract/lifecycle suites passed 50/50 and the Node 24
 build passed.
+
+T016 evidence (2026-07-25): exact indexed spans now disambiguate same-name
+outer and nested functions before name fallback; top-level arrows, function
+expressions, and local class methods are independently readable; and enclosing
+graphs record nested declaration/value creation without inlining nested control
+flow. Unreachable post-return and post-throw source persists as disconnected
+`unreachable` blocks, empty and `return undefined` functions contain only entry
+and exit, and nested resource limits do not consume the outer function budget.
+Six initial regressions plus three parent-review interactions failed before the
+fixes. The complete CFG directory passed 57/57, the Node 24 build passed, and
+the authoritative suite passed 258 files with 4594 tests passed and 178 skipped.
+
+US1 group gate (2026-07-25): all T009–T016 semantics passed independently,
+including the full repository gate under Node 24.11.1. The same gate also
+identified the dogfood index deletion described in Bootstrap Status; after
+temporary-path isolation, the full suite remained green with the live index
+present and no longer removed it.
 
 ---
 
