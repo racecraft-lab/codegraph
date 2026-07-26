@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T008 complete; Slice 1 / US1 Library CFG (T009–T016) is active. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T012 complete; Slice 1 / US1 Library CFG (T013–T016) is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -798,7 +798,7 @@ Before any completion or merge claim:
 |---|---|---|
 | Setup and Reviewability Baseline | T001–T003 | ✅ Complete — fixture tests 2/2 green |
 | Foundational Contract and Storage | T004–T008 | ✅ Complete — focused CFG 16/16, build, and full Node 24 suite green |
-| Slice 1 / US1 Library CFG | T009–T016 | 🔄 In Progress |
+| Slice 1 / US1 Library CFG | T009–T016 | 🔄 In Progress — T009–T012 complete; T013 throw/finally active |
 | Slice 1 / US2 Lifecycle | T017–T023 | ⏳ Pending |
 | Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ⏳ Pending |
 | Slice 2 / US4 Python Parity | T032–T038 | ⏳ Pending |
@@ -812,6 +812,32 @@ Node 24 build passed, and the authoritative full suite passed 258 files with
 4553 tests passed and 178 skipped. The full gate also exposed and remediated
 legacy schema/config expectations and one repeated daemon cold-parallel timeout
 budget before the group was closed.
+
+T009 evidence (2026-07-25): a real enabled TypeScript project now flows
+through tree-sitter parsing, a conservative linear IR/builder, atomic CFG-owned
+SQLite writes, and `CodeGraph.getCfg`. Explicit returns persist a `return`
+edge, unsupported nested semantics are not flattened, and cancellation cannot
+commit a partial transaction. The focused TypeScript/contract/lifecycle suites
+passed 16/16 and the Node 24 build passed.
+
+T010 evidence (2026-07-25): three unchanged index runs returned identical
+function, graph, and block IDs, deterministic block/edge ordering, and
+byte-equivalent serialized `getCfg` results. The characterization passed on its
+first run because T009 already satisfied the frozen determinism contract; 17
+focused CFG tests and the Node 24 build passed.
+
+T011 evidence (2026-07-25): out-of-scope Go functions, unsupported
+constructs, unavailable parsers, file-level parse errors, and parse-unsafe
+function regions now persist distinct stable skip reasons with zero blocks,
+zero edges, and no read payload. The focused CFG suites passed 22/22 and the
+Node 24 build passed.
+
+T012 evidence (2026-07-25): a generated 5,001-branch function now crosses
+the exact 10,000-basic-block safety threshold through iterative control-flow
+demand accounting. It persists `resource_limited` /
+`block_limit_exceeded` before generic skip handling and exposes no blocks,
+edges, or payload. The focused CFG suites passed 23/23 and the Node 24 build
+passed.
 
 ---
 

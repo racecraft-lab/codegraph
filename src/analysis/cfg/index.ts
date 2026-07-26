@@ -1,5 +1,12 @@
 import * as crypto from 'node:crypto';
-
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { Node as SyntaxNode, Tree } from 'web-tree-sitter';
+import { CURRENT_SCHEMA_VERSION } from '../../db/migrations';
+import type { SqliteDatabase } from '../../db/sqlite-adapter';
+import { getParser } from '../../extraction/grammars';
+import { getNodeText } from '../../extraction/tree-sitter-helpers';
+import type { Language } from '../../types';
 export type CfgState =
   | 'available'
   | 'disabled'
@@ -175,6 +182,89 @@ export interface MakeCfgReadResultInput {
   page?: CfgPage | null;
 }
 
+export interface RunCfgAnalysisInput {
+  projectRoot: string;
+  db: SqliteDatabase;
+  signal?: AbortSignal;
+}
+export interface ReadCfgInput {
+  db: SqliteDatabase;
+  functionId: string;
+  enabled: boolean;
+  request?: CfgPageRequest;
+  projectIndexed?: boolean;
+}
+interface CfgFunctionRow {
+  id: string;
+  file_path: string;
+  language: string;
+  kind: string;
+  name: string;
+  start_line: number;
+  start_column: number;
+  end_line: number;
+  end_column: number;
+  content_hash: string;
+}
+interface StoredCfgStatusRow {
+  function_id: string;
+  language: string;
+  state: StoredCfgState;
+  reason: CfgReason | null;
+  message: string | null;
+  source_version: string | null;
+  status_version: number;
+  block_version: number;
+  edge_version: number;
+}
+interface StoredCfgBlockRow {
+  block_id: string;
+  ordinal: number;
+  role: CfgBlock['role'];
+  spans_json: string;
+}
+
+interface StoredCfgEdgeRow {
+  source_block_id: string;
+  target_block_id: string;
+  kind: CfgEdge['kind'];
+}
+
+interface CfgBlockIr {
+  role: CfgBlock['role'];
+  spans: CfgBlock['spans'];
+}
+
+interface CfgEdgeIr {
+  sourceOrdinal: number;
+  targetOrdinal: number;
+  kind: CfgEdge['kind'];
+}
+
+interface CfgIr {
+  blocks: CfgBlockIr[];
+  edges: CfgEdgeIr[];
+}
+
+interface ParsedCfgFunction {
+  ok: true;
+  tree: Tree;
+  node: SyntaxNode;
+}
+
+interface CfgFunctionParseFailure {
+  ok: false;
+  state: Extract<CfgState, 'unavailable' | 'unsupported'>;
+  reason: Extract<CfgReason, 'first_refresh_failed' | 'parser_unavailable' | 'parse_error' | 'parse_unsafe_region'>;
+  message: string;
+}
+
+type CfgFunctionParseResult = ParsedCfgFunction | CfgFunctionParseFailure;
+
+type CfgParser = {
+  parse(source: string): Tree | null;
+};
+
 const CFG_STATES: ReadonlySet<string> = new Set([
   'available',
   'disabled',
@@ -241,6 +331,687 @@ const REASONS_BY_STATE: Record<CfgState, ReadonlySet<CfgReason | null>> = {
   unknown_function: new Set(['function_unknown']),
   deleted: new Set(['function_deleted']),
 };
+
+const CFG_TSJS_LANGUAGES = ['typescript', 'tsx', 'javascript', 'jsx'] as const;
+const CFG_TSJS_LANGUAGE_SET: ReadonlySet<string> = new Set(CFG_TSJS_LANGUAGES);
+const CFG_FUNCTION_KINDS = ['function', 'method'] as const;
+const CFG_BASIC_BLOCK_LIMIT = 10_000;
+const CFG_TSJS_FUNCTION_NODE_TYPES: ReadonlySet<string> = new Set([
+  'function_declaration',
+  'method_definition',
+]);
+const LINEAR_BODY_STATEMENT_TYPES: ReadonlySet<string> = new Set([
+  'empty_statement',
+  'expression_statement',
+  'lexical_declaration',
+  'return_statement',
+  'variable_declaration',
+]);
+const LINEAR_DESCENDANT_TYPES: ReadonlySet<string> = new Set([
+  ...LINEAR_BODY_STATEMENT_TYPES,
+  'false',
+  'identifier',
+  'null',
+  'number',
+  'property_identifier',
+  'string',
+  'string_fragment',
+  'true',
+  'undefined',
+  'variable_declarator',
+]);
+const CFG_COMMENT_NODE_TYPES: ReadonlySet<string> = new Set([
+  'comment',
+  'line_comment',
+  'block_comment',
+]);
+const UNSUPPORTED_LINEAR_DESCENDANT_TYPES: ReadonlySet<string> = new Set([
+  'arrow_function',
+  'break_statement',
+  'case_statement',
+  'catch_clause',
+  'class_declaration',
+  'continue_statement',
+  'do_statement',
+  'else_clause',
+  'finally_clause',
+  'for_in_statement',
+  'for_statement',
+  'function_declaration',
+  'function_expression',
+  'generator_function',
+  'generator_function_declaration',
+  'if_statement',
+  'labeled_statement',
+  'method_definition',
+  'switch_statement',
+  'throw_statement',
+  'try_statement',
+  'while_statement',
+  'with_statement',
+  'yield_expression',
+]);
+const CFG_CONSERVATIVE_BLOCK_DEMAND: ReadonlyMap<string, number> = new Map([
+  ['break_statement', 1],
+  ['case_statement', 2],
+  ['catch_clause', 1],
+  ['continue_statement', 1],
+  ['do_statement', 4],
+  ['else_clause', 1],
+  ['finally_clause', 1],
+  ['for_in_statement', 4],
+  ['for_statement', 4],
+  ['if_statement', 2],
+  ['return_statement', 1],
+  ['switch_statement', 2],
+  ['throw_statement', 1],
+  ['try_statement', 3],
+  ['while_statement', 4],
+]);
+
+const cfgParserOverridesForTests = new Map<string, CfgParser | null>();
+
+export function setCfgParserOverrideForTests(language: string, parser: CfgParser | null | undefined): void {
+  if (parser === undefined) {
+    cfgParserOverridesForTests.delete(language);
+    return;
+  }
+  cfgParserOverridesForTests.set(language, parser);
+}
+
+export function runCfgAnalysis(input: RunCfgAnalysisInput): void {
+  if (input.signal?.aborted) return;
+
+  const functions = input.db
+    .prepare(
+      `
+      SELECT
+        nodes.id,
+        nodes.file_path,
+        nodes.language,
+        nodes.kind,
+        nodes.name,
+        nodes.start_line,
+        nodes.start_column,
+        nodes.end_line,
+        nodes.end_column,
+        files.content_hash
+      FROM nodes
+      INNER JOIN files ON files.path = nodes.file_path
+      WHERE nodes.kind IN (${CFG_FUNCTION_KINDS.map(() => '?').join(', ')})
+      ORDER BY nodes.file_path, nodes.start_line, nodes.start_column, nodes.id
+      `,
+    )
+    .all(...CFG_FUNCTION_KINDS) as CfgFunctionRow[];
+
+  if (input.signal?.aborted) return;
+
+  const writeCfg = input.db.transaction(() => {
+    input.db.prepare('DELETE FROM cfg_status').run();
+
+    for (const row of functions) {
+      writeCfgForFunction(input.db, input.projectRoot, row);
+    }
+  });
+
+  if (input.signal?.aborted) return;
+  writeCfg();
+}
+
+export function readCfg(input: ReadCfgInput): CfgReadResult {
+  const current = selectCurrentCfgFunction(input.db, input.functionId);
+  const currentSourceVersion = current ? deriveSourceVersionForFunction(current) : null;
+  const stored = selectStoredCfgStatus(input.db, input.functionId);
+  const resolved = resolveCfgStatus({
+    enabled: input.enabled,
+    projectIndexed: input.projectIndexed ?? true,
+    currentSourceVersion,
+    stored: stored ? toStoredCfgStatus(stored) : null,
+  });
+
+  if (!resolved.carriesPayload) {
+    return makeCfgReadResult({
+      functionId: input.functionId,
+      state: resolved.state,
+      reason: resolved.reason,
+      message: stored?.message,
+      sourceVersion: resolved.sourceVersion,
+    });
+  }
+
+  const sourceVersion = resolved.sourceVersion;
+  if (sourceVersion === null || stored === null) {
+    throw new TypeError('Invalid stored CFG payload: missing source version or status');
+  }
+
+  const graph = readStoredCfgGraph(input.db, input.functionId, stored.language, sourceVersion);
+  const { cfg, page } = pageCfgGraph({ graph, request: input.request ?? {} });
+  return makeCfgReadResult({
+    functionId: input.functionId,
+    state: resolved.state,
+    reason: resolved.reason,
+    message: stored.message,
+    sourceVersion,
+    cfg,
+    page,
+  });
+}
+
+function writeCfgForFunction(db: SqliteDatabase, projectRoot: string, row: CfgFunctionRow): void {
+  const sourceVersion = deriveSourceVersionForFunction(row);
+  if (!CFG_TSJS_LANGUAGE_SET.has(row.language)) {
+    writeCfgStatus(db, row, {
+      state: 'unsupported',
+      reason: 'unsupported_language',
+      message: 'CFG analysis does not support this function language.',
+      sourceVersion,
+    });
+    return;
+  }
+
+  const parsed = parseCfgFunction(projectRoot, row);
+  const unsupportedMessage = 'CFG lowering currently supports linear TypeScript/JavaScript functions only.';
+  try {
+    const status = !parsed.ok
+      ? parsed
+      : estimateCfgBlockDemand(parsed.node) > CFG_BASIC_BLOCK_LIMIT
+        ? {
+            state: 'resource_limited' as const,
+            reason: 'block_limit_exceeded' as const,
+            message: `CFG basic-block limit of ${CFG_BASIC_BLOCK_LIMIT} exceeded.`,
+          }
+        : isLinearTsJsFunctionNode(parsed.node)
+          ? {
+              state: 'available' as const,
+              reason: null,
+              message: '',
+            }
+          : {
+              state: 'unsupported' as const,
+              reason: 'unsupported_construct' as const,
+              message: unsupportedMessage,
+            };
+
+    writeCfgStatus(db, row, { ...status, sourceVersion });
+
+    if (status.state !== 'available' || !parsed.ok) return;
+
+    const graph = lowerCfgIr(row, sourceVersion, buildLinearCfgIr(row, parsed.node));
+    const insertBlock = db.prepare(
+      `
+      INSERT INTO cfg_blocks (function_id, block_id, ordinal, role, spans_json)
+      VALUES (?, ?, ?, ?, ?)
+      `,
+    );
+    const insertEdge = db.prepare(
+      `
+      INSERT INTO cfg_edges (function_id, edge_ordinal, source_block_id, target_block_id, kind)
+      VALUES (?, ?, ?, ?, ?)
+      `,
+    );
+
+    for (const block of graph.blocks) {
+      insertBlock.run(row.id, block.id, block.ordinal, block.role, JSON.stringify(block.spans));
+    }
+    graph.edges.forEach((edge, edgeOrdinal) => {
+      insertEdge.run(row.id, edgeOrdinal, edge.source, edge.target, edge.kind);
+    });
+  } finally {
+    if (parsed.ok) parsed.tree.delete();
+  }
+}
+
+function writeCfgStatus(
+  db: SqliteDatabase,
+  row: CfgFunctionRow,
+  status: {
+    state: StoredCfgState;
+    reason: CfgReason | null;
+    message: string;
+    sourceVersion: string | null;
+  },
+): void {
+  db.prepare(
+    `
+    INSERT INTO cfg_status (
+      function_id,
+      file_path,
+      language,
+      function_kind,
+      function_name,
+      start_line,
+      start_column,
+      end_line,
+      end_column,
+      state,
+      reason,
+      message,
+      source_version,
+      status_version,
+      block_version,
+      edge_version,
+      schema_version,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+  ).run(
+    row.id,
+    row.file_path,
+    row.language,
+    row.kind,
+    row.name,
+    row.start_line,
+    row.start_column,
+    row.end_line,
+    row.end_column,
+    status.state,
+    status.reason,
+    status.message,
+    status.sourceVersion,
+    CFG_STATUS_CONTRACT_VERSION,
+    CFG_BLOCK_CONTRACT_VERSION,
+    CFG_EDGE_CONTRACT_VERSION,
+    CURRENT_SCHEMA_VERSION,
+    Date.now(),
+  );
+}
+
+function selectCurrentCfgFunction(db: SqliteDatabase, functionId: string): CfgFunctionRow | null {
+  const row = db
+    .prepare(
+      `
+      SELECT
+        nodes.id,
+        nodes.file_path,
+        nodes.language,
+        nodes.kind,
+        nodes.name,
+        nodes.start_line,
+        nodes.start_column,
+        nodes.end_line,
+        nodes.end_column,
+        files.content_hash
+      FROM nodes
+      INNER JOIN files ON files.path = nodes.file_path
+      WHERE nodes.id = ?
+        AND nodes.kind IN (${CFG_FUNCTION_KINDS.map(() => '?').join(', ')})
+      `,
+    )
+    .get(functionId, ...CFG_FUNCTION_KINDS) as CfgFunctionRow | undefined;
+  return row ?? null;
+}
+
+function selectStoredCfgStatus(db: SqliteDatabase, functionId: string): StoredCfgStatusRow | null {
+  const row = db
+    .prepare(
+      `
+      SELECT
+        function_id,
+        language,
+        state,
+        reason,
+        message,
+        source_version,
+        status_version,
+        block_version,
+        edge_version
+      FROM cfg_status
+      WHERE function_id = ?
+      `,
+    )
+    .get(functionId) as StoredCfgStatusRow | undefined;
+  return row ?? null;
+}
+
+function toStoredCfgStatus(row: StoredCfgStatusRow): StoredCfgStatus {
+  return {
+    state: row.state,
+    reason: row.reason,
+    message: row.message,
+    sourceVersion: row.source_version,
+    statusVersion: Number(row.status_version),
+    blockVersion: Number(row.block_version),
+    edgeVersion: Number(row.edge_version),
+  };
+}
+
+function readStoredCfgGraph(
+  db: SqliteDatabase,
+  functionId: string,
+  language: string,
+  sourceVersion: string,
+): CfgGraph {
+  const blocks = db
+    .prepare(
+      `
+      SELECT block_id, ordinal, role, spans_json
+      FROM cfg_blocks
+      WHERE function_id = ?
+      ORDER BY ordinal
+      `,
+    )
+    .all(functionId) as StoredCfgBlockRow[];
+  const edges = db
+    .prepare(
+      `
+      SELECT source_block_id, target_block_id, kind
+      FROM cfg_edges
+      WHERE function_id = ?
+      ORDER BY edge_ordinal
+      `,
+    )
+    .all(functionId) as StoredCfgEdgeRow[];
+
+  return {
+    analysis: 'cfg',
+    graphId: deriveCfgGraphId(functionId, sourceVersion),
+    language,
+    functionId,
+    sourceVersion,
+    blocks: blocks.map((block) => ({
+      id: block.block_id,
+      role: block.role,
+      ordinal: Number(block.ordinal),
+      spans: parseStoredSpans(block.spans_json),
+    })),
+    edges: edges.map((edge) => ({
+      source: edge.source_block_id,
+      target: edge.target_block_id,
+      kind: edge.kind,
+    })),
+  };
+}
+
+function deriveSourceVersionForFunction(row: CfgFunctionRow): string {
+  return deriveCfgSourceVersion({
+    fileContentHash: row.content_hash,
+    functionId: row.id,
+    language: row.language,
+    startLine: row.start_line,
+    startColumn: row.start_column,
+    endLine: row.end_line,
+    endColumn: row.end_column,
+    statusVersion: CFG_STATUS_CONTRACT_VERSION,
+    blockVersion: CFG_BLOCK_CONTRACT_VERSION,
+    edgeVersion: CFG_EDGE_CONTRACT_VERSION,
+  });
+}
+
+function parseCfgFunction(projectRoot: string, row: CfgFunctionRow): CfgFunctionParseResult {
+  const source = readIndexedFileSource(projectRoot, row.file_path);
+  if (source === null) {
+    return {
+      ok: false,
+      state: 'unavailable',
+      reason: 'first_refresh_failed',
+      message: 'Unable to read indexed function source.',
+    };
+  }
+
+  const parser = getCfgParser(row.language, row.file_path);
+  if (parser === null) {
+    return {
+      ok: false,
+      state: 'unsupported',
+      reason: 'parser_unavailable',
+      message: 'Parser unavailable for CFG analysis.',
+    };
+  }
+
+  let tree: Tree | null = null;
+  try {
+    tree = parser.parse(source) ?? null;
+    if (tree === null) {
+      return {
+        ok: false,
+        state: 'unsupported',
+        reason: 'parse_error',
+        message: 'Unable to parse function source for CFG analysis.',
+      };
+    }
+
+    const node = findCfgFunctionNode(tree.rootNode, row, source);
+    if (node === null) {
+      tree.delete();
+      return {
+        ok: false,
+        state: 'unsupported',
+        reason: 'parse_error',
+        message: 'Unable to locate indexed function in parsed source.',
+      };
+    }
+    if (node.hasError || hasMissingSyntaxNode(node)) {
+      tree.delete();
+      return {
+        ok: false,
+        state: 'unsupported',
+        reason: 'parse_unsafe_region',
+        message: 'Function syntax contains a parse-unsafe region.',
+      };
+    }
+    if (tree.rootNode.hasError) {
+      tree.delete();
+      return {
+        ok: false,
+        state: 'unsupported',
+        reason: 'parse_error',
+        message: 'Unable to parse complete source for CFG analysis.',
+      };
+    }
+
+    return { ok: true, tree, node };
+  } catch {
+    tree?.delete();
+    return {
+      ok: false,
+      state: 'unsupported',
+      reason: 'parse_error',
+      message: 'Unable to parse function source for CFG analysis.',
+    };
+  }
+}
+
+function getCfgParser(language: string, filePath: string): CfgParser | null {
+  if (cfgParserOverridesForTests.has(language)) {
+    return cfgParserOverridesForTests.get(language)!;
+  }
+  return getParser(language as Language, filePath);
+}
+
+function hasMissingSyntaxNode(node: SyntaxNode): boolean {
+  if (node.isMissing) return true;
+  for (let index = 0; index < node.namedChildCount; index++) {
+    const child = node.namedChild(index);
+    if (child && hasMissingSyntaxNode(child)) return true;
+  }
+  return false;
+}
+
+function estimateCfgBlockDemand(root: SyntaxNode): number {
+  let demand = 3;
+  const stack: SyntaxNode[] = [root];
+
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    demand += CFG_CONSERVATIVE_BLOCK_DEMAND.get(node.type) ?? 0;
+    if (demand > CFG_BASIC_BLOCK_LIMIT) return demand;
+
+    for (let index = 0; index < node.namedChildCount; index++) {
+      const child = node.namedChild(index);
+      if (child) stack.push(child);
+    }
+  }
+
+  return demand;
+}
+
+function findCfgFunctionNode(root: SyntaxNode, row: CfgFunctionRow, source: string): SyntaxNode | null {
+  let best: SyntaxNode | null = null;
+  const visit = (node: SyntaxNode): void => {
+    if (
+      CFG_TSJS_FUNCTION_NODE_TYPES.has(node.type) &&
+      isNodeWithinIndexedSpan(node, row) &&
+      cfgFunctionNameMatches(node, row, source) &&
+      (best === null || node.endIndex - node.startIndex < best.endIndex - best.startIndex)
+    ) {
+      best = node;
+    }
+
+    for (let index = 0; index < node.namedChildCount; index++) {
+      const child = node.namedChild(index);
+      if (child) visit(child);
+    }
+  };
+  visit(root);
+  return best;
+}
+
+function cfgFunctionNameMatches(node: SyntaxNode, row: CfgFunctionRow, source: string): boolean {
+  const nameNode =
+    node.childForFieldName('name') ??
+    node.namedChildren.find((child) => child.type === 'identifier' || child.type === 'property_identifier');
+  if (!nameNode) return false;
+  const name = getNodeText(nameNode, source).trim();
+  return row.name === name || row.name.endsWith(`::${name}`) || row.name.endsWith(`.${name}`);
+}
+
+function isNodeWithinIndexedSpan(node: SyntaxNode, row: CfgFunctionRow): boolean {
+  const nodeStartLine = node.startPosition.row + 1;
+  const nodeStartColumn = node.startPosition.column;
+  const nodeEndLine = node.endPosition.row + 1;
+  const nodeEndColumn = node.endPosition.column;
+  const startsAfterIndexedStart =
+    nodeStartLine > row.start_line ||
+    (nodeStartLine === row.start_line && nodeStartColumn >= row.start_column);
+  const endsBeforeIndexedEnd =
+    nodeEndLine < row.end_line ||
+    (nodeEndLine === row.end_line && nodeEndColumn <= row.end_column);
+  return startsAfterIndexedStart && endsBeforeIndexedEnd;
+}
+
+function isLinearTsJsFunctionNode(node: SyntaxNode): boolean {
+  const body = getFunctionBodyNode(node);
+  if (!body || body.type !== 'statement_block') return false;
+
+  let sawReturn = false;
+  for (const statement of body.namedChildren) {
+    if (CFG_COMMENT_NODE_TYPES.has(statement.type)) continue;
+    if (!LINEAR_BODY_STATEMENT_TYPES.has(statement.type)) return false;
+    if (sawReturn) return false;
+    if (hasUnsupportedLinearDescendant(statement)) return false;
+    if (statement.type === 'return_statement') sawReturn = true;
+  }
+  return true;
+}
+
+function hasUnsupportedLinearDescendant(node: SyntaxNode): boolean {
+  if (CFG_COMMENT_NODE_TYPES.has(node.type)) return false;
+  if (UNSUPPORTED_LINEAR_DESCENDANT_TYPES.has(node.type) || node.type === 'ERROR') return true;
+  if (!LINEAR_DESCENDANT_TYPES.has(node.type)) return true;
+  for (let index = 0; index < node.namedChildCount; index++) {
+    const child = node.namedChild(index);
+    if (child && hasUnsupportedLinearDescendant(child)) return true;
+  }
+  return false;
+}
+
+function getFunctionBodyNode(node: SyntaxNode): SyntaxNode | null {
+  return node.childForFieldName('body') ?? node.namedChildren.find((child) => child.type === 'statement_block') ?? null;
+}
+
+function functionBodyEndsWithReturn(node: SyntaxNode): boolean {
+  const body = getFunctionBodyNode(node);
+  if (!body) return false;
+  const statements = body.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
+  return statements.at(-1)?.type === 'return_statement';
+}
+
+function buildLinearCfgIr(row: CfgFunctionRow, node: SyntaxNode): CfgIr {
+  const exitEdgeKind: CfgEdge['kind'] = functionBodyEndsWithReturn(node) ? 'return' : 'fallthrough';
+  return {
+    blocks: [
+      { role: 'entry', spans: [] },
+      {
+        role: 'body',
+        spans: [
+          {
+            startLine: row.start_line,
+            startColumn: row.start_column,
+            endLine: row.end_line,
+            endColumn: row.end_column,
+          },
+        ],
+      },
+      { role: 'exit', spans: [] },
+    ],
+    edges: [
+      { sourceOrdinal: 0, targetOrdinal: 1, kind: 'fallthrough' },
+      { sourceOrdinal: 1, targetOrdinal: 2, kind: exitEdgeKind },
+    ],
+  };
+}
+
+function lowerCfgIr(row: CfgFunctionRow, sourceVersion: string, ir: CfgIr): CfgGraph {
+  const blocks = ir.blocks.map((block, ordinal) => ({
+    id: deriveCfgBlockId(row.id, sourceVersion, ordinal, block.role),
+    role: block.role,
+    ordinal,
+    spans: block.spans,
+  }));
+  return {
+    analysis: 'cfg',
+    graphId: deriveCfgGraphId(row.id, sourceVersion),
+    language: row.language,
+    functionId: row.id,
+    sourceVersion,
+    blocks,
+    edges: ir.edges.map((edge) => ({
+      source: blocks[edge.sourceOrdinal]!.id,
+      target: blocks[edge.targetOrdinal]!.id,
+      kind: edge.kind,
+    })),
+  };
+}
+
+function deriveCfgGraphId(functionId: string, sourceVersion: string): string {
+  return deriveStableCfgId('cfg', [functionId, sourceVersion]);
+}
+
+function deriveCfgBlockId(
+  functionId: string,
+  sourceVersion: string,
+  ordinal: number,
+  role: CfgBlock['role'],
+): string {
+  return deriveStableCfgId('cfgblock', [functionId, sourceVersion, ordinal, role]);
+}
+
+function deriveStableCfgId(prefix: string, parts: readonly unknown[]): string {
+  const digest = crypto.createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+  return `${prefix}:${digest.slice(0, 24)}`;
+}
+
+function readIndexedFileSource(projectRoot: string, filePath: string): string | null {
+  try {
+    const root = path.resolve(projectRoot);
+    const absolutePath = path.resolve(root, filePath);
+    if (absolutePath !== root && !absolutePath.startsWith(`${root}${path.sep}`)) return null;
+    return fs.readFileSync(absolutePath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function parseStoredSpans(value: string): CfgBlock['spans'] {
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isSpan);
+  } catch {
+    return [];
+  }
+}
 
 export function deriveCfgSourceVersion(input: CfgSourceVersionInput): string {
   const payload = {
