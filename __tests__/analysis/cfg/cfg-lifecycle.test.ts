@@ -481,6 +481,43 @@ describe('SPEC-014 CFG SQLite lifecycle schema', () => {
     }
   });
 
+  it('retries config revision hashing when the open file changes during the read', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-config-revision-race-'));
+    dirs.push(dir);
+    fs.writeFileSync(
+      path.join(dir, PROJECT_CONFIG_FILENAME),
+      JSON.stringify({ analysis: { cfg: true } }),
+    );
+    clearProjectConfigCache();
+
+    const mutableFs = createRequire(import.meta.url)('node:fs') as typeof fs;
+    const originalFstat = mutableFs.fstatSync;
+    const originalReadFile = mutableFs.readFileSync;
+    let fstatCalls = 0;
+    const fstat = vi.fn(((descriptor: number, options: { bigint: true }) => {
+      const stat = originalFstat(descriptor, options);
+      fstatCalls++;
+      if (fstatCalls === 2) {
+        return { ...stat, ctimeNs: stat.ctimeNs + 1n };
+      }
+      return stat;
+    }) as typeof fs.fstatSync);
+    const readFile = vi.fn(originalReadFile);
+    mutableFs.fstatSync = fstat;
+    mutableFs.readFileSync = readFile as typeof fs.readFileSync;
+    syncBuiltinESMExports();
+    try {
+      const revision = deriveProjectConfigRevision(dir);
+      expect(revision).not.toBe(deriveProjectConfigRevision(path.join(dir, 'missing')));
+      expect(readFile).toHaveBeenCalledTimes(2);
+      expect(fstat).toHaveBeenCalledTimes(4);
+    } finally {
+      mutableFs.fstatSync = originalFstat;
+      mutableFs.readFileSync = originalReadFile;
+      syncBuiltinESMExports();
+    }
+  });
+
   it('backfills CFG payload on first enable during an ordinary zero-change sync', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-first-enable-sync-'));
     dirs.push(dir);

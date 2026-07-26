@@ -36,32 +36,43 @@ export const PROJECT_CONFIG_FILENAME = 'codegraph.json';
 export function deriveProjectConfigRevision(rootDir: string): string {
   const file = path.resolve(rootDir, PROJECT_CONFIG_FILENAME);
   try {
-    const initialStat = fs.statSync(file, { bigint: true });
-    const initialIdentity = projectConfigStatIdentity(initialStat);
-    const cached = projectConfigRevisionCache.get(file);
-    if (cached?.identity === initialIdentity) return cached.revision;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const descriptor = fs.openSync(file, 'r');
+      try {
+        const before = fs.fstatSync(descriptor, { bigint: true });
+        const identity = projectConfigStatIdentity(before);
+        const cached = projectConfigRevisionCache.get(file);
+        if (cached?.identity === identity) return cached.revision;
 
-    const content = fs.readFileSync(file);
-    const stat = fs.statSync(file, { bigint: true });
-    const payload = {
-      exists: true,
-      dev: stat.dev.toString(),
-      ino: stat.ino.toString(),
-      size: stat.size.toString(),
-      mtimeNs: stat.mtimeNs.toString(),
-      ctimeNs: stat.ctimeNs.toString(),
-      contentHash: createHash('sha256').update(content).digest('hex'),
-    };
-    const revision = `cfgconf:v1:${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
-    projectConfigRevisionCache.set(file, {
-      identity: projectConfigStatIdentity(stat),
-      revision,
-    });
-    return revision;
+        const content = fs.readFileSync(descriptor);
+        const after = fs.fstatSync(descriptor, { bigint: true });
+        if (projectConfigStatIdentity(after) !== identity) {
+          projectConfigRevisionCache.delete(file);
+          continue;
+        }
+
+        const payload = {
+          exists: true,
+          dev: after.dev.toString(),
+          ino: after.ino.toString(),
+          size: after.size.toString(),
+          mtimeNs: after.mtimeNs.toString(),
+          ctimeNs: after.ctimeNs.toString(),
+          contentHash: createHash('sha256').update(content).digest('hex'),
+        };
+        const revision = `cfgconf:v1:${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
+        projectConfigRevisionCache.set(file, { identity, revision });
+        return revision;
+      } finally {
+        fs.closeSync(descriptor);
+      }
+    }
   } catch {
     projectConfigRevisionCache.delete(file);
     return MISSING_PROJECT_CONFIG_REVISION;
   }
+  projectConfigRevisionCache.delete(file);
+  return MISSING_PROJECT_CONFIG_REVISION;
 }
 
 function projectConfigStatIdentity(stat: fs.BigIntStats): string {
