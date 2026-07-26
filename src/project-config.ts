@@ -34,8 +34,13 @@ export const PROJECT_CONFIG_FILENAME = 'codegraph.json';
 
 /** Durable revision for config-sensitive analysis generations. */
 export function deriveProjectConfigRevision(rootDir: string): string {
-  const file = path.join(rootDir, PROJECT_CONFIG_FILENAME);
+  const file = path.resolve(rootDir, PROJECT_CONFIG_FILENAME);
   try {
+    const initialStat = fs.statSync(file, { bigint: true });
+    const initialIdentity = projectConfigStatIdentity(initialStat);
+    const cached = projectConfigRevisionCache.get(file);
+    if (cached?.identity === initialIdentity) return cached.revision;
+
     const content = fs.readFileSync(file);
     const stat = fs.statSync(file, { bigint: true });
     const payload = {
@@ -47,10 +52,26 @@ export function deriveProjectConfigRevision(rootDir: string): string {
       ctimeNs: stat.ctimeNs.toString(),
       contentHash: createHash('sha256').update(content).digest('hex'),
     };
-    return `cfgconf:v1:${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
+    const revision = `cfgconf:v1:${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
+    projectConfigRevisionCache.set(file, {
+      identity: projectConfigStatIdentity(stat),
+      revision,
+    });
+    return revision;
   } catch {
-    return `cfgconf:v1:${createHash('sha256').update(JSON.stringify({ exists: false })).digest('hex')}`;
+    projectConfigRevisionCache.delete(file);
+    return MISSING_PROJECT_CONFIG_REVISION;
   }
+}
+
+function projectConfigStatIdentity(stat: fs.BigIntStats): string {
+  return [
+    stat.dev,
+    stat.ino,
+    stat.size,
+    stat.mtimeNs,
+    stat.ctimeNs,
+  ].join(':');
 }
 
 export interface ProjectConfig {
@@ -125,6 +146,11 @@ interface CacheEntry {
   config: ParsedConfig;
 }
 
+interface ProjectConfigRevisionCacheEntry {
+  identity: string;
+  revision: string;
+}
+
 /**
  * Cache keyed by project root. The loader is called once per indexing/scan/sync
  * operation (and per watch event), so the mtime guard keeps repeat calls to one
@@ -132,6 +158,9 @@ interface CacheEntry {
  * projects in the same process (the daemon / multi-project MCP server) isolated.
  */
 const cache = new Map<string, CacheEntry>();
+const projectConfigRevisionCache = new Map<string, ProjectConfigRevisionCacheEntry>();
+const MISSING_PROJECT_CONFIG_REVISION =
+  `cfgconf:v1:${createHash('sha256').update(JSON.stringify({ exists: false })).digest('hex')}`;
 
 /** Shared frozen empties so the no-config path allocates nothing. */
 const EMPTY_EXTENSIONS: Record<string, Language> = Object.freeze({});
@@ -422,6 +451,7 @@ export function loadIncludePatterns(rootDir: string): string[] {
 /** Test/maintenance hook: forget cached config (e.g. after rewriting it in a test). */
 export function clearProjectConfigCache(): void {
   cache.clear();
+  projectConfigRevisionCache.clear();
 }
 
 /**

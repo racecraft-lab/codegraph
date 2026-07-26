@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -11,6 +12,7 @@ import { createDatabase, SqliteDatabase } from '../../../src/db/sqlite-adapter';
 import { getCodeGraphDir } from '../../../src/directory';
 import {
   clearProjectConfigCache,
+  deriveProjectConfigRevision,
   loadAnalysisConfig,
   PROJECT_CONFIG_FILENAME,
 } from '../../../src/project-config';
@@ -445,6 +447,38 @@ describe('SPEC-014 CFG SQLite lifecycle schema', () => {
     fs.writeFileSync(configPath, JSON.stringify({ analysis: { cfg: true } }));
     clearProjectConfigCache();
     expect(loadAnalysisConfig(dir)).toEqual({ flows: false, clusters: false, cfg: true });
+  });
+
+  it('reuses the config revision while the file stat identity is unchanged', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-config-revision-cache-'));
+    dirs.push(dir);
+    const configPath = path.join(dir, PROJECT_CONFIG_FILENAME);
+    fs.writeFileSync(configPath, JSON.stringify({ analysis: { cfg: true } }));
+    clearProjectConfigCache();
+
+    const mutableFs = createRequire(import.meta.url)('node:fs') as typeof fs;
+    const originalReadFile = mutableFs.readFileSync;
+    const readFile = vi.fn(originalReadFile);
+    mutableFs.readFileSync = readFile as typeof fs.readFileSync;
+    syncBuiltinESMExports();
+    try {
+      const readsBefore = readFile.mock.calls.length;
+      const first = deriveProjectConfigRevision(dir);
+      const readsAfterFirst = readFile.mock.calls.length;
+      const second = deriveProjectConfigRevision(dir);
+
+      expect(second).toBe(first);
+      expect(readsAfterFirst - readsBefore).toBe(1);
+      expect(readFile.mock.calls.length).toBe(readsAfterFirst);
+
+      fs.writeFileSync(configPath, JSON.stringify({ analysis: { cfg: false }, changed: true }));
+      const changed = deriveProjectConfigRevision(dir);
+      expect(changed).not.toBe(first);
+      expect(readFile.mock.calls.length).toBe(readsAfterFirst + 1);
+    } finally {
+      mutableFs.readFileSync = originalReadFile;
+      syncBuiltinESMExports();
+    }
   });
 
   it('backfills CFG payload on first enable during an ordinary zero-change sync', async () => {
