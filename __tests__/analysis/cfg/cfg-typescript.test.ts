@@ -183,6 +183,31 @@ function edgeRolePaths(cfg: CfgGraph): string[] {
   return cfg.edges.map((edge) => `${blockLabels.get(edge.source)} -${edge.kind}-> ${blockLabels.get(edge.target)}`);
 }
 
+function edgeTextPaths(cfg: CfgGraph, source: string): string[] {
+  const blockLabels = new Map(cfg.blocks.map((block) => [block.id, blockTextLabel(source, block)]));
+  return cfg.edges.map((edge) => `${blockLabels.get(edge.source)} -${edge.kind}-> ${blockLabels.get(edge.target)}`);
+}
+
+function blockTextLabel(source: string, block: CfgGraph['blocks'][number]): string {
+  const text = block.spans[0] ? spanText(source, block.spans[0]) : '';
+  return text ? `${block.ordinal}:${block.role}:${text}` : `${block.ordinal}:${block.role}`;
+}
+
+function spanText(source: string, span: CfgGraph['blocks'][number]['spans'][number]): string {
+  const lines = source.split('\n');
+  const startLine = lines[span.startLine - 1] ?? '';
+  if (span.startLine === span.endLine) {
+    return startLine.slice(span.startColumn, span.endColumn).replace(/\s+/g, ' ').trim();
+  }
+
+  const parts = [startLine.slice(span.startColumn)];
+  for (let line = span.startLine; line < span.endLine - 1; line++) {
+    parts.push(lines[line] ?? '');
+  }
+  parts.push((lines[span.endLine - 1] ?? '').slice(0, span.endColumn));
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 describe('TypeScript/JavaScript CFG fixtures', () => {
   afterEach(() => {
     while (openGraphs.length > 0) {
@@ -392,6 +417,167 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     }
   });
 
+  it('persists the committed short-circuit fixture with branch-gated RHS evaluation', async () => {
+    const source = fs.readFileSync(path.join(FIXTURE_DIR, 'short-circuit.ts'), 'utf8');
+    const cfg = await indexFunctionCfg('short-circuit.ts', 'shortCircuit', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:user',
+      '1:condition:user -true-> 2:condition:user.active',
+      '1:condition:user -false-> 5:body:return Boolean(user && user.active && (user.role === \'admin\' || user.role === \'owner\'));',
+      '2:condition:user.active -true-> 3:condition:user.role === \'admin\'',
+      '2:condition:user.active -false-> 5:body:return Boolean(user && user.active && (user.role === \'admin\' || user.role === \'owner\'));',
+      '3:condition:user.role === \'admin\' -true-> 5:body:return Boolean(user && user.active && (user.role === \'admin\' || user.role === \'owner\'));',
+      '3:condition:user.role === \'admin\' -false-> 4:body:user.role === \'owner\'',
+      '4:body:user.role === \'owner\' -fallthrough-> 5:body:return Boolean(user && user.active && (user.role === \'admin\' || user.role === \'owner\'));',
+      '5:body:return Boolean(user && user.active && (user.role === \'admin\' || user.role === \'owner\')); -return-> 6:exit',
+    ]);
+  });
+
+  it('persists the committed optional-chain fixture with non-nullish-gated continuation', async () => {
+    const source = fs.readFileSync(path.join(FIXTURE_DIR, 'optional-chaining.ts'), 'utf8');
+    const cfg = await indexFunctionCfg('optional-chaining.ts', 'optionalChain', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:user',
+      '1:condition:user -true-> 2:condition:user?.profile',
+      '1:condition:user -false-> 5:body:\'anonymous\'',
+      '2:condition:user?.profile -true-> 3:body:user?.profile?.name',
+      '2:condition:user?.profile -false-> 5:body:\'anonymous\'',
+      '3:body:user?.profile?.name -fallthrough-> 4:condition:user?.profile?.name',
+      '4:condition:user?.profile?.name -true-> 6:body:return user?.profile?.name ?? \'anonymous\';',
+      '4:condition:user?.profile?.name -false-> 5:body:\'anonymous\'',
+      '5:body:\'anonymous\' -fallthrough-> 6:body:return user?.profile?.name ?? \'anonymous\';',
+      '6:body:return user?.profile?.name ?? \'anonymous\'; -return-> 7:exit',
+    ]);
+  });
+
+  it('persists the committed nullish-coalescing fixture with fallback-only RHS evaluation', async () => {
+    const source = fs.readFileSync(path.join(FIXTURE_DIR, 'nullish-coalescing.js'), 'utf8');
+    const cfg = await indexFunctionCfg('nullish-coalescing.js', 'nullishCoalesce', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:config.retryCount',
+      '1:condition:config.retryCount -true-> 3:body:const retryCount = config.retryCount ?? 3;',
+      '1:condition:config.retryCount -false-> 2:body:3',
+      '2:body:3 -fallthrough-> 3:body:const retryCount = config.retryCount ?? 3;',
+      '3:body:const retryCount = config.retryCount ?? 3; -fallthrough-> 4:condition:config.timeoutMs',
+      '4:condition:config.timeoutMs -true-> 6:body:const timeoutMs = config.timeoutMs ?? 1000;',
+      '4:condition:config.timeoutMs -false-> 5:body:1000',
+      '5:body:1000 -fallthrough-> 6:body:const timeoutMs = config.timeoutMs ?? 1000;',
+      '6:body:const timeoutMs = config.timeoutMs ?? 1000; -fallthrough-> 7:body:return retryCount * timeoutMs;',
+      '7:body:return retryCount * timeoutMs; -return-> 8:exit',
+    ]);
+  });
+
+  it('persists a ternary initializer with exactly one evaluated arm before merge', async () => {
+    const source = [
+      'export function ternaryProbe(flag: boolean): number {',
+      '  const selected = flag ? first() : second();',
+      '  return selected;',
+      '}',
+      '',
+      'function first(): number { return 1; }',
+      'function second(): number { return 2; }',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('ternary-probe.ts', 'ternaryProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:flag',
+      '1:condition:flag -true-> 2:body:first()',
+      '1:condition:flag -false-> 3:body:second()',
+      '2:body:first() -fallthrough-> 4:body:const selected = flag ? first() : second();',
+      '3:body:second() -fallthrough-> 4:body:const selected = flag ? first() : second();',
+      '4:body:const selected = flag ? first() : second(); -fallthrough-> 5:body:return selected;',
+      '5:body:return selected; -return-> 6:exit',
+    ]);
+  });
+
+  it('persists branchy expressions nested inside ordinary member wrappers', async () => {
+    const source = [
+      'export function nestedWrapperProbe(obj?: { values?: string[] }): number {',
+      '  const length = (obj?.values ?? []).length;',
+      '  return length;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('nested-wrapper-probe.ts', 'nestedWrapperProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:obj',
+      '1:condition:obj -true-> 2:body:obj?.values',
+      '1:condition:obj -false-> 4:body:[]',
+      '2:body:obj?.values -fallthrough-> 3:condition:obj?.values',
+      '3:condition:obj?.values -true-> 5:body:(obj?.values ?? []).length',
+      '3:condition:obj?.values -false-> 4:body:[]',
+      '4:body:[] -fallthrough-> 5:body:(obj?.values ?? []).length',
+      '5:body:(obj?.values ?? []).length -fallthrough-> 6:body:const length = (obj?.values ?? []).length;',
+      '6:body:const length = (obj?.values ?? []).length; -fallthrough-> 7:body:return length;',
+      '7:body:return length; -return-> 8:exit',
+    ]);
+  });
+
+  it('persists optional member calls and optional calls without invoking skipped callees', async () => {
+    const source = [
+      'export function optionalCallProbe(obj?: { method?: () => number }, fn?: () => number): number {',
+      '  const methodValue = obj?.method?.() ?? 0;',
+      '  const fnValue = fn?.() ?? 1;',
+      '  return methodValue + fnValue;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('optional-call-probe.ts', 'optionalCallProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:obj',
+      '1:condition:obj -true-> 2:body:obj?.method',
+      '1:condition:obj -false-> 6:body:0',
+      '2:body:obj?.method -fallthrough-> 3:condition:obj?.method',
+      '3:condition:obj?.method -true-> 4:body:obj?.method?.()',
+      '3:condition:obj?.method -false-> 6:body:0',
+      '4:body:obj?.method?.() -fallthrough-> 5:condition:obj?.method?.()',
+      '5:condition:obj?.method?.() -true-> 7:body:const methodValue = obj?.method?.() ?? 0;',
+      '5:condition:obj?.method?.() -false-> 6:body:0',
+      '6:body:0 -fallthrough-> 7:body:const methodValue = obj?.method?.() ?? 0;',
+      '7:body:const methodValue = obj?.method?.() ?? 0; -fallthrough-> 8:condition:fn',
+      '8:condition:fn -true-> 9:body:fn?.()',
+      '8:condition:fn -false-> 11:body:1',
+      '9:body:fn?.() -fallthrough-> 10:condition:fn?.()',
+      '10:condition:fn?.() -true-> 12:body:const fnValue = fn?.() ?? 1;',
+      '10:condition:fn?.() -false-> 11:body:1',
+      '11:body:1 -fallthrough-> 12:body:const fnValue = fn?.() ?? 1;',
+      '12:body:const fnValue = fn?.() ?? 1; -fallthrough-> 13:body:return methodValue + fnValue;',
+      '13:body:return methodValue + fnValue; -return-> 14:exit',
+    ]);
+  });
+
+  it('persists optional subscript evaluation through non-nullish receivers only', async () => {
+    const source = [
+      'export function optionalSubscriptProbe(obj: { values?: number[] } | null, key: number): number {',
+      '  const item = obj?.values?.[key] ?? 2;',
+      '  return item;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('optional-subscript-probe.ts', 'optionalSubscriptProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:obj',
+      '1:condition:obj -true-> 2:body:obj?.values',
+      '1:condition:obj -false-> 6:body:2',
+      '2:body:obj?.values -fallthrough-> 3:condition:obj?.values',
+      '3:condition:obj?.values -true-> 4:body:obj?.values?.[key]',
+      '3:condition:obj?.values -false-> 6:body:2',
+      '4:body:obj?.values?.[key] -fallthrough-> 5:condition:obj?.values?.[key]',
+      '5:condition:obj?.values?.[key] -true-> 7:body:const item = obj?.values?.[key] ?? 2;',
+      '5:condition:obj?.values?.[key] -false-> 6:body:2',
+      '6:body:2 -fallthrough-> 7:body:const item = obj?.values?.[key] ?? 2;',
+      '7:body:const item = obj?.values?.[key] ?? 2; -fallthrough-> 8:body:return item;',
+      '8:body:return item; -return-> 9:exit',
+    ]);
+  });
+
   it('persists the committed throw/finally fixture with path-precise pending transfers', async () => {
     const source = fs.readFileSync(path.join(FIXTURE_DIR, 'throw-finally.js'), 'utf8');
     const cfg = await indexFunctionCfg('throw-finally.js', 'throwFinally', source);
@@ -588,32 +774,6 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
         'export function parseUnsafeSkip(input: number): number {',
         '  const total = ;',
         '  return input;',
-        '}',
-        '',
-      ].join('\n'),
-    },
-    {
-      fileName: 'deferred-expression-branch.ts',
-      functionName: 'deferredExpressionBranchSkip',
-      reason: 'unsupported_construct',
-      source: [
-        'export function deferredExpressionBranchSkip(input?: { count?: number; ready?: boolean }): number {',
-        '  const total = input?.ready && ((input.count ?? 0) > 0) ? input.count ?? 0 : 0;',
-        '  return total;',
-        '}',
-        '',
-      ].join('\n'),
-    },
-    {
-      fileName: 'deferred-if-condition.ts',
-      functionName: 'deferredIfConditionSkip',
-      reason: 'unsupported_construct',
-      source: [
-        'export function deferredIfConditionSkip(input: { count: number; ready: boolean }): number {',
-        '  if (input.ready && input.count > 0) {',
-        '    return input.count;',
-        '  }',
-        '  return 0;',
         '}',
         '',
       ].join('\n'),

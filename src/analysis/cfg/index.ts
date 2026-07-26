@@ -262,6 +262,21 @@ interface CfgStatementFlow {
   terminals: CfgPendingTransfer[];
 }
 
+interface CfgExpressionFlow {
+  exits: CfgPendingTransfer[];
+  definitelyNullishExits: CfgPendingTransfer[];
+}
+
+interface CfgConditionFlow {
+  trueTransfers: CfgPendingTransfer[];
+  falseTransfers: CfgPendingTransfer[];
+}
+
+interface OptionalMemberChain {
+  base: SyntaxNode;
+  segments: SyntaxNode[];
+}
+
 type CfgTerminalMode = 'collect' | 'emit';
 
 interface ParsedCfgFunction {
@@ -968,7 +983,6 @@ function functionBodyEndsWithReturn(node: SyntaxNode): boolean {
 }
 
 function buildCfgIrForFunction(row: CfgFunctionRow, node: SyntaxNode): CfgIr | null {
-  if (hasDeferredExpressionBranching(node)) return null;
   if (isLinearTsJsFunctionNode(node)) return buildLinearCfgIr(row, node);
   return new StructuredCfgBuilder().buildFunction(node);
 }
@@ -1039,24 +1053,52 @@ class StructuredCfgBuilder {
       return this.buildTryFinallyStatement(statement, incoming, terminalMode);
     }
     if (statement.type === 'return_statement') {
-      const blockOrdinal = this.addBodyBlock(statement);
-      this.connectIncoming(incoming, blockOrdinal);
-      return this.handleTerminalTransfer({ fromOrdinal: blockOrdinal, kind: 'return' }, terminalMode);
+      return this.buildTerminalStatement(statement, incoming, terminalMode, 'return');
     }
     if (statement.type === 'throw_statement') {
-      const blockOrdinal = this.addBodyBlock(statement);
-      this.connectIncoming(incoming, blockOrdinal);
-      return this.handleTerminalTransfer({ fromOrdinal: blockOrdinal, kind: 'throw' }, terminalMode);
+      return this.buildTerminalStatement(statement, incoming, terminalMode, 'throw');
     }
     if (isSimpleStructuredStatement(statement)) {
-      const blockOrdinal = this.addBodyBlock(statement);
-      this.connectIncoming(incoming, blockOrdinal);
-      return {
-        continues: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
-        terminals: [],
-      };
+      return this.buildValueStatement(statement, incoming);
     }
     return null;
+  }
+
+  private buildTerminalStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    kind: Extract<CfgEdge['kind'], 'return' | 'throw'>,
+  ): CfgStatementFlow | null {
+    const expression = getStatementExpression(statement);
+    const expressionIncoming = expression && hasModeledExpressionBranching(expression)
+      ? this.buildExpressionValue(expression, incoming, true)
+      : null;
+    if (expression && hasModeledExpressionBranching(expression) && !expressionIncoming) return null;
+
+    const blockOrdinal = this.addBodyBlock(statement);
+    this.connectIncoming(expressionIncoming ? allExpressionExits(expressionIncoming) : incoming, blockOrdinal);
+    return this.handleTerminalTransfer({ fromOrdinal: blockOrdinal, kind }, terminalMode);
+  }
+
+  private buildValueStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgStatementFlow | null {
+    let continues = [...incoming];
+    for (const expression of getStatementValueExpressions(statement)) {
+      if (!hasModeledExpressionBranching(expression)) continue;
+      const expressionFlow = this.buildExpressionValue(expression, continues, true);
+      if (!expressionFlow) return null;
+      continues = allExpressionExits(expressionFlow);
+    }
+
+    const blockOrdinal = this.addBodyBlock(statement);
+    this.connectIncoming(continues, blockOrdinal);
+    return {
+      continues: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
+      terminals: [],
+    };
   }
 
   private buildIfStatement(
@@ -1068,25 +1110,354 @@ class StructuredCfgBuilder {
     if (!consequence) return null;
 
     const condition = statement.childForFieldName('condition') ?? statement;
-    const conditionOrdinal = this.addBlock('condition', condition);
-    this.connectIncoming(incoming, conditionOrdinal);
+    const conditionFlow = this.buildConditionExpression(condition, incoming);
+    if (!conditionFlow) return null;
 
-    const trueFlow = this.buildStatement(consequence, [{ fromOrdinal: conditionOrdinal, kind: 'true' }], terminalMode);
+    const trueFlow = this.buildStatement(consequence, conditionFlow.trueTransfers, terminalMode);
     if (!trueFlow) return null;
 
     const continues = [...trueFlow.continues];
     const terminals = [...trueFlow.terminals];
     const alternative = getElseClauseStatement(statement.childForFieldName('alternative'));
     if (alternative) {
-      const falseFlow = this.buildStatement(alternative, [{ fromOrdinal: conditionOrdinal, kind: 'false' }], terminalMode);
+      const falseFlow = this.buildStatement(alternative, conditionFlow.falseTransfers, terminalMode);
       if (!falseFlow) return null;
       continues.push(...falseFlow.continues);
       terminals.push(...falseFlow.terminals);
     } else {
-      continues.push({ fromOrdinal: conditionOrdinal, kind: 'false' });
+      continues.push(...conditionFlow.falseTransfers);
     }
 
     return { continues, terminals };
+  }
+
+  private buildExpressionValue(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    materializeLeaf: boolean,
+  ): CfgExpressionFlow | null {
+    const node = unwrapExpressionNode(expression);
+    const binaryOperator = node.type === 'binary_expression' ? getBinaryOperator(node) : null;
+    if (binaryOperator === '&&') {
+      const operands = getBinaryOperands(node);
+      if (!operands) return null;
+      const left = this.buildConditionExpression(operands.left, incoming);
+      if (!left) return null;
+      const right = this.buildExpressionValue(operands.right, left.trueTransfers, true);
+      if (!right) return null;
+      return {
+        exits: [...left.falseTransfers, ...allExpressionExits(right)],
+        definitelyNullishExits: [],
+      };
+    }
+    if (binaryOperator === '||') {
+      const operands = getBinaryOperands(node);
+      if (!operands) return null;
+      const left = this.buildConditionExpression(operands.left, incoming);
+      if (!left) return null;
+      const right = this.buildExpressionValue(operands.right, left.falseTransfers, true);
+      if (!right) return null;
+      return {
+        exits: [...left.trueTransfers, ...allExpressionExits(right)],
+        definitelyNullishExits: [],
+      };
+    }
+    if (binaryOperator === '??') {
+      return this.buildNullishCoalescingExpression(node, incoming);
+    }
+    if (node.type === 'ternary_expression' || node.type === 'conditional_expression') {
+      return this.buildTernaryExpression(node, incoming);
+    }
+    if (isOptionalMemberExpression(node)) {
+      return this.buildOptionalChainExpression(node, incoming);
+    }
+    if (node.type === 'call_expression' || node.type === 'new_expression') {
+      return this.buildCallLikeExpression(node, incoming, materializeLeaf);
+    }
+    if (node.type === 'subscript_expression') {
+      return this.buildSubscriptExpression(node, incoming, materializeLeaf);
+    }
+    if (node.type === 'member_expression') {
+      return this.buildMemberWrapperExpression(node, incoming, materializeLeaf);
+    }
+
+    if (hasModeledExpressionBranching(node)) return null;
+
+    if (!materializeLeaf) {
+      return { exits: [...incoming], definitelyNullishExits: [] };
+    }
+
+    const blockOrdinal = this.addBodyBlock(node);
+    this.connectIncoming(incoming, blockOrdinal);
+    return {
+      exits: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
+      definitelyNullishExits: [],
+    };
+  }
+
+  private buildConditionExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgConditionFlow | null {
+    const node = unwrapExpressionNode(expression);
+    const binaryOperator = node.type === 'binary_expression' ? getBinaryOperator(node) : null;
+    if (binaryOperator === '&&') {
+      const operands = getBinaryOperands(node);
+      if (!operands) return null;
+      const left = this.buildConditionExpression(operands.left, incoming);
+      if (!left) return null;
+      const right = this.buildConditionExpression(operands.right, left.trueTransfers);
+      if (!right) return null;
+      return {
+        trueTransfers: right.trueTransfers,
+        falseTransfers: [...left.falseTransfers, ...right.falseTransfers],
+      };
+    }
+    if (binaryOperator === '||') {
+      const operands = getBinaryOperands(node);
+      if (!operands) return null;
+      const left = this.buildConditionExpression(operands.left, incoming);
+      if (!left) return null;
+      const right = this.buildConditionExpression(operands.right, left.falseTransfers);
+      if (!right) return null;
+      return {
+        trueTransfers: [...left.trueTransfers, ...right.trueTransfers],
+        falseTransfers: right.falseTransfers,
+      };
+    }
+    if (node.type === 'ternary_expression' || node.type === 'conditional_expression') {
+      const parts = getTernaryParts(node);
+      if (!parts) return null;
+      const condition = this.buildConditionExpression(parts.condition, incoming);
+      if (!condition) return null;
+      const consequence = this.buildConditionExpression(parts.consequence, condition.trueTransfers);
+      if (!consequence) return null;
+      const alternative = this.buildConditionExpression(parts.alternative, condition.falseTransfers);
+      if (!alternative) return null;
+      return {
+        trueTransfers: [...consequence.trueTransfers, ...alternative.trueTransfers],
+        falseTransfers: [...consequence.falseTransfers, ...alternative.falseTransfers],
+      };
+    }
+    if (hasModeledExpressionBranching(node)) {
+      const value = this.buildExpressionValue(node, incoming, true);
+      if (!value) return null;
+      const conditionOrdinal = this.addBlock('condition', node);
+      this.connectIncoming(allExpressionExits(value), conditionOrdinal);
+      return {
+        trueTransfers: [{ fromOrdinal: conditionOrdinal, kind: 'true' }],
+        falseTransfers: [{ fromOrdinal: conditionOrdinal, kind: 'false' }],
+      };
+    }
+
+    const conditionOrdinal = this.addBlock('condition', node);
+    this.connectIncoming(incoming, conditionOrdinal);
+    return {
+      trueTransfers: [{ fromOrdinal: conditionOrdinal, kind: 'true' }],
+      falseTransfers: [{ fromOrdinal: conditionOrdinal, kind: 'false' }],
+    };
+  }
+
+  private buildNullishCoalescingExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgExpressionFlow | null {
+    const operands = getBinaryOperands(expression);
+    if (!operands) return null;
+
+    let nonNullishTransfers: CfgPendingTransfer[];
+    let nullishTransfers: CfgPendingTransfer[];
+    if (hasModeledExpressionBranching(operands.left)) {
+      const left = this.buildExpressionValue(operands.left, incoming, true);
+      if (!left) return null;
+      const conditionOrdinal = this.addBlock('condition', operands.left);
+      this.connectIncoming(left.exits, conditionOrdinal);
+      nonNullishTransfers = [{ fromOrdinal: conditionOrdinal, kind: 'true' }];
+      nullishTransfers = [
+        ...left.definitelyNullishExits,
+        { fromOrdinal: conditionOrdinal, kind: 'false' },
+      ];
+    } else {
+      const conditionOrdinal = this.addBlock('condition', operands.left);
+      this.connectIncoming(incoming, conditionOrdinal);
+      nonNullishTransfers = [{ fromOrdinal: conditionOrdinal, kind: 'true' }];
+      nullishTransfers = [{ fromOrdinal: conditionOrdinal, kind: 'false' }];
+    }
+
+    const right = this.buildExpressionValue(operands.right, nullishTransfers, true);
+    if (!right) return null;
+    return {
+      exits: [...nonNullishTransfers, ...allExpressionExits(right)],
+      definitelyNullishExits: right.definitelyNullishExits,
+    };
+  }
+
+  private buildTernaryExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgExpressionFlow | null {
+    const parts = getTernaryParts(expression);
+    if (!parts) return null;
+    const condition = this.buildConditionExpression(parts.condition, incoming);
+    if (!condition) return null;
+    const consequence = this.buildExpressionValue(parts.consequence, condition.trueTransfers, true);
+    if (!consequence) return null;
+    const alternative = this.buildExpressionValue(parts.alternative, condition.falseTransfers, true);
+    if (!alternative) return null;
+    return {
+      exits: [...allExpressionExits(consequence), ...allExpressionExits(alternative)],
+      definitelyNullishExits: [
+        ...consequence.definitelyNullishExits,
+        ...alternative.definitelyNullishExits,
+      ],
+    };
+  }
+
+  private buildOptionalChainExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgExpressionFlow | null {
+    const chain = collectOptionalMemberChain(expression);
+    if (!chain || hasModeledExpressionBranching(chain.base)) return null;
+
+    let continuation = [...incoming];
+    const definitelyNullishExits: CfgPendingTransfer[] = [];
+    for (let index = 0; index < chain.segments.length; index++) {
+      const checkNode = index === 0 ? chain.base : chain.segments[index - 1]!;
+      const segment = chain.segments[index]!;
+      const conditionOrdinal = this.addBlock('condition', checkNode);
+      this.connectIncoming(continuation, conditionOrdinal);
+      definitelyNullishExits.push({ fromOrdinal: conditionOrdinal, kind: 'false' });
+
+      if (index === chain.segments.length - 1) {
+        const valueOrdinal = this.addBodyBlock(segment);
+        this.addEdge(conditionOrdinal, valueOrdinal, 'true');
+        return {
+          exits: [{ fromOrdinal: valueOrdinal, kind: 'fallthrough' }],
+          definitelyNullishExits,
+        };
+      }
+
+      continuation = [{ fromOrdinal: conditionOrdinal, kind: 'true' }];
+    }
+
+    return null;
+  }
+
+  private buildMemberWrapperExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    materializeLeaf: boolean,
+  ): CfgExpressionFlow | null {
+    const objectNode = getMemberObjectNode(expression);
+    if (!objectNode || !hasModeledExpressionBranching(objectNode)) return null;
+
+    const objectFlow = this.buildExpressionValue(objectNode, incoming, true);
+    if (!objectFlow) return null;
+
+    const continues = allExpressionExits(objectFlow);
+    if (!materializeLeaf) {
+      return { exits: continues, definitelyNullishExits: [] };
+    }
+
+    const blockOrdinal = this.addBodyBlock(expression);
+    this.connectIncoming(continues, blockOrdinal);
+    return {
+      exits: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
+      definitelyNullishExits: [],
+    };
+  }
+
+  private buildSubscriptExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    materializeLeaf: boolean,
+  ): CfgExpressionFlow | null {
+    const objectNode = getSubscriptObjectNode(expression);
+    const indexNode = getSubscriptIndexNode(expression);
+    if (!objectNode) return null;
+
+    let continues: CfgPendingTransfer[] = [...incoming];
+    const definitelyNullishExits: CfgPendingTransfer[] = [];
+    if (hasModeledExpressionBranching(objectNode)) {
+      const objectFlow = this.buildExpressionValue(objectNode, continues, true);
+      if (!objectFlow) return null;
+      continues = objectFlow.exits;
+      definitelyNullishExits.push(...objectFlow.definitelyNullishExits);
+    }
+
+    if (hasOptionalSubscriptOperator(expression)) {
+      const conditionOrdinal = this.addBlock('condition', objectNode);
+      this.connectIncoming(continues, conditionOrdinal);
+      definitelyNullishExits.push({ fromOrdinal: conditionOrdinal, kind: 'false' });
+      continues = [{ fromOrdinal: conditionOrdinal, kind: 'true' }];
+    }
+
+    if (indexNode && hasModeledExpressionBranching(indexNode)) {
+      const indexFlow = this.buildExpressionValue(indexNode, continues, true);
+      if (!indexFlow) return null;
+      continues = allExpressionExits(indexFlow);
+    }
+
+    if (!materializeLeaf) {
+      return { exits: continues, definitelyNullishExits };
+    }
+
+    const blockOrdinal = this.addBodyBlock(expression);
+    this.connectIncoming(continues, blockOrdinal);
+    return {
+      exits: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
+      definitelyNullishExits,
+    };
+  }
+
+  private buildCallLikeExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    materializeLeaf: boolean,
+  ): CfgExpressionFlow | null {
+    const callee = getCallCalleeExpression(expression);
+    let continues: CfgPendingTransfer[] = [...incoming];
+    const definitelyNullishExits: CfgPendingTransfer[] = [];
+
+    if (callee && hasModeledExpressionBranching(callee)) {
+      const calleeFlow = this.buildExpressionValue(callee, continues, true);
+      if (!calleeFlow) return null;
+      continues = calleeFlow.exits;
+      definitelyNullishExits.push(...calleeFlow.definitelyNullishExits);
+    }
+
+    const optionalCall = expression.type === 'call_expression' && hasOptionalCallOperator(expression);
+    if (optionalCall) {
+      if (!callee) return null;
+      const conditionOrdinal = this.addBlock('condition', callee);
+      this.connectIncoming(continues, conditionOrdinal);
+      definitelyNullishExits.push({ fromOrdinal: conditionOrdinal, kind: 'false' });
+      continues = [{ fromOrdinal: conditionOrdinal, kind: 'true' }];
+    }
+
+    let sawModeledArgument = false;
+    for (const argument of getCallArgumentExpressions(expression)) {
+      if (!hasModeledExpressionBranching(argument)) continue;
+      sawModeledArgument = true;
+      const argumentFlow = this.buildExpressionValue(argument, continues, true);
+      if (!argumentFlow) return null;
+      continues = allExpressionExits(argumentFlow);
+    }
+
+    if (sawModeledArgument && !optionalCall) {
+      return { exits: continues, definitelyNullishExits };
+    }
+    if (!materializeLeaf) {
+      return { exits: continues, definitelyNullishExits };
+    }
+
+    const blockOrdinal = this.addBodyBlock(expression);
+    this.connectIncoming(continues, blockOrdinal);
+    return {
+      exits: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
+      definitelyNullishExits,
+    };
   }
 
   private buildTryFinallyStatement(
@@ -1200,19 +1571,24 @@ function getElseClauseStatement(node: SyntaxNode | null): SyntaxNode | null {
 
 function isSimpleStructuredStatement(node: SyntaxNode): boolean {
   return (
-    !hasDeferredExpressionBranching(node) &&
-    (node.type === 'empty_statement' ||
-      node.type === 'expression_statement' ||
-      node.type === 'lexical_declaration' ||
-      node.type === 'variable_declaration')
+    node.type === 'empty_statement' ||
+    node.type === 'expression_statement' ||
+    node.type === 'lexical_declaration' ||
+    node.type === 'variable_declaration'
   );
 }
 
-function hasDeferredExpressionBranching(root: SyntaxNode): boolean {
+function allExpressionExits(flow: CfgExpressionFlow): CfgPendingTransfer[] {
+  return [...flow.exits, ...flow.definitelyNullishExits];
+}
+
+function hasModeledExpressionBranching(root: SyntaxNode): boolean {
   const stack: SyntaxNode[] = [root];
   while (stack.length > 0) {
     const node = stack.pop()!;
     if (node.type === 'binary_expression' && hasDeferredBinaryOperator(node)) return true;
+    if (node.type === 'call_expression' && hasOptionalCallOperator(node)) return true;
+    if (node.type === 'subscript_expression' && hasOptionalSubscriptOperator(node)) return true;
     if (DEFERRED_EXPRESSION_BRANCH_TYPES.has(node.type)) return true;
     for (let index = 0; index < node.namedChildCount; index++) {
       const child = node.namedChild(index);
@@ -1223,11 +1599,131 @@ function hasDeferredExpressionBranching(root: SyntaxNode): boolean {
 }
 
 function hasDeferredBinaryOperator(node: SyntaxNode): boolean {
+  const operator = getBinaryOperator(node);
+  return operator !== null && DEFERRED_BINARY_OPERATORS.has(operator);
+}
+
+function unwrapExpressionNode(node: SyntaxNode): SyntaxNode {
+  let current = node;
+  while (current.type === 'parenthesized_expression') {
+    const inner = current.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
+    if (!inner) break;
+    current = inner;
+  }
+  return current;
+}
+
+function getBinaryOperator(node: SyntaxNode): string | null {
   for (let index = 0; index < node.childCount; index++) {
     const child = node.child(index);
-    if (child && !child.isNamed && DEFERRED_BINARY_OPERATORS.has(child.type)) return true;
+    if (child && !child.isNamed) return child.type;
+  }
+  return null;
+}
+
+function getBinaryOperands(node: SyntaxNode): { left: SyntaxNode; right: SyntaxNode } | null {
+  const [left, right] = node.namedChildren;
+  return left && right ? { left, right } : null;
+}
+
+function getTernaryParts(
+  node: SyntaxNode,
+): { condition: SyntaxNode; consequence: SyntaxNode; alternative: SyntaxNode } | null {
+  const [condition, consequence, alternative] = node.namedChildren;
+  return condition && consequence && alternative ? { condition, consequence, alternative } : null;
+}
+
+function isOptionalMemberExpression(node: SyntaxNode): boolean {
+  return collectOptionalMemberChain(node) !== null;
+}
+
+function collectOptionalMemberChain(node: SyntaxNode): OptionalMemberChain | null {
+  if (node.type !== 'member_expression') return null;
+
+  let current: SyntaxNode | null = node;
+  let base: SyntaxNode | null = null;
+  const segments: SyntaxNode[] = [];
+  while (current && current.type === 'member_expression') {
+    if (hasOptionalChainChild(current)) segments.unshift(current);
+    const objectNode = getMemberObjectNode(current);
+    if (!objectNode || objectNode.type !== 'member_expression') {
+      base = objectNode;
+      break;
+    }
+    current = objectNode;
+  }
+
+  return base && segments.length > 0 ? { base, segments } : null;
+}
+
+function hasOptionalChainChild(node: SyntaxNode): boolean {
+  for (let index = 0; index < node.namedChildCount; index++) {
+    if (node.namedChild(index)?.type === 'optional_chain') return true;
   }
   return false;
+}
+
+function getMemberObjectNode(node: SyntaxNode): SyntaxNode | null {
+  return (
+    node.childForFieldName('object') ??
+    node.namedChildren.find((child) => child.type !== 'optional_chain' && child.type !== 'property_identifier') ??
+    null
+  );
+}
+
+function getSubscriptObjectNode(node: SyntaxNode): SyntaxNode | null {
+  return node.childForFieldName('object') ?? node.namedChildren[0] ?? null;
+}
+
+function getSubscriptIndexNode(node: SyntaxNode): SyntaxNode | null {
+  const objectNode = getSubscriptObjectNode(node);
+  return (
+    node.childForFieldName('index') ??
+    node.namedChildren.find((child) => child !== objectNode && child.type !== 'optional_chain') ??
+    null
+  );
+}
+
+function hasOptionalSubscriptOperator(node: SyntaxNode): boolean {
+  return hasOptionalChainChild(node);
+}
+
+function getCallCalleeExpression(node: SyntaxNode): SyntaxNode | null {
+  return node.childForFieldName('function') ?? node.namedChildren.find((child) => child.type !== 'arguments') ?? null;
+}
+
+function hasOptionalCallOperator(node: SyntaxNode): boolean {
+  for (let index = 0; index < node.childCount; index++) {
+    if (node.child(index)?.type === '?.') return true;
+  }
+  return false;
+}
+
+function getStatementExpression(statement: SyntaxNode): SyntaxNode | null {
+  return statement.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) ?? null;
+}
+
+function getStatementValueExpressions(statement: SyntaxNode): SyntaxNode[] {
+  if (statement.type === 'lexical_declaration' || statement.type === 'variable_declaration') {
+    return statement.namedChildren
+      .filter((child) => child.type === 'variable_declarator')
+      .map(getVariableDeclaratorValue)
+      .filter((child): child is SyntaxNode => child !== null);
+  }
+  if (statement.type === 'expression_statement') {
+    const expression = getStatementExpression(statement);
+    return expression ? [expression] : [];
+  }
+  return [];
+}
+
+function getVariableDeclaratorValue(node: SyntaxNode): SyntaxNode | null {
+  return node.childForFieldName('value') ?? (node.namedChildren.length > 1 ? node.namedChildren.at(-1)! : null);
+}
+
+function getCallArgumentExpressions(node: SyntaxNode): SyntaxNode[] {
+  const args = node.childForFieldName('arguments') ?? node.namedChildren.find((child) => child.type === 'arguments');
+  return args ? args.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) : [];
 }
 
 function isTerminalTransferKind(kind: CfgEdge['kind']): boolean {

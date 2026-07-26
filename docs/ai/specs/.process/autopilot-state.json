@@ -13,7 +13,7 @@
   },
   "status": "in_progress",
   "active_step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)",
-  "updated_at": "2026-07-25T16:54:41Z",
+  "updated_at": "2026-07-25T17:23:10Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -520,6 +520,20 @@
           "build": "passed",
           "node": "24.11.1",
           "verification": "explicit throws and continuation-specific try/finally paths preserve pending and overriding abrupt transfers without speculative cross-product exits"
+        },
+        "T014": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 7,
+          "green_passed": 35,
+          "focused_tests": [
+            "__tests__/analysis/cfg/cfg-typescript.test.ts",
+            "__tests__/analysis/cfg/cfg-contract.test.ts",
+            "__tests__/analysis/cfg/cfg-lifecycle.test.ts"
+          ],
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "logical, ternary, nullish, optional member/call/subscript, and nested-wrapper evaluation paths are AST-grounded and branch-gated without implicit exception edges"
         }
       }
     }
