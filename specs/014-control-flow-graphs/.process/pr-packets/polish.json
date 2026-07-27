@@ -1,0 +1,133 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/polish/body.md",
+  "editable_fields": [
+    {
+      "end_marker": "<!-- speckit-pro-editable:summary:end -->",
+      "field_id": "summary",
+      "heading": "Summary",
+      "start_marker": "<!-- speckit-pro-editable:summary:start -->"
+    },
+    {
+      "end_marker": "<!-- speckit-pro-editable:what_changed:end -->",
+      "field_id": "what_changed",
+      "heading": "What Changed",
+      "start_marker": "<!-- speckit-pro-editable:what_changed:start -->"
+    },
+    {
+      "end_marker": "<!-- speckit-pro-editable:why_it_matters:end -->",
+      "field_id": "why_it_matters",
+      "heading": "Why It Matters",
+      "start_marker": "<!-- speckit-pro-editable:why_it_matters:start -->"
+    }
+  ],
+  "generated_title": {
+    "description": "Complete CFG review gates and hardening",
+    "rejected_candidates": [],
+    "scope": "SPEC-014",
+    "source_evidence": {
+      "kind": "workflow",
+      "source": "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "summary": "Title generated from active SpecKit workflow evidence."
+    },
+    "type": "fix",
+    "value": "fix(SPEC-014): Complete CFG review gates and hardening"
+  },
+  "mode": "split",
+  "packet_id": "polish",
+  "protected_body_fingerprint": {
+    "algorithm": "sha256",
+    "elided_fields": [
+      "summary",
+      "what_changed",
+      "why_it_matters"
+    ],
+    "normalization": "LF line endings; trailing whitespace trimmed; final newline ensured; editable block bodies replaced by <elided:field_id> before sha256.",
+    "value": "7bc9adef1832c1086f734ec650347eaa79e90622ce46a64dd316fd6dc6b621e2"
+  },
+  "required_headings": [
+    "Summary",
+    "What Changed",
+    "Why It Matters",
+    "How To Review",
+    "How To UAT",
+    "Verification",
+    "Scope",
+    "Known Gaps"
+  ],
+  "schema_version": "1.0.0",
+  "scope_evidence": {
+    "budget_result": "warning",
+    "changed_files": [
+      ".codex/config.toml",
+      "__tests__/analysis/cfg/cfg-contract.test.ts",
+      "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+      "__tests__/analysis/cfg/cfg-performance.test.ts",
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "__tests__/analysis/schema-ship.test.ts",
+      "__tests__/mcp-dogfood-runtime.test.ts",
+      "docs/agent-dogfooding.md",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "docs/ai/specs/intelligence-platform-technical-roadmap.md",
+      "scripts/agent-eval/ab-new-vs-baseline.sh",
+      "scripts/lib/dogfood-node-runtime.mjs",
+      "scripts/mcp-dogfood.mjs",
+      "specs/014-control-flow-graphs/.process/emission/full-verification.json",
+      "specs/014-control-flow-graphs/.process/evidence/t041-retrieval-ab.json",
+      "specs/014-control-flow-graphs/.process/reviewability/final-actual.json",
+      "specs/014-control-flow-graphs/contracts/cfg-cli.md",
+      "specs/014-control-flow-graphs/contracts/cfg-mcp.md",
+      "specs/014-control-flow-graphs/contracts/cfg-status.md",
+      "specs/014-control-flow-graphs/plan.md",
+      "specs/014-control-flow-graphs/quickstart.md",
+      "specs/014-control-flow-graphs/research.md",
+      "specs/014-control-flow-graphs/tasks.md",
+      "specs/014-control-flow-graphs/verify-tasks-report.md",
+      "src/analysis/cfg/index.ts",
+      "src/bin/codegraph.ts",
+      "src/index.ts",
+      "src/mcp/tools.ts",
+      "src/project-config.ts"
+    ],
+    "non_goals": [
+      "No behavior beyond the task IDs owned by this ordered marker.",
+      "No aggregate SPEC-014 merge; later behavior remains in later stacked markers."
+    ],
+    "production_files": 5,
+    "reviewable_loc": 636,
+    "total_files": 30
+  },
+  "source_feature_dir": "specs/014-control-flow-graphs",
+  "source_markers": [
+    {
+      "marker_id": "polish",
+      "rendered_text": "fix(SPEC-014): Complete CFG review gates and hardening",
+      "source": "docs/ai/specs/.process/SPEC-014-workflow.md"
+    }
+  ],
+  "split_slice": {
+    "slice_id": "polish",
+    "source_boundary": {
+      "section": "Polish, Gates, and Review Packet"
+    },
+    "source_packet": "docs/ai/specs/.process/SPEC-014-workflow.md#pr-marker-plan-evidence"
+  },
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-10-us4",
+    "head_branch": "codex/spec014-cfg-stack-11-polish"
+  },
+  "uat": {
+    "how_to_uat": "No separate manual UAT runbook was committed for this feature.\nRun the checkpoint-scoped commands recorded in the verification evidence.",
+    "uat_runbook_heading": "## UAT Runbook",
+    "uat_source": "specs/014-control-flow-graphs/.process/emission/polish/verification.json"
+  },
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/polish/validation.json",
+  "verification_evidence": [
+    {
+      "kind": "checkpoint",
+      "result": "pass",
+      "source": "specs/014-control-flow-graphs/.process/emission/polish/verification.json",
+      "summary": "Marker polish passed its checkpoint-scoped verification at 91238913e5358560cbca8cec804e23e4b2c03f78."
+    }
+  ]
+}

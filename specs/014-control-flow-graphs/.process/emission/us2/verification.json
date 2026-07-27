@@ -1,0 +1,38 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "us2",
+  "review_order": 8,
+  "branch": "codex/spec014-cfg-stack-08-us2",
+  "base_branch": "codex/spec014-cfg-stack-07-us1-part5",
+  "checkpoint_sha": "ee70c09c2cca9b7641248c7912d24705b3bf151a",
+  "previous_checkpoint_sha": "91235007d4de2e8bd0f68b9a2abdc83bdb967c5b",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 7,
+    "total_churn": 1877,
+    "production_files": 3,
+    "production_churn": 556,
+    "budget_result": "warning",
+    "changed_files": [
+      "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "specs/014-control-flow-graphs/tasks.md",
+      "src/analysis/cfg/index.ts",
+      "src/index.ts",
+      "src/project-config.ts"
+    ]
+  },
+  "summary": "The indexing, sync, cleanup, disablement, and retained-failure lifecycle checkpoint passes its focused suite.",
+  "commands": [
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-lifecycle.test.ts",
+      "status": "pass",
+      "result": "14 tests passed."
+    }
+  ]
+}

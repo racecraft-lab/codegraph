@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/us1-part3/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "us1-part3",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part3/body.md",
+      "sha256": "02eaa9c18c4a0b53596e5b744a7ae7a606b6de0715eb21640944fd90865c0496",
+      "size_bytes": 1960
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part3.json",
+      "sha256": "a2a9fd20a0fa128ae1ea53278c37eec40dfe1e0b1e6c6ac490b5f8a41c5f79eb",
+      "size_bytes": 3790
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-04-us1-part2",
+    "head_branch": "codex/spec014-cfg-stack-05-us1-part3"
+  },
+  "timestamp": "2026-07-26T12:02:55Z",
+  "title_value": "feat(SPEC-014): Add expression control flow",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part3/validation.json"
+}

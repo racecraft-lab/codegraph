@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/foundation/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "foundation",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/foundation/body.md",
+      "sha256": "663e0a8f002ba38a4feaa386e7a5679e1b8679f72b9c151179b5c4278545dcf5",
+      "size_bytes": 2357
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/foundation.json",
+      "sha256": "866b0638698005df9efca5babdaa036666b9f359656f2b664fa186a600e58eb3",
+      "size_bytes": 4250
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-01-full-spec",
+    "head_branch": "codex/spec014-cfg-stack-02-foundation"
+  },
+  "timestamp": "2026-07-26T12:02:51Z",
+  "title_value": "feat(SPEC-014): Establish CFG storage and contracts",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/foundation/validation.json"
+}

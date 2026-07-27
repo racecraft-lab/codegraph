@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/us2/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "us2",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us2/body.md",
+      "sha256": "46e9d295b7d1e89db7b8b75f7d19aa215a519728edba34cfd87fdd2bd19253ee",
+      "size_bytes": 2018
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us2.json",
+      "sha256": "f6cd7cfc1439ae888635d4eeb18fcf70cbdf35a269118d126b5d4f10002732f1",
+      "size_bytes": 3781
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-07-us1-part5",
+    "head_branch": "codex/spec014-cfg-stack-08-us2"
+  },
+  "timestamp": "2026-07-26T12:02:58Z",
+  "title_value": "feat(SPEC-014): Add CFG lifecycle management",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/us2/validation.json"
+}

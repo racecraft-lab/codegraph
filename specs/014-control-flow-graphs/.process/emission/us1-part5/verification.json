@@ -1,0 +1,48 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "us1-part5",
+  "review_order": 7,
+  "branch": "codex/spec014-cfg-stack-07-us1-part5",
+  "base_branch": "codex/spec014-cfg-stack-06-us1-part4",
+  "checkpoint_sha": "91235007d4de2e8bd0f68b9a2abdc83bdb967c5b",
+  "previous_checkpoint_sha": "a3cff3b299d39b8d6aad17c95b8017b9ec0a1369",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 7,
+    "total_churn": 718,
+    "production_files": 1,
+    "production_churn": 300,
+    "budget_result": "within_budget",
+    "changed_files": [
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "__tests__/pr-impact-action-contract.test.ts",
+      "__tests__/pr-impact-cache.test.ts",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "specs/014-control-flow-graphs/tasks.md",
+      "src/analysis/cfg/index.ts"
+    ]
+  },
+  "summary": "The completed TypeScript CFG checkpoint passes its focused suite and build, and its tree is byte-identical to the original reviewed US1 commit.",
+  "commands": [
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-typescript.test.ts",
+      "status": "pass",
+      "result": "42 tests passed."
+    },
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "result": "Build passed."
+    },
+    {
+      "command": "git rev-parse HEAD^{tree} 10acdf77^{tree}",
+      "status": "pass",
+      "result": "Both trees are ce5630dbb504d3e14e7835bade67ac860aef088d."
+    }
+  ]
+}

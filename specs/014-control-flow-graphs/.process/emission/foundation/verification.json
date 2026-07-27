@@ -1,0 +1,47 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "foundation",
+  "review_order": 2,
+  "branch": "codex/spec014-cfg-stack-02-foundation",
+  "base_branch": "codex/spec014-cfg-stack-01-full-spec",
+  "checkpoint_sha": "11bec1fecddcd88854ac0a2d79d3ef82acf88353",
+  "previous_checkpoint_sha": "666ce13eef9a243d12cf53da48a0d3640672214f",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 16,
+    "total_churn": 1677,
+    "production_files": 5,
+    "production_churn": 796,
+    "budget_result": "warning",
+    "changed_files": [
+      "__tests__/analysis/activation/dormancy.test.ts",
+      "__tests__/analysis/cfg/cfg-contract.test.ts",
+      "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+      "__tests__/analysis/schema-ship.test.ts",
+      "__tests__/embeddings-index.test.ts",
+      "__tests__/foundation.test.ts",
+      "__tests__/mcp-daemon.test.ts",
+      "__tests__/pr19-improvements.test.ts",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "specs/014-control-flow-graphs/tasks.md",
+      "src/analysis/cfg/index.ts",
+      "src/db/migrations.ts",
+      "src/db/schema.sql",
+      "src/index.ts",
+      "src/project-config.ts"
+    ]
+  },
+  "summary": "The storage, contract, status, and paging foundation passes its focused contract and lifecycle suite.",
+  "commands": [
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-contract.test.ts __tests__/analysis/cfg/cfg-lifecycle.test.ts",
+      "status": "pass",
+      "result": "2 files passed; 14 tests passed."
+    }
+  ]
+}

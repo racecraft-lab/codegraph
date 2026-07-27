@@ -1,0 +1,94 @@
+{
+  "schema_version": "spec-014-stack-manager-evidence.v1",
+  "feature_id": "SPEC-014",
+  "strategy": "manual-style-b-linear-stack",
+  "manager": "explicit-git-and-gh-fallback",
+  "status": "verified",
+  "source_base": {
+    "branch": "main",
+    "sha": "474729007ebb6bf400857003790cc296a0238d75"
+  },
+  "orchestration_branch": "014-control-flow-graphs",
+  "orchestration_head": "3b9a07cfbc83537942d0b2d15697dbd0da60d323",
+  "topology": [
+    {
+      "slice_id": "full-spec",
+      "review_order": 1,
+      "branch": "codex/spec014-cfg-stack-01-full-spec",
+      "base_branch": "main",
+      "head_sha": "666ce13eef9a243d12cf53da48a0d3640672214f"
+    },
+    {
+      "slice_id": "foundation",
+      "review_order": 2,
+      "branch": "codex/spec014-cfg-stack-02-foundation",
+      "base_branch": "codex/spec014-cfg-stack-01-full-spec",
+      "head_sha": "11bec1fecddcd88854ac0a2d79d3ef82acf88353"
+    },
+    {
+      "slice_id": "us1-part1",
+      "review_order": 3,
+      "branch": "codex/spec014-cfg-stack-03-us1-part1",
+      "base_branch": "codex/spec014-cfg-stack-02-foundation",
+      "head_sha": "884ee30f533b0720c704e38a526e2b532e553652"
+    },
+    {
+      "slice_id": "us1-part2",
+      "review_order": 4,
+      "branch": "codex/spec014-cfg-stack-04-us1-part2",
+      "base_branch": "codex/spec014-cfg-stack-03-us1-part1",
+      "head_sha": "bc34465b2325bf8f9bfa2faca79af222dade93f6"
+    },
+    {
+      "slice_id": "us1-part3",
+      "review_order": 5,
+      "branch": "codex/spec014-cfg-stack-05-us1-part3",
+      "base_branch": "codex/spec014-cfg-stack-04-us1-part2",
+      "head_sha": "688c0d21cebac1eb907e7d9bf16da18825722dc6"
+    },
+    {
+      "slice_id": "us1-part4",
+      "review_order": 6,
+      "branch": "codex/spec014-cfg-stack-06-us1-part4",
+      "base_branch": "codex/spec014-cfg-stack-05-us1-part3",
+      "head_sha": "a3cff3b299d39b8d6aad17c95b8017b9ec0a1369"
+    },
+    {
+      "slice_id": "us1-part5",
+      "review_order": 7,
+      "branch": "codex/spec014-cfg-stack-07-us1-part5",
+      "base_branch": "codex/spec014-cfg-stack-06-us1-part4",
+      "head_sha": "91235007d4de2e8bd0f68b9a2abdc83bdb967c5b"
+    },
+    {
+      "slice_id": "us2",
+      "review_order": 8,
+      "branch": "codex/spec014-cfg-stack-08-us2",
+      "base_branch": "codex/spec014-cfg-stack-07-us1-part5",
+      "head_sha": "ee70c09c2cca9b7641248c7912d24705b3bf151a"
+    },
+    {
+      "slice_id": "us3",
+      "review_order": 9,
+      "branch": "codex/spec014-cfg-stack-09-us3",
+      "base_branch": "codex/spec014-cfg-stack-08-us2",
+      "head_sha": "6c8bc414eba7432c5a2dd25e62efb1605fbd3826"
+    },
+    {
+      "slice_id": "us4",
+      "review_order": 10,
+      "branch": "codex/spec014-cfg-stack-10-us4",
+      "base_branch": "codex/spec014-cfg-stack-09-us3",
+      "head_sha": "132658f393fa6a960d82a001e5dd33fd0d18935f"
+    },
+    {
+      "slice_id": "polish",
+      "review_order": 11,
+      "branch": "codex/spec014-cfg-stack-11-polish",
+      "base_branch": "codex/spec014-cfg-stack-10-us4",
+      "head_sha": "91238913e5358560cbca8cec804e23e4b2c03f78"
+    }
+  ],
+  "invariant": "Each frozen marker branch points to its verified cumulative checkpoint; the first PR targets main and every later PR targets the previous marker branch.",
+  "v1_ownership_exception": "The installed pr-marker-plan.v2 validator cannot authorize its canonical schema files outside the repository. The validated v1 plan therefore keeps declared_files empty and uniquely owns all task IDs, while packet and PRS scopes record the real per-commit paths, including repeated edits to the shared CFG builder."
+}

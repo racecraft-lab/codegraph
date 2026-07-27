@@ -1,0 +1,145 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/full-spec/body.md",
+  "editable_fields": [
+    {
+      "end_marker": "<!-- speckit-pro-editable:summary:end -->",
+      "field_id": "summary",
+      "heading": "Summary",
+      "start_marker": "<!-- speckit-pro-editable:summary:start -->"
+    },
+    {
+      "end_marker": "<!-- speckit-pro-editable:what_changed:end -->",
+      "field_id": "what_changed",
+      "heading": "What Changed",
+      "start_marker": "<!-- speckit-pro-editable:what_changed:start -->"
+    },
+    {
+      "end_marker": "<!-- speckit-pro-editable:why_it_matters:end -->",
+      "field_id": "why_it_matters",
+      "heading": "Why It Matters",
+      "start_marker": "<!-- speckit-pro-editable:why_it_matters:start -->"
+    }
+  ],
+  "generated_title": {
+    "description": "Add deterministic CFG acceptance fixtures",
+    "rejected_candidates": [],
+    "scope": "SPEC-014",
+    "source_evidence": {
+      "kind": "workflow",
+      "source": "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "summary": "Title generated from active SpecKit workflow evidence."
+    },
+    "type": "test",
+    "value": "test(SPEC-014): Add deterministic CFG acceptance fixtures"
+  },
+  "mode": "split",
+  "packet_id": "full-spec",
+  "protected_body_fingerprint": {
+    "algorithm": "sha256",
+    "elided_fields": [
+      "summary",
+      "what_changed",
+      "why_it_matters"
+    ],
+    "normalization": "LF line endings; trailing whitespace trimmed; final newline ensured; editable block bodies replaced by <elided:field_id> before sha256.",
+    "value": "eca274c60a0d6345d200ca874aff0f59d6286ac3f8c27f57986976877d74fe43"
+  },
+  "required_headings": [
+    "Summary",
+    "What Changed",
+    "Why It Matters",
+    "How To Review",
+    "How To UAT",
+    "Verification",
+    "Scope",
+    "Known Gaps"
+  ],
+  "schema_version": "1.0.0",
+  "scope_evidence": {
+    "budget_result": "warning",
+    "changed_files": [
+      ".specify/feature.json",
+      "__tests__/analysis/cfg/cfg-python.test.ts",
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "__tests__/analysis/cfg/fixtures/python/async_await.py",
+      "__tests__/analysis/cfg/fixtures/python/comprehensions.py",
+      "__tests__/analysis/cfg/fixtures/python/generators.py",
+      "__tests__/analysis/cfg/fixtures/python/lambdas_and_nested_classes.py",
+      "__tests__/analysis/cfg/fixtures/python/match_case.py",
+      "__tests__/analysis/cfg/fixtures/python/parity_baseline.py",
+      "__tests__/analysis/cfg/fixtures/python/raise_and_unreachable.py",
+      "__tests__/analysis/cfg/fixtures/tsjs/baseline.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/nested-functions.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/no-op.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/nullish-coalescing.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/optional-chaining.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/over-limit.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/short-circuit.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/switch.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/throw-finally.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/unreachable.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/unsupported.js",
+      "docs/ai/specs/.process/SPEC-014-design-concept.md",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "docs/ai/specs/intelligence-platform-roadmap-MOC.md",
+      "docs/ai/specs/intelligence-platform-technical-roadmap.md",
+      "specs/014-control-flow-graphs/SPEC-MOC.md",
+      "specs/014-control-flow-graphs/checklists/api-contracts.md",
+      "specs/014-control-flow-graphs/checklists/data-integrity.md",
+      "specs/014-control-flow-graphs/checklists/error-handling.md",
+      "specs/014-control-flow-graphs/checklists/performance.md",
+      "specs/014-control-flow-graphs/checklists/requirements.md",
+      "specs/014-control-flow-graphs/contracts/cfg-cli.md",
+      "specs/014-control-flow-graphs/contracts/cfg-mcp.md",
+      "specs/014-control-flow-graphs/contracts/cfg-shared-contract.md",
+      "specs/014-control-flow-graphs/contracts/cfg-status.md",
+      "specs/014-control-flow-graphs/data-model.md",
+      "specs/014-control-flow-graphs/plan.md",
+      "specs/014-control-flow-graphs/quickstart.md",
+      "specs/014-control-flow-graphs/research.md",
+      "specs/014-control-flow-graphs/spec.md",
+      "specs/014-control-flow-graphs/tasks.md"
+    ],
+    "non_goals": [
+      "No behavior beyond the task IDs owned by this ordered marker.",
+      "No aggregate SPEC-014 merge; later behavior remains in later stacked markers."
+    ],
+    "production_files": 0,
+    "reviewable_loc": 0,
+    "total_files": 42
+  },
+  "source_feature_dir": "specs/014-control-flow-graphs",
+  "source_markers": [
+    {
+      "marker_id": "full-spec",
+      "rendered_text": "test(SPEC-014): Add deterministic CFG acceptance fixtures",
+      "source": "docs/ai/specs/.process/SPEC-014-workflow.md"
+    }
+  ],
+  "split_slice": {
+    "slice_id": "full-spec",
+    "source_boundary": {
+      "section": "Setup and Reviewability Baseline"
+    },
+    "source_packet": "docs/ai/specs/.process/SPEC-014-workflow.md#pr-marker-plan-evidence"
+  },
+  "target": {
+    "base_branch": "main",
+    "head_branch": "codex/spec014-cfg-stack-01-full-spec"
+  },
+  "uat": {
+    "how_to_uat": "No separate manual UAT runbook was committed for this feature.\nRun the checkpoint-scoped commands recorded in the verification evidence.",
+    "uat_runbook_heading": "## UAT Runbook",
+    "uat_source": "specs/014-control-flow-graphs/.process/emission/full-spec/verification.json"
+  },
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/full-spec/validation.json",
+  "verification_evidence": [
+    {
+      "kind": "checkpoint",
+      "result": "pass",
+      "source": "specs/014-control-flow-graphs/.process/emission/full-spec/verification.json",
+      "summary": "Marker full-spec passed its checkpoint-scoped verification at 666ce13eef9a243d12cf53da48a0d3640672214f."
+    }
+  ]
+}

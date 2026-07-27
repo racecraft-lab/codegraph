@@ -1,0 +1,81 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "polish",
+  "review_order": 11,
+  "branch": "codex/spec014-cfg-stack-11-polish",
+  "base_branch": "codex/spec014-cfg-stack-10-us4",
+  "checkpoint_sha": "91238913e5358560cbca8cec804e23e4b2c03f78",
+  "previous_checkpoint_sha": "132658f393fa6a960d82a001e5dd33fd0d18935f",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 30,
+    "total_churn": 3858,
+    "production_files": 5,
+    "production_churn": 636,
+    "budget_result": "warning",
+    "changed_files": [
+      ".codex/config.toml",
+      "__tests__/analysis/cfg/cfg-contract.test.ts",
+      "__tests__/analysis/cfg/cfg-lifecycle.test.ts",
+      "__tests__/analysis/cfg/cfg-performance.test.ts",
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "__tests__/analysis/schema-ship.test.ts",
+      "__tests__/mcp-dogfood-runtime.test.ts",
+      "docs/agent-dogfooding.md",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "docs/ai/specs/intelligence-platform-technical-roadmap.md",
+      "scripts/agent-eval/ab-new-vs-baseline.sh",
+      "scripts/lib/dogfood-node-runtime.mjs",
+      "scripts/mcp-dogfood.mjs",
+      "specs/014-control-flow-graphs/.process/emission/full-verification.json",
+      "specs/014-control-flow-graphs/.process/evidence/t041-retrieval-ab.json",
+      "specs/014-control-flow-graphs/.process/reviewability/final-actual.json",
+      "specs/014-control-flow-graphs/contracts/cfg-cli.md",
+      "specs/014-control-flow-graphs/contracts/cfg-mcp.md",
+      "specs/014-control-flow-graphs/contracts/cfg-status.md",
+      "specs/014-control-flow-graphs/plan.md",
+      "specs/014-control-flow-graphs/quickstart.md",
+      "specs/014-control-flow-graphs/research.md",
+      "specs/014-control-flow-graphs/tasks.md",
+      "specs/014-control-flow-graphs/verify-tasks-report.md",
+      "src/analysis/cfg/index.ts",
+      "src/bin/codegraph.ts",
+      "src/index.ts",
+      "src/mcp/tools.ts",
+      "src/project-config.ts"
+    ]
+  },
+  "summary": "The final reviewed tree passes build, typecheck, focused CFG tests, the unrestricted full suite, performance, retrieval-guardian, dogfood, and authorized Sonnet A/B gates.",
+  "commands": [
+    {
+      "command": "See specs/014-control-flow-graphs/.process/emission/full-verification.json",
+      "status": "pass",
+      "result": "Build and typecheck passed; 114 focused CFG and 4,662 unrestricted tests passed."
+    },
+    {
+      "command": "git rev-parse 91238913e5358560cbca8cec804e23e4b2c03f78^{tree}",
+      "status": "pass",
+      "result": "The updated final marker tree is 0d082de144b43dd792df3fd52d1faf6f8d47d8f5."
+    },
+    {
+      "command": "npm run typecheck && npm run build && npx vitest run __tests__/analysis/cfg/cfg-contract.test.ts __tests__/analysis/cfg/cfg-lifecycle.test.ts __tests__/analysis/cfg/cfg-performance.test.ts __tests__/analysis/cfg/cfg-typescript.test.ts __tests__/analysis/cfg/cfg-python.test.ts",
+      "status": "pass",
+      "result": "Review remediation passed typecheck, build, and 114 focused CFG tests with 3 skips."
+    },
+    {
+      "command": "git merge-base --is-ancestor 132658f393fa6a960d82a001e5dd33fd0d18935f 91238913e5358560cbca8cec804e23e4b2c03f78",
+      "status": "pass",
+      "result": "The CI-remediated US4 checkpoint is an ancestor of the final cumulative polish checkpoint."
+    },
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-contract.test.ts -t 'resolves unindexed CFG activation from the nearest ancestor config for nested project paths'",
+      "status": "pass",
+      "result": "Nested unindexed paths now inherit the nearest ancestor cfg activation policy for both enabled and disabled configurations."
+    }
+  ]
+}

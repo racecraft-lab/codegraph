@@ -11,9 +11,9 @@
     "execution_root": "/Users/fredrickgabelmann/.codex/worktrees/f585/codegraph/.worktrees/014-control-flow-graphs",
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
-  "status": "in_progress",
-  "active_step": "Post: PR Packet/Body Generation",
-  "updated_at": "2026-07-26T11:11:53Z",
+  "status": "completed",
+  "active_step": "complete",
+  "updated_at": "2026-07-26T14:50:28Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -1201,7 +1201,7 @@
         "typecheck": "passed",
         "test_files_passed": 260,
         "test_files_skipped": 15,
-        "tests_passed": 4652,
+        "tests_passed": 4662,
         "tests_skipped": 181,
         "performance_ratio": 1.159,
         "performance_threshold": 1.2,
@@ -1252,11 +1252,11 @@
       "build": "passed",
       "typecheck": "passed",
       "focused_cfg_files_passed": 5,
-      "focused_cfg_tests_passed": 107,
+      "focused_cfg_tests_passed": 114,
       "focused_cfg_tests_skipped": 3,
       "test_files_passed": 260,
       "test_files_skipped": 15,
-      "tests_passed": 4655,
+      "tests_passed": 4662,
       "tests_skipped": 181,
       "sandbox_note": "The restricted-sandbox attempt was invalid because loopback sockets and daemon-election writes were denied; the authoritative unrestricted rerun passed."
     },
@@ -1284,7 +1284,7 @@
         "unit_test": "passed",
         "test_files_passed": 260,
         "test_files_skipped": 15,
-        "tests_passed": 4655,
+        "tests_passed": 4662,
         "tests_skipped": 181,
         "integration_test": "not_applicable"
       },
@@ -1315,13 +1315,107 @@
       "correctness_findings": 0,
       "single_aggregate_pr_forbidden": true,
       "evidence": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+    },
+    "marker_stack": {
+      "status": "completed",
+      "verdict": "passed",
+      "marker_count": 11,
+      "source_base_sha": "474729007ebb6bf400857003790cc296a0238d75",
+      "final_reviewed_tree": "0d082de144b43dd792df3fd52d1faf6f8d47d8f5",
+      "synthetic_stack_tree": "0d082de144b43dd792df3fd52d1faf6f8d47d8f5",
+      "v1_ownership_exception": "Task ownership is strict and unique; packet scopes retain real repeated paths because the shared CFG builder spans multiple cumulative checkpoints.",
+      "evidence": "specs/014-control-flow-graphs/.process/emission/marker-checkpoints.json"
+    },
+    "pr_packet_body_generation": {
+      "status": "completed",
+      "verdict": "passed",
+      "packets_generated": 11,
+      "bodies_generated": 11,
+      "read_only_packet_validations_passed": 11,
+      "workflow_contract_validations_passed": 11,
+      "persisted_validation_fingerprints": 11,
+      "command_plan": "specs/014-control-flow-graphs/.process/emission/multi-pr-command-plan.json"
+    },
+    "pr_body_generation": {
+      "status": "completed",
+      "verdict": "passed",
+      "ownership": "pr-packet-output helper",
+      "body_count": 11
+    },
+    "pr_creation": {
+      "status": "completed",
+      "verdict": "passed",
+      "mode": "marker_split_with_completion_handoff",
+      "marker_pr_count": 11,
+      "total_pr_count": 12,
+      "pr_numbers": [169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180],
+      "first_base_branch": "main",
+      "final_marker_head_branch": "codex/spec014-cfg-stack-11-polish",
+      "final_head_branch": "014-control-flow-graphs",
+      "prs_path": "specs/014-control-flow-graphs/.process/prs.json",
+      "prs_manifest_scope": "implementation markers #169-#179",
+      "moc_path": "specs/014-control-flow-graphs/SPEC-MOC.md",
+      "completion_handoff": {
+        "pr_number": 180,
+        "url": "https://github.com/racecraft-lab/codegraph/pull/180",
+        "base_branch": "codex/spec014-cfg-stack-11-polish",
+        "head_branch": "014-control-flow-graphs",
+        "draft": true,
+        "scope": "64 workflow and evidence files; no production-code difference from PR #179",
+        "gh_stack_attempt": "linked",
+        "gh_stack_initial_failure": "exit 9 after gh-stack selected the fetch-only colbymchenry/codegraph upstream for API calls",
+        "gh_stack_root_cause": "--remote origin controls branch pushes but does not override go-gh repository.Current API selection",
+        "gh_stack_repository_override": "GH_REPO=racecraft-lab/codegraph",
+        "native_stack_number": 181,
+        "native_stack_status": "open",
+        "native_stack_pr_count": 12,
+        "pr_creation_path": "gh pr create created PR #180 before native stack registration was corrected",
+        "checks_status": "passed",
+        "checks_passed": 11,
+        "checks_pending": 0,
+        "checks_failed": 0,
+        "verified_head_sha": "844f26077d1c4d7dc29821e9fce2dee136ed7d4b"
+      }
+    },
+    "review_remediation": {
+      "status": "completed",
+      "verdict": "passed",
+      "review_threads_total": 25,
+      "review_threads_resolved": 25,
+      "review_threads_unresolved": 0,
+      "stack_prs": 11,
+      "stack_checks_passed": 121,
+      "stack_checks_pending": 0,
+      "stack_checks_failed": 0,
+      "final_pr": 179,
+      "final_head_sha": "91238913e5358560cbca8cec804e23e4b2c03f78",
+      "codeql": "passed after replacing the path-level stat/read race with stable descriptor reads and declaring a secure open mode",
+      "focused_cfg_tests_passed": 114,
+      "full_tests_passed": 4662
+    },
+    "retrospective": {
+      "status": "completed",
+      "verdict": "passed",
+      "report": "specs/014-control-flow-graphs/retrospective.md",
+      "completion_rate": 100,
+      "spec_adherence": 100,
+      "tasks_complete": "43/43",
+      "functional_requirements_covered": "34/34",
+      "success_criteria_covered": "11/11",
+      "critical_findings": 0,
+      "significant_findings": 3,
+      "minor_findings": 0,
+      "positive_findings": 4,
+      "proposed_spec_changes": 3,
+      "spec_changes_applied": false,
+      "self_assessment": "7/7 PASS"
     }
   },
   "pr_marker_plan": {
     "schema_version": "pr-marker-plan.v1",
     "kind": "pr_marker_plan",
     "feature_id": "SPEC-014",
-    "status": "planned",
+    "status": "emitted",
     "source_fingerprint": {
       "feature_spec_sha": "sha256:94f776a71f3fbd2aa3c6c01b4a4ba41c2d66250c943eff25024dc58cfaa783d4",
       "plan_declared_scope_sha": "sha256:de4a3c9a5cff0749455009856b5d7a4fc5e707ab80faa5c8b1abaabf0a8fe540",
@@ -1359,10 +1453,19 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "666ce13eef9a243d12cf53da48a0d3640672214f",
+          "head_sha": "666ce13eef9a243d12cf53da48a0d3640672214f",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/full-spec/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/full-spec.json",
+          "pr_number": 169,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/169",
+          "branch": "codex/spec014-cfg-stack-01-full-spec",
+          "base_branch": "main",
+          "head_sha": "666ce13eef9a243d12cf53da48a0d3640672214f"
         },
         "warnings": []
       },
@@ -1395,10 +1498,19 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "11bec1fecddcd88854ac0a2d79d3ef82acf88353",
+          "head_sha": "11bec1fecddcd88854ac0a2d79d3ef82acf88353",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/foundation/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/foundation.json",
+          "pr_number": 170,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/170",
+          "branch": "codex/spec014-cfg-stack-02-foundation",
+          "base_branch": "codex/spec014-cfg-stack-01-full-spec",
+          "head_sha": "11bec1fecddcd88854ac0a2d79d3ef82acf88353"
         },
         "warnings": [
           {
@@ -1445,10 +1557,19 @@
           }
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "884ee30f533b0720c704e38a526e2b532e553652",
+          "head_sha": "884ee30f533b0720c704e38a526e2b532e553652",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us1-part1/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part1.json",
+          "pr_number": 171,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/171",
+          "branch": "codex/spec014-cfg-stack-03-us1-part1",
+          "base_branch": "codex/spec014-cfg-stack-02-foundation",
+          "head_sha": "884ee30f533b0720c704e38a526e2b532e553652"
         },
         "warnings": []
       },
@@ -1484,10 +1605,19 @@
           }
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "bc34465b2325bf8f9bfa2faca79af222dade93f6",
+          "head_sha": "bc34465b2325bf8f9bfa2faca79af222dade93f6",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us1-part2/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part2.json",
+          "pr_number": 172,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/172",
+          "branch": "codex/spec014-cfg-stack-04-us1-part2",
+          "base_branch": "codex/spec014-cfg-stack-03-us1-part1",
+          "head_sha": "bc34465b2325bf8f9bfa2faca79af222dade93f6"
         },
         "warnings": []
       },
@@ -1523,10 +1653,19 @@
           }
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "688c0d21cebac1eb907e7d9bf16da18825722dc6",
+          "head_sha": "688c0d21cebac1eb907e7d9bf16da18825722dc6",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us1-part3/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part3.json",
+          "pr_number": 173,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/173",
+          "branch": "codex/spec014-cfg-stack-05-us1-part3",
+          "base_branch": "codex/spec014-cfg-stack-04-us1-part2",
+          "head_sha": "688c0d21cebac1eb907e7d9bf16da18825722dc6"
         },
         "warnings": []
       },
@@ -1562,10 +1701,19 @@
           }
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "a3cff3b299d39b8d6aad17c95b8017b9ec0a1369",
+          "head_sha": "a3cff3b299d39b8d6aad17c95b8017b9ec0a1369",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us1-part4/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part4.json",
+          "pr_number": 174,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/174",
+          "branch": "codex/spec014-cfg-stack-06-us1-part4",
+          "base_branch": "codex/spec014-cfg-stack-05-us1-part3",
+          "head_sha": "a3cff3b299d39b8d6aad17c95b8017b9ec0a1369"
         },
         "warnings": []
       },
@@ -1601,10 +1749,19 @@
           }
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "91235007d4de2e8bd0f68b9a2abdc83bdb967c5b",
+          "head_sha": "91235007d4de2e8bd0f68b9a2abdc83bdb967c5b",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us1-part5/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part5.json",
+          "pr_number": 175,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/175",
+          "branch": "codex/spec014-cfg-stack-07-us1-part5",
+          "base_branch": "codex/spec014-cfg-stack-06-us1-part4",
+          "head_sha": "91235007d4de2e8bd0f68b9a2abdc83bdb967c5b"
         },
         "warnings": []
       },
@@ -1637,10 +1794,19 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "ee70c09c2cca9b7641248c7912d24705b3bf151a",
+          "head_sha": "ee70c09c2cca9b7641248c7912d24705b3bf151a",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us2/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us2.json",
+          "pr_number": 176,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/176",
+          "branch": "codex/spec014-cfg-stack-08-us2",
+          "base_branch": "codex/spec014-cfg-stack-07-us1-part5",
+          "head_sha": "ee70c09c2cca9b7641248c7912d24705b3bf151a"
         },
         "warnings": []
       },
@@ -1673,10 +1839,19 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "6c8bc414eba7432c5a2dd25e62efb1605fbd3826",
+          "head_sha": "6c8bc414eba7432c5a2dd25e62efb1605fbd3826",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us3/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us3.json",
+          "pr_number": 177,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/177",
+          "branch": "codex/spec014-cfg-stack-09-us3",
+          "base_branch": "codex/spec014-cfg-stack-08-us2",
+          "head_sha": "6c8bc414eba7432c5a2dd25e62efb1605fbd3826"
         },
         "warnings": []
       },
@@ -1709,10 +1884,19 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "132658f393fa6a960d82a001e5dd33fd0d18935f",
+          "head_sha": "132658f393fa6a960d82a001e5dd33fd0d18935f",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/us4/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/us4.json",
+          "pr_number": 178,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/178",
+          "branch": "codex/spec014-cfg-stack-10-us4",
+          "base_branch": "codex/spec014-cfg-stack-09-us3",
+          "head_sha": "132658f393fa6a960d82a001e5dd33fd0d18935f"
         },
         "warnings": []
       },
@@ -1745,10 +1929,19 @@
           "details": {}
         },
         "implementation_checkpoint": {
-          "status": "pending"
+          "status": "complete",
+          "commit_sha": "91238913e5358560cbca8cec804e23e4b2c03f78",
+          "head_sha": "91238913e5358560cbca8cec804e23e4b2c03f78",
+          "verification_evidence_path": "specs/014-control-flow-graphs/.process/emission/polish/verification.json"
         },
         "emission_mapping": {
-          "status": "pending"
+          "status": "emitted",
+          "packet_path": "specs/014-control-flow-graphs/.process/pr-packets/polish.json",
+          "pr_number": 179,
+          "pr_url": "https://github.com/racecraft-lab/codegraph/pull/179",
+          "branch": "codex/spec014-cfg-stack-11-polish",
+          "base_branch": "codex/spec014-cfg-stack-10-us4",
+          "head_sha": "91238913e5358560cbca8cec804e23e4b2c03f78"
         },
         "warnings": []
       }
@@ -1768,7 +1961,19 @@
       }
     ],
     "created_at": "2026-07-25T23:58:25Z",
-    "updated_at": "2026-07-26T10:27:52Z"
+    "updated_at": "2026-07-26T13:34:29Z"
+  },
+  "multi_pr_emission": {
+    "status": "emitted",
+    "mode": "marker_split",
+    "source_feature_dir": "specs/014-control-flow-graphs",
+    "prs_path": "specs/014-control-flow-graphs/.process/prs.json",
+    "moc_path": "specs/014-control-flow-graphs/SPEC-MOC.md",
+    "stack_manager_evidence_path": "specs/014-control-flow-graphs/.process/emission/stack-manager.json",
+    "checkpoint_evidence_path": "specs/014-control-flow-graphs/.process/emission/marker-checkpoints.json",
+    "review_order": ["full-spec", "foundation", "us1-part1", "us1-part2", "us1-part3", "us1-part4", "us1-part5", "us2", "us3", "us4", "polish"],
+    "next_slice_id": null,
+    "command_plan": "specs/014-control-flow-graphs/.process/emission/multi-pr-command-plan.json"
   },
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
@@ -1809,10 +2014,11 @@
     {"step": "Post: Self-Review", "status": "completed"},
     {"step": "Post: UAT Runbook Generation", "status": "completed"},
     {"step": "Post: Final Reviewability Backstop", "status": "completed"},
-    {"step": "Post: PR Packet/Body Generation", "status": "in_progress"},
-    {"step": "Post: PR Body Generation", "status": "pending"},
-    {"step": "Post: PR Creation", "status": "pending"},
-    {"step": "Post: Review Remediation", "status": "pending"},
-    {"step": "Post: Retrospective", "status": "pending"}
+    {"step": "Post: PR Packet/Body Generation", "status": "completed"},
+    {"step": "Post: PR Body Generation", "status": "completed"},
+    {"step": "Post: PR Creation", "status": "completed"},
+    {"step": "Post: Review Remediation", "status": "completed"},
+    {"step": "Post: Retrospective", "status": "completed"},
+    {"step": "Post: Completion PR Handoff", "status": "completed"}
   ]
 }

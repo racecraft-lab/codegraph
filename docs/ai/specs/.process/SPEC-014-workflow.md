@@ -1276,34 +1276,28 @@ Marker-plan lifecycle mirror:
 
 - Schema: `pr-marker-plan.v1`
 - Fingerprint status: Current
-- Plan status: `planned`
-- Final marker split: required for size only; not emission-ready
+- Plan status: `emitted`
+- Final marker split: required for size only; all 11 checkpoints verified
 - Warning codes: `FINAL_SIZE_ONLY_BLOCK`, `MARKER_ABOVE_TARGET`
-- Packet validation: `pending`
-- PR mappings: `pending`
+- Packet validation: `passed` for 11/11 packets and workflow contracts
+- PR mappings: `11/11 emitted`
 
-| Order | Marker | Owned tasks | Reviewability | Checkpoint | Emission |
-|---:|---|---|---|---|---|
-| 1 | `full-spec` | T001–T003 | not estimated | pending | pending |
-| 2 | `foundation` | T004–T008 | warn | pending | pending |
-| 3 | `us1-part1` | T009–T012 | not estimated | pending | pending |
-| 4 | `us1-part2` | T013 | not estimated | pending | pending |
-| 5 | `us1-part3` | T014 | not estimated | pending | pending |
-| 6 | `us1-part4` | T015 | not estimated | pending | pending |
-| 7 | `us1-part5` | T016 | not estimated | pending | pending |
-| 8 | `us2` | T017–T023 | warn | pending | pending |
-| 9 | `us3` | T024–T031 | warn | pending | pending |
-| 10 | `us4` | T032–T038 | warn | pending | pending |
-| 11 | `polish` | T039–T043 | not estimated | pending | pending |
+All 43 task IDs are owned exactly once. The five US1 marker commits replace
+the original monolithic US1 commit without changing its final tree. The
+complete synthetic stack has reviewed tree
+`0d082de144b43dd792df3fd52d1faf6f8d47d8f5`. The final checkpoint
+`91238913` is rooted on CI-remediated US4 checkpoint `132658f3`. Every
+checkpoint exists, is linearly ordered, and is an ancestor of the active
+orchestration head through the no-content marker-history merge.
 
-All 43 task IDs are owned exactly once. The plan is intentionally `planned`,
-not emission-ready: each marker still requires a verified implementation
-checkpoint and current packet validation before any PR can be emitted.
-The v1 planning state intentionally leaves declared file/test ownership empty;
-the emission stage must bind actual subdivided checkpoints and strict file
-ownership before packet generation.
-An independent read-only T043 audit re-read the settled files and returned
-`PASS` for this planned marker-split handoff.
+The installed `pr-marker-plan.v2` validator cannot authorize its canonical
+schema files because those files live in the external plugin cache rather than
+this repository. The validated v1 route therefore retains strict, unique task
+ownership while leaving marker-plan `declared_files` empty. Each packet and PRS
+record carries its actual per-commit scope, including repeated edits to the
+shared `src/analysis/cfg/index.ts` monolith. This is the explicit exception to
+the earlier strict file-ownership wording; it does not relax checkpoint,
+ancestry, test, packet, or live-branch verification.
 
 The marker plan is bound to these current source fingerprints:
 
@@ -1315,11 +1309,44 @@ The marker plan is bound to these current source fingerprints:
 | Final reviewability evidence | `6d82c3cba35b9aabb2be725e5358e5192aee4007bbb7defff740b6b10cd98238` |
 | Hazard route (`one-navigable-PR`) | `b6404134e0816be38c5748cdef55016133bf7f32f16b4598c7c9e5a098c5adbb` |
 
+## PR Marker Plan Evidence
+
+| Order | Marker | Owned tasks | Reviewability | Checkpoint | Emission |
+|---:|---|---|---|---|---|
+| 1 | `full-spec` | T001–T003 | warning: 42 files, 0 production churn | `666ce13eef9a243d12cf53da48a0d3640672214f` | emitted [#169](https://github.com/racecraft-lab/codegraph/pull/169) |
+| 2 | `foundation` | T004–T008 | warning: 796 production churn | `11bec1fecddcd88854ac0a2d79d3ef82acf88353` | emitted [#170](https://github.com/racecraft-lab/codegraph/pull/170) |
+| 3 | `us1-part1` | T009–T012 | warning: 800 production churn | `884ee30f533b0720c704e38a526e2b532e553652` | emitted [#171](https://github.com/racecraft-lab/codegraph/pull/171) |
+| 4 | `us1-part2` | T013 | within budget: 358 production churn | `bc34465b2325bf8f9bfa2faca79af222dade93f6` | emitted [#172](https://github.com/racecraft-lab/codegraph/pull/172) |
+| 5 | `us1-part3` | T014 | warning: 546 production churn | `688c0d21cebac1eb907e7d9bf16da18825722dc6` | emitted [#173](https://github.com/racecraft-lab/codegraph/pull/173) |
+| 6 | `us1-part4` | T015 | warning: 409 production churn | `a3cff3b299d39b8d6aad17c95b8017b9ec0a1369` | emitted [#174](https://github.com/racecraft-lab/codegraph/pull/174) |
+| 7 | `us1-part5` | T016 | within budget: 300 production churn | `91235007d4de2e8bd0f68b9a2abdc83bdb967c5b` | emitted [#175](https://github.com/racecraft-lab/codegraph/pull/175) |
+| 8 | `us2` | T017–T023 | warning: 556 production churn | `ee70c09c2cca9b7641248c7912d24705b3bf151a` | emitted [#176](https://github.com/racecraft-lab/codegraph/pull/176) |
+| 9 | `us3` | T024–T031 | warning: 459 production churn | `6c8bc414eba7432c5a2dd25e62efb1605fbd3826` | emitted [#177](https://github.com/racecraft-lab/codegraph/pull/177) |
+| 10 | `us4` | T032–T038 | warning: 508 production churn | `132658f393fa6a960d82a001e5dd33fd0d18935f` | emitted [#178](https://github.com/racecraft-lab/codegraph/pull/178) |
+| 11 | `polish` | T039–T043 | warning: 30 files, 636 production churn | `91238913e5358560cbca8cec804e23e4b2c03f78` | emitted [#179](https://github.com/racecraft-lab/codegraph/pull/179) |
+
+- Implementation checkpoint [full-spec]: `666ce13eef9a243d12cf53da48a0d3640672214f`
+- Implementation checkpoint [foundation]: `11bec1fecddcd88854ac0a2d79d3ef82acf88353`
+- Implementation checkpoint [us1-part1]: `884ee30f533b0720c704e38a526e2b532e553652`
+- Implementation checkpoint [us1-part2]: `bc34465b2325bf8f9bfa2faca79af222dade93f6`
+- Implementation checkpoint [us1-part3]: `688c0d21cebac1eb907e7d9bf16da18825722dc6`
+- Implementation checkpoint [us1-part4]: `a3cff3b299d39b8d6aad17c95b8017b9ec0a1369`
+- Implementation checkpoint [us1-part5]: `91235007d4de2e8bd0f68b9a2abdc83bdb967c5b`
+- Implementation checkpoint [us2]: `ee70c09c2cca9b7641248c7912d24705b3bf151a`
+- Implementation checkpoint [us3]: `6c8bc414eba7432c5a2dd25e62efb1605fbd3826`
+- Implementation checkpoint [us4]: `132658f393fa6a960d82a001e5dd33fd0d18935f`
+- Implementation checkpoint [polish]: `91238913e5358560cbca8cec804e23e4b2c03f78`
+
+Durable checkpoint, scoped verification, changed-file, stack topology, and
+pending PRS evidence lives under
+`specs/014-control-flow-graphs/.process/emission/` and
+`specs/014-control-flow-graphs/.process/prs.json`.
+
 ### G7 Completion
 
 G7 passed on 2026-07-26 under Node 24.11.1. `npm run build` and
 `npm run typecheck` exited zero. The final authoritative suite passed 260 files
-and 4,652 tests, with 15 files and 181 tests skipped. The isolated paired
+and 4,662 tests, with 15 files and 181 tests skipped. The isolated paired
 benchmark remained below the 1.20 threshold at 1.159, the retrieval-guardian
 returned no applicable local finding, and the authorized two-run-per-arm
 Sonnet/high A/B completed successfully with no worst-case Read regression.
@@ -1334,16 +1361,17 @@ Sonnet/high A/B completed successfully with no worst-case Read regression.
 | Post: Verify Implementation | ✅ Complete | PASS: 43/43 tasks, 34/34 FRs, and 4/4 stories traced. |
 | Post: Verify Tasks Phantom Check | ✅ Complete | PASS: 43 verified, zero partial/weak/not-found/skipped; report committed with the feature. |
 | Post: Code Review | ✅ Complete | Three findings were fixed with regression-first tests; bounded independent re-review passed. |
-| Post: Integration Suite | ✅ Complete | Node 24 build/typecheck passed; focused CFG 107/107 and unrestricted full suite 4,655/4,655 passed. |
+| Post: Integration Suite | ✅ Complete | Node 24 build/typecheck passed; focused CFG 114/114 and unrestricted full suite 4,662/4,662 passed. |
 | Post: Reviewability Diff Gate | ✅ Complete | Current `origin/main...db97414f` evidence remains a size-only marker split; no aggregate PR is allowed. |
 | Post: Self-Review | ✅ Complete | PASS: tests, all 22 acceptance scenarios, all eight edge cases, requirement/task traceability, and tidiness audited. |
 | Post: UAT Runbook Generation | ⏭️ Skipped | Fail-open: no committed UAT runbook exists and the skeleton helper is deferred. |
 | Post: Final Reviewability Backstop | ✅ Complete | Committed-head evidence confirms the size-only 11-marker split with zero correctness findings. |
-| Post: PR Packet/Body Generation | 🔄 In Progress | Bind checkpoints and strict ownership, then emit and validate feature-local packets. |
-| Post: PR Body Generation | ⏳ Pending | Generate the packet-owned PR body. |
-| Post: PR Creation | ⏳ Pending | Create the authorized PR or marker stack. |
-| Post: Review Remediation | ⏳ Pending | Poll and resolve CI and review findings. |
-| Post: Retrospective | ⏳ Pending | Run last, after every other Post item. |
+| Post: PR Packet/Body Generation | ✅ Complete | Eleven helper-owned packets pass read-only validation and persisted fingerprint checks. |
+| Post: PR Body Generation | ✅ Complete | Eleven packet-owned bodies pass structure and workflow-contract validation. |
+| Post: PR Creation | ✅ Complete | PRs #169–#179 plus dependent completion/evidence PR #180 are live with linear bases. |
+| Post: Review Remediation | ✅ Complete | All 25 review threads are resolved and all 121 checks across PRs #169–#179 pass. |
+| Post: Retrospective | ✅ Complete | 100% completion and adherence; 0 critical findings; 7/7 self-assessment checks passed. |
+| Post: Completion PR Handoff | ✅ Complete | Draft PR #180 targets the PR #179 branch; all 11 checks passed at handoff checkpoint `1eefaa96`. |
 
 - [x] Every task is implemented and verified, not merely checked off.
 - [x] `npm run build` passes under supported Node.
@@ -1354,8 +1382,8 @@ Sonnet/high A/B completed successfully with no worst-case Read regression.
 - [x] Library, CLI JSON, and MCP parity tests pass.
 - [x] Self-repo UAT and Python fixture UAT are recorded.
 - [x] Retrieval-guardian returns no blocking finding.
-- [ ] Reviewability gates pass for each emitted slice/PR.
-- [ ] Roadmap/workflow/autopilot state remains synchronized.
+- [x] Reviewability gates pass for each emitted slice/PR.
+- [x] Roadmap/workflow/autopilot state remains synchronized.
 
 Parallel Post evidence (2026-07-26): the Doctor track recorded the required
 explicit skip because neither Doctor nor speckit-utils is installed. The
@@ -1367,15 +1395,46 @@ characters on CFG CLI human/error surfaces. Regression-first remediations now
 fail closed for runtime-evaluated case labels, retain prior snapshots as stale
 on source-read failure, and escape CFG human/error text while preserving exact
 JSON values. A bounded independent re-review passed. Under Node 24.11.1, build
-and typecheck passed, the focused CFG suite passed 107 tests with three skipped,
-and the final unrestricted full suite passed 260 files and 4,655 tests with 15
+and typecheck passed, the focused CFG suite passed 114 tests with three skipped,
+and the final unrestricted full suite passed 260 files and 4,662 tests with 15
 files and 181 tests skipped. The restricted-sandbox attempt was invalid because
 loopback sockets and daemon-election writes were denied; it is not gate
 evidence.
 
+Review Remediation (2026-07-26): all 25 review threads across PRs #169–#179
+are resolved and all 121 stacked checks pass. The final remediation fixed four
+late semantic findings plus a real CodeQL-reported project-config read race.
+The config revision cache now reads and verifies one stable descriptor, retries
+a concurrent identity change, and declares an explicit secure open mode. The
+exact final PR #179 head `91238913` passes CodeQL, the full 11-check matrix,
+114 focused CFG tests, and the unrestricted 4,662-test repository suite.
+
+Retrospective (2026-07-26): the final report at
+`specs/014-control-flow-graphs/retrospective.md` records 43/43 tasks, 34/34
+functional requirements, 11/11 success criteria, 100% spec adherence, zero
+critical findings, three significant process findings, four positive findings,
+and a 7/7 PASS self-assessment. Three proposed spec clarifications remain
+report-only because no separate human approval to modify `spec.md` was given.
+
+Completion PR correction (2026-07-26): the original PR-creation completion
+claim covered the eleven implementation markers but omitted the 64-file
+workflow/evidence delta from `codex/spec014-cfg-stack-11-polish` to
+`014-control-flow-graphs`. Draft PR #180 now supplies that final dependent
+layer with no production-code difference from PR #179. Authenticated
+`gh pr create` initially supplied the dependent PR after `gh stack link`
+returned exit code 9. Diagnosis showed that `gh-stack` had selected the
+fetch-only `colbymchenry/codegraph` upstream for API calls even though
+`--remote origin` controlled branch pushes; the tracking fork itself already
+supported native Stacks. Re-running with
+`GH_REPO=racecraft-lab/codegraph` created open native stack #181 containing
+PRs #169 through #180 in order and preserved draft PR #180. All 11 PR #180
+checks, including CodeQL and the six OS/Node jobs, passed at the pre-correction
+handoff checkpoint `844f2607`.
+
 Reviewability Diff Gate (2026-07-26): `origin/main` was refreshed and still
-resolves to `474729007ebb6bf400857003790cc296a0238d75`; no open, closed, or
-merged PR exists for head `014-control-flow-graphs` or a `SPEC-014` title.
+resolves to `474729007ebb6bf400857003790cc296a0238d75`. At the time of that
+gate, no open, closed, or merged PR existed for head
+`014-control-flow-graphs`; that omission is now corrected by draft PR #180.
 Against committed head `db97414f2da16afd00c406503dde0b6364feab76`, the
 surface is 75 files and 18,042 lines of churn, including 10 production files
 and 4,486 production lines. The classification remains a correctness-clean
@@ -1386,7 +1445,7 @@ checkpoints and strict file ownership before packet emission.
 Self-Review (2026-07-26):
 
 1. **Tests executed** — PASS. Node 24.11.1 `npm run build` and
-   `npm run typecheck` exited zero. `npm test` passed 260 files and 4,655
+   `npm run typecheck` exited zero. `npm test` passed 260 files and 4,662
    tests, with 15 files and 181 tests skipped. The project declares LINT and
    INTEGRATION_TEST as not applicable; the unrestricted full suite is the
    authoritative test gate.

@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/us1-part2/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "us1-part2",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part2/body.md",
+      "sha256": "d1446ced21939ff48515565b1018f51f2b0bcfb4318fe8ad095ddaa9a8a7b671",
+      "size_bytes": 1830
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part2.json",
+      "sha256": "046a997f7b361ca88852a3de8389f9137cb0d02b73beffc40f2978ec87469de8",
+      "size_bytes": 3808
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-03-us1-part1",
+    "head_branch": "codex/spec014-cfg-stack-04-us1-part2"
+  },
+  "timestamp": "2026-07-26T12:02:53Z",
+  "title_value": "feat(SPEC-014): Add throw and finally routing",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part2/validation.json"
+}
