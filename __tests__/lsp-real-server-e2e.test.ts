@@ -10,9 +10,13 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import CodeGraph from '../src';
+
+const requireFromTest = createRequire(import.meta.url);
+const typescriptPackageDir = path.dirname(requireFromTest.resolve('typescript/package.json'));
 
 function commandOnPath(name: string): boolean {
   const probe = process.platform === 'win32' ? 'where' : 'which';
@@ -29,6 +33,15 @@ describe.runIf(hasServer)('LSP precision pass against a real typescript-language
   it('verifies or corrects at least one call edge end-to-end', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-real-'));
     try {
+      // The server resolves TypeScript from the workspace, while this fixture
+      // intentionally lives outside the repository's node_modules ancestry.
+      const nodeModulesDir = path.join(dir, 'node_modules');
+      fs.mkdirSync(nodeModulesDir);
+      fs.symlinkSync(
+        typescriptPackageDir,
+        path.join(nodeModulesDir, 'typescript'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
       fs.writeFileSync(
         path.join(dir, 'tsconfig.json'),
         JSON.stringify({ compilerOptions: { strict: false } }),
