@@ -106,3 +106,14 @@
   stale T018-T048 checkbox reconciliation in
   [archive-reports/2026-07-24-SPEC-009.md](archive-reports/2026-07-24-SPEC-009.md);
   `.specify/feature.json` cleared because no active spec remains.
+
+- **2026-07-27** - SPEC-014 archived. PRs #169-#179 merged the ordered CFG
+  fixture, storage, TypeScript/JavaScript semantics, lifecycle, read-surface,
+  Python-parity, and hardening markers; PR #180 (`6dbf309`) merged final
+  workflow/evidence state. Post-merge dogfood repair PR #182 (`55bf822`) then
+  restored deterministic real-TypeScript LSP fixture initialization and passed
+  the full OS/Node matrix. The roadmap row flipped to complete and SPEC-015
+  moved to ready because the persisted CFG substrate and contracts are merged;
+  `specs/014-control-flow-graphs/` was removed with provenance in
+  [archive-reports/2026-07-27-SPEC-014.md](archive-reports/2026-07-27-SPEC-014.md);
+  `.specify/feature.json` was cleared because no active spec remains.

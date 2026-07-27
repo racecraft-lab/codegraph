@@ -212,3 +212,22 @@ Detailed provenance, stale-task-ledger reconciliation, and recovery:
 [archive-reports/2026-07-24-SPEC-009.md](archive-reports/2026-07-24-SPEC-009.md).
 The active `specs/009-lsp-server-facade/` folder was removed because merged code,
 tests, CI, UAT, and preserved workflow/design evidence carry the durable record.
+
+## SPEC-014 - Control-Flow Graphs (archived 2026-07-27)
+
+Control-flow graphs shipped as ordered PRs #169 through #179 plus completion
+PR #180. The default-off analysis builds deterministic per-function CFGs for
+TypeScript, JavaScript, and Python, persists state/blocks/typed edges with
+bounded lifecycle semantics, and exposes one stateful contract through
+`CodeGraph.getCfg`, `codegraph cfg`, paginated `codegraph_get_cfg`, and
+aggregate status. Canonical implementation lives in `src/analysis/cfg/`,
+CFG additions under `src/db/`, activation/orchestration in
+`src/project-config.ts` and `src/index.ts`, CLI/MCP adapters, Python extraction
+identity, and focused coverage under `__tests__/analysis/cfg/`. Detailed stack,
+dogfood, verification, and recovery provenance:
+[archive-reports/2026-07-27-SPEC-014.md](archive-reports/2026-07-27-SPEC-014.md).
+The active `specs/014-control-flow-graphs/` folder was removed because merged
+code, 43/43 verified tasks, green cross-platform checks, post-merge dogfood,
+and preserved workflow/design evidence carry the durable record. SPEC-015 is
+now ready because its required persisted CFG substrate and read contracts are
+merged.

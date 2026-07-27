@@ -83,7 +83,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
 | Implement | `/speckit-implement` | ✅ Complete | T001–T043 and G7 complete; final Node 24 build/typecheck/full suite and retrieval A/B are green. |
-| Post | Autopilot post-implementation | 🔄 In Progress | Parallel verification/review is complete; the serial reviewability, UAT, packet, PR, remediation, and retrospective tail is active. |
+| Post | Autopilot post-implementation | ✅ Complete | PRs #169-#180 merged; post-merge dogfood repair #182 merged; archive cleanup preserves this workflow and the durable report. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -1372,6 +1372,7 @@ Sonnet/high A/B completed successfully with no worst-case Read regression.
 | Post: Review Remediation | ✅ Complete | All 25 review threads are resolved and all 121 checks across PRs #169–#179 pass. |
 | Post: Retrospective | ✅ Complete | 100% completion and adherence; 0 critical findings; 7/7 self-assessment checks passed. |
 | Post: Completion PR Handoff | ✅ Complete | Draft PR #180 targets the PR #179 branch; all 11 checks passed at handoff checkpoint `1eefaa96`. |
+| Post: Archive Cleanup | ✅ Complete | Merge provenance confirmed on `origin/main`; active spec artifacts moved to durable memory and removed; roadmap now marks SPEC-015 ready. |
 
 - [x] Every task is implemented and verified, not merely checked off.
 - [x] `npm run build` passes under supported Node.
@@ -1494,6 +1495,20 @@ deferred helper was not invoked; the manual committed-head recheck used
 lines. There are zero correctness findings. The outcome remains `marker_split`;
 a single aggregate PR is forbidden. The evidence is frozen in
 `specs/014-control-flow-graphs/.process/reviewability/final-actual.json`.
+
+---
+
+## Archive Cleanup
+
+Completed 2026-07-27 after confirming the ordered implementation stack
+#169-#179, completion/evidence PR #180, and post-merge dogfood repair #182 are
+merged into `origin/main`. The active `specs/014-control-flow-graphs/` folder
+was removed after its durable specification, plan, verification, merge, CI,
+dogfood, recovery, and downstream-unblock evidence was recorded in
+`.specify/memory/archive-reports/2026-07-27-SPEC-014.md` and the three
+append-only memory ledgers. This workflow and its design concept remain the
+canonical process record. The roadmap now marks SPEC-014 complete and
+SPEC-015 ready.
 
 ---
 
