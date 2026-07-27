@@ -545,7 +545,7 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 **Priority:** P2 | **Depends On:** None | **Enables:** SPEC-015 → 016 → 017
 
 **Status:** Complete — merged as PRs #169-#180, post-merge dogfood repaired in
-#182, and archived with durable provenance.
+PR #182, and archived with durable provenance.
 
 **Goal:** Opt-in per-function CFGs (basic blocks + typed edges) built from tree-sitter ASTs through a language-neutral lowering IR, persisted and queryable — TS/JS + Python first.
 
