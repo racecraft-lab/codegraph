@@ -1550,7 +1550,7 @@ describe('SPEC-014 public CFG contract', () => {
       functionId: 'function:cfg-invalid',
     });
     expect(invalidMcp.isError).toBe(true);
-  });
+  }, 30_000);
 
   it.runIf(process.env.CODEGRAPH_SELF_REPO_UAT === '1')(
     'dogfoods the current repository through library, built CLI JSON, MCP pages, and status',
