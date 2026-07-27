@@ -470,6 +470,132 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     ]);
   });
 
+  it('persists the committed switch fixture with ordered case and default dispatch', async () => {
+    const source = fs.readFileSync(path.join(FIXTURE_DIR, 'switch.js'), 'utf8');
+    const cfg = await indexFunctionCfg('switch.js', 'switchRoute', source);
+    const paths = edgeTextPaths(cfg, source);
+
+    expect(cfg.blocks.map((block) => blockTextLabel(source, block))).toEqual([
+      '0:entry',
+      '1:condition:state',
+      '2:body:return \'queued\';',
+      '3:body:return \'active\';',
+      '4:body:return \'done\';',
+      '5:body:return \'unknown\';',
+      '6:exit',
+    ]);
+    expect(paths).toEqual(expect.arrayContaining([
+      '0:entry -fallthrough-> 1:condition:state',
+      '1:condition:state -case-> 2:body:return \'queued\';',
+      '1:condition:state -case-> 3:body:return \'active\';',
+      '1:condition:state -case-> 4:body:return \'done\';',
+      '1:condition:state -default-> 5:body:return \'unknown\';',
+      '2:body:return \'queued\'; -return-> 6:exit',
+      '3:body:return \'active\'; -return-> 6:exit',
+      '4:body:return \'done\'; -return-> 6:exit',
+      '5:body:return \'unknown\'; -return-> 6:exit',
+    ]));
+    expect(paths).toHaveLength(9);
+  });
+
+  it('persists real switch fallthrough and break to the switch successor', async () => {
+    const source = [
+      'export function switchFallthroughProbe(value: string): number {',
+      '  let total = 0;',
+      '  switch (value) {',
+      "    case 'a':",
+      '      total += 1;',
+      "    case 'b':",
+      '      total += 2;',
+      '      break;',
+      '    default:',
+      '      total += 3;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('switch-fallthrough-probe.ts', 'switchFallthroughProbe', source);
+    const paths = edgeTextPaths(cfg, source);
+
+    expect(cfg.blocks.map((block) => blockTextLabel(source, block))).toEqual([
+      '0:entry',
+      '1:body:let total = 0;',
+      '2:condition:value',
+      '3:body:total += 1;',
+      '4:body:total += 2;',
+      '5:body:break;',
+      '6:body:total += 3;',
+      '7:body:return total;',
+      '8:exit',
+    ]);
+    expect(paths).toEqual(expect.arrayContaining([
+      '0:entry -fallthrough-> 1:body:let total = 0;',
+      '1:body:let total = 0; -fallthrough-> 2:condition:value',
+      '2:condition:value -case-> 3:body:total += 1;',
+      '2:condition:value -case-> 4:body:total += 2;',
+      '2:condition:value -default-> 6:body:total += 3;',
+      '3:body:total += 1; -fallthrough-> 4:body:total += 2;',
+      '4:body:total += 2; -fallthrough-> 5:body:break;',
+      '5:body:break; -break-> 7:body:return total;',
+      '6:body:total += 3; -fallthrough-> 7:body:return total;',
+      '7:body:return total; -return-> 8:exit',
+    ]));
+    expect(paths).toHaveLength(10);
+  });
+
+  it('persists an unmatched switch dispatch without an explicit default as a default edge', async () => {
+    const source = [
+      'export function switchMissingDefaultProbe(value: string): number {',
+      '  switch (value) {',
+      "    case 'ready':",
+      '      return 1;',
+      '  }',
+      '  return 0;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('switch-missing-default-probe.ts', 'switchMissingDefaultProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:value',
+      '1:condition:value -case-> 2:body:return 1;',
+      '1:condition:value -default-> 3:body:return 0;',
+      '2:body:return 1; -return-> 4:exit',
+      '3:body:return 0; -return-> 4:exit',
+    ]);
+  });
+
+  it('persists branchy switch discriminants before case dispatch', async () => {
+    const source = [
+      'export function branchySwitchProbe(config?: { mode?: string }, fallback = \'idle\'): number {',
+      '  switch (config?.mode ?? fallback) {',
+      "    case 'ready':",
+      '      return 1;',
+      '  }',
+      '  return 0;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('branchy-switch-probe.ts', 'branchySwitchProbe', source);
+    const paths = edgeTextPaths(cfg, source);
+
+    expect(paths).toEqual(expect.arrayContaining([
+      '0:entry -fallthrough-> 1:condition:config',
+      '1:condition:config -true-> 2:body:config?.mode',
+      '1:condition:config -false-> 4:body:fallback',
+      '2:body:config?.mode -fallthrough-> 3:condition:config?.mode',
+      '3:condition:config?.mode -true-> 5:condition:config?.mode ?? fallback',
+      '3:condition:config?.mode -false-> 4:body:fallback',
+      '4:body:fallback -fallthrough-> 5:condition:config?.mode ?? fallback',
+      '5:condition:config?.mode ?? fallback -case-> 6:body:return 1;',
+      '5:condition:config?.mode ?? fallback -default-> 7:body:return 0;',
+      '6:body:return 1; -return-> 8:exit',
+      '7:body:return 0; -return-> 8:exit',
+    ]));
+    expect(paths).toHaveLength(11);
+  });
+
   it('persists a ternary initializer with exactly one evaluated arm before merge', async () => {
     const source = [
       'export function ternaryProbe(flag: boolean): number {',
@@ -687,6 +813,242 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     expect(cfg.edges.filter((edge) => edge.kind === 'throw')).toHaveLength(1);
   });
 
+  it('persists nearest loop break and continue targets through the update path', async () => {
+    const source = [
+      'export function loopTransferProbe(limit: number): number {',
+      '  let total = 0;',
+      '  for (let index = 0; index < limit; index++) {',
+      '    if (index === 1) {',
+      '      continue;',
+      '    }',
+      '    if (index === 3) {',
+      '      break;',
+      '    }',
+      '    total += index;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('loop-transfer-probe.ts', 'loopTransferProbe', source);
+    const paths = edgeTextPaths(cfg, source);
+
+    expect(paths).toEqual(expect.arrayContaining([
+      '2:body:let index = 0; -fallthrough-> 3:condition:index < limit',
+      '3:condition:index < limit -true-> 4:condition:index === 1',
+      '3:condition:index < limit -false-> 10:body:return total;',
+      '5:body:continue; -continue-> 9:body:index++',
+      '7:body:break; -break-> 10:body:return total;',
+      '8:body:total += index; -fallthrough-> 9:body:index++',
+      '9:body:index++ -loop_back-> 3:condition:index < limit',
+    ]));
+    expect(paths.indexOf('5:body:continue; -continue-> 9:body:index++')).toBeLessThan(
+      paths.indexOf('9:body:index++ -loop_back-> 3:condition:index < limit'),
+    );
+  });
+
+  it('routes labeled break and continue through lexical finally before exact loop targets', async () => {
+    const source = [
+      'export function labeledFinallyProbe(limit: number): number {',
+      '  let total = 0;',
+      'outer:',
+      '  for (let row = 0; row < limit; row++) {',
+      '    for (let col = 0; col < limit; col++) {',
+      '      try {',
+      '        if (col === 1) {',
+      '          continue outer;',
+      '        }',
+      '        if (row === 2) {',
+      '          break outer;',
+      '        }',
+      '      } finally {',
+      '        total += 100;',
+      '      }',
+      '      total += col;',
+      '    }',
+      '    total += row;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('labeled-finally-probe.ts', 'labeledFinallyProbe', source);
+    const paths = edgeTextPaths(cfg, source);
+
+    expect(paths.some((path) =>
+      path.includes('body:continue outer; -finally->') && path.endsWith('body:total += 100;')
+    )).toBe(true);
+    expect(paths.some((path) =>
+      path.includes('body:break outer; -finally->') && path.endsWith('body:total += 100;')
+    )).toBe(true);
+    expect(paths.some((path) =>
+      path.includes('body:total += 100; -continue->') && path.endsWith('body:row++')
+    )).toBe(true);
+    expect(paths.some((path) =>
+      path.includes('body:total += 100; -break->') && path.endsWith('body:return total;')
+    )).toBe(true);
+  });
+
+  it('routes chained labels that ultimately target one loop to that loop target', async () => {
+    const source = [
+      'export function chainedLoopLabelProbe(limit: number, skip: boolean): number {',
+      '  let total = 0;',
+      'outer:',
+      'inner:',
+      '  while (limit > 0) {',
+      '    limit -= 1;',
+      '    if (skip) {',
+      '      continue outer;',
+      '    }',
+      '    total += limit;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('chained-loop-label-probe.ts', 'chainedLoopLabelProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:body:let total = 0;',
+      '1:body:let total = 0; -fallthrough-> 2:condition:limit > 0',
+      '2:condition:limit > 0 -true-> 3:body:limit -= 1;',
+      '2:condition:limit > 0 -false-> 7:body:return total;',
+      '3:body:limit -= 1; -fallthrough-> 4:condition:skip',
+      '4:condition:skip -true-> 5:body:continue outer;',
+      '4:condition:skip -false-> 6:body:total += limit;',
+      '5:body:continue outer; -continue-> 2:condition:limit > 0',
+      '6:body:total += limit; -loop_back-> 2:condition:limit > 0',
+      '7:body:return total; -return-> 8:exit',
+    ]);
+  });
+
+  it('persists labeled block breaks to the labeled statement successor', async () => {
+    const source = [
+      'export function labeledBlockBreakProbe(flag: boolean): number {',
+      '  let total = 0;',
+      'done:',
+      '  {',
+      '    if (flag) {',
+      '      break done;',
+      '    }',
+      '    total += 1;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('labeled-block-break-probe.ts', 'labeledBlockBreakProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:body:let total = 0;',
+      '1:body:let total = 0; -fallthrough-> 2:condition:flag',
+      '2:condition:flag -true-> 3:body:break done;',
+      '2:condition:flag -false-> 4:body:total += 1;',
+      '3:body:break done; -break-> 5:body:return total;',
+      '4:body:total += 1; -fallthrough-> 5:body:return total;',
+      '5:body:return total; -return-> 6:exit',
+    ]);
+  });
+
+  it('persists for-ever loops with only real break paths leaving the loop', async () => {
+    const source = [
+      'export function foreverBreakProbe(stop: boolean): number {',
+      '  let total = 0;',
+      '  for (;;) {',
+      '    if (stop) {',
+      '      break;',
+      '    }',
+      '    total += 1;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('forever-break-probe.ts', 'foreverBreakProbe', source);
+    const paths = edgeRolePaths(cfg);
+
+    expect(paths).toEqual([
+      '0:entry -fallthrough-> 1:body',
+      '1:body -fallthrough-> 2:condition',
+      '2:condition -true-> 3:condition',
+      '3:condition -true-> 4:body',
+      '3:condition -false-> 5:body',
+      '4:body -break-> 6:body',
+      '5:body -loop_back-> 2:condition',
+      '6:body -return-> 7:exit',
+    ]);
+    expect(paths.some((path) => path.startsWith('2:condition -false->'))).toBe(false);
+  });
+
+  it('persists branchy for update expressions on continue and loop-back paths', async () => {
+    const source = [
+      'export function branchyForUpdateProbe(limit: number, step?: { next?: number }): number {',
+      '  let total = 0;',
+      '  for (let index = 0; index < limit; step?.next ?? index++) {',
+      '    if (index === 1) {',
+      '      continue;',
+      '    }',
+      '    total += index;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('branchy-for-update-probe.ts', 'branchyForUpdateProbe', source);
+    const paths = edgeTextPaths(cfg, source);
+
+    expect(paths).toEqual([
+      '0:entry -fallthrough-> 1:body:let total = 0;',
+      '1:body:let total = 0; -fallthrough-> 2:body:let index = 0;',
+      '2:body:let index = 0; -fallthrough-> 3:condition:index < limit',
+      '3:condition:index < limit -true-> 4:condition:index === 1',
+      '3:condition:index < limit -false-> 11:body:return total;',
+      '4:condition:index === 1 -true-> 5:body:continue;',
+      '4:condition:index === 1 -false-> 6:body:total += index;',
+      '5:body:continue; -continue-> 7:condition:step',
+      '6:body:total += index; -fallthrough-> 7:condition:step',
+      '7:condition:step -true-> 8:body:step?.next',
+      '7:condition:step -false-> 10:body:index++',
+      '8:body:step?.next -fallthrough-> 9:condition:step?.next',
+      '9:condition:step?.next -false-> 10:body:index++',
+      '9:condition:step?.next -loop_back-> 3:condition:index < limit',
+      '10:body:index++ -loop_back-> 3:condition:index < limit',
+      '11:body:return total; -return-> 12:exit',
+    ]);
+    expect(paths.some((path) => path.includes('body:step?.next ?? index++'))).toBe(false);
+  });
+
+  it('persists branchy while conditions on each loop evaluation', async () => {
+    const source = [
+      'export function branchyWhileProbe(cursor?: { active?: boolean }, limit = 2): number {',
+      '  let steps = 0;',
+      '  while (cursor?.active && limit > 0) {',
+      '    steps += 1;',
+      '    limit -= 1;',
+      '  }',
+      '  return steps;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('branchy-while-probe.ts', 'branchyWhileProbe', source);
+
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:body:let steps = 0;',
+      '1:body:let steps = 0; -fallthrough-> 2:condition:cursor?.active && limit > 0',
+      '2:condition:cursor?.active && limit > 0 -fallthrough-> 3:condition:cursor',
+      '3:condition:cursor -true-> 4:body:cursor?.active',
+      '3:condition:cursor -false-> 5:condition:cursor?.active',
+      '4:body:cursor?.active -fallthrough-> 5:condition:cursor?.active',
+      '5:condition:cursor?.active -true-> 6:condition:limit > 0',
+      '5:condition:cursor?.active -false-> 9:body:return steps;',
+      '6:condition:limit > 0 -true-> 7:body:steps += 1;',
+      '6:condition:limit > 0 -false-> 9:body:return steps;',
+      '7:body:steps += 1; -fallthrough-> 8:body:limit -= 1;',
+      '8:body:limit -= 1; -loop_back-> 2:condition:cursor?.active && limit > 0',
+      '9:body:return steps; -return-> 10:exit',
+    ]);
+  });
+
   it('persists resource_limited when finally cloning exceeds the block cap after estimation', async () => {
     const { db, functionId, result } = await indexFunctionResult(
       'finally-clone-limit.ts',
@@ -735,9 +1097,9 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
       reason: 'unsupported_construct',
       source: [
         'export function unsupportedConstructSkip(input: number): number {',
-        '  for (let index = 0; index < input; index++) {',
-        '    input += index;',
-        '  }',
+        '  do {',
+        '    input += 1;',
+        '  } while (input < 10);',
         '  return input;',
         '}',
         '',
@@ -830,6 +1192,90 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
         setCfgParserOverrideForTests('typescript', undefined);
       }
     }
+  });
+
+  it.each([
+    {
+      fileName: 'unresolved-label-skip.ts',
+      functionName: 'unresolvedLabelSkip',
+      reason: 'unsupported_construct',
+      source: [
+        'export function unresolvedLabelSkip(): number {',
+        '  break missing;',
+        '  return 1;',
+        '}',
+        '',
+      ].join('\n'),
+    },
+    {
+      fileName: 'cross-boundary-label-skip.ts',
+      functionName: 'crossBoundaryLabelSkip',
+      reason: 'unsupported_construct',
+      source: [
+        'export function crossBoundaryLabelSkip(limit: number): number {',
+        'outer:',
+        '  while (limit > 0) {',
+        '    function inner(): number {',
+        '      break outer;',
+        '    }',
+        '    return inner();',
+        '  }',
+        '  return 0;',
+        '}',
+        '',
+      ].join('\n'),
+    },
+    {
+      fileName: 'continue-to-block-label-skip.ts',
+      functionName: 'continueToBlockLabelSkip',
+      reason: 'unsupported_construct',
+      source: [
+        'export function continueToBlockLabelSkip(flag: boolean): number {',
+        'done:',
+        '  {',
+        '    if (flag) {',
+        '      continue done;',
+        '    }',
+        '  }',
+        '  return 1;',
+        '}',
+        '',
+      ].join('\n'),
+    },
+    {
+      fileName: 'parse-unsafe-label-skip.ts',
+      functionName: 'parseUnsafeLabelSkip',
+      reason: 'parse_unsafe_region',
+      source: [
+        'export function parseUnsafeLabelSkip(): number {',
+        'label:',
+        '  if () {',
+        '    break label;',
+        '  }',
+        '  return 1;',
+        '}',
+        '',
+      ].join('\n'),
+    },
+  ])('skips whole-function CFG for $fileName with zero payload', async ({ fileName, functionName, reason, source }) => {
+    const { db, functionId, result } = await indexFunctionResult(fileName, functionName, source);
+
+    expect(result).toMatchObject({
+      analysis: 'cfg',
+      cfg: null,
+      functionId,
+      page: null,
+      reason,
+      sourceVersion: expect.stringMatching(/^cfgsrc:v1:/),
+      stale: false,
+      state: 'unsupported',
+    });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_blocks WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_edges WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
   });
 
   it('persists resource_limited for a generated function whose CFG demand exceeds the block cap', async () => {

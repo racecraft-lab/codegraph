@@ -255,6 +255,7 @@ interface CfgIr {
 interface CfgPendingTransfer {
   fromOrdinal: number;
   kind: CfgEdge['kind'];
+  label?: string | null;
 }
 
 interface CfgStatementFlow {
@@ -270,6 +271,10 @@ interface CfgExpressionFlow {
 interface CfgConditionFlow {
   trueTransfers: CfgPendingTransfer[];
   falseTransfers: CfgPendingTransfer[];
+}
+
+interface CfgLoopConditionFlow extends CfgConditionFlow {
+  reentryOrdinal: number;
 }
 
 interface OptionalMemberChain {
@@ -1006,6 +1011,7 @@ class StructuredCfgBuilder {
       this.addEdge(continuation.fromOrdinal, exitOrdinal, continuation.kind);
     }
     for (const terminal of flow.terminals) {
+      if (!isFunctionExitTransferKind(terminal.kind)) return null;
       this.addEdge(terminal.fromOrdinal, exitOrdinal, terminal.kind);
     }
 
@@ -1042,12 +1048,25 @@ class StructuredCfgBuilder {
     statement: SyntaxNode,
     incoming: readonly CfgPendingTransfer[],
     terminalMode: CfgTerminalMode,
+    labels: readonly string[] = [],
   ): CfgStatementFlow | null {
+    if (statement.type === 'labeled_statement') {
+      return this.buildLabeledStatement(statement, incoming, terminalMode, labels);
+    }
     if (statement.type === 'statement_block') {
       return this.buildStatementSequence(getStatementBlockStatements(statement), incoming, terminalMode);
     }
     if (statement.type === 'if_statement') {
       return this.buildIfStatement(statement, incoming, terminalMode);
+    }
+    if (statement.type === 'switch_statement') {
+      return this.buildSwitchStatement(statement, incoming, terminalMode, labels);
+    }
+    if (statement.type === 'for_statement') {
+      return this.buildForStatement(statement, incoming, terminalMode, labels);
+    }
+    if (statement.type === 'while_statement') {
+      return this.buildWhileStatement(statement, incoming, terminalMode, labels);
     }
     if (statement.type === 'try_statement') {
       return this.buildTryFinallyStatement(statement, incoming, terminalMode);
@@ -1057,6 +1076,12 @@ class StructuredCfgBuilder {
     }
     if (statement.type === 'throw_statement') {
       return this.buildTerminalStatement(statement, incoming, terminalMode, 'throw');
+    }
+    if (statement.type === 'break_statement') {
+      return this.buildJumpStatement(statement, incoming, terminalMode, 'break');
+    }
+    if (statement.type === 'continue_statement') {
+      return this.buildJumpStatement(statement, incoming, terminalMode, 'continue');
     }
     if (isSimpleStructuredStatement(statement)) {
       return this.buildValueStatement(statement, incoming);
@@ -1129,6 +1154,284 @@ class StructuredCfgBuilder {
     }
 
     return { continues, terminals };
+  }
+
+  private buildLabeledStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    labels: readonly string[],
+  ): CfgStatementFlow | null {
+    const label = getStatementLabelName(statement);
+    const body = getLabeledStatementBody(statement);
+    if (!label || !body || labels.includes(label)) return null;
+
+    if (isLoopStatement(body)) {
+      return this.buildStatement(body, incoming, terminalMode, [...labels, label]);
+    }
+    if (body.type === 'labeled_statement' && labeledStatementUltimatelyTargetsLoop(body)) {
+      return this.buildStatement(body, incoming, terminalMode, [...labels, label]);
+    }
+
+    const flow = this.buildStatement(body, incoming, terminalMode, labels);
+    if (!flow) return null;
+
+    const continues = [...flow.continues];
+    const terminals: CfgPendingTransfer[] = [];
+    for (const terminal of flow.terminals) {
+      if (terminal.kind === 'break' && terminal.label === label) {
+        continues.push(terminal);
+      } else {
+        terminals.push(terminal);
+      }
+    }
+
+    return { continues, terminals };
+  }
+
+  private buildSwitchStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    labels: readonly string[],
+  ): CfgStatementFlow | null {
+    const condition = getSwitchConditionExpression(statement);
+    const body = statement.childForFieldName('body');
+    if (!condition || !body || body.type !== 'switch_body') return null;
+
+    const conditionOrdinal = this.addSwitchDiscriminantBlock(condition, incoming);
+    if (conditionOrdinal === null) return null;
+
+    const clauses = getSwitchClauses(body);
+    const continues: CfgPendingTransfer[] = [];
+    const terminals: CfgPendingTransfer[] = [];
+    let fallthrough: CfgPendingTransfer[] = [];
+    let hasDefault = false;
+
+    for (const clause of clauses) {
+      const dispatchKind: CfgEdge['kind'] = clause.type === 'switch_default' ? 'default' : 'case';
+      if (dispatchKind === 'default') hasDefault = true;
+
+      const clauseIncoming = [
+        { fromOrdinal: conditionOrdinal, kind: dispatchKind },
+        ...fallthrough,
+      ];
+      const statements = getSwitchClauseStatements(clause);
+      if (statements.length === 0) {
+        fallthrough = clauseIncoming;
+        continue;
+      }
+
+      const flow = this.buildStatementSequence(statements, clauseIncoming, terminalMode);
+      if (!flow) return null;
+      const partition = partitionBreakTransfers(flow.terminals, labels);
+      continues.push(...partition.consumed);
+      terminals.push(...partition.remaining);
+      fallthrough = flow.continues;
+    }
+
+    continues.push(...fallthrough);
+    if (!hasDefault) {
+      continues.push({ fromOrdinal: conditionOrdinal, kind: 'default' });
+    }
+
+    return { continues, terminals };
+  }
+
+  private buildForStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    labels: readonly string[],
+  ): CfgStatementFlow | null {
+    let loopIncoming = [...incoming];
+    const initializer = statement.childForFieldName('initializer');
+    if (initializer && initializer.type !== 'empty_statement') {
+      const initFlow = this.buildLoopInitializer(initializer, loopIncoming);
+      if (!initFlow || initFlow.terminals.length > 0) return null;
+      loopIncoming = initFlow.continues;
+    }
+
+    const condition = getForConditionExpression(statement);
+    const conditionFlow = condition
+      ? this.buildLoopCondition(condition, loopIncoming)
+      : this.buildInfiniteLoopCondition(statement, loopIncoming);
+    if (!conditionFlow) return null;
+
+    const body = statement.childForFieldName('body');
+    if (!body) return null;
+
+    const bodyFlow = this.buildStatement(body, conditionFlow.trueTransfers, terminalMode);
+    if (!bodyFlow) return null;
+
+    const partition = partitionLoopTransfers(bodyFlow.terminals, labels);
+    const loopBackTransfers = [...bodyFlow.continues, ...partition.continues];
+    const update = statement.childForFieldName('increment');
+    if (update) {
+      const updateFlow = this.buildLoopUpdate(update, loopBackTransfers);
+      if (!updateFlow || updateFlow.terminals.length > 0) return null;
+      for (const transfer of updateFlow.continues) {
+        this.addEdge(transfer.fromOrdinal, conditionFlow.reentryOrdinal, 'loop_back');
+      }
+    } else {
+      for (const transfer of loopBackTransfers) {
+        this.addEdge(
+          transfer.fromOrdinal,
+          conditionFlow.reentryOrdinal,
+          transfer.kind === 'continue' ? 'continue' : 'loop_back',
+        );
+      }
+    }
+
+    return {
+      continues: [
+        ...conditionFlow.falseTransfers,
+        ...partition.breaks,
+      ],
+      terminals: partition.remaining,
+    };
+  }
+
+  private buildLoopUpdate(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgStatementFlow | null {
+    const node = unwrapStatementExpressionNode(expression);
+    if (hasModeledExpressionBranching(node)) {
+      const expressionFlow = this.buildExpressionValue(node, incoming, true);
+      if (!expressionFlow) return null;
+      return { continues: allExpressionExits(expressionFlow), terminals: [] };
+    }
+
+    const updateOrdinal = this.addBodyBlock(node);
+    this.connectIncoming(incoming, updateOrdinal);
+    return {
+      continues: [{ fromOrdinal: updateOrdinal, kind: 'fallthrough' }],
+      terminals: [],
+    };
+  }
+
+  private buildWhileStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    labels: readonly string[],
+  ): CfgStatementFlow | null {
+    const condition = statement.childForFieldName('condition');
+    const body = statement.childForFieldName('body');
+    if (!condition || !body) return null;
+
+    const conditionFlow = this.buildLoopCondition(condition, incoming);
+    if (!conditionFlow) return null;
+
+    const bodyFlow = this.buildStatement(body, conditionFlow.trueTransfers, terminalMode);
+    if (!bodyFlow) return null;
+
+    const partition = partitionLoopTransfers(bodyFlow.terminals, labels);
+    for (const transfer of bodyFlow.continues) {
+      this.addEdge(transfer.fromOrdinal, conditionFlow.reentryOrdinal, 'loop_back');
+    }
+    for (const transfer of partition.continues) {
+      this.addEdge(transfer.fromOrdinal, conditionFlow.reentryOrdinal, 'continue');
+    }
+
+    return {
+      continues: [
+        ...conditionFlow.falseTransfers,
+        ...partition.breaks,
+      ],
+      terminals: partition.remaining,
+    };
+  }
+
+  private buildLoopInitializer(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgStatementFlow | null {
+    if (isSimpleStructuredStatement(statement)) {
+      return this.buildValueStatement(statement, incoming);
+    }
+
+    if (hasModeledExpressionBranching(statement)) return null;
+
+    const blockOrdinal = this.addBodyBlock(statement);
+    this.connectIncoming(incoming, blockOrdinal);
+    return {
+      continues: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
+      terminals: [],
+    };
+  }
+
+  private buildJumpStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    kind: Extract<CfgEdge['kind'], 'break' | 'continue'>,
+  ): CfgStatementFlow {
+    const blockOrdinal = this.addBodyBlock(statement);
+    this.connectIncoming(incoming, blockOrdinal);
+    return this.handleTerminalTransfer({
+      fromOrdinal: blockOrdinal,
+      kind,
+      label: getTransferStatementLabel(statement),
+    }, terminalMode);
+  }
+
+  private addSwitchDiscriminantBlock(
+    condition: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): number | null {
+    const node = unwrapStatementExpressionNode(condition);
+    const expressionFlow = hasModeledExpressionBranching(node)
+      ? this.buildExpressionValue(node, incoming, true)
+      : null;
+    if (hasModeledExpressionBranching(node) && !expressionFlow) return null;
+
+    const conditionOrdinal = this.addBlock('condition', node);
+    this.connectIncoming(expressionFlow ? allExpressionExits(expressionFlow) : incoming, conditionOrdinal);
+    return conditionOrdinal;
+  }
+
+  private buildLoopCondition(
+    condition: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgLoopConditionFlow | null {
+    const node = unwrapStatementExpressionNode(condition);
+    if (!hasModeledExpressionBranching(node)) {
+      const conditionOrdinal = this.addBlock('condition', node);
+      this.connectIncoming(incoming, conditionOrdinal);
+      return {
+        reentryOrdinal: conditionOrdinal,
+        trueTransfers: [{ fromOrdinal: conditionOrdinal, kind: 'true' }],
+        falseTransfers: [{ fromOrdinal: conditionOrdinal, kind: 'false' }],
+      };
+    }
+
+    const anchorOrdinal = this.addBlock('condition', node);
+    this.connectIncoming(incoming, anchorOrdinal);
+    const conditionFlow = this.buildConditionExpression(node, [
+      { fromOrdinal: anchorOrdinal, kind: 'fallthrough' },
+    ]);
+    if (!conditionFlow) return null;
+
+    return {
+      reentryOrdinal: anchorOrdinal,
+      trueTransfers: conditionFlow.trueTransfers,
+      falseTransfers: conditionFlow.falseTransfers,
+    };
+  }
+
+  private buildInfiniteLoopCondition(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgLoopConditionFlow {
+    const conditionOrdinal = this.addBlock('condition', statement);
+    this.connectIncoming(incoming, conditionOrdinal);
+    return {
+      reentryOrdinal: conditionOrdinal,
+      trueTransfers: [{ fromOrdinal: conditionOrdinal, kind: 'true' }],
+      falseTransfers: [],
+    };
   }
 
   private buildExpressionValue(
@@ -1493,9 +1796,10 @@ class StructuredCfgBuilder {
       for (const finalizerContinuation of finallyFlow.continues) {
         const resumed = {
           fromOrdinal: finalizerContinuation.fromOrdinal,
-          kind: isTerminalTransferKind(pending.kind) ? pending.kind : 'fallthrough',
+          kind: isAbruptTransferKind(pending.kind) ? pending.kind : 'fallthrough',
+          label: pending.label,
         };
-        if (isTerminalTransferKind(resumed.kind)) {
+        if (isAbruptTransferKind(resumed.kind)) {
           const handled = this.handleTerminalTransfer(resumed, terminalMode);
           terminals.push(...handled.terminals);
         } else {
@@ -1528,7 +1832,7 @@ class StructuredCfgBuilder {
     terminal: CfgPendingTransfer,
     terminalMode: CfgTerminalMode,
   ): CfgStatementFlow {
-    if (terminalMode === 'emit') {
+    if (terminalMode === 'emit' && isFunctionExitTransferKind(terminal.kind)) {
       this.addEdge(terminal.fromOrdinal, CFG_EXIT_TARGET_ORDINAL, terminal.kind);
       return { continues: [], terminals: [] };
     }
@@ -1567,6 +1871,99 @@ function getElseClauseStatement(node: SyntaxNode | null): SyntaxNode | null {
   if (!node) return null;
   if (node.type !== 'else_clause') return node;
   return node.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) ?? null;
+}
+
+function getStatementLabelName(node: SyntaxNode): string | null {
+  const label = node.childForFieldName('label') ?? node.namedChildren.find((child) => child.type === 'statement_identifier');
+  return label ? getSyntaxNodeRuntimeText(label) : null;
+}
+
+function getLabeledStatementBody(node: SyntaxNode): SyntaxNode | null {
+  return node.childForFieldName('body') ?? node.namedChildren.find((child) => child.type !== 'statement_identifier') ?? null;
+}
+
+function getTransferStatementLabel(node: SyntaxNode): string | null {
+  const label = node.childForFieldName('label') ?? node.namedChildren.find((child) => child.type === 'statement_identifier');
+  return label ? getSyntaxNodeRuntimeText(label) : null;
+}
+
+function getSyntaxNodeRuntimeText(node: SyntaxNode): string {
+  return ((node as unknown as { text?: string }).text ?? '').trim();
+}
+
+function getSwitchConditionExpression(node: SyntaxNode): SyntaxNode | null {
+  return node.childForFieldName('condition') ?? node.namedChildren.find((child) => child.type !== 'switch_body') ?? null;
+}
+
+function getSwitchClauses(node: SyntaxNode): SyntaxNode[] {
+  return node.namedChildren.filter((child) => child.type === 'switch_case' || child.type === 'switch_default');
+}
+
+function getSwitchClauseStatements(node: SyntaxNode): SyntaxNode[] {
+  const children = node.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
+  return node.type === 'switch_case' ? children.slice(1) : children;
+}
+
+function getForConditionExpression(node: SyntaxNode): SyntaxNode | null {
+  const condition = node.childForFieldName('condition') ?? null;
+  return condition?.type === 'empty_statement' ? null : condition;
+}
+
+function unwrapStatementExpressionNode(node: SyntaxNode): SyntaxNode {
+  const unwrapped = unwrapExpressionNode(node);
+  if (unwrapped.type !== 'expression_statement') return unwrapped;
+  const expression = getStatementExpression(unwrapped);
+  return expression ? unwrapExpressionNode(expression) : unwrapped;
+}
+
+function partitionBreakTransfers(
+  transfers: readonly CfgPendingTransfer[],
+  labels: readonly string[],
+): { consumed: CfgPendingTransfer[]; remaining: CfgPendingTransfer[] } {
+  const consumed: CfgPendingTransfer[] = [];
+  const remaining: CfgPendingTransfer[] = [];
+  for (const transfer of transfers) {
+    if (transfer.kind === 'break' && transferTargetsLabels(transfer, labels)) {
+      consumed.push(transfer);
+    } else {
+      remaining.push(transfer);
+    }
+  }
+  return { consumed, remaining };
+}
+
+function partitionLoopTransfers(
+  transfers: readonly CfgPendingTransfer[],
+  labels: readonly string[],
+): { breaks: CfgPendingTransfer[]; continues: CfgPendingTransfer[]; remaining: CfgPendingTransfer[] } {
+  const breaks: CfgPendingTransfer[] = [];
+  const continues: CfgPendingTransfer[] = [];
+  const remaining: CfgPendingTransfer[] = [];
+  for (const transfer of transfers) {
+    if (transfer.kind === 'break' && transferTargetsLabels(transfer, labels)) {
+      breaks.push(transfer);
+    } else if (transfer.kind === 'continue' && transferTargetsLabels(transfer, labels)) {
+      continues.push(transfer);
+    } else {
+      remaining.push(transfer);
+    }
+  }
+  return { breaks, continues, remaining };
+}
+
+function transferTargetsLabels(transfer: CfgPendingTransfer, labels: readonly string[]): boolean {
+  return transfer.label === undefined || transfer.label === null || labels.includes(transfer.label);
+}
+
+function isLoopStatement(node: SyntaxNode): boolean {
+  return node.type === 'for_statement' || node.type === 'while_statement';
+}
+
+function labeledStatementUltimatelyTargetsLoop(node: SyntaxNode): boolean {
+  const body = getLabeledStatementBody(node);
+  if (!body) return false;
+  if (isLoopStatement(body)) return true;
+  return body.type === 'labeled_statement' && labeledStatementUltimatelyTargetsLoop(body);
 }
 
 function isSimpleStructuredStatement(node: SyntaxNode): boolean {
@@ -1726,8 +2123,12 @@ function getCallArgumentExpressions(node: SyntaxNode): SyntaxNode[] {
   return args ? args.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) : [];
 }
 
-function isTerminalTransferKind(kind: CfgEdge['kind']): boolean {
+function isFunctionExitTransferKind(kind: CfgEdge['kind']): boolean {
   return kind === 'return' || kind === 'throw';
+}
+
+function isAbruptTransferKind(kind: CfgEdge['kind']): boolean {
+  return kind === 'return' || kind === 'throw' || kind === 'break' || kind === 'continue';
 }
 
 function spanForSyntaxNode(node: SyntaxNode): CfgBlock['spans'][number] {
