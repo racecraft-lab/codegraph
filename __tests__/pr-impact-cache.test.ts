@@ -83,6 +83,7 @@ async function runWithMetadata(
   const lockfile = options.lockfile ?? '{"lockfileVersion":3}';
   try {
     const eventPath = path.join(tmp, 'event.json');
+    const codegraphPath = path.join(tmp, '.codegraph');
     const metadataPath = path.join(tmp, 'pr-impact-cache.json');
     fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
     fs.writeFileSync(metadataPath, typeof metadata === 'string' ? metadata : JSON.stringify(metadata), 'utf8');
@@ -98,6 +99,7 @@ async function runWithMetadata(
         PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
         PR_IMPACT_CACHE_RESTORE_HIT: 'true',
         PR_IMPACT_CACHE_METADATA_PATH: metadataPath,
+        PR_IMPACT_CODEGRAPH_PATH: codegraphPath,
         PR_IMPACT_MERGE_BASE: '0000000000000000000000000000000000000001',
       },
       stdout: { write: () => true },
@@ -219,6 +221,7 @@ describe('PR impact cache handling', () => {
     try {
       const eventPath = path.join(tmp, 'event.json');
       const metadataPath = path.join(tmp, 'pr-impact-cache.json');
+      const codegraphPath = path.join(tmp, '.codegraph');
       const gitignorePath = path.join(tmp, '.gitignore');
       fs.writeFileSync(eventPath, JSON.stringify(prImpactGitHubEvent), 'utf8');
       fs.writeFileSync(gitignorePath, originalGitignore, 'utf8');
@@ -233,6 +236,7 @@ describe('PR impact cache handling', () => {
           GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'),
           PR_IMPACT_REPORT_PATH: path.join(tmp, 'report.md'),
           PR_IMPACT_CACHE_METADATA_PATH: metadataPath,
+          PR_IMPACT_CODEGRAPH_PATH: codegraphPath,
           PR_IMPACT_GITIGNORE_PATH: gitignorePath,
           PR_IMPACT_MERGE_BASE: '0000000000000000000000000000000000000001',
         },

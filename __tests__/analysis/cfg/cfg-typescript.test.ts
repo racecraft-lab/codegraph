@@ -13,6 +13,17 @@ type FixtureCase = {
   readonly requiredSnippets: readonly string[];
 };
 
+type FunctionNodeRow = {
+  readonly id: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly qualified_name: string;
+  readonly start_line: number;
+  readonly start_column: number;
+  readonly end_line: number;
+  readonly end_column: number;
+};
+
 const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'tsjs');
 const tempDirs: string[] = [];
 const openGraphs: CodeGraph[] = [];
@@ -109,6 +120,25 @@ function generatedFinallyCloneOverLimitFunction(): string {
   return lines.join('\n');
 }
 
+function generatedHugeNestedFunctionSource(): string {
+  const lines = [
+    'export function wrapperWithHugeNested(): number {',
+    '  function hugeNested(value: number): number {',
+    '    let total = value;',
+  ];
+  for (let index = 0; index < OVER_LIMIT_IF_COUNT; index++) {
+    lines.push(`    if (value === ${index}) {`, `      total = ${index};`, '    }');
+  }
+  lines.push(
+    '    return total;',
+    '  }',
+    '  return 1;',
+    '}',
+    '',
+  );
+  return lines.join('\n');
+}
+
 function createCfgProject(files: Readonly<Record<string, string>>): string {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-tsjs-'));
   tempDirs.push(projectRoot);
@@ -143,6 +173,51 @@ async function indexFunctionResult(
   const result = graph.getCfg(functionRow!.id, { limit: 100, offset: 0 });
 
   return { db, functionId: functionRow!.id, result };
+}
+
+async function indexCfgProject(
+  files: Readonly<Record<string, string>>,
+): Promise<{ db: any; graph: CodeGraph; projectRoot: string }> {
+  const projectRoot = createCfgProject(files);
+  const graph = await CodeGraph.init(projectRoot, { index: true });
+  openGraphs.push(graph);
+  const db = (graph as unknown as { db: { getDb(): any } }).db.getDb();
+  return { db, graph, projectRoot };
+}
+
+function functionRowsForFile(db: any, fileName: string): FunctionNodeRow[] {
+  return db
+    .prepare(
+      [
+        'SELECT id, kind, name, qualified_name, start_line, start_column, end_line, end_column',
+        'FROM nodes',
+        'WHERE file_path = ? AND kind IN (\'function\', \'method\')',
+        'ORDER BY start_line, start_column, end_line, end_column, name',
+      ].join(' '),
+    )
+    .all(`src/${fileName}`) as FunctionNodeRow[];
+}
+
+function requireFunctionRow(rows: readonly FunctionNodeRow[], name: string): FunctionNodeRow {
+  const matches = rows.filter((row) => row.name === name || row.qualified_name.endsWith(`::${name}`));
+  expect(matches, `expected exactly one function row for ${name}`).toHaveLength(1);
+  return matches[0]!;
+}
+
+function readAvailableCfg(graph: CodeGraph, row: FunctionNodeRow): CfgGraph {
+  const result = graph.getCfg(row.id, { limit: 100, offset: 0 });
+  expect(result).toMatchObject({
+    analysis: 'cfg',
+    cfg: expect.any(Object),
+    functionId: row.id,
+    message: '',
+    reason: null,
+    sourceVersion: expect.stringMatching(/^cfgsrc:v1:/),
+    stale: false,
+    state: 'available',
+  });
+  expect(result.cfg).not.toBeNull();
+  return result.cfg!;
 }
 
 async function indexFunctionCfg(fileName: string, functionName: string, source: string): Promise<CfgGraph> {
@@ -704,6 +779,179 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     ]);
   });
 
+  it('persists the committed nested fixture as separate CFGs without inlining nested bodies', async () => {
+    const source = fs.readFileSync(path.join(FIXTURE_DIR, 'nested-functions.ts'), 'utf8');
+    const { db, graph } = await indexCfgProject({ 'nested-functions.ts': source });
+    const rows = functionRowsForFile(db, 'nested-functions.ts');
+
+    expect(rows.map((row) => row.name).sort()).toEqual(['innerStep', 'outerWorkflow']);
+    const outer = requireFunctionRow(rows, 'outerWorkflow');
+    const inner = requireFunctionRow(rows, 'innerStep');
+    expect(new Set([outer.id, inner.id]).size).toBe(2);
+    expect([outer.id, inner.id].every((id) => id.startsWith('function:'))).toBe(true);
+
+    const outerCfg = readAvailableCfg(graph, outer);
+    expect(outerCfg.blocks.map((block) => block.role)).toEqual(['entry', 'body', 'body', 'body', 'exit']);
+    expect(outerCfg.blocks.slice(1, -1).map((block) => spanText(source, block.spans[0]!))).toEqual([
+      'function innerStep(item: string): string { return item.trim().toUpperCase(); }',
+      'const finish = (item: string): string => `${innerStep(item)}!`;',
+      'return items.map(finish);',
+    ]);
+    expect(edgeRolePaths(outerCfg)).toEqual([
+      '0:entry -fallthrough-> 1:body',
+      '1:body -fallthrough-> 2:body',
+      '2:body -fallthrough-> 3:body',
+      '3:body -return-> 4:exit',
+    ]);
+
+    const innerCfg = readAvailableCfg(graph, inner);
+    expect(edgeTextPaths(innerCfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:body:return item.trim().toUpperCase();',
+      '1:body:return item.trim().toUpperCase(); -return-> 2:exit',
+    ]);
+
+  });
+
+  it('keeps extracted function expressions, arrows, and local class methods separate from enclosing CFGs', async () => {
+    const source = [
+      'export const topArrowBoundary = (value: string): string => {',
+      "  if (value === 'x') {",
+      '    return value;',
+      '  }',
+      "  return 'empty';",
+      '};',
+      'export const topExpressionBoundary = function(value: string): string {',
+      '  if (value.length > 0) {',
+      '    return value.trim();',
+      '  }',
+      "  return 'empty';",
+      '};',
+      'export function functionBoundaryProbe(input: string): string {',
+      '  const viaExpression = function(value: string): string {',
+      '    if (value.length > 0) {',
+      '      return value.trim();',
+      '    }',
+      "    return 'empty';",
+      '  };',
+      '  const viaArrow = (value: string): string => {',
+      "    if (value === 'x') {",
+      '      return viaExpression(value);',
+      '    }',
+      '    return value;',
+      '  };',
+      '  class LocalWorker {',
+      '    run(value: string): string {',
+      '      if (value.length > 1) {',
+      '        return viaArrow(value);',
+      '      }',
+      "      return 'short';",
+      '    }',
+      '  }',
+      '  const worker = new LocalWorker();',
+      '  return worker.run(input);',
+      '}',
+      '',
+    ].join('\n');
+    const { db, graph } = await indexCfgProject({ 'function-boundary-probe.ts': source });
+    const rows = functionRowsForFile(db, 'function-boundary-probe.ts');
+
+    for (const name of ['topArrowBoundary', 'topExpressionBoundary', 'functionBoundaryProbe', 'run']) {
+      const row = requireFunctionRow(rows, name);
+      expect(row.id).toMatch(row.kind === 'method' ? /^method:/ : /^function:/);
+    }
+
+    const outerCfg = readAvailableCfg(graph, requireFunctionRow(rows, 'functionBoundaryProbe'));
+    expect(outerCfg.blocks.map((block) => block.role)).toEqual([
+      'entry',
+      'body',
+      'body',
+      'body',
+      'body',
+      'body',
+      'exit',
+    ]);
+    expect(outerCfg.blocks.slice(1, -1).map((block) => spanText(source, block.spans[0]!))).toEqual([
+      "const viaExpression = function(value: string): string { if (value.length > 0) { return value.trim(); } return 'empty'; };",
+      "const viaArrow = (value: string): string => { if (value === 'x') { return viaExpression(value); } return value; };",
+      "class LocalWorker { run(value: string): string { if (value.length > 1) { return viaArrow(value); } return 'short'; } }",
+      'const worker = new LocalWorker();',
+      'return worker.run(input);',
+    ]);
+    expect(outerCfg.blocks.some((block) => block.role === 'condition')).toBe(false);
+
+    for (const name of ['topArrowBoundary', 'topExpressionBoundary', 'run']) {
+      const cfg = readAvailableCfg(graph, requireFunctionRow(rows, name));
+      expect(cfg.blocks.map((block) => block.role)).toContain('condition');
+    }
+  });
+
+  it('resolves same-name nested functions by exact indexed span before name fallback', async () => {
+    const source = [
+      'export function sameName(value: number): number {',
+      '  function sameName(value: number): number {',
+      '    return value + 1;',
+      '  }',
+      '  return sameName(value);',
+      '}',
+      '',
+    ].join('\n');
+    const { db, graph } = await indexCfgProject({ 'same-name-boundary.ts': source });
+    const rows = functionRowsForFile(db, 'same-name-boundary.ts').filter((row) => row.name === 'sameName');
+
+    expect(rows).toHaveLength(2);
+    const [outer, inner] = rows;
+    expect(outer!.id).not.toBe(inner!.id);
+
+    const outerCfg = readAvailableCfg(graph, outer!);
+    const innerCfg = readAvailableCfg(graph, inner!);
+
+    expect(outerCfg.blocks.slice(1, -1).map((block) => spanText(source, block.spans[0]!))).toEqual([
+      'function sameName(value: number): number { return value + 1; }',
+      'return sameName(value);',
+    ]);
+    expect(edgeTextPaths(outerCfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:body:function sameName(value: number): number { return value + 1; }',
+      '1:body:function sameName(value: number): number { return value + 1; } -fallthrough-> 2:body:return sameName(value);',
+      '2:body:return sameName(value); -return-> 3:exit',
+    ]);
+    expect(edgeTextPaths(innerCfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:body:return value + 1;',
+      '1:body:return value + 1; -return-> 2:exit',
+    ]);
+  });
+
+  it('does not resource-limit an enclosing CFG because a nested function exceeds the block cap', async () => {
+    const source = generatedHugeNestedFunctionSource();
+    const { db, graph } = await indexCfgProject({ 'huge-nested-function.ts': source });
+    const rows = functionRowsForFile(db, 'huge-nested-function.ts');
+    const wrapper = requireFunctionRow(rows, 'wrapperWithHugeNested');
+    const nested = requireFunctionRow(rows, 'hugeNested');
+
+    const wrapperCfg = readAvailableCfg(graph, wrapper);
+    const bodyLabels = wrapperCfg.blocks.slice(1, -1).map((block) => spanText(source, block.spans[0]!));
+
+    expect(wrapperCfg.blocks.map((block) => block.role)).toEqual(['entry', 'body', 'body', 'exit']);
+    expect(bodyLabels[0]!.startsWith('function hugeNested(value: number): number { let total = value;')).toBe(true);
+    expect(bodyLabels[1]).toBe('return 1;');
+    expect(edgeRolePaths(wrapperCfg)).toEqual([
+      '0:entry -fallthrough-> 1:body',
+      '1:body -fallthrough-> 2:body',
+      '2:body -return-> 3:exit',
+    ]);
+
+    const nestedResult = graph.getCfg(nested.id, { limit: 100, offset: 0 });
+    expect(nestedResult).toMatchObject({
+      analysis: 'cfg',
+      cfg: null,
+      functionId: nested.id,
+      page: null,
+      reason: 'block_limit_exceeded',
+      sourceVersion: expect.stringMatching(/^cfgsrc:v1:/),
+      stale: false,
+      state: 'resource_limited',
+    });
+  });
+
   it('persists the committed throw/finally fixture with path-precise pending transfers', async () => {
     const source = fs.readFileSync(path.join(FIXTURE_DIR, 'throw-finally.js'), 'utf8');
     const cfg = await indexFunctionCfg('throw-finally.js', 'throwFinally', source);
@@ -1047,6 +1295,65 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
       '8:body:limit -= 1; -loop_back-> 2:condition:cursor?.active && limit > 0',
       '9:body:return steps; -return-> 10:exit',
     ]);
+  });
+
+  it('preserves unreachable statements after return and throw as disconnected blocks', async () => {
+    const source = [
+      'export function unreachableAfterAbrupt(flag: boolean): number {',
+      '  if (flag) {',
+      '    return 1;',
+      '    return 2;',
+      '  }',
+      "  throw new Error('stop');",
+      '  return 3;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('unreachable-after-abrupt.ts', 'unreachableAfterAbrupt', source);
+    const incomingTargets = new Set(cfg.edges.map((edge) => edge.target));
+    const unreachableBlocks = cfg.blocks.filter((block) => block.role === 'unreachable');
+
+    expect(cfg.blocks.map((block) => block.role)).toEqual([
+      'entry',
+      'condition',
+      'body',
+      'unreachable',
+      'body',
+      'unreachable',
+      'exit',
+    ]);
+    expect(unreachableBlocks.map((block) => blockTextLabel(source, block))).toEqual([
+      '3:unreachable:return 2;',
+      '5:unreachable:return 3;',
+    ]);
+    for (const block of unreachableBlocks) {
+      expect(incomingTargets.has(block.id)).toBe(false);
+    }
+    expect(edgeTextPaths(cfg, source)).toEqual([
+      '0:entry -fallthrough-> 1:condition:flag',
+      '1:condition:flag -true-> 2:body:return 1;',
+      "1:condition:flag -false-> 4:body:throw new Error('stop');",
+      '2:body:return 1; -return-> 6:exit',
+      "4:body:throw new Error('stop'); -throw-> 6:exit",
+    ]);
+  });
+
+  it('persists empty and no-op functions as minimal entry-exit CFGs', async () => {
+    const noOpSource = fs.readFileSync(path.join(FIXTURE_DIR, 'no-op.ts'), 'utf8');
+    const noOpCfg = await indexFunctionCfg('no-op.ts', 'noOpFixture', noOpSource);
+
+    expect(noOpCfg.blocks.map((block) => block.role)).toEqual(['entry', 'exit']);
+    expect(edgeRolePaths(noOpCfg)).toEqual(['0:entry -return-> 1:exit']);
+
+    const emptySource = [
+      'export function emptyBoundaryProbe(): void {',
+      '}',
+      '',
+    ].join('\n');
+    const emptyCfg = await indexFunctionCfg('empty-boundary-probe.ts', 'emptyBoundaryProbe', emptySource);
+
+    expect(emptyCfg.blocks.map((block) => block.role)).toEqual(['entry', 'exit']);
+    expect(edgeRolePaths(emptyCfg)).toEqual(['0:entry -fallthrough-> 1:exit']);
   });
 
   it('persists resource_limited when finally cloning exceeds the block cap after estimation', async () => {
