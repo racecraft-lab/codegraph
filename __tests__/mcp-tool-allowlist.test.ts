@@ -17,15 +17,21 @@ describe('CODEGRAPH_MCP_TOOLS allowlist', () => {
 
   const listed = () => new ToolHandler(null).getTools().map(t => t.name).sort();
 
-  it('exposes the default surface (explore + detect-changes + rename) when unset', () => {
+  it('exposes the default surface (explore + detect-changes + rename + get-cfg) when unset', () => {
     delete process.env[ENV];
     // The default set (see DEFAULT_MCP_TOOLS) is codegraph_explore — the retrieval
     // tool that earns its place (verbatim source grouped by file),
     // codegraph_detect_changes for local diff impact, plus codegraph_rename,
-    // the SPEC-010 graph-aware write tool (FR-022).
+    // the SPEC-010 graph-aware write tool (FR-022), and codegraph_get_cfg for
+    // bounded SPEC-014 CFG reads.
     // node/search/callers/callees/impact/files/status stay defined and executable
     // but unlisted; CODEGRAPH_MCP_TOOLS re-enables them.
-    expect(listed()).toEqual(['codegraph_detect_changes', 'codegraph_explore', 'codegraph_rename']);
+    expect(listed()).toEqual([
+      'codegraph_detect_changes',
+      'codegraph_explore',
+      'codegraph_get_cfg',
+      'codegraph_rename',
+    ]);
   });
 
   it('re-enables an unlisted tool via the allowlist (impact)', () => {
@@ -45,7 +51,12 @@ describe('CODEGRAPH_MCP_TOOLS allowlist', () => {
 
   it('treats an empty/whitespace value as unset (default surface)', () => {
     process.env[ENV] = '   ';
-    expect(listed()).toEqual(['codegraph_detect_changes', 'codegraph_explore', 'codegraph_rename']);
+    expect(listed()).toEqual([
+      'codegraph_detect_changes',
+      'codegraph_explore',
+      'codegraph_get_cfg',
+      'codegraph_rename',
+    ]);
   });
 
   it('rejects a disabled tool on execute (defense in depth)', async () => {

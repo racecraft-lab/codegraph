@@ -13,9 +13,10 @@
  *
  * Keep it tight. The agent reads this every session — long instructions
  * burn tokens. The DEFAULT MCP surface is `codegraph_explore` (the retrieval
- * PRIMARY), `codegraph_detect_changes` (SPEC-012 local diff impact), plus
+ * PRIMARY), `codegraph_detect_changes` (SPEC-012 local diff impact),
  * `codegraph_rename` (the SPEC-010 write tool, documented in its own short
- * section) — see DEFAULT_MCP_TOOLS in tools.ts. The other
+ * section), plus `codegraph_get_cfg` (bounded SPEC-014 CFG reads) — see
+ * DEFAULT_MCP_TOOLS in tools.ts. The other
  * tools (node/search/callers/…) stay defined and are re-enablable via
  * CODEGRAPH_MCP_TOOLS, but they are NOT listed to agents, so don't name them.
  */
@@ -72,6 +73,21 @@ when you need an agent-readable impact packet for \`unstaged\`, \`staged\`,
 \`all\`, or \`base-ref\` diffs. Expected states such as missing indexes,
 stale indexes, unmapped hunks, unavailable flow enrichment, or threshold breaches
 return a normal text payload; check \`summary.status\` and \`exitCode\`.
+
+## codegraph_get_cfg — bounded CFG read
+
+\`codegraph_get_cfg\` reads one function control-flow graph by \`functionId\`;
+pass \`projectPath\` when targeting another indexed project. \`limit\` defaults
+to \`100\`, \`offset\` defaults to \`0\`, and \`limit\` is clamped to
+\`1..500\`. The same offset pages \`blocks\` and \`edges\` independently:
+\`total\`, \`returned\`, \`hasMore\`, and \`nextOffset\` describe each window;
+follow each \`nextOffset\` until null to traverse large graphs. Results use the
+exact \`CfgReadResult\`: \`available\`, \`disabled\`, \`not_indexed\`,
+\`not_computed\`, \`stale\`, \`unavailable\`, \`unsupported\`,
+\`resource_limited\`, \`unknown_function\`, and \`deleted\` are normal
+state/reason results, not tool failures. Only \`available\` and retained
+\`stale\` results carry \`cfg\` and \`page\`; every other expected state has
+\`cfg: null\` and \`page: null\`.
 
 ## How to query
 
@@ -136,4 +152,19 @@ pass \`apply: true\`.
 \`projectPath\` to get a normal JSON or markdown impact report for local git
 diffs. If that project has no index, the tool returns an unavailable report
 instead of hiding the tool.
+
+## codegraph_get_cfg — bounded CFG read
+
+\`codegraph_get_cfg\` reads one function control-flow graph by \`functionId\`;
+pass \`projectPath\` for the indexed project to query. \`limit\` defaults to
+\`100\`, \`offset\` defaults to \`0\`, and \`limit\` is clamped to \`1..500\`.
+The same offset pages \`blocks\` and \`edges\` independently: \`total\`,
+\`returned\`, \`hasMore\`, and \`nextOffset\` describe each window; follow each
+\`nextOffset\` until null to traverse large graphs. Results use the exact
+\`CfgReadResult\`: \`available\`, \`disabled\`, \`not_indexed\`,
+\`not_computed\`, \`stale\`, \`unavailable\`, \`unsupported\`,
+\`resource_limited\`, \`unknown_function\`, and \`deleted\` are normal
+state/reason results, not tool failures. Only \`available\` and retained
+\`stale\` results carry \`cfg\` and \`page\`; every other expected state has
+\`cfg: null\` and \`page: null\`.
 `;

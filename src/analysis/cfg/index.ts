@@ -50,6 +50,25 @@ export interface CfgReadResult {
   page: CfgPage | null;
 }
 
+export interface CfgProjectStatus {
+  enabled: boolean;
+  state: 'available' | 'disabled' | 'not_indexed' | 'not_computed' | 'stale' | 'unavailable' | 'empty';
+  reason:
+    | null
+    | 'analysis_disabled'
+    | 'project_not_indexed'
+    | 'cfg_not_computed'
+    | 'first_refresh_failed'
+    | 'refresh_failed_retained_stale'
+    | 'source_version_mismatch'
+    | 'no_current_cfg_functions';
+  availableCount: number;
+  skippedCount: number;
+  unsupportedCount: number;
+  resourceLimitedCount: number;
+  staleCount: number;
+}
+
 export interface CfgGraph {
   analysis: 'cfg';
   graphId: string;
@@ -203,6 +222,13 @@ export interface ReadCfgInput {
   enabled: boolean;
   analysisFresh?: boolean;
   request?: CfgPageRequest;
+  projectIndexed?: boolean;
+}
+
+export interface ReadCfgProjectStatusInput {
+  db?: SqliteDatabase | null;
+  enabled: boolean;
+  analysisFresh?: boolean;
   projectIndexed?: boolean;
 }
 
@@ -538,29 +564,7 @@ export function runCfgAnalysis(input: RunCfgAnalysisInput): RunCfgAnalysisResult
   if (input.signal?.aborted) return { committed: false };
 
   const filePaths = input.filePaths && input.filePaths.length > 0 ? [...new Set(input.filePaths)].sort() : null;
-  const fileScopeSql = filePaths ? `AND nodes.file_path IN (${filePaths.map(() => '?').join(', ')})` : '';
-  const functions = input.db
-    .prepare(
-      `
-      SELECT
-        nodes.id,
-        nodes.file_path,
-        nodes.language,
-        nodes.kind,
-        nodes.name,
-        nodes.start_line,
-        nodes.start_column,
-        nodes.end_line,
-        nodes.end_column,
-        files.content_hash
-      FROM nodes
-      INNER JOIN files ON files.path = nodes.file_path
-      WHERE nodes.kind IN (${CFG_FUNCTION_KINDS.map(() => '?').join(', ')})
-        ${fileScopeSql}
-      ORDER BY nodes.file_path, nodes.start_line, nodes.start_column, nodes.id
-      `,
-    )
-    .all(...CFG_FUNCTION_KINDS, ...(filePaths ?? [])) as CfgFunctionRow[];
+  const functions = selectCurrentCfgFunctions(input.db, filePaths ?? undefined);
 
   if (input.signal?.aborted) return { committed: false };
 
@@ -631,6 +635,84 @@ export function runCfgAnalysis(input: RunCfgAnalysisInput): RunCfgAnalysisResult
     committed = true;
   }
   return { committed };
+}
+
+export function readCfgProjectStatus(input: ReadCfgProjectStatusInput): CfgProjectStatus {
+  const enabled = input.enabled === true;
+  if (!enabled) return makeCfgProjectStatus(enabled, 'disabled', 'analysis_disabled');
+  if (input.projectIndexed === false || !input.db) return makeCfgProjectStatus(enabled, 'not_indexed', 'project_not_indexed');
+
+  if (input.analysisFresh === false) return makeCfgProjectStatus(enabled, 'not_computed', 'cfg_not_computed');
+  const functions = selectCurrentCfgFunctions(input.db);
+  if (functions.length === 0) return makeCfgProjectStatus(enabled, 'empty', 'no_current_cfg_functions');
+
+  const storedByFunction = selectStoredCfgStatuses(input.db, functions.map((row) => row.id));
+  const refreshFailures = selectCfgRefreshFailures(input.db, functions.map((row) => row.id));
+  let availableCount = 0;
+  let unsupportedCount = 0;
+  let resourceLimitedCount = 0;
+  let staleCount = 0;
+  let hasNotComputed = false;
+  let hasUnavailable = false;
+  let hasRefreshFailureStale = false;
+
+  for (const row of functions) {
+    const stored = storedByFunction.get(row.id);
+    const resolved = resolveCfgStatus({
+      enabled,
+      projectIndexed: true,
+      analysisFresh: true,
+      refreshFailure: refreshFailures.has(row.id),
+      currentSourceVersion: deriveSourceVersionForFunction(row),
+      stored: stored ? toStoredCfgStatus(stored) : null,
+    });
+
+    switch (resolved.state) {
+      case 'available':
+        availableCount += 1;
+        break;
+      case 'unsupported':
+        unsupportedCount += 1;
+        break;
+      case 'resource_limited':
+        resourceLimitedCount += 1;
+        break;
+      case 'stale':
+        staleCount += 1;
+        if (resolved.reason === 'refresh_failed_retained_stale') hasRefreshFailureStale = true;
+        break;
+      case 'unavailable':
+        hasUnavailable = true;
+        break;
+      case 'not_computed':
+        hasNotComputed = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  const counts = {
+    availableCount,
+    skippedCount: unsupportedCount + resourceLimitedCount,
+    unsupportedCount,
+    resourceLimitedCount,
+    staleCount,
+  };
+  if (hasNotComputed) return makeCfgProjectStatus(enabled, 'not_computed', 'cfg_not_computed', counts);
+  if (hasUnavailable && availableCount === 0) {
+    return makeCfgProjectStatus(enabled, 'unavailable', 'first_refresh_failed', counts);
+  }
+  if (staleCount > 0) {
+    return makeCfgProjectStatus(
+      enabled,
+      'stale',
+      hasRefreshFailureStale ? 'refresh_failed_retained_stale' : 'source_version_mismatch',
+      counts,
+    );
+  }
+  if (availableCount === 0) return makeCfgProjectStatus(enabled, 'empty', 'no_current_cfg_functions', counts);
+  return makeCfgProjectStatus(enabled, 'available', null, counts);
 }
 
 export function readCfg(input: ReadCfgInput): CfgReadResult {
@@ -980,6 +1062,33 @@ function selectPriorCfgStatusRowsWithoutCurrentFunctions(db: SqliteDatabase): Cf
     .all(...CFG_FUNCTION_KINDS) as CfgPriorStatusRow[];
 }
 
+function selectCurrentCfgFunctions(db: SqliteDatabase, filePaths?: readonly string[]): CfgFunctionRow[] {
+  const paths = filePaths && filePaths.length > 0 ? [...new Set(filePaths)].sort() : null;
+  const fileScopeSql = paths ? `AND nodes.file_path IN (${paths.map(() => '?').join(', ')})` : '';
+  return db
+    .prepare(
+      `
+      SELECT
+        nodes.id,
+        nodes.file_path,
+        nodes.language,
+        nodes.kind,
+        nodes.name,
+        nodes.start_line,
+        nodes.start_column,
+        nodes.end_line,
+        nodes.end_column,
+        files.content_hash
+      FROM nodes
+      INNER JOIN files ON files.path = nodes.file_path
+      WHERE nodes.kind IN (${CFG_FUNCTION_KINDS.map(() => '?').join(', ')})
+        ${fileScopeSql}
+      ORDER BY nodes.file_path, nodes.start_line, nodes.start_column, nodes.id
+      `,
+    )
+    .all(...CFG_FUNCTION_KINDS, ...(paths ?? [])) as CfgFunctionRow[];
+}
+
 function selectCurrentCfgFunction(db: SqliteDatabase, functionId: string): CfgFunctionRow | null {
   const row = db
     .prepare(
@@ -1062,6 +1171,28 @@ function selectCfgRefreshFailure(db: SqliteDatabase, functionId: string): boolea
     .prepare('SELECT 1 FROM project_metadata WHERE key = ?')
     .get(cfgRefreshFailureMetadataKey(functionId)) as { 1: number } | undefined;
   return row !== undefined;
+}
+
+function selectCfgRefreshFailures(db: SqliteDatabase, functionIds: readonly string[]): Set<string> {
+  const failures = new Set<string>();
+  for (let offset = 0; offset < functionIds.length; offset += 500) {
+    const chunk = functionIds.slice(offset, offset + 500);
+    if (chunk.length === 0) continue;
+    const keys = chunk.map(cfgRefreshFailureMetadataKey);
+    const rows = db
+      .prepare(
+        `
+        SELECT key
+        FROM project_metadata
+        WHERE key IN (${keys.map(() => '?').join(', ')})
+        `,
+      )
+      .all(...keys) as Array<{ key: string }>;
+    for (const row of rows) {
+      failures.add(row.key.slice(CFG_REFRESH_FAILURE_METADATA_PREFIX.length));
+    }
+  }
+  return failures;
 }
 
 function toStoredCfgStatus(row: StoredCfgStatusRow): StoredCfgStatus {
@@ -2878,6 +3009,29 @@ export function safeCfgMessage(value: unknown): string {
   return [...value.replace(/\s+/g, ' ').trim()].slice(0, 240).join('');
 }
 
+function makeCfgProjectStatus(
+  enabled: boolean,
+  state: CfgProjectStatus['state'],
+  reason: CfgProjectStatus['reason'],
+  counts: Partial<
+    Pick<
+      CfgProjectStatus,
+      'availableCount' | 'skippedCount' | 'unsupportedCount' | 'resourceLimitedCount' | 'staleCount'
+    >
+  > = {},
+): CfgProjectStatus {
+  return {
+    enabled,
+    state,
+    reason,
+    availableCount: counts.availableCount ?? 0,
+    skippedCount: counts.skippedCount ?? 0,
+    unsupportedCount: counts.unsupportedCount ?? 0,
+    resourceLimitedCount: counts.resourceLimitedCount ?? 0,
+    staleCount: counts.staleCount ?? 0,
+  };
+}
+
 export function resolveCfgStatus(input: ResolveCfgStatusInput): ResolvedCfgStatus {
   if (!input.enabled) {
     return {
@@ -3013,6 +3167,15 @@ export function makeCfgReadResult(input: MakeCfgReadResultInput): CfgReadResult 
     throw new TypeError('Invalid CfgReadResult: constructed result violates CFG contract');
   }
   return result;
+}
+
+export function makeCfgNotIndexedReadResult(functionId: string): CfgReadResult {
+  return makeCfgReadResult({
+    functionId,
+    state: 'not_indexed',
+    reason: 'project_not_indexed',
+    message: 'Project is not indexed with CodeGraph.',
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

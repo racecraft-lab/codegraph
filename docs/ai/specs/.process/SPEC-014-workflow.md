@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T023 complete; Slice 1 / US3 CLI, MCP, and Status (T024) is active. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T031 and the Slice 1 authoritative gate are complete; Slice 2 / US4 Python parity (T032) is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -808,8 +808,8 @@ Before any completion or merge claim:
 
 | Slice | Scope | Tasks | Status |
 |---|---|---:|---|
-| 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | 🔄 In Progress — foundation and US1 complete; US2 active |
-| 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | ⏳ Pending |
+| 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | ✅ Complete — authoritative Node 24 gate green |
+| 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | 🔄 In Progress — T032 active |
 
 ### Implementation Task Groups
 
@@ -819,8 +819,8 @@ Before any completion or merge claim:
 | Foundational Contract and Storage | T004–T008 | ✅ Complete — focused CFG 16/16, build, and full Node 24 suite green |
 | Slice 1 / US1 Library CFG | T009–T016 | ✅ Complete — complete CFG directory 57/57, build, and full Node 24 suite green |
 | Slice 1 / US2 Lifecycle | T017–T023 | ✅ Complete — CFG 67/67, build, and full Node 24 suite green |
-| Slice 1 / US3 CLI, MCP, and Status | T024–T031 | 🔄 In Progress — T024 CLI read surface active |
-| Slice 2 / US4 Python Parity | T032–T038 | ⏳ Pending |
+| Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ✅ Complete — build, typecheck, and full Node 24 suite green |
+| Slice 2 / US4 Python Parity | T032–T038 | 🔄 In Progress — T032 active |
 | Polish, Gates, and Review Packet | T039–T043 | ⏳ Pending |
 
 Foundation evidence (2026-07-25): schema v11 fresh/migration/shipped-asset
@@ -972,6 +972,99 @@ independently. The authoritative suite passed 258 files with 4604 tests passed
 and 178 skipped under Node 24.11.1 while the live dogfood index remained
 initialized and structurally complete with its 10,191/10,191 prior embedding
 coverage intact.
+
+T024 evidence (2026-07-25): the built real-project CLI probe initially exited
+`1` because `codegraph cfg` did not exist. The command is now a thin wrapper
+over `CodeGraph.getCfg`, accepts function ID, project path, limit, and offset,
+and emits the exact shared JSON shape. A real temporary TypeScript project test
+derives the indexed function ID from SQLite and deep-compares paged `available`
+and payload-free `unknown_function` CLI results with the library. The focused
+contract suite passed 11/11, the complete CFG directory passed 68/68, and the
+Node 24 build passed.
+
+T025 evidence (2026-07-25): red tests showed default output still parsing as
+JSON, the expected-state matrix receiving JSON instead of bounded human text,
+and invalid non-finite paging exiting `0`. Human mode now reports state,
+reason, function identity, source version, stale flag, bounded message,
+block/edge counts, and page metadata without dumping graph arrays; `--json`
+alone emits the exact machine result. Real CLI probes cover every publicly
+constructible state, the closed state table locks all ten success-shaped
+states, and invalid paging, usage, and project roots fail nonzero. The focused
+contract suite passed 15/15, the complete CFG directory passed 72/72, and the
+Node 24 build passed.
+
+T026 evidence (2026-07-25): three red probes found no static
+`codegraph_get_cfg` definition and received unknown-tool errors for available
+and expected-state reads. The statically exposed read-only tool now requires
+project path and function ID, accepts optional integer paging, delegates
+indexed reads to `CodeGraph.getCfg`, and returns exact `CfgReadResult` JSON
+text. Expected unindexed, absence, skip, and stale states remain
+success-shaped; malformed input and real malfunctions retain normal MCP error
+behavior. The focused contract suite passed 18/18, relevant MCP contract suites
+passed 17/17, the complete CFG directory passed 75/75, and the Node 24 build
+passed.
+
+T027 evidence (2026-07-25): real SQLite/ToolHandler probes lock paging
+defaults `100/0`, integer clamps, independent block and edge windows with
+different totals, exact page metadata, and complete ordered multi-page
+reconstruction without duplicates or gaps. Parent review rejected a temporary
+handler weakening that accepted fractional input despite the integer MCP
+schema; a remediation regression first failed on accepted `2.8`, then restored
+integer-only validation while preserving shared paging. The focused contract
+suite passed 20/20, relevant MCP suites passed 34/34, the complete CFG
+directory passed 77/77, and the Node 24 build passed.
+
+T028 evidence (2026-07-25): aggregate CFG health is now an exported,
+read-only `CfgProjectStatus` shared by the library and initialized/uninitialized
+human and JSON `codegraph status`. Mixed-state tests cover exact keys, counts,
+skip arithmetic, and every precedence state without per-function output. A
+resumed parent-review regression first showed first-refresh `unavailable`
+losing to retained `stale` when no current available CFG existed; the resolver
+now applies the frozen precedence exactly. The focused contract suite passed
+25/25, relevant status suites passed 48/48, the complete CFG directory passed
+82/82, and the Node 24 build passed.
+
+T029 evidence (2026-07-25): a real-project table-driven matrix exercises all
+ten frozen per-function states through exact library, built CLI JSON/human, and
+MCP assertions. The red probe showed a valid CFG-enabled but unindexed
+workspace exiting CLI `1`; a shared constructor now gives CLI and MCP the same
+typed `not_indexed` result, while an empty invalid workspace still fails
+normally. The focused contract suite passed 26/26, selected CLI/MCP/status
+suites passed 83/83, the complete CFG directory passed 83/83, and the Node 24
+build passed. An accidentally started broader run hit sandbox-only GPG,
+socket, and daemon failures, was stopped, and is not treated as gate evidence.
+
+T030 evidence (2026-07-25): a read-only scout found that the new CFG tool was
+defined but hidden from the default MCP surface, while the instruction source
+forbids naming hidden tools. Eight instruction/default-surface assertions and
+one tiny-project assertion failed before the tool became the fourth default
+surface. Both instruction variants now concisely pin inputs, bounded
+independent paging, all ten success-shaped states, and payload rules without
+mentioning Read or Grep; `codegraph_explore` remains primary. Focused
+instruction tests passed 12/12, default allowlist/rename tests 22/22, combined
+instruction/explore/CFG tests 42/42, unindexed/annotation tests 12/12, the
+complete CFG directory 83/83, and the Node 24 build passed. T041 still owns
+retrieval-guardian and deterministic A/B validation.
+
+T031 evidence (2026-07-25): the old runbook command failed because
+`--analysis` is not a supported sync flag. The replacement opt-in UAT mirrors
+671 current tracked TS/JS files into a temporary CFG-enabled project without
+touching the live config or index, dynamically selects an available self-repo
+function, and proves exact library/built-CLI JSON parity, MCP reconstruction,
+and library/built-CLI status parity. Its emitted target had 6 blocks and 6
+edges; aggregate status reported 3,160 available, 1,599 unsupported, zero
+resource-limited, and zero stale. The Node 24 build passed, the env-gated UAT
+passed 1/1, the ordinary contract passed 26/26, and the complete CFG directory
+passed 83/83; the opt-in case is skipped in ordinary runs.
+
+Slice 1 / US3 authoritative gate evidence (2026-07-25): Node 24.11.1
+`npm run build`, `npm run typecheck`, and the complete `npm test` suite passed.
+Vitest reported 258 files and 4,626 tests passed, with 15 files and 179 tests
+skipped. `git diff --check` passed. The live dogfood index survived with 898
+files, 15,908 nodes, 66,157 edges, complete prior embedding coverage
+(10,228/10,228), and nine expected modified worktree files pending sync. Its
+current project configuration has CFG disabled, so the temporary T031
+CFG-enabled self-repo UAT remains the authoritative Slice 1 dogfood evidence.
 
 ---
 
