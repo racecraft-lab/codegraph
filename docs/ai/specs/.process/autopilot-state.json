@@ -13,7 +13,7 @@
   },
   "status": "in_progress",
   "active_step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)",
-  "updated_at": "2026-07-25T15:55:59Z",
+  "updated_at": "2026-07-25T16:34:40Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -449,6 +449,63 @@
             "node": "24.11.1",
             "daemon_timeout_remediation": "raised one repeated cold-parallel fallback-log wait from 6000ms to 12000ms"
           }
+        },
+        "T009": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 2,
+          "green_passed": 16,
+          "focused_tests": [
+            "__tests__/analysis/cfg/cfg-typescript.test.ts",
+            "__tests__/analysis/cfg/cfg-contract.test.ts",
+            "__tests__/analysis/cfg/cfg-lifecycle.test.ts"
+          ],
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "real enabled TypeScript project persisted deterministic entry/body/exit CFG rows and CodeGraph.getCfg returned the exact available shape"
+        },
+        "T010": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 0,
+          "initial_probe": "passed because T009 already satisfied the determinism contract",
+          "green_passed": 17,
+          "focused_tests": [
+            "__tests__/analysis/cfg/cfg-typescript.test.ts",
+            "__tests__/analysis/cfg/cfg-contract.test.ts",
+            "__tests__/analysis/cfg/cfg-lifecycle.test.ts"
+          ],
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "three unchanged re-index runs produced stable IDs, ordering, and byte-equivalent serialized getCfg results"
+        },
+        "T011": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 3,
+          "green_passed": 22,
+          "focused_tests": [
+            "__tests__/analysis/cfg/cfg-typescript.test.ts",
+            "__tests__/analysis/cfg/cfg-contract.test.ts",
+            "__tests__/analysis/cfg/cfg-lifecycle.test.ts"
+          ],
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "unsupported language and construct, parser unavailable, parse error, and parse-unsafe region persisted stable status-only whole-function skips"
+        },
+        "T012": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 1,
+          "green_passed": 23,
+          "focused_tests": [
+            "__tests__/analysis/cfg/cfg-typescript.test.ts",
+            "__tests__/analysis/cfg/cfg-contract.test.ts",
+            "__tests__/analysis/cfg/cfg-lifecycle.test.ts"
+          ],
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "generated 5,001-branch function exceeded the 10,000-block demand cap and persisted resource_limited with no partial payload"
         }
       }
     }

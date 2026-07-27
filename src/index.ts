@@ -124,6 +124,12 @@ import {
   type FlowDetailRead,
   type FlowListResult,
 } from './analysis';
+import {
+  readCfg,
+  runCfgAnalysis,
+  type CfgPageRequest,
+  type CfgReadResult,
+} from './analysis/cfg';
 import { minRefsForPool } from './resolution/resolver-pool';
 
 // Re-export types for consumers
@@ -1427,8 +1433,11 @@ export class CodeGraph {
 
   private maybeRunCfgAnalysis(config: AnalysisConfig, signal?: AbortSignal): void {
     if (signal?.aborted || config.cfg !== true) return;
-    // CFG lowering/backfill is introduced by later SPEC-014 tasks. T006 only
-    // wires the opt-in gate so disabled projects stay fully dormant.
+    runCfgAnalysis({
+      projectRoot: this.projectRoot,
+      db: this.queries.getDb(),
+      signal,
+    });
   }
 
   /**
@@ -2273,6 +2282,20 @@ export class CodeGraph {
   getFlowById(id: string): FlowDetailRead {
     const enabled = loadAnalysisConfig(this.projectRoot).flows;
     return readFlowDetail(this.queries.getDb(), enabled, id);
+  }
+
+  /**
+   * SPEC-014 — one function's bounded control-flow graph read, gated by the
+   * live `analysis.cfg` opt-in so disabled projects stay dormant at read time.
+   */
+  getCfg(functionId: string, request: CfgPageRequest = {}): CfgReadResult {
+    const enabled = loadAnalysisConfig(this.projectRoot).cfg === true;
+    return readCfg({
+      db: this.queries.getDb(),
+      functionId,
+      enabled,
+      request,
+    });
   }
 
   /**
