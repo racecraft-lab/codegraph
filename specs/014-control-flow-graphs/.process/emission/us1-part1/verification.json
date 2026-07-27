@@ -1,0 +1,37 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "us1-part1",
+  "review_order": 3,
+  "branch": "codex/spec014-cfg-stack-03-us1-part1",
+  "base_branch": "codex/spec014-cfg-stack-02-foundation",
+  "checkpoint_sha": "884ee30f533b0720c704e38a526e2b532e553652",
+  "previous_checkpoint_sha": "11bec1fecddcd88854ac0a2d79d3ef82acf88353",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 6,
+    "total_churn": 1268,
+    "production_files": 2,
+    "production_churn": 800,
+    "budget_result": "warning",
+    "changed_files": [
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "specs/014-control-flow-graphs/tasks.md",
+      "src/analysis/cfg/index.ts",
+      "src/index.ts"
+    ]
+  },
+  "summary": "The bounded TypeScript CFG core checkpoint passes the tests present at its exact cumulative head.",
+  "commands": [
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-typescript.test.ts",
+      "status": "pass",
+      "result": "9 tests passed."
+    }
+  ]
+}

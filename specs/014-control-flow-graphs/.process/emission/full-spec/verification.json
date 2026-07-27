@@ -1,0 +1,73 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "full-spec",
+  "review_order": 1,
+  "branch": "codex/spec014-cfg-stack-01-full-spec",
+  "base_branch": "main",
+  "checkpoint_sha": "666ce13eef9a243d12cf53da48a0d3640672214f",
+  "previous_checkpoint_sha": "474729007ebb6bf400857003790cc296a0238d75",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 42,
+    "total_churn": 3986,
+    "production_files": 0,
+    "production_churn": 0,
+    "budget_result": "warning",
+    "changed_files": [
+      ".specify/feature.json",
+      "__tests__/analysis/cfg/cfg-python.test.ts",
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "__tests__/analysis/cfg/fixtures/python/async_await.py",
+      "__tests__/analysis/cfg/fixtures/python/comprehensions.py",
+      "__tests__/analysis/cfg/fixtures/python/generators.py",
+      "__tests__/analysis/cfg/fixtures/python/lambdas_and_nested_classes.py",
+      "__tests__/analysis/cfg/fixtures/python/match_case.py",
+      "__tests__/analysis/cfg/fixtures/python/parity_baseline.py",
+      "__tests__/analysis/cfg/fixtures/python/raise_and_unreachable.py",
+      "__tests__/analysis/cfg/fixtures/tsjs/baseline.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/nested-functions.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/no-op.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/nullish-coalescing.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/optional-chaining.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/over-limit.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/short-circuit.ts",
+      "__tests__/analysis/cfg/fixtures/tsjs/switch.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/throw-finally.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/unreachable.js",
+      "__tests__/analysis/cfg/fixtures/tsjs/unsupported.js",
+      "docs/ai/specs/.process/SPEC-014-design-concept.md",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "docs/ai/specs/intelligence-platform-roadmap-MOC.md",
+      "docs/ai/specs/intelligence-platform-technical-roadmap.md",
+      "specs/014-control-flow-graphs/SPEC-MOC.md",
+      "specs/014-control-flow-graphs/checklists/api-contracts.md",
+      "specs/014-control-flow-graphs/checklists/data-integrity.md",
+      "specs/014-control-flow-graphs/checklists/error-handling.md",
+      "specs/014-control-flow-graphs/checklists/performance.md",
+      "specs/014-control-flow-graphs/checklists/requirements.md",
+      "specs/014-control-flow-graphs/contracts/cfg-cli.md",
+      "specs/014-control-flow-graphs/contracts/cfg-mcp.md",
+      "specs/014-control-flow-graphs/contracts/cfg-shared-contract.md",
+      "specs/014-control-flow-graphs/contracts/cfg-status.md",
+      "specs/014-control-flow-graphs/data-model.md",
+      "specs/014-control-flow-graphs/plan.md",
+      "specs/014-control-flow-graphs/quickstart.md",
+      "specs/014-control-flow-graphs/research.md",
+      "specs/014-control-flow-graphs/spec.md",
+      "specs/014-control-flow-graphs/tasks.md"
+    ]
+  },
+  "summary": "The planning, contract, fixture, and acceptance baseline has zero production churn and passes git diff --check.",
+  "commands": [
+    {
+      "command": "git diff --check origin/main..codex/spec014-cfg-stack-01-full-spec",
+      "status": "pass",
+      "result": "No whitespace errors."
+    }
+  ]
+}

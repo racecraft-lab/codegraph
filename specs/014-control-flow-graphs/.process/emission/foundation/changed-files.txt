@@ -1,0 +1,16 @@
+__tests__/analysis/activation/dormancy.test.ts
+__tests__/analysis/cfg/cfg-contract.test.ts
+__tests__/analysis/cfg/cfg-lifecycle.test.ts
+__tests__/analysis/schema-ship.test.ts
+__tests__/embeddings-index.test.ts
+__tests__/foundation.test.ts
+__tests__/mcp-daemon.test.ts
+__tests__/pr19-improvements.test.ts
+docs/ai/specs/.process/SPEC-014-workflow.md
+docs/ai/specs/.process/autopilot-state.json
+specs/014-control-flow-graphs/tasks.md
+src/analysis/cfg/index.ts
+src/db/migrations.ts
+src/db/schema.sql
+src/index.ts
+src/project-config.ts

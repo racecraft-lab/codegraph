@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/us1-part5/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "us1-part5",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part5/body.md",
+      "sha256": "37da7706a0b5ed063e4c4033bd3fe8c5416d0d278d3fdbba254aa2ec455c7a97",
+      "size_bytes": 1920
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part5.json",
+      "sha256": "ff55653b61c2a3ace199593cabae3364c0e26e2629ce7ffc3647677d4edfc8d7",
+      "size_bytes": 3925
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-06-us1-part4",
+    "head_branch": "codex/spec014-cfg-stack-07-us1-part5"
+  },
+  "timestamp": "2026-07-26T12:02:57Z",
+  "title_value": "feat(SPEC-014): Complete TypeScript CFG semantics",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part5/validation.json"
+}

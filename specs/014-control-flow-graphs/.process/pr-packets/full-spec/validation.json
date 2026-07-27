@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/full-spec/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "full-spec",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/full-spec/body.md",
+      "sha256": "e73629c13029436308ec020b51aba66ecc3d2eef0469a98d735631419289a08c",
+      "size_bytes": 3985
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/full-spec.json",
+      "sha256": "df125f70f5e3c8c2b11d93ab510635134e5960cf59b666d1cf8b42bcaed33251",
+      "size_bytes": 6065
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "main",
+    "head_branch": "codex/spec014-cfg-stack-01-full-spec"
+  },
+  "timestamp": "2026-07-26T12:02:50Z",
+  "title_value": "test(SPEC-014): Add deterministic CFG acceptance fixtures",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/full-spec/validation.json"
+}

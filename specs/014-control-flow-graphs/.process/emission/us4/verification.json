@@ -1,0 +1,50 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "us4",
+  "review_order": 10,
+  "branch": "codex/spec014-cfg-stack-10-us4",
+  "base_branch": "codex/spec014-cfg-stack-09-us3",
+  "checkpoint_sha": "132658f393fa6a960d82a001e5dd33fd0d18935f",
+  "previous_checkpoint_sha": "6c8bc414eba7432c5a2dd25e62efb1605fbd3826",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 9,
+    "total_churn": 1936,
+    "production_files": 3,
+    "production_churn": 508,
+    "budget_result": "warning",
+    "changed_files": [
+      "__tests__/analysis/cfg/cfg-contract.test.ts",
+      "__tests__/analysis/cfg/cfg-python.test.ts",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "specs/014-control-flow-graphs/quickstart.md",
+      "specs/014-control-flow-graphs/tasks.md",
+      "src/analysis/cfg/index.ts",
+      "src/extraction/extraction-version.ts",
+      "src/extraction/languages/python.ts"
+    ]
+  },
+  "summary": "The Python identity, construct, lifecycle, and cross-language parity checkpoint passes after rebuilding its own dist artifacts.",
+  "commands": [
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "result": "Checkpoint-local build passed."
+    },
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-python.test.ts __tests__/analysis/cfg/cfg-contract.test.ts",
+      "status": "pass",
+      "result": "45 tests passed; 2 environment-gated tests skipped."
+    },
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-contract.test.ts -t 'keeps expected CFG read states exact across library, built CLI JSON/human, and MCP surfaces'",
+      "status": "pass",
+      "result": "The CI-remediated cross-surface matrix passed on Node 22.22.2 and Node 24.11.1 with an explicit 30-second bound."
+    }
+  ]
+}

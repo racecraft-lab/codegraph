@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/us3/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "us3",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us3/body.md",
+      "sha256": "364b0acbae47519f432760c910a6a83ab1c4a5721d16ee7a1bf48d3ef9b182b3",
+      "size_bytes": 2242
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us3.json",
+      "sha256": "a65661f0f5019817b1d4683447236dcf1ce7eab42ef13474315a98efdd10c0b5",
+      "size_bytes": 4056
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-08-us2",
+    "head_branch": "codex/spec014-cfg-stack-09-us3"
+  },
+  "timestamp": "2026-07-26T12:02:59Z",
+  "title_value": "feat(SPEC-014): Expose CFG CLI MCP and status reads",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/us3/validation.json"
+}

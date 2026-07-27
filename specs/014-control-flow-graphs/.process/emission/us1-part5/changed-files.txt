@@ -1,0 +1,7 @@
+__tests__/analysis/cfg/cfg-typescript.test.ts
+__tests__/pr-impact-action-contract.test.ts
+__tests__/pr-impact-cache.test.ts
+docs/ai/specs/.process/SPEC-014-workflow.md
+docs/ai/specs/.process/autopilot-state.json
+specs/014-control-flow-graphs/tasks.md
+src/analysis/cfg/index.ts

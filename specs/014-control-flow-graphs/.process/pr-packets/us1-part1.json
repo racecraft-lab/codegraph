@@ -1,0 +1,109 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/us1-part1/body.md",
+  "editable_fields": [
+    {
+      "end_marker": "<!-- speckit-pro-editable:summary:end -->",
+      "field_id": "summary",
+      "heading": "Summary",
+      "start_marker": "<!-- speckit-pro-editable:summary:start -->"
+    },
+    {
+      "end_marker": "<!-- speckit-pro-editable:what_changed:end -->",
+      "field_id": "what_changed",
+      "heading": "What Changed",
+      "start_marker": "<!-- speckit-pro-editable:what_changed:start -->"
+    },
+    {
+      "end_marker": "<!-- speckit-pro-editable:why_it_matters:end -->",
+      "field_id": "why_it_matters",
+      "heading": "Why It Matters",
+      "start_marker": "<!-- speckit-pro-editable:why_it_matters:start -->"
+    }
+  ],
+  "generated_title": {
+    "description": "Add bounded TypeScript CFG core",
+    "rejected_candidates": [],
+    "scope": "SPEC-014",
+    "source_evidence": {
+      "kind": "workflow",
+      "source": "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "summary": "Title generated from active SpecKit workflow evidence."
+    },
+    "type": "feat",
+    "value": "feat(SPEC-014): Add bounded TypeScript CFG core"
+  },
+  "mode": "split",
+  "packet_id": "us1-part1",
+  "protected_body_fingerprint": {
+    "algorithm": "sha256",
+    "elided_fields": [
+      "summary",
+      "what_changed",
+      "why_it_matters"
+    ],
+    "normalization": "LF line endings; trailing whitespace trimmed; final newline ensured; editable block bodies replaced by <elided:field_id> before sha256.",
+    "value": "79892547b5a9b4a89ebaa14efc54103371efbebcb7e7acc2fcc2a435b632ac1d"
+  },
+  "required_headings": [
+    "Summary",
+    "What Changed",
+    "Why It Matters",
+    "How To Review",
+    "How To UAT",
+    "Verification",
+    "Scope",
+    "Known Gaps"
+  ],
+  "schema_version": "1.0.0",
+  "scope_evidence": {
+    "budget_result": "warning",
+    "changed_files": [
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "specs/014-control-flow-graphs/tasks.md",
+      "src/analysis/cfg/index.ts",
+      "src/index.ts"
+    ],
+    "non_goals": [
+      "No behavior beyond the task IDs owned by this ordered marker.",
+      "No aggregate SPEC-014 merge; later behavior remains in later stacked markers."
+    ],
+    "production_files": 2,
+    "reviewable_loc": 800,
+    "total_files": 6
+  },
+  "source_feature_dir": "specs/014-control-flow-graphs",
+  "source_markers": [
+    {
+      "marker_id": "us1-part1",
+      "rendered_text": "feat(SPEC-014): Add bounded TypeScript CFG core",
+      "source": "docs/ai/specs/.process/SPEC-014-workflow.md"
+    }
+  ],
+  "split_slice": {
+    "slice_id": "us1-part1",
+    "source_boundary": {
+      "section": "User Story 1 - Core CFG Path and Safety"
+    },
+    "source_packet": "docs/ai/specs/.process/SPEC-014-workflow.md#pr-marker-plan-evidence"
+  },
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-02-foundation",
+    "head_branch": "codex/spec014-cfg-stack-03-us1-part1"
+  },
+  "uat": {
+    "how_to_uat": "No separate manual UAT runbook was committed for this feature.\nRun the checkpoint-scoped commands recorded in the verification evidence.",
+    "uat_runbook_heading": "## UAT Runbook",
+    "uat_source": "specs/014-control-flow-graphs/.process/emission/us1-part1/verification.json"
+  },
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part1/validation.json",
+  "verification_evidence": [
+    {
+      "kind": "checkpoint",
+      "result": "pass",
+      "source": "specs/014-control-flow-graphs/.process/emission/us1-part1/verification.json",
+      "summary": "Marker us1-part1 passed its checkpoint-scoped verification at 884ee30f533b0720c704e38a526e2b532e553652."
+    }
+  ]
+}

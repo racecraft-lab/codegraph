@@ -1,0 +1,36 @@
+{
+  "schema_version": "spec-014-marker-verification.v1",
+  "feature_id": "SPEC-014",
+  "marker_id": "us1-part2",
+  "review_order": 4,
+  "branch": "codex/spec014-cfg-stack-04-us1-part2",
+  "base_branch": "codex/spec014-cfg-stack-03-us1-part1",
+  "checkpoint_sha": "bc34465b2325bf8f9bfa2faca79af222dade93f6",
+  "previous_checkpoint_sha": "884ee30f533b0720c704e38a526e2b532e553652",
+  "status": "passed",
+  "runtime": {
+    "node": "24.11.1"
+  },
+  "scope": {
+    "total_files": 5,
+    "total_churn": 655,
+    "production_files": 1,
+    "production_churn": 358,
+    "budget_result": "within_budget",
+    "changed_files": [
+      "__tests__/analysis/cfg/cfg-typescript.test.ts",
+      "docs/ai/specs/.process/SPEC-014-workflow.md",
+      "docs/ai/specs/.process/autopilot-state.json",
+      "specs/014-control-flow-graphs/tasks.md",
+      "src/analysis/cfg/index.ts"
+    ]
+  },
+  "summary": "The throw and finally-routing checkpoint passes the tests present at its exact cumulative head.",
+  "commands": [
+    {
+      "command": "npx vitest run __tests__/analysis/cfg/cfg-typescript.test.ts",
+      "status": "pass",
+      "result": "16 tests passed."
+    }
+  ]
+}

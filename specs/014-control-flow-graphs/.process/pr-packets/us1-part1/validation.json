@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/014-control-flow-graphs/.process/pr-packets/us1-part1/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "split",
+  "packet_id": "us1-part1",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part1/body.md",
+      "sha256": "60c0428fbc3a93d9ff0e16b8df3b39a23d73bd34c72ca062ee49ac928fea8083",
+      "size_bytes": 2002
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part1.json",
+      "sha256": "ba40ab733f15fac5deeb348bdd98ebe09603d635eb67b7c1292efbad25c0553c",
+      "size_bytes": 3826
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "codex/spec014-cfg-stack-02-foundation",
+    "head_branch": "codex/spec014-cfg-stack-03-us1-part1"
+  },
+  "timestamp": "2026-07-26T12:02:52Z",
+  "title_value": "feat(SPEC-014): Add bounded TypeScript CFG core",
+  "validation_result_path": "specs/014-control-flow-graphs/.process/pr-packets/us1-part1/validation.json"
+}
