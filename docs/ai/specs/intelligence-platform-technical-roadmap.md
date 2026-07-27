@@ -116,8 +116,8 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-011 | Execution Flows & Clusters | ✅ Complete | [SPEC-011-workflow.md](.process/SPEC-011-workflow.md) | Merged (#50); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-011.md` |
 | SPEC-012 | Change Impact Detection | ✅ Complete | [SPEC-012-workflow.md](.process/SPEC-012-workflow.md) | Merged (#55); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-012.md` |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
-| SPEC-014 | Control-Flow Graphs | 🔄 In Progress | [SPEC-014-workflow.md](.process/SPEC-014-workflow.md) | Implementation and final hardening are active on `014-control-flow-graphs`; no SPEC-014 commit or PR has merged into `origin/main`, so SPEC-015 remains blocked |
-| SPEC-015 | Dataflow Substrate | ⏳ Pending | [SPEC-015-workflow.md](SPEC-015-workflow.md) | Blocked by SPEC-014 |
+| SPEC-014 | Control-Flow Graphs | ✅ Complete | [SPEC-014-workflow.md](.process/SPEC-014-workflow.md) | Merged (#169-#180), post-merge dogfood repaired in #182, and archived in `.specify/memory/archive-reports/2026-07-27-SPEC-014.md` |
+| SPEC-015 | Dataflow Substrate | ⏳ Pending | [SPEC-015-workflow.md](SPEC-015-workflow.md) | Ready (SPEC-014 shipped the persisted CFG substrate and read contracts) |
 | SPEC-016 | Program Dependence Graphs | ⏳ Pending | [SPEC-016-workflow.md](SPEC-016-workflow.md) | Blocked by SPEC-015 |
 | SPEC-017 | Taint Analysis Engine | ⏳ Pending | [SPEC-017-workflow.md](SPEC-017-workflow.md) | Blocked by SPEC-016 |
 | SPEC-018 | LLM Access Layer | ✅ Complete | [SPEC-018-workflow.md](.process/SPEC-018-workflow.md) | Merged (#48, #49); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-018.md` |
@@ -544,12 +544,15 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 
 **Priority:** P2 | **Depends On:** None | **Enables:** SPEC-015 → 016 → 017
 
+**Status:** Complete — merged as PRs #169-#180, post-merge dogfood repaired in
+PR #182, and archived with durable provenance.
+
 **Goal:** Opt-in per-function CFGs (basic blocks + typed edges) built from tree-sitter ASTs through a language-neutral lowering IR, persisted and queryable — TS/JS + Python first.
 
 **Reviewability Budget:** Primary surface: schema/migration + analysis harness/adapters |
 Original setup estimate: 780 reviewable LOC across ~8 production and ~18 total files |
-Current feature-branch product diff: 4,457 lines of churn across 10 `src/**` files |
-Budget result: the implementation materially exceeds the original forecast; final review requires an ordered marker split rather than one aggregate PR
+Shipped product diff: 4,457 lines of churn across 10 `src/**` files |
+Budget result: the implementation exceeded the original forecast and shipped as an ordered marker split rather than one aggregate PR
 
 **Scope:**
 - `src/analysis/cfg/index.ts` contains the language-neutral internal statement/expression IR, deterministic CFG builder, TypeScript/JavaScript and Python tree-sitter lowering, persistence helpers, and exact read-result guards. Python lambda identity extraction is versioned in `src/extraction/languages/python.ts`; the IR is not persisted.

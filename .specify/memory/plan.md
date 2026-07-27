@@ -157,3 +157,17 @@ explicit activation with no background network behavior. The task ledger was
 not synchronized after T017; merged PRs #159-#162 and their green checks are the
 authoritative completion evidence. Full plan recoverable:
 `git show 436b183:specs/009-lsp-server-facade/plan.md`.
+
+## SPEC-014 - Control-Flow Graphs (archived 2026-07-27)
+
+Plan shape that shipped: one consolidated `src/analysis/cfg/index.ts` module
+contains the language-neutral lowering IR, deterministic CFG builder,
+TypeScript/JavaScript and Python lowerers, persistence, lifecycle, paging, and
+read-result guards. Schema-v11 storage is by-value and CFG-owned; activation is
+explicit through `analysis.cfg=true`; first enable backfills, later syncs
+replace affected-file results atomically, and disabled/unsupported/stale/
+deleted/resource-limited states remain explicit and payload-safe. Library, CLI,
+MCP, and project status share the same result contract. The original
+reviewability forecast was exceeded, so delivery used eleven ordered marker
+PRs (#169-#179) and workflow/evidence PR #180. Full plan recoverable:
+`git show 6dbf309:specs/014-control-flow-graphs/plan.md`.

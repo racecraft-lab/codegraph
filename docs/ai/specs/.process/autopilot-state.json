@@ -4,16 +4,17 @@
   "spec_id": "SPEC-014",
   "feature_dir": "specs/014-control-flow-graphs",
   "branch": "014-control-flow-graphs",
-  "worktree": "/Users/fredrickgabelmann/.codex/worktrees/f585/codegraph/.worktrees/014-control-flow-graphs",
+  "worktree": null,
   "worktree_binding": {
-    "status": "operator_override",
-    "task_root": "/Users/fredrickgabelmann/.codex/worktrees/f585/codegraph",
-    "execution_root": "/Users/fredrickgabelmann/.codex/worktrees/f585/codegraph/.worktrees/014-control-flow-graphs",
-    "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
+    "status": "archived",
+    "task_root": null,
+    "execution_root": null,
+    "archive_execution_root": null,
+    "constraint": "The feature worktree is historical; recover removed artifacts from the recorded merge commit when needed."
   },
-  "status": "completed",
-  "active_step": "complete",
-  "updated_at": "2026-07-26T14:50:28Z",
+  "status": "completed_archived",
+  "active_step": "Archive complete",
+  "updated_at": "2026-07-27T16:07:53Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -22,16 +23,41 @@
     "confidence_threshold": 0.9
   },
   "archive_sweep": {
-    "status": "no_candidates",
+    "status": "cleanup_applied",
     "execution_path": "extension_contract",
     "invocation_available": true,
     "prerequisite_available": true,
-    "prerequisite_mode": "codex_native_worktree_binding_with_operator_override",
+    "prerequisite_mode": "merge_provenance_confirmed_on_origin_main",
     "archive_extension_installed": true,
-    "eligible_previous_specs": [],
-    "excluded_current_spec": "specs/014-control-flow-graphs",
-    "cleanup_mode": "feature_worktree_sweep",
-    "safeToApplyCleanup": false
+    "eligible_previous_specs": [
+      "specs/014-control-flow-graphs"
+    ],
+    "removed_specs": [
+      "specs/014-control-flow-graphs"
+    ],
+    "excluded_current_spec": null,
+    "cleanup_mode": "all_merged_specs",
+    "safeToApplyCleanup": true,
+    "base": "origin/main",
+    "base_commit": "55bf822bd7d1e0991300a98d9e06ed2b6bda8893",
+    "merged_prs": [
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      182
+    ],
+    "report": ".specify/memory/archive-reports/2026-07-27-SPEC-014.md",
+    "applied_at": "2026-07-27T16:07:53Z",
+    "notes": "All merged active specs were archived. SPEC-014 was the only active candidate; process artifacts remain under docs/ai/specs/.process/."
   },
   "prerequisites": {
     "status": "passed",
@@ -2019,6 +2045,7 @@
     {"step": "Post: PR Creation", "status": "completed"},
     {"step": "Post: Review Remediation", "status": "completed"},
     {"step": "Post: Retrospective", "status": "completed"},
-    {"step": "Post: Completion PR Handoff", "status": "completed"}
+    {"step": "Post: Completion PR Handoff", "status": "completed"},
+    {"step": "Post: Archive Cleanup", "status": "completed"}
   ]
 }
