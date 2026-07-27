@@ -22,13 +22,16 @@ import {
   normalizeCfgPageRequest,
   pageCfgGraph,
   resolveCfgStatus,
+  runCfgAnalysis,
   safeCfgMessage,
+  setCfgParserOverrideForTests,
 } from '../../../src/analysis/cfg';
 import type { SqliteDatabase } from '../../../src/db/sqlite-adapter';
 import { ToolHandler, tools, type ToolResult } from '../../../src/mcp/tools';
 import { clearProjectConfigCache } from '../../../src/project-config';
 
 const BIN = path.resolve(__dirname, '../../../dist/bin/codegraph.js');
+const PYTHON_FIXTURE_DIR = path.resolve(__dirname, 'fixtures/python');
 
 const TOP_LEVEL_KEYS = [
   'analysis',
@@ -174,6 +177,14 @@ function functionIdFor(db: SqliteDatabase, filePath: string, name: string): stri
     .get(filePath, name) as { id: string }).id;
 }
 
+function functionIdForRequired(db: SqliteDatabase, filePath: string, name: string): string {
+  const row = db
+    .prepare('SELECT id FROM nodes WHERE file_path = ? AND name = ?')
+    .get(filePath, name) as { id: string } | undefined;
+  expect(row, `expected indexed function ${name} in ${filePath}`).toBeDefined();
+  return row!.id;
+}
+
 function functionIdsFor(db: SqliteDatabase, filePath: string, names: string[]): Map<string, string> {
   const rows = db
     .prepare(
@@ -314,6 +325,90 @@ async function createCfgStatusProject(dirs: string[], cfgEnabled: boolean): Prom
   return { cg, db, dir, functionIds };
 }
 
+function generateBlockLimitPythonSource(branches = 5_005): string {
+  const lines = ['def block_limit_probe(value):'];
+  for (let index = 0; index < branches; index++) {
+    lines.push(`    if value == ${index}:`);
+    lines.push('        pass');
+  }
+  lines.push('    return value');
+  lines.push('');
+  return lines.join('\n');
+}
+
+async function createMixedPythonTsCfgProject(dirs: string[]): Promise<{
+  cg: CodeGraph;
+  db: SqliteDatabase;
+  dir: string;
+  ids: {
+    tsAvailable: string;
+    pythonAvailable: string;
+    pythonParserUnavailable: string;
+    pythonResourceLimited: string;
+  };
+}> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-mixed-python-ts-'));
+  dirs.push(dir);
+  writeCfgConfig(dir, true);
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'src', 'parity.ts'),
+    [
+      'export function branchLoopParity(items: Array<number | null>): number {',
+      '  let total = 0;',
+      '  let attempts = 0;',
+      '  for (let index = 0; index < items.length; index += 1) {',
+      '    const item = items[index];',
+      '    if (item === null) continue;',
+      '    if (item < 0) break;',
+      '    total += item;',
+      '  }',
+      '  while (attempts < 3) {',
+      '    if (total > 10) return total;',
+      '    attempts += 1;',
+      '    total += attempts;',
+      '  }',
+      '  return total;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  fs.copyFileSync(
+    path.join(PYTHON_FIXTURE_DIR, 'parity_baseline.py'),
+    path.join(dir, 'src', 'parity_baseline.py'),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'src', 'parser_unavailable.py'),
+    [
+      'def parser_unavailable_probe(value):',
+      '    return value',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(path.join(dir, 'src', 'block_limit.py'), generateBlockLimitPythonSource());
+
+  const cg = CodeGraph.initSync(dir);
+  expect((await cg.indexAll({ embeddingsProvider: 'off', lsp: 'disable' })).success).toBe(true);
+  const db = (cg as unknown as { db: { getDb(): SqliteDatabase } }).db.getDb();
+  const ids = {
+    tsAvailable: functionIdForRequired(db, 'src/parity.ts', 'branchLoopParity'),
+    pythonAvailable: functionIdForRequired(db, 'src/parity_baseline.py', 'branch_loop_parity'),
+    pythonParserUnavailable: functionIdForRequired(db, 'src/parser_unavailable.py', 'parser_unavailable_probe'),
+    pythonResourceLimited: functionIdForRequired(db, 'src/block_limit.py', 'block_limit_probe'),
+  };
+
+  setCfgParserOverrideForTests('python', null);
+  try {
+    expect(runCfgAnalysis({ projectRoot: dir, db, filePaths: ['src/parser_unavailable.py'] })).toEqual({
+      committed: true,
+    });
+  } finally {
+    setCfgParserOverrideForTests('python', undefined);
+  }
+
+  return { cg, db, dir, ids };
+}
+
 function setStoredCfgState(
   db: SqliteDatabase,
   functionId: string,
@@ -445,6 +540,96 @@ function expectCfgReadSurfaceResult(result: CfgReadResult, state: CfgState, reas
   if (['disabled', 'not_indexed', 'not_computed', 'unknown_function', 'deleted'].includes(state)) {
     expect(result.sourceVersion).toBeNull();
   }
+}
+
+async function expectCfgReadSurfacesDeepEqual(input: {
+  cg: CodeGraph;
+  dir: string;
+  functionId: string;
+  reason: CfgReason | null;
+  state: CfgState;
+}): Promise<CfgReadResult> {
+  const expected = input.cg.getCfg(input.functionId, { limit: 1, offset: 0 });
+  expectCfgReadSurfaceResult(expected, input.state, input.reason);
+  expect(expected.cfg === null).toBe(input.state !== 'available' && input.state !== 'stale');
+  expect(expected.page === null).toBe(input.state !== 'available' && input.state !== 'stale');
+  if (input.state === 'unsupported' || input.state === 'resource_limited') {
+    expect(expected.sourceVersion).toMatch(/^cfgsrc:v1:/);
+  }
+
+  const cliJson = runCfgCli([input.functionId, '-p', input.dir, '--json', '--limit', '1', '--offset', '0'], input.dir);
+  expect(cliJson.status, `${input.functionId} JSON exit`).toBe(0);
+  expect(cliJson.stderr, `${input.functionId} JSON stderr`).toBe('');
+  const cliBody = JSON.parse(cliJson.stdout) as CfgReadResult;
+  expectCfgReadSurfaceResult(cliBody, input.state, input.reason);
+  expect(cliBody).toEqual(expected);
+
+  const cliHuman = runCfgCli([input.functionId, '-p', input.dir, '--limit', '1', '--offset', '0'], input.dir);
+  expect(cliHuman.status, `${input.functionId} human exit`).toBe(0);
+  expect(cliHuman.stderr, `${input.functionId} human stderr`).toBe('');
+  expectBoundedHumanSummary(cliHuman.stdout, expected);
+
+  await withCfgMcpTool(async () => {
+    const mcp = parseCfgMcp(
+      await new ToolHandler(input.cg).execute('codegraph_get_cfg', {
+        projectPath: input.dir,
+        functionId: input.functionId,
+        limit: 1,
+        offset: 0,
+      }),
+    );
+    expect(mcp.isError, `${input.functionId} MCP isError`).toBe(false);
+    expectCfgReadSurfaceResult(mcp.body, input.state, input.reason);
+    expect(mcp.body).toEqual(expected);
+  });
+
+  return expected;
+}
+
+function expectLimitOneReconstruction(cg: CodeGraph, functionId: string, full: CfgReadResult): void {
+  expect(full.state).toBe('available');
+  expect(full.page).not.toBeNull();
+  const expectedBlocks = cfgBlockIds(full);
+  const expectedEdges = cfgEdgeKeys(full);
+  expect(expectedBlocks.length).toBe(full.page!.blocks.total);
+  expect(expectedEdges.length).toBe(full.page!.edges.total);
+
+  const reconstructedBlocks: string[] = [];
+  const reconstructedEdges: string[] = [];
+  const offsets: number[] = [];
+  let offset = 0;
+  while (true) {
+    offsets.push(offset);
+    const page = cg.getCfg(functionId, { limit: 1, offset });
+    expect(page.state).toBe('available');
+    expect(page.page?.limit).toBe(1);
+    expect(page.page?.offset).toBe(offset);
+    expect(page.page?.blocks.total).toBe(expectedBlocks.length);
+    expect(page.page?.edges.total).toBe(expectedEdges.length);
+    reconstructedBlocks.push(...cfgBlockIds(page));
+    reconstructedEdges.push(...cfgEdgeKeys(page));
+
+    const nextOffsets = [page.page?.blocks.nextOffset, page.page?.edges.nextOffset].filter(
+      (nextOffset): nextOffset is number => nextOffset !== null && nextOffset !== undefined,
+    );
+    if (nextOffsets.length === 0) break;
+    offset = Math.max(...nextOffsets);
+  }
+
+  expect(offsets).toEqual(Array.from({ length: Math.max(expectedBlocks.length, expectedEdges.length) }, (_, index) => index));
+  expect(reconstructedBlocks).toEqual(expectedBlocks);
+  expect(reconstructedEdges).toEqual(expectedEdges);
+  expect(new Set(reconstructedBlocks).size).toBe(reconstructedBlocks.length);
+  expect(new Set(reconstructedEdges).size).toBe(reconstructedEdges.length);
+}
+
+function graphTotals(db: SqliteDatabase): { cfgBlocks: number; cfgEdges: number; edges: number; nodes: number } {
+  return {
+    cfgBlocks: Number((db.prepare('SELECT COUNT(*) AS count FROM cfg_blocks').get() as { count: number }).count),
+    cfgEdges: Number((db.prepare('SELECT COUNT(*) AS count FROM cfg_edges').get() as { count: number }).count),
+    edges: Number((db.prepare('SELECT COUNT(*) AS count FROM edges').get() as { count: number }).count),
+    nodes: Number((db.prepare('SELECT COUNT(*) AS count FROM nodes').get() as { count: number }).count),
+  };
 }
 
 async function createCfgParityCase(
@@ -580,6 +765,7 @@ describe('SPEC-014 public CFG contract', () => {
   const dirs: string[] = [];
 
   afterEach(() => {
+    setCfgParserOverrideForTests('python', undefined);
     while (dirs.length) fs.rmSync(dirs.pop()!, { recursive: true, force: true });
   });
 
@@ -1551,6 +1737,230 @@ describe('SPEC-014 public CFG contract', () => {
     });
     expect(invalidMcp.isError).toBe(true);
   }, 30_000);
+
+  it('T037 proves mixed TypeScript and Python CFG read/status parity across library, CLI, and MCP surfaces', async () => {
+    const { cg, dir, ids } = await createMixedPythonTsCfgProject(dirs);
+    try {
+      const tsFull = await expectCfgReadSurfacesDeepEqual({
+        cg,
+        dir,
+        functionId: ids.tsAvailable,
+        state: 'available',
+        reason: null,
+      });
+      const pythonFull = await expectCfgReadSurfacesDeepEqual({
+        cg,
+        dir,
+        functionId: ids.pythonAvailable,
+        state: 'available',
+        reason: null,
+      });
+      await expectCfgReadSurfacesDeepEqual({
+        cg,
+        dir,
+        functionId: ids.pythonParserUnavailable,
+        state: 'unsupported',
+        reason: 'parser_unavailable',
+      });
+      await expectCfgReadSurfacesDeepEqual({
+        cg,
+        dir,
+        functionId: ids.pythonResourceLimited,
+        state: 'resource_limited',
+        reason: 'block_limit_exceeded',
+      });
+
+      expect(tsFull.cfg?.language).toBe('typescript');
+      expect(pythonFull.cfg?.language).toBe('python');
+      expectLimitOneReconstruction(cg, ids.tsAvailable, cg.getCfg(ids.tsAvailable, { limit: 500, offset: 0 }));
+      expectLimitOneReconstruction(cg, ids.pythonAvailable, cg.getCfg(ids.pythonAvailable, { limit: 500, offset: 0 }));
+
+      const expectedStatus = (cg as unknown as { getCfgStatus: () => CfgProjectStatus }).getCfgStatus();
+      expectCfgProjectStatus(expectedStatus, {
+        enabled: true,
+        state: 'available',
+        reason: null,
+        availableCount: 2,
+        skippedCount: 2,
+        unsupportedCount: 1,
+        resourceLimitedCount: 1,
+        staleCount: 0,
+      });
+
+      const statusJson = runStatusCli(['--json'], dir);
+      expect(statusJson.status).toBe(0);
+      expect(statusJson.stderr).toBe('');
+      const statusBody = parseStatusJson(statusJson.stdout);
+      expectCfgProjectStatus(statusBody.cfg as CfgProjectStatus, expectedStatus);
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('T037 keeps unchanged Python CFG indexing byte-stable across repeated real SQLite indexes', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-python-stable-'));
+    dirs.push(dir);
+    writeCfgConfig(dir, true);
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.copyFileSync(
+      path.join(PYTHON_FIXTURE_DIR, 'parity_baseline.py'),
+      path.join(dir, 'src', 'parity_baseline.py'),
+    );
+
+    const cg = CodeGraph.initSync(dir);
+    try {
+      const snapshots: Array<{
+        blockIds: string[];
+        bytes: string;
+        functionId: string;
+        graphId: string;
+        sourceVersion: string;
+        totals: ReturnType<typeof graphTotals>;
+      }> = [];
+
+      for (let run = 0; run < 3; run++) {
+        expect((await cg.indexAll({ embeddingsProvider: 'off', lsp: 'disable' })).success).toBe(true);
+        const db = (cg as unknown as { db: { getDb(): SqliteDatabase } }).db.getDb();
+        const functionId = functionIdForRequired(db, 'src/parity_baseline.py', 'branch_loop_parity');
+        const result = cg.getCfg(functionId, { limit: 500, offset: 0 });
+        expect(result.state).toBe('available');
+        expect(result.cfg).not.toBeNull();
+        snapshots.push({
+          blockIds: result.cfg!.blocks.map((block) => block.id),
+          bytes: JSON.stringify(result),
+          functionId,
+          graphId: result.cfg!.graphId,
+          sourceVersion: result.sourceVersion!,
+          totals: graphTotals(db),
+        });
+      }
+
+      expect(snapshots).toHaveLength(3);
+      const [first] = snapshots;
+      for (const snapshot of snapshots) {
+        expect(snapshot.functionId).toBe(first!.functionId);
+        expect(snapshot.graphId).toBe(first!.graphId);
+        expect(snapshot.sourceVersion).toBe(first!.sourceVersion);
+        expect(snapshot.blockIds).toEqual(first!.blockIds);
+        expect(snapshot.totals).toEqual(first!.totals);
+        expect(snapshot.bytes).toBe(first!.bytes);
+      }
+    } finally {
+      cg.close();
+    }
+  });
+
+  it.runIf(process.env.CODEGRAPH_PYTHON_FIXTURE_UAT === '1')(
+    'T038 runs the Python fixture CFG UAT against library, built CLI, MCP paging, and status',
+    async () => {
+      const mirrorDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cfg-python-fixture-uat-'));
+      dirs.push(mirrorDir);
+      writeCfgConfig(mirrorDir, true);
+      fs.mkdirSync(path.join(mirrorDir, 'src'), { recursive: true });
+      fs.copyFileSync(
+        path.join(PYTHON_FIXTURE_DIR, 'parity_baseline.py'),
+        path.join(mirrorDir, 'src', 'parity_baseline.py'),
+      );
+
+      let cg: CodeGraph | null = null;
+      try {
+        cg = CodeGraph.initSync(mirrorDir);
+        const indexResult = await cg.indexAll({ embeddingsProvider: 'off', lsp: 'disable' });
+        expect(indexResult.success).toBe(true);
+
+        const db = (cg as unknown as { db: { getDb(): SqliteDatabase } }).db.getDb();
+        const functionId = functionIdForRequired(db, 'src/parity_baseline.py', 'branch_loop_parity');
+        const libraryFull = cg.getCfg(functionId, { limit: 500, offset: 0 });
+        expectCfgReadSurfaceResult(libraryFull, 'available', null);
+        expect(libraryFull.cfg?.language).toBe('python');
+        expect(libraryFull.page?.blocks.total).toBeGreaterThan(0);
+        expect(libraryFull.page?.edges.total).toBeGreaterThan(0);
+
+        const cliJson = runCfgCli([functionId, '-p', mirrorDir, '--json', '--limit', '500', '--offset', '0'], mirrorDir);
+        expect(cliJson.status).toBe(0);
+        expect(cliJson.stderr).toBe('');
+        expect(JSON.parse(cliJson.stdout)).toEqual(libraryFull);
+
+        const cliHuman = runCfgCli([functionId, '-p', mirrorDir, '--limit', '1', '--offset', '0'], mirrorDir);
+        expect(cliHuman.status).toBe(0);
+        expect(cliHuman.stderr).toBe('');
+        expectBoundedHumanSummary(cliHuman.stdout, cg.getCfg(functionId, { limit: 1, offset: 0 }));
+
+        const mcpPages = await withCfgMcpTool(async () => {
+          const handler = new ToolHandler(cg);
+          const expectedBlocks = cfgBlockIds(libraryFull);
+          const expectedEdges = cfgEdgeKeys(libraryFull);
+          const reconstructedBlocks: string[] = [];
+          const reconstructedEdges: string[] = [];
+          let offset = 0;
+          let pages = 0;
+
+          while (true) {
+            pages += 1;
+            const expectedPage = cg!.getCfg(functionId, { limit: 1, offset });
+            const actualPage = parseCfgMcp(
+              await handler.execute('codegraph_get_cfg', {
+                projectPath: mirrorDir,
+                functionId,
+                limit: 1,
+                offset,
+              }),
+            );
+            expect(actualPage.isError).toBe(false);
+            expect(actualPage.body).toEqual(expectedPage);
+            reconstructedBlocks.push(...cfgBlockIds(actualPage.body));
+            reconstructedEdges.push(...cfgEdgeKeys(actualPage.body));
+
+            const nextOffsets = [
+              actualPage.body.page?.blocks.nextOffset,
+              actualPage.body.page?.edges.nextOffset,
+            ].filter((nextOffset): nextOffset is number => nextOffset !== null && nextOffset !== undefined);
+            if (nextOffsets.length === 0) break;
+            offset = Math.max(...nextOffsets);
+          }
+
+          expect(reconstructedBlocks).toEqual(expectedBlocks);
+          expect(reconstructedEdges).toEqual(expectedEdges);
+          expect(new Set(reconstructedBlocks).size).toBe(reconstructedBlocks.length);
+          expect(new Set(reconstructedEdges).size).toBe(reconstructedEdges.length);
+          return pages;
+        });
+
+        const libraryStatus = (cg as unknown as { getCfgStatus: () => CfgProjectStatus }).getCfgStatus();
+        const statusJson = runStatusCli(['--json'], mirrorDir);
+        expect(statusJson.status).toBe(0);
+        expect(statusJson.stderr).toBe('');
+        const statusBody = parseStatusJson(statusJson.stdout);
+        expectCfgProjectStatus(statusBody.cfg as CfgProjectStatus, libraryStatus);
+        expectCfgProjectStatus(libraryStatus, {
+          enabled: true,
+          state: 'available',
+          reason: null,
+          availableCount: 1,
+          skippedCount: 0,
+          unsupportedCount: 0,
+          resourceLimitedCount: 0,
+          staleCount: 0,
+        });
+
+        console.log(JSON.stringify({
+          uat: 'spec-014-python-fixture-cfg',
+          functionId,
+          graphId: libraryFull.cfg!.graphId,
+          sourceVersion: libraryFull.sourceVersion,
+          totals: {
+            blocks: libraryFull.page!.blocks.total,
+            edges: libraryFull.page!.edges.total,
+          },
+          mcpPages,
+          status: libraryStatus,
+        }));
+      } finally {
+        cg?.close();
+      }
+    },
+    120_000,
+  );
 
   it.runIf(process.env.CODEGRAPH_SELF_REPO_UAT === '1')(
     'dogfoods the current repository through library, built CLI JSON, MCP pages, and status',

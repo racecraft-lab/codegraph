@@ -76,6 +76,39 @@ Do not print, copy, or persist `.envrc.local`. CFG analysis does not require emb
 
    Expected: Python `match`/`case`, comprehensions, generator expressions, explicit `raise`, unreachable blocks, nested boundaries, `await`, `yield`, and `yield from` use the same `CfgReadResult`, block, edge, status, and page contracts as TypeScript/JavaScript.
 
+## Python Fixture UAT (T038)
+
+1. From the SPEC-014 worktree, use Node 24.11.1 and build the local CLI.
+
+   ```bash
+   /Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin/npm run build
+   ```
+
+2. Run the opt-in Python fixture UAT with daemon use disabled and only the CFG MCP tool exposed.
+
+   ```bash
+   PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:$PATH CODEGRAPH_PYTHON_FIXTURE_UAT=1 CODEGRAPH_NO_DAEMON=1 CODEGRAPH_MCP_TOOLS=get_cfg node node_modules/vitest/vitest.mjs run __tests__/analysis/cfg/cfg-contract.test.ts -t 'T038' --reporter=verbose
+   ```
+
+   The UAT creates an isolated temporary mirror under the OS temp directory, writes `analysis.cfg=true` only to that mirror, copies the committed Python parity fixture into the mirror, and indexes the mirror into real SQLite with embeddings off and LSP disabled. It never enables CFG on the live worktree, never opens or mutates the live worktree index, and runs the built CLI against the mirror project path.
+
+3. Confirm the selected function and read surfaces.
+
+   Expected: the test resolves the Python `branch_loop_parity` function ID dynamically from the mirror's real SQLite database. The library read is `available` for Python; built CLI JSON with `--limit 500 --offset 0` is deep-equal to the library result; built CLI human output with `--limit 1 --offset 0` stays bounded; in-process MCP `codegraph_get_cfg` calls use `limit=1` pages to reconstruct ordered blocks and edges independently without duplicates or gaps; and built CLI `status --json` matches `CodeGraph.getCfgStatus()` with CFG enabled and available.
+
+4. Record the bounded evidence line.
+
+   Observed on 2026-07-25 with Node `v24.11.1`:
+
+   ```text
+   PASS __tests__/analysis/cfg/cfg-contract.test.ts > SPEC-014 public CFG contract > T038 runs the Python fixture CFG UAT against library, built CLI, MCP paging, and status 720ms
+   Test Files  1 passed (1)
+   Tests  1 passed | 29 skipped (30)
+   {"uat":"spec-014-python-fixture-cfg","functionId":"function:9188ebe874c51fc2cd1c1680e562b59e","graphId":"cfg:4c739844eb8f3c8cc97e6da3","sourceVersion":"cfgsrc:v1:206bd679e20e1a7435a906619d57effb780a46e6991afabbdc71406c5af21ea2","totals":{"blocks":17,"edges":21},"mcpPages":21,"status":{"enabled":true,"state":"available","reason":null,"availableCount":1,"skippedCount":0,"unsupportedCount":0,"resourceLimitedCount":0,"staleCount":0}}
+   ```
+
+   The function, graph, and source-version IDs are selected from real SQLite for this fixture run and may change when the fixture or CFG extraction contract changes. The test closes the CodeGraph database and recursively removes the temporary mirror during test cleanup.
+
 ## Self-Repo UAT
 
 1. From the SPEC-014 worktree, use Node 24 and build the local CLI.

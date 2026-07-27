@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T031 and the Slice 1 authoritative gate are complete; Slice 2 / US4 Python parity (T032) is active. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T038 and both slice gates are complete; final hardening and performance task T039 is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -209,6 +209,20 @@ remaining deployment risk is that the configured HAL embedding endpoint uses
 plaintext HTTP on a non-loopback host; source-derived query text crosses the
 local network without transport encryption.
 
+On 2026-07-25 during Slice 2, a local-only MCP handshake against the current
+build succeeded and listed all four default tools: `codegraph_explore`,
+`codegraph_get_cfg`, `codegraph_detect_changes`, and `codegraph_rename`. This
+proves the service binary and protocol are healthy; the active Codex task's
+missing native tools are a non-hot-reloaded task registration issue. The same
+service reported that auto-sync had stopped because the OS watch/file limit was
+exhausted. A manual `codegraph sync --embeddings off` refreshed four changed
+files and restored zero pending changes, 15,991 nodes, 66,554 edges, and zero
+pending references without external egress. Because changed-symbol embeddings
+were deliberately not sent to HAL, retained coverage is 9,698/10,283 (94%) and
+hybrid search is unavailable in the safe local-only process. The exact launcher
+and a 100% embedding backfill remain gated on explicit authorization for
+repository-derived embedding egress.
+
 ### Agent and Preset Evidence
 
 - The installed Codex-agent dry run reported all ten required TOML files current,
@@ -252,11 +266,12 @@ Tests must use real files and real SQLite; do not mock the database.
 At initial scaffold time no `codegraph_explore` capability was exposed, and the
 target worktree had no build or CodeGraph repository index. Local branch files,
 Git history, and runner helpers supplied the fallback evidence. The approved
-bootstrap later produced a 100%-embedded worktree-local index and an exact MCP
-handshake exposing `codegraph_explore`; the active outer-root task cannot adopt
-that server retroactively. Future phases must start from this worktree,
-enumerate the live tool surface again, and prefer the repository's CodeGraph
-capability when healthy.
+bootstrap later produced a worktree-local index and exact MCP handshakes; the
+active outer-root task cannot adopt that server retroactively. In this task,
+safe local-only MCP clients may exercise the current server with embeddings
+disabled, and manual sync is required after checkpoints while the OS watcher is
+exhausted. Future tasks must start from this worktree, enumerate the native tool
+surface again, and prefer the repository's CodeGraph capability when healthy.
 
 Capability path: codebase/spec context → current worktree files and Git;
 workflow gates → installed `speckit_pro_runner`; human decisions → native
@@ -809,7 +824,7 @@ Before any completion or merge claim:
 | Slice | Scope | Tasks | Status |
 |---|---|---:|---|
 | 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | ✅ Complete — authoritative Node 24 gate green |
-| 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | 🔄 In Progress — T032 active |
+| 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | 🔄 In Progress — Python parity gate complete; T039 active |
 
 ### Implementation Task Groups
 
@@ -820,8 +835,8 @@ Before any completion or merge claim:
 | Slice 1 / US1 Library CFG | T009–T016 | ✅ Complete — complete CFG directory 57/57, build, and full Node 24 suite green |
 | Slice 1 / US2 Lifecycle | T017–T023 | ✅ Complete — CFG 67/67, build, and full Node 24 suite green |
 | Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ✅ Complete — build, typecheck, and full Node 24 suite green |
-| Slice 2 / US4 Python Parity | T032–T038 | 🔄 In Progress — T032 active |
-| Polish, Gates, and Review Packet | T039–T043 | ⏳ Pending |
+| Slice 2 / US4 Python Parity | T032–T038 | ✅ Complete — authoritative Node 24 gate green |
+| Polish, Gates, and Review Packet | T039–T043 | 🔄 In Progress — T039 active |
 
 Foundation evidence (2026-07-25): schema v11 fresh/migration/shipped-asset
 parity, default-off CFG dormancy, frozen public contract, source-version/status
@@ -1065,6 +1080,84 @@ files, 15,908 nodes, 66,157 edges, complete prior embedding coverage
 (10,228/10,228), and nine expected modified worktree files pending sync. Its
 current project configuration has CFG disabled, so the temporary T031
 CFG-enabled self-repo UAT remains the authoritative Slice 1 dogfood evidence.
+
+T032 evidence (2026-07-25): three real indexing tests first failed because
+Python lambdas had no function rows. Python extraction now creates deterministic
+`<lambda@LINE:COLUMN>` function identities, including top-level assignment
+initializers and distinct lambdas on the same line, while preserving repeated
+index IDs and call attribution. The extraction contract version advanced from
+24 to 25. The Python CFG file passed 4/4, Python extraction regressions passed
+19/19, and the Node 24 build passed.
+
+T033 evidence (2026-07-25): four real Python CFG tests first returned
+`unsupported/unsupported_language`. Python functions and lambdas now enter the
+shared builder by exact span; ordinary blocks, for-in and while loops,
+break/continue, `raise`, nested boundaries, unreachable code, and minimal
+lexical `finally` routing satisfy the frozen contract. Loop `else`, exception
+handlers, try `else`, and unsafe shapes fail closed. Parent review preserved
+existing TypeScript unreachable behavior and added an explicit nested named
+function probe. Focused T033 passed 4/4, Python CFG 8/8, TypeScript CFG 42/42,
+the complete CFG directory 90/90 with one opt-in skip, and the Node 24 build
+passed.
+
+T034 evidence (2026-07-25): two match probes first failed as
+`unsupported_construct`, and parent review added a failing guarded-wildcard
+regression. The shared builder now evaluates the match subject once, routes
+source-ordered case predicates and guards, models Python `and`/`or`
+short-circuit flow, preserves language-correct conditional-expression order,
+and distinguishes guarded wildcard fallthrough from terminal unguarded default.
+Focused T034 passed 3/3, Python CFG 11/11, TypeScript CFG 42/42, the complete
+CFG directory 93/93 with one opt-in skip, and the Node 24 build passed.
+
+T035 evidence (2026-07-25): three real tests first showed comprehension
+assignments flattened into linear statements. The shared builder now models
+list/set/dict comprehensions and generator expressions as ordered loops and
+filters, preserves nested-clause exhaustion and backedges, keeps dict key before
+value, and handles generator expressions inside Python calls. Demand accounting
+includes comprehension clauses; unsafe await/yield descendants fail closed.
+Focused T035 passed 3/3, Python CFG 14/14, TypeScript CFG 42/42, the complete
+CFG directory 96/96 with one opt-in skip, and the Node 24 build passed.
+
+T036 evidence (2026-07-25): the committed await/yield fixtures characterized
+ordinary flow immediate-green after one corrected expected loop-back. A
+branch-containing await probe then failed as `unsupported_construct`; the
+wrapper now delegates only when its operand needs the existing short-circuit or
+conditional builder. No scheduler blocks, suspension states, resumption edges,
+or public edge kinds were added, and comprehension await/yield remains
+fail-closed. Focused T036 passed 3/3, Python CFG 17/17, TypeScript CFG 42/42,
+the complete CFG directory 99/99 with one opt-in skip, and the Node 24 build
+passed.
+
+T037 evidence (2026-07-25): the first parity fixture used an unsupported
+TypeScript `for...of` shape and was narrowed to the supported C-style loop
+before GREEN. The final real-SQLite matrix proves exact library, built-CLI JSON
+and human, and MCP parity for available TypeScript/Python CFGs plus
+parser-unavailable and real block-limit states. Independent limit-one MCP
+paging reconstructs both arrays without gaps or duplicates, and three complete
+Python re-indexes retain byte-identical results, stable function/graph/source
+identities, block IDs, and graph/index totals. Parent verification passed both
+focused T037 tests. The opt-in T038 harness also passed and emitted 17 blocks,
+21 edges, 21 MCP pages, and an `available` project status.
+
+T038 evidence (2026-07-25): the env-gated Python fixture UAT passed before and
+after its exact runbook was added to `quickstart.md`. The test builds the local
+CLI, creates an isolated temporary mirror, enables CFG only in that mirror,
+resolves the fixture function dynamically from real SQLite, keeps embeddings
+and LSP disabled, and proves library, built CLI JSON/human, independently paged
+MCP, and project-status parity. It emitted a bounded 17-block, 21-edge,
+21-MCP-page record, closed the database, removed the mirror, and never touched
+the live worktree index. The combined Python and contract suites passed 45
+tests with 2 opt-in skips; both Node 24 builds passed.
+
+Slice 2 / US4 authoritative gate evidence (2026-07-25): Node 24.11.1
+`npm run build`, `npm run typecheck`, and the complete `npm test` suite passed.
+Vitest reported 258 files and 4,644 tests passed, with 15 files and 180 tests
+skipped. A local-only dogfood reindex with embeddings and LSP explicitly off
+upgraded the live index from extraction contract 24 to 25: 898 files, 16,045
+nodes, 68,457 edges, zero pending changes/references, and no reindex
+recommendation. CFG remains intentionally disabled by current project config;
+the isolated T031 and T038 UAT mirrors remain the authoritative CFG-enabled
+dogfood evidence.
 
 ---
 

@@ -459,7 +459,11 @@ const REASONS_BY_STATE: Record<CfgState, ReadonlySet<CfgReason | null>> = {
 };
 
 const CFG_TSJS_LANGUAGES = ['typescript', 'tsx', 'javascript', 'jsx'] as const;
-const CFG_TSJS_LANGUAGE_SET: ReadonlySet<string> = new Set(CFG_TSJS_LANGUAGES);
+const CFG_PYTHON_LANGUAGE = 'python';
+const CFG_SUPPORTED_LANGUAGE_SET: ReadonlySet<string> = new Set([
+  ...CFG_TSJS_LANGUAGES,
+  CFG_PYTHON_LANGUAGE,
+]);
 const CFG_FUNCTION_KINDS = ['function', 'method'] as const;
 const CFG_BASIC_BLOCK_LIMIT = 10_000;
 const CFG_TSJS_FUNCTION_NODE_TYPES: ReadonlySet<string> = new Set([
@@ -467,6 +471,20 @@ const CFG_TSJS_FUNCTION_NODE_TYPES: ReadonlySet<string> = new Set([
   'function_declaration',
   'function_expression',
   'method_definition',
+]);
+const CFG_PYTHON_FUNCTION_NODE_TYPES: ReadonlySet<string> = new Set([
+  'function_definition',
+  'lambda',
+]);
+const PYTHON_COMPREHENSION_EXPRESSION_TYPES: ReadonlySet<string> = new Set([
+  'dictionary_comprehension',
+  'generator_expression',
+  'list_comprehension',
+  'set_comprehension',
+]);
+const PYTHON_COMPREHENSION_CLAUSE_TYPES: ReadonlySet<string> = new Set([
+  'for_in_clause',
+  'if_clause',
 ]);
 const LINEAR_BODY_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'empty_statement',
@@ -524,7 +542,7 @@ const DEFERRED_EXPRESSION_BRANCH_TYPES: ReadonlySet<string> = new Set([
   'optional_chain',
   'ternary_expression',
 ]);
-const DEFERRED_BINARY_OPERATORS: ReadonlySet<string> = new Set(['&&', '||', '??']);
+const DEFERRED_BINARY_OPERATORS: ReadonlySet<string> = new Set(['&&', '||', '??', 'and', 'or']);
 const UNEXPECTED_CFG_FAILURE_MESSAGE = 'CFG analysis result unavailable.';
 const CFG_REFRESH_FAILURE_METADATA_PREFIX = 'cfg_refresh_failure:';
 const CFG_CONSERVATIVE_BLOCK_DEMAND: ReadonlyMap<string, number> = new Map([
@@ -536,9 +554,16 @@ const CFG_CONSERVATIVE_BLOCK_DEMAND: ReadonlyMap<string, number> = new Map([
   ['else_clause', 1],
   ['finally_clause', 1],
   ['for_in_statement', 4],
+  ['for_in_clause', 2],
   ['for_statement', 4],
+  ['dictionary_comprehension', 3],
+  ['generator_expression', 1],
+  ['if_clause', 1],
   ['if_statement', 2],
+  ['list_comprehension', 1],
+  ['raise_statement', 1],
   ['return_statement', 1],
+  ['set_comprehension', 1],
   ['switch_statement', 2],
   ['throw_statement', 1],
   ['try_statement', 3],
@@ -795,7 +820,7 @@ function computeCfgForFunction(projectRoot: string, row: CfgFunctionRow): CfgCom
     functionName: row.name,
   });
   const sourceVersion = deriveSourceVersionForFunction(row);
-  if (!CFG_TSJS_LANGUAGE_SET.has(row.language)) {
+  if (!CFG_SUPPORTED_LANGUAGE_SET.has(row.language)) {
     return {
       kind: 'computed',
       graph: null,
@@ -810,7 +835,8 @@ function computeCfgForFunction(projectRoot: string, row: CfgFunctionRow): CfgCom
   }
 
   const parsed = parseCfgFunction(projectRoot, row);
-  const unsupportedMessage = 'CFG lowering does not support this TypeScript/JavaScript construct yet.';
+  const unsupportedLanguageLabel = row.language === CFG_PYTHON_LANGUAGE ? 'Python' : 'TypeScript/JavaScript';
+  const unsupportedMessage = `CFG lowering does not support this ${unsupportedLanguageLabel} construct yet.`;
   try {
     const blockDemand = parsed.ok ? estimateCfgBlockDemand(parsed.node) : null;
     const cfgIr = parsed.ok && blockDemand !== null && blockDemand <= CFG_BASIC_BLOCK_LIMIT
@@ -1383,7 +1409,7 @@ function findCfgFunctionNode(root: SyntaxNode, row: CfgFunctionRow, source: stri
   let exact: SyntaxNode | null = null;
   let fallback: SyntaxNode | null = null;
   const visit = (node: SyntaxNode): void => {
-    if (CFG_TSJS_FUNCTION_NODE_TYPES.has(node.type) && isNodeWithinIndexedSpan(node, row)) {
+    if (isCfgFunctionNodeType(node, row.language) && isNodeWithinIndexedSpan(node, row)) {
       if (
         isNodeExactIndexedSpan(node, row) &&
         (exact === null || node.endIndex - node.startIndex < exact.endIndex - exact.startIndex)
@@ -1404,6 +1430,11 @@ function findCfgFunctionNode(root: SyntaxNode, row: CfgFunctionRow, source: stri
   };
   visit(root);
   return exact ?? fallback;
+}
+
+function isCfgFunctionNodeType(node: SyntaxNode, language: string): boolean {
+  if (language === CFG_PYTHON_LANGUAGE) return CFG_PYTHON_FUNCTION_NODE_TYPES.has(node.type);
+  return CFG_TSJS_FUNCTION_NODE_TYPES.has(node.type);
 }
 
 function cfgFunctionNameMatches(node: SyntaxNode, row: CfgFunctionRow, source: string): boolean {
@@ -1479,7 +1510,7 @@ function buildCfgIrForFunction(row: CfgFunctionRow, node: SyntaxNode): CfgIr | n
   const noOp = buildMinimalNoOpCfgIr(node);
   if (noOp) return noOp;
   if (isLinearTsJsFunctionNode(node)) return buildLinearCfgIr(row, node);
-  return new StructuredCfgBuilder().buildFunction(node);
+  return new StructuredCfgBuilder(row.language).buildFunction(node);
 }
 
 function buildMinimalNoOpCfgIr(node: SyntaxNode): CfgIr | null {
@@ -1510,13 +1541,15 @@ class StructuredCfgBuilder {
   private readonly blocks: CfgBlockIr[] = [];
   private readonly edges: CfgEdgeIr[] = [];
 
+  constructor(private readonly language: string) {}
+
   buildFunction(node: SyntaxNode): CfgIr | null {
     const body = getFunctionBodyNode(node);
     if (!body) return null;
 
     const entryOrdinal = this.addBlock('entry');
     const incoming: CfgPendingTransfer[] = [{ fromOrdinal: entryOrdinal, kind: 'fallthrough' }];
-    const flow = body.type === 'statement_block'
+    const flow = isStatementSequenceBlock(body)
       ? this.buildStatementSequence(getStatementBlockStatements(body), incoming, 'emit')
       : this.buildExpressionBody(body, incoming);
     if (!flow) return null;
@@ -1588,7 +1621,7 @@ class StructuredCfgBuilder {
     statement: SyntaxNode,
     incoming: readonly CfgPendingTransfer[],
   ): CfgStatementFlow | null {
-    if (statement.type === 'statement_block') {
+    if (isStatementSequenceBlock(statement)) {
       return this.buildUnreachableStatementSequence(getStatementBlockStatements(statement), incoming);
     }
     if (statement.type === 'if_statement') {
@@ -1597,7 +1630,7 @@ class StructuredCfgBuilder {
 
     const blockOrdinal = this.addBlock('unreachable', statement);
     this.connectIncoming(incoming, blockOrdinal);
-    if (isAbruptStatement(statement)) {
+    if (this.language === CFG_PYTHON_LANGUAGE || isAbruptStatement(statement)) {
       return { continues: [], terminals: [] };
     }
     return {
@@ -1667,7 +1700,7 @@ class StructuredCfgBuilder {
     if (statement.type === 'labeled_statement') {
       return this.buildLabeledStatement(statement, incoming, terminalMode, targetLabels, visibleLabels);
     }
-    if (statement.type === 'statement_block') {
+    if (isStatementSequenceBlock(statement)) {
       return this.buildStatementSequence(getStatementBlockStatements(statement), incoming, terminalMode, [], visibleLabels);
     }
     if (statement.type === 'if_statement') {
@@ -1675,6 +1708,12 @@ class StructuredCfgBuilder {
     }
     if (statement.type === 'switch_statement') {
       return this.buildSwitchStatement(statement, incoming, terminalMode, targetLabels, visibleLabels);
+    }
+    if (statement.type === 'match_statement') {
+      return this.buildPythonMatchStatement(statement, incoming, terminalMode, visibleLabels);
+    }
+    if (isPythonForInStatement(statement)) {
+      return this.buildPythonForInStatement(statement, incoming, terminalMode, targetLabels, visibleLabels);
     }
     if (statement.type === 'for_statement') {
       return this.buildForStatement(statement, incoming, terminalMode, targetLabels, visibleLabels);
@@ -1689,6 +1728,9 @@ class StructuredCfgBuilder {
       return this.buildTerminalStatement(statement, incoming, terminalMode, 'return');
     }
     if (statement.type === 'throw_statement') {
+      return this.buildTerminalStatement(statement, incoming, terminalMode, 'throw');
+    }
+    if (statement.type === 'raise_statement') {
       return this.buildTerminalStatement(statement, incoming, terminalMode, 'throw');
     }
     if (statement.type === 'break_statement') {
@@ -1858,6 +1900,76 @@ class StructuredCfgBuilder {
     return { continues, terminals };
   }
 
+  private buildPythonMatchStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    visibleLabels: readonly string[],
+  ): CfgStatementFlow | null {
+    const subject = statement.childForFieldName('subject');
+    const body = statement.childForFieldName('body');
+    if (!subject || !body || !isStatementSequenceBlock(body)) return null;
+
+    const subjectOrdinal = this.addSwitchDiscriminantBlock(subject, incoming);
+    if (subjectOrdinal === null) return null;
+
+    const clauses = getPythonCaseClauses(body);
+    if (clauses.length === 0) return null;
+
+    const continues: CfgPendingTransfer[] = [];
+    const terminals: CfgPendingTransfer[] = [];
+    let predicateIncoming: CfgPendingTransfer[] = [{ fromOrdinal: subjectOrdinal, kind: 'case' }];
+
+    for (let index = 0; index < clauses.length; index++) {
+      const clause = clauses[index]!;
+      const nextClause = clauses[index + 1] ?? null;
+      const pattern = getPythonCasePattern(clause);
+      const consequence = clause.childForFieldName('consequence');
+      if (!pattern || !consequence || !isStatementSequenceBlock(consequence)) return null;
+
+      const guard = getPythonCaseGuardExpression(clause);
+      const wildcard = isPythonWildcardPattern(pattern);
+      const unguardedWildcard = wildcard && !guard;
+      if (unguardedWildcard) {
+        if (index !== clauses.length - 1) return null;
+        predicateIncoming = predicateIncoming.map((transfer) => ({ ...transfer, kind: 'default' }));
+      }
+
+      const patternOrdinal = this.addBlock('condition', pattern);
+      this.connectIncoming(predicateIncoming, patternOrdinal);
+
+      let bodyIncoming: CfgPendingTransfer[] = [{ fromOrdinal: patternOrdinal, kind: 'true' }];
+      let misses: CfgPendingTransfer[] = wildcard ? [] : [{ fromOrdinal: patternOrdinal, kind: 'false' }];
+      if (guard) {
+        const guardFlow = this.buildConditionExpression(guard, bodyIncoming);
+        if (!guardFlow) return null;
+        bodyIncoming = guardFlow.trueTransfers;
+        misses = [...misses, ...guardFlow.falseTransfers];
+      }
+
+      const caseFlow = this.buildStatement(consequence, bodyIncoming, terminalMode, [], visibleLabels);
+      if (!caseFlow) return null;
+      continues.push(...caseFlow.continues);
+      terminals.push(...caseFlow.terminals);
+
+      predicateIncoming = this.remapPythonCaseMisses(misses, nextClause);
+    }
+
+    continues.push(...predicateIncoming.map((transfer) => ({
+      ...transfer,
+      kind: 'default' as const,
+    })));
+    return { continues, terminals };
+  }
+
+  private remapPythonCaseMisses(
+    misses: readonly CfgPendingTransfer[],
+    nextClause: SyntaxNode | null,
+  ): CfgPendingTransfer[] {
+    const kind: CfgEdge['kind'] = nextClause && isPythonUnguardedWildcardClause(nextClause) ? 'default' : 'false';
+    return misses.map((transfer) => ({ ...transfer, kind }));
+  }
+
   private buildForStatement(
     statement: SyntaxNode,
     incoming: readonly CfgPendingTransfer[],
@@ -1913,6 +2025,52 @@ class StructuredCfgBuilder {
     };
   }
 
+  private buildPythonForInStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+    targetLabels: readonly string[],
+    visibleLabels: readonly string[],
+  ): CfgStatementFlow | null {
+    if (statement.childForFieldName('alternative')) return null;
+
+    const left = statement.childForFieldName('left');
+    const right = statement.childForFieldName('right');
+    const body = statement.childForFieldName('body');
+    if (!left || !right || !body) return null;
+
+    const iterableHasBranching = hasModeledExpressionBranching(right);
+    const iterableFlow = iterableHasBranching ? this.buildExpressionValue(right, incoming, true) : null;
+    if (iterableHasBranching && !iterableFlow) return null;
+
+    const conditionOrdinal = this.addBlock('condition', right);
+    this.connectIncoming(iterableFlow ? allExpressionExits(iterableFlow) : incoming, conditionOrdinal);
+
+    const targetOrdinal = this.addBodyBlock(left);
+    this.addEdge(conditionOrdinal, targetOrdinal, 'true');
+
+    const bodyFlow = this.buildStatement(body, [
+      { fromOrdinal: targetOrdinal, kind: 'fallthrough' },
+    ], terminalMode, [], visibleLabels);
+    if (!bodyFlow) return null;
+
+    const partition = partitionLoopTransfers(bodyFlow.terminals, targetLabels);
+    for (const transfer of bodyFlow.continues) {
+      this.addEdge(transfer.fromOrdinal, conditionOrdinal, 'loop_back');
+    }
+    for (const transfer of partition.continues) {
+      this.addEdge(transfer.fromOrdinal, conditionOrdinal, 'continue');
+    }
+
+    return {
+      continues: [
+        { fromOrdinal: conditionOrdinal, kind: 'false' },
+        ...partition.breaks,
+      ],
+      terminals: partition.remaining,
+    };
+  }
+
   private buildLoopUpdate(
     expression: SyntaxNode,
     incoming: readonly CfgPendingTransfer[],
@@ -1939,6 +2097,8 @@ class StructuredCfgBuilder {
     targetLabels: readonly string[],
     visibleLabels: readonly string[],
   ): CfgStatementFlow | null {
+    if (statement.childForFieldName('alternative')) return null;
+
     const condition = statement.childForFieldName('condition');
     const body = statement.childForFieldName('body');
     if (!condition || !body) return null;
@@ -2062,8 +2222,8 @@ class StructuredCfgBuilder {
     materializeLeaf: boolean,
   ): CfgExpressionFlow | null {
     const node = unwrapExpressionNode(expression);
-    const binaryOperator = node.type === 'binary_expression' ? getBinaryOperator(node) : null;
-    if (binaryOperator === '&&') {
+    const shortCircuitOperator = getShortCircuitOperator(node);
+    if (shortCircuitOperator === '&&' || shortCircuitOperator === 'and') {
       const operands = getBinaryOperands(node);
       if (!operands) return null;
       const left = this.buildConditionExpression(operands.left, incoming);
@@ -2075,7 +2235,7 @@ class StructuredCfgBuilder {
         definitelyNullishExits: [],
       };
     }
-    if (binaryOperator === '||') {
+    if (shortCircuitOperator === '||' || shortCircuitOperator === 'or') {
       const operands = getBinaryOperands(node);
       if (!operands) return null;
       const left = this.buildConditionExpression(operands.left, incoming);
@@ -2087,16 +2247,19 @@ class StructuredCfgBuilder {
         definitelyNullishExits: [],
       };
     }
-    if (binaryOperator === '??') {
+    if (shortCircuitOperator === '??') {
       return this.buildNullishCoalescingExpression(node, incoming);
     }
     if (node.type === 'ternary_expression' || node.type === 'conditional_expression') {
       return this.buildTernaryExpression(node, incoming);
     }
+    if (isPythonComprehensionExpression(node)) {
+      return this.buildPythonComprehensionExpression(node, incoming);
+    }
     if (isOptionalMemberExpression(node)) {
       return this.buildOptionalChainExpression(node, incoming);
     }
-    if (node.type === 'call_expression' || node.type === 'new_expression') {
+    if (node.type === 'call_expression' || node.type === 'new_expression' || node.type === 'call') {
       return this.buildCallLikeExpression(node, incoming, materializeLeaf);
     }
     if (node.type === 'subscript_expression') {
@@ -2104,6 +2267,11 @@ class StructuredCfgBuilder {
     }
     if (node.type === 'member_expression') {
       return this.buildMemberWrapperExpression(node, incoming, materializeLeaf);
+    }
+    if (isPythonAwaitOrYieldExpression(node)) {
+      const operand = getPythonAwaitOrYieldOperand(node);
+      if (!operand) return null;
+      return this.buildExpressionValue(operand, incoming, materializeLeaf);
     }
 
     if (hasModeledExpressionBranching(node)) return null;
@@ -2125,8 +2293,8 @@ class StructuredCfgBuilder {
     incoming: readonly CfgPendingTransfer[],
   ): CfgConditionFlow | null {
     const node = unwrapExpressionNode(expression);
-    const binaryOperator = node.type === 'binary_expression' ? getBinaryOperator(node) : null;
-    if (binaryOperator === '&&') {
+    const shortCircuitOperator = getShortCircuitOperator(node);
+    if (shortCircuitOperator === '&&' || shortCircuitOperator === 'and') {
       const operands = getBinaryOperands(node);
       if (!operands) return null;
       const left = this.buildConditionExpression(operands.left, incoming);
@@ -2138,7 +2306,7 @@ class StructuredCfgBuilder {
         falseTransfers: [...left.falseTransfers, ...right.falseTransfers],
       };
     }
-    if (binaryOperator === '||') {
+    if (shortCircuitOperator === '||' || shortCircuitOperator === 'or') {
       const operands = getBinaryOperands(node);
       if (!operands) return null;
       const left = this.buildConditionExpression(operands.left, incoming);
@@ -2236,6 +2404,89 @@ class StructuredCfgBuilder {
         ...alternative.definitelyNullishExits,
       ],
     };
+  }
+
+  private buildPythonComprehensionExpression(
+    expression: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgExpressionFlow | null {
+    if (hasUnsupportedPythonComprehensionDescendant(expression)) return null;
+
+    const body = getPythonComprehensionBody(expression);
+    const clauses = getPythonComprehensionClauses(expression);
+    if (!body || clauses.length === 0 || clauses[0]?.type !== 'for_in_clause') return null;
+
+    const loopConditionOrdinals: number[] = [];
+    let continues = [...incoming];
+    for (const clause of clauses) {
+      if (clause.type === 'for_in_clause') {
+        const left = clause.childForFieldName('left');
+        const right = clause.childForFieldName('right');
+        if (!left || !right) return null;
+
+        const rightHasBranching = hasModeledExpressionBranching(right);
+        const rightFlow = rightHasBranching ? this.buildExpressionValue(right, continues, true) : null;
+        if (rightHasBranching && !rightFlow) return null;
+
+        const conditionOrdinal = this.addBlock('condition', right);
+        this.connectIncoming(rightFlow ? allExpressionExits(rightFlow) : continues, conditionOrdinal);
+
+        const targetOrdinal = this.addBodyBlock(left);
+        this.addEdge(conditionOrdinal, targetOrdinal, 'true');
+        loopConditionOrdinals.push(conditionOrdinal);
+        continues = [{ fromOrdinal: targetOrdinal, kind: 'fallthrough' }];
+        continue;
+      }
+
+      if (clause.type === 'if_clause') {
+        const loopOrdinal = loopConditionOrdinals.at(-1);
+        const condition = getPythonIfClauseCondition(clause);
+        if (loopOrdinal === undefined || !condition) return null;
+
+        const conditionFlow = this.buildConditionExpression(condition, continues);
+        if (!conditionFlow) return null;
+        this.connectLoopBack(conditionFlow.falseTransfers, loopOrdinal);
+        continues = conditionFlow.trueTransfers;
+        continue;
+      }
+
+      return null;
+    }
+
+    const innermostLoopOrdinal = loopConditionOrdinals.at(-1);
+    if (innermostLoopOrdinal === undefined) return null;
+
+    const bodyFlow = this.buildPythonComprehensionBodyValue(expression, body, continues);
+    if (!bodyFlow) return null;
+    this.connectLoopBack(allExpressionExits(bodyFlow), innermostLoopOrdinal);
+
+    for (let index = loopConditionOrdinals.length - 1; index > 0; index--) {
+      this.addEdge(loopConditionOrdinals[index]!, loopConditionOrdinals[index - 1]!, 'loop_back');
+    }
+
+    return {
+      exits: [{ fromOrdinal: loopConditionOrdinals[0]!, kind: 'false' }],
+      definitelyNullishExits: [],
+    };
+  }
+
+  private buildPythonComprehensionBodyValue(
+    expression: SyntaxNode,
+    body: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgExpressionFlow | null {
+    if (expression.type !== 'dictionary_comprehension') {
+      return this.buildExpressionValue(body, incoming, true);
+    }
+
+    if (body.type !== 'pair') return null;
+    const key = body.childForFieldName('key');
+    const value = body.childForFieldName('value');
+    if (!key || !value) return null;
+
+    const keyFlow = this.buildExpressionValue(key, incoming, true);
+    if (!keyFlow) return null;
+    return this.buildExpressionValue(value, allExpressionExits(keyFlow), true);
   }
 
   private buildOptionalChainExpression(
@@ -2391,12 +2642,20 @@ class StructuredCfgBuilder {
     terminalMode: CfgTerminalMode,
     visibleLabels: readonly string[],
   ): CfgStatementFlow | null {
-    if (statement.namedChildren.some((child) => child.type === 'catch_clause')) return null;
+    if (
+      statement.namedChildren.some((child) =>
+        child.type === 'catch_clause' ||
+        child.type === 'except_clause' ||
+        child.type === 'else_clause'
+      )
+    ) {
+      return null;
+    }
 
     const tryBody = statement.childForFieldName('body');
-    const finalizer = statement.childForFieldName('finalizer');
-    const finallyBody = finalizer?.childForFieldName('body') ?? null;
-    if (!tryBody || !finallyBody || tryBody.type !== 'statement_block' || finallyBody.type !== 'statement_block') {
+    const finalizer = getFinallyClause(statement);
+    const finallyBody = finalizer ? getFinallyBody(finalizer) : null;
+    if (!tryBody || !finallyBody || !isStatementSequenceBlock(tryBody) || !isStatementSequenceBlock(finallyBody)) {
       return null;
     }
 
@@ -2469,6 +2728,12 @@ class StructuredCfgBuilder {
     }
   }
 
+  private connectLoopBack(incoming: readonly CfgPendingTransfer[], targetOrdinal: number): void {
+    for (const transfer of incoming) {
+      this.addEdge(transfer.fromOrdinal, targetOrdinal, 'loop_back');
+    }
+  }
+
   private addBodyBlock(node: SyntaxNode): number {
     return this.addBlock('body', node);
   }
@@ -2489,6 +2754,34 @@ class StructuredCfgBuilder {
 
 function getStatementBlockStatements(block: SyntaxNode): SyntaxNode[] {
   return block.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
+}
+
+function isStatementSequenceBlock(node: SyntaxNode): boolean {
+  return node.type === 'statement_block' || node.type === 'block';
+}
+
+function isPythonForInStatement(node: SyntaxNode): boolean {
+  return (
+    node.type === 'for_statement' &&
+    node.childForFieldName('left') !== null &&
+    node.childForFieldName('right') !== null
+  );
+}
+
+function getFinallyClause(node: SyntaxNode): SyntaxNode | null {
+  return (
+    node.childForFieldName('finalizer') ??
+    node.namedChildren.find((child) => child.type === 'finally_clause') ??
+    null
+  );
+}
+
+function getFinallyBody(node: SyntaxNode): SyntaxNode | null {
+  return (
+    node.childForFieldName('body') ??
+    node.namedChildren.find((child) => isStatementSequenceBlock(child)) ??
+    null
+  );
 }
 
 function getElseClauseStatement(node: SyntaxNode | null): SyntaxNode | null {
@@ -2526,6 +2819,77 @@ function getSwitchClauses(node: SyntaxNode): SyntaxNode[] {
 function getSwitchClauseStatements(node: SyntaxNode): SyntaxNode[] {
   const children = node.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
   return node.type === 'switch_case' ? children.slice(1) : children;
+}
+
+function getPythonCaseClauses(node: SyntaxNode): SyntaxNode[] {
+  return node.namedChildren.filter((child) => child.type === 'case_clause');
+}
+
+function getPythonCasePattern(node: SyntaxNode): SyntaxNode | null {
+  return node.namedChildren.find((child) => child.type === 'case_pattern') ?? null;
+}
+
+function getPythonCaseGuardExpression(node: SyntaxNode): SyntaxNode | null {
+  const guard = node.childForFieldName('guard') ?? node.namedChildren.find((child) => child.type === 'if_clause');
+  if (!guard) return null;
+  return guard.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) ?? null;
+}
+
+function isPythonWildcardPattern(node: SyntaxNode): boolean {
+  return node.type === 'case_pattern' && getSyntaxNodeRuntimeText(node) === '_';
+}
+
+function isPythonUnguardedWildcardClause(node: SyntaxNode): boolean {
+  const pattern = getPythonCasePattern(node);
+  return pattern !== null && isPythonWildcardPattern(pattern) && getPythonCaseGuardExpression(node) === null;
+}
+
+function isPythonComprehensionExpression(node: SyntaxNode): boolean {
+  return PYTHON_COMPREHENSION_EXPRESSION_TYPES.has(node.type);
+}
+
+function isPythonAwaitOrYieldExpression(node: SyntaxNode): boolean {
+  return node.type === 'await' || node.type === 'await_expression' || node.type === 'yield' || node.type === 'yield_expression';
+}
+
+function getPythonAwaitOrYieldOperand(node: SyntaxNode): SyntaxNode | null {
+  return node.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) ?? null;
+}
+
+function getPythonComprehensionBody(node: SyntaxNode): SyntaxNode | null {
+  return node.childForFieldName('body') ?? node.namedChildren.find((child) =>
+    !PYTHON_COMPREHENSION_CLAUSE_TYPES.has(child.type) && !CFG_COMMENT_NODE_TYPES.has(child.type)
+  ) ?? null;
+}
+
+function getPythonComprehensionClauses(node: SyntaxNode): SyntaxNode[] {
+  return node.namedChildren.filter((child) => PYTHON_COMPREHENSION_CLAUSE_TYPES.has(child.type));
+}
+
+function getPythonIfClauseCondition(node: SyntaxNode): SyntaxNode | null {
+  return node.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) ?? null;
+}
+
+function hasUnsupportedPythonComprehensionDescendant(root: SyntaxNode): boolean {
+  const stack: SyntaxNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (isUnsupportedPythonComprehensionNode(node)) return true;
+    for (let index = 0; index < node.namedChildCount; index++) {
+      const child = node.namedChild(index);
+      if (child) stack.push(child);
+    }
+  }
+  return false;
+}
+
+function isUnsupportedPythonComprehensionNode(node: SyntaxNode): boolean {
+  return (
+    node.type === 'await' ||
+    node.type === 'await_expression' ||
+    node.type === 'yield' ||
+    node.type === 'yield_expression'
+  );
 }
 
 function getForConditionExpression(node: SyntaxNode): SyntaxNode | null {
@@ -2617,10 +2981,13 @@ function hasLabelTransferTargeting(node: SyntaxNode, labels: readonly string[]):
 function isSimpleStructuredStatement(node: SyntaxNode): boolean {
   return (
     node.type === 'class_declaration' ||
+    node.type === 'class_definition' ||
     node.type === 'empty_statement' ||
     node.type === 'expression_statement' ||
     node.type === 'function_declaration' ||
+    node.type === 'function_definition' ||
     node.type === 'lexical_declaration' ||
+    node.type === 'pass_statement' ||
     node.type === 'variable_declaration'
   );
 }
@@ -2635,7 +3002,8 @@ function hasModeledExpressionBranching(root: SyntaxNode): boolean {
   const stack: SyntaxNode[] = [root];
   while (stack.length > 0) {
     const node = stack.pop()!;
-    if (node.type === 'binary_expression' && hasDeferredBinaryOperator(node)) return true;
+    if (hasDeferredShortCircuitOperator(node)) return true;
+    if (isPythonComprehensionExpression(node)) return true;
     if (node.type === 'call_expression' && hasOptionalCallOperator(node)) return true;
     if (node.type === 'subscript_expression' && hasOptionalSubscriptOperator(node)) return true;
     if (DEFERRED_EXPRESSION_BRANCH_TYPES.has(node.type)) return true;
@@ -2653,16 +3021,19 @@ function isNestedControlBoundaryNode(node: SyntaxNode): boolean {
     node.type === 'abstract_class_declaration' ||
     node.type === 'arrow_function' ||
     node.type === 'class_declaration' ||
+    node.type === 'class_definition' ||
     node.type === 'function_declaration' ||
+    node.type === 'function_definition' ||
     node.type === 'function_expression' ||
     node.type === 'generator_function' ||
     node.type === 'generator_function_declaration' ||
+    node.type === 'lambda' ||
     node.type === 'method_definition'
   );
 }
 
-function hasDeferredBinaryOperator(node: SyntaxNode): boolean {
-  const operator = getBinaryOperator(node);
+function hasDeferredShortCircuitOperator(node: SyntaxNode): boolean {
+  const operator = getShortCircuitOperator(node);
   return operator !== null && DEFERRED_BINARY_OPERATORS.has(operator);
 }
 
@@ -2684,6 +3055,11 @@ function getBinaryOperator(node: SyntaxNode): string | null {
   return null;
 }
 
+function getShortCircuitOperator(node: SyntaxNode): string | null {
+  if (node.type !== 'binary_expression' && node.type !== 'boolean_operator') return null;
+  return getBinaryOperator(node);
+}
+
 function getBinaryOperands(node: SyntaxNode): { left: SyntaxNode; right: SyntaxNode } | null {
   const [left, right] = node.namedChildren;
   return left && right ? { left, right } : null;
@@ -2692,7 +3068,17 @@ function getBinaryOperands(node: SyntaxNode): { left: SyntaxNode; right: SyntaxN
 function getTernaryParts(
   node: SyntaxNode,
 ): { condition: SyntaxNode; consequence: SyntaxNode; alternative: SyntaxNode } | null {
+  const conditionField = node.childForFieldName('condition');
+  const consequenceField = node.childForFieldName('consequence');
+  const alternativeField = node.childForFieldName('alternative');
+  if (conditionField && consequenceField && alternativeField) {
+    return { condition: conditionField, consequence: consequenceField, alternative: alternativeField };
+  }
+
   const [condition, consequence, alternative] = node.namedChildren;
+  if (node.type === 'conditional_expression' && condition && consequence && alternative) {
+    return { condition: consequence, consequence: condition, alternative };
+  }
   return condition && consequence && alternative ? { condition, consequence, alternative } : null;
 }
 
@@ -2752,7 +3138,9 @@ function hasOptionalSubscriptOperator(node: SyntaxNode): boolean {
 }
 
 function getCallCalleeExpression(node: SyntaxNode): SyntaxNode | null {
-  return node.childForFieldName('function') ?? node.namedChildren.find((child) => child.type !== 'arguments') ?? null;
+  return node.childForFieldName('function') ?? node.namedChildren.find((child) =>
+    child.type !== 'arguments' && child.type !== 'argument_list'
+  ) ?? null;
 }
 
 function hasOptionalCallOperator(node: SyntaxNode): boolean {
@@ -2783,7 +3171,9 @@ function getStatementValueExpressions(statement: SyntaxNode): SyntaxNode[] {
   }
   if (statement.type === 'expression_statement') {
     const expression = getStatementExpression(statement);
-    return expression ? [expression] : [];
+    if (!expression) return [];
+    const assignmentValue = getPythonAssignmentValue(expression);
+    return assignmentValue ? [assignmentValue] : [expression];
   }
   return [];
 }
@@ -2792,8 +3182,15 @@ function getVariableDeclaratorValue(node: SyntaxNode): SyntaxNode | null {
   return node.childForFieldName('value') ?? (node.namedChildren.length > 1 ? node.namedChildren.at(-1)! : null);
 }
 
+function getPythonAssignmentValue(node: SyntaxNode): SyntaxNode | null {
+  if (node.type !== 'assignment') return null;
+  return node.childForFieldName('right') ?? (node.namedChildren.length > 1 ? node.namedChildren.at(-1)! : null);
+}
+
 function getCallArgumentExpressions(node: SyntaxNode): SyntaxNode[] {
-  const args = node.childForFieldName('arguments') ?? node.namedChildren.find((child) => child.type === 'arguments');
+  const args = node.childForFieldName('arguments') ?? node.namedChildren.find((child) =>
+    child.type === 'arguments' || child.type === 'argument_list'
+  );
   return args ? args.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) : [];
 }
 
@@ -2808,6 +3205,7 @@ function isAbruptTransferKind(kind: CfgEdge['kind']): boolean {
 function isAbruptStatement(node: SyntaxNode): boolean {
   return (
     node.type === 'return_statement' ||
+    node.type === 'raise_statement' ||
     node.type === 'throw_statement' ||
     node.type === 'break_statement' ||
     node.type === 'continue_statement'
