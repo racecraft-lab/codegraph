@@ -7,9 +7,9 @@
   "worktree": null,
   "worktree_binding": {
     "status": "archived",
-    "task_root": "/Users/fredrickgabelmann/.codex/worktrees/f585/codegraph",
+    "task_root": null,
     "execution_root": null,
-    "archive_execution_root": "/Users/fredrickgabelmann/.codex/worktrees/f585/codegraph/.worktrees/main-dogfood-20260727",
+    "archive_execution_root": null,
     "constraint": "The feature worktree is historical; recover removed artifacts from the recorded merge commit when needed."
   },
   "status": "completed_archived",
