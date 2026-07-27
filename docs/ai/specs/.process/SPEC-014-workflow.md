@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T016 complete; Slice 1 / US2 Lifecycle (T017) is active. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T023 complete; Slice 1 / US3 CLI, MCP, and Status (T024) is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -818,8 +818,8 @@ Before any completion or merge claim:
 | Setup and Reviewability Baseline | T001–T003 | ✅ Complete — fixture tests 2/2 green |
 | Foundational Contract and Storage | T004–T008 | ✅ Complete — focused CFG 16/16, build, and full Node 24 suite green |
 | Slice 1 / US1 Library CFG | T009–T016 | ✅ Complete — complete CFG directory 57/57, build, and full Node 24 suite green |
-| Slice 1 / US2 Lifecycle | T017–T023 | 🔄 In Progress — T017 first-enable empty-change backfill active |
-| Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ⏳ Pending |
+| Slice 1 / US2 Lifecycle | T017–T023 | ✅ Complete — CFG 67/67, build, and full Node 24 suite green |
+| Slice 1 / US3 CLI, MCP, and Status | T024–T031 | 🔄 In Progress — T024 CLI read surface active |
 | Slice 2 / US4 Python Parity | T032–T038 | ⏳ Pending |
 | Polish, Gates, and Review Packet | T039–T043 | ⏳ Pending |
 
@@ -898,6 +898,80 @@ including the full repository gate under Node 24.11.1. The same gate also
 identified the dogfood index deletion described in Bootstrap Status; after
 temporary-path isolation, the full suite remained green with the live index
 present and no longer removed it.
+
+T017 evidence (2026-07-25): a real project indexed with CFG disabled retained
+zero CFG rows; after enabling CFG without changing any source, ordinary
+zero-change `sync()` backfilled every current supported function with status,
+blocks, and edges. The regression passed on first execution because the T009
+post-sync wiring already satisfied first-enable backfill. The complete CFG
+directory passed 58/58 and the Node 24 build passed; no production edit was
+required.
+
+T018 evidence (2026-07-25): the initial changed-file regression proved routine
+sync incorrectly recomputed an unaffected file by advancing its `updated_at`
+from 1000 to 2000. A parent-review regression also proved that a second
+zero-change sync recomputed the first-enable snapshot. Ordinary sync now scopes
+CFG work to changed paths, reserves full-project work for a true first
+backfill, precomputes complete function outcomes before persistence, and swaps
+each affected file in one transaction. A three-function changed file became
+two current outcomes while the unaffected file remained byte-identical. The
+complete CFG directory passed 59/59 and the Node 24 build passed.
+
+T019 evidence (2026-07-25): a real-SQLite deletion regression first showed
+that a removed function lost its status entirely. Scoped refresh now compares
+prior by-value identities with current outcomes and writes compact
+`deleted` / `function_deleted` tombstones for missing IDs. Sync also discovers
+whole-file deletion scopes from CFG paths no longer present in indexed files.
+Function and file deletions retain identity with null source versions and no
+blocks or edges, unaffected rows remain byte-identical, and a never-seen ID
+returns `unknown_function` / `function_unknown` with no payload. The complete
+CFG directory passed 60/60 and the Node 24 build passed.
+
+T020 evidence (2026-07-25): retained rows remained byte-identical through a
+disabled sync, but the initial re-enabled read incorrectly exposed them as
+`available`. CFG refresh now persists a durable revision derived from
+`codegraph.json` content plus stat identity. Disabled reads remain
+`disabled` / `analysis_disabled` without payload and disabled sync does not
+touch CFG tables. A re-enabled read with a mismatched revision is
+`not_computed` / `cfg_not_computed` until a zero-change sync full-refreshes the
+rows and advances the marker. The complete CFG directory passed 61/61 and the
+Node 24 build passed.
+
+T021 evidence (2026-07-25): an injected unexpected computation failure first
+left a never-computed function as `not_computed`. Per-function containment now
+persists payload-free `unavailable` / `first_refresh_failed` for first failure,
+while a later failure preserves the prior status, blocks, and edges
+byte-identically and sets a durable metadata marker that projects
+`stale` / `refresh_failed_retained_stale`. Recovery clears the marker; generic
+bounded messages expose no source or exception text; and other functions
+continue to refresh. Parent review also caught full re-enable backfill deleting
+a function removed while disabled; the same atomic pass now writes its compact
+tombstone. The complete CFG directory passed 63/63 and the Node 24 build
+passed.
+
+T022 evidence (2026-07-25): deterministic cancellation probes confirmed that
+pre-swap first refresh leaves no rows or failure marker and reads
+`not_computed`, while pre-swap later refresh retains the prior snapshot
+byte-identically and projects `stale` / `source_version_mismatch`. The
+post-swap probe initially committed CFG rows but withheld the config revision,
+so reads incorrectly became `not_computed`. `runCfgAnalysis` now returns a
+commit result, and orchestration advances the revision whenever the atomic swap
+committed regardless of the signal's later state. The complete CFG directory
+passed 66/66 and the Node 24 build passed.
+
+T023 evidence (2026-07-25): the integration characterization passed on first
+execution. Advancing general graph-write metadata and syncing a source change
+in another file left the unchanged function's status, blocks, edges, and
+source version byte-identical and `available`. Deliberately mismatching its
+stored block contract version projected the retained complete payload as
+`stale` / `source_version_mismatch` without a read-side write or recomputation.
+The complete CFG directory passed 67/67 and the Node 24 build passed.
+
+US2 group gate (2026-07-25): all T017–T023 lifecycle transitions passed
+independently. The authoritative suite passed 258 files with 4604 tests passed
+and 178 skipped under Node 24.11.1 while the live dogfood index remained
+initialized and structurally complete with its 10,191/10,191 prior embedding
+coverage intact.
 
 ---
 

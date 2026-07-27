@@ -22,6 +22,7 @@
  * individual entries are warned-and-skipped (never fatal): an unparseable
  * project file must not break indexing.
  */
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Language } from './types';
@@ -30,6 +31,27 @@ import { logWarn } from './errors';
 
 /** Filename of the project-scoped config, resolved relative to the project root. */
 export const PROJECT_CONFIG_FILENAME = 'codegraph.json';
+
+/** Durable revision for config-sensitive analysis generations. */
+export function deriveProjectConfigRevision(rootDir: string): string {
+  const file = path.join(rootDir, PROJECT_CONFIG_FILENAME);
+  try {
+    const content = fs.readFileSync(file);
+    const stat = fs.statSync(file, { bigint: true });
+    const payload = {
+      exists: true,
+      dev: stat.dev.toString(),
+      ino: stat.ino.toString(),
+      size: stat.size.toString(),
+      mtimeNs: stat.mtimeNs.toString(),
+      ctimeNs: stat.ctimeNs.toString(),
+      contentHash: createHash('sha256').update(content).digest('hex'),
+    };
+    return `cfgconf:v1:${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
+  } catch {
+    return `cfgconf:v1:${createHash('sha256').update(JSON.stringify({ exists: false })).digest('hex')}`;
+  }
+}
 
 export interface ProjectConfig {
   /** Map of custom file extension (`.foo`) to a supported language id. */
