@@ -82,7 +82,7 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T012 complete; Slice 1 / US1 Library CFG (T013–T016) is active. |
+| Implement | `/speckit-implement` | 🔄 In Progress | T001–T013 complete; Slice 1 / US1 Library CFG (T014–T016) is active. |
 | Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -798,7 +798,7 @@ Before any completion or merge claim:
 |---|---|---|
 | Setup and Reviewability Baseline | T001–T003 | ✅ Complete — fixture tests 2/2 green |
 | Foundational Contract and Storage | T004–T008 | ✅ Complete — focused CFG 16/16, build, and full Node 24 suite green |
-| Slice 1 / US1 Library CFG | T009–T016 | 🔄 In Progress — T009–T012 complete; T013 throw/finally active |
+| Slice 1 / US1 Library CFG | T009–T016 | 🔄 In Progress — T009–T013 complete; T014 expression flow active |
 | Slice 1 / US2 Lifecycle | T017–T023 | ⏳ Pending |
 | Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ⏳ Pending |
 | Slice 2 / US4 Python Parity | T032–T038 | ⏳ Pending |
@@ -838,6 +838,14 @@ demand accounting. It persists `resource_limited` /
 `block_limit_exceeded` before generic skip handling and exposes no blocks,
 edges, or payload. The focused CFG suites passed 23/23 and the Node 24 build
 passed.
+
+T013 evidence (2026-07-25): structured TS/JS lowering now handles explicit
+throws and path-precise lexical finally routing without speculative
+cross-products. Pending return/throw continuations receive cloned finally
+paths, abrupt transfers inside finally supersede them, empty finally bodies
+remain explicit, only explicit throws create exception edges, edges use the
+frozen order, and cloned graphs are capped before persistence. The focused CFG
+suites passed 30/30 and the Node 24 build passed.
 
 ---
 

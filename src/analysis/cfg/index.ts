@@ -2,11 +2,13 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Node as SyntaxNode, Tree } from 'web-tree-sitter';
+
 import { CURRENT_SCHEMA_VERSION } from '../../db/migrations';
 import type { SqliteDatabase } from '../../db/sqlite-adapter';
 import { getParser } from '../../extraction/grammars';
 import { getNodeText } from '../../extraction/tree-sitter-helpers';
 import type { Language } from '../../types';
+
 export type CfgState =
   | 'available'
   | 'disabled'
@@ -187,6 +189,7 @@ export interface RunCfgAnalysisInput {
   db: SqliteDatabase;
   signal?: AbortSignal;
 }
+
 export interface ReadCfgInput {
   db: SqliteDatabase;
   functionId: string;
@@ -194,6 +197,7 @@ export interface ReadCfgInput {
   request?: CfgPageRequest;
   projectIndexed?: boolean;
 }
+
 interface CfgFunctionRow {
   id: string;
   file_path: string;
@@ -206,6 +210,7 @@ interface CfgFunctionRow {
   end_column: number;
   content_hash: string;
 }
+
 interface StoredCfgStatusRow {
   function_id: string;
   language: string;
@@ -217,6 +222,7 @@ interface StoredCfgStatusRow {
   block_version: number;
   edge_version: number;
 }
+
 interface StoredCfgBlockRow {
   block_id: string;
   ordinal: number;
@@ -246,6 +252,18 @@ interface CfgIr {
   edges: CfgEdgeIr[];
 }
 
+interface CfgPendingTransfer {
+  fromOrdinal: number;
+  kind: CfgEdge['kind'];
+}
+
+interface CfgStatementFlow {
+  continues: CfgPendingTransfer[];
+  terminals: CfgPendingTransfer[];
+}
+
+type CfgTerminalMode = 'collect' | 'emit';
+
 interface ParsedCfgFunction {
   ok: true;
   tree: Tree;
@@ -264,6 +282,8 @@ type CfgFunctionParseResult = ParsedCfgFunction | CfgFunctionParseFailure;
 type CfgParser = {
   parse(source: string): Tree | null;
 };
+
+const CFG_EXIT_TARGET_ORDINAL = -1;
 
 const CFG_STATES: ReadonlySet<string> = new Set([
   'available',
@@ -287,7 +307,7 @@ const CFG_BLOCK_ROLES: ReadonlySet<string> = new Set([
   'unreachable',
 ]);
 
-const CFG_EDGE_KINDS: ReadonlySet<string> = new Set([
+const CFG_EDGE_KIND_VALUES = [
   'fallthrough',
   'true',
   'false',
@@ -299,7 +319,11 @@ const CFG_EDGE_KINDS: ReadonlySet<string> = new Set([
   'break',
   'continue',
   'finally',
-]);
+] as const satisfies readonly CfgEdge['kind'][];
+const CFG_EDGE_KINDS: ReadonlySet<string> = new Set(CFG_EDGE_KIND_VALUES);
+const CFG_EDGE_KIND_ORDER: ReadonlyMap<CfgEdge['kind'], number> = new Map(
+  CFG_EDGE_KIND_VALUES.map((kind, index) => [kind, index]),
+);
 
 const RESULT_KEYS = [
   'analysis',
@@ -391,6 +415,12 @@ const UNSUPPORTED_LINEAR_DESCENDANT_TYPES: ReadonlySet<string> = new Set([
   'with_statement',
   'yield_expression',
 ]);
+const DEFERRED_EXPRESSION_BRANCH_TYPES: ReadonlySet<string> = new Set([
+  'conditional_expression',
+  'optional_chain',
+  'ternary_expression',
+]);
+const DEFERRED_BINARY_OPERATORS: ReadonlySet<string> = new Set(['&&', '||', '??']);
 const CFG_CONSERVATIVE_BLOCK_DEMAND: ReadonlyMap<string, number> = new Map([
   ['break_statement', 1],
   ['case_statement', 2],
@@ -510,17 +540,27 @@ function writeCfgForFunction(db: SqliteDatabase, projectRoot: string, row: CfgFu
   }
 
   const parsed = parseCfgFunction(projectRoot, row);
-  const unsupportedMessage = 'CFG lowering currently supports linear TypeScript/JavaScript functions only.';
+  const unsupportedMessage = 'CFG lowering does not support this TypeScript/JavaScript construct yet.';
   try {
+    const blockDemand = parsed.ok ? estimateCfgBlockDemand(parsed.node) : null;
+    const cfgIr = parsed.ok && blockDemand !== null && blockDemand <= CFG_BASIC_BLOCK_LIMIT
+      ? buildCfgIrForFunction(row, parsed.node)
+      : null;
     const status = !parsed.ok
       ? parsed
-      : estimateCfgBlockDemand(parsed.node) > CFG_BASIC_BLOCK_LIMIT
+      : blockDemand !== null && blockDemand > CFG_BASIC_BLOCK_LIMIT
         ? {
             state: 'resource_limited' as const,
             reason: 'block_limit_exceeded' as const,
             message: `CFG basic-block limit of ${CFG_BASIC_BLOCK_LIMIT} exceeded.`,
           }
-        : isLinearTsJsFunctionNode(parsed.node)
+        : cfgIr && cfgIr.blocks.length > CFG_BASIC_BLOCK_LIMIT
+          ? {
+              state: 'resource_limited' as const,
+              reason: 'block_limit_exceeded' as const,
+              message: `CFG basic-block limit of ${CFG_BASIC_BLOCK_LIMIT} exceeded.`,
+            }
+        : cfgIr
           ? {
               state: 'available' as const,
               reason: null,
@@ -536,7 +576,7 @@ function writeCfgForFunction(db: SqliteDatabase, projectRoot: string, row: CfgFu
 
     if (status.state !== 'available' || !parsed.ok) return;
 
-    const graph = lowerCfgIr(row, sourceVersion, buildLinearCfgIr(row, parsed.node));
+    const graph = lowerCfgIr(row, sourceVersion, cfgIr!);
     const insertBlock = db.prepare(
       `
       INSERT INTO cfg_blocks (function_id, block_id, ordinal, role, spans_json)
@@ -927,6 +967,282 @@ function functionBodyEndsWithReturn(node: SyntaxNode): boolean {
   return statements.at(-1)?.type === 'return_statement';
 }
 
+function buildCfgIrForFunction(row: CfgFunctionRow, node: SyntaxNode): CfgIr | null {
+  if (hasDeferredExpressionBranching(node)) return null;
+  if (isLinearTsJsFunctionNode(node)) return buildLinearCfgIr(row, node);
+  return new StructuredCfgBuilder().buildFunction(node);
+}
+
+class StructuredCfgBuilder {
+  private readonly blocks: CfgBlockIr[] = [];
+  private readonly edges: CfgEdgeIr[] = [];
+
+  buildFunction(node: SyntaxNode): CfgIr | null {
+    const body = getFunctionBodyNode(node);
+    if (!body || body.type !== 'statement_block') return null;
+
+    const entryOrdinal = this.addBlock('entry');
+    const flow = this.buildStatementSequence(getStatementBlockStatements(body), [
+      { fromOrdinal: entryOrdinal, kind: 'fallthrough' },
+    ], 'emit');
+    if (!flow) return null;
+
+    const exitOrdinal = this.addBlock('exit');
+    for (const continuation of flow.continues) {
+      this.addEdge(continuation.fromOrdinal, exitOrdinal, continuation.kind);
+    }
+    for (const terminal of flow.terminals) {
+      this.addEdge(terminal.fromOrdinal, exitOrdinal, terminal.kind);
+    }
+
+    return {
+      blocks: this.blocks,
+      edges: this.edges.map((edge) => ({
+        ...edge,
+        targetOrdinal: edge.targetOrdinal === CFG_EXIT_TARGET_ORDINAL ? exitOrdinal : edge.targetOrdinal,
+      })),
+    };
+  }
+
+  private buildStatementSequence(
+    statements: readonly SyntaxNode[],
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+  ): CfgStatementFlow | null {
+    let continues = [...incoming];
+    const terminals: CfgPendingTransfer[] = [];
+
+    for (const statement of statements) {
+      if (continues.length === 0) return null;
+
+      const flow = this.buildStatement(statement, continues, terminalMode);
+      if (!flow) return null;
+      terminals.push(...flow.terminals);
+      continues = flow.continues;
+    }
+
+    return { continues, terminals };
+  }
+
+  private buildStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+  ): CfgStatementFlow | null {
+    if (statement.type === 'statement_block') {
+      return this.buildStatementSequence(getStatementBlockStatements(statement), incoming, terminalMode);
+    }
+    if (statement.type === 'if_statement') {
+      return this.buildIfStatement(statement, incoming, terminalMode);
+    }
+    if (statement.type === 'try_statement') {
+      return this.buildTryFinallyStatement(statement, incoming, terminalMode);
+    }
+    if (statement.type === 'return_statement') {
+      const blockOrdinal = this.addBodyBlock(statement);
+      this.connectIncoming(incoming, blockOrdinal);
+      return this.handleTerminalTransfer({ fromOrdinal: blockOrdinal, kind: 'return' }, terminalMode);
+    }
+    if (statement.type === 'throw_statement') {
+      const blockOrdinal = this.addBodyBlock(statement);
+      this.connectIncoming(incoming, blockOrdinal);
+      return this.handleTerminalTransfer({ fromOrdinal: blockOrdinal, kind: 'throw' }, terminalMode);
+    }
+    if (isSimpleStructuredStatement(statement)) {
+      const blockOrdinal = this.addBodyBlock(statement);
+      this.connectIncoming(incoming, blockOrdinal);
+      return {
+        continues: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
+        terminals: [],
+      };
+    }
+    return null;
+  }
+
+  private buildIfStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+  ): CfgStatementFlow | null {
+    const consequence = statement.childForFieldName('consequence');
+    if (!consequence) return null;
+
+    const condition = statement.childForFieldName('condition') ?? statement;
+    const conditionOrdinal = this.addBlock('condition', condition);
+    this.connectIncoming(incoming, conditionOrdinal);
+
+    const trueFlow = this.buildStatement(consequence, [{ fromOrdinal: conditionOrdinal, kind: 'true' }], terminalMode);
+    if (!trueFlow) return null;
+
+    const continues = [...trueFlow.continues];
+    const terminals = [...trueFlow.terminals];
+    const alternative = getElseClauseStatement(statement.childForFieldName('alternative'));
+    if (alternative) {
+      const falseFlow = this.buildStatement(alternative, [{ fromOrdinal: conditionOrdinal, kind: 'false' }], terminalMode);
+      if (!falseFlow) return null;
+      continues.push(...falseFlow.continues);
+      terminals.push(...falseFlow.terminals);
+    } else {
+      continues.push({ fromOrdinal: conditionOrdinal, kind: 'false' });
+    }
+
+    return { continues, terminals };
+  }
+
+  private buildTryFinallyStatement(
+    statement: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+    terminalMode: CfgTerminalMode,
+  ): CfgStatementFlow | null {
+    if (statement.namedChildren.some((child) => child.type === 'catch_clause')) return null;
+
+    const tryBody = statement.childForFieldName('body');
+    const finalizer = statement.childForFieldName('finalizer');
+    const finallyBody = finalizer?.childForFieldName('body') ?? null;
+    if (!tryBody || !finallyBody || tryBody.type !== 'statement_block' || finallyBody.type !== 'statement_block') {
+      return null;
+    }
+
+    const tryFlow = this.buildStatementSequence(getStatementBlockStatements(tryBody), incoming, 'collect');
+    if (!tryFlow) return null;
+
+    const continues: CfgPendingTransfer[] = [];
+    const terminals: CfgPendingTransfer[] = [];
+    for (const pending of [...tryFlow.terminals, ...tryFlow.continues]) {
+      const finallyFlow = this.buildFinallyBody(finallyBody, [
+        { fromOrdinal: pending.fromOrdinal, kind: 'finally' },
+      ]);
+      if (!finallyFlow) return null;
+
+      for (const finalizerTerminal of finallyFlow.terminals) {
+        const handled = this.handleTerminalTransfer(finalizerTerminal, terminalMode);
+        terminals.push(...handled.terminals);
+      }
+
+      for (const finalizerContinuation of finallyFlow.continues) {
+        const resumed = {
+          fromOrdinal: finalizerContinuation.fromOrdinal,
+          kind: isTerminalTransferKind(pending.kind) ? pending.kind : 'fallthrough',
+        };
+        if (isTerminalTransferKind(resumed.kind)) {
+          const handled = this.handleTerminalTransfer(resumed, terminalMode);
+          terminals.push(...handled.terminals);
+        } else {
+          continues.push(resumed);
+        }
+      }
+    }
+
+    return { continues, terminals };
+  }
+
+  private buildFinallyBody(
+    finallyBody: SyntaxNode,
+    incoming: readonly CfgPendingTransfer[],
+  ): CfgStatementFlow | null {
+    const statements = getStatementBlockStatements(finallyBody);
+    if (statements.length > 0) {
+      return this.buildStatementSequence(statements, incoming, 'collect');
+    }
+
+    const finallyOrdinal = this.addBodyBlock(finallyBody);
+    this.connectIncoming(incoming, finallyOrdinal);
+    return {
+      continues: [{ fromOrdinal: finallyOrdinal, kind: 'fallthrough' }],
+      terminals: [],
+    };
+  }
+
+  private handleTerminalTransfer(
+    terminal: CfgPendingTransfer,
+    terminalMode: CfgTerminalMode,
+  ): CfgStatementFlow {
+    if (terminalMode === 'emit') {
+      this.addEdge(terminal.fromOrdinal, CFG_EXIT_TARGET_ORDINAL, terminal.kind);
+      return { continues: [], terminals: [] };
+    }
+    return { continues: [], terminals: [terminal] };
+  }
+
+  private connectIncoming(incoming: readonly CfgPendingTransfer[], targetOrdinal: number): void {
+    for (const transfer of incoming) {
+      this.addEdge(transfer.fromOrdinal, targetOrdinal, transfer.kind);
+    }
+  }
+
+  private addBodyBlock(node: SyntaxNode): number {
+    return this.addBlock('body', node);
+  }
+
+  private addBlock(role: CfgBlock['role'], node?: SyntaxNode): number {
+    const ordinal = this.blocks.length;
+    this.blocks.push({
+      role,
+      spans: node ? [spanForSyntaxNode(node)] : [],
+    });
+    return ordinal;
+  }
+
+  private addEdge(sourceOrdinal: number, targetOrdinal: number, kind: CfgEdge['kind']): void {
+    this.edges.push({ sourceOrdinal, targetOrdinal, kind });
+  }
+}
+
+function getStatementBlockStatements(block: SyntaxNode): SyntaxNode[] {
+  return block.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
+}
+
+function getElseClauseStatement(node: SyntaxNode | null): SyntaxNode | null {
+  if (!node) return null;
+  if (node.type !== 'else_clause') return node;
+  return node.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type)) ?? null;
+}
+
+function isSimpleStructuredStatement(node: SyntaxNode): boolean {
+  return (
+    !hasDeferredExpressionBranching(node) &&
+    (node.type === 'empty_statement' ||
+      node.type === 'expression_statement' ||
+      node.type === 'lexical_declaration' ||
+      node.type === 'variable_declaration')
+  );
+}
+
+function hasDeferredExpressionBranching(root: SyntaxNode): boolean {
+  const stack: SyntaxNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node.type === 'binary_expression' && hasDeferredBinaryOperator(node)) return true;
+    if (DEFERRED_EXPRESSION_BRANCH_TYPES.has(node.type)) return true;
+    for (let index = 0; index < node.namedChildCount; index++) {
+      const child = node.namedChild(index);
+      if (child) stack.push(child);
+    }
+  }
+  return false;
+}
+
+function hasDeferredBinaryOperator(node: SyntaxNode): boolean {
+  for (let index = 0; index < node.childCount; index++) {
+    const child = node.child(index);
+    if (child && !child.isNamed && DEFERRED_BINARY_OPERATORS.has(child.type)) return true;
+  }
+  return false;
+}
+
+function isTerminalTransferKind(kind: CfgEdge['kind']): boolean {
+  return kind === 'return' || kind === 'throw';
+}
+
+function spanForSyntaxNode(node: SyntaxNode): CfgBlock['spans'][number] {
+  return {
+    startLine: node.startPosition.row + 1,
+    startColumn: node.startPosition.column,
+    endLine: node.endPosition.row + 1,
+    endColumn: node.endPosition.column,
+  };
+}
+
 function buildLinearCfgIr(row: CfgFunctionRow, node: SyntaxNode): CfgIr {
   const exitEdgeKind: CfgEdge['kind'] = functionBodyEndsWithReturn(node) ? 'return' : 'fallthrough';
   return {
@@ -959,6 +1275,15 @@ function lowerCfgIr(row: CfgFunctionRow, sourceVersion: string, ir: CfgIr): CfgG
     ordinal,
     spans: block.spans,
   }));
+  const edges = ir.edges
+    .map((edge) => ({
+      sourceOrdinal: edge.sourceOrdinal,
+      targetOrdinal: edge.targetOrdinal,
+      source: blocks[edge.sourceOrdinal]!.id,
+      target: blocks[edge.targetOrdinal]!.id,
+      kind: edge.kind,
+    }))
+    .sort(compareLoweredCfgEdges);
   return {
     analysis: 'cfg',
     graphId: deriveCfgGraphId(row.id, sourceVersion),
@@ -966,12 +1291,27 @@ function lowerCfgIr(row: CfgFunctionRow, sourceVersion: string, ir: CfgIr): CfgG
     functionId: row.id,
     sourceVersion,
     blocks,
-    edges: ir.edges.map((edge) => ({
-      source: blocks[edge.sourceOrdinal]!.id,
-      target: blocks[edge.targetOrdinal]!.id,
+    edges: edges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
       kind: edge.kind,
     })),
   };
+}
+
+function compareLoweredCfgEdges(
+  left: CfgEdgeIr & { source: string; target: string },
+  right: CfgEdgeIr & { source: string; target: string },
+): number {
+  return (
+    left.sourceOrdinal - right.sourceOrdinal ||
+    cfgEdgeKindOrder(left.kind) - cfgEdgeKindOrder(right.kind) ||
+    left.target.localeCompare(right.target)
+  );
+}
+
+function cfgEdgeKindOrder(kind: CfgEdge['kind']): number {
+  return CFG_EDGE_KIND_ORDER.get(kind) ?? Number.MAX_SAFE_INTEGER;
 }
 
 function deriveCfgGraphId(functionId: string, sourceVersion: string): string {

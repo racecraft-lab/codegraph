@@ -13,7 +13,7 @@
   },
   "status": "in_progress",
   "active_step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)",
-  "updated_at": "2026-07-25T16:34:40Z",
+  "updated_at": "2026-07-25T16:54:41Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -506,6 +506,20 @@
           "build": "passed",
           "node": "24.11.1",
           "verification": "generated 5,001-branch function exceeded the 10,000-block demand cap and persisted resource_limited with no partial payload"
+        },
+        "T013": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 8,
+          "green_passed": 30,
+          "focused_tests": [
+            "__tests__/analysis/cfg/cfg-typescript.test.ts",
+            "__tests__/analysis/cfg/cfg-contract.test.ts",
+            "__tests__/analysis/cfg/cfg-lifecycle.test.ts"
+          ],
+          "build": "passed",
+          "node": "24.11.1",
+          "verification": "explicit throws and continuation-specific try/finally paths preserve pending and overriding abrupt transfers without speculative cross-product exits"
         }
       }
     }
