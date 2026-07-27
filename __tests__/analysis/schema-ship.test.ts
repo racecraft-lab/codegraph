@@ -26,11 +26,32 @@ const CATALOG_INDEXES = [
   'idx_cluster_members_cluster',
 ];
 
-function objectNames(db: SqliteDatabase, type: 'table' | 'index'): Set<string> {
+const CFG_TABLES = ['cfg_blocks', 'cfg_edges', 'cfg_status'] as const;
+const CFG_INDEXES = [
+  'idx_cfg_blocks_function_ordinal',
+  'idx_cfg_edges_function_ordinal',
+  'idx_cfg_status_file_path',
+  'idx_cfg_status_source_version',
+  'idx_cfg_status_state',
+] as const;
+const CFG_TRIGGERS = [
+  'cfg_blocks_require_available_status_insert',
+  'cfg_blocks_require_available_status_update',
+  'cfg_status_reject_non_available_payload_update',
+] as const;
+
+function objectNames(db: SqliteDatabase, type: 'table' | 'index' | 'trigger'): Set<string> {
   const rows = db.prepare(`SELECT name FROM sqlite_master WHERE type = ?`).all(type) as {
     name: string;
   }[];
   return new Set(rows.map((r) => r.name));
+}
+
+function matchingObjectNames(db: SqliteDatabase, type: 'table' | 'index' | 'trigger', nameGlob: string): string[] {
+  const rows = db
+    .prepare('SELECT name FROM sqlite_master WHERE type = ? AND name GLOB ? ORDER BY name')
+    .all(type, nameGlob) as { name: string }[];
+  return rows.map((row) => row.name);
 }
 
 /** A comparable column-shape signature for one table. */
@@ -127,5 +148,31 @@ describe('SPEC-011 catalog schema ships + migrates in lockstep', () => {
     for (const t of CATALOG_TABLES) {
       expect(sql).toContain(`CREATE TABLE IF NOT EXISTS ${t}`);
     }
+  });
+
+  it('copy-assets keeps source and shipped schema byte-identical with exact SPEC-014 CFG DDL', () => {
+    const source = path.resolve(__dirname, '../../src/db/schema.sql');
+    const shipped = path.resolve(__dirname, '../../dist/db/schema.sql');
+    const sourceBytes = fs.readFileSync(source);
+    const shippedBytes = fs.readFileSync(shipped);
+
+    expect(Buffer.compare(shippedBytes, sourceBytes)).toBe(0);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-ship-cfg-ddl-'));
+    dirs.push(dir);
+    const { db } = createDatabase(path.join(dir, 'codegraph.db'));
+    dbs.push(db);
+    db.exec(shippedBytes.toString('utf-8'));
+
+    const cfgTables = matchingObjectNames(db, 'table', 'cfg_*');
+    const cfgIndexes = matchingObjectNames(db, 'index', 'idx_cfg_*');
+    const cfgTriggers = matchingObjectNames(db, 'trigger', 'cfg_*');
+
+    expect(cfgTables).toHaveLength(3);
+    expect(cfgTables).toEqual([...CFG_TABLES]);
+    expect(cfgIndexes).toHaveLength(5);
+    expect(cfgIndexes).toEqual([...CFG_INDEXES]);
+    expect(cfgTriggers).toHaveLength(3);
+    expect(cfgTriggers).toEqual([...CFG_TRIGGERS]);
   });
 });

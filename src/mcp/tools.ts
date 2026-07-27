@@ -44,7 +44,7 @@ import {
   renderMarkdownReport,
 } from '../analysis/detect-changes/report';
 import type { CfgPageRequest } from '../analysis/cfg';
-import { loadAnalysisConfig } from '../project-config';
+import { loadAnalysisConfig, PROJECT_CONFIG_FILENAME } from '../project-config';
 
 /**
  * An expected, recoverable "codegraph can't serve this" condition — most
@@ -64,7 +64,27 @@ export class NotIndexedError extends Error {}
  * retry guidance — abandoning this path is the desired agent reaction.
  */
 export class PathRefusalError extends Error {}
-import { resolve as resolvePath } from 'path';
+import { dirname as dirnamePath, parse as parsePath, resolve as resolvePath } from 'path';
+
+/**
+ * Find the nearest committed project config for an unindexed path.
+ *
+ * `projectPath` accepts any directory inside a project. When no `.codegraph/`
+ * exists yet, the index-root resolver cannot tell us which ancestor owns the
+ * activation policy, so mirror its upward walk using `codegraph.json`.
+ */
+function findNearestProjectConfigRoot(startPath: string): string | null {
+  let current = resolvePath(startPath);
+  const root = parsePath(current).root;
+
+  while (true) {
+    if (existsSync(resolvePath(current, PROJECT_CONFIG_FILENAME))) {
+      return current;
+    }
+    if (current === root) return null;
+    current = dirnamePath(current);
+  }
+}
 
 /**
  * The four accepted `codegraph_search` retrieval modes. The MCP surface default
@@ -929,12 +949,12 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        projectPath: { type: 'string', description: 'Absolute path to the indexed project.' },
+        projectPath: projectPathProperty,
         functionId: { type: 'string', description: 'Public CodeGraph function id to read.' },
         limit: { type: 'integer', description: 'Page size for CFG blocks and edges (default 100, clamped to 1-500).' },
         offset: { type: 'integer', description: 'Zero-based page offset for CFG blocks and edges (default 0).' },
       },
-      required: ['projectPath', 'functionId'],
+      required: ['functionId'],
     },
     annotations: READ_ONLY_ANNOTATIONS,
   },
@@ -1878,8 +1898,7 @@ export class ToolHandler {
    * CfgReadResult JSON, never as an MCP error.
    */
   private async handleGetCfg(args: Record<string, unknown>): Promise<ToolResult> {
-    const projectPath = this.validateString(args.projectPath, 'projectPath', MAX_PATH_LENGTH);
-    if (typeof projectPath !== 'string') return projectPath;
+    const projectPath = args.projectPath as string | undefined;
     const functionId = this.validateString(args.functionId, 'functionId');
     if (typeof functionId !== 'string') return functionId;
     const limit = this.coerceOptionalInteger(args.limit, 'limit');
@@ -1896,11 +1915,17 @@ export class ToolHandler {
       cg = this.getCodeGraph(projectPath);
     } catch (err) {
       if (err instanceof NotIndexedError) {
-        if (loadAnalysisConfig(projectPath).cfg === true) {
-          const { makeCfgNotIndexedReadResult } = await import('../analysis/cfg');
-          return this.textResult(JSON.stringify(makeCfgNotIndexedReadResult(functionId), null, 2));
+        const configRoot = projectPath ? findNearestProjectConfigRoot(projectPath) : null;
+        if (configRoot) {
+          if (loadAnalysisConfig(configRoot).cfg === true) {
+            const { makeCfgNotIndexedReadResult } = await import('../analysis/cfg');
+            return this.textResult(JSON.stringify(makeCfgNotIndexedReadResult(functionId), null, 2));
+          }
+          const { makeCfgDisabledReadResult } = await import('../analysis/cfg');
+          return this.textResult(JSON.stringify(makeCfgDisabledReadResult(functionId), null, 2));
         }
-        return this.errorResult(err.message);
+        const { makeCfgNotIndexedReadResult } = await import('../analysis/cfg');
+        return this.textResult(JSON.stringify(makeCfgNotIndexedReadResult(functionId), null, 2));
       }
       throw err;
     }

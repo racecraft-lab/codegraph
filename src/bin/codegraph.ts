@@ -69,13 +69,14 @@ import { RENAME_EXIT_CODES, renameApplyExitCode } from '../refactor/types';
 import type { ApplyResult, RenamePlan } from '../refactor/types';
 import { formatApplyResultTable, formatRenamePlanTable, serializeApplyResultJson, serializeRenamePlanJson } from '../refactor/plan-format';
 import {
+  makeCfgDisabledReadResult,
   makeCfgNotIndexedReadResult,
   readCfgProjectStatus,
   safeCfgMessage,
   type CfgProjectStatus,
   type CfgReadResult,
 } from '../analysis/cfg';
-import { loadAnalysisConfig } from '../project-config';
+import { loadAnalysisConfig, PROJECT_CONFIG_FILENAME } from '../project-config';
 import { createUnavailableReport, detectChanges, type DiffMode, type ReportFormat } from '../analysis/detect-changes';
 import {
   normalizeDetectChangesRequest,
@@ -351,7 +352,7 @@ function parseCfgPagingOption(value: string | undefined, flag: '--limit' | '--of
   if (value === undefined) return undefined;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid ${flag} value "${value}" - must be a finite number.`);
+    throw new Error(`Invalid ${flag} value "${escapeControlChars(value)}" - must be a finite number.`);
   }
   return parsed;
 }
@@ -371,12 +372,12 @@ function formatCfgHumanResult(result: CfgReadResult): string {
   const page = result.page;
   return [
     'CFG',
-    `functionId: ${result.functionId}`,
+    `functionId: ${escapeControlChars(result.functionId)}`,
     `state: ${result.state}`,
     `reason: ${result.reason ?? 'none'}`,
     `sourceVersion: ${result.sourceVersion ?? 'none'}`,
     `stale: ${result.stale}`,
-    `message: ${safeCfgMessage(result.message)}`,
+    `message: ${escapeControlChars(safeCfgMessage(result.message))}`,
     page === null ? 'page: none' : `page: limit=${page.limit} offset=${page.offset}`,
     formatCfgCount('blocks', page?.blocks ?? null),
     formatCfgCount('edges', page?.edges ?? null),
@@ -1632,7 +1633,12 @@ program
           process.stdout.write(`${options.json ? JSON.stringify(result, null, 2) : formatCfgHumanResult(result)}\n`);
           return;
         }
-        error(`CodeGraph not initialized in ${projectPath}`);
+        if (fs.existsSync(path.join(projectPath, PROJECT_CONFIG_FILENAME))) {
+          const result = makeCfgDisabledReadResult(functionId);
+          process.stdout.write(`${options.json ? JSON.stringify(result, null, 2) : formatCfgHumanResult(result)}\n`);
+          return;
+        }
+        error(`CodeGraph not initialized in ${escapeControlChars(projectPath)}`);
         process.exit(1);
       }
 
@@ -1645,7 +1651,7 @@ program
         cg.destroy();
       }
     } catch (err) {
-      error(`cfg failed: ${err instanceof Error ? err.message : String(err)}`);
+      error(`cfg failed: ${escapeControlChars(err instanceof Error ? err.message : String(err))}`);
       process.exit(1);
     }
   });

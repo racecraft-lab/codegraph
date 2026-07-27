@@ -12,8 +12,8 @@
     "constraint": "Every command, agent, gate, commit, push, and PR operation must target execution_root."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: Implement - Polish and Gates (T039)",
-  "updated_at": "2026-07-25T22:28:02Z",
+  "active_step": "Post: PR Packet/Body Generation",
+  "updated_at": "2026-07-26T11:11:53Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -399,15 +399,15 @@
       "reason": "composite at or above threshold"
     },
     "implementation": {
-      "status": "in_progress",
+      "status": "completed",
       "groups": [
         {"step": "Phase 7: Implement - Setup and Reviewability Baseline (T001-T003)", "task_ids": ["T001", "T002", "T003"], "status": "completed"},
         {"step": "Phase 7: Implement - Foundational Contract and Storage (T004-T008)", "task_ids": ["T004", "T005", "T006", "T007", "T008"], "status": "completed"},
         {"step": "Phase 7: Implement - Slice 1 / US1 Library CFG (T009-T016)", "task_ids": ["T009", "T010", "T011", "T012", "T013", "T014", "T015", "T016"], "status": "completed"},
         {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "task_ids": ["T017", "T018", "T019", "T020", "T021", "T022", "T023"], "status": "completed"},
         {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "task_ids": ["T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031"], "status": "completed"},
-        {"step": "Phase 7: Implement - Slice 2 / US4 Python Parity (T032-T038)", "task_ids": ["T032", "T033", "T034", "T035", "T036", "T037", "T038"], "status": "in_progress"},
-        {"step": "Phase 7: Implement - Polish, Gates, and Review Packet (T039-T043)", "task_ids": ["T039", "T040", "T041", "T042", "T043"], "status": "pending"}
+        {"step": "Phase 7: Implement - Slice 2 / US4 Python Parity (T032-T038)", "task_ids": ["T032", "T033", "T034", "T035", "T036", "T037", "T038"], "status": "completed"},
+        {"step": "Phase 7: Implement - Polish, Gates, and Review Packet (T039-T043)", "task_ids": ["T039", "T040", "T041", "T042", "T043"], "status": "completed"}
       ],
       "task_results": {
         "T001": {
@@ -543,7 +543,7 @@
           ],
           "build": "passed",
           "node": "24.11.1",
-          "verification": "explicit throws and continuation-specific try/finally paths preserve pending and overriding abrupt transfers without speculative cross-product exits"
+          "verification": "explicit throws and continuation-specific try/finally paths preserve queued and overriding abrupt transfers without speculative cross-product exits"
         },
         "T014": {
           "status": "completed",
@@ -971,9 +971,804 @@
             "dogfood_extraction_version": 25,
             "dogfood_cfg_state": "disabled_by_current_project_config"
           }
+        },
+        "T039": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_placeholder_failed": 1,
+          "red_parser_cache_failed": 1,
+          "red_authoritative_ratio": 1.4128,
+          "green_parser_calls_per_three_function_file": 1,
+          "executor_authoritative_ratio": 1.1618,
+          "parent_authoritative_ratio": 1.1673,
+          "threshold": 1.2,
+          "warmup_pairs": 2,
+          "measured_pairs": 10,
+          "parent_disabled_median_ms": 57.03,
+          "parent_enabled_median_ms": 66.58,
+          "disabled_cfg_rows": 0,
+          "enabled_cfg_statuses": 36,
+          "enabled_cfg_blocks": 137,
+          "enabled_cfg_edges": 104,
+          "enabled_languages": {
+            "python_available": 3,
+            "typescript_available": 31
+          },
+          "network_fetches": 0,
+          "held_non_cfg_metrics": "matched",
+          "cfg_directory_tests_passed": 103,
+          "cfg_directory_tests_skipped": 2,
+          "build": "passed",
+          "node": "24.11.1",
+          "final_authoritative_ratio": 1.159,
+          "timing_modes": {
+            "authoritative": "CODEGRAPH_CFG_PERF_EVIDENCE=1",
+            "smoke": "CODEGRAPH_CFG_PERF_SMOKE=1",
+            "default_suite": "parser-cache regression only; timing skipped"
+          },
+          "remaining_risk": "The repeated ratio passed with about 3.3 percentage points of headroom; retain the paired gate in final evidence.",
+          "verification": "one parsed tree is shared per source file and disposed after the analysis run; authoritative paired medians remain within the 1.20 budget with dormant disabled writes and positive cross-language enabled CFGs"
+        },
+        "T040": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_schema_ship_failed": 1,
+          "green_schema_ship_passed": 6,
+          "schema_sha256": "ee029372fb2aaeb7c697ed3a4d317a7eee811fe5bfdba960f9bc9ccb563c53c3",
+          "schema_cfg_tables": 3,
+          "schema_cfg_indexes": 5,
+          "schema_cfg_triggers": 3,
+          "cfg_directory_tests_passed": 103,
+          "cfg_directory_tests_skipped": 2,
+          "build": "passed",
+          "typecheck": "passed",
+          "full_test_files_passed": 259,
+          "full_test_files_skipped": 15,
+          "full_tests_passed": 4646,
+          "full_tests_skipped": 181,
+          "node": "24.11.1",
+          "focused_timeout_remediation": "two integration-heavy CLI/contract assertions use explicit 30-second timeouts after concurrent full-suite runs exceeded the default 5 seconds",
+          "diff_check": "passed",
+          "verification": "source and shipped schema are byte-equivalent, focused CFG and schema gates pass, and the authoritative full repository suite is green"
+        },
+        "T041": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_failed": 1,
+          "green_focused_passed": 1,
+          "guardian_remediation_red_failed": 4,
+          "guardian_remediation_green_passed": 4,
+          "cfg_contract_tests_passed": 32,
+          "cfg_contract_tests_skipped": 2,
+          "focused_cfg_mcp_tests_passed": 70,
+          "focused_cfg_mcp_tests_skipped": 2,
+          "full_test_files_passed": 260,
+          "full_test_files_skipped": 15,
+          "full_tests_passed": 4652,
+          "full_tests_skipped": 181,
+          "node": "24.11.1",
+          "remediation": "expected unindexed projects return DB-free success-shaped results without raw Read/Grep/Glob steering; the static schema defaults projectPath while no-default sessions dynamically require it",
+          "disabled_enabled_invariant_smoke": {
+            "nodes_each": 52,
+            "base_edges_each": 109,
+            "disabled_cfg_statuses": 0,
+            "enabled_cfg_statuses": 36,
+            "enabled_cfg_blocks": 137,
+            "enabled_cfg_edges": 104,
+            "network_fetches": 0,
+            "authoritative_timing": false
+          },
+          "retrieval_guardian": {
+            "status": "passed",
+            "budget_monotonicity": "pass",
+            "no_read_steering": "pass",
+            "is_error_audit": "pass",
+            "synthesized_provenance": "not_applicable",
+            "flow_closure": "not_applicable",
+            "server_instructions": "pass",
+            "node_edge_stability": "pass",
+            "ab_evidence": "passed"
+          },
+          "external_ab": {
+            "status": "passed",
+            "evidence_path": "specs/014-control-flow-graphs/.process/evidence/t041-retrieval-ab.json",
+            "authorization": "explicit_operator_authorization_received",
+            "model": "sonnet",
+            "effort": "high",
+            "baseline_commit": "bab207022934d8e56ce3489069831329039bf3ef",
+            "runs_per_arm": 2,
+            "successful_runs_per_arm": 2,
+            "new_read_calls": [2, 1],
+            "baseline_read_calls": [2, 2],
+            "new_worst_case_read_calls": 2,
+            "baseline_worst_case_read_calls": 2,
+            "worst_case_read_regression": false,
+            "all_arms_used_codegraph": true
+          },
+          "dogfood_service": {
+            "root_causes": [
+              "Codex sandbox denied the POSIX daemon election lease under ~/.codegraph with EPERM",
+              "fallback in-process watcher exhausted OS watch resources with EMFILE"
+            ],
+            "codex_profile": {
+              "CODEGRAPH_NO_DAEMON": "1",
+              "CODEGRAPH_NO_WATCH": "1",
+              "config_resolution": "passed"
+            },
+            "manual_sync": {
+              "files_changed": 8,
+              "nodes": 751,
+              "duration_seconds": 1.3
+            },
+            "explore_smoke": {
+              "warm_ms": 4402,
+              "steady_ms": 1148,
+              "timeouts": 0
+            },
+            "runtime_resolution": {
+              "red_missing_selector": 1,
+              "green_tests_passed": 4,
+              "unsupported_host_node": "26.5.0",
+              "selected_node": "24.11.1",
+              "selection": "first PATH runtime satisfying package engines"
+            },
+            "fresh_session": {
+              "mcp_connect_ms": 353,
+              "tools_list_ms": 349,
+              "tools_discovered": 4,
+              "codegraph_explore": "passed",
+              "codegraph_explore_ms": 7875,
+              "watcher_disabled_confirmed": true
+            },
+            "agent_instruction_tests_passed": 6
+          }
+        },
+        "T042": {
+          "status": "completed",
+          "agent": "implement-executor",
+          "red_built_runtime_parser_unavailable": 1,
+          "built_runtime_regression_passed": 1,
+          "built_runtime_regression_skipped": 31,
+          "contract_performance_tests_passed": 31,
+          "contract_performance_tests_skipped": 3,
+          "packet_checks_passed": 19,
+          "packet_forbidden_strings": 0,
+          "build": "passed",
+          "typecheck": "passed",
+          "diff_check": "passed",
+          "node": "24.11.1",
+          "manual_uat": {
+            "typescript_blocks": 7,
+            "typescript_edges": 7,
+            "python_blocks": 17,
+            "python_edges": 21,
+            "disabled_row_counts_before_after": "1:7:7",
+            "disabled_state": "disabled",
+            "reenabled_state": "available",
+            "library_cli_parity": "passed",
+            "mcp_success": "passed",
+            "status_success": "passed"
+          },
+          "remediation": "compiled-worker index and first-enable zero-change sync load only CFG-supported languages present in the selected function rows before main-process CFG analysis; disabled CFG returns before grammar loading",
+          "review_packet": "quickstart contains activation truth, executable POSIX UAT, marker-safe review order, actual scope, evidence separation, traceability, verification, non-goals, rollback, and known gaps",
+          "verification": "real built CLI indexing produces available TypeScript and Python CFGs, lifecycle probes are executable, and the packet records completed T041 external A/B evidence"
+        },
+        "T043": {
+          "status": "completed",
+          "agent": "orchestrator-direct",
+          "base_ref": "origin/main",
+          "base_commit": "474729007ebb6bf400857003790cc296a0238d75",
+          "merge_base": "474729007ebb6bf400857003790cc296a0238d75",
+          "matching_github_prs": 0,
+          "forecast_reviewable_loc": 780,
+          "forecast_production_files": 8,
+          "forecast_total_files": 18,
+          "forecast_vertical_slices": 2,
+          "actual_total_files": 67,
+          "actual_production_files": 10,
+          "actual_production_churn": 4457,
+          "classification": "size_only",
+          "correctness_findings": 0,
+          "atomicity_route": "one-navigable-PR",
+          "final_outcome": "marker_split",
+          "single_aggregate_pr_forbidden": true,
+          "reviewability_evidence": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json",
+          "canonical_validator": "passed",
+          "independent_audit": "passed_planned_marker_split_handoff",
+          "marker_count": 11,
+          "ordered_marker_ids": [
+            "full-spec",
+            "foundation",
+            "us1-part1",
+            "us1-part2",
+            "us1-part3",
+            "us1-part4",
+            "us1-part5",
+            "us2",
+            "us3",
+            "us4",
+            "polish"
+          ],
+          "checkpoint_requirement": "every marker must receive a verified commit checkpoint before emission",
+          "roadmap_truth": "SPEC-014 is not merged and SPEC-015 remains blocked"
         }
+      },
+      "gate": {
+        "id": "G7",
+        "status": "passed",
+        "node": "24.11.1",
+        "build": "passed",
+        "typecheck": "passed",
+        "test_files_passed": 260,
+        "test_files_skipped": 15,
+        "tests_passed": 4652,
+        "tests_skipped": 181,
+        "performance_ratio": 1.159,
+        "performance_threshold": 1.2,
+        "retrieval_guardian": "passed",
+        "external_ab": "passed",
+        "evidence_path": "specs/014-control-flow-graphs/.process/evidence/t041-retrieval-ab.json"
       }
     }
+  },
+  "post_results": {
+    "doctor": {
+      "status": "skipped",
+      "reason": "The Doctor extension and speckit-utils prerequisite are not installed; the required explicit skip was recorded without mutation."
+    },
+    "verify_implementation": {
+      "status": "completed",
+      "verdict": "passed",
+      "tasks_complete": "43/43",
+      "functional_requirements_traced": "34/34",
+      "user_stories_covered": "4/4",
+      "reviewability_disposition": "size-only marker split remains required"
+    },
+    "verify_tasks": {
+      "status": "completed",
+      "verdict": "passed",
+      "verified": 43,
+      "partial": 0,
+      "weak": 0,
+      "not_found": 0,
+      "skipped": 0,
+      "report": "specs/014-control-flow-graphs/verify-tasks-report.md"
+    },
+    "code_review": {
+      "status": "completed",
+      "initial_verdict": "failed",
+      "initial_findings": 3,
+      "remediation": [
+        "fail closed for runtime-evaluated TypeScript and JavaScript switch case labels",
+        "retain a prior successful CFG snapshot when a later refresh cannot read indexed source",
+        "escape terminal control characters on every codegraph cfg human and error surface while preserving JSON values"
+      ],
+      "final_verdict": "passed",
+      "independent_recheck": "passed"
+    },
+    "integration": {
+      "status": "completed",
+      "node": "24.11.1",
+      "build": "passed",
+      "typecheck": "passed",
+      "focused_cfg_files_passed": 5,
+      "focused_cfg_tests_passed": 107,
+      "focused_cfg_tests_skipped": 3,
+      "test_files_passed": 260,
+      "test_files_skipped": 15,
+      "tests_passed": 4655,
+      "tests_skipped": 181,
+      "sandbox_note": "The restricted-sandbox attempt was invalid because loopback sockets and daemon-election writes were denied; the authoritative unrestricted rerun passed."
+    },
+    "reviewability_diff_gate": {
+      "status": "completed",
+      "base_ref": "origin/main",
+      "base_commit": "474729007ebb6bf400857003790cc296a0238d75",
+      "head_commit": "db97414f2da16afd00c406503dde0b6364feab76",
+      "total_files": 75,
+      "production_files": 10,
+      "production_churn": 4486,
+      "classification": "size_only",
+      "outcome": "marker_split",
+      "single_aggregate_pr_forbidden": true,
+      "matching_github_prs": 0,
+      "evidence": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+    },
+    "self_review": {
+      "status": "completed",
+      "verdict": "passed",
+      "tests": {
+        "build": "passed",
+        "typecheck": "passed",
+        "lint": "not_applicable",
+        "unit_test": "passed",
+        "test_files_passed": 260,
+        "test_files_skipped": 15,
+        "tests_passed": 4655,
+        "tests_skipped": 181,
+        "integration_test": "not_applicable"
+      },
+      "acceptance_scenarios_covered": "22/22",
+      "edge_cases_covered": "8/8",
+      "edge_case_gaps": 0,
+      "functional_requirements_crosswalk": "34/34",
+      "completed_tasks_verified": "43/43",
+      "orphan_requirements": 0,
+      "orphan_tasks": 0,
+      "tidiness_findings": 0
+    },
+    "uat": {
+      "status": "skipped",
+      "reason": "No committed UAT runbook exists. The deferred generate-uat-skeleton helper was not invoked, so the post-implementation contract requires an explicit fail-open skip."
+    },
+    "final_reviewability_backstop": {
+      "status": "completed",
+      "verdict": "marker_split",
+      "base_ref": "origin/main",
+      "base_commit": "474729007ebb6bf400857003790cc296a0238d75",
+      "head_commit": "468fbd5049fc26ea8c346b45e64a5187be2a215c",
+      "total_files": 75,
+      "total_churn": 18143,
+      "production_files": 10,
+      "production_churn": 4486,
+      "classification": "size_only",
+      "correctness_findings": 0,
+      "single_aggregate_pr_forbidden": true,
+      "evidence": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+    }
+  },
+  "pr_marker_plan": {
+    "schema_version": "pr-marker-plan.v1",
+    "kind": "pr_marker_plan",
+    "feature_id": "SPEC-014",
+    "status": "planned",
+    "source_fingerprint": {
+      "feature_spec_sha": "sha256:94f776a71f3fbd2aa3c6c01b4a4ba41c2d66250c943eff25024dc58cfaa783d4",
+      "plan_declared_scope_sha": "sha256:de4a3c9a5cff0749455009856b5d7a4fc5e707ab80faa5c8b1abaabf0a8fe540",
+      "tasks_sha": "sha256:a2f4e3aad241f8b723deb213114315f0847417335bc6706034c675c96573e419",
+      "reviewability_sha": "sha256:6d82c3cba35b9aabb2be725e5358e5192aee4007bbb7defff740b6b10cd98238",
+      "hazard_route_sha": "sha256:b6404134e0816be38c5748cdef55016133bf7f32f16b4598c7c9e5a098c5adbb"
+    },
+    "markers": [
+      {
+        "id": "full-spec",
+        "review_order": 1,
+        "kind": "full_spec",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "Setup and Reviewability Baseline",
+          "story_id": null,
+          "start_task_id": "T001",
+          "end_task_id": "T003"
+        },
+        "title_description": "Establish the SPEC-014 acceptance, fixture, and reviewability baseline.",
+        "task_ids": ["T001", "T002", "T003"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "not_estimated",
+          "mode": "final-marker-plan",
+          "scope": "setup-and-reviewability",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "foundation",
+        "review_order": 2,
+        "kind": "foundation",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "Foundational Contract and Storage",
+          "story_id": null,
+          "start_task_id": "T004",
+          "end_task_id": "T008"
+        },
+        "title_description": "Add the frozen CFG storage, contract, status, and paging foundation.",
+        "task_ids": ["T004", "T005", "T006", "T007", "T008"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "warn",
+          "mode": "checkpoint-actual",
+          "scope": "foundation production churn 796",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": [
+          {
+            "code": "MARKER_ABOVE_TARGET",
+            "severity": "warning",
+            "message": "The foundation checkpoint exceeds the 400-line target but remains below the 800-line hard ceiling.",
+            "source": "final-actual.json",
+            "details": {
+              "production_churn": 796,
+              "hard_ceiling": 800
+            }
+          }
+        ]
+      },
+      {
+        "id": "us1-part1",
+        "review_order": 3,
+        "kind": "user_story_part",
+        "parent_marker_id": "us1",
+        "source_boundary": {
+          "section": "User Story 1 - Core CFG Path and Safety",
+          "story_id": 1,
+          "start_task_id": "T009",
+          "end_task_id": "T012"
+        },
+        "title_description": "Introduce the TypeScript CFG path, determinism, skip states, and resource bounds.",
+        "task_ids": ["T009", "T010", "T011", "T012"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "not_estimated",
+          "mode": "planned-subdivision",
+          "scope": "US1 core path and safety",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "safe_split",
+          "details": {
+            "parent": "us1",
+            "reason": "The core path and bounded failure states form a prerequisite checkpoint before structured semantics."
+          }
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us1-part2",
+        "review_order": 4,
+        "kind": "user_story_part",
+        "parent_marker_id": "us1",
+        "source_boundary": {
+          "section": "User Story 1 - Abrupt Completion and Finally",
+          "story_id": 1,
+          "start_task_id": "T013",
+          "end_task_id": "T013"
+        },
+        "title_description": "Add throw and path-precise finally routing.",
+        "task_ids": ["T013"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "not_estimated",
+          "mode": "planned-subdivision",
+          "scope": "US1 throw and finally semantics",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "safe_split",
+          "details": {
+            "parent": "us1",
+            "reason": "Abrupt-completion routing is independently testable on top of the core builder."
+          }
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us1-part3",
+        "review_order": 5,
+        "kind": "user_story_part",
+        "parent_marker_id": "us1",
+        "source_boundary": {
+          "section": "User Story 1 - Expression Control Flow",
+          "story_id": 1,
+          "start_task_id": "T014",
+          "end_task_id": "T014"
+        },
+        "title_description": "Add short-circuit, ternary, nullish, and optional-chain expression paths.",
+        "task_ids": ["T014"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "not_estimated",
+          "mode": "planned-subdivision",
+          "scope": "US1 expression control flow",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "safe_split",
+          "details": {
+            "parent": "us1",
+            "reason": "Expression branching is an additive semantic layer with focused tests."
+          }
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us1-part4",
+        "review_order": 6,
+        "kind": "user_story_part",
+        "parent_marker_id": "us1",
+        "source_boundary": {
+          "section": "User Story 1 - Switch, Loop, and Label Semantics",
+          "story_id": 1,
+          "start_task_id": "T015",
+          "end_task_id": "T015"
+        },
+        "title_description": "Add switch fallthrough, loop re-entry, and label target semantics.",
+        "task_ids": ["T015"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "not_estimated",
+          "mode": "planned-subdivision",
+          "scope": "US1 switch loop and label semantics",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "safe_split",
+          "details": {
+            "parent": "us1",
+            "reason": "Loop, switch, and label routing is a focused semantic layer on the established builder."
+          }
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us1-part5",
+        "review_order": 7,
+        "kind": "user_story_part",
+        "parent_marker_id": "us1",
+        "source_boundary": {
+          "section": "User Story 1 - Unreachable Code and Golden Completion",
+          "story_id": 1,
+          "start_task_id": "T016",
+          "end_task_id": "T016"
+        },
+        "title_description": "Close TypeScript semantics with unreachable-code and golden coverage.",
+        "task_ids": ["T016"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "not_estimated",
+          "mode": "planned-subdivision",
+          "scope": "US1 golden completion",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "safe_split",
+          "details": {
+            "parent": "us1",
+            "reason": "The final golden and unreachable-code coverage closes the story after the semantic layers."
+          }
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us2",
+        "review_order": 8,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 2 - CFG Lifecycle",
+          "story_id": 2,
+          "start_task_id": "T017",
+          "end_task_id": "T023"
+        },
+        "title_description": "Add indexing, sync, cleanup, disablement, and failure lifecycle behavior.",
+        "task_ids": ["T017", "T018", "T019", "T020", "T021", "T022", "T023"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "warn",
+          "mode": "checkpoint-actual",
+          "scope": "US2 production churn 556",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us3",
+        "review_order": 9,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 3 - CLI, MCP, and Status",
+          "story_id": 3,
+          "start_task_id": "T024",
+          "end_task_id": "T031"
+        },
+        "title_description": "Expose deterministic CFG reads through library, CLI, MCP, and status surfaces.",
+        "task_ids": ["T024", "T025", "T026", "T027", "T028", "T029", "T030", "T031"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "warn",
+          "mode": "checkpoint-actual",
+          "scope": "US3 production churn 459",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "us4",
+        "review_order": 10,
+        "kind": "user_story",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "User Story 4 - Python Parity",
+          "story_id": 4,
+          "start_task_id": "T032",
+          "end_task_id": "T038"
+        },
+        "title_description": "Add Python CFG identity, constructs, lifecycle, and cross-language parity.",
+        "task_ids": ["T032", "T033", "T034", "T035", "T036", "T037", "T038"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "warn",
+          "mode": "checkpoint-actual",
+          "scope": "US4 production churn 508",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      },
+      {
+        "id": "polish",
+        "review_order": 11,
+        "kind": "polish",
+        "parent_marker_id": null,
+        "source_boundary": {
+          "section": "Polish, Gates, and Review Packet",
+          "story_id": null,
+          "start_task_id": "T039",
+          "end_task_id": "T043"
+        },
+        "title_description": "Add performance evidence, final gates, retrieval review, built-runtime UAT, and reviewability evidence.",
+        "task_ids": ["T039", "T040", "T041", "T042", "T043"],
+        "folded_polish_task_ids": [],
+        "folded_polish_target_reason": "",
+        "declared_files": [],
+        "declared_tests": [],
+        "reviewability": {
+          "status": "not_estimated",
+          "mode": "final-marker-plan",
+          "scope": "polish and final gates",
+          "evidence_path": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json"
+        },
+        "hazards": [],
+        "subdivision": {
+          "status": "none",
+          "details": {}
+        },
+        "implementation_checkpoint": {
+          "status": "pending"
+        },
+        "emission_mapping": {
+          "status": "pending"
+        },
+        "warnings": []
+      }
+    ],
+    "warnings": [
+      {
+        "code": "FINAL_SIZE_ONLY_BLOCK",
+        "severity": "warning",
+        "message": "The full diff exceeds the forecast and hard reviewability boundary; use marker-based emission and forbid a single aggregate PR.",
+        "source": "specs/014-control-flow-graphs/.process/reviewability/final-actual.json",
+        "details": {
+          "production_churn": 4486,
+          "forecast_reviewable_loc": 780,
+          "final_outcome": "marker_split",
+          "single_aggregate_pr_forbidden": true
+        }
+      }
+    ],
+    "created_at": "2026-07-25T23:58:25Z",
+    "updated_at": "2026-07-26T10:27:52Z"
   },
   "plan": [
     {"step": "Archive Sweep: previously merged specs dry-run/apply eligibility", "status": "completed"},
@@ -1004,17 +1799,17 @@
     {"step": "Phase 7: Implement - Slice 1 / US2 Lifecycle (T017-T023)", "status": "completed"},
     {"step": "Phase 7: Implement - Slice 1 / US3 CLI, MCP, and Status (T024-T031)", "status": "completed"},
     {"step": "Phase 7: Implement - Slice 2 / US4 Python Parity (T032-T038)", "status": "completed"},
-    {"step": "Phase 7: Implement - Polish, Gates, and Review Packet (T039-T043)", "status": "in_progress"},
-    {"step": "Post: Doctor Extension Check", "status": "pending"},
-    {"step": "Post: Verify Implementation", "status": "pending"},
-    {"step": "Post: Verify Tasks Phantom Check", "status": "pending"},
-    {"step": "Post: Code Review", "status": "pending"},
-    {"step": "Post: Integration Suite", "status": "pending"},
-    {"step": "Post: Reviewability Diff Gate", "status": "pending"},
-    {"step": "Post: Self-Review", "status": "pending"},
-    {"step": "Post: UAT Runbook Generation", "status": "pending"},
-    {"step": "Post: Final Reviewability Backstop", "status": "pending"},
-    {"step": "Post: PR Packet/Body Generation", "status": "pending"},
+    {"step": "Phase 7: Implement - Polish, Gates, and Review Packet (T039-T043)", "status": "completed"},
+    {"step": "Post: Doctor Extension Check", "status": "completed"},
+    {"step": "Post: Verify Implementation", "status": "completed"},
+    {"step": "Post: Verify Tasks Phantom Check", "status": "completed"},
+    {"step": "Post: Code Review", "status": "completed"},
+    {"step": "Post: Integration Suite", "status": "completed"},
+    {"step": "Post: Reviewability Diff Gate", "status": "completed"},
+    {"step": "Post: Self-Review", "status": "completed"},
+    {"step": "Post: UAT Runbook Generation", "status": "completed"},
+    {"step": "Post: Final Reviewability Backstop", "status": "completed"},
+    {"step": "Post: PR Packet/Body Generation", "status": "in_progress"},
     {"step": "Post: PR Body Generation", "status": "pending"},
     {"step": "Post: PR Creation", "status": "pending"},
     {"step": "Post: Review Remediation", "status": "pending"},

@@ -116,7 +116,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-011 | Execution Flows & Clusters | ✅ Complete | [SPEC-011-workflow.md](.process/SPEC-011-workflow.md) | Merged (#50); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-011.md` |
 | SPEC-012 | Change Impact Detection | ✅ Complete | [SPEC-012-workflow.md](.process/SPEC-012-workflow.md) | Merged (#55); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-012.md` |
 | SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
-| SPEC-014 | Control-Flow Graphs | 🔄 In Progress | [SPEC-014-workflow.md](.process/SPEC-014-workflow.md) | Scaffold ready on `014-control-flow-graphs`; Specify next with two vertical language slices |
+| SPEC-014 | Control-Flow Graphs | 🔄 In Progress | [SPEC-014-workflow.md](.process/SPEC-014-workflow.md) | Implementation and final hardening are active on `014-control-flow-graphs`; no SPEC-014 commit or PR has merged into `origin/main`, so SPEC-015 remains blocked |
 | SPEC-015 | Dataflow Substrate | ⏳ Pending | [SPEC-015-workflow.md](SPEC-015-workflow.md) | Blocked by SPEC-014 |
 | SPEC-016 | Program Dependence Graphs | ⏳ Pending | [SPEC-016-workflow.md](SPEC-016-workflow.md) | Blocked by SPEC-015 |
 | SPEC-017 | Taint Analysis Engine | ⏳ Pending | [SPEC-017-workflow.md](SPEC-017-workflow.md) | Blocked by SPEC-016 |
@@ -546,20 +546,19 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 
 **Goal:** Opt-in per-function CFGs (basic blocks + typed edges) built from tree-sitter ASTs through a language-neutral lowering IR, persisted and queryable — TS/JS + Python first.
 
-**Reviewability Budget:** Primary surface: schema/migration + harness/adapter |
-Projected reviewable LOC: 780 (net-new) |
-Production files: ~8 |
-Total files: ~17 |
-Budget result: advisory warning accepted; Grill Me ratified 2 vertical language slices
+**Reviewability Budget:** Primary surface: schema/migration + analysis harness/adapters |
+Original setup estimate: 780 reviewable LOC across ~8 production and ~18 total files |
+Current feature-branch product diff: 4,457 lines of churn across 10 `src/**` files |
+Budget result: the implementation materially exceeds the original forecast; final review requires an ordered marker split rather than one aggregate PR
 
 **Scope:**
-- `src/analysis/cfg/ir.ts`: lowering IR (statements, expressions, branch/loop/try constructs) with a per-language interface; `languages/typescript.ts` and `languages/python.ts` lower tree-sitter ASTs without persisting the IR.
+- `src/analysis/cfg/index.ts` contains the language-neutral internal statement/expression IR, deterministic CFG builder, TypeScript/JavaScript and Python tree-sitter lowering, persistence helpers, and exact read-result guards. Python lambda identity extraction is versioned in `src/extraction/languages/python.ts`; the IR is not persisted.
 - TypeScript/JavaScript semantics include switch/fallthrough, short-circuit logic, conditional expressions, optional chaining, and nullish coalescing. Python includes `match`/`case` and comprehensions. Nested functions own separate CFGs; unreachable source remains as disconnected blocks; `await`/`yield` are ordinary intra-procedural operations.
-- `builder.ts`: function-level entry/exit nodes, deterministic same-source block ids, and distinct sequential, branch, loop-back, return, throw, break, continue, and exception edges. Exception flow comes only from explicit `throw`/`raise`.
+- Function-level entry/exit blocks, deterministic same-source block IDs, and sequential, branch, loop-back, return, throw, break, continue, and exception edges are built in the consolidated CFG module. Exception flow comes only from explicit `throw`/`raise`.
 - Persistence: compact per-function state/reason/source-version records plus `cfg_blocks` and `cfg_edges` keyed to function node ids. Unsupported, parse-unsafe, and over-10,000-block functions persist status but no partial CFG.
-- Activation/lifecycle: `--analysis cfg` persists `analysis.cfg=true`; first enable performs a full backfill; later syncs transactionally replace affected-file CFGs and remove deleted functions. Disabled rows are inert; an unexpected refresh retains only an explicitly stale prior snapshot.
+- Activation/lifecycle: users set `analysis.cfg=true` directly in `codegraph.json`, then run `sync` for first-enable backfill or `index` for an optional full rebuild. There is no `--analysis cfg` CLI flag. Later syncs transactionally replace affected-file CFGs and tombstone deleted functions. Disabled rows are inert; an unexpected refresh retains only an explicitly stale prior snapshot.
 - Read surfaces: one stateful shared contract through `getCfg(functionId)`, CLI JSON/human output, and a paginated MCP read tool. Reads accept function ids only; `codegraph status` reports aggregate CFG health and coverage.
-- Verification: golden constructs, real-SQLite lifecycle and migration tests, exact library/CLI JSON/MCP parity, deterministic repeated re-indexing, self-repo UAT, and paired-median enabled index overhead ≤20% on the committed benchmark monorepo.
+- Verification: committed golden constructs and benchmark-monorepo generator, real-SQLite lifecycle/migration tests, exact library/CLI JSON/MCP parity, deterministic repeated re-indexing, isolated self-repo UAT, and an explicit paired-median evidence mode that gates enabled index overhead at ≤20%.
 - Slice 1 delivers shared infrastructure plus TypeScript/JavaScript end-to-end through every read surface; Slice 2 adds Python semantic parity through the same path.
 
 **Out of Scope:**
@@ -567,10 +566,11 @@ Budget result: advisory warning accepted; Grill Me ratified 2 vertical language 
 - Implicit exception inference; async suspension/resumption edges; persisted lowering instructions; edit-stable block matching; name/position lookup; REST; write/mutation surfaces; usable partial/truncated CFGs.
 
 **Key Files:**
-- `src/analysis/cfg/ir.ts`, `builder.ts`, `languages/{typescript,python}.ts`
-- `src/db/schema.sql` — CFG tables (modify)
-- `src/project-config.ts`, `src/index.ts` — activation, lifecycle, public API, status
-- `src/bin/codegraph.ts`, `src/mcp/tools.ts` — CLI and bounded MCP surfaces (modify)
+- `src/analysis/cfg/index.ts` — internal IR, CFG construction, persistence, lifecycle, paging, and result contracts
+- `src/db/schema.sql`, `src/db/migrations.ts` — schema-v11 CFG tables, indexes, triggers, and migration
+- `src/project-config.ts`, `src/index.ts` — default-off activation, orchestration, public API, and aggregate status
+- `src/extraction/languages/python.ts`, `src/extraction/extraction-version.ts` — deterministic Python lambda identity contract
+- `src/bin/codegraph.ts`, `src/mcp/tools.ts`, `src/mcp/server-instructions.ts` — CLI, bounded MCP read surface, and agent guidance
 
 ---
 

@@ -527,6 +527,22 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     ]);
   });
 
+  it('checks the direct receiver when an optional member follows an ordinary member', async () => {
+    const source = [
+      'export function optionalDirectReceiver(a: { b?: { c: string } }): string | undefined {',
+      '  return a.b?.c;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('optional-direct-receiver.ts', 'optionalDirectReceiver', source);
+    const conditions = cfg.blocks
+      .filter((block) => block.role === 'condition')
+      .map((block) => spanText(source, block.spans[0]!));
+
+    expect(conditions).toContain('a.b');
+    expect(conditions).not.toContain('a');
+  });
+
   it('persists the committed nullish-coalescing fixture with fallback-only RHS evaluation', async () => {
     const source = fs.readFileSync(path.join(FIXTURE_DIR, 'nullish-coalescing.js'), 'utf8');
     const cfg = await indexFunctionCfg('nullish-coalescing.js', 'nullishCoalesce', source);
@@ -619,6 +635,26 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     expect(paths).toHaveLength(10);
   });
 
+  it('keeps every consecutive empty switch case dispatch into the first statement', async () => {
+    const source = [
+      'export function consecutiveEmptyCases(value: string): number {',
+      '  switch (value) {',
+      "    case 'a':",
+      "    case 'b':",
+      '      return 1;',
+      '    default:',
+      '      return 0;',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('consecutive-empty-cases.ts', 'consecutiveEmptyCases', source);
+
+    expect(edgeTextPaths(cfg, source).filter((path) =>
+      path === '1:condition:value -case-> 2:body:return 1;'
+    )).toHaveLength(2);
+  });
+
   it('persists an unmatched switch dispatch without an explicit default as a default edge', async () => {
     const source = [
       'export function switchMissingDefaultProbe(value: string): number {',
@@ -639,6 +675,45 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
       '2:body:return 1; -return-> 4:exit',
       '3:body:return 0; -return-> 4:exit',
     ]);
+  });
+
+  it('fails closed when a switch case label requires runtime evaluation', async () => {
+    const source = [
+      'function nextCase(): string {',
+      "  return 'ready';",
+      '}',
+      '',
+      'export function dynamicSwitchCaseProbe(value: string): number {',
+      '  switch (value) {',
+      '    case nextCase():',
+      '      return 1;',
+      '    default:',
+      '      return 0;',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const { db, functionId, result } = await indexFunctionResult(
+      'dynamic-switch-case-probe.ts',
+      'dynamicSwitchCaseProbe',
+      source,
+    );
+
+    expect(result).toMatchObject({
+      analysis: 'cfg',
+      cfg: null,
+      functionId,
+      page: null,
+      reason: 'unsupported_construct',
+      stale: false,
+      state: 'unsupported',
+    });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_blocks WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM cfg_edges WHERE function_id = ?').get(functionId),
+    ).toEqual({ count: 0 });
   });
 
   it('persists branchy switch discriminants before case dispatch', async () => {
@@ -1338,6 +1413,25 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     ]);
   });
 
+  it('keeps consecutive non-abrupt unreachable statements mutually disconnected', async () => {
+    const source = [
+      'export function consecutiveUnreachable(): number {',
+      '  return 1;',
+      '  const first = 2;',
+      '  const second = 3;',
+      '}',
+      '',
+    ].join('\n');
+    const cfg = await indexFunctionCfg('consecutive-unreachable.ts', 'consecutiveUnreachable', source);
+    const incomingTargets = new Set(cfg.edges.map((edge) => edge.target));
+    const unreachableBlocks = cfg.blocks.filter((block) => block.role === 'unreachable');
+
+    expect(unreachableBlocks).toHaveLength(2);
+    for (const block of unreachableBlocks) {
+      expect(incomingTargets.has(block.id)).toBe(false);
+    }
+  });
+
   it('persists empty and no-op functions as minimal entry-exit CFGs', async () => {
     const noOpSource = fs.readFileSync(path.join(FIXTURE_DIR, 'no-op.ts'), 'utf8');
     const noOpCfg = await indexFunctionCfg('no-op.ts', 'noOpFixture', noOpSource);
@@ -1583,6 +1677,33 @@ describe('TypeScript/JavaScript CFG fixtures', () => {
     expect(
       db.prepare('SELECT COUNT(*) AS count FROM cfg_edges WHERE function_id = ?').get(functionId),
     ).toEqual({ count: 0 });
+  });
+
+  it('allows a nested function to reuse an outer label for its own local transfer', async () => {
+    const source = [
+      'export function reusedOuterLabel(limit: number): number {',
+      'outer:',
+      '  while (limit > 0) {',
+      '    function inner(value: number): number {',
+      '    outer:',
+      '      while (value > 0) {',
+      '        break outer;',
+      '      }',
+      '      return value;',
+      '    }',
+      '    return inner(limit);',
+      '  }',
+      '  return 0;',
+      '}',
+      '',
+    ].join('\n');
+    const { result } = await indexFunctionResult('reused-label-boundary.ts', 'reusedOuterLabel', source);
+
+    expect(result).toMatchObject({
+      state: 'available',
+      reason: null,
+      cfg: expect.any(Object),
+    });
   });
 
   it('persists resource_limited for a generated function whose CFG demand exceeds the block cap', async () => {

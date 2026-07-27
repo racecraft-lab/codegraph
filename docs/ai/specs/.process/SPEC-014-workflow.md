@@ -82,8 +82,8 @@ Resolved from the SPEC-014 worktree on 2026-07-24:
 | Checklist | `/speckit-checklist` | ✅ Complete | 76 items passed; 6 documentation gaps remediated; G4 passed with zero gap markers. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 43 sequential test-first tasks; all 34 FRs covered; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 1 medium and 1 low finding remediated; strict rerun clean; G6 passed. |
-| Implement | `/speckit-implement` | 🔄 In Progress | T001–T038 and both slice gates are complete; final hardening and performance task T039 is active. |
-| Post | Autopilot post-implementation | ⏳ Pending | Run every canonical verification, reviewability, UAT, PR, remediation, and retrospective item. |
+| Implement | `/speckit-implement` | ✅ Complete | T001–T043 and G7 complete; final Node 24 build/typecheck/full suite and retrieval A/B are green. |
+| Post | Autopilot post-implementation | 🔄 In Progress | Parallel verification/review is complete; the serial reviewability, UAT, packet, PR, remediation, and retrospective tail is active. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -505,8 +505,9 @@ Round-2 flag.
 /speckit-plan
 
 ## Tech Stack
-- Runtime: TypeScript on Node >=20 <25; source paths touching node:sqlite need
-  Node 22.5+ and project commands use Node 24.11.1.
+- Runtime: TypeScript on the package-supported Node range
+  `^20.19.0 || >=22.12.0 <25.0.0`; direct `node:sqlite` acceptance probes and
+  project commands use Node 24.11.1.
 - Parsing: existing tree-sitter extraction and function nodes.
 - Database: node:sqlite only; schema.sql is a shipped asset copied by build.
 - Interfaces: public CodeGraph library, CLI, and MCP; no REST for SPEC-014.
@@ -824,7 +825,7 @@ Before any completion or merge claim:
 | Slice | Scope | Tasks | Status |
 |---|---|---:|---|
 | 1 | Shared infrastructure + TS/JS + all read surfaces | 23 behavior + 8 setup/foundation | ✅ Complete — authoritative Node 24 gate green |
-| 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | 🔄 In Progress — Python parity gate complete; T039 active |
+| 2 | Python semantic parity + final hardening | 7 behavior + 5 cross-cutting gates | ✅ Complete — T032–T043 and G7 green |
 
 ### Implementation Task Groups
 
@@ -836,7 +837,7 @@ Before any completion or merge claim:
 | Slice 1 / US2 Lifecycle | T017–T023 | ✅ Complete — CFG 67/67, build, and full Node 24 suite green |
 | Slice 1 / US3 CLI, MCP, and Status | T024–T031 | ✅ Complete — build, typecheck, and full Node 24 suite green |
 | Slice 2 / US4 Python Parity | T032–T038 | ✅ Complete — authoritative Node 24 gate green |
-| Polish, Gates, and Review Packet | T039–T043 | 🔄 In Progress — T039 active |
+| Polish, Gates, and Review Packet | T039–T043 | ✅ Complete — guardian and two-run-per-arm Sonnet/high A/B green |
 
 Foundation evidence (2026-07-25): schema v11 fresh/migration/shipped-asset
 parity, default-off CFG dormancy, frozen public contract, source-version/status
@@ -1159,38 +1160,281 @@ recommendation. CFG remains intentionally disabled by current project config;
 the isolated T031 and T038 UAT mirrors remain the authoritative CFG-enabled
 dogfood evidence.
 
+T039 evidence (2026-07-25): the first authoritative paired benchmark failed at
+`1.4128`, and a failing parser-count probe showed one source with three
+functions was parsed three times. CFG analysis now shares one tree-sitter parse
+per source file for the bounded run and disposes cached trees in `finally`. The
+executor's 2-warmup/10-pair GREEN ratio was `1.1618`; parent repetition passed
+at `1.1673` with 57.03 ms disabled and 66.58 ms enabled medians. The disabled
+arm wrote zero CFG rows; the enabled arm wrote 36 statuses, 137 blocks, and 104
+edges with available Python and TypeScript CFGs. All held non-CFG counts
+matched and network fetches were zero. Node 24 build and 103/103 CFG tests
+passed, with 2 opt-in skips. The final isolated evidence rerun passed at
+`1.159`. The authoritative timed path is now explicit through
+`CODEGRAPH_CFG_PERF_EVIDENCE=1`, its non-authoritative invariant smoke is
+explicit through `CODEGRAPH_CFG_PERF_SMOKE=1`, and default full-suite runs keep
+the deterministic parser-cache regression without timing under concurrent
+load.
+
+T040 evidence (2026-07-25): a deliberately stale shipped schema first failed
+1/6 assertions; `npm run build` restored byte-equivalent source/dist schema
+with SHA-256
+`ee029372fb2aaeb7c697ed3a4d317a7eee811fe5bfdba960f9bc9ccb563c53c3`,
+and the hardened test locks the exact 3 CFG tables, 5 indexes, and 3 triggers.
+Build, typecheck, all 6 schema-shipping assertions, and 103 CFG tests passed
+with 2 explicit performance-mode skips. The authoritative Node 24.11.1 full
+suite passed 259 files and 4,646 tests, with 15 files and 181 tests skipped.
+Two integration-heavy CLI/contract cases received only local 30-second
+timeouts after concurrent full-suite runs exceeded the default 5 seconds;
+their focused contract file remains green. `git diff --check` passed.
+
+T041 local evidence (2026-07-25): the first RED real-files regression proved
+that an explicitly configured, unindexed project with CFG disabled returned
+CLI nonzero and MCP `isError: true`. The guardian follow-up then exposed four
+more RED cases: the static schema required `projectPath` despite default-project
+guidance, omission could not use the default project, and two ordinary
+unindexed workspaces leaked error-shaped Read/Grep/Glob steering. A shared
+DB-free result constructor now restores exact CLI/MCP parity; the static schema
+requires only `functionId`, no-default sessions dynamically require
+`projectPath`, and every expected unindexed state is success-shaped without raw
+steering text. The four-case RED/GREEN probe passed 4/4, the focused CFG/MCP
+suite passed 70 tests with 2 skips, and the authoritative Node 24.11.1 full
+suite passed 259 files and 4,648 tests with 15 files and 181 tests skipped. An
+explicit disabled/enabled invariant smoke held non-CFG counts at 52 nodes and
+109 base edges while enabled mode alone wrote 36 CFG statuses, 137 blocks, and
+104 CFG edges with zero network fetches. The retrieval-guardian re-audit passes
+all seven applicable local checks with no advisory.
+
+The missing Codex dogfood service was reproduced separately: the shared daemon
+could not create its POSIX election lease under `~/.codegraph` in the Codex
+sandbox (`EPERM`), fallback in-process mode lost auto-sync when the watcher hit
+`EMFILE`, and a fresh Codex session resolved bare `node` to unsupported Node
+26.5.0. The checked-in Codex MCP profile now selects direct/no-watch mode, and
+the launcher scans PATH for the first runtime satisfying the package's Node
+range. A RED missing-selector test turned GREEN at 4/4, a real Node 26 launch
+selected Node 24.11.1, `codex mcp get codegraph --json` resolves both
+environment keys, and a new bare-Node-26 MCP client discovered all four tools
+in about 0.7s. A genuinely fresh Codex session then invoked
+`codegraph_explore` successfully in 7.87s. Manual sync completed 8 files / 751
+nodes, and warm/steady direct explore calls completed in 4.4s / 1.15s with
+zero timeouts. The operator then explicitly authorized the external retrieval
+evaluation. Two Sonnet/high repetitions against baseline `bab20702` succeeded
+in every arm: new Read counts were 2 and 1 versus baseline 2 and 2, so the
+worst-case Read count stayed at 2; every arm used CodeGraph. The committed
+summary and raw-log hashes live at
+`specs/014-control-flow-graphs/.process/evidence/t041-retrieval-ab.json`.
+
+T042 evidence (2026-07-25): a RED built Node 24 CLI acceptance probe exposed
+that compiled parse workers loaded grammar WASM only in worker processes,
+leaving main-process CFG reparsing as `unsupported` /
+`parser_unavailable` after full index and first-enable zero-change sync.
+CFG-enabled index and sync now load only the supported CFG languages actually
+present before analysis; disabled analysis returns before grammar loading.
+The built-runtime regression passed TypeScript init plus TypeScript/Python
+first-enable backfill. Manual built-CLI UAT returned a 7-block/7-edge
+TypeScript graph, preserved `1:7:7` CFG row counts through disabled sync,
+returned `available` after re-index, and returned the 17-block/21-edge Python
+graph through library, CLI, MCP, and status. Node 24 build and typecheck
+passed; the full contract/performance pair passed 31 tests with 3 explicit
+skips; all 19 packet checks and `git diff --check` passed. The review packet
+records the actual scope overrun, marker-safe review order, separated evidence,
+traceability, rollback, non-goals, and the completed external A/B evidence.
+
+### T043 Final Reviewability and Marker Plan
+
+Live Git and GitHub evidence (2026-07-25) resolves `origin/main` and the
+feature merge base to `474729007ebb6bf400857003790cc296a0238d75`.
+No PR exists for head `014-control-flow-graphs` or a `SPEC-014` title, so the
+roadmap must continue to report SPEC-014 as unmerged and SPEC-015 as blocked.
+
+The current committed surface contains 75 files, including 10 production files and 4,486
+lines of production churn. This exceeds the 780 reviewable-LOC, 8-production-
+surface, 18-total-file, and two-slice forecast. The gate classification is
+`block` for `size_only`; there is no correctness finding or correctness
+exception. The `one-navigable-PR` atomicity route therefore remains the
+dependency topology, while final delivery must use `marker_split`. A single
+aggregate PR is forbidden.
+
+Current reviewability evidence:
+`specs/014-control-flow-graphs/.process/reviewability/final-actual.json`.
+The durable `pr_marker_plan` in `autopilot-state.json` owns these 11 ordered
+markers:
+
+1. `full-spec`
+2. `foundation`
+3. `us1-part1`
+4. `us1-part2`
+5. `us1-part3`
+6. `us1-part4`
+7. `us1-part5`
+8. `us2`
+9. `us3`
+10. `us4`
+11. `polish`
+
+Marker-plan lifecycle mirror:
+
+- Schema: `pr-marker-plan.v1`
+- Fingerprint status: Current
+- Plan status: `planned`
+- Final marker split: required for size only; not emission-ready
+- Warning codes: `FINAL_SIZE_ONLY_BLOCK`, `MARKER_ABOVE_TARGET`
+- Packet validation: `pending`
+- PR mappings: `pending`
+
+| Order | Marker | Owned tasks | Reviewability | Checkpoint | Emission |
+|---:|---|---|---|---|---|
+| 1 | `full-spec` | T001–T003 | not estimated | pending | pending |
+| 2 | `foundation` | T004–T008 | warn | pending | pending |
+| 3 | `us1-part1` | T009–T012 | not estimated | pending | pending |
+| 4 | `us1-part2` | T013 | not estimated | pending | pending |
+| 5 | `us1-part3` | T014 | not estimated | pending | pending |
+| 6 | `us1-part4` | T015 | not estimated | pending | pending |
+| 7 | `us1-part5` | T016 | not estimated | pending | pending |
+| 8 | `us2` | T017–T023 | warn | pending | pending |
+| 9 | `us3` | T024–T031 | warn | pending | pending |
+| 10 | `us4` | T032–T038 | warn | pending | pending |
+| 11 | `polish` | T039–T043 | not estimated | pending | pending |
+
+All 43 task IDs are owned exactly once. The plan is intentionally `planned`,
+not emission-ready: each marker still requires a verified implementation
+checkpoint and current packet validation before any PR can be emitted.
+The v1 planning state intentionally leaves declared file/test ownership empty;
+the emission stage must bind actual subdivided checkpoints and strict file
+ownership before packet generation.
+An independent read-only T043 audit re-read the settled files and returned
+`PASS` for this planned marker-split handoff.
+
+The marker plan is bound to these current source fingerprints:
+
+| Source | SHA-256 |
+|---|---|
+| Feature spec | `94f776a71f3fbd2aa3c6c01b4a4ba41c2d66250c943eff25024dc58cfaa783d4` |
+| Declared plan scope | `de4a3c9a5cff0749455009856b5d7a4fc5e707ab80faa5c8b1abaabf0a8fe540` |
+| Task graph | `a2f4e3aad241f8b723deb213114315f0847417335bc6706034c675c96573e419` |
+| Final reviewability evidence | `6d82c3cba35b9aabb2be725e5358e5192aee4007bbb7defff740b6b10cd98238` |
+| Hazard route (`one-navigable-PR`) | `b6404134e0816be38c5748cdef55016133bf7f32f16b4598c7c9e5a098c5adbb` |
+
+### G7 Completion
+
+G7 passed on 2026-07-26 under Node 24.11.1. `npm run build` and
+`npm run typecheck` exited zero. The final authoritative suite passed 260 files
+and 4,652 tests, with 15 files and 181 tests skipped. The isolated paired
+benchmark remained below the 1.20 threshold at 1.159, the retrieval-guardian
+returned no applicable local finding, and the authorized two-run-per-arm
+Sonnet/high A/B completed successfully with no worst-case Read regression.
+
 ---
 
 ## Post-Implementation Checklist
 
 | Item | Status | Notes |
 |---|---|---|
-| Post: Doctor Extension Check | ⏳ Pending | Skip with explicit evidence if doctor/speckit-utils is absent. |
-| Post: Verify Implementation | ⏳ Pending | Run the installed verify extension. |
-| Post: Verify Tasks Phantom Check | ⏳ Pending | Run the installed verify-tasks extension. |
-| Post: Code Review | ⏳ Pending | Run independent specialized review. |
-| Post: Integration Suite | ⏳ Pending | Run the authoritative project integration gate. |
-| Post: Reviewability Diff Gate | ⏳ Pending | Evaluate the final changed-file surface. |
-| Post: Self-Review | ⏳ Pending | Complete the four-question audit. |
-| Post: UAT Runbook Generation | ⏳ Pending | Generate and author the executable runbook. |
-| Post: Final Reviewability Backstop | ⏳ Pending | Validate current committed reviewability evidence. |
-| Post: PR Packet/Body Generation | ⏳ Pending | Emit and validate feature-local PR packets. |
+| Post: Doctor Extension Check | ✅ Complete | Explicitly skipped: Doctor and speckit-utils are not installed. |
+| Post: Verify Implementation | ✅ Complete | PASS: 43/43 tasks, 34/34 FRs, and 4/4 stories traced. |
+| Post: Verify Tasks Phantom Check | ✅ Complete | PASS: 43 verified, zero partial/weak/not-found/skipped; report committed with the feature. |
+| Post: Code Review | ✅ Complete | Three findings were fixed with regression-first tests; bounded independent re-review passed. |
+| Post: Integration Suite | ✅ Complete | Node 24 build/typecheck passed; focused CFG 107/107 and unrestricted full suite 4,655/4,655 passed. |
+| Post: Reviewability Diff Gate | ✅ Complete | Current `origin/main...db97414f` evidence remains a size-only marker split; no aggregate PR is allowed. |
+| Post: Self-Review | ✅ Complete | PASS: tests, all 22 acceptance scenarios, all eight edge cases, requirement/task traceability, and tidiness audited. |
+| Post: UAT Runbook Generation | ⏭️ Skipped | Fail-open: no committed UAT runbook exists and the skeleton helper is deferred. |
+| Post: Final Reviewability Backstop | ✅ Complete | Committed-head evidence confirms the size-only 11-marker split with zero correctness findings. |
+| Post: PR Packet/Body Generation | 🔄 In Progress | Bind checkpoints and strict ownership, then emit and validate feature-local packets. |
 | Post: PR Body Generation | ⏳ Pending | Generate the packet-owned PR body. |
 | Post: PR Creation | ⏳ Pending | Create the authorized PR or marker stack. |
 | Post: Review Remediation | ⏳ Pending | Poll and resolve CI and review findings. |
 | Post: Retrospective | ⏳ Pending | Run last, after every other Post item. |
 
-- [ ] Every task is implemented and verified, not merely checked off.
-- [ ] `npm run build` passes under supported Node.
-- [ ] `npm test` passes.
-- [ ] Focused CFG determinism, lifecycle, CLI, MCP, status, and schema suites pass.
-- [ ] Paired benchmark ratio is at most 1.20 with recorded samples.
-- [ ] Disabled mode makes no network calls and writes no CFG content/status rows.
-- [ ] Library, CLI JSON, and MCP parity tests pass.
-- [ ] Self-repo UAT and Python fixture UAT are recorded.
-- [ ] Retrieval-guardian returns no blocking finding.
+- [x] Every task is implemented and verified, not merely checked off.
+- [x] `npm run build` passes under supported Node.
+- [x] `npm test` passes.
+- [x] Focused CFG determinism, lifecycle, CLI, MCP, status, and schema suites pass.
+- [x] Paired benchmark ratio is at most 1.20 with recorded samples.
+- [x] Disabled mode makes no network calls and writes no CFG content/status rows.
+- [x] Library, CLI JSON, and MCP parity tests pass.
+- [x] Self-repo UAT and Python fixture UAT are recorded.
+- [x] Retrieval-guardian returns no blocking finding.
 - [ ] Reviewability gates pass for each emitted slice/PR.
 - [ ] Roadmap/workflow/autopilot state remains synchronized.
+
+Parallel Post evidence (2026-07-26): the Doctor track recorded the required
+explicit skip because neither Doctor nor speckit-utils is installed. The
+implementation verifier traced all 43 tasks, 34 requirements, and four stories;
+the separate phantom-task report verified all 43 completed tasks. Independent
+review initially found dynamic switch-label evaluation being skipped, later
+source-read failures replacing a prior successful CFG, and raw terminal control
+characters on CFG CLI human/error surfaces. Regression-first remediations now
+fail closed for runtime-evaluated case labels, retain prior snapshots as stale
+on source-read failure, and escape CFG human/error text while preserving exact
+JSON values. A bounded independent re-review passed. Under Node 24.11.1, build
+and typecheck passed, the focused CFG suite passed 107 tests with three skipped,
+and the final unrestricted full suite passed 260 files and 4,655 tests with 15
+files and 181 tests skipped. The restricted-sandbox attempt was invalid because
+loopback sockets and daemon-election writes were denied; it is not gate
+evidence.
+
+Reviewability Diff Gate (2026-07-26): `origin/main` was refreshed and still
+resolves to `474729007ebb6bf400857003790cc296a0238d75`; no open, closed, or
+merged PR exists for head `014-control-flow-graphs` or a `SPEC-014` title.
+Against committed head `db97414f2da16afd00c406503dde0b6364feab76`, the
+surface is 75 files and 18,042 lines of churn, including 10 production files
+and 4,486 production lines. The classification remains a correctness-clean
+`size_only` block with `marker_split` as the required outcome. A single
+aggregate PR remains forbidden, and the marker plan still requires complete
+checkpoints and strict file ownership before packet emission.
+
+Self-Review (2026-07-26):
+
+1. **Tests executed** — PASS. Node 24.11.1 `npm run build` and
+   `npm run typecheck` exited zero. `npm test` passed 260 files and 4,655
+   tests, with 15 files and 181 tests skipped. The project declares LINT and
+   INTEGRATION_TEST as not applicable; the unrestricted full suite is the
+   authoritative test gate.
+2. **Acceptance and edge cases** — PASS with no `[edge-case-gap]`.
+   - US1 scenarios 1-5 map respectively to
+     `cfg-typescript.test.ts:319`, `:426`, `:1427`, `:1627`, and the
+     construct matrix at `:495`, `:512`, `:530`, `:548`, `:821`, `:994`,
+     `:1103`, and `:1339`.
+   - US2 scenarios 1-7 map respectively to
+     `cfg-lifecycle.test.ts:450`, `:545`, `:653`, `:417` plus `:800`,
+     `:909` plus `:1081`, `:909`, and `:800`.
+   - US3 scenarios 1-6 map respectively to
+     `cfg-contract.test.ts:1135`, `:2235` plus `:2292`, `:1382`, `:1821`,
+     `:1516` plus `:1559`, and the env-gated self-repo probe at `:2111`.
+   - US4 scenarios 1-4 map respectively to
+     `cfg-python.test.ts:315`, `:477` plus `:562`, `:655` plus `:683`, and
+     `cfg-contract.test.ts:1887` plus the Python UAT probe at `:1999`.
+   - The eight explicit edge cases map to disabled dormancy at
+     `cfg-lifecycle.test.ts:417`, deleted/unknown reads at `:653`,
+     whole-function skip and block-cap behavior at
+     `cfg-typescript.test.ts:1427` and `:1627`, first/retained refresh failure
+     at `cfg-lifecycle.test.ts:909` and `:1081`, unreachable blocks at
+     `cfg-typescript.test.ts:1339`, nested boundaries at `:821` and
+     `cfg-python.test.ts:368`, deterministic MCP reconstruction at
+     `cfg-contract.test.ts:1382`, and minimal empty/no-op graphs at
+     `cfg-typescript.test.ts:1380`.
+3. **Requirements matched** — PASS. The spec contains 34 unique FR IDs, the
+   task graph contains the same 34 IDs with no set difference, and all 43 task
+   rows are checked. The independent verification report records 43 VERIFIED,
+   zero partial/weak/not-found/skipped, 34/34 FRs, and 4/4 stories.
+4. **Follow-up and tidiness** — PASS. No `[TODO]`, `[DEFERRED]`, or
+   `[OUT-OF-SCOPE]` marker exists in the spec, plan, or tasks; no untracked
+   file or whitespace error exists. Added `console.log` calls are intentional
+   CLI/status output or env-gated benchmark/UAT evidence, not debug leftovers.
+
+UAT (2026-07-26): skipped fail-open. No committed
+`specs/014-control-flow-graphs/.process/uat-runbook.md` exists. Per the
+post-implementation contract, the deferred `generate-uat-skeleton` helper was
+not invoked and no synthetic runbook or validator result was created.
+
+Final Reviewability Backstop (2026-07-26): PASS for the required route. The
+deferred helper was not invoked; the manual committed-head recheck used
+`origin/main...468fbd5049fc26ea8c346b45e64a5187be2a215c`, whose merge base remains
+`474729007ebb6bf400857003790cc296a0238d75`. The final surface is 75 files and
+18,143 lines of churn, including 10 production files and 4,486 production
+lines. There are zero correctness findings. The outcome remains `marker_split`;
+a single aggregate PR is forbidden. The evidence is frozen in
+`specs/014-control-flow-graphs/.process/reviewability/final-actual.json`.
 
 ---
 
@@ -1211,8 +1455,10 @@ src/
 __tests__/
 └── analysis/
     └── cfg/                       # real SQLite, golden, lifecycle, parity fixtures
-scripts/
-└── bench-cfg-analysis.mjs         # paired disabled/enabled benchmark
+__tests__/
+└── analysis/
+    └── cfg/
+        └── cfg-performance.test.ts # opt-in paired disabled/enabled benchmark
 specs/
 └── 014-control-flow-graphs/       # CONTRACT artifacts and later UAT runbook
 docs/ai/specs/.process/

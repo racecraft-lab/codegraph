@@ -5,7 +5,7 @@ import type { Node as SyntaxNode, Tree } from 'web-tree-sitter';
 
 import { CURRENT_SCHEMA_VERSION } from '../../db/migrations';
 import type { SqliteDatabase } from '../../db/sqlite-adapter';
-import { getParser } from '../../extraction/grammars';
+import { getParser, loadGrammarsForLanguages } from '../../extraction/grammars';
 import { getNodeText } from '../../extraction/tree-sitter-helpers';
 import type { Language } from '../../types';
 
@@ -368,7 +368,6 @@ type CfgTerminalMode = 'collect' | 'emit';
 
 interface ParsedCfgFunction {
   ok: true;
-  tree: Tree;
   node: SyntaxNode;
 }
 
@@ -384,6 +383,18 @@ type CfgFunctionParseResult = ParsedCfgFunction | CfgFunctionParseFailure;
 type CfgParser = {
   parse(source: string): Tree | null;
 };
+
+interface ParsedCfgSourceFile {
+  ok: true;
+  source: string;
+  tree: Tree;
+}
+
+type CfgSourceFileParseResult = ParsedCfgSourceFile | CfgFunctionParseFailure;
+
+interface CfgAnalysisContext {
+  parsedSourceFiles: Map<string, CfgSourceFileParseResult>;
+}
 
 const CFG_EXIT_TARGET_ORDINAL = -1;
 
@@ -511,6 +522,14 @@ const CFG_COMMENT_NODE_TYPES: ReadonlySet<string> = new Set([
   'line_comment',
   'block_comment',
 ]);
+const CFG_STATIC_SWITCH_CASE_NODE_TYPES: ReadonlySet<string> = new Set([
+  'false',
+  'null',
+  'number',
+  'string',
+  'true',
+  'undefined',
+]);
 const UNSUPPORTED_LINEAR_DESCENDANT_TYPES: ReadonlySet<string> = new Set([
   'arrow_function',
   'break_statement',
@@ -585,6 +604,19 @@ export function setCfgComputeFailureOverrideForTests(override: CfgComputeFailure
   cfgComputeFailureOverrideForTests = override;
 }
 
+export async function loadCfgParsersForAnalysis(input: RunCfgAnalysisInput): Promise<void> {
+  if (input.signal?.aborted) return;
+  const languages = [
+    ...new Set(
+      selectCurrentCfgFunctions(input.db, input.filePaths)
+        .map((row) => row.language)
+        .filter((language): language is Language => CFG_SUPPORTED_LANGUAGE_SET.has(language)),
+    ),
+  ];
+  if (languages.length === 0) return;
+  await loadGrammarsForLanguages(languages);
+}
+
 export function runCfgAnalysis(input: RunCfgAnalysisInput): RunCfgAnalysisResult {
   if (input.signal?.aborted) return { committed: false };
 
@@ -593,73 +625,78 @@ export function runCfgAnalysis(input: RunCfgAnalysisInput): RunCfgAnalysisResult
 
   if (input.signal?.aborted) return { committed: false };
 
-  const priorStatusByFunction = selectStoredCfgStatuses(input.db, functions.map((row) => row.id));
-  const outcomes = functions.map((row) =>
-    computeCfgOutcome(input.projectRoot, row, priorStatusByFunction.get(row.id) ?? null)
-  );
-  const fullDeletedOutcomes = filePaths
-    ? []
-    : selectPriorCfgStatusRowsWithoutCurrentFunctions(input.db).map((row) => ({ row }));
-  if (input.signal?.aborted) return { committed: false };
+  const context = createCfgAnalysisContext();
+  try {
+    const priorStatusByFunction = selectStoredCfgStatuses(input.db, functions.map((row) => row.id));
+    const outcomes = functions.map((row) =>
+      computeCfgOutcome(input.projectRoot, row, priorStatusByFunction.get(row.id) ?? null, context)
+    );
+    const fullDeletedOutcomes = filePaths
+      ? []
+      : selectPriorCfgStatusRowsWithoutCurrentFunctions(input.db).map((row) => ({ row }));
+    if (input.signal?.aborted) return { committed: false };
 
-  if (!filePaths) {
-    const writeCfg = input.db.transaction(() => {
-      for (const outcome of outcomes) {
+    if (!filePaths) {
+      const writeCfg = input.db.transaction(() => {
+        for (const outcome of outcomes) {
+          writeCurrentCfgOutcome(input.db, outcome);
+        }
+        for (const outcome of fullDeletedOutcomes) {
+          deleteCfgStatus(input.db, outcome.row.function_id);
+          writeDeletedCfgOutcome(input.db, outcome);
+          clearCfgRefreshFailure(input.db, outcome.row.function_id);
+        }
+      });
+
+      if (input.signal?.aborted) return { committed: false };
+      writeCfg();
+      return { committed: true };
+    }
+
+    const currentOutcomesByFile = new Map<string, CfgFunctionOutcome[]>();
+    for (const outcome of outcomes) {
+      const rows = currentOutcomesByFile.get(outcome.row.file_path);
+      if (rows) {
+        rows.push(outcome);
+      } else {
+        currentOutcomesByFile.set(outcome.row.file_path, [outcome]);
+      }
+    }
+    const fileOutcomes = new Map<string, CfgFileOutcomes>();
+    for (const filePath of filePaths) {
+      const current = currentOutcomesByFile.get(filePath) ?? [];
+      const currentIds = new Set(current.map((outcome) => outcome.row.id));
+      fileOutcomes.set(filePath, {
+        current,
+        deleted: selectPriorCfgStatusRowsForFile(input.db, filePath)
+          .filter((row) => !currentIds.has(row.function_id))
+          .map((row) => ({ row })),
+      });
+    }
+
+    const writeFileCfg = input.db.transaction((filePath: string) => {
+      const fileOutcome = fileOutcomes.get(filePath);
+
+      for (const outcome of fileOutcome?.current ?? []) {
         writeCurrentCfgOutcome(input.db, outcome);
       }
-      for (const outcome of fullDeletedOutcomes) {
+      for (const outcome of fileOutcome?.deleted ?? []) {
         deleteCfgStatus(input.db, outcome.row.function_id);
         writeDeletedCfgOutcome(input.db, outcome);
         clearCfgRefreshFailure(input.db, outcome.row.function_id);
       }
     });
 
-    if (input.signal?.aborted) return { committed: false };
-    writeCfg();
-    return { committed: true };
-  }
-
-  const currentOutcomesByFile = new Map<string, CfgFunctionOutcome[]>();
-  for (const outcome of outcomes) {
-    const rows = currentOutcomesByFile.get(outcome.row.file_path);
-    if (rows) {
-      rows.push(outcome);
-    } else {
-      currentOutcomesByFile.set(outcome.row.file_path, [outcome]);
+    let committed = false;
+    for (const filePath of filePaths) {
+      if (input.signal?.aborted) return { committed };
+      writeFileCfg(filePath);
+      committed = true;
     }
+    return { committed };
+  } finally {
+    disposeCfgAnalysisContext(context);
   }
-  const fileOutcomes = new Map<string, CfgFileOutcomes>();
-  for (const filePath of filePaths) {
-    const current = currentOutcomesByFile.get(filePath) ?? [];
-    const currentIds = new Set(current.map((outcome) => outcome.row.id));
-    fileOutcomes.set(filePath, {
-      current,
-      deleted: selectPriorCfgStatusRowsForFile(input.db, filePath)
-        .filter((row) => !currentIds.has(row.function_id))
-        .map((row) => ({ row })),
-    });
-  }
-
-  const writeFileCfg = input.db.transaction((filePath: string) => {
-    const fileOutcome = fileOutcomes.get(filePath);
-
-    for (const outcome of fileOutcome?.current ?? []) {
-      writeCurrentCfgOutcome(input.db, outcome);
-    }
-    for (const outcome of fileOutcome?.deleted ?? []) {
-      deleteCfgStatus(input.db, outcome.row.function_id);
-      writeDeletedCfgOutcome(input.db, outcome);
-      clearCfgRefreshFailure(input.db, outcome.row.function_id);
-    }
-  });
-
-  let committed = false;
-  for (const filePath of filePaths) {
-    if (input.signal?.aborted) return { committed };
-    writeFileCfg(filePath);
-    committed = true;
-  }
-  return { committed };
 }
 
 export function readCfgProjectStatus(input: ReadCfgProjectStatusInput): CfgProjectStatus {
@@ -789,9 +826,22 @@ function computeCfgOutcome(
   projectRoot: string,
   row: CfgFunctionRow,
   prior: StoredCfgStatusRow | null,
+  context: CfgAnalysisContext,
 ): CfgFunctionOutcome {
   try {
-    return computeCfgForFunction(projectRoot, row);
+    const outcome = computeCfgForFunction(projectRoot, row, context);
+    if (
+      outcome.status.state === 'unavailable' &&
+      outcome.status.reason === 'first_refresh_failed' &&
+      prior?.state === 'available' &&
+      prior.source_version !== null
+    ) {
+      return {
+        kind: 'retained_failure',
+        row,
+      };
+    }
+    return outcome;
   } catch {
     if (prior?.state === 'available' && prior.source_version !== null) {
       return {
@@ -813,7 +863,11 @@ function computeCfgOutcome(
   }
 }
 
-function computeCfgForFunction(projectRoot: string, row: CfgFunctionRow): CfgComputedFunctionOutcome {
+function computeCfgForFunction(
+  projectRoot: string,
+  row: CfgFunctionRow,
+  context: CfgAnalysisContext,
+): CfgComputedFunctionOutcome {
   cfgComputeFailureOverrideForTests?.({
     functionId: row.id,
     filePath: row.file_path,
@@ -834,49 +888,45 @@ function computeCfgForFunction(projectRoot: string, row: CfgFunctionRow): CfgCom
     };
   }
 
-  const parsed = parseCfgFunction(projectRoot, row);
+  const parsed = parseCfgFunction(projectRoot, row, context);
   const unsupportedLanguageLabel = row.language === CFG_PYTHON_LANGUAGE ? 'Python' : 'TypeScript/JavaScript';
   const unsupportedMessage = `CFG lowering does not support this ${unsupportedLanguageLabel} construct yet.`;
-  try {
-    const blockDemand = parsed.ok ? estimateCfgBlockDemand(parsed.node) : null;
-    const cfgIr = parsed.ok && blockDemand !== null && blockDemand <= CFG_BASIC_BLOCK_LIMIT
-      ? buildCfgIrForFunction(row, parsed.node)
-      : null;
-    const status = !parsed.ok
-      ? parsed
-      : blockDemand !== null && blockDemand > CFG_BASIC_BLOCK_LIMIT
+  const blockDemand = parsed.ok ? estimateCfgBlockDemand(parsed.node) : null;
+  const cfgIr = parsed.ok && blockDemand !== null && blockDemand <= CFG_BASIC_BLOCK_LIMIT
+    ? buildCfgIrForFunction(row, parsed.node)
+    : null;
+  const status = !parsed.ok
+    ? parsed
+    : blockDemand !== null && blockDemand > CFG_BASIC_BLOCK_LIMIT
+      ? {
+          state: 'resource_limited' as const,
+          reason: 'block_limit_exceeded' as const,
+          message: `CFG basic-block limit of ${CFG_BASIC_BLOCK_LIMIT} exceeded.`,
+        }
+      : cfgIr && cfgIr.blocks.length > CFG_BASIC_BLOCK_LIMIT
         ? {
             state: 'resource_limited' as const,
             reason: 'block_limit_exceeded' as const,
             message: `CFG basic-block limit of ${CFG_BASIC_BLOCK_LIMIT} exceeded.`,
           }
-        : cfgIr && cfgIr.blocks.length > CFG_BASIC_BLOCK_LIMIT
-          ? {
-              state: 'resource_limited' as const,
-              reason: 'block_limit_exceeded' as const,
-              message: `CFG basic-block limit of ${CFG_BASIC_BLOCK_LIMIT} exceeded.`,
-            }
-        : cfgIr
-          ? {
-              state: 'available' as const,
-              reason: null,
-              message: '',
-            }
-          : {
-              state: 'unsupported' as const,
-              reason: 'unsupported_construct' as const,
-              message: unsupportedMessage,
-            };
+      : cfgIr
+        ? {
+            state: 'available' as const,
+            reason: null,
+            message: '',
+          }
+        : {
+            state: 'unsupported' as const,
+            reason: 'unsupported_construct' as const,
+            message: unsupportedMessage,
+          };
 
-    return {
-      kind: 'computed',
-      graph: status.state === 'available' && parsed.ok ? lowerCfgIr(row, sourceVersion, cfgIr!) : null,
-      row,
-      status: { ...status, sourceVersion },
-    };
-  } finally {
-    if (parsed.ok) parsed.tree.delete();
-  }
+  return {
+    kind: 'computed',
+    graph: status.state === 'available' && parsed.ok ? lowerCfgIr(row, sourceVersion, cfgIr!) : null,
+    row,
+    status: { ...status, sourceVersion },
+  };
 }
 
 function writeCurrentCfgOutcome(db: SqliteDatabase, outcome: CfgFunctionOutcome): void {
@@ -1295,77 +1345,115 @@ function deriveSourceVersionForFunction(row: CfgFunctionRow): string {
   });
 }
 
-function parseCfgFunction(projectRoot: string, row: CfgFunctionRow): CfgFunctionParseResult {
+function createCfgAnalysisContext(): CfgAnalysisContext {
+  return { parsedSourceFiles: new Map() };
+}
+
+function disposeCfgAnalysisContext(context: CfgAnalysisContext): void {
+  for (const parsed of context.parsedSourceFiles.values()) {
+    if (parsed.ok) parsed.tree.delete();
+  }
+  context.parsedSourceFiles.clear();
+}
+
+function parseCfgFunction(
+  projectRoot: string,
+  row: CfgFunctionRow,
+  context: CfgAnalysisContext,
+): CfgFunctionParseResult {
+  const parsedFile = parseCfgSourceFile(projectRoot, row, context);
+  if (!parsedFile.ok) return parsedFile;
+
+  const { source, tree } = parsedFile;
+  const node = findCfgFunctionNode(tree.rootNode, row, source);
+  if (node === null) {
+    return {
+      ok: false,
+      state: 'unsupported',
+      reason: 'parse_error',
+      message: 'Unable to locate indexed function in parsed source.',
+    };
+  }
+  if (node.hasError || hasMissingSyntaxNode(node)) {
+    return {
+      ok: false,
+      state: 'unsupported',
+      reason: 'parse_unsafe_region',
+      message: 'Function syntax contains a parse-unsafe region.',
+    };
+  }
+  if (tree.rootNode.hasError) {
+    return {
+      ok: false,
+      state: 'unsupported',
+      reason: 'parse_error',
+      message: 'Unable to parse complete source for CFG analysis.',
+    };
+  }
+
+  return { ok: true, node };
+}
+
+function parseCfgSourceFile(
+  projectRoot: string,
+  row: CfgFunctionRow,
+  context: CfgAnalysisContext,
+): CfgSourceFileParseResult {
+  const key = `${row.language}\0${row.file_path}`;
+  const cached = context.parsedSourceFiles.get(key);
+  if (cached) return cached;
+
   const source = readIndexedFileSource(projectRoot, row.file_path);
   if (source === null) {
-    return {
+    const failure: CfgFunctionParseFailure = {
       ok: false,
       state: 'unavailable',
       reason: 'first_refresh_failed',
       message: 'Unable to read indexed function source.',
     };
+    context.parsedSourceFiles.set(key, failure);
+    return failure;
   }
 
   const parser = getCfgParser(row.language, row.file_path);
   if (parser === null) {
-    return {
+    const failure: CfgFunctionParseFailure = {
       ok: false,
       state: 'unsupported',
       reason: 'parser_unavailable',
       message: 'Parser unavailable for CFG analysis.',
     };
+    context.parsedSourceFiles.set(key, failure);
+    return failure;
   }
 
   let tree: Tree | null = null;
   try {
     tree = parser.parse(source) ?? null;
     if (tree === null) {
-      return {
+      const failure: CfgFunctionParseFailure = {
         ok: false,
         state: 'unsupported',
         reason: 'parse_error',
         message: 'Unable to parse function source for CFG analysis.',
       };
+      context.parsedSourceFiles.set(key, failure);
+      return failure;
     }
 
-    const node = findCfgFunctionNode(tree.rootNode, row, source);
-    if (node === null) {
-      tree.delete();
-      return {
-        ok: false,
-        state: 'unsupported',
-        reason: 'parse_error',
-        message: 'Unable to locate indexed function in parsed source.',
-      };
-    }
-    if (node.hasError || hasMissingSyntaxNode(node)) {
-      tree.delete();
-      return {
-        ok: false,
-        state: 'unsupported',
-        reason: 'parse_unsafe_region',
-        message: 'Function syntax contains a parse-unsafe region.',
-      };
-    }
-    if (tree.rootNode.hasError) {
-      tree.delete();
-      return {
-        ok: false,
-        state: 'unsupported',
-        reason: 'parse_error',
-        message: 'Unable to parse complete source for CFG analysis.',
-      };
-    }
-
-    return { ok: true, tree, node };
+    const parsed: ParsedCfgSourceFile = { ok: true, source, tree };
+    context.parsedSourceFiles.set(key, parsed);
+    return parsed;
   } catch {
     tree?.delete();
-    return {
+    const failure: CfgFunctionParseFailure = {
       ok: false,
       state: 'unsupported',
       reason: 'parse_error',
       message: 'Unable to parse function source for CFG analysis.',
     };
+    context.parsedSourceFiles.set(key, failure);
+    return failure;
   }
 }
 
@@ -1510,7 +1598,7 @@ function buildCfgIrForFunction(row: CfgFunctionRow, node: SyntaxNode): CfgIr | n
   const noOp = buildMinimalNoOpCfgIr(node);
   if (noOp) return noOp;
   if (isLinearTsJsFunctionNode(node)) return buildLinearCfgIr(row, node);
-  return new StructuredCfgBuilder(row.language).buildFunction(node);
+  return new StructuredCfgBuilder().buildFunction(node);
 }
 
 function buildMinimalNoOpCfgIr(node: SyntaxNode): CfgIr | null {
@@ -1540,8 +1628,6 @@ function buildMinimalNoOpCfgIr(node: SyntaxNode): CfgIr | null {
 class StructuredCfgBuilder {
   private readonly blocks: CfgBlockIr[] = [];
   private readonly edges: CfgEdgeIr[] = [];
-
-  constructor(private readonly language: string) {}
 
   buildFunction(node: SyntaxNode): CfgIr | null {
     const body = getFunctionBodyNode(node);
@@ -1597,14 +1683,11 @@ class StructuredCfgBuilder {
     let continues = [...incoming];
     const terminals: CfgPendingTransfer[] = [];
     let buildingUnreachable = false;
-    let unreachableContinues: CfgPendingTransfer[] = [];
 
     for (const statement of statements) {
       if (buildingUnreachable || continues.length === 0) {
         buildingUnreachable = true;
-        const flow = this.buildUnreachableStatement(statement, unreachableContinues);
-        if (!flow) return null;
-        unreachableContinues = flow.continues;
+        if (!this.buildUnreachableStatement(statement)) return null;
         continue;
       }
 
@@ -1617,77 +1700,44 @@ class StructuredCfgBuilder {
     return { continues, terminals };
   }
 
-  private buildUnreachableStatement(
-    statement: SyntaxNode,
-    incoming: readonly CfgPendingTransfer[],
-  ): CfgStatementFlow | null {
+  private buildUnreachableStatement(statement: SyntaxNode): CfgStatementFlow | null {
     if (isStatementSequenceBlock(statement)) {
-      return this.buildUnreachableStatementSequence(getStatementBlockStatements(statement), incoming);
+      return this.buildUnreachableStatementSequence(getStatementBlockStatements(statement));
     }
     if (statement.type === 'if_statement') {
-      return this.buildUnreachableIfStatement(statement, incoming);
+      return this.buildUnreachableIfStatement(statement);
     }
 
-    const blockOrdinal = this.addBlock('unreachable', statement);
-    this.connectIncoming(incoming, blockOrdinal);
-    if (this.language === CFG_PYTHON_LANGUAGE || isAbruptStatement(statement)) {
-      return { continues: [], terminals: [] };
-    }
-    return {
-      continues: [{ fromOrdinal: blockOrdinal, kind: 'fallthrough' }],
-      terminals: [],
-    };
+    this.addBlock('unreachable', statement);
+    return { continues: [], terminals: [] };
   }
 
   private buildUnreachableStatementSequence(
     statements: readonly SyntaxNode[],
-    incoming: readonly CfgPendingTransfer[],
   ): CfgStatementFlow | null {
-    let continues = [...incoming];
     for (const statement of statements) {
-      const flow = this.buildUnreachableStatement(statement, continues);
-      if (!flow) return null;
-      continues = flow.continues;
+      if (!this.buildUnreachableStatement(statement)) return null;
     }
-    return { continues, terminals: [] };
+    return { continues: [], terminals: [] };
   }
 
-  private buildUnreachableIfStatement(
-    statement: SyntaxNode,
-    incoming: readonly CfgPendingTransfer[],
-  ): CfgStatementFlow | null {
+  private buildUnreachableIfStatement(statement: SyntaxNode): CfgStatementFlow | null {
     const consequence = statement.childForFieldName('consequence');
     if (!consequence) return null;
 
     const condition = statement.childForFieldName('condition') ?? statement;
-    const conditionOrdinal = this.addBlock('unreachable', unwrapStatementExpressionNode(condition));
-    this.connectIncoming(incoming, conditionOrdinal);
+    this.addBlock('unreachable', unwrapStatementExpressionNode(condition));
 
-    const consequenceFlow = this.buildUnreachableStatement(consequence, [
-      { fromOrdinal: conditionOrdinal, kind: 'true' },
-    ]);
+    const consequenceFlow = this.buildUnreachableStatement(consequence);
     if (!consequenceFlow) return null;
 
     const alternative = getElseClauseStatement(statement.childForFieldName('alternative'));
-    if (!alternative) {
-      return {
-        continues: [
-          ...consequenceFlow.continues,
-          { fromOrdinal: conditionOrdinal, kind: 'false' },
-        ],
-        terminals: [],
-      };
-    }
+    if (!alternative) return { continues: [], terminals: [] };
 
-    const alternativeFlow = this.buildUnreachableStatement(alternative, [
-      { fromOrdinal: conditionOrdinal, kind: 'false' },
-    ]);
+    const alternativeFlow = this.buildUnreachableStatement(alternative);
     if (!alternativeFlow) return null;
 
-    return {
-      continues: [...consequenceFlow.continues, ...alternativeFlow.continues],
-      terminals: [],
-    };
+    return { continues: [], terminals: [] };
   }
 
   private buildStatement(
@@ -1861,10 +1911,12 @@ class StructuredCfgBuilder {
     const body = statement.childForFieldName('body');
     if (!condition || !body || body.type !== 'switch_body') return null;
 
+    const clauses = getSwitchClauses(body);
+    if (clauses.some((clause) => !isStaticSwitchClause(clause))) return null;
+
     const conditionOrdinal = this.addSwitchDiscriminantBlock(condition, incoming);
     if (conditionOrdinal === null) return null;
 
-    const clauses = getSwitchClauses(body);
     const continues: CfgPendingTransfer[] = [];
     const terminals: CfgPendingTransfer[] = [];
     let fallthrough: CfgPendingTransfer[] = [];
@@ -1875,8 +1927,8 @@ class StructuredCfgBuilder {
       if (dispatchKind === 'default') hasDefault = true;
 
       const clauseIncoming = [
-        { fromOrdinal: conditionOrdinal, kind: dispatchKind },
         ...fallthrough,
+        { fromOrdinal: conditionOrdinal, kind: dispatchKind },
       ];
       const statements = getSwitchClauseStatements(clause);
       if (statements.length === 0) {
@@ -2499,8 +2551,9 @@ class StructuredCfgBuilder {
     let continuation = [...incoming];
     const definitelyNullishExits: CfgPendingTransfer[] = [];
     for (let index = 0; index < chain.segments.length; index++) {
-      const checkNode = index === 0 ? chain.base : chain.segments[index - 1]!;
       const segment = chain.segments[index]!;
+      const checkNode = getMemberObjectNode(segment);
+      if (!checkNode) return null;
       const conditionOrdinal = this.addBlock('condition', checkNode);
       this.connectIncoming(continuation, conditionOrdinal);
       definitelyNullishExits.push({ fromOrdinal: conditionOrdinal, kind: 'false' });
@@ -2816,6 +2869,13 @@ function getSwitchClauses(node: SyntaxNode): SyntaxNode[] {
   return node.namedChildren.filter((child) => child.type === 'switch_case' || child.type === 'switch_default');
 }
 
+function isStaticSwitchClause(node: SyntaxNode): boolean {
+  if (node.type === 'switch_default') return true;
+  const expression = node.childForFieldName('value') ??
+    node.namedChildren.find((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
+  return expression !== undefined && CFG_STATIC_SWITCH_CASE_NODE_TYPES.has(expression.type);
+}
+
 function getSwitchClauseStatements(node: SyntaxNode): SyntaxNode[] {
   const children = node.namedChildren.filter((child) => !CFG_COMMENT_NODE_TYPES.has(child.type));
   return node.type === 'switch_case' ? children.slice(1) : children;
@@ -2971,9 +3031,19 @@ function hasLabelTransferTargeting(node: SyntaxNode, labels: readonly string[]):
     const label = getTransferStatementLabel(node);
     if (label && labels.includes(label)) return true;
   }
+  const labeledBody = node.type === 'labeled_statement' ? getLabeledStatementBody(node) : null;
+  const localLabel = labeledBody ? getStatementLabelName(node) : null;
   for (let index = 0; index < node.namedChildCount; index++) {
     const child = node.namedChild(index);
-    if (child && hasLabelTransferTargeting(child, labels)) return true;
+    if (!child) continue;
+    const isLabeledBody = labeledBody !== null
+      && child.type === labeledBody.type
+      && child.startIndex === labeledBody.startIndex
+      && child.endIndex === labeledBody.endIndex;
+    const visibleOuterLabels = isLabeledBody && localLabel
+      ? labels.filter((label) => label !== localLabel)
+      : labels;
+    if (hasLabelTransferTargeting(child, visibleOuterLabels)) return true;
   }
   return false;
 }
@@ -3200,16 +3270,6 @@ function isFunctionExitTransferKind(kind: CfgEdge['kind']): boolean {
 
 function isAbruptTransferKind(kind: CfgEdge['kind']): boolean {
   return kind === 'return' || kind === 'throw' || kind === 'break' || kind === 'continue';
-}
-
-function isAbruptStatement(node: SyntaxNode): boolean {
-  return (
-    node.type === 'return_statement' ||
-    node.type === 'raise_statement' ||
-    node.type === 'throw_statement' ||
-    node.type === 'break_statement' ||
-    node.type === 'continue_statement'
-  );
 }
 
 function spanForSyntaxNode(node: SyntaxNode): CfgBlock['spans'][number] {
@@ -3576,6 +3636,14 @@ export function makeCfgNotIndexedReadResult(functionId: string): CfgReadResult {
   });
 }
 
+export function makeCfgDisabledReadResult(functionId: string): CfgReadResult {
+  return makeCfgReadResult({
+    functionId,
+    state: 'disabled',
+    reason: 'analysis_disabled',
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -3593,8 +3661,10 @@ function isSpan(value: unknown): boolean {
   return (
     isRecord(value) &&
     isNonNegativeInteger(value.startLine) &&
+    value.startLine > 0 &&
     isNonNegativeInteger(value.startColumn) &&
     isNonNegativeInteger(value.endLine) &&
+    value.endLine >= value.startLine &&
     isNonNegativeInteger(value.endColumn)
   );
 }
@@ -3652,6 +3722,7 @@ function isCfgPage(value: unknown): value is CfgPage {
   return (
     isRecord(value) &&
     isNonNegativeInteger(value.limit) &&
+    value.limit > 0 &&
     isNonNegativeInteger(value.offset) &&
     isPagePart(value.blocks) &&
     isPagePart(value.edges)
