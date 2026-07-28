@@ -84,11 +84,11 @@ server or network egress.
   - **REFACTOR**: Reuse existing shell/status primitives and preserve server behavior.
   - **Evidence**: Focused app-shell and local-client component tests.
 
-- [ ] T010 [US2] Route local overview, keyword search, symbol, and cached source reads through the shared client and render source as inert text in `web/src/lib/repository-client.ts`, `web/src/routes/RepositoryOverview.tsx`, and existing symbol/source consumers (`FR-010`, `FR-011`, `FR-013`, `FR-035`, `FR-054`).
-  - **RED**: Add local-route cases that fail on daemon fetch fallback, disabled core routes, raw HTML/source-derived URLs, or enabled server-only actions.
-  - **GREEN**: Serve published local results with current response shapes, keep core routes enabled, render plain text/tokens, and explain unavailable server-only capabilities.
-  - **REFACTOR**: Share route presentation and remove duplicated local/server rendering branches.
-  - **Evidence**: Focused route/component tests with malicious source fixtures.
+- [ ] T010 [US2] Route local overview, keyword search, symbol, and cached source reads through `LocalRepositoryClient` in `web/src/lib/repository-client.ts`, `web/src/routes/RepositoryOverview.tsx`, `web/src/routes/SymbolDetailRoute.tsx`, `web/src/components/symbol/SourcePane.tsx`, and `web/src/lib/lsp/client.ts` (`FR-010`, `FR-011`, `FR-013`, `FR-021`, `FR-035`, `FR-044`, `FR-054`).
+  - **RED**: Add local-route cases that fail on daemon fetch fallback, any `/lsp` WebSocket connection, disabled core routes, raw HTML/source-derived URLs, or enabled LSP-only/server-only actions.
+  - **GREEN**: Serve cached local source through `LocalRepositoryClient.getSource`, keep core routes enabled, render plain text/tokens, prevent `BrowserLspClient` from connecting for local repositories, and disable hover/definition/references with an honest LSP-only explanation.
+  - **REFACTOR**: Share source-route presentation and source models while keeping the server LSP client available only for server repositories.
+  - **Evidence**: Focused `web/src/tests/local-indexing-client.test.tsx` and malicious-source route/component tests proving local source never opens `/lsp`.
 
 - [ ] T011 [US1] Complete the real Chromium folder-to-keyword journey in `web/src/tests/local-indexing-full.spec.ts` (`FR-001` through `FR-010`, `FR-025`, `FR-027`, `FR-031`, `FR-037` through `FR-041`, `FR-044`, `FR-047`, `FR-048`).
   - **RED**: Record the first failing secure-context picker/import/index/reload/search/source journey using real worker, WASM, OPFS, and shipped grammar assets.
@@ -233,8 +233,8 @@ accessibility, determinism, performance, and asset completeness.
   - **Evidence**: Focused worker/embedding tests.
 
 - [ ] T031 [US6] Enforce the no-consent and explicit-consent network boundary in `web/src/tests/local-indexing-network.spec.ts` (`FR-021`, `FR-022`, `FR-024`, `FR-042` through `FR-045`, `FR-054`, `FR-063`).
-  - **RED**: Intercept fetch/XHR/WebSocket/beacon/external asset traffic and expose any repository-derived request before consent or source-derived request after consent.
-  - **GREEN**: Allow only enumerated same-origin shipped assets before consent and the configured secure endpoint with memory-only authorization afterward.
+  - **RED**: Intercept fetch/XHR/WebSocket/beacon/external asset traffic and expose any repository-derived request before consent, including `/lsp`, or source-derived request after consent.
+  - **GREEN**: Allow only enumerated same-origin shipped assets before consent, prove local source browsing opens no `/lsp` WebSocket, and allow only the configured secure endpoint with memory-only authorization afterward.
   - **REFACTOR**: Keep the request audit allowlist explicit and fail-closed.
   - **Evidence**: Network log proving zero no-consent repository egress and redacted consent traffic.
 

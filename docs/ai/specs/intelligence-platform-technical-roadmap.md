@@ -336,10 +336,12 @@ Budget result: warning accepted — under the greenfield block line (1200); esti
 **Goal:** Open a local folder in the browser and get the same browse/search/impact experience with all parsing and storage happening client-side.
 
 **Reviewability Budget:** Primary surface: UI (browser runtime) |
-Projected reviewable LOC: 580 (net-new) |
-Production files: ~7 |
-Total files: ~14 |
-Budget result: within greenfield allowance (estimator suggested 2 slices — advisory)
+Projected reviewable LOC: 1,100 |
+Production files: ~18 |
+Total files: ~28 |
+Budget result: warning accepted with 3 ratified vertical slices; the current
+plan estimator projects 720 reviewable LOC from declared production files
+(advisory)
 
 **Scope:**
 - Browser indexing pipeline: File System Access API directory walk (+ drag-drop fallback), reuse shipped tree-sitter WASM grammars in a Web Worker, SQLite-WASM (OPFS-backed) store implementing the same schema; ignore rules honored.
@@ -353,7 +355,10 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 **Key Files:**
 - `web/src/local-indexing/` — worker pipeline + OPFS store
 - `src/extraction/` — runtime seams (minimal modify)
-- `web/src/pages/open-folder` — UI flow
+- `web/src/components/layout/RepositorySwitcher.tsx` — local-folder entry
+- `web/src/routes/SymbolDetailRoute.tsx`,
+  `web/src/components/symbol/SourcePane.tsx`, and `web/src/lib/lsp/client.ts` —
+  cached local source routing with no local `/lsp` connection
 
 ---
 

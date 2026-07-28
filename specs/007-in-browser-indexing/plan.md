@@ -7,7 +7,7 @@
 
 Deliver local-first browser indexing in three reviewable slices: a browser-safe graph build pipeline, local repository read routing in the web UI, and explicit semantic opt-in with capability/performance hardening. The browser path uses a dedicated module worker, SQLite-Wasm with OPFS SAH-pool storage, canonical CodeGraph schema/migrations, web-tree-sitter grammars served from the package, and source selection through user-granted browser handles or drag/drop snapshot imports.
 
-The plan preserves the accepted reviewability warning from the scaffold: 13 production ownership slots and approximately 1,055 reviewable production LOC. Implementation must stop for consensus if the slice plan expands beyond that boundary or adds a fourth user-facing slice.
+The plan preserves the accepted reviewability warning from the scaffold: 13 production ownership slots and approximately 1,100 reviewable production LOC. Implementation must stop for consensus if the slice plan expands beyond that boundary or adds a fourth user-facing slice.
 
 ## Technical Context
 
@@ -38,7 +38,7 @@ The plan preserves the accepted reviewability warning from the scaffold: 13 prod
 - **III. Agent-Consumable Graphs**: PASS. Local reads return existing graph/search/source/relationship shapes through a repository-client abstraction.
 - **IV. Deterministic Engineering**: PASS. Shared schema migrations, deterministic source manifests, and explicit worker protocol states define reproducible behavior.
 - **V. Retrieval Quality Is a Product Surface**: PASS. Query parity, benchmark checks, and retrieval-oriented UAT are in scope.
-- **VI. Every Capability Earns Its Complexity**: PASS WITH WARNING. The feature crosses worker, storage, parser, UI, and embedding surfaces. The warning is accepted only because the work is split into three vertical slices and capped at 13 production ownership slots / about 1,055 reviewable production LOC.
+- **VI. Every Capability Earns Its Complexity**: PASS WITH WARNING. The feature crosses worker, storage, parser, UI, and embedding surfaces. The warning is accepted only because the work is split into three vertical slices and capped at 13 production ownership slots / about 1,100 reviewable production LOC.
 - **VII. Privacy Is Dormant By Default**: PASS. Semantic endpoint configuration remains dormant until explicit user opt-in and stores no API key.
 
 ### Gate 2: Post-Design
@@ -82,10 +82,15 @@ src/
 web/
 |-- vite.config.ts
 `-- src/
-    |-- components/layout/RepositorySwitcher.tsx
-    |-- routes/RepositoryOverview.tsx
+    |-- components/
+    |   |-- layout/RepositorySwitcher.tsx
+    |   `-- symbol/SourcePane.tsx
+    |-- routes/
+    |   |-- RepositoryOverview.tsx
+    |   `-- SymbolDetailRoute.tsx
     |-- lib/
     |   |-- api/client.ts
+    |   |-- lsp/client.ts
     |   `-- repository-client.ts
     `-- local-indexing/
         |-- capabilities.ts
@@ -141,7 +146,7 @@ No AGENTS/CLAUDE/GEMINI context file was modified. The loaded repo-local skill e
 | Local repository-client abstraction | UI routes need to read from either REST daemon or browser worker with the same data shapes. | Duplicating every route for browser mode would expand UI churn and review surface. |
 | Direct semantic endpoint opt-in | FRs require optional semantic search without a local server; privacy requires dormant-by-default behavior. | Shipping semantic calls by default or adding a proxy would violate privacy and deployment constraints. |
 
-**Reviewability verdict**: WARN accepted. The plan keeps three slices, caps reviewable production LOC at about 1,055, and forecasts 13 production ownership slots. Any implementation forecast above 1,200 production LOC, above 13 production ownership slots, or requiring a fourth slice must return for consensus before code changes continue.
+**Reviewability verdict**: WARN accepted. The plan keeps three slices, caps reviewable production LOC at about 1,100, and forecasts 13 production ownership slots. Any implementation forecast above 1,200 production LOC, above 13 production ownership slots, or requiring a fourth slice must return for consensus before code changes continue.
 
 ## Slice Plan
 
@@ -179,7 +184,7 @@ No AGENTS/CLAUDE/GEMINI context file was modified. The loaded repo-local skill e
 | Worker protocol/runtime | `web/src/local-indexing/worker.ts` | 1 | 170 |
 | Main-thread worker client | `web/src/local-indexing/client.ts` | 2 | 85 |
 | Semantic opt-in | `web/src/local-indexing/embeddings.ts` | 3 | 55 |
-| UI integration | `web/src/components/layout/RepositorySwitcher.tsx`, `web/src/routes/RepositoryOverview.tsx` | 2 | 50 |
+| UI and local source-route integration | `web/src/components/layout/RepositorySwitcher.tsx`, `web/src/routes/RepositoryOverview.tsx`, `web/src/routes/SymbolDetailRoute.tsx`, `web/src/components/symbol/SourcePane.tsx`, `web/src/lib/lsp/client.ts` | 2 | 95 |
 
 ## Declared File Operations
 
@@ -199,8 +204,11 @@ No AGENTS/CLAUDE/GEMINI context file was modified. The loaded repo-local skill e
 - NEW web/src/local-indexing/embeddings.ts
 - MODIFIED web/src/components/layout/RepositorySwitcher.tsx
 - MODIFIED web/src/routes/RepositoryOverview.tsx
+- MODIFIED web/src/routes/SymbolDetailRoute.tsx
+- MODIFIED web/src/components/symbol/SourcePane.tsx
+- MODIFIED web/src/lib/lsp/client.ts
 
-**Estimated reviewable production LOC**: 1,055
+**Estimated reviewable production LOC**: 1,100
 
 **Planned test files**: 9 focused files covering schema migration, extraction parity, worker protocol, client integration, browser capability degradation, network/privacy policy, packaged assets, and Chromium full-flow UAT.
 
@@ -213,6 +221,9 @@ No AGENTS/CLAUDE/GEMINI context file was modified. The loaded repo-local skill e
 - Run Playwright Firefox/WebKit degradation checks for unsupported picker/reconnect paths.
 - Run accessibility and responsive UX checks for keyboard-only local workspace flows, focus restoration after picker/dialog/terminal states, status/alert announcements for progress and failures, 320 CSS px mobile layout, and reduced-motion progress/status behavior.
 - Confirm no network request is made before semantic opt-in and no persisted storage contains API keys.
+- Confirm a browser-local source view uses `LocalRepositoryClient.getSource`,
+  never opens `/lsp`, renders cached source as inert text, and exposes
+  hover/definition/references as honest LSP-only disabled actions.
 - Confirm packaged `dist/web` can load worker, SQLite WASM, tree-sitter core WASM, grammar WASM, and browser routes without a dev-server-only path.
 - Record package/static-host local-indexing asset byte sizes, initial route bundle impact, and request order proving SQLite, tree-sitter core, and grammar WASM assets are lazy until local indexing and accepted-language demand.
 - Capture SQLite query plans for the deterministic self-repo search, graph, and impact suite; document index/FTS usage, row limits, candidate caps, and any intentional bounded scan.

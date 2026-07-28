@@ -30,7 +30,9 @@ Use the Vite development URL for local browser iteration. `localhost` is treated
 
 Expected result:
 
-- No network request occurs.
+- No repository-derived, external-origin, daemon, WebSocket, beacon, or
+  embedding request occurs before semantic opt-in. Only enumerated same-origin
+  shipped assets may load.
 - A local repository appears with ready status.
 - Query results use the same response shapes as daemon-backed repositories.
 - Oversized, binary, ignored, and unsupported files appear as warnings without failing the whole index.

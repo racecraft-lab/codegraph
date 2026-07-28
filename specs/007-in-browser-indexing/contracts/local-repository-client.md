@@ -55,6 +55,11 @@ export interface LocalRepositoryClient extends RepositoryClient {
 - Local-only errors are normalized to the existing `ErrorEnvelope` style with a stable code and redacted message.
 - Unsupported local read types return `capability_unavailable` rather than falling through to the remote daemon silently.
 - Empty indexes return valid empty results, not transport failures.
+- A browser-local `SourcePane` uses `getSource` as its sole content transport
+  and never instantiates or connects `BrowserLspClient`.
+- Hover, definition, references, and other LSP-only source intelligence remain
+  disabled for browser-local repositories with an honest explanation; server
+  repositories retain their existing LSP transport.
 
 ## Repository Status Extensions
 

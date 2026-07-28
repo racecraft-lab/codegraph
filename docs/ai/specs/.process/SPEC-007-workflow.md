@@ -35,8 +35,8 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 | Plan | `/speckit-plan` | ✅ Complete | Seven artifacts complete; G3 passed; estimator projected 600 LOC across 15 production files. |
 | Checklist | `/speckit-checklist` | ✅ Complete | Four domains, 129/129 rows checked, 18 initial gaps resolved; G4 passed. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 38 TDD tasks, 63/63 FRs, 7/7 stories; G5 passed. |
-| Analyze | `/speckit-analyze` | 🔄 In Progress | Check cross-artifact scope, privacy, parity, and reviewability. |
-| Implement | `/speckit-implement` | ⏳ Pending | Implement only after G1-G6 are clean. |
+| Analyze | `/speckit-analyze` | ✅ Complete | Consensus remediated 1 HIGH and 1 MEDIUM finding; G6 passed; confidence 0.94. |
+| Implement | `/speckit-implement` | 🔄 In Progress | Execute 38 task-level TDD units in three vertical slices. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -899,11 +899,35 @@ constitution-compatible exception is approved.
 
 ### Analysis Results
 
-Populate after `/speckit-analyze`:
-
 | ID | Severity | Issue | Resolution |
 |---|---|---|---|
-| Pending | | | |
+| A-001 | HIGH | Plan/tasks omitted the current LSP-backed source-route files, allowing a browser-local source view to open `/lsp`. | Added explicit ownership for `SymbolDetailRoute`, `SourcePane`, and `lsp/client`; local source uses `LocalRepositoryClient.getSource`, local LSP actions are honestly disabled, and tests prohibit local `/lsp`. |
+| A-002 | MEDIUM | Quickstart claimed no network request even though same-origin shipped worker/WASM assets must load. | Narrowed the statement to prohibit repository-derived, external, daemon, WebSocket, beacon, and embedding traffic before opt-in while allowing enumerated same-origin assets. |
+| A-003 | LOW | Spec-context analyst reported that the roadmap workflow link targeted a missing `.process` directory. | Dismissed after path resolution: the relative link resolves to existing `docs/ai/specs/.process/SPEC-007-workflow.md`. The genuinely stale roadmap size/file estimate was synchronized to the remediated plan. |
+
+The `analyze-executor` initial pass reported zero findings and G6 passed.
+Mandatory consensus then used `codebase-analyst`, `spec-context-analyst`, and
+`domain-researcher`. Codebase and domain perspectives independently found
+A-001; domain also found A-002. After remediation, Plan
+`estimate-reviewable-loc` returned `status=pass`, `projected=720`, 18
+production files, 8 new files, 11 modified files, and 19 declared entries.
+G5 and G6 both passed again, with zero unmapped FRs and zero finding markers.
+No unresolved item requires human review.
+
+The installed `consensus-synthesizer` role is unavailable, so the parent
+orchestrator applied the documented synthesis fallback:
+
+```text
+📊 Confidence: 0.94
+Requirements coverage: 0.96
+Codebase/domain alignment: 0.94
+Task executability: 0.94
+Verification sufficiency: 0.95
+Implementation readiness: 0.93
+```
+
+Confidence mode is advisory; the synthesized score exceeds the configured
+0.90 threshold.
 
 ---
 
