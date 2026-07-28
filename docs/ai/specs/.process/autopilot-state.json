@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Post: Final Reviewability Backstop",
-  "updated_at": "2026-07-28T15:15:11Z",
+  "active_step": "Post: PR Packet/Body Generation",
+  "updated_at": "2026-07-28T15:17:30Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -1350,11 +1350,11 @@
     },
     {
       "step": "Post: Final Reviewability Backstop",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: PR Packet/Body Generation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: PR Body Generation",
@@ -1382,8 +1382,8 @@
     "reviewability_diff_gate": "completed_warn_non_blocking",
     "self_review": "completed_no_gaps",
     "uat_runbook_generation": "skipped_generate_uat_skeleton_deferred",
-    "final_reviewability_backstop": "in_progress",
-    "pr_packet_body_generation": "pending",
+    "final_reviewability_backstop": "completed_warn_proceed",
+    "pr_packet_body_generation": "in_progress",
     "pr_body_generation": "pending",
     "pr_creation": "pending",
     "review_remediation": "pending",
@@ -1410,12 +1410,23 @@
     "uat_runbook": {
       "status": "skipped",
       "reason": "generate-uat-skeleton deferred and no committed source-derived runbook exists"
+    },
+    "final_reviewability_backstop": {
+      "status": "warn",
+      "mode": "committed_fallback_evidence",
+      "proceed": true,
+      "implementation_checkpoint": "8e55cac1617c9f37f12f32a0305c2bc2e936dc66",
+      "base_commit": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
+      "diff": "83 files, +24406/-2099",
+      "correctness_blocker": false,
+      "atomicity_route": "one-navigable-PR",
+      "pr_marker_plan": null
     }
   },
   "resume": {
-    "last_completed": "Post: UAT Runbook Generation",
-    "current": "Post: Final Reviewability Backstop",
-    "next": "Checkpoint the remediated implementation and current reviewability evidence, then emit and validate the PR packet",
+    "last_completed": "Post: Final Reviewability Backstop",
+    "current": "Post: PR Packet/Body Generation",
+    "next": "Emit and validate the feature-local PR packet and packet-owned body",
     "required_action": "Finish the serial post-implementation tail through PR creation, review remediation, and retrospective."
   }
 }
