@@ -105,6 +105,7 @@ Validation:
 - Entries above 1 MiB are rejected with a warning row, not truncated silently.
 - Binary/NUL-containing files are rejected from text cache.
 - Paths use `/`, reject `..`, reject absolute host paths, and remain case-preserving.
+- Paths are admitted only after separator normalization rejects empty segments, `.`, `..`, absolute paths, duplicate normalized paths, unsupported entry kinds, recursive cycles, and configured traversal budget overruns.
 
 ### AcceptedFileManifest
 
@@ -123,6 +124,7 @@ Validation:
 - Manifest order is deterministic.
 - Manifest records filtered/skipped counts for status reporting.
 - Manifest fingerprint changes trigger refresh eligibility.
+- Manifest warnings include traversal-rejected entries before any rejected file text is read into source cache or graph input.
 
 ### WorkerOperation
 

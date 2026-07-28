@@ -84,6 +84,27 @@ Rules:
 - Terminal phase is exactly one of `complete`, `cancelled`, or `failed`.
 - `failed` includes a stable redacted error code.
 - `cancelled` must not publish a partial generation.
+- Progress emission is coalesced under the documented cadence ceiling and must not require one main-thread message per file, node, edge, vector, or source-cache row.
+
+## Performance Budgets
+
+The implementation must declare exact constants before code review for:
+
+- `maxFilesPerReadBatch`
+- `maxBytesPerReadBatch`
+- `maxBytesPerWorkerPayload`
+- `maxBytesPerSnapshotTransfer`
+- `maxProgressEventsPerSecond`
+- `maxEmbeddingBatchItems`
+- `maxVectorRowsPerTransaction`
+
+Rules:
+
+- File reads, snapshot transfer, parser/store bundles, and embedding writes stay within the declared ceilings.
+- ArrayBuffer transfer is preferred for snapshot payloads large enough to avoid duplicate structured-clone copies.
+- Budget overruns return stable bounded warnings or recoverable failures before source text enters the source cache, graph, semantic queue, URLs, or logs.
+- Long-running phases yield or return progress at the documented cadence so progress, cancel, and route chrome remain actionable.
+- Evidence must record heartbeat maximum gap for scan, read, grammar-load, parse, store, publish, and embed phases.
 
 ## Database Rules
 
@@ -99,8 +120,10 @@ Rules:
 - The main thread may pass handles only after user-activation permission checks.
 - The worker performs reads only through granted handles or immutable snapshots.
 - Paths are normalized to POSIX-style relative paths before database writes.
+- The worker admits only paths derived from source-provider ancestry metadata; absolute paths, empty segments, `.`, `..`, separator escapes, duplicate normalized paths, unsupported entry kinds, recursive cycles, and configured traversal budget overruns are warnings before source text is read.
 - Files above 1 MiB, binary files, unreadable files, and unsupported languages produce warnings.
 - Source text never leaves the worker except for requested source-pane reads or explicit semantic opt-in input.
+- Source-pane payloads are plain text/token data only; worker responses never produce HTML markup, executable document content, iframe/blob/object URLs, CSS URLs, or link-autoload instructions from repository bytes.
 
 ## Query Rules
 
@@ -121,6 +144,8 @@ Rules:
 - Results match existing web API response shapes.
 - Unsupported query shapes return `capability_unavailable`.
 - Query methods must read only the published generation.
+- The deterministic self-repository search, graph, and impact suite must capture SQLite `EXPLAIN QUERY PLAN` or equivalent browser-SQLite plan output, index/FTS usage, row limits, candidate caps, and any intentional bounded scan rationale.
+- Local reads must remain eligible for the 150 ms p95 target while indexing, refresh, cancellation cleanup, and semantic embedding operations are active.
 
 ## Semantic Rules
 
@@ -129,6 +154,9 @@ Rules:
 - The worker must not persist API keys or bearer tokens.
 - Direct endpoint failures are normalized as `network_blocked`, `credential_required`, or provider error codes with redacted details.
 - Keyword search remains available if semantic vector generation fails.
+- Embedding runs as a distinct long-running operation with its own `operationId`, cancellation state, resumable progress, and documented endpoint/vector batch ceilings.
+- Cancellation prevents new endpoint calls before the next documented batch and persists only secret-free resumable state consistent with the current graph generation.
+- Active, paused, failed, or cancelled embedding must not block local keyword search, graph, or impact reads from the published keyword generation.
 
 ## Failure Handling
 
@@ -148,3 +176,9 @@ Rules:
 - `protocolVersion` starts at `1`.
 - The worker rejects unknown major protocol versions.
 - New optional fields must be ignored by older clients when possible.
+
+## Resource Release
+
+- Parser trees and per-file parse resources are released after each file result is materialized.
+- Grammar/parser caches, SQLite statements, database handles, SAH-pool/VFS ownership, transferable buffers, vector matrices, and worker instances are released or bounded after completion, cancellation, delete, worker crash, and close.
+- Repeated self-repository index/delete/reindex and embed cancel/resume evidence must record resource high-water and post-cleanup state.

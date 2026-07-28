@@ -23,11 +23,11 @@ The plan preserves the accepted reviewability warning from the scaffold: 13 prod
 
 **Project Type**: Existing single repository with TypeScript library/CLI/server plus React SPA. This feature adds a browser-local runtime path without changing default CLI/server behavior.
 
-**Performance Goals**: Self-repo baseline target is the current SPEC-007 scale of 901 files, 16,127 nodes, and 68,846 edges. Keyword-only browser indexing should complete within 60 seconds on reference hardware; local search/graph/impact reads should keep p95 under 150 ms after warmup; main-thread heartbeat must remain responsive during indexing.
+**Performance Goals**: Self-repo baseline target is the current SPEC-007 scale of 901 files, 16,127 nodes, and 68,846 edges. Keyword-only browser indexing should complete within 60 seconds on reference hardware; local search/graph/impact reads should keep p95 under 150 ms after warmup; main-thread heartbeat must remain responsive during scan, read, grammar-load, parse, store, publish, and embed phases. Implementation must declare file-batch, worker-payload, snapshot-transfer, progress-cadence, embedding-batch, and vector-write ceilings before code review; self-repo evidence must include local query plans, asset byte inventory/request order, and repeated-run resource cleanup.
 
 **Constraints**: No default network calls, no implicit credentials, no writes to the user-selected source tree, 1 MiB per-file text cap, explicit user activation for permission prompts, one active local indexing writer per origin/repository, no COOP/COEP dependency, and no `node:*` imports in browser bundles.
 
-**Scale/Scope**: Current spec has 49 functional requirements, 7 user stories, 3 implementation slices, and 10 acceptance scenarios.
+**Scale/Scope**: Current spec has 63 functional requirements, 7 user stories, 3 implementation slices, and 21 measurable outcomes.
 
 ## Constitution Check
 
@@ -211,8 +211,15 @@ No AGENTS/CLAUDE/GEMINI context file was modified. The loaded repo-local skill e
 - Run `npm --prefix web run test` for web unit/component tests.
 - Run Playwright Chromium full-flow UAT against a local fixture and the self-repo scale target.
 - Run Playwright Firefox/WebKit degradation checks for unsupported picker/reconnect paths.
+- Run accessibility and responsive UX checks for keyboard-only local workspace flows, focus restoration after picker/dialog/terminal states, status/alert announcements for progress and failures, 320 CSS px mobile layout, and reduced-motion progress/status behavior.
 - Confirm no network request is made before semantic opt-in and no persisted storage contains API keys.
 - Confirm packaged `dist/web` can load worker, SQLite WASM, tree-sitter core WASM, grammar WASM, and browser routes without a dev-server-only path.
+- Record package/static-host local-indexing asset byte sizes, initial route bundle impact, and request order proving SQLite, tree-sitter core, and grammar WASM assets are lazy until local indexing and accepted-language demand.
+- Capture SQLite query plans for the deterministic self-repo search, graph, and impact suite; document index/FTS usage, row limits, candidate caps, and any intentional bounded scan.
+- Capture enforced read/message/progress and embedding/vector ceilings, including negative tests where budget overruns become bounded warnings or recoverable failures before unbounded work begins.
+- Capture repeated self-repo index/delete/reindex and embed cancel/resume resource evidence, including parser/tree/worker/SQLite/VFS/vector cleanup high-water and post-cleanup state.
+- While semantic embedding is active, paused, failed, and cancelled, rerun local keyword search, graph, and impact reads and verify the 150 ms p95 local-read target still holds.
+- Confirm data-integrity recovery covers worker close/release, Web Lock ownership release, stale ownership metadata on next open, crash boundaries across source-cache staging/graph write/registry publish/status update/delete cleanup, incremental add/change/delete source-cache synchronization, and semantic vector model/dimension/generation convergence and resume.
 
 ## Unresolved For Consensus
 

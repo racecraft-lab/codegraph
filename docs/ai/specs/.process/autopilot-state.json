@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Phase 4: Checklist — UX",
-  "updated_at": "2026-07-28T05:47:04Z",
+  "active_step": "Phase 5: Tasks",
+  "updated_at": "2026-07-28T06:41:43Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -298,8 +298,130 @@
       }
     },
     "checklist": {
-      "status": "pending",
-      "domains": {}
+      "status": "completed",
+      "domains": {
+        "ux": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "file": "specs/007-in-browser-indexing/checklists/ux.md",
+          "items": 31,
+          "initial_gaps": 5,
+          "final_gaps": 0,
+          "remediation_loops": 1,
+          "requirements_added": [
+            "FR-050",
+            "FR-051",
+            "FR-052"
+          ],
+          "success_criteria_added": [
+            "SC-012"
+          ],
+          "consensus_status": "completed_no_unresolved_items",
+          "runner_marker_count": {
+            "type": "gaps",
+            "total": 0,
+            "spec": 0,
+            "plan": 0,
+            "checklists": 0
+          }
+        },
+        "security": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "file": "specs/007-in-browser-indexing/checklists/security.md",
+          "items": 31,
+          "initial_gaps": 2,
+          "final_gaps": 0,
+          "remediation_loops": 1,
+          "requirements_added": [
+            "FR-053",
+            "FR-054"
+          ],
+          "success_criteria_added": [
+            "SC-013",
+            "SC-014"
+          ],
+          "consensus_status": "completed_no_unresolved_items",
+          "runner_marker_count": {
+            "type": "gaps",
+            "total": 0,
+            "spec": 0,
+            "plan": 0,
+            "checklists": 0
+          }
+        },
+        "data_integrity": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "file": "specs/007-in-browser-indexing/checklists/data-integrity.md",
+          "items": 34,
+          "initial_gaps": 6,
+          "final_gaps": 0,
+          "remediation_loops": 1,
+          "requirements_added": [
+            "FR-055",
+            "FR-056",
+            "FR-057",
+            "FR-058"
+          ],
+          "success_criteria_added": [
+            "SC-015",
+            "SC-016",
+            "SC-017",
+            "SC-018"
+          ],
+          "consensus_status": "completed_no_unresolved_items",
+          "runner_marker_count": {
+            "type": "gaps",
+            "total": 0,
+            "spec": 0,
+            "plan": 0,
+            "checklists": 0
+          }
+        },
+        "performance": {
+          "status": "completed",
+          "agent": "checklist-executor",
+          "file": "specs/007-in-browser-indexing/checklists/performance.md",
+          "items": 33,
+          "initial_gaps": 5,
+          "final_gaps": 0,
+          "remediation_loops": 1,
+          "requirements_added": [
+            "FR-059",
+            "FR-060",
+            "FR-061",
+            "FR-062",
+            "FR-063"
+          ],
+          "success_criteria_added": [
+            "SC-019",
+            "SC-020",
+            "SC-021"
+          ],
+          "correction": "Parent validation found all rows unchecked after remediation; bounded follow-up marked 33/33 checked and annotated five resolved rows.",
+          "consensus_status": "completed_no_unresolved_items",
+          "runner_marker_count": {
+            "type": "gaps",
+            "total": 0,
+            "spec": 0,
+            "plan": 0,
+            "checklists": 0
+          }
+        }
+      },
+      "totals": {
+        "items": 129,
+        "checked": 129,
+        "unchecked": 0,
+        "initial_gaps": 18,
+        "final_gaps": 0
+      },
+      "gate": {
+        "id": "G4",
+        "status": "passed",
+        "reason": "0 [Gap] markers and all 129 domain checklist rows checked"
+      }
     },
     "tasks": {
       "status": "pending"
@@ -366,39 +488,39 @@
     },
     {
       "step": "Phase 4: Checklist — UX",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist — Consensus — UX",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist — Security",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist — Consensus — Security",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist — Data Integrity",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist — Consensus — Data Integrity",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist — Performance",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist — Consensus — Performance",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 6: Analyze",
@@ -490,9 +612,9 @@
     "retrospective": "pending"
   },
   "resume": {
-    "last_completed": "Phase 3: Plan",
-    "current": "Phase 4: Checklist — UX",
-    "next": "Phase 4: Checklist — Consensus — UX",
-    "required_action": "Dispatch checklist-executor for UX, remediate every gap, and complete the UX consensus companion."
+    "last_completed": "Phase 4: Checklist — Consensus — Performance",
+    "current": "Phase 5: Tasks",
+    "next": "Phase 6: Analyze",
+    "required_action": "Dispatch phase-executor for Tasks, validate every FR maps to dependency-ordered TDD work, record deferred tasks-mode reviewability diagnostics, and pass G5."
   }
 }

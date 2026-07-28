@@ -33,8 +33,8 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 | Specify | `/speckit-specify` | ✅ Complete | 7 user stories, 30 FRs, 23 acceptance scenarios; G1 passed with zero markers. |
 | Clarify | `/speckit-clarify` | ✅ Complete | Four sessions applied; 49 unique FRs, zero markers; G2 passed. |
 | Plan | `/speckit-plan` | ✅ Complete | Seven artifacts complete; G3 passed; estimator projected 600 LOC across 15 production files. |
-| Checklist | `/speckit-checklist` | 🔄 In Progress | Running UX, security, data-integrity, and performance domains. |
-| Tasks | `/speckit-tasks` | ⏳ Pending | Generate TDD tasks ordered by the three vertical slices. |
+| Checklist | `/speckit-checklist` | ✅ Complete | Four domains, 129/129 rows checked, 18 initial gaps resolved; G4 passed. |
+| Tasks | `/speckit-tasks` | 🔄 In Progress | Generate TDD tasks ordered by the three vertical slices. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Check cross-artifact scope, privacy, parity, and reviewability. |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement only after G1-G6 are clean. |
 
@@ -608,7 +608,7 @@ under `specs/007-in-browser-indexing/`.
 | `quickstart.md` | ✅ Complete | Deterministic local/package/static-host/UAT procedures |
 
 Plan executor: `phase-executor`. It produced seven canonical artifacts covering
-49 functional requirements and three vertical slices. Both pre-research and
+the then-current 49 functional requirements and three vertical slices. Both pre-research and
 post-design constitution checks passed; Principle VI retains the accepted
 complexity warning, with no fourth slice permitted without consensus.
 
@@ -705,11 +705,44 @@ Populate after all four runs:
 
 | Checklist | Items | Gaps | Resolution status |
 |---|---:|---:|---|
-| ux | | | ⏳ Pending |
-| security | | | ⏳ Pending |
-| data-integrity | | | ⏳ Pending |
-| performance | | | ⏳ Pending |
-| **Total** | | | ⏳ Pending |
+| ux | 31 | 5 initial / 0 final | ✅ Complete; FR-050–FR-052 and SC-012 added |
+| security | 31 | 2 initial / 0 final | ✅ Complete; FR-053–FR-054 and SC-013–SC-014 added |
+| data-integrity | 34 | 6 initial / 0 final | ✅ Complete; FR-055–FR-058 and SC-015–SC-018 added |
+| performance | 33 | 5 initial / 0 final | ✅ Complete; FR-059–FR-063 and SC-019–SC-021 added |
+| **Total** | **129** | **18 initial / 0 final** | ✅ G4 passed |
+
+UX executor: `checklist-executor`. It researched and resolved five requirements
+gaps in one loop: keyboard/focus behavior, assistive-technology progress and
+terminal announcements, 320 CSS px/reduced-motion behavior, active-operation
+delete semantics, and measurable accessibility success criteria. The final
+runner `count-markers(type=gaps)` result was zero across spec, plan, and
+checklists. No unresolved item required consensus, so the UX consensus
+companion completed without analyst dispatch.
+
+Performance executor: `checklist-executor`. It researched and resolved five
+requirements gaps in one loop: bounded read/message/progress budgets, query-plan
+evidence, resource release, lazy packaged-asset evidence, and embedding
+isolation. An independent parent check found all 33 checklist rows were still
+unchecked despite the zero-marker result; a bounded correction marked all rows
+checked and annotated the five remediated items. Final validation: UX 31/31,
+Security 31/31, Data Integrity 34/34, Performance 33/33, zero unchecked rows,
+and zero `[Gap]` markers. G4 passed. No unresolved item required consensus, so
+the Performance consensus companion completed without analyst dispatch.
+
+Security executor: `checklist-executor`. It researched and resolved two
+requirements gaps in one loop: traversal/drop-recursion admission rules and
+inert rendering for malicious source text. The final runner
+`count-markers(type=gaps)` result was zero across spec, plan, and checklists.
+No unresolved security judgment remained, so mandatory analyst consensus was
+not triggered and the Security consensus companion completed without dispatch.
+
+Data Integrity executor: `checklist-executor`. It researched and resolved six
+requirements gaps in one loop: database/lock lifecycle, vector convergence,
+named crash boundaries, deterministic refresh synchronization, measurable
+failure recovery, and measurable add/change/delete outcomes. The final runner
+`count-markers(type=gaps)` result was zero across spec, plan, and checklists.
+No unresolved item required consensus, so the Data Integrity consensus
+companion completed without analyst dispatch.
 
 ---
 
