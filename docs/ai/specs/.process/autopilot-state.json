@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Post: PR Creation",
-  "updated_at": "2026-07-28T15:42:00Z",
+  "active_step": "Post: Review Remediation",
+  "updated_at": "2026-07-28T15:44:00Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -1362,11 +1362,11 @@
     },
     {
       "step": "Post: PR Creation",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: Review Remediation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Retrospective",
@@ -1385,8 +1385,8 @@
     "final_reviewability_backstop": "completed_warn_proceed",
     "pr_packet_body_generation": "completed_validated",
     "pr_body_generation": "completed_validated",
-    "pr_creation": "in_progress",
-    "review_remediation": "pending",
+    "pr_creation": "completed_draft",
+    "review_remediation": "in_progress",
     "retrospective": "pending"
   },
   "post_evidence": {
@@ -1452,12 +1452,29 @@
         "writes_state": false
       },
       "bootstrap_repair": "Authoritative SpecKit Pro source now prefers the nearest trusted marker, so this nested linked worktree is not captured by the dirty parent source checkout."
+    },
+    "pr_creation": {
+      "status": "completed_draft",
+      "number": 185,
+      "url": "https://github.com/racecraft-lab/codegraph/pull/185",
+      "title": "feat(SPEC-007): Add private in-browser indexing",
+      "base_ref": "main",
+      "base_oid": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
+      "head_ref": "007-in-browser-indexing",
+      "creation_head_oid": "0e8d7e856b09116b443db14fd88558b89e997e3c",
+      "is_draft": true,
+      "mergeable": "MERGEABLE",
+      "initial_feedback": {
+        "reviews": 0,
+        "comments": 0,
+        "checks": "queued_or_in_progress"
+      }
     }
   },
   "resume": {
-    "last_completed": "Post: PR Body Generation",
-    "current": "Post: PR Creation",
-    "next": "Create the draft PR from packet-owned fields",
+    "last_completed": "Post: PR Creation",
+    "current": "Post: Review Remediation",
+    "next": "Inspect live PR checks, reviews, and comments; remediate actionable findings",
     "required_action": "Finish the serial post-implementation tail through PR creation, review remediation, and retrospective."
   }
 }

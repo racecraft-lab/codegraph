@@ -1978,8 +1978,8 @@ After each slice:
 | Post | Post: Final Reviewability Backstop | ✅ Complete | Proceed with warning at committed checkpoint `8e55cac1`; 83 files, +24,406/-2,099, no correctness blocker. |
 | Post | Post: PR Packet/Body Generation | ✅ Complete | Canonical packet and packet-owned body emitted; read-only validation passed with current fingerprints. |
 | Post | Post: PR Body Generation | ✅ Complete | Packet-owned body checkpointed; persisted validation and title/scope contract passed. |
-| Post | Post: PR Creation | 🔄 In Progress | Creating the draft PR from packet-owned base, head, title, and body fields. |
-| Post | Post: Review Remediation | ⏳ Pending | Live PR feedback and checks will be inspected after creation. |
+| Post | Post: PR Creation | ✅ Complete | Draft PR [#185](https://github.com/racecraft-lab/codegraph/pull/185) created from packet-owned fields. |
+| Post | Post: Review Remediation | 🔄 In Progress | Live PR checks are running; no reviews or comments are present yet. |
 | Post | Post: Retrospective | ⏳ Pending | Final canonical post step. |
 
 ### Reviewability Diff Gate
@@ -2083,6 +2083,17 @@ invoked.
   checkout before the nearer worktree `.specify/` marker. The durable source
   repair now gives the nearest trusted marker precedence and retains the clean
   worktree safety gate.
+
+### PR Creation
+
+- Draft PR: [#185](https://github.com/racecraft-lab/codegraph/pull/185).
+- Live creation authority: base `main` at
+  `91cf4b24cb2d64440733675e0db67040adc9c3d6`; head
+  `007-in-browser-indexing` at
+  `0e8d7e856b09116b443db14fd88558b89e997e3c`.
+- GitHub reports the PR mergeable. Initial CI, CodeQL, dependency review,
+  installer coverage, and PR-impact checks are queued or running; no review or
+  comment exists at creation time.
 
 - [ ] All tasks in `tasks.md` are genuinely implemented and verified.
 - [ ] `npm run build` passes with shipped worker/WASM/static assets.
