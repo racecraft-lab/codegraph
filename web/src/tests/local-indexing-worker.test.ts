@@ -483,7 +483,7 @@ describe("versioned local-index worker RPC", () => {
     postMessage.mockRestore()
   })
 
-  it("extracts Vue script blocks with whitespace in the closing tag", async () => {
+  it("extracts Vue script blocks without relying on HTML tag filtering", async () => {
     const { extractVueScriptSource } = await import(
       "../local-indexing/extract"
     )
@@ -493,6 +493,16 @@ describe("versioned local-index worker RPC", () => {
         "<template><p>hello</p></template><script>const answer = 42</script >",
       ),
     ).toBe("const answer = 42")
+    expect(
+      extractVueScriptSource(
+        '<script data-label="a > b">const answer = 43</script\t\n ignored>',
+      ),
+    ).toBe("const answer = 43")
+    expect(
+      extractVueScriptSource(
+        "<scripture>ignore</scripture><script>const answer = 44</script>",
+      ),
+    ).toBe("const answer = 44")
   })
 
   const request = (

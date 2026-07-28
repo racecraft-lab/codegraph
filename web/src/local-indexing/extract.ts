@@ -186,9 +186,65 @@ function declarations(
   return output
 }
 
+function isHtmlWhitespace(value: string | undefined) {
+  return (
+    value === " " ||
+    value === "\t" ||
+    value === "\n" ||
+    value === "\r" ||
+    value === "\f"
+  )
+}
+
+function findTagEnd(source: string, start: number) {
+  let quote: '"' | "'" | undefined
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index]
+    if (quote) {
+      if (character === quote) quote = undefined
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+    } else if (character === ">") {
+      return index
+    }
+  }
+  return -1
+}
+
 export function extractVueScriptSource(source: string) {
-  const match = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/i.exec(source)
-  return match?.[1] ?? ""
+  const normalized = source.toLowerCase()
+  let searchFrom = 0
+
+  while (searchFrom < source.length) {
+    const openingStart = normalized.indexOf("<script", searchFrom)
+    if (openingStart < 0) return ""
+    const openingBoundary = source[openingStart + 7]
+    if (openingBoundary !== ">" && !isHtmlWhitespace(openingBoundary)) {
+      searchFrom = openingStart + 7
+      continue
+    }
+
+    const openingEnd = findTagEnd(source, openingStart + 7)
+    if (openingEnd < 0) return ""
+    let closingSearchFrom = openingEnd + 1
+    while (closingSearchFrom < source.length) {
+      const closingStart = normalized.indexOf("</script", closingSearchFrom)
+      if (closingStart < 0) return ""
+      const closingBoundary = source[closingStart + 8]
+      if (
+        closingBoundary === ">" ||
+        closingBoundary === "/" ||
+        isHtmlWhitespace(closingBoundary)
+      ) {
+        return source.slice(openingEnd + 1, closingStart)
+      }
+      closingSearchFrom = closingStart + 8
+    }
+    return ""
+  }
+  return ""
 }
 
 function extract(path: string, source: string, language: Language): ExtractionResult {
