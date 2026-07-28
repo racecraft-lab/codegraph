@@ -105,6 +105,20 @@ describe('repository agent instructions', () => {
     }
   });
 
+  it('keeps the feature worktree preflight discoverable from root instructions', () => {
+    const rootAgents = read('AGENTS.md');
+    expect(rootAgents).toContain('## Feature Worktree Preflight');
+    expect(rootAgents).toContain(
+      'docs/ai/specs/intelligence-platform-technical-roadmap.md#dogfooding-protocol',
+    );
+
+    const roadmap = read('docs/ai/specs/intelligence-platform-technical-roadmap.md');
+    expect(roadmap).toContain('6. **Spec-session preflight:**');
+    expect(roadmap).toContain('npm ci');
+    expect(roadmap).toContain('node dist/bin/codegraph.js init .');
+    expect(roadmap).toContain('node dist/bin/codegraph.js status . --json');
+  });
+
   it('leaves workflow context updates unable to target agent files', () => {
     const contextConfig = read('.specify/extensions/agent-context/agent-context-config.yml');
     expect(contextConfig).toContain('context_file: ""');
