@@ -30,8 +30,8 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 
 | Phase | Command | Status | Notes |
 |---|---|---|---|
-| Specify | `/speckit-specify` | ⏳ Pending | Produce measurable user stories and requirements from the design concept. |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Resolve only the planning-level questions still listed in the design concept. |
+| Specify | `/speckit-specify` | ✅ Complete | 7 user stories, 30 FRs, 23 acceptance scenarios; G1 passed with zero markers. |
+| Clarify | `/speckit-clarify` | 🔄 In Progress | Running the four planned decision-validation sessions without reopening settled choices. |
 | Plan | `/speckit-plan` | ⏳ Pending | Define runtime seams, browser storage, worker contracts, asset delivery, and three slices. |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run UX, security, data-integrity, and performance domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Generate TDD tasks ordered by the three vertical slices. |
@@ -153,6 +153,36 @@ Apply `.specify/memory/constitution.md` throughout:
 
 **Constitution Check:** scaffold pre-check passed; `/speckit-plan` must run and
 record both required plan-phase checks before G3.
+
+### Autopilot Preflight Evidence
+
+Recorded on 2026-07-28 from the bound `007-in-browser-indexing` worktree:
+
+- Archive Sweep: installed archive extension contract executed in dry-run mode;
+  `specs/007-in-browser-indexing` was the only active spec and was excluded as
+  the current target, so no prior spec required archival or cleanup.
+- Runner integrity and prerequisites: passed. The runner resolves linked
+  worktrees through the repository control checkout, so the absolute workflow
+  path was supplied; direct Git checks independently confirmed the execution
+  root, branch, clean status, HEAD, and upstream.
+- Runtime: Node `v24.11.1`, npm `11.6.2`, Python `3.11.0`.
+- Build: passed.
+- Typecheck: passed.
+- Test baseline: 260 files passed, 4,663 tests passed, 181 skipped.
+- Lint and separate integration commands: not defined by the project command
+  detector; integration coverage is included in the Vitest suite.
+- Reviewability setup gate: passed. The governing scaffold estimate remains
+  `estimated_loc=1055`, `suggested_slices=3`, `status=warn`.
+- Settings: defaults (`consensus=moderate`, `gate_failure=stop`,
+  `auto_commit=per-phase`, confidence gate `advisory`, token discipline off).
+- Required Codex agent bundle: current at the user destination; dry-run install
+  reported no changes and no restart requirement.
+- Capability path: repository files, Git, and the healthy worktree-local
+  CodeGraph index for codebase evidence; local workflow/design/roadmap/
+  constitution artifacts for spec evidence; Context7 for library documentation;
+  installed web research for current external standards. Native
+  `codegraph_explore` is not exposed in this task, so structural work uses the
+  indexed CLI plus repository-local fallback evidence.
 
 ---
 
@@ -344,13 +374,20 @@ Populate after `/speckit-specify`:
 
 | Metric | Expected baseline |
 |---|---|
-| Functional Requirements | At least 24, each mapped to AC-7.1 through AC-7.4 and the design decisions |
+| Functional Requirements | 30, mapped to AC-7.1 through AC-7.4 and the design decisions |
 | User Stories | 7 |
+| Acceptance Scenarios | 23 |
 | Acceptance Criteria | AC-7.1, AC-7.2, AC-7.3, AC-7.4 plus measurable privacy/performance/package criteria |
+| G1 | Passed: zero `[NEEDS CLARIFICATION]` markers |
+| Requirements Checklist | 16/16 complete; zero `[Gap]` markers |
+
+Executor: `phase-executor`. Unresolved for consensus: none.
 
 ### Files Generated
 
-- [ ] `specs/007-in-browser-indexing/spec.md`
+- [x] `specs/007-in-browser-indexing/spec.md`
+- [x] `specs/007-in-browser-indexing/checklists/requirements.md`
+- [x] `.specify/feature.json`
 
 ---
 
