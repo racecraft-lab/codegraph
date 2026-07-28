@@ -32,8 +32,8 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 |---|---|---|---|
 | Specify | `/speckit-specify` | ✅ Complete | 7 user stories, 30 FRs, 23 acceptance scenarios; G1 passed with zero markers. |
 | Clarify | `/speckit-clarify` | ✅ Complete | Four sessions applied; 49 unique FRs, zero markers; G2 passed. |
-| Plan | `/speckit-plan` | 🔄 In Progress | Defining runtime seams, browser storage, worker contracts, asset delivery, and three slices. |
-| Checklist | `/speckit-checklist` | ⏳ Pending | Run UX, security, data-integrity, and performance domains. |
+| Plan | `/speckit-plan` | ✅ Complete | Seven artifacts complete; G3 passed; estimator projected 600 LOC across 15 production files. |
+| Checklist | `/speckit-checklist` | 🔄 In Progress | Running UX, security, data-integrity, and performance domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Generate TDD tasks ordered by the three vertical slices. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Check cross-artifact scope, privacy, parity, and reviewability. |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement only after G1-G6 are clean. |
@@ -599,15 +599,27 @@ under `specs/007-in-browser-indexing/`.
 
 ### Plan Results
 
-Populate after `/speckit-plan`:
-
 | Artifact | Status | Required content |
 |---|---|---|
-| `plan.md` | ⏳ Pending | Constitution checks, runtime architecture, exact file map, three slices, complexity table |
-| `research.md` | ⏳ Pending | Official docs, dependency/license decision, browser matrix, alternatives |
-| `data-model.md` | ⏳ Pending | Browser repository, storage, worker, source, embedding, and error entities |
-| `contracts/` | ⏳ Pending | Repository client, worker RPC, capabilities, and security contracts |
-| `quickstart.md` | ⏳ Pending | Deterministic local/package/static-host/UAT procedures |
+| `plan.md` | ✅ Complete | Two passing constitution checks, runtime architecture, machine-readable file map, three slices, complexity table |
+| `research.md` | ✅ Complete | Nine decisions covering official docs, dependency/license, browser matrix, and alternatives |
+| `data-model.md` | ✅ Complete | Browser repository, storage, worker, source, embedding, generation, and error entities |
+| `contracts/` | ✅ Complete | Repository client, worker RPC, capability, degradation, and security contracts |
+| `quickstart.md` | ✅ Complete | Deterministic local/package/static-host/UAT procedures |
+
+Plan executor: `phase-executor`. It produced seven canonical artifacts covering
+49 functional requirements and three vertical slices. Both pre-research and
+post-design constitution checks passed; Principle VI retains the accepted
+complexity warning, with no fourth slice permitted without consensus.
+
+G3 passed: `plan.md` exists with zero unresolved markers. The first
+`estimate-reviewable-loc` call returned `not_estimated` because the file map was
+not in the helper's machine-readable format. A bounded plan follow-up added
+`## Declared File Operations`, after which the authoritative rerun returned
+`status=pass`, `projected=600`, 15 production files, 8 new files, 8 modified
+files, and 16 total declared entries (warn threshold 400; block threshold 800).
+The earlier scaffold estimate remains advisory evidence: 1,055 LOC, three
+suggested slices, `status=warn`. No unresolved item required consensus.
 
 ---
 
