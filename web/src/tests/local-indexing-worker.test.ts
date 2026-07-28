@@ -439,6 +439,27 @@ describe("browser-local SQLite generation contract", () => {
 })
 
 describe("versioned local-index worker RPC", () => {
+  it("ignores messages that declare a different origin", async () => {
+    const postMessage = vi
+      .spyOn(globalThis, "postMessage")
+      .mockImplementation(() => undefined)
+    await import("../local-indexing/worker")
+
+    globalThis.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          protocolVersion: 1,
+          requestId: "cross-origin-ingress",
+          kind: "close",
+        },
+        origin: "https://attacker.example",
+      }),
+    )
+
+    expect(postMessage).not.toHaveBeenCalled()
+    postMessage.mockRestore()
+  })
+
   it("rejects a malformed ingress discriminant without crashing the worker", async () => {
     const postMessage = vi
       .spyOn(globalThis, "postMessage")
@@ -460,6 +481,18 @@ describe("versioned local-index worker RPC", () => {
       }),
     )
     postMessage.mockRestore()
+  })
+
+  it("extracts Vue script blocks with whitespace in the closing tag", async () => {
+    const { extractVueScriptSource } = await import(
+      "../local-indexing/extract"
+    )
+
+    expect(
+      extractVueScriptSource(
+        "<template><p>hello</p></template><script>const answer = 42</script >",
+      ),
+    ).toBe("const answer = 42")
   })
 
   const request = (

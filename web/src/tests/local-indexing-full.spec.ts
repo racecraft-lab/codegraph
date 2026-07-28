@@ -66,17 +66,25 @@ function selfRepositorySources(): SelfRepositorySource[] {
     )
     .flatMap((relativePath) => {
       const absolutePath = path.join(repositoryRoot, relativePath)
-      if (!fs.existsSync(absolutePath)) return []
-      const stat = fs.statSync(absolutePath)
-      if (!stat.isFile() || stat.size > 1024 * 1024) return []
-      return [
-        {
-          path: relativePath.replaceAll(path.sep, "/"),
-          text: fs.readFileSync(absolutePath, "utf8"),
-          bytes: stat.size,
-          lastModified: Math.trunc(stat.mtimeMs),
-        },
-      ]
+      let descriptor: number | undefined
+      try {
+        descriptor = fs.openSync(absolutePath, "r")
+        const stat = fs.fstatSync(descriptor)
+        if (!stat.isFile() || stat.size > 1024 * 1024) return []
+        return [
+          {
+            path: relativePath.replaceAll(path.sep, "/"),
+            text: fs.readFileSync(descriptor, "utf8"),
+            bytes: stat.size,
+            lastModified: Math.trunc(stat.mtimeMs),
+          },
+        ]
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+        throw error
+      } finally {
+        if (descriptor !== undefined) fs.closeSync(descriptor)
+      }
     })
     .sort((left, right) => left.path.localeCompare(right.path))
 }

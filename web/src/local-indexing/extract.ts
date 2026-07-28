@@ -186,8 +186,8 @@ function declarations(
   return output
 }
 
-function scriptSource(source: string) {
-  const match = /<script\b[^>]*>([\s\S]*?)<\/script>/i.exec(source)
+export function extractVueScriptSource(source: string) {
+  const match = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/i.exec(source)
   return match?.[1] ?? ""
 }
 
@@ -202,7 +202,8 @@ function extract(path: string, source: string, language: Language): ExtractionRe
   if (!parser) {
     throw new Error(`The ${parseLanguage} browser parser is not loaded.`)
   }
-  const parsedSource = language === "vue" ? scriptSource(source) : source
+  const parsedSource =
+    language === "vue" ? extractVueScriptSource(source) : source
   const tree = parser.parse(parsedSource)
   if (!tree) throw new Error(`The ${parseLanguage} browser parser returned no tree.`)
   try {

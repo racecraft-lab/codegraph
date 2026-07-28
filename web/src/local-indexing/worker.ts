@@ -2421,6 +2421,12 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
 globalThis.addEventListener(
   "message",
   (event: MessageEvent<unknown>) => {
+    if (
+      event.origin !== "" &&
+      event.origin !== globalThis.location.origin
+    ) {
+      return
+    }
     const candidate = event.data
     if (!isRecord(candidate) || typeof candidate.requestId !== "string") {
       return
