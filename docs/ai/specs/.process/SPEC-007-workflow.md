@@ -1977,8 +1977,8 @@ After each slice:
 | Post | Post: UAT Runbook Generation | ⏭️ Skipped | `generate-uat-skeleton` is deferred and no committed source-derived runbook exists; fail-open per installed runner policy. |
 | Post | Post: Final Reviewability Backstop | ✅ Complete | Proceed with warning at committed checkpoint `8e55cac1`; 83 files, +24,406/-2,099, no correctness blocker. |
 | Post | Post: PR Packet/Body Generation | ✅ Complete | Canonical packet and packet-owned body emitted; read-only validation passed with current fingerprints. |
-| Post | Post: PR Body Generation | 🔄 In Progress | Checkpointing the validated public body before persisted validation. |
-| Post | Post: PR Creation | ⏳ Pending | Draft PR targets `origin` after packet validation. |
+| Post | Post: PR Body Generation | ✅ Complete | Packet-owned body checkpointed; persisted validation and title/scope contract passed. |
+| Post | Post: PR Creation | 🔄 In Progress | Creating the draft PR from packet-owned base, head, title, and body fields. |
 | Post | Post: Review Remediation | ⏳ Pending | Live PR feedback and checks will be inspected after creation. |
 | Post | Post: Retrospective | ⏳ Pending | Final canonical post step. |
 
@@ -2074,6 +2074,11 @@ invoked.
   `5eff94f2bd7692b321a1cb7b684d56b41b8d2b5e070adeead109f93e1343b4a2`;
   body
   `9103307fd32a0e8f8d1aac4a0df68960cbec810699166f2c4ab4472c68bf206f`.
+- Packet/body checkpoint: `5e7b4c92d3ce62e934f64a5660b5dff57dfdb4b7`.
+  `validate-pr-packet-write` then passed from the clean tree and persisted
+  `validation.json` with `pr_blocked=false`.
+- `validate-pr-workflow-contract` passed against the packet-owned title and
+  live `origin/main...HEAD` changed-file scope with `writes_state=false`.
 - The installed 2.20.0 runner had incorrectly selected the dirty parent source
   checkout before the nearer worktree `.specify/` marker. The durable source
   repair now gives the nearest trusted marker precedence and retains the clean

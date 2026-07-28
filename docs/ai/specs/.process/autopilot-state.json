@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Post: PR Body Generation",
-  "updated_at": "2026-07-28T15:40:00Z",
+  "active_step": "Post: PR Creation",
+  "updated_at": "2026-07-28T15:42:00Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -1358,11 +1358,11 @@
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: PR Creation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Review Remediation",
@@ -1384,8 +1384,8 @@
     "uat_runbook_generation": "skipped_generate_uat_skeleton_deferred",
     "final_reviewability_backstop": "completed_warn_proceed",
     "pr_packet_body_generation": "completed_validated",
-    "pr_body_generation": "in_progress",
-    "pr_creation": "pending",
+    "pr_body_generation": "completed_validated",
+    "pr_creation": "in_progress",
     "review_remediation": "pending",
     "retrospective": "pending"
   },
@@ -1439,13 +1439,25 @@
         "packet_sha256": "5eff94f2bd7692b321a1cb7b684d56b41b8d2b5e070adeead109f93e1343b4a2",
         "body_sha256": "9103307fd32a0e8f8d1aac4a0df68960cbec810699166f2c4ab4472c68bf206f"
       },
+      "checkpoint_commit": "5e7b4c92d3ce62e934f64a5660b5dff57dfdb4b7",
+      "persisted_validation": {
+        "status": "passed",
+        "pr_blocked": false,
+        "validation_result_path": "specs/007-in-browser-indexing/.process/pr-packets/spec-007/validation.json",
+        "validation_source": "validate-pr-packet-read-only"
+      },
+      "pr_workflow_contract": {
+        "status": "passed",
+        "title": "feat(SPEC-007): Add private in-browser indexing",
+        "writes_state": false
+      },
       "bootstrap_repair": "Authoritative SpecKit Pro source now prefers the nearest trusted marker, so this nested linked worktree is not captured by the dirty parent source checkout."
     }
   },
   "resume": {
-    "last_completed": "Post: PR Packet/Body Generation",
-    "current": "Post: PR Body Generation",
-    "next": "Checkpoint the validated packet/body artifacts and persist current validation",
+    "last_completed": "Post: PR Body Generation",
+    "current": "Post: PR Creation",
+    "next": "Create the draft PR from packet-owned fields",
     "required_action": "Finish the serial post-implementation tail through PR creation, review remediation, and retrospective."
   }
 }
