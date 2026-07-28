@@ -1976,8 +1976,8 @@ After each slice:
 | Post | Post: Self-Review | ✅ Complete | Tests executed, all acceptance/edge-case groups mapped, FR-001–FR-063 traced, and tidiness scan passed. |
 | Post | Post: UAT Runbook Generation | ⏭️ Skipped | `generate-uat-skeleton` is deferred and no committed source-derived runbook exists; fail-open per installed runner policy. |
 | Post | Post: Final Reviewability Backstop | ✅ Complete | Proceed with warning at committed checkpoint `8e55cac1`; 83 files, +24,406/-2,099, no correctness blocker. |
-| Post | Post: PR Packet/Body Generation | 🔄 In Progress | Emitting the feature-local packet and packet-owned body from current evidence. |
-| Post | Post: PR Body Generation | ⏳ Pending | Packet-owned public body will be checked for current verification and UAT text. |
+| Post | Post: PR Packet/Body Generation | ✅ Complete | Canonical packet and packet-owned body emitted; read-only validation passed with current fingerprints. |
+| Post | Post: PR Body Generation | 🔄 In Progress | Checkpointing the validated public body before persisted validation. |
 | Post | Post: PR Creation | ⏳ Pending | Draft PR targets `origin` after packet validation. |
 | Post | Post: Review Remediation | ⏳ Pending | Live PR feedback and checks will be inspected after creation. |
 | Post | Post: Retrospective | ⏳ Pending | Final canonical post step. |
@@ -2059,6 +2059,25 @@ invoked.
   boundary. No correctness blocker, unsafe output, stale marker plan, or
   unratified capability surface exists. Atomicity remains
   `one-navigable-PR`; no `pr_marker_plan` is active.
+
+### PR Packet And Body Generation
+
+- The authoritative fixed SpecKit Pro source runner emitted
+  `specs/007-in-browser-indexing/.process/pr-packets/spec-007.json` and its
+  packet-owned `body.md` from this exact linked worktree.
+- The generated title is
+  `feat(SPEC-007): Add private in-browser indexing`; target branches are
+  `main` and `007-in-browser-indexing`.
+- `validate-pr-packet-read-only` passed with `pr_blocked=false` and
+  `writes_state=false`.
+- Current fingerprints: packet
+  `5eff94f2bd7692b321a1cb7b684d56b41b8d2b5e070adeead109f93e1343b4a2`;
+  body
+  `9103307fd32a0e8f8d1aac4a0df68960cbec810699166f2c4ab4472c68bf206f`.
+- The installed 2.20.0 runner had incorrectly selected the dirty parent source
+  checkout before the nearer worktree `.specify/` marker. The durable source
+  repair now gives the nearest trusted marker precedence and retains the clean
+  worktree safety gate.
 
 - [ ] All tasks in `tasks.md` are genuinely implemented and verified.
 - [ ] `npm run build` passes with shipped worker/WASM/static assets.

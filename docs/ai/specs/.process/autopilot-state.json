@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Post: PR Packet/Body Generation",
-  "updated_at": "2026-07-28T15:17:30Z",
+  "active_step": "Post: PR Body Generation",
+  "updated_at": "2026-07-28T15:40:00Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -1354,11 +1354,11 @@
     },
     {
       "step": "Post: PR Packet/Body Generation",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: PR Creation",
@@ -1383,8 +1383,8 @@
     "self_review": "completed_no_gaps",
     "uat_runbook_generation": "skipped_generate_uat_skeleton_deferred",
     "final_reviewability_backstop": "completed_warn_proceed",
-    "pr_packet_body_generation": "in_progress",
-    "pr_body_generation": "pending",
+    "pr_packet_body_generation": "completed_validated",
+    "pr_body_generation": "in_progress",
     "pr_creation": "pending",
     "review_remediation": "pending",
     "retrospective": "pending"
@@ -1421,12 +1421,31 @@
       "correctness_blocker": false,
       "atomicity_route": "one-navigable-PR",
       "pr_marker_plan": null
+    },
+    "pr_packet_body": {
+      "status": "passed",
+      "helper": "pr-packet-output",
+      "packet_path": "specs/007-in-browser-indexing/.process/pr-packets/spec-007.json",
+      "body_file": "specs/007-in-browser-indexing/.process/pr-packets/spec-007/body.md",
+      "generated_title": "feat(SPEC-007): Add private in-browser indexing",
+      "target": {
+        "base_branch": "main",
+        "head_branch": "007-in-browser-indexing"
+      },
+      "read_only_validation": {
+        "status": "passed",
+        "pr_blocked": false,
+        "writes_state": false,
+        "packet_sha256": "5eff94f2bd7692b321a1cb7b684d56b41b8d2b5e070adeead109f93e1343b4a2",
+        "body_sha256": "9103307fd32a0e8f8d1aac4a0df68960cbec810699166f2c4ab4472c68bf206f"
+      },
+      "bootstrap_repair": "Authoritative SpecKit Pro source now prefers the nearest trusted marker, so this nested linked worktree is not captured by the dirty parent source checkout."
     }
   },
   "resume": {
-    "last_completed": "Post: Final Reviewability Backstop",
-    "current": "Post: PR Packet/Body Generation",
-    "next": "Emit and validate the feature-local PR packet and packet-owned body",
+    "last_completed": "Post: PR Packet/Body Generation",
+    "current": "Post: PR Body Generation",
+    "next": "Checkpoint the validated packet/body artifacts and persist current validation",
     "required_action": "Finish the serial post-implementation tail through PR creation, review remediation, and retrospective."
   }
 }
