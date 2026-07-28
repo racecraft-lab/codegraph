@@ -31,8 +31,8 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 | Phase | Command | Status | Notes |
 |---|---|---|---|
 | Specify | `/speckit-specify` | ✅ Complete | 7 user stories, 30 FRs, 23 acceptance scenarios; G1 passed with zero markers. |
-| Clarify | `/speckit-clarify` | 🔄 In Progress | Running the four planned decision-validation sessions without reopening settled choices. |
-| Plan | `/speckit-plan` | ⏳ Pending | Define runtime seams, browser storage, worker contracts, asset delivery, and three slices. |
+| Clarify | `/speckit-clarify` | ✅ Complete | Four sessions applied; 49 unique FRs, zero markers; G2 passed. |
+| Plan | `/speckit-plan` | 🔄 In Progress | Defining runtime seams, browser storage, worker contracts, asset delivery, and three slices. |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run UX, security, data-integrity, and performance domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Generate TDD tasks ordered by the three vertical slices. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Check cross-artifact scope, privacy, parity, and reviewability. |
@@ -443,10 +443,39 @@ Populate after the sessions:
 
 | Session | Focus Area | Required outcome |
 |---|---|---|
-| 1 | Capability and UX | Complete state/permission/fallback/delete interaction contract |
-| 2 | Storage and runtime | Complete schema, RPC, transaction, recovery, and refresh contract |
-| 3 | Embedding and delivery | Complete consent, secret, transport, CSP, asset, and degradation contract |
-| 4 | Performance and parity | Reproducible fixtures, benchmarks, and browser support matrix |
+| 1 | Capability and UX | ✅ Complete: shell entry, runtime labels, cached pre-reconnect browsing, snapshot identity, busy interstitial, disabled-route explanations, and destructive delete contract |
+| 2 | Storage and runtime | ✅ Complete: opaque identity, generation publication, shared schema/migrations, manifest refresh, bounded errors, cancellation, and versioned worker RPC |
+| 3 | Embedding and delivery | ✅ Complete: persisted secret-free profile, memory-only credentials, redacted failures, no-consent audit, CSP/WASM hosting, and fail-closed package assets |
+| 4 | Performance and parity | ✅ Complete: semantic fixture projection, disclosed self-repo benchmark, 20-sample user-observed p95 reads, responsiveness evidence, and Chromium/Firefox/WebKit matrix |
+
+Session 1 executor: `clarify-executor`. Five parent-owned recommended answers
+were applied as FR-031 through FR-036 and recorded in `spec.md` Clarifications.
+Unresolved for consensus: none; consensus companion completed without analyst
+dispatch.
+
+Session 2 executor: `clarify-executor`. Five parent-owned recommended answers
+were applied as FR-037 through FR-041 and recorded in `spec.md` Clarifications.
+Unresolved for consensus: none; consensus companion completed without analyst
+dispatch.
+
+Session 3 executor: `clarify-executor`. Five parent-owned recommended answers
+were applied as FR-042 through FR-046 and recorded in `spec.md` Clarifications.
+The credential-persistence item followed the mandatory security route. All
+three analysts agreed, and the existing human-ratified Q14/Q15 decision selected
+the same memory-only credential boundary, satisfying the human-review
+requirement without reopening the settled product choice.
+
+### Consensus Resolution Log
+
+| # | Type | Question/Gap/Finding | Categories | Round | Outcome | Resolution | Analysts Used |
+|---|---|---|---|---|---|---|---|
+| 1 | Clarify | Which semantic settings may persist while bearer keys stay memory-only? | [security] | 1 | [HUMAN REVIEW] satisfied by prior ratification | Persist only a secret-free repository profile, vectors, and resumable metadata; require credential re-entry for endpoint traffic after reload. Q14/Q15 already record the user's explicit choice. | codebase-analyst, spec-context-analyst, domain-researcher |
+
+Session 4 executor: `clarify-executor`. Five parent-owned recommended answers
+were applied as FR-047 through FR-049 plus SC-008/SC-009 refinements and
+recorded in `spec.md` Clarifications. Unresolved for consensus: none; consensus
+companion completed without analyst dispatch. G2 passed with zero
+`[NEEDS CLARIFICATION]` or `HUMAN REVIEW NEEDED` markers.
 
 ---
 

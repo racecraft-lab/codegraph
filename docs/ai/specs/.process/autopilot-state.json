@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Phase 2: Clarify — Browser Capability and UX Contracts",
-  "updated_at": "2026-07-28T04:35:00Z",
+  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-28T05:19:00Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -137,8 +137,119 @@
       }
     },
     "clarify": {
-      "status": "pending",
-      "sessions": {}
+      "status": "completed",
+      "sessions": {
+        "browser_capability_and_ux_contracts": {
+          "status": "completed",
+          "agent": "clarify-executor",
+          "questions_answered": 5,
+          "decisions_applied": [
+            "existing repository shell owns the explicit Open local folder entry and runtime labels",
+            "last-good index and cached accepted source remain browseable before explicit reconnect",
+            "each completed directory drop creates a distinct fingerprinted snapshot repository",
+            "lock contention shows a pre-storage busy interstitial with Retry and Switch repository",
+            "core local routes remain enabled, server-only routes explain unavailability, and delete requires name confirmation"
+          ],
+          "requirements_added": [
+            "FR-031",
+            "FR-032",
+            "FR-033",
+            "FR-034",
+            "FR-035",
+            "FR-036"
+          ],
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        },
+        "storage_integrity_and_runtime_contracts": {
+          "status": "completed",
+          "agent": "clarify-executor",
+          "questions_answered": 5,
+          "decisions_applied": [
+            "browser repositories use opaque origin-scoped ids with handles and fingerprints as metadata",
+            "one complete repository generation publishes graph, source cache, manifest, status, and last-success pointer",
+            "browser graph storage follows the canonical Node schema and shared migration stream",
+            "manual refresh diffs relative paths and hashes, publishes atomically, and bounds recoverable file warnings",
+            "worker RPC uses versioned structured-clone-safe envelopes with exactly one terminal state"
+          ],
+          "requirements_added": [
+            "FR-037",
+            "FR-038",
+            "FR-039",
+            "FR-040",
+            "FR-041"
+          ],
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        },
+        "embedding_security_and_delivery": {
+          "status": "completed",
+          "agent": "clarify-executor",
+          "questions_answered": 5,
+          "decisions_applied": [
+            "persist only secret-free embedding profiles, stored vectors, and resumable semantic metadata while credentials remain memory-only",
+            "semantic transport and provider failures use stable redacted codes with no insecure escape",
+            "no-consent audits allow only enumerated same-origin shipped assets",
+            "supported hosts permit required same-origin workers and WebAssembly without a COOP/COEP dependency",
+            "required local-indexing assets ship and verify fail-closed with no CDN fallback"
+          ],
+          "requirements_added": [
+            "FR-042",
+            "FR-043",
+            "FR-044",
+            "FR-045",
+            "FR-046"
+          ],
+          "unresolved_for_consensus": 1,
+          "consensus": {
+            "item": "Which semantic settings may persist while bearer keys stay memory-only?",
+            "categories": [
+              "security"
+            ],
+            "round": 1,
+            "outcome": "human-review-satisfied-by-prior-ratification",
+            "agreement": "3/3",
+            "confidence": "high",
+            "analysts": [
+              "codebase-analyst",
+              "spec-context-analyst",
+              "domain-researcher"
+            ],
+            "human_decision_source": "SPEC-007 design concept Q14 and Q15",
+            "resolution": "Persist only secret-free profile/vector/resume state and require bearer-key re-entry for post-reload endpoint traffic."
+          }
+        },
+        "performance_and_cross_runtime_parity": {
+          "status": "completed",
+          "agent": "clarify-executor",
+          "questions_answered": 5,
+          "decisions_applied": [
+            "cross-runtime parity compares accepted manifests, language maps, semantic projections, warning codes, lazy grammar manifests, and repeat counts",
+            "self-repo index evidence discloses hardware, software, graph scale, storage state, timing, and run count",
+            "local read p95 uses deterministic search/graph/impact suites with at least 20 user-observed samples after warmup",
+            "index responsiveness records heartbeat gaps, supported long-task evidence, and actionable controls",
+            "Chromium validates the full path while Firefox and WebKit validate precise independent capability degradation"
+          ],
+          "requirements_added": [
+            "FR-047",
+            "FR-048",
+            "FR-049"
+          ],
+          "success_criteria_refined": [
+            "SC-008",
+            "SC-009"
+          ],
+          "unresolved_for_consensus": 0,
+          "consensus_status": "completed_no_unresolved_items"
+        }
+      },
+      "functional_requirements_after_clarify": 49,
+      "clarification_sessions": 4,
+      "gate": {
+        "id": "G2",
+        "status": "passed",
+        "reason": "zero clarification and human-review-needed markers"
+      }
     },
     "plan": {
       "status": "pending"
@@ -176,39 +287,39 @@
     },
     {
       "step": "Phase 2: Clarify — Browser Capability and UX Contracts",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify — Consensus — Browser Capability and UX Contracts",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify — Storage, Integrity, and Runtime Contracts",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify — Consensus — Storage, Integrity, and Runtime Contracts",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify — Embedding, Security, and Delivery",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify — Consensus — Embedding, Security, and Delivery",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify — Performance and Cross-Runtime Parity",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify — Consensus — Performance and Cross-Runtime Parity",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 3: Plan",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 4: Checklist — UX",
@@ -336,9 +447,9 @@
     "retrospective": "pending"
   },
   "resume": {
-    "last_completed": "Phase 1: Specify",
-    "current": "Phase 2: Clarify — Browser Capability and UX Contracts",
-    "next": "Phase 2: Clarify — Consensus — Browser Capability and UX Contracts",
-    "required_action": "Dispatch clarify-executor for session 1, apply parent-owned answers, and process any category-routed consensus items."
+    "last_completed": "Phase 2: Clarify — Consensus — Performance and Cross-Runtime Parity",
+    "current": "Phase 3: Plan",
+    "next": "Phase 4: Checklist — UX",
+    "required_action": "Checkpoint Clarify, then dispatch phase-executor for Plan and validate G3."
   }
 }
