@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
-  "updated_at": "2026-07-28T08:52:52Z",
+  "active_step": "Phase 7: Implement — Slice 3 Degradation, Semantic Opt-In, and Shipping (T025–T038)",
+  "updated_at": "2026-07-28T11:04:53Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -565,9 +565,9 @@
     "implement": {
       "status": "in_progress",
       "task_decomposition": "38 task-level TDD units in 3 vertical slices",
-      "current_slice": "Slice 2 Local Repository Shell and Lifecycle",
-      "current_task_range": "T013-T024",
-      "current_task": "T013",
+      "current_slice": "Slice 3 Degradation, Semantic Opt-In, and Shipping",
+      "current_task_range": "T025-T038",
+      "current_task": "T025",
       "completed_tasks": [
         "T001",
         "T002",
@@ -580,7 +580,19 @@
         "T009",
         "T010",
         "T011",
-        "T012"
+        "T012",
+        "T013",
+        "T014",
+        "T015",
+        "T016",
+        "T017",
+        "T018",
+        "T019",
+        "T020",
+        "T021",
+        "T022",
+        "T023",
+        "T024"
       ],
       "executor_binding": {
         "status": "parent_fallback_required",
@@ -753,6 +765,175 @@
           "Chromium package, real SQLite-Wasm recovery, and full folder journey 3/3 passed",
           "git diff --check passed"
         ]
+      },
+      "T013": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Remote relationship requests dropped paging, local requests forwarded over-cap values, the real worker did not expose relationship/graph storage queries, and the first callee plan selected the broader edge identity index.",
+        "green": "Shared request normalization mirrors REST page/depth limits; published-generation relationship reads de-duplicate nodes and force target/source-kind indexes; bounded breadth graph expansion caps at 2,000 nodes and 10,000 inspected edges with honest truncation.",
+        "verification": [
+          "focused client, worker, and local-route tests 17/17 passed",
+          "web typecheck passed",
+          "real Chromium SQLite relationship paging, graph caps, and unpublished-generation isolation passed 1/1",
+          "EXPLAIN QUERY PLAN captured idx_edges_target_kind, idx_edges_source_kind, and MULTI-INDEX OR graph evidence",
+          "git diff --check passed"
+        ]
+      },
+      "T014": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Focused UI assertions failed because progress ignored reduced motion and local Re-analyze/Chat actions remained enabled without honest trust-boundary explanations.",
+        "green": "Local keyword search stays enabled; local refresh and chat are disabled with visible aria-describedby guidance; server actions remain unchanged; keyboard/focus, live-region, reduced-motion, wrapping, and runtime-label behavior are explicit.",
+        "verification": [
+          "focused local and app shell tests 8/8 passed",
+          "web typecheck passed",
+          "real Chromium full local journey and 320-CSS-pixel no-overflow probe passed 1/1",
+          "git diff --check passed"
+        ]
+      },
+      "T015": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "The real SQLite-Wasm worker exposed no impact query-plan evidence or distinct storage impact request, and production routed impact through the undirected graph query.",
+        "green": "Published-generation impact follows bounded incoming non-containment dependencies, expands contained members at the same semantic depth, preserves GraphResult response parity, and exposes affected files through node file fields plus dependency-edge explanations.",
+        "verification": [
+          "focused shared repository-client tests 4/4 passed",
+          "web typecheck passed",
+          "real Chromium SQLite impact semantics, 2,000-node and 10,000-edge budgets, affected-file projection, query-plan capture, and unpublished-generation isolation passed 1/1",
+          "EXPLAIN QUERY PLAN captured idx_edges_target_kind for impact",
+          "git diff --check passed"
+        ]
+      },
+      "T016": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "The deterministic full journey had no warmup-plus-20 action-to-render gate and failed its intended end-to-end query-plan assertion because no plan evidence was captured.",
+        "green": "The Chromium journey performs one warmup and 20 user-observed samples each for search, graph, and impact, enforces p95 at or below 150 ms, and attaches all samples plus real SQLite query plans as JSON evidence.",
+        "verification": [
+          "web typecheck passed",
+          "real Chromium cancellation, index, search, source, reload, performance, query-plan, privacy, and 320-CSS-pixel journey passed 1/1",
+          "20 measured samples per operation after one warmup",
+          "p95 search 114.3 ms, graph 101.3 ms, impact 103.2 ms",
+          "graph plan captured MULTI-INDEX OR and impact plan captured idx_edges_target_kind",
+          "spec007-local-read-latency.json attached by Playwright",
+          "git diff --check passed"
+        ]
+      },
+      "T017": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Three focused cases failed because the source-handle registry and client connection state did not exist, restore could not represent stale/prompt/denied/granted handles, and refresh was not reconnect-gated.",
+        "green": "Origin-scoped IndexedDB persists opaque saved-handle identity and the browser capability handle; restore never prompts, explicit activation owns permission requests and same-entry validation, cached reads stay available, and only a live granted handle enables refresh.",
+        "verification": [
+          "focused source, local-client, and local-shell suites 23/23 passed",
+          "granted, prompt, denied, stale, mismatch, host-path rejection, cached-read, and refresh-gate cases passed",
+          "web typecheck passed",
+          "real Chromium cached reload, privacy, latency, and responsive journey passed 1/1",
+          "git diff --check passed"
+        ]
+      },
+      "T018": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "The manifest test had no deterministic diff implementation and the real SQLite-Wasm worker rejected storage-refresh; refresh requests carried no live source collection or exact result accounting.",
+        "green": "Refresh diffs path/content hashes, extracts only added/changed candidates, retains unchanged source/graph rows, removes deleted rows, caps skipped warnings, rebuilds the accepted manifest, and atomically publishes matching generation/count metadata.",
+        "verification": [
+          "focused worker and local-client suites 18/18 passed",
+          "web typecheck passed",
+          "real SQLite-Wasm added/changed/deleted/unchanged/skipped refresh fixture passed 1/1",
+          "generation 2 and exact files 3, nodes 6, edges 3, warnings 1 metadata matched persisted rows",
+          "initial-index, cached reload, privacy, latency, and responsive Chromium regression passed 1/1",
+          "git diff --check passed"
+        ]
+      },
+      "T019": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "The first real recovery injection published generation 2 because storage had no independent transactional fault boundary after source staging.",
+        "green": "Transactional failure points after source staging, graph write, status update, publication pointer update, and failed-generation cleanup now preserve the prior published generation; quota and migration retain stable failure codes; next-open crash recovery marks and removes stale staging.",
+        "verification": [
+          "real SQLite-Wasm source-stage, graph-write, status-update, registry-publish, quota, migration, cleanup, and crash recovery matrix passed 1/1",
+          "generation 1 remained readable and eight later candidate generations were failed after reopen",
+          "focused cancellation, duplicate/stale operation, stale client response, source, and local-client regressions 18/18 passed",
+          "web typecheck passed",
+          "git diff --check passed"
+        ]
+      },
+      "T020": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "The client terminated without a close handshake, busy repositories exposed no Retry/Switch recovery and left local reads enabled, and the production worker rejected acquire as invalid_worker_request.",
+        "green": "A named exclusive Web Lock is acquired per opaque repository id before SQLite/OPFS opens; contention emits repository_busy; busy UI disables local actions and provides Retry/Switch; close shuts DB/VFS before releasing ownership and acknowledging the client.",
+        "verification": [
+          "focused local-client and local-shell suites 12/12 passed",
+          "web production build passed",
+          "real Chromium multi-page lock suite 2/2 passed",
+          "second tab excluded until deterministic close and then acquired on retry",
+          "abrupt owning-worker termination released stale browser ownership for next-open recovery",
+          "T019 interrupted-generation recovery remains covered",
+          "git diff --check passed"
+        ]
+      },
+      "T021": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "No passive storage-status or explicit persistence APIs existed, and local UI lacked usage/quota, persistence, last-good recovery, and non-eviction guidance.",
+        "green": "Passive estimate and persisted inspection never calls persist; a direct-action button owns the advisory persistence request; supported, denied, unknown, and unsupported states are honest; quota guidance preserves the prior complete index and rejects automatic eviction.",
+        "verification": [
+          "focused local-client and local-shell suites 15/15 passed",
+          "web typecheck passed",
+          "real SQLite-Wasm storage and recovery suite 1/1 passed including quota rollback",
+          "git diff --check passed"
+        ]
+      },
+      "T022": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Client deletion ignored active-operation intent and no destructive confirmation UI enforced exact name, runtime/data classes, source-folder safety, or cancellation choice.",
+        "green": "Exact-name confirmation and explicit cancel-and-delete are required; worker deletes graph/source-cache/vector generation databases and registry rows, closes DB/VFS, releases ownership, and client removes saved-handle/local registration without source writes.",
+        "verification": [
+          "focused local-client and local-shell suites 17/17 passed",
+          "source handle write method remained unused",
+          "web typecheck and production build passed",
+          "real SQLite-Wasm suite 1/1 proved repository publication and all generation statuses absent after delete",
+          "git diff --check passed"
+        ]
+      },
+      "T023": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Controlled refresh exposed a live picker connection overwritten by stale restore; deletion exposed an unintended remote repository discovery request.",
+        "green": "The Chromium journey now cancels, indexes, browses, refreshes one controlled content-hash change with exact counts, reloads the refreshed generation, measures local reads, deletes with exact-name confirmation, preserves source bytes, and emits zero forbidden requests.",
+        "verification": [
+          "full Chromium lifecycle 1/1 passed in 14.1 seconds",
+          "refresh counts added 0 changed 1 deleted 0 unchanged 0 skipped 0 and four-symbol generation survived reload",
+          "20 samples each p95 search 110.8 ms graph 105.5 ms impact 104.4 ms",
+          "multi-tab lock and real SQLite-Wasm recovery suites 3/3 passed",
+          "web production build and typecheck passed",
+          "320 CSS pixel overflow check and zero forbidden request audit passed",
+          "git diff --check passed"
+        ]
+      },
+      "T024": {
+        "status": "completed_with_reviewability_warning",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Slice 2 measured 18 files and +4231/-161 overall, including ten production web files at +2343/-139; the first chained full-suite attempt leaked from Node 24 into unsupported Node 26 after the first command.",
+        "green": "The slice remains confined to the accepted repository-client, local-indexing, repository-shell, lifecycle-test, and durable-record surfaces with no fourth capability class; exporting Node 24.11.1 for the full shell restored a clean regression gate.",
+        "reviewability": {
+          "all": "18 files, +4231/-161",
+          "production": "10 web files, +2343/-139",
+          "status": "warning_retained_for_final_backstop",
+          "undeclared_capability_surfaces": 0
+        },
+        "verification": [
+          "root build and typecheck passed",
+          "root Vitest 262 files and 4670 tests passed with 181 expected skips",
+          "web lint completed with 0 errors and 15 warnings",
+          "web Vitest 25 files and 156 tests passed",
+          "Chromium packaged assets, locks, storage, and complete lifecycle journeys 5/5 passed",
+          "20-sample p95 search 115.0 ms graph 102.9 ms impact 100.6 ms",
+          "git diff --check passed"
+        ]
       }
       }
     }
@@ -860,11 +1041,11 @@
     },
     {
       "step": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement — Slice 3 Degradation, Semantic Opt-In, and Shipping (T025–T038)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Doctor Extension Check",
@@ -940,9 +1121,9 @@
     "retrospective": "pending"
   },
   "resume": {
-    "last_completed": "Phase 7 T012 and Slice 1 checkpoint",
-    "current": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
-    "next": "T013 relationships and graph query parity",
-    "required_action": "Continue with T013 using strict RED-GREEN-REFACTOR evidence for local relationships, graph, and bounded impact parity; dispatch and consume the implement-executor first, then use the recorded parent fallback from this exact worktree if the child writable-root blocker recurs."
+    "last_completed": "Phase 7 T024",
+    "current": "Phase 7: Implement — Slice 3 Degradation, Semantic Opt-In, and Shipping (T025–T038)",
+    "next": "T025 runtime capability probes and degradation result model",
+    "required_action": "Continue with T025 by dispatching and consuming the implement-executor, then implement live picker, drop, OPFS, locks, worker, WASM, persistence, CSP, and secure-context capability probes with stable full, snapshot-only, and unsupported guidance using strict RED-GREEN-REFACTOR."
   }
 }

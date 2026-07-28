@@ -3,6 +3,7 @@ import type { Database, SAHPoolUtil } from "@sqlite.org/sqlite-wasm"
 import canonicalSchemaSource from "../../../src/db/schema.sql?raw"
 import { SHARED_SCHEMA_VERSION } from "../../../src/db/schema-version"
 import type { Edge, Node } from "../../../src/types"
+import type { SourceManifest } from "./source"
 import type {
   CodeEdge,
   CodeNode,
@@ -12,13 +13,27 @@ import type {
   RepositoryStatus,
   SearchResult,
 } from "../lib/api/types"
-import type { SourceResult } from "../lib/repository-client"
+import {
+  normalizeDepthRequest,
+  normalizeRelationshipRequest,
+  REPOSITORY_QUERY_LIMITS,
+  type SourceResult,
+} from "../lib/repository-client"
 
 export const BROWSER_SCHEMA_VERSION = SHARED_SCHEMA_VERSION
 
 const REGISTRY_DATABASE = "/codegraph/browser/registry.sqlite3"
 const OPAQUE_REPOSITORY_ID = /^[A-Za-z0-9_-]+$/
 const MINIMUM_POOL_CAPACITY = 16
+const IMPACT_CONTAINER_KINDS = new Set([
+  "class",
+  "interface",
+  "struct",
+  "trait",
+  "protocol",
+  "module",
+  "enum",
+])
 
 const canonicalSchema = canonicalSchemaSource.replace(
   "INSERT INTO schema_versions (version, applied_at, description)",
@@ -47,8 +62,13 @@ export interface BrowserGenerationInput {
 
 export type BrowserStorageFaultPoint =
   | "after-registry-stage"
+  | "after-source-staging"
+  | "after-graph-write"
   | "after-generation-write"
   | "before-publication"
+  | "after-status-update"
+  | "after-registry-publish"
+  | "after-delete-cleanup"
 
 export interface BrowserGraphStoreOptions {
   poolName?: string
@@ -69,6 +89,27 @@ export interface CurrentBrowserGeneration {
   manifestFingerprint: string
   nodeNames: string[]
   sourceText: string | null
+  sourcePaths: string[]
+  edgeCount: number
+  manifest: unknown
+  counts: Record<string, number>
+  warnings: unknown[]
+}
+
+export interface BrowserRefreshBase {
+  repositoryId: string
+  generation: number
+  manifest: SourceManifest
+  sources: BrowserGenerationSource[]
+  nodes: Node[]
+  edges: Edge[]
+}
+
+export interface BrowserQueryPlanEvidence {
+  callers: string[]
+  callees: string[]
+  graph: string[]
+  impact: string[]
 }
 
 export class BrowserStorageError extends Error {
@@ -76,6 +117,7 @@ export class BrowserStorageError extends Error {
     | "invalid_repository_id"
     | "invalid_generation"
     | "quota_exceeded"
+    | "repository_busy"
     | "storage_write_failed"
     | "store_closed"
     | "schema_version_mismatch"
@@ -134,6 +176,56 @@ function codeEdge(row: Record<string, unknown>): CodeEdge {
     ...(row.provenance == null
       ? {}
       : { provenance: String(row.provenance) }),
+  }
+}
+
+function storedNode(row: Record<string, unknown>): Node {
+  const parseArray = (value: unknown) =>
+    value == null ? undefined : JSON.parse(String(value)) as string[]
+  return {
+    id: String(row.id),
+    kind: String(row.kind) as Node["kind"],
+    name: String(row.name),
+    qualifiedName: String(row.qualified_name),
+    filePath: String(row.file_path),
+    language: String(row.language) as Node["language"],
+    startLine: Number(row.start_line),
+    endLine: Number(row.end_line),
+    startColumn: Number(row.start_column),
+    endColumn: Number(row.end_column),
+    ...(row.docstring == null ? {} : { docstring: String(row.docstring) }),
+    ...(row.signature == null ? {} : { signature: String(row.signature) }),
+    ...(row.visibility == null
+      ? {}
+      : { visibility: String(row.visibility) as Node["visibility"] }),
+    isExported: Boolean(row.is_exported),
+    isAsync: Boolean(row.is_async),
+    isStatic: Boolean(row.is_static),
+    isAbstract: Boolean(row.is_abstract),
+    ...(row.decorators == null
+      ? {}
+      : { decorators: parseArray(row.decorators) }),
+    ...(row.type_parameters == null
+      ? {}
+      : { typeParameters: parseArray(row.type_parameters) }),
+    ...(row.return_type == null ? {} : { returnType: String(row.return_type) }),
+    updatedAt: Number(row.updated_at),
+  }
+}
+
+function storedEdge(row: Record<string, unknown>): Edge {
+  return {
+    source: String(row.source),
+    target: String(row.target),
+    kind: String(row.kind) as Edge["kind"],
+    ...(row.metadata == null
+      ? {}
+      : { metadata: JSON.parse(String(row.metadata)) as Record<string, unknown> }),
+    ...(row.line == null ? {} : { line: Number(row.line) }),
+    ...(row.col == null ? {} : { column: Number(row.col) }),
+    ...(row.provenance == null
+      ? {}
+      : { provenance: String(row.provenance) as Edge["provenance"] }),
   }
 }
 
@@ -282,6 +374,7 @@ export class BrowserGraphStore {
             ],
           )
         }
+        this.faultInjector?.("after-source-staging")
         for (const node of input.nodes) {
           run(
             db,
@@ -332,6 +425,7 @@ export class BrowserGraphStore {
             ],
           )
         }
+        this.faultInjector?.("after-graph-write")
         run(
           db,
           `INSERT INTO index_generations(
@@ -371,6 +465,11 @@ export class BrowserGraphStore {
       const failure = storageFailure(error)
       this.markGenerationFailed(staged, failure)
       this.pool.unlink(staged.databasePath)
+      try {
+        this.faultInjector?.("after-delete-cleanup")
+      } catch (cleanupError) {
+        throw storageFailure(cleanupError)
+      }
       throw failure
     }
   }
@@ -397,6 +496,7 @@ export class BrowserGraphStore {
              WHERE repository_id = ? AND generation = ? AND status = 'building'`,
             [Date.now(), input.repositoryId, staged.generation],
           )
+          this.faultInjector?.("after-status-update")
           run(
             db,
             `INSERT INTO index_publications(
@@ -415,6 +515,7 @@ export class BrowserGraphStore {
               Date.now(),
             ],
           )
+          this.faultInjector?.("after-registry-publish")
         })
       })
       return { repositoryId: input.repositoryId, generation: staged.generation }
@@ -422,6 +523,11 @@ export class BrowserGraphStore {
       const failure = storageFailure(error)
       this.markGenerationFailed(staged, failure)
       this.pool.unlink(staged.databasePath)
+      try {
+        this.faultInjector?.("after-delete-cleanup")
+      } catch (cleanupError) {
+        throw storageFailure(cleanupError)
+      }
       throw failure
     }
   }
@@ -489,7 +595,8 @@ export class BrowserGraphStore {
   readCurrent(repositoryId: string): CurrentBrowserGeneration | null {
     const publication = this.withDatabase(REGISTRY_DATABASE, (db) =>
       db.selectObject(
-        `SELECT p.current_generation, g.schema_version, g.manifest_fingerprint
+        `SELECT p.current_generation, g.schema_version, g.manifest_fingerprint,
+                g.manifest_json, g.counts_json, g.warnings_json
          FROM index_publications p
          JOIN index_generations g
            ON g.repository_id = p.repository_id
@@ -509,6 +616,16 @@ export class BrowserGraphStore {
       sourceText: (db.selectValue("SELECT text FROM source_cache ORDER BY path LIMIT 1") as
         | string
         | undefined) ?? null,
+      sourcePaths: db
+        .selectValues("SELECT path FROM source_cache ORDER BY path")
+        .map(String),
+      edgeCount: Number(db.selectValue("SELECT COUNT(*) FROM edges") ?? 0),
+      manifest: JSON.parse(String(publication.manifest_json ?? "[]")) as unknown,
+      counts: JSON.parse(String(publication.counts_json ?? "{}")) as Record<
+        string,
+        number
+      >,
+      warnings: JSON.parse(String(publication.warnings_json ?? "[]")) as unknown[],
     }))
   }
 
@@ -516,7 +633,7 @@ export class BrowserGraphStore {
     const publication = this.withDatabase(REGISTRY_DATABASE, (db) =>
       db.selectObject(
         `SELECT p.current_generation, p.status, g.manifest_fingerprint,
-                g.counts_json, g.warnings_json, g.published_at
+                g.manifest_json, g.counts_json, g.warnings_json, g.published_at
          FROM index_publications p
          JOIN index_generations g
            ON g.repository_id = p.repository_id
@@ -532,6 +649,7 @@ export class BrowserGraphStore {
       databasePath: generationDatabasePath(repositoryId, generation),
       status: String(publication.status),
       manifestFingerprint: String(publication.manifest_fingerprint),
+      manifest: JSON.parse(String(publication.manifest_json ?? "[]")) as unknown,
       counts: JSON.parse(String(publication.counts_json ?? "{}")) as Record<
         string,
         number
@@ -542,6 +660,45 @@ export class BrowserGraphStore {
           ? null
           : Number(publication.published_at),
     }
+  }
+
+  readRefreshBase(repositoryId: string): BrowserRefreshBase {
+    const current = this.currentGeneration(repositoryId)
+    if (!current) {
+      throw new BrowserStorageError(
+        "invalid_generation",
+        "The browser-local repository has no published refresh base.",
+      )
+    }
+    return this.withDatabase(current.databasePath, (db) => ({
+      repositoryId,
+      generation: current.generation,
+      manifest: current.manifest as SourceManifest,
+      sources: db
+        .selectObjects(
+          `SELECT path, content_hash, language, size_bytes, mtime_hint, text
+           FROM source_cache
+           WHERE repository_id = ? AND generation = ?
+           ORDER BY path`,
+          [repositoryId, current.generation],
+        )
+        .map((row) => ({
+          path: String(row.path),
+          contentHash: String(row.content_hash),
+          language: String(row.language),
+          size: Number(row.size_bytes),
+          text: String(row.text),
+          ...(row.mtime_hint == null
+            ? {}
+            : { mtimeHint: Number(row.mtime_hint) }),
+        })),
+      nodes: db
+        .selectObjects("SELECT * FROM nodes ORDER BY id")
+        .map(storedNode),
+      edges: db
+        .selectObjects("SELECT * FROM edges ORDER BY source, target, kind, id")
+        .map(storedEdge),
+    }))
   }
 
   listRepositories(
@@ -682,65 +839,369 @@ export class BrowserGraphStore {
     repositoryId: string,
     nodeId: string,
     direction: "callers" | "callees",
-    limit = 100,
-    offset = 0,
+    limit?: number,
+    offset?: number,
   ): ListResult<CodeNode> {
+    const page = normalizeRelationshipRequest({ limit, offset })
     const current = this.currentGeneration(repositoryId)
-    if (!current) return { items: [], total: 0, limit, offset }
+    if (!current) {
+      return {
+        items: [],
+        total: 0,
+        limit: page.limit,
+        offset: page.offset,
+      }
+    }
     const joinColumn = direction === "callers" ? "source" : "target"
     const matchColumn = direction === "callers" ? "target" : "source"
+    const edgeIndex =
+      direction === "callers"
+        ? "idx_edges_target_kind"
+        : "idx_edges_source_kind"
     return this.withDatabase(current.databasePath, (db) => {
       const total = Number(
         db.selectValue(
-          `SELECT COUNT(*) FROM edges WHERE kind = 'calls' AND ${matchColumn} = ?`,
+          `SELECT COUNT(DISTINCT ${joinColumn})
+           FROM edges INDEXED BY ${edgeIndex}
+           WHERE kind = 'calls' AND ${matchColumn} = ?`,
           [nodeId],
         ) ?? 0,
       )
       const items = db
         .selectObjects(
-          `SELECT n.id, n.kind, n.name, n.file_path, n.start_line,
-                  n.signature, n.docstring
-           FROM edges e
+          `SELECT DISTINCT n.id, n.kind, n.name, n.file_path, n.start_line,
+                           n.signature, n.docstring
+           FROM edges e INDEXED BY ${edgeIndex}
            JOIN nodes n ON n.id = e.${joinColumn}
            WHERE e.kind = 'calls' AND e.${matchColumn} = ?
            ORDER BY n.name, n.id
            LIMIT ? OFFSET ?`,
-          [nodeId, limit, offset],
+          [nodeId, page.limit, page.offset],
         )
         .map(codeNode)
-      return { items, total, limit, offset }
+      return {
+        items,
+        total,
+        limit: page.limit,
+        offset: page.offset,
+      }
     })
   }
 
-  graph(repositoryId: string, nodeId: string): GraphResult {
+  graph(repositoryId: string, nodeId: string, depth?: number): GraphResult {
+    const graphDepth = normalizeDepthRequest({ depth }).depth
     const current = this.currentGeneration(repositoryId)
     if (!current) return { nodes: [], edges: [], truncated: false }
     return this.withDatabase(current.databasePath, (db) => {
-      const edgeRows = db.selectObjects(
-        `SELECT source, target, kind, provenance
-         FROM edges WHERE source = ? OR target = ?
-         ORDER BY source, target, kind`,
-        [nodeId, nodeId],
+      const focal = db.selectObject(
+        `SELECT id, kind, name, file_path, start_line, signature, docstring
+         FROM nodes
+         WHERE id = ?`,
+        [nodeId],
       )
-      const ids = new Set<string>([nodeId])
-      for (const edge of edgeRows) {
-        ids.add(String(edge.source))
-        ids.add(String(edge.target))
-      }
-      const nodes = [...ids]
-        .map((id) =>
-          db.selectObject(
-            `SELECT id, kind, name, file_path, start_line, signature, docstring
-             FROM nodes WHERE id = ?`,
-            [id],
-          ),
+      if (!focal) {
+        throw new BrowserStorageError(
+          "invalid_generation",
+          "The requested browser-local graph root is unavailable.",
         )
-        .filter((row) => row !== undefined)
+      }
+
+      const visited = new Set<string>([nodeId])
+      let frontier = [nodeId]
+      const edgeRows: Array<Record<string, unknown>> = []
+      const seenEdges = new Set<string>()
+      let inspectedCandidates = 0
+      let truncated = false
+
+      for (
+        let currentDepth = 0;
+        currentDepth < graphDepth && frontier.length > 0;
+        currentDepth += 1
+      ) {
+        const remainingCandidates =
+          REPOSITORY_QUERY_LIMITS.maxGraphEdges - inspectedCandidates
+        if (remainingCandidates <= 0) {
+          truncated = true
+          break
+        }
+        const placeholders = frontier.map(() => "?").join(", ")
+        const candidates = db.selectObjects(
+          `SELECT source, target, kind, provenance
+           FROM edges
+           WHERE source IN (${placeholders})
+              OR target IN (${placeholders})
+           ORDER BY source, target, kind
+           LIMIT ?`,
+          [
+            ...frontier,
+            ...frontier,
+            remainingCandidates + 1,
+          ],
+        )
+        if (candidates.length > remainingCandidates) truncated = true
+        const next = new Set<string>()
+        for (const row of candidates.slice(0, remainingCandidates)) {
+          inspectedCandidates += 1
+          const source = String(row.source)
+          const target = String(row.target)
+          const edgeId = `${source}\u0000${target}\u0000${String(row.kind)}`
+          let keepEdge = true
+          for (const candidateId of [source, target]) {
+            if (visited.has(candidateId)) continue
+            if (visited.size >= REPOSITORY_QUERY_LIMITS.maxGraphNodes) {
+              truncated = true
+              keepEdge = false
+              continue
+            }
+            visited.add(candidateId)
+            next.add(candidateId)
+          }
+          if (keepEdge && !seenEdges.has(edgeId)) {
+            seenEdges.add(edgeId)
+            edgeRows.push(row)
+          }
+        }
+        frontier = [...next].sort()
+        if (
+          visited.size >= REPOSITORY_QUERY_LIMITS.maxGraphNodes ||
+          inspectedCandidates >= REPOSITORY_QUERY_LIMITS.maxGraphEdges
+        ) {
+          if (frontier.length > 0 || candidates.length > remainingCandidates) {
+            truncated = true
+          }
+          break
+        }
+      }
+
+      const ids = [...visited].sort()
+      const placeholders = ids.map(() => "?").join(", ")
+      const nodes = db
+        .selectObjects(
+          `SELECT id, kind, name, file_path, start_line, signature, docstring
+           FROM nodes
+           WHERE id IN (${placeholders})
+           ORDER BY id`,
+          ids,
+        )
         .map(codeNode)
       return {
         nodes,
         edges: edgeRows.map(codeEdge),
-        truncated: false,
+        truncated,
+      }
+    })
+  }
+
+  impact(repositoryId: string, nodeId: string, depth?: number): GraphResult {
+    const impactDepth = normalizeDepthRequest(
+      { depth },
+      REPOSITORY_QUERY_LIMITS.defaultImpactDepth,
+    ).depth
+    const current = this.currentGeneration(repositoryId)
+    if (!current) return { nodes: [], edges: [], truncated: false }
+    return this.withDatabase(current.databasePath, (db) => {
+      const focal = db.selectObject(
+        `SELECT id, kind, name, file_path, start_line, signature, docstring
+         FROM nodes
+         WHERE id = ?`,
+        [nodeId],
+      )
+      if (!focal) {
+        throw new BrowserStorageError(
+          "invalid_generation",
+          "The requested browser-local impact root is unavailable.",
+        )
+      }
+
+      const visited = new Set<string>([nodeId])
+      const nodeRows = new Map<string, Record<string, unknown>>([
+        [nodeId, focal],
+      ])
+      const seenEdges = new Set<string>()
+      const edgeRows: Array<Record<string, unknown>> = []
+      let frontier = [nodeId]
+      let inspectedCandidates = 0
+      let truncated = false
+
+      const remainingEdgeBudget = () =>
+        REPOSITORY_QUERY_LIMITS.maxGraphEdges - inspectedCandidates
+      const recordCandidates = (
+        candidates: Array<Record<string, unknown>>,
+        adjacentColumn: "source" | "target",
+        next: Set<string>,
+      ) => {
+        const remaining = remainingEdgeBudget()
+        if (candidates.length > remaining) truncated = true
+        for (const row of candidates.slice(0, remaining)) {
+          inspectedCandidates += 1
+          const source = String(row.source)
+          const target = String(row.target)
+          const adjacentId = String(row[adjacentColumn])
+          const edgeId = `${source}\u0000${target}\u0000${String(row.kind)}`
+          if (!visited.has(adjacentId)) {
+            if (visited.size >= REPOSITORY_QUERY_LIMITS.maxGraphNodes) {
+              truncated = true
+              continue
+            }
+            visited.add(adjacentId)
+            nodeRows.set(adjacentId, {
+              id: adjacentId,
+              kind: row.adjacent_kind,
+              name: row.name,
+              file_path: row.file_path,
+              start_line: row.start_line,
+              signature: row.signature,
+              docstring: row.docstring,
+            })
+            next.add(adjacentId)
+          }
+          if (!seenEdges.has(edgeId)) {
+            seenEdges.add(edgeId)
+            edgeRows.push(row)
+          }
+        }
+      }
+
+      for (
+        let currentDepth = 0;
+        currentDepth < impactDepth && frontier.length > 0;
+        currentDepth += 1
+      ) {
+        const sameDepth = new Set(frontier)
+        let containerFrontier = frontier.filter((id) =>
+          IMPACT_CONTAINER_KINDS.has(String(nodeRows.get(id)?.kind ?? "")),
+        )
+
+        while (containerFrontier.length > 0 && remainingEdgeBudget() > 0) {
+          const placeholders = containerFrontier.map(() => "?").join(", ")
+          const candidates = db.selectObjects(
+            `SELECT e.source, e.target, e.kind, e.provenance,
+                    n.id, n.kind AS adjacent_kind, n.name, n.file_path,
+                    n.start_line, n.signature, n.docstring
+             FROM edges e INDEXED BY idx_edges_source_kind
+             JOIN nodes n ON n.id = e.target
+             WHERE e.source IN (${placeholders})
+               AND e.kind = 'contains'
+             ORDER BY e.source, e.target, e.kind
+             LIMIT ?`,
+            [...containerFrontier, remainingEdgeBudget() + 1],
+          )
+          const added = new Set<string>()
+          recordCandidates(candidates, "target", added)
+          for (const id of added) {
+            sameDepth.add(id)
+          }
+          containerFrontier = [...added]
+            .filter((id) =>
+              IMPACT_CONTAINER_KINDS.has(
+                String(nodeRows.get(id)?.kind ?? ""),
+              ),
+            )
+            .sort()
+        }
+
+        if (remainingEdgeBudget() <= 0) {
+          truncated = true
+          break
+        }
+        const currentIds = [...sameDepth].sort()
+        const placeholders = currentIds.map(() => "?").join(", ")
+        const candidates = db.selectObjects(
+          `SELECT e.source, e.target, e.kind, e.provenance,
+                  n.id, n.kind AS adjacent_kind, n.name, n.file_path,
+                  n.start_line, n.signature, n.docstring
+           FROM edges e INDEXED BY idx_edges_target_kind
+           JOIN nodes n ON n.id = e.source
+           WHERE e.target IN (${placeholders})
+             AND e.kind <> 'contains'
+           ORDER BY e.target, e.source, e.kind
+           LIMIT ?`,
+          [...currentIds, remainingEdgeBudget() + 1],
+        )
+        const next = new Set<string>()
+        recordCandidates(candidates, "source", next)
+        frontier = [...next].sort()
+      }
+
+      const ids = [...visited].sort()
+      const placeholders = ids.map(() => "?").join(", ")
+      const nodes = db
+        .selectObjects(
+          `SELECT id, kind, name, file_path, start_line, signature, docstring
+           FROM nodes
+           WHERE id IN (${placeholders})
+           ORDER BY id`,
+          ids,
+        )
+        .map(codeNode)
+      return {
+        nodes,
+        edges: edgeRows
+          .sort(
+            (left, right) =>
+              String(left.source).localeCompare(String(right.source)) ||
+              String(left.target).localeCompare(String(right.target)) ||
+              String(left.kind).localeCompare(String(right.kind)),
+          )
+          .map(codeEdge),
+        truncated,
+      }
+    })
+  }
+
+  queryPlans(repositoryId: string): BrowserQueryPlanEvidence {
+    const current = this.currentGeneration(repositoryId)
+    if (!current) {
+      throw new BrowserStorageError(
+        "invalid_generation",
+        "The browser-local repository has no published query plan.",
+      )
+    }
+    return this.withDatabase(current.databasePath, (db) => {
+      const explain = (sql: string, bindings: readonly unknown[]) =>
+        db
+          .selectObjects(`EXPLAIN QUERY PLAN ${sql}`, bindings as never)
+          .map((row) => String(row.detail))
+      return {
+        callers: explain(
+          `SELECT DISTINCT n.id, n.name
+           FROM edges e INDEXED BY idx_edges_target_kind
+           JOIN nodes n ON n.id = e.source
+           WHERE e.kind = 'calls' AND e.target = ?
+           ORDER BY n.name, n.id
+           LIMIT ? OFFSET ?`,
+          ["query-plan-node", 100, 0],
+        ),
+        callees: explain(
+          `SELECT DISTINCT n.id, n.name
+           FROM edges e INDEXED BY idx_edges_source_kind
+           JOIN nodes n ON n.id = e.target
+           WHERE e.kind = 'calls' AND e.source = ?
+           ORDER BY n.name, n.id
+           LIMIT ? OFFSET ?`,
+          ["query-plan-node", 100, 0],
+        ),
+        graph: explain(
+          `SELECT source, target, kind, provenance
+           FROM edges
+           WHERE source IN (?) OR target IN (?)
+           ORDER BY source, target, kind
+           LIMIT ?`,
+          [
+            "query-plan-node",
+            "query-plan-node",
+            REPOSITORY_QUERY_LIMITS.maxGraphEdges,
+          ],
+        ),
+        impact: explain(
+          `SELECT e.source, e.target, e.kind, e.provenance
+           FROM edges e INDEXED BY idx_edges_target_kind
+           WHERE e.target IN (?)
+             AND e.kind <> 'contains'
+           ORDER BY e.target, e.source, e.kind
+           LIMIT ?`,
+          ["query-plan-node", REPOSITORY_QUERY_LIMITS.maxGraphEdges],
+        ),
       }
     })
   }
@@ -760,6 +1221,44 @@ export class BrowserGraphStore {
           status: String(row.status),
         })),
     )
+  }
+
+  deleteRepository(repositoryId: string) {
+    if (!OPAQUE_REPOSITORY_ID.test(repositoryId)) {
+      throw new BrowserStorageError(
+        "invalid_repository_id",
+        "Browser storage requires an opaque repository id.",
+      )
+    }
+    const generations = this.withDatabase(REGISTRY_DATABASE, (db) =>
+      db
+        .selectValues(
+          `SELECT generation
+           FROM index_generations
+           WHERE repository_id = ?
+           ORDER BY generation`,
+          [repositoryId],
+        )
+        .map(Number),
+    )
+    this.withDatabase(REGISTRY_DATABASE, (db) => {
+      db.transaction("IMMEDIATE", () => {
+        run(db, "DELETE FROM index_publications WHERE repository_id = ?", [
+          repositoryId,
+        ])
+        run(db, "DELETE FROM index_generations WHERE repository_id = ?", [
+          repositoryId,
+        ])
+      })
+    })
+    for (const generation of generations) {
+      this.pool.unlink(generationDatabasePath(repositoryId, generation))
+    }
+    return {
+      repositoryId,
+      deleted: true,
+      generations: generations.length,
+    }
   }
 
   close() {

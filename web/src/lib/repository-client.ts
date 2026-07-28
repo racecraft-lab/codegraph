@@ -39,6 +39,71 @@ export interface SourceResult {
   snapshotToken: string
 }
 
+export const REPOSITORY_QUERY_LIMITS = {
+  defaultPageSize: 100,
+  maxPageSize: 500,
+  defaultGraphDepth: 1,
+  defaultImpactDepth: 3,
+  maxDepth: 3,
+  maxGraphNodes: 2_000,
+  maxGraphEdges: 10_000,
+} as const
+
+function boundedInteger(
+  value: number | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+  label: string,
+) {
+  if (value === undefined) return fallback
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new RepositoryClientError(
+      "invalid_request",
+      `${label} must be an integer at least ${minimum}.`,
+      false,
+      400,
+    )
+  }
+  return Math.min(value, maximum)
+}
+
+export function normalizeRelationshipRequest(
+  request: RelationshipRequest = {},
+) {
+  return {
+    limit: boundedInteger(
+      request.limit,
+      REPOSITORY_QUERY_LIMITS.defaultPageSize,
+      1,
+      REPOSITORY_QUERY_LIMITS.maxPageSize,
+      "limit",
+    ),
+    offset: boundedInteger(
+      request.offset,
+      0,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      "offset",
+    ),
+  }
+}
+
+export function normalizeDepthRequest(
+  request: DepthRequest = {},
+  defaultDepth: number = REPOSITORY_QUERY_LIMITS.defaultGraphDepth,
+) {
+  return {
+    depth: boundedInteger(
+      request.depth,
+      defaultDepth,
+      1,
+      REPOSITORY_QUERY_LIMITS.maxDepth,
+      "depth",
+    ),
+  }
+}
+
 export interface RepositoryClient {
   listRepositories(): Promise<Repository[]>
   getRepositoryStatus(repositoryId: string): Promise<RepositoryStatus>
@@ -133,14 +198,29 @@ export function createRemoteRepositoryClient(): RepositoryClient {
     getNode: (repositoryId, nodeId) =>
       remoteResult(() => getSymbol(nodeId, repositoryId)),
     getSource: async () => remoteUnavailable("Source content"),
-    getCallers: (repositoryId, nodeId) =>
-      remoteResult(() => listCallers(nodeId, repositoryId)),
-    getCallees: (repositoryId, nodeId) =>
-      remoteResult(() => listCallees(nodeId, repositoryId)),
-    getGraph: (repositoryId, nodeId, request) =>
-      remoteResult(() => getGraph(nodeId, repositoryId, request?.depth)),
-    getImpact: (repositoryId, nodeId, request) =>
-      remoteResult(() => getImpact(nodeId, repositoryId, request?.depth)),
+    getCallers: (repositoryId, nodeId, request) => {
+      const page = normalizeRelationshipRequest(request)
+      return remoteResult(() =>
+        listCallers(nodeId, repositoryId, page.limit, page.offset),
+      )
+    },
+    getCallees: (repositoryId, nodeId, request) => {
+      const page = normalizeRelationshipRequest(request)
+      return remoteResult(() =>
+        listCallees(nodeId, repositoryId, page.limit, page.offset),
+      )
+    },
+    getGraph: (repositoryId, nodeId, request) => {
+      const { depth } = normalizeDepthRequest(request)
+      return remoteResult(() => getGraph(nodeId, repositoryId, depth))
+    },
+    getImpact: (repositoryId, nodeId, request) => {
+      const { depth } = normalizeDepthRequest(
+        request,
+        REPOSITORY_QUERY_LIMITS.defaultImpactDepth,
+      )
+      return remoteResult(() => getImpact(nodeId, repositoryId, depth))
+    },
     refresh: (repositoryId) => remoteResult(() => startReindex(repositoryId)),
     cancel: async () => remoteUnavailable("Reindex cancellation"),
     deleteRepository: async () => remoteUnavailable("Repository deletion"),

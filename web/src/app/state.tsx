@@ -12,10 +12,13 @@ import {
 import {
   LocalRepositoryClient,
   type LocalRepositoryProgress,
+  type LocalStorageStatus,
 } from "@/local-indexing/client"
 import {
   openPickedFolderFromUserAction,
+  SourceHandleRegistry,
   type DirectoryHandleLike,
+  type SourceIdentity,
 } from "@/local-indexing/source"
 
 export type LocalOperationState =
@@ -29,6 +32,7 @@ export type LocalOperationState =
   | "busy"
   | "quota-blocked"
   | "permission-blocked"
+  | "deleting"
   | "deleted"
 
 export interface LocalOperationStatus {
@@ -72,6 +76,22 @@ function persistLocalRepositories(repositories: Repository[]) {
   )
 }
 
+function pickedFolderIdentity(repository: Repository): SourceIdentity | undefined {
+  if (
+    repository.runtime !== "local" ||
+    repository.sourceKind !== "picked-folder"
+  ) {
+    return undefined
+  }
+  return {
+    id: repository.id,
+    sourceKind: "picked-folder",
+    displayName: repository.name,
+    virtualRoot: `local://${repository.id}`,
+    handleRefId: `handle-${repository.id}`,
+  }
+}
+
 interface AppStateValue {
   repositories: Repository[]
   repositoriesStatus: AsyncStatus
@@ -86,8 +106,15 @@ interface AppStateValue {
   refreshRepositories: () => Promise<void>
   refreshStatus: () => Promise<void>
   localOperation?: LocalOperationStatus
+  storageStatus?: LocalStorageStatus
   openLocalFolder: () => Promise<void>
+  refreshLocalRepository: () => Promise<void>
   cancelLocalOperation: () => Promise<void>
+  requestStoragePersistence: () => Promise<void>
+  deleteLocalRepository: (options: {
+    confirmationName: string
+    cancelActive: boolean
+  }) => Promise<void>
   repositoryClient: RepositoryClient
 }
 
@@ -102,6 +129,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [statusMessage, setStatusMessage] = React.useState("Loading repository state.")
   const [selectedNode, setSelectedNode] = React.useState<CodeNode | undefined>()
   const [localOperation, setLocalOperation] = React.useState<LocalOperationStatus | undefined>()
+  const [storageStatus, setStorageStatus] =
+    React.useState<LocalStorageStatus | undefined>()
   const [activeLocalClient, setActiveLocalClient] =
     React.useState<LocalRepositoryClient | undefined>()
   const [remoteClient] = React.useState<RepositoryClient>(() =>
@@ -113,6 +142,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const statusRequestRef = React.useRef(0)
   const localClientRef = React.useRef<LocalRepositoryClient | undefined>(undefined)
   const localOperationIdRef = React.useRef<string | undefined>(undefined)
+  const sourceRegistryRef = React.useRef<SourceHandleRegistry | undefined>(
+    undefined,
+  )
+  sourceRegistryRef.current ??= new SourceHandleRegistry()
 
   const selectedRepo = React.useMemo(
     () => repositories.find((repo) => repo.id === selectedRepoId) ?? repositories.find((repo) => repo.default) ?? repositories[0],
@@ -143,6 +176,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       )
       const client = new LocalRepositoryClient(worker, {
         onProgress: updateLocalProgress,
+        sourceRegistry: sourceRegistryRef.current,
       })
       localClientRef.current = client
       setActiveLocalClient(client)
@@ -152,10 +186,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const refreshRepositories = React.useCallback(async () => {
     setRepositoriesStatus("loading")
+    const persisted = persistedLocalRepositories()
     try {
-      const persisted = persistedLocalRepositories()
       let nextRepos: Repository[]
       if (persisted.length > 0) {
+        const repositoryToAcquire =
+          persisted.find((repository) => repository.default) ??
+          persisted[0]
+        await localClient().acquireRepository(repositoryToAcquire.id)
+        setStorageStatus(await localClient().getStorageStatus())
         const publishedIds = new Set(
           (await localClient().listRepositories()).map(
             (repository) => repository.id,
@@ -164,15 +203,49 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         nextRepos = persisted.filter((repository) =>
           publishedIds.has(repository.id),
         )
+        await Promise.allSettled(
+          nextRepos.map((repository) => {
+            const identity = pickedFolderIdentity(repository)
+            const activeConnection = localClient().sourceConnection(
+              repository.id,
+            )
+            return identity
+              ? activeConnection?.canRefresh
+                ? Promise.resolve(activeConnection)
+                : localClient().restorePickedFolder(identity)
+              : Promise.resolve()
+          }),
+        )
         persistLocalRepositories(nextRepos)
       } else {
+        setStorageStatus(undefined)
         nextRepos = await remoteClient.listRepositories()
       }
       setRepositories(nextRepos)
       setSelectedRepoId((current) => current ?? nextRepos.find((repo) => repo.default)?.id ?? nextRepos[0]?.id)
       setRepositoriesStatus("success")
+      setLocalOperation((current) =>
+        current?.state === "busy" ? undefined : current,
+      )
     } catch (error) {
-      const nextError = errorState(error)
+      const nextError =
+        error instanceof RepositoryClientError
+          ? { code: error.code, message: error.message }
+          : errorState(error)
+      if (nextError.code === "repository_busy") {
+        setRepositories(persisted)
+        setSelectedRepoId(
+          (current) =>
+            current ??
+            persisted.find((repository) => repository.default)?.id ??
+            persisted[0]?.id,
+        )
+        setLocalOperation({
+          state: "busy",
+          message: nextError.message,
+          cancellable: false,
+        })
+      }
       setRepositoriesStatus("error")
       setRepositoryState(nextError.code === "unauthorized" ? "unauthorized" : "unavailable")
       setStatusMessage(nextError.message)
@@ -229,6 +302,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         message: "This browser does not provide local folder selection.",
         cancellable: false,
       })
+      setStorageStatus(await localClient().getStorageStatus())
       throw new RepositoryClientError(
         "capability_unavailable",
         "This browser does not provide local folder selection.",
@@ -246,8 +320,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     })
 
     try {
+      let pickedHandle: DirectoryHandleLike | undefined
       const provider = await openPickedFolderFromUserAction(
-        () => picker.call(window),
+        async () => {
+          pickedHandle = await picker.call(window)
+          return pickedHandle
+        },
         { userActivated: true },
       )
       setLocalOperation({
@@ -269,6 +347,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         provider.identity.id,
         operationId,
       )
+      if (pickedHandle) {
+        localClient().connectPickedFolder(provider.identity, pickedHandle)
+      }
+      if (
+        pickedHandle?.queryPermission &&
+        pickedHandle.requestPermission &&
+        pickedHandle.isSameEntry
+      ) {
+        await localClient().savePickedFolder(provider.identity, pickedHandle)
+      }
       const localRepository: Repository = {
         ...repository,
         id: provider.identity.id,
@@ -342,6 +430,127 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     await localClient().cancel(operationId)
   }, [localClient])
 
+  const refreshLocalRepository = React.useCallback(async () => {
+    if (!selectedRepo || selectedRepo.runtime !== "local") {
+      throw new RepositoryClientError(
+        "invalid_request",
+        "Select a browser-local repository to refresh.",
+        false,
+      )
+    }
+    setLocalOperation({
+      state: "refreshing",
+      message: `Refreshing ${selectedRepo.name}.`,
+      phase: "refresh-diff",
+      completed: 0,
+      total: 0,
+      cancellable: true,
+    })
+    try {
+      const result = await localClient().refresh(selectedRepo.id)
+      const changes = (result.changes ?? {}) as Record<string, number>
+      setLocalOperation({
+        state: (result.counts as { warnings?: number } | undefined)?.warnings
+          ? "partial-warning"
+          : "complete",
+        message: `Local refresh complete: ${changes.added ?? 0} added, ${changes.changed ?? 0} changed, ${changes.deleted ?? 0} deleted, ${changes.unchanged ?? 0} unchanged, ${changes.skipped ?? 0} skipped.`,
+        phase: "Complete",
+        cancellable: false,
+      })
+      await refreshStatus()
+    } catch (error) {
+      const code =
+        error instanceof RepositoryClientError ? error.code : "internal"
+      setLocalOperation({
+        state:
+          code === "operation_cancelled"
+            ? "cancelled"
+            : code === "quota_exceeded"
+              ? "quota-blocked"
+              : code === "permission_denied"
+                ? "permission-blocked"
+                : "failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The local refresh failed; the previous complete index remains available.",
+        cancellable: false,
+      })
+      throw error
+    }
+  }, [localClient, refreshStatus, selectedRepo])
+
+  const requestStoragePersistence = React.useCallback(async () => {
+    setStorageStatus(await localClient().requestPersistentStorage())
+  }, [localClient])
+
+  const deleteLocalRepository = React.useCallback(
+    async (options: {
+      confirmationName: string
+      cancelActive: boolean
+    }) => {
+      if (!selectedRepo || selectedRepo.runtime !== "local") {
+        throw new RepositoryClientError(
+          "invalid_request",
+          "Select a browser-local repository to delete.",
+          false,
+        )
+      }
+      if (options.confirmationName !== selectedRepo.name) {
+        throw new RepositoryClientError(
+          "invalid_request",
+          "Type the displayed repository name exactly.",
+          false,
+        )
+      }
+      if (localOperation?.state === "refreshing" && !options.cancelActive) {
+        throw new RepositoryClientError(
+          "conflict",
+          "Choose whether to cancel the active local operation.",
+          false,
+        )
+      }
+      const repository = selectedRepo
+      setLocalOperation({
+        state: "deleting",
+        message: `Deleting browser-owned data for ${repository.name}.`,
+        cancellable: false,
+      })
+      try {
+        await localClient().deleteRepository(repository.id, {
+          cancelActive: options.cancelActive,
+        })
+        const remaining = repositories.filter(
+          (candidate) => candidate.id !== repository.id,
+        )
+        setRepositories(remaining)
+        persistLocalRepositories(remaining)
+        setSelectedRepoId(
+          remaining.find((candidate) => candidate.default)?.id ??
+            remaining[0]?.id,
+        )
+        setRepositoryStatus(undefined)
+        setStorageStatus(undefined)
+        setLocalOperation({
+          state: "deleted",
+          message: `${repository.name} browser-owned data was deleted. Source folder files were not changed.`,
+          cancellable: false,
+        })
+      } catch (error) {
+        setLocalOperation({
+          state: "failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Browser repository deletion failed; the previous readable state was retained.",
+          cancellable: false,
+        })
+        throw error
+      }
+    },
+    [localClient, localOperation?.state, repositories, selectedRepo],
+  )
+
   React.useEffect(() => {
     void refreshRepositories()
   }, [refreshRepositories])
@@ -352,7 +561,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(
     () => () => {
-      localClientRef.current?.close()
+      void localClientRef.current?.close()
       localClientRef.current = undefined
     },
     [],
@@ -373,8 +582,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       refreshRepositories,
       refreshStatus,
       localOperation,
+      storageStatus,
       openLocalFolder,
+      refreshLocalRepository,
       cancelLocalOperation,
+      requestStoragePersistence,
+      deleteLocalRepository,
       repositoryClient,
     }),
     [
@@ -391,8 +604,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       refreshRepositories,
       refreshStatus,
       localOperation,
+      storageStatus,
       openLocalFolder,
+      refreshLocalRepository,
       cancelLocalOperation,
+      requestStoragePersistence,
+      deleteLocalRepository,
       repositoryClient,
     ],
   )

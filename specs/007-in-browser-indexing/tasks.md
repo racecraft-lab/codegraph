@@ -110,13 +110,13 @@ safe deletion while preserving the last good generation.
 
 ### User Story 2 — Browse the Local Graph Experience
 
-- [ ] T013 [US2] Complete relationships and graph query parity in `web/src/local-indexing/sqlite.ts` and `web/src/lib/repository-client.ts` (`FR-011`, `FR-026`, `FR-035`, `FR-060`).
+- [x] T013 [US2] Complete relationships and graph query parity in `web/src/local-indexing/sqlite.ts` and `web/src/lib/repository-client.ts` (`FR-011`, `FR-026`, `FR-035`, `FR-060`).
   - **RED**: Add client/worker cases that expose response-shape drift, unpublished-generation reads, unbounded candidates, and missing query-plan evidence.
   - **GREEN**: Implement bounded relationship/graph reads using existing result types and indexed/FTS query paths.
   - **REFACTOR**: Share row mappers and query-limit constants with REST semantics.
   - **Evidence**: Focused worker/client tests plus captured browser SQLite query plans.
 
-- [ ] T014 [US2] Finish local/server route context, honest disabled states, mobile layout, and trust-boundary accessibility in `web/src/components/layout/RepositorySwitcher.tsx` and `web/src/routes/RepositoryOverview.tsx` (`FR-012`, `FR-013`, `FR-030`, `FR-035`, `FR-050`, `FR-051`).
+- [x] T014 [US2] Finish local/server route context, honest disabled states, mobile layout, and trust-boundary accessibility in `web/src/components/layout/RepositorySwitcher.tsx` and `web/src/routes/RepositoryOverview.tsx` (`FR-012`, `FR-013`, `FR-030`, `FR-035`, `FR-050`, `FR-051`).
   - **RED**: Fail keyboard, focus restoration, status announcement, 320 CSS px, reduced-motion, and server-only explanation cases.
   - **GREEN**: Reuse the existing shell while making runtime, status, and unavailable capabilities explicit at every relevant route/action.
   - **REFACTOR**: Consolidate status/action presentation without altering server repository UX.
@@ -124,13 +124,13 @@ safe deletion while preserving the last good generation.
 
 ### User Story 3 — Inspect Local Impact
 
-- [ ] T015 [US3] Implement bounded impact queries and explainable affected-file results in `web/src/local-indexing/sqlite.ts` and the shared repository client (`FR-011`, `FR-026`, `FR-035`, `FR-060`).
+- [x] T015 [US3] Implement bounded impact queries and explainable affected-file results in `web/src/local-indexing/sqlite.ts` and the shared repository client (`FR-011`, `FR-026`, `FR-035`, `FR-060`).
   - **RED**: Add known-symbol fixtures that fail on unbounded traversal, missing explanation fields, response drift, or full scans without rationale.
   - **GREEN**: Add bounded indexed queries that match current impact semantics and published-generation isolation.
   - **REFACTOR**: Reuse graph/relationship query helpers while preserving explicit limits.
   - **Evidence**: Focused worker/client impact tests and query-plan capture.
 
-- [ ] T016 [US3] Add user-observed graph/impact latency coverage to `web/src/tests/local-indexing-full.spec.ts` (`FR-026`, `FR-048`, `FR-060`).
+- [x] T016 [US3] Add user-observed graph/impact latency coverage to `web/src/tests/local-indexing-full.spec.ts` (`FR-026`, `FR-048`, `FR-060`).
   - **RED**: Capture a deterministic suite that fails without one warmup, 20 measured samples, action-to-render timing, p95 calculation, and query-plan evidence.
   - **GREEN**: Meet p95 ≤150 ms for search, graph navigation, and bounded impact on the documented fixture.
   - **REFACTOR**: Share timing/evidence helpers with existing web performance marks.
@@ -138,49 +138,49 @@ safe deletion while preserving the last good generation.
 
 ### User Story 4 — Reconnect, Refresh, And Delete
 
-- [ ] T017 [US4] Implement the origin-scoped repository registry, saved-handle identity, cached reopen, and explicit reconnect in `web/src/local-indexing/client.ts` and `web/src/local-indexing/source.ts` (`FR-016`, `FR-032`, `FR-037`).
+- [x] T017 [US4] Implement the origin-scoped repository registry, saved-handle identity, cached reopen, and explicit reconnect in `web/src/local-indexing/client.ts` and `web/src/local-indexing/source.ts` (`FR-016`, `FR-032`, `FR-037`).
   - **RED**: Fail on host-path identity, automatic permission requests, cached-browse loss, same-entry mismatch, and refresh enabled before reconnect.
   - **GREEN**: Persist only opaque identity/handle metadata, reopen last-good data, and request reconnect permission from direct activation.
   - **REFACTOR**: Separate durable registry metadata from live handle/permission state.
   - **Evidence**: Focused client tests covering granted, prompt, denied, and stale handles.
 
-- [ ] T018 [US4] Implement manifest-hash incremental refresh and deterministic result counts in `web/src/local-indexing/source.ts`, `web/src/local-indexing/worker.ts`, and `web/src/local-indexing/sqlite.ts` (`FR-014`, `FR-015`, `FR-038`, `FR-040`, `FR-057`).
+- [x] T018 [US4] Implement manifest-hash incremental refresh and deterministic result counts in `web/src/local-indexing/source.ts`, `web/src/local-indexing/worker.ts`, and `web/src/local-indexing/sqlite.ts` (`FR-014`, `FR-015`, `FR-038`, `FR-040`, `FR-057`).
   - **RED**: Add one added/changed/deleted/unchanged/skipped-warning fixture and prove graph/cache/manifest/count drift or partial publication.
   - **GREEN**: Stage only changed work, remove deleted rows, retain unchanged data, cap warnings, and publish matching generation/count metadata.
   - **REFACTOR**: Reuse the initial-index generation transaction and hash helpers.
   - **Evidence**: Focused worker refresh test with exact counts and generation ids.
 
-- [ ] T019 [US4] Harden cancel, crash, quota, migration, and database-write recovery across the worker/storage boundary (`FR-015`, `FR-038`, `FR-041`, `FR-058`).
+- [x] T019 [US4] Harden cancel, crash, quota, migration, and database-write recovery across the worker/storage boundary (`FR-015`, `FR-038`, `FR-041`, `FR-058`).
   - **RED**: Inject each named failure after source staging, graph write, registry publish, status update, and delete cleanup and observe falsely complete or lost last-good state.
   - **GREEN**: Preserve/restore the prior readable generation, expose non-complete stable status, ignore stale messages, and clean staging on next open.
   - **REFACTOR**: Centralize recovery transitions and failure injection points.
   - **Evidence**: Focused real SQLite-Wasm recovery matrix.
 
-- [ ] T020 [US4] Implement per-repository Web Lock ownership, busy/retry state, deterministic close, and stale-ownership recovery in `web/src/local-indexing/client.ts`, `web/src/local-indexing/worker.ts`, and `web/src/local-indexing/sqlite.ts` (`FR-018`, `FR-034`, `FR-055`, `FR-061`).
+- [x] T020 [US4] Implement per-repository Web Lock ownership, busy/retry state, deterministic close, and stale-ownership recovery in `web/src/local-indexing/client.ts`, `web/src/local-indexing/worker.ts`, and `web/src/local-indexing/sqlite.ts` (`FR-018`, `FR-034`, `FR-055`, `FR-061`).
   - **RED**: Demonstrate a second tab opening storage concurrently, actions enabled while busy, leaked lock/DB handles, and next-open stale ownership marked complete.
   - **GREEN**: Acquire before storage open, expose Retry/Switch repository, disable local actions, close DB/VFS before release, and recover stale metadata safely.
   - **REFACTOR**: Keep lock lifecycle in one client/worker boundary.
   - **Evidence**: Multi-page Playwright and focused close/crash tests.
 
-- [ ] T021 [US4] Add quota estimate, persistence request, and quota/permission status flows in `web/src/local-indexing/client.ts` and repository UI (`FR-017`, `FR-030`, `FR-038`, `FR-058`).
+- [x] T021 [US4] Add quota estimate, persistence request, and quota/permission status flows in `web/src/local-indexing/client.ts` and repository UI (`FR-017`, `FR-030`, `FR-038`, `FR-058`).
   - **RED**: Fail when persistence prompts automatically, quota failures look complete, or the UI implies automatic eviction.
   - **GREEN**: Report storage usage/persistence, request only from direct action, preserve last-good data, and show stable recovery guidance.
   - **REFACTOR**: Reuse status/error presentation from T014.
   - **Evidence**: Focused client/component tests for supported, denied, and quota-blocked cases.
 
-- [ ] T022 [US4] Implement typed-name deletion, active-operation cancellation choice, and complete browser-owned cleanup in the repository client/UI (`FR-029`, `FR-036`, `FR-052`, `FR-055`, `FR-058`).
+- [x] T022 [US4] Implement typed-name deletion, active-operation cancellation choice, and complete browser-owned cleanup in the repository client/UI (`FR-029`, `FR-036`, `FR-052`, `FR-055`, `FR-058`).
   - **RED**: Fail on deletion without exact name, missing source-folder safety text, reads/actions during delete, partial browser-data removal, source-handle writes, and active-operation ambiguity.
   - **GREEN**: Confirm runtime/name/data classes, cancel or retain active work explicitly, close storage, delete graph/cache/registry/semantic state, and restore prior readable state on failure.
   - **REFACTOR**: Share cleanup order with recovery and close paths.
   - **Evidence**: Focused client/component deletion tests and source-folder no-write assertion.
 
-- [ ] T023 [US4] Validate reload, reconnect, refresh, cancel/failure, busy, quota, and delete as one real-browser lifecycle in `web/src/tests/local-indexing-full.spec.ts` (`FR-014` through `FR-018`, `FR-029`, `FR-030`, `FR-032`, `FR-034`, `FR-036`, `FR-040`, `FR-050` through `FR-052`, `FR-055`, `FR-057`, `FR-058`).
+- [x] T023 [US4] Validate reload, reconnect, refresh, cancel/failure, busy, quota, and delete as one real-browser lifecycle in `web/src/tests/local-indexing-full.spec.ts` (`FR-014` through `FR-018`, `FR-029`, `FR-030`, `FR-032`, `FR-034`, `FR-036`, `FR-040`, `FR-050` through `FR-052`, `FR-055`, `FR-057`, `FR-058`).
   - **RED**: Record the failing end-to-end lifecycle with controlled file mutations and fault injection.
   - **GREEN**: Pass every visible state and last-good/no-source-write assertion against real browser storage.
   - **REFACTOR**: Extract deterministic lifecycle helpers without hiding individual expected states.
   - **Evidence**: Chromium Playwright trace plus focused lifecycle suites.
 
-- [ ] T024 [US4] Run the Slice 2 reviewability and regression checkpoint, fixing only slice-owned defects (`FR-028`).
+- [x] T024 [US4] Run the Slice 2 reviewability and regression checkpoint, fixing only slice-owned defects (`FR-028`).
   - **RED**: Capture changed files/LOC, unresolved lifecycle failures, and any new capability surface outside the accepted slice.
   - **GREEN**: Pass root build/typecheck, focused root/web tests, complete Chromium lifecycle UAT, and the Slice 1 regression journey.
   - **REFACTOR**: Simplify only T013–T023 changes; stop for consensus on boundary expansion.

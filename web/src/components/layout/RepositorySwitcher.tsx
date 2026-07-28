@@ -33,6 +33,7 @@ const OPERATION_LABELS = {
   busy: "Repository busy",
   "quota-blocked": "Storage quota blocked",
   "permission-blocked": "Permission blocked",
+  deleting: "Deleting",
   deleted: "Deleted",
 } as const
 
@@ -51,6 +52,7 @@ export function RepositorySwitcher() {
     selectRepository,
     openLocalFolder,
     cancelLocalOperation,
+    refreshRepositories,
     localOperation,
   } = useAppState()
   const location = useLocation()
@@ -149,6 +151,32 @@ export function RepositorySwitcher() {
               <XIcon data-icon="inline-start" />
               Cancel local indexing
             </Button>
+          ) : null}
+          {localOperation.state === "busy" ? (
+            <div className="flex min-w-0 flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refreshRepositories()}
+              >
+                Retry
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!repositories.some(
+                  (repository) => repository.id !== selectedRepo?.id,
+                )}
+                onClick={() => {
+                  const alternative = repositories.find(
+                    (repository) => repository.id !== selectedRepo?.id,
+                  )
+                  if (alternative) changeRepository(alternative.id)
+                }}
+              >
+                Switch repository
+              </Button>
+            </div>
           ) : null}
         </div>
       ) : null}

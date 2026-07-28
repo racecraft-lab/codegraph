@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
+import type {
+  SavedSourceHandle,
+  SourceHandleStore,
+} from "../local-indexing/source"
 
 type EntryHandle = TestDirectoryHandle | TestFileHandle | { kind: "unsupported"; name: string }
 
@@ -38,6 +42,12 @@ class TestDirectoryHandle {
   }
 }
 
+class PermissionDirectoryHandle extends TestDirectoryHandle {
+  readonly queryPermission = vi.fn()
+  readonly requestPermission = vi.fn()
+  readonly isSameEntry = vi.fn()
+}
+
 const bytes = (value: string) => new TextEncoder().encode(value)
 const deterministicHash = async (value: Uint8Array) => `hash-${value.byteLength}-${value[0] ?? 0}`
 
@@ -72,6 +82,117 @@ describe("browser-local source providers", () => {
     })
     expect(JSON.stringify(provider.identity)).not.toContain("/Users/")
     expect(provider).not.toHaveProperty("handle")
+  })
+
+  it("persists opaque handle identity and reconnects only from direct activation", async () => {
+    const source = await import("../local-indexing/source")
+    const records = new Map<string, SavedSourceHandle>()
+    const store: SourceHandleStore = {
+      get: vi.fn(async (handleRefId) => records.get(handleRefId)),
+      put: vi.fn(async (record) => {
+        records.set(record.identity.handleRefId!, record)
+      }),
+      delete: vi.fn(async (handleRefId) => {
+        records.delete(handleRefId)
+      }),
+    }
+    const registry = new source.SourceHandleRegistry(store)
+    const identity = {
+      id: "repo-opaque",
+      sourceKind: "picked-folder" as const,
+      displayName: "project",
+      virtualRoot: "local://repo-opaque",
+      handleRefId: "handle-repo-opaque",
+    }
+    const granted = new PermissionDirectoryHandle("project")
+    granted.queryPermission.mockResolvedValue("granted")
+
+    await registry.save(identity, granted)
+    await expect(registry.restore(identity)).resolves.toMatchObject({
+      status: "granted",
+      canRefresh: true,
+    })
+    expect(granted.requestPermission).not.toHaveBeenCalled()
+    expect(JSON.stringify(records.get("handle-repo-opaque")?.identity)).not.toContain(
+      "/Users/",
+    )
+
+    const prompted = new PermissionDirectoryHandle("project")
+    prompted.queryPermission.mockResolvedValue("prompt")
+    prompted.requestPermission.mockResolvedValue("granted")
+    prompted.isSameEntry.mockResolvedValue(true)
+    records.set("handle-repo-opaque", { identity, handle: prompted })
+
+    await expect(registry.restore(identity)).resolves.toMatchObject({
+      status: "prompt",
+      canRefresh: false,
+    })
+    expect(prompted.requestPermission).not.toHaveBeenCalled()
+    await expect(
+      registry.reconnect(identity, { userActivated: false }),
+    ).rejects.toMatchObject({ code: "user_activation_required" })
+    expect(prompted.requestPermission).not.toHaveBeenCalled()
+    await expect(
+      registry.reconnect(identity, { userActivated: true }),
+    ).resolves.toMatchObject({ status: "granted", canRefresh: true })
+    expect(prompted.requestPermission).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects stale, denied, mismatched, and host-path handle identities", async () => {
+    const source = await import("../local-indexing/source")
+    const records = new Map<string, SavedSourceHandle>()
+    const store: SourceHandleStore = {
+      get: async (handleRefId) => records.get(handleRefId),
+      put: async (record) => {
+        records.set(record.identity.handleRefId!, record)
+      },
+      delete: async (handleRefId) => {
+        records.delete(handleRefId)
+      },
+    }
+    const registry = new source.SourceHandleRegistry(store)
+    const identity = {
+      id: "repo-opaque",
+      sourceKind: "picked-folder" as const,
+      displayName: "project",
+      virtualRoot: "local://repo-opaque",
+      handleRefId: "handle-repo-opaque",
+    }
+
+    await expect(registry.restore(identity)).resolves.toMatchObject({
+      status: "stale",
+      canRefresh: false,
+    })
+
+    const denied = new PermissionDirectoryHandle("project")
+    denied.queryPermission.mockResolvedValue("denied")
+    denied.requestPermission.mockResolvedValue("denied")
+    records.set("handle-repo-opaque", { identity, handle: denied })
+    await expect(
+      registry.reconnect(identity, { userActivated: true }),
+    ).rejects.toMatchObject({ code: "permission_denied" })
+
+    const saved = new PermissionDirectoryHandle("project")
+    saved.queryPermission.mockResolvedValue("granted")
+    saved.isSameEntry.mockResolvedValue(false)
+    records.set("handle-repo-opaque", { identity, handle: saved })
+    await expect(
+      registry.reconnect(identity, {
+        userActivated: true,
+        candidate: new PermissionDirectoryHandle("different"),
+      }),
+    ).rejects.toMatchObject({ code: "source_mismatch" })
+
+    await expect(
+      registry.save(
+        {
+          ...identity,
+          id: "/Users/alice/project",
+          virtualRoot: "local:///Users/alice/project",
+        },
+        saved,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_source_identity" })
   })
 
   it("derives bounded POSIX paths from ancestry and rejects cycles, duplicates, ignores, and oversize reads", async () => {
@@ -153,6 +274,35 @@ describe("browser-local source providers", () => {
     expect(result.warnings).toMatchObject({ total: 6, truncated: true })
     expect(result.warnings.details).toHaveLength(3)
     expect(result.entries).toEqual([])
+  })
+
+  it("diffs manifests deterministically by content hash", async () => {
+    const source = await import("../local-indexing/source")
+    expect(
+      source.diffSourceManifests(
+        {
+          fingerprint: "before",
+          entries: [
+            { path: "changed.ts", contentHash: "old", size: 1 },
+            { path: "deleted.ts", contentHash: "deleted", size: 1 },
+            { path: "unchanged.ts", contentHash: "same", size: 1 },
+          ],
+        },
+        {
+          fingerprint: "after",
+          entries: [
+            { path: "added.ts", contentHash: "added", size: 1 },
+            { path: "changed.ts", contentHash: "new", size: 1 },
+            { path: "unchanged.ts", contentHash: "same", size: 99 },
+          ],
+        },
+      ),
+    ).toEqual({
+      added: ["added.ts"],
+      changed: ["changed.ts"],
+      deleted: ["deleted.ts"],
+      unchanged: ["unchanged.ts"],
+    })
   })
 
   it("builds immutable snapshot manifests without path leakage or rejected payloads", async () => {

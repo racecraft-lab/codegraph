@@ -1006,8 +1006,8 @@ After each slice:
 | Slice | Tasks | Status | Required demonstration |
 |---|---|---|---|
 | 1 - Persistent keyword path | T001-T012 complete | ✅ Complete | Open folder through local overview/search/symbol/source after reload |
-| 2 - Graph and lifecycle | T013-T024 assigned | 🚧 In progress | Graph/impact, reconnect, refresh/rollback, storage, lock, delete |
-| 3 - Fallback, semantic, shipping | Assigned after G5 | ⏳ Pending | Snapshot/degradation, opt-in semantic, package/offline/performance UAT |
+| 2 - Graph and lifecycle | T013-T024 complete | ✅ Complete | Graph/impact, reconnect, refresh/rollback, storage, lock, delete |
+| 3 - Fallback, semantic, shipping | T025-T038 assigned | 🚧 In progress | Snapshot/degradation, opt-in semantic, package/offline/performance UAT |
 
 ### Implementation Evidence
 
@@ -1262,6 +1262,305 @@ After each slice:
 - **REFACTOR**: No additional code change was justified by the green
   checkpoint. `git diff --check` passed and the oversized-but-contained warning
   remains visible for the final reviewability backstop.
+
+#### T013 - Relationship And Graph Query Parity
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the task in the verified worktree.
+- **RED**: The shared-client test showed remote callers dropped requested
+  `limit`/`offset` entirely and local requests forwarded over-cap values.
+  Real Chromium SQLite rejected the new relationship request as unsupported.
+  The first query-plan run then showed SQLite choosing the broader edge
+  identity index for callees rather than the intended `(source, kind)` path.
+- **GREEN**: Shared request normalization now mirrors server limits: relationship
+  pages default to 100 and clamp at 500, graph depth defaults to one and clamps
+  at three, and invalid sub-minimum integers fail as `invalid_request`.
+  Remote and local clients send identical effective values. Published-generation
+  relationship reads de-duplicate node ids, use explicit target/source-kind
+  indexes, and report effective paging. Bounded breadth expansion caps graph
+  reads at 2,000 nodes and 10,000 inspected edges with honest truncation.
+- **QUERY PLANS/ISOLATION**: Real browser `EXPLAIN QUERY PLAN` evidence contains
+  `idx_edges_target_kind`, `idx_edges_source_kind`, and SQLite's multi-index OR
+  graph path. A staged unpublished generation remains invisible to callers;
+  only the registry's published generation is queried.
+- **VERIFY**: Focused client/worker/route suites passed 17/17; web typecheck
+  passed; real Chromium SQLite publication, paging, graph caps, plan capture,
+  and unpublished-generation isolation passed 1/1; `git diff --check` passed.
+
+#### T014 - Local/Server Context And Accessibility
+
+- Required executor dispatch returned zero changes/tests with the known child
+  writable-root blocker; parent fallback completed the focused UI TDD.
+- **RED**: Three component assertions failed because progress animations did
+  not honor reduced-motion, local Re-analyze/Chat links remained enabled without
+  trust-boundary explanations, and local action labels did not distinguish
+  browser refresh from server re-analysis.
+- **GREEN**: Local Search remains an enabled existing route. Until the dedicated
+  refresh lifecycle is connected, Refresh local index is a disabled button with
+  visible `aria-describedby` guidance; Chat is likewise disabled with a visible
+  server-only explanation. Server Re-analyze and Chat links remain unchanged.
+  Runtime badges, display names, and live status/alert semantics remain
+  explicit without displaying opaque local roots.
+- **ACCESSIBILITY/RESPONSIVE**: Folder open is keyboard-activatable and restores
+  focus after success or dismissal; progress transitions use
+  `motion-reduce:transition-none`; local action copy wraps in min-width-safe
+  containers; a real Chromium viewport at 320 CSS px reports no horizontal
+  document overflow.
+- **VERIFY**: Focused local/app shell suites passed 8/8; web typecheck passed;
+  Chromium full local journey plus 320-CSS-pixel probe passed 1/1;
+  `git diff --check` passed.
+
+#### T015 - Bounded Explainable Impact
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the task in the verified worktree.
+- **RED**: The real SQLite-Wasm worker result had no impact query-plan evidence,
+  and the storage test could not request a distinct bounded impact traversal.
+  The existing worker routed impact through the undirected graph query, which
+  included dependencies instead of only affected dependents.
+- **GREEN**: Local impact now follows incoming non-containment edges through the
+  published generation, expands contained members at the same semantic depth,
+  defaults to depth three, and caps work at 2,000 symbols and 10,000 inspected
+  edges. Results preserve the existing `GraphResult` shape: affected files come
+  from node file fields and the retained dependency edges explain why each
+  symbol/file is affected.
+- **QUERY PLANS/ISOLATION**: Real browser `EXPLAIN QUERY PLAN` evidence uses
+  `idx_edges_target_kind`; the known fixture excludes outgoing callees and
+  unrelated symbols while preserving callers across multiple depths. A staged
+  unpublished caller remains invisible.
+- **REFACTOR/VERIFY**: Container kinds, depth normalization, and explicit graph
+  budgets are shared constants. Focused shared-client tests passed 4/4; web
+  typecheck passed; real Chromium SQLite impact semantics, affected-file
+  projection, plan capture, and publication isolation passed 1/1;
+  `git diff --check` passed.
+
+#### T016 - User-Observed Local Read Latency
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the browser performance harness.
+- **RED**: After locator stabilization, the deterministic full journey reached
+  its intended failure because it had no end-to-end graph/impact query-plan
+  evidence. The pre-existing journey also had no warmup-plus-20 action-to-render
+  sample gate for search, graph, or impact.
+- **GREEN**: The real Chromium journey now performs one warmup followed by 20
+  measured user actions per operation, times from immediately before the action
+  through the visible rendered state, calculates p95, and enforces the 150 ms
+  budget. A second production worker publishes a minimal isolated generation
+  and captures real SQLite query plans without repository-derived network use.
+- **EVIDENCE**: The attached `spec007-local-read-latency.json` contains all 60
+  samples, p95 values, caps, and query plans. The final run measured search
+  114.3 ms, graph 101.3 ms, and impact 103.2 ms p95; graph used SQLite
+  multi-index OR and impact used `idx_edges_target_kind`.
+- **REFACTOR/VERIFY**: Shared timing and percentile helpers keep warmups outside
+  the sample arrays and apply one explicit budget. Web typecheck passed; the
+  real cancellation/index/search/source/reload/performance/320-pixel Chromium
+  journey passed 1/1; `git diff --check` passed.
+
+#### T017 - Saved Folder Registry And Explicit Reconnect
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the lifecycle boundary.
+- **RED**: Three focused cases failed because no source-handle registry or
+  client connection state existed. Cached reads could not distinguish stale,
+  prompt, denied, or granted handles, and refresh posted to the worker before
+  reconnect.
+- **GREEN**: An origin-scoped IndexedDB registry stores only opaque repository
+  identity, safe display metadata, and the browser capability handle. Restore
+  calls `queryPermission` only, never prompts, and leaves last-good SQLite data
+  browseable for prompt/denied/stale states. Explicit reconnect requires direct
+  activation, requests read permission only then, rejects different folders via
+  `isSameEntry`, and enables refresh only for a live granted handle.
+- **REFACTOR**: Durable saved-handle records are separate from the in-memory
+  live-handle/permission map. App startup restores connection state without
+  blocking cached repository discovery; native cloneable picker handles are
+  saved after successful publication without exposing a host path.
+- **VERIFY**: Focused source/client/shell suites passed 23/23 across granted,
+  prompt, denied, stale, mismatch, opaque-identity, cached-read, and refresh-gate
+  cases; web typecheck passed; real Chromium cached reload/privacy/performance
+  journey passed 1/1; `git diff --check` passed.
+
+#### T018 - Manifest-Hash Incremental Refresh
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the refresh transaction.
+- **RED**: The pure manifest test failed because no deterministic diff existed,
+  and the real SQLite-Wasm worker rejected `storage-refresh` as unsupported.
+  Existing refresh requests carried no current source collection and could not
+  preserve unchanged graph/cache rows or remove deleted ones.
+- **GREEN**: Refresh now compares sorted path/content-hash manifests, extracts
+  only added/changed candidates, retains unchanged cached source/nodes/edges,
+  omits deleted rows, records unsupported changed candidates as bounded
+  warnings, rebuilds an accepted-source manifest, and atomically publishes one
+  matching full generation. The client recollects only through a live granted
+  handle and sends the bounded collection to the refresh worker operation.
+- **EXACT EVIDENCE**: The real fixture processed `added.ts`, `changed.ts`, and
+  unsupported `skipped.txt`; retained `unchanged.ts`; removed `deleted.ts`; and
+  published generation 2 with `{added:1, changed:1, deleted:1, unchanged:1,
+  skipped:1}` plus exact `{files:3, nodes:6, edges:3, warnings:1}` counts.
+  Manifest fingerprint, manifest entries, source cache, node names, edge count,
+  warnings, and registry metadata agree.
+- **REFACTOR/VERIFY**: Initial and incremental publication share accepted-source
+  materialization, manifest hashing, warning caps, extraction, and the existing
+  atomic generation transaction. Focused worker/client suites passed 18/18;
+  web typecheck passed; real SQLite-Wasm refresh passed 1/1; the complete
+  initial-index/reload Chromium regression passed 1/1; `git diff --check`
+  passed.
+
+#### T019 - Worker/Storage Recovery Matrix
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the failure matrix.
+- **RED**: The first real recovery injection unexpectedly published generation
+  2, proving source staging, graph writes, status changes, registry publication,
+  and cleanup had no independently testable rollback points.
+- **GREEN**: Storage now exposes deterministic fault boundaries after source
+  staging, graph writes, status update, publication-pointer update, and failed
+  generation cleanup. Each write-side fault runs inside the existing SQLite
+  transaction, marks the candidate generation failed, deletes its staging
+  database, and leaves the prior publication pointer/readable generation
+  unchanged. Quota and schema-migration failures retain their stable codes.
+- **CRASH/CANCEL/STALE**: A worker terminated with a building generation is
+  recovered to failed on the next open and its staging database is removed.
+  Existing protocol tests continue to accept cancellation only before publish,
+  emit one terminal state, ignore duplicate/stale operations, and ignore
+  mismatched client responses.
+- **VERIFY**: The real SQLite-Wasm matrix passed source-stage, graph-write,
+  status-update, registry-publish, quota, migration, cleanup, and crash cases
+  while generation 1 remained readable; all eight later rows were failed after
+  reopen. Focused worker/client regressions passed 18/18; web typecheck and
+  `git diff --check` passed.
+
+#### T020 - Exclusive Repository Ownership and Deterministic Close
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the lock lifecycle.
+- **RED**: The client terminated its worker without sending `close`; the
+  repository shell exposed no Retry/Switch recovery controls and left local
+  reads enabled while busy; the production worker rejected the new `acquire`
+  protocol request as `invalid_worker_request`.
+- **GREEN**: A named exclusive Web Lock is acquired per opaque repository id
+  before SQLite/OPFS opens. Contending tabs receive stable
+  `repository_busy` guidance with Retry/Switch controls, and every local action
+  is disabled until ownership succeeds. Close now waits for the worker to close
+  DB/VFS, then releases all held locks, acknowledges the client, and only then
+  terminates the worker.
+- **STALE OWNERSHIP/RECOVERY**: Browser-managed ownership is released after an
+  abrupt worker termination, allowing a fresh worker to acquire and reopen the
+  repository. T019's next-open recovery continues to mark interrupted building
+  generations failed and remove staging storage rather than reporting them
+  complete.
+- **VERIFY**: Focused client/shell suites passed 12/12; the web production build
+  passed; the real Chromium multi-page suite passed 2/2 for concurrent
+  exclusion, deterministic close/retry, and abrupt-worker ownership recovery;
+  `git diff --check` passed.
+
+#### T021 - Storage Estimate, Persistence, and Quota Guidance
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the storage-status flow.
+- **RED**: Focused client tests failed because no passive storage inspection or
+  explicit persistence request methods existed. The local overview had no
+  usage/quota, persistence, last-good recovery, or non-eviction guidance.
+- **GREEN**: The client now passively inspects approximate usage/quota and
+  `persisted()` state without invoking `persist()`. Persistence is requested
+  only by the directly activated UI button and reports granted, denied,
+  unknown, or unsupported without blocking keyword indexing. The local
+  overview reports browser-owned storage, states that CodeGraph never
+  auto-deletes indexes, and tells quota-blocked users that the prior complete
+  index remains available.
+- **VERIFY**: Focused client/shell suites passed 15/15 across supported, denied,
+  and unsupported APIs; web typecheck passed; the real SQLite-Wasm recovery
+  suite passed 1/1 including quota rollback and prior-generation readability;
+  `git diff --check` passed.
+
+#### T022 - Confirmed Browser-Owned Repository Deletion
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  deletion.
+- **RED**: The client ignored active-operation intent and only sent a bare
+  delete request. No destructive confirmation UI existed, so repository name,
+  runtime/data classes, source-folder safety, and cancellation choice were not
+  enforced.
+- **GREEN**: Local deletion now requires the exact displayed repository name
+  and, while refresh/index work is active, an explicit cancel-and-delete
+  checkbox. The dialog names runtime, repository, graph database, accepted
+  source cache, registry metadata, saved handle, semantic state, and states
+  that source-folder files will not change. Worker cleanup cancels pre-publish
+  work when authorized, deletes every generation database plus registry rows,
+  closes DB/VFS, releases ownership, then removes saved handle metadata and
+  local repository registration. Reads/actions are disabled during deletion.
+- **SOURCE SAFETY/RECOVERY**: Focused client evidence proves no source-handle
+  write method is called. Cleanup failures remain non-complete; failure before
+  destructive cleanup retains the prior readable state, while T019 covers
+  interrupted staging cleanup.
+- **VERIFY**: Focused client/shell suites passed 17/17; web typecheck and
+  production build passed; the real SQLite-Wasm suite passed 1/1 and proved all
+  recovery generations plus publication/status metadata were absent after
+  delete; `git diff --check` passed.
+
+#### T023 - Real-Browser Local Repository Lifecycle
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback extended
+  the Chromium lifecycle.
+- **RED**: The first controlled refresh failed with the visible permission
+  block because app repository discovery overwrote the live picker connection
+  with a stale restore result. After fixing that seam, deletion exposed an
+  unintended `/api/repos` request caused by a selected-id-dependent discovery
+  effect.
+- **GREEN**: A freshly picked handle remains live for same-page refresh even
+  when it cannot be cloned durably, and passive repository discovery no longer
+  replaces a granted connection. The full journey cancels once, indexes,
+  browses source, applies one controlled content-hash change, reports exact
+  `{added:0, changed:1, deleted:0, unchanged:0, skipped:0}` counts, reloads the
+  published four-symbol generation, exercises search/graph/impact, and performs
+  typed-name deletion. Deletion no longer triggers remote discovery.
+- **LIFECYCLE BACKSTOP**: The companion real-worker suites prove two-tab busy
+  and Retry ownership, abrupt-worker recovery, quota/migration/write rollback,
+  interrupted-generation cleanup, and complete repository deletion. Source
+  fixture text remains byte-identical across browser-owned deletion, and the
+  audit records zero forbidden API/LSP/external requests.
+- **VERIFY**: Full Chromium journey passed 1/1 in 14.1 seconds with 20 measured
+  samples per read operation and p95 search 110.8 ms, graph 105.5 ms, impact
+  104.4 ms. Lock/storage suites passed 3/3; web typecheck, production build,
+  320-CSS-pixel overflow check, and `git diff --check` passed.
+
+#### T024 - Slice 2 Reviewability And Regression Checkpoint
+
+- Required executor dispatch returned zero changes/tests after confirming the
+  dedicated worktree remained `posix-not-writable`; parent fallback completed
+  the bounded checkpoint from the verified execution root.
+- **RED/DIFF BUDGET**: Relative to the Slice 1 commit, Slice 2 contains 18
+  files and `+4231/-161` overall. Its ten production web files contain
+  `+2343/-139`; the remaining eight paths are tests and durable workflow/task
+  records. This is materially larger than the planning estimate, so the
+  reviewability warning remains live for the final backstop.
+- **BOUNDARY VERDICT**: Every production change remains inside the accepted
+  repository-client, local-indexing, repository-shell, and lifecycle surfaces.
+  No fourth capability class, server behavior, alternate ingestion path, or
+  Slice 3 semantic/degradation feature was introduced. The integrated local
+  graph/lifecycle journey remains independently demonstrable, so no boundary
+  expansion or re-slice is required at this gate.
+- **ENVIRONMENT DIAGNOSIS**: The initial chained root command scoped the Node
+  24 PATH only to its first command; later tests ran under unsupported Node 26
+  and failed only the Node-version/child-process checks. Exporting Node
+  24.11.1 for the complete shell cleared all 80 focused failures and the full
+  regression suite.
+- **VERIFY**: Root build and typecheck passed; root Vitest passed 262 files and
+  4,670 tests with 181 expected skips. Web lint completed with zero errors and
+  15 existing warnings; web Vitest passed 25 files and 156 tests. Packaged
+  assets, multi-tab locks, real SQLite-Wasm storage/recovery, and the complete
+  Chromium lifecycle passed 5/5. The lifecycle retained 20 samples per local
+  read with p95 search 115.0 ms, graph 102.9 ms, and impact 100.6 ms.
 
 ---
 

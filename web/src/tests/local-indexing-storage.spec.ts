@@ -97,6 +97,207 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     edges: [],
   })
 
+  const relationshipGeneration = () => {
+    const node = (id: string, name = id, filePath = "src/main.ts") => ({
+      id,
+      kind: "function",
+      name,
+      qualifiedName: `${filePath}::${name}`,
+      filePath,
+      language: "typescript",
+      startLine: 1,
+      endLine: 1,
+      startColumn: 0,
+      endColumn: 5,
+      isExported: true,
+      updatedAt: 1,
+    })
+    const leaves = Array.from({ length: 2_005 }, (_, index) =>
+      node(`leaf-${index.toString().padStart(4, "0")}`),
+    )
+    const nodes = [
+      node("root"),
+      node("callee", "callee", "src/callee.ts"),
+      node("caller-a", "caller-a", "src/caller-a.ts"),
+      node("caller-b", "caller-b", "src/caller-b.ts"),
+      node("caller-upstream", "caller-upstream", "src/caller-upstream.ts"),
+      node("isolated", "isolated", "src/isolated.ts"),
+      ...leaves,
+    ]
+    const edges = [
+      {
+        source: "root",
+        target: "callee",
+        kind: "calls",
+        provenance: "tree-sitter",
+      },
+      {
+        source: "caller-a",
+        target: "root",
+        kind: "calls",
+        provenance: "tree-sitter",
+      },
+      {
+        source: "caller-b",
+        target: "root",
+        kind: "calls",
+        provenance: "tree-sitter",
+      },
+      {
+        source: "caller-upstream",
+        target: "caller-a",
+        kind: "references",
+        provenance: "tree-sitter",
+      },
+      ...leaves.map((leaf) => ({
+        source: "root",
+        target: leaf.id,
+        kind: "references",
+        provenance: "tree-sitter",
+      })),
+    ]
+    return {
+      repositoryId: "repo_opaque",
+      manifestFingerprint: "manifest-relationships",
+      manifest: [
+        {
+          path: "src/main.ts",
+          contentHash: "hash-relationships",
+          size: 1,
+        },
+      ],
+      counts: {
+        files: 1,
+        nodes: nodes.length,
+        edges: edges.length,
+        warnings: 0,
+      },
+      warnings: [],
+      sources: [
+        {
+          path: "src/main.ts",
+          contentHash: "hash-relationships",
+          language: "typescript",
+          size: 1,
+          text: "export function root() {}",
+        },
+      ],
+      nodes,
+      edges,
+    }
+  }
+
+  const unpublishedGeneration = {
+    ...generation("unpublished"),
+    nodes: [
+      {
+        ...generation("unpublished").nodes[0],
+        id: "root",
+        name: "stale-root",
+      },
+      {
+        ...generation("unpublished").nodes[0],
+        id: "caller-stale",
+        name: "caller-stale",
+      },
+    ],
+    edges: [
+      {
+        source: "caller-stale",
+        target: "root",
+        kind: "calls",
+        provenance: "tree-sitter",
+      },
+    ],
+  }
+
+  const recoveryGeneration = (label: string) => {
+    const candidate = generation(`recovery-${label}`)
+    return {
+      ...candidate,
+      repositoryId: "repo_recovery",
+    }
+  }
+
+  const refreshInitialGeneration = {
+    repositoryId: "repo_refresh",
+    manifestFingerprint: "refresh-initial",
+    manifest: {
+      fingerprint: "refresh-initial",
+      entries: [
+        { path: "changed.ts", contentHash: "changed-old", size: 30 },
+        { path: "deleted.ts", contentHash: "deleted", size: 28 },
+        { path: "unchanged.ts", contentHash: "unchanged", size: 27 },
+      ],
+    },
+    counts: { files: 3, nodes: 6, edges: 3, warnings: 0 },
+    warnings: [],
+    sources: [
+      {
+        path: "changed.ts",
+        contentHash: "changed-old",
+        language: "typescript",
+        size: 30,
+        text: "export function oldValue() {}",
+      },
+      {
+        path: "deleted.ts",
+        contentHash: "deleted",
+        language: "typescript",
+        size: 28,
+        text: "export function deleted() {}",
+      },
+      {
+        path: "unchanged.ts",
+        contentHash: "unchanged",
+        language: "typescript",
+        size: 27,
+        text: "export function retained() {}",
+      },
+    ],
+    nodes: [
+      ...["changed", "deleted", "unchanged"].flatMap((label) => [
+        {
+          id: `file-${label}`,
+          kind: "file",
+          name: `${label}.ts`,
+          qualifiedName: `${label}.ts`,
+          filePath: `${label}.ts`,
+          language: "typescript",
+          startLine: 1,
+          endLine: 1,
+          startColumn: 0,
+          endColumn: 1,
+          updatedAt: 1,
+        },
+        {
+          id: `function-${label}`,
+          kind: "function",
+          name:
+            label === "unchanged"
+              ? "retained"
+              : label === "changed"
+                ? "oldValue"
+                : "deleted",
+          qualifiedName: `${label}.ts::value`,
+          filePath: `${label}.ts`,
+          language: "typescript",
+          startLine: 1,
+          endLine: 1,
+          startColumn: 0,
+          endColumn: 1,
+          updatedAt: 1,
+        },
+      ]),
+    ],
+    edges: ["changed", "deleted", "unchanged"].map((label) => ({
+      source: `file-${label}`,
+      target: `function-${label}`,
+      kind: "contains",
+      provenance: "tree-sitter",
+    })),
+  }
+
   await spawnWorker()
   await request("storage-open", { poolName, clearOnInit: true })
   await expect(request("storage-publish", { generation: generation("one") })).resolves.toMatchObject({
@@ -148,5 +349,323 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     nodeNames: ["valuefour"],
     sourceText: 'export const value = "four"',
   })
+
+  await expect(
+    request("storage-publish", { generation: relationshipGeneration() }),
+  ).resolves.toMatchObject({ generation: 5 })
+
+  await expect(
+    request("storage-publish", { generation: refreshInitialGeneration }),
+  ).resolves.toMatchObject({ repositoryId: "repo_refresh", generation: 1 })
+  const encoder = new TextEncoder()
+  const refreshCollection = {
+    entries: [
+      {
+        kind: "file",
+        path: "added.ts",
+        bytes: encoder.encode("export function added() {}"),
+        contentHash: "added",
+        size: 27,
+      },
+      {
+        kind: "file",
+        path: "changed.ts",
+        bytes: encoder.encode("export function changedValue() {}"),
+        contentHash: "changed-new",
+        size: 34,
+      },
+      {
+        kind: "file",
+        path: "skipped.txt",
+        bytes: encoder.encode("not source"),
+        contentHash: "skipped",
+        size: 10,
+      },
+      {
+        kind: "file",
+        path: "unchanged.ts",
+        bytes: encoder.encode("export function retained() {}"),
+        contentHash: "unchanged",
+        size: 27,
+      },
+    ],
+    manifest: {
+      fingerprint: "refresh-candidate",
+      entries: [
+        { path: "added.ts", contentHash: "added", size: 27 },
+        { path: "changed.ts", contentHash: "changed-new", size: 34 },
+        { path: "skipped.txt", contentHash: "skipped", size: 10 },
+        { path: "unchanged.ts", contentHash: "unchanged", size: 27 },
+      ],
+    },
+    warnings: { details: [], total: 0, truncated: false },
+  }
+  await expect(
+    request("storage-refresh", {
+      repositoryId: "repo_refresh",
+      collection: refreshCollection,
+    }),
+  ).resolves.toEqual({
+    repositoryId: "repo_refresh",
+    generation: 2,
+    changes: {
+      added: 1,
+      changed: 1,
+      deleted: 1,
+      unchanged: 1,
+      skipped: 1,
+    },
+    counts: { files: 3, nodes: 6, edges: 3, warnings: 1 },
+    extractedPaths: ["added.ts", "changed.ts", "skipped.txt"],
+  })
+  await expect(
+    request("storage-current", { repositoryId: "repo_refresh" }),
+  ).resolves.toMatchObject({
+    generation: 2,
+    counts: { files: 3, nodes: 6, edges: 3, warnings: 1 },
+    sourcePaths: ["added.ts", "changed.ts", "unchanged.ts"],
+    nodeNames: expect.arrayContaining(["added", "changedValue", "retained"]),
+    edgeCount: 3,
+    warnings: [expect.objectContaining({ path: "skipped.txt" })],
+    manifest: {
+      entries: [
+        expect.objectContaining({ path: "added.ts", contentHash: "added" }),
+        expect.objectContaining({
+          path: "changed.ts",
+          contentHash: "changed-new",
+        }),
+        expect.objectContaining({
+          path: "unchanged.ts",
+          contentHash: "unchanged",
+        }),
+      ],
+    },
+  })
+  const refreshed = await request<{
+    manifestFingerprint: string
+    manifest: { fingerprint: string }
+  }>("storage-current", { repositoryId: "repo_refresh" })
+  expect(refreshed.manifestFingerprint).toBe(refreshed.manifest.fingerprint)
+  await expect(
+    request("storage-relationships", {
+      repositoryId: "repo_opaque",
+      nodeId: "root",
+      direction: "callers",
+      limit: 999,
+      offset: 0,
+    }),
+  ).resolves.toEqual({
+    items: [
+      expect.objectContaining({ id: "caller-a", name: "caller-a" }),
+      expect.objectContaining({ id: "caller-b", name: "caller-b" }),
+    ],
+    total: 2,
+    limit: 500,
+    offset: 0,
+  })
+  await expect(
+    request("storage-relationships", {
+      repositoryId: "repo_opaque",
+      nodeId: "root",
+      direction: "callees",
+    }),
+  ).resolves.toMatchObject({
+    items: [expect.objectContaining({ id: "callee" })],
+    total: 1,
+    limit: 100,
+    offset: 0,
+  })
+  await expect(
+    request<{ nodes: unknown[]; edges: unknown[]; truncated: boolean }>(
+      "storage-graph",
+      {
+        repositoryId: "repo_opaque",
+        nodeId: "root",
+        depth: 99,
+      },
+    ),
+  ).resolves.toMatchObject({
+    nodes: expect.arrayContaining([expect.objectContaining({ id: "root" })]),
+    truncated: true,
+  })
+  const graph = await request<{
+    nodes: unknown[]
+    edges: unknown[]
+    truncated: boolean
+  }>("storage-graph", {
+    repositoryId: "repo_opaque",
+    nodeId: "root",
+    depth: 99,
+  })
+  expect(graph.nodes).toHaveLength(2_000)
+  expect(graph.edges.length).toBeLessThanOrEqual(10_000)
+
+  const plans = await request<Record<string, string[]>>(
+    "storage-query-plans",
+    { repositoryId: "repo_opaque" },
+  )
+  expect(plans.callers.join(" ")).toContain("idx_edges_target_kind")
+  expect(plans.callees.join(" ")).toContain("idx_edges_source_kind")
+  expect(plans.graph.join(" ")).toContain("MULTI-INDEX OR")
+  expect(plans.impact.join(" ")).toContain("idx_edges_target_kind")
+
+  await expect(
+    request("storage-impact", {
+      repositoryId: "repo_opaque",
+      nodeId: "root",
+      depth: 99,
+    }),
+  ).resolves.toEqual({
+    nodes: [
+      expect.objectContaining({ id: "caller-a", file: "src/caller-a.ts" }),
+      expect.objectContaining({ id: "caller-b", file: "src/caller-b.ts" }),
+      expect.objectContaining({
+        id: "caller-upstream",
+        file: "src/caller-upstream.ts",
+      }),
+      expect.objectContaining({ id: "root", file: "src/main.ts" }),
+    ],
+    edges: [
+      expect.objectContaining({
+        source: "caller-a",
+        target: "root",
+        kind: "calls",
+      }),
+      expect.objectContaining({
+        source: "caller-b",
+        target: "root",
+        kind: "calls",
+      }),
+      expect.objectContaining({
+        source: "caller-upstream",
+        target: "caller-a",
+        kind: "references",
+      }),
+    ],
+    truncated: false,
+  })
+  await expect(
+    request("storage-impact", {
+      repositoryId: "repo_opaque",
+      nodeId: "isolated",
+    }),
+  ).resolves.toEqual({
+    nodes: [expect.objectContaining({ id: "isolated", file: "src/isolated.ts" })],
+    edges: [],
+    truncated: false,
+  })
+
+  await request("storage-leave-staging", {
+    generation: unpublishedGeneration,
+  })
+  await expect(
+    request("storage-relationships", {
+      repositoryId: "repo_opaque",
+      nodeId: "root",
+      direction: "callers",
+    }),
+  ).resolves.toMatchObject({
+    items: [
+      expect.objectContaining({ id: "caller-a" }),
+      expect.objectContaining({ id: "caller-b" }),
+    ],
+    total: 2,
+  })
+  await expect(
+    request("storage-impact", {
+      repositoryId: "repo_opaque",
+      nodeId: "root",
+    }),
+  ).resolves.toMatchObject({
+    nodes: expect.not.arrayContaining([
+      expect.objectContaining({ id: "caller-stale" }),
+    ]),
+    edges: expect.not.arrayContaining([
+      expect.objectContaining({ source: "caller-stale" }),
+    ]),
+  })
+
+  await expect(
+    request("storage-publish", {
+      generation: recoveryGeneration("base"),
+    }),
+  ).resolves.toMatchObject({
+    repositoryId: "repo_recovery",
+    generation: 1,
+  })
+  const recoveryFaults = [
+    ["after-source-staging", /storage_write_failed/],
+    ["after-graph-write", /storage_write_failed/],
+    ["after-status-update", /storage_write_failed/],
+    ["after-registry-publish", /storage_write_failed/],
+    ["quota-before-publication", /quota_exceeded/],
+    ["migration-failed", /schema_version_mismatch/],
+    ["after-delete-cleanup", /storage_write_failed/],
+  ] as const
+  for (const [fault, expected] of recoveryFaults) {
+    await expect(
+      request("storage-publish", {
+        generation: recoveryGeneration(fault),
+        fault,
+      }),
+    ).rejects.toThrow(expected)
+    await expect(
+      request("storage-current", { repositoryId: "repo_recovery" }),
+    ).resolves.toMatchObject({
+      generation: 1,
+      nodeNames: ["valuerecovery-base"],
+    })
+  }
+  await expect(
+    request("storage-statuses", { repositoryId: "repo_recovery" }),
+  ).resolves.toEqual([
+    { generation: 1, status: "published" },
+    ...recoveryFaults.map((_, index) => ({
+      generation: index + 2,
+      status: "failed",
+    })),
+  ])
+  await request("storage-leave-staging", {
+    generation: recoveryGeneration("crashed"),
+  })
   await expect(request<{ paused: boolean }>("storage-close")).resolves.toEqual({ paused: true })
+  await page.evaluate(() => {
+    const target = window as typeof window & { spec007Worker?: Worker }
+    target.spec007Worker?.terminate()
+    delete target.spec007Worker
+  })
+  await spawnWorker()
+  await request("storage-open", { poolName, clearOnInit: false })
+  await expect(
+    request("storage-statuses", { repositoryId: "repo_recovery" }),
+  ).resolves.toEqual([
+    { generation: 1, status: "published" },
+    ...recoveryFaults.map((_, index) => ({
+      generation: index + 2,
+      status: "failed",
+    })),
+    { generation: recoveryFaults.length + 2, status: "failed" },
+  ])
+  await expect(
+    request("storage-current", { repositoryId: "repo_recovery" }),
+  ).resolves.toMatchObject({
+    generation: 1,
+    nodeNames: ["valuerecovery-base"],
+  })
+  await expect(
+    request("storage-delete", { repositoryId: "repo_recovery" }),
+  ).resolves.toEqual({
+    repositoryId: "repo_recovery",
+    deleted: true,
+    generations: recoveryFaults.length + 2,
+  })
+  await expect(
+    request("storage-current", { repositoryId: "repo_recovery" }),
+  ).resolves.toBeNull()
+  await expect(
+    request("storage-statuses", { repositoryId: "repo_recovery" }),
+  ).resolves.toEqual([])
+  await expect(request<{ paused: boolean }>("storage-close")).resolves.toEqual({
+    paused: true,
+  })
 })

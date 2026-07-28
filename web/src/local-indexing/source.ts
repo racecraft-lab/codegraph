@@ -63,9 +63,21 @@ export interface AcceptedSourceEntry {
   mtimeHint?: number
 }
 
+export type SourceManifestEntry = Pick<
+  AcceptedSourceEntry,
+  "path" | "contentHash" | "size" | "mtimeHint"
+>
+
 export interface SourceManifest {
-  entries: Array<Pick<AcceptedSourceEntry, "path" | "contentHash" | "size" | "mtimeHint">>
+  entries: SourceManifestEntry[]
   fingerprint: string
+}
+
+export interface SourceManifestDiff {
+  added: string[]
+  changed: string[]
+  deleted: string[]
+  unchanged: string[]
 }
 
 export interface SourceCollection {
@@ -95,12 +107,300 @@ export interface DirectoryHandleLike {
   readonly kind: "directory"
   readonly name: string
   entries(): AsyncIterableIterator<[string, SourceHandleLike]>
+  queryPermission?(options?: { mode: "read" }): Promise<SourcePermissionState>
+  requestPermission?(options?: { mode: "read" }): Promise<SourcePermissionState>
+  isSameEntry?(other: DirectoryHandleLike): Promise<boolean>
 }
 
 export type SourceHandleLike =
   | FileHandleLike
   | DirectoryHandleLike
   | { readonly kind: string; readonly name: string }
+
+export type SourcePermissionState = "granted" | "prompt" | "denied"
+export type SourceConnectionStatus =
+  | SourcePermissionState
+  | "stale"
+
+export interface SourceConnection {
+  repositoryId: string
+  handleRefId: string
+  status: SourceConnectionStatus
+  canRefresh: boolean
+}
+
+export interface SavedSourceHandle {
+  identity: SourceIdentity
+  handle: DirectoryHandleLike
+}
+
+export interface SourceHandleStore {
+  get(handleRefId: string): Promise<SavedSourceHandle | undefined>
+  put(record: SavedSourceHandle): Promise<void>
+  delete(handleRefId: string): Promise<void>
+}
+
+interface PersistedSourceHandle {
+  handleRefId: string
+  repositoryId: string
+  sourceKind: SourceKind
+  displayName: string
+  virtualRoot: string
+  handle: DirectoryHandleLike
+}
+
+const SOURCE_REGISTRY_DATABASE = "codegraph-browser-source-registry"
+const SOURCE_REGISTRY_STORE = "handles"
+const OPAQUE_SOURCE_ID = /^[A-Za-z0-9_-]+$/
+
+function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.addEventListener("success", () => resolve(request.result), {
+      once: true,
+    })
+    request.addEventListener("error", () => reject(request.error), {
+      once: true,
+    })
+  })
+}
+
+function idbTransaction(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.addEventListener("complete", () => resolve(), { once: true })
+    transaction.addEventListener(
+      "abort",
+      () => reject(transaction.error ?? new Error("Source registry transaction aborted.")),
+      { once: true },
+    )
+    transaction.addEventListener(
+      "error",
+      () => reject(transaction.error ?? new Error("Source registry transaction failed.")),
+      { once: true },
+    )
+  })
+}
+
+export class IndexedDbSourceHandleStore implements SourceHandleStore {
+  private database?: Promise<IDBDatabase>
+
+  private open() {
+    this.database ??= new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(SOURCE_REGISTRY_DATABASE, 1)
+      request.addEventListener("upgradeneeded", () => {
+        if (!request.result.objectStoreNames.contains(SOURCE_REGISTRY_STORE)) {
+          request.result.createObjectStore(SOURCE_REGISTRY_STORE, {
+            keyPath: "handleRefId",
+          })
+        }
+      })
+      request.addEventListener("success", () => resolve(request.result), {
+        once: true,
+      })
+      request.addEventListener("error", () => reject(request.error), {
+        once: true,
+      })
+    })
+    return this.database
+  }
+
+  async get(handleRefId: string): Promise<SavedSourceHandle | undefined> {
+    const database = await this.open()
+    const transaction = database.transaction(SOURCE_REGISTRY_STORE, "readonly")
+    const completed = idbTransaction(transaction)
+    const record = await idbRequest(
+      transaction.objectStore(SOURCE_REGISTRY_STORE).get(handleRefId),
+    ) as PersistedSourceHandle | undefined
+    await completed
+    if (!record) return undefined
+    return {
+      identity: {
+        id: record.repositoryId,
+        sourceKind: record.sourceKind,
+        displayName: record.displayName,
+        virtualRoot: record.virtualRoot,
+        handleRefId: record.handleRefId,
+      },
+      handle: record.handle,
+    }
+  }
+
+  async put(record: SavedSourceHandle): Promise<void> {
+    const database = await this.open()
+    const transaction = database.transaction(SOURCE_REGISTRY_STORE, "readwrite")
+    const completed = idbTransaction(transaction)
+    transaction.objectStore(SOURCE_REGISTRY_STORE).put({
+      handleRefId: record.identity.handleRefId!,
+      repositoryId: record.identity.id,
+      sourceKind: record.identity.sourceKind,
+      displayName: record.identity.displayName,
+      virtualRoot: record.identity.virtualRoot,
+      handle: record.handle,
+    } satisfies PersistedSourceHandle)
+    await completed
+  }
+
+  async delete(handleRefId: string): Promise<void> {
+    const database = await this.open()
+    const transaction = database.transaction(SOURCE_REGISTRY_STORE, "readwrite")
+    const completed = idbTransaction(transaction)
+    transaction.objectStore(SOURCE_REGISTRY_STORE).delete(handleRefId)
+    await completed
+  }
+}
+
+function assertPickedFolderIdentity(identity: SourceIdentity) {
+  if (
+    identity.sourceKind !== "picked-folder" ||
+    !OPAQUE_SOURCE_ID.test(identity.id) ||
+    identity.virtualRoot !== `local://${identity.id}` ||
+    identity.handleRefId !== `handle-${identity.id}`
+  ) {
+    throw new SourceProviderError(
+      "invalid_source_identity",
+      "Saved folders require an opaque browser-local identity.",
+    )
+  }
+}
+
+async function readPermission(handle: DirectoryHandleLike) {
+  return handle.queryPermission?.({ mode: "read" }) ?? "granted"
+}
+
+export class SourceHandleRegistry {
+  private readonly store: SourceHandleStore
+  private readonly liveHandles = new Map<string, DirectoryHandleLike>()
+
+  constructor(store: SourceHandleStore = new IndexedDbSourceHandleStore()) {
+    this.store = store
+  }
+
+  async save(identity: SourceIdentity, handle: DirectoryHandleLike) {
+    assertPickedFolderIdentity(identity)
+    this.liveHandles.set(identity.id, handle)
+    await this.store.put({ identity: { ...identity }, handle })
+    return {
+      repositoryId: identity.id,
+      handleRefId: identity.handleRefId!,
+      status: "granted",
+      canRefresh: true,
+    } satisfies SourceConnection
+  }
+
+  async restore(identity: SourceIdentity): Promise<SourceConnection> {
+    assertPickedFolderIdentity(identity)
+    const record = await this.store.get(identity.handleRefId!)
+    if (
+      !record ||
+      record.identity.id !== identity.id ||
+      record.identity.virtualRoot !== identity.virtualRoot ||
+      record.identity.handleRefId !== identity.handleRefId
+    ) {
+      this.liveHandles.delete(identity.id)
+      return {
+        repositoryId: identity.id,
+        handleRefId: identity.handleRefId!,
+        status: "stale",
+        canRefresh: false,
+      }
+    }
+    let status: SourceConnectionStatus
+    try {
+      status = await readPermission(record.handle)
+    } catch {
+      status = "stale"
+    }
+    if (status === "granted") {
+      this.liveHandles.set(identity.id, record.handle)
+    } else {
+      this.liveHandles.delete(identity.id)
+    }
+    return {
+      repositoryId: identity.id,
+      handleRefId: identity.handleRefId!,
+      status,
+      canRefresh: status === "granted",
+    }
+  }
+
+  async reconnect(
+    identity: SourceIdentity,
+    options: {
+      userActivated: boolean
+      candidate?: DirectoryHandleLike
+    },
+  ): Promise<SourceConnection> {
+    assertPickedFolderIdentity(identity)
+    if (!options.userActivated) {
+      throw new SourceProviderError(
+        "user_activation_required",
+        "Reconnecting a local folder requires direct user activation.",
+      )
+    }
+    const record = await this.store.get(identity.handleRefId!)
+    if (!record) {
+      throw new SourceProviderError(
+        "stale_handle",
+        "The saved folder handle is unavailable. Select the original folder again.",
+      )
+    }
+    const handle = options.candidate ?? record.handle
+    if (options.candidate) {
+      const sameEntry =
+        (await record.handle.isSameEntry?.(options.candidate)) ??
+        (await options.candidate.isSameEntry?.(record.handle)) ??
+        false
+      if (!sameEntry) {
+        throw new SourceProviderError(
+          "source_mismatch",
+          "The selected folder does not match this browser-local repository.",
+        )
+      }
+    }
+    let permission = await readPermission(handle)
+    if (permission !== "granted") {
+      permission =
+        (await handle.requestPermission?.({ mode: "read" })) ?? permission
+    }
+    if (permission !== "granted") {
+      this.liveHandles.delete(identity.id)
+      throw new SourceProviderError(
+        "permission_denied",
+        "Read permission was not granted for the saved local folder.",
+      )
+    }
+    this.liveHandles.set(identity.id, handle)
+    if (options.candidate) {
+      await this.store.put({ identity: { ...identity }, handle })
+    }
+    return {
+      repositoryId: identity.id,
+      handleRefId: identity.handleRefId!,
+      status: "granted",
+      canRefresh: true,
+    }
+  }
+
+  connectedHandle(repositoryId: string) {
+    return this.liveHandles.get(repositoryId)
+  }
+
+  connect(identity: SourceIdentity, handle: DirectoryHandleLike) {
+    assertPickedFolderIdentity(identity)
+    this.liveHandles.set(identity.id, handle)
+    return {
+      repositoryId: identity.id,
+      handleRefId: identity.handleRefId!,
+      status: "granted" as const,
+      canRefresh: true,
+    }
+  }
+
+  async forget(identity: SourceIdentity) {
+    assertPickedFolderIdentity(identity)
+    this.liveHandles.delete(identity.id)
+    await this.store.delete(identity.handleRefId!)
+  }
+}
 
 export interface SnapshotSourceEntry {
   readonly kind: string
@@ -125,10 +425,15 @@ export interface SnapshotProviderOptions extends SourceProviderOptions {
 }
 
 export class SourceProviderError extends Error {
-  readonly code: "user_activation_required"
+  readonly code:
+    | "user_activation_required"
+    | "invalid_source_identity"
+    | "stale_handle"
+    | "source_mismatch"
+    | "permission_denied"
 
   constructor(
-    code: "user_activation_required",
+    code: SourceProviderError["code"],
     message: string,
   ) {
     super(message)
@@ -229,9 +534,9 @@ function isIgnored(
   return matcher.ignores(directory ? `${path}/` : path)
 }
 
-async function manifestFor(
-  entries: readonly AcceptedSourceEntry[],
-  hashBytes: (bytes: Uint8Array) => Promise<string>,
+export async function createSourceManifest(
+  entries: readonly SourceManifestEntry[],
+  hashBytes: (bytes: Uint8Array) => Promise<string> = sha256,
 ): Promise<SourceManifest> {
   const manifestEntries = entries.map(({ path, contentHash, size, mtimeHint }) => ({
     path,
@@ -245,6 +550,36 @@ async function manifestFor(
   return {
     entries: manifestEntries,
     fingerprint: await hashBytes(new TextEncoder().encode(canonical)),
+  }
+}
+
+export function diffSourceManifests(
+  previous: SourceManifest,
+  current: SourceManifest,
+): SourceManifestDiff {
+  const previousByPath = new Map(
+    previous.entries.map((entry) => [entry.path, entry]),
+  )
+  const currentByPath = new Map(
+    current.entries.map((entry) => [entry.path, entry]),
+  )
+  const added: string[] = []
+  const changed: string[] = []
+  const unchanged: string[] = []
+  for (const entry of current.entries) {
+    const old = previousByPath.get(entry.path)
+    if (!old) added.push(entry.path)
+    else if (old.contentHash === entry.contentHash) unchanged.push(entry.path)
+    else changed.push(entry.path)
+  }
+  const deleted = previous.entries
+    .filter((entry) => !currentByPath.has(entry.path))
+    .map((entry) => entry.path)
+  return {
+    added: added.sort(),
+    changed: changed.sort(),
+    deleted: deleted.sort(),
+    unchanged: unchanged.sort(),
   }
 }
 
@@ -352,7 +687,7 @@ export function createPickedFolderProvider(
       entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
       return {
         entries,
-        manifest: await manifestFor(entries, hashBytes),
+        manifest: await createSourceManifest(entries, hashBytes),
         warnings: warnings.result(),
       }
     },
@@ -448,7 +783,7 @@ export function createSnapshotProvider(
       entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
       return {
         entries,
-        manifest: await manifestFor(entries, hashBytes),
+        manifest: await createSourceManifest(entries, hashBytes),
         warnings: warnings.result(),
       }
     },
