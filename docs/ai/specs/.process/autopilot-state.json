@@ -15,9 +15,9 @@
     "upstream_head": "7596c57bf6b1960b37818f41134eadb2a1b25f67",
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
-  "status": "autopilot_in_progress",
-  "active_step": "Post: Review Remediation",
-  "updated_at": "2026-07-28T15:44:00Z",
+  "status": "autopilot_complete",
+  "active_step": null,
+  "updated_at": "2026-07-28T16:10:09Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -1366,11 +1366,11 @@
     },
     {
       "step": "Post: Review Remediation",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: Retrospective",
-      "status": "pending"
+      "status": "completed"
     }
   ],
   "post": {
@@ -1386,8 +1386,8 @@
     "pr_packet_body_generation": "completed_validated",
     "pr_body_generation": "completed_validated",
     "pr_creation": "completed_draft",
-    "review_remediation": "in_progress",
-    "retrospective": "pending"
+    "review_remediation": "completed",
+    "retrospective": "completed"
   },
   "post_evidence": {
     "live_base": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
@@ -1469,12 +1469,59 @@
         "comments": 0,
         "checks": "queued_or_in_progress"
       }
+    },
+    "review_remediation": {
+      "status": "completed",
+      "reviewed_source_head": "f3a0795f54abcc1f2cb76cbb8790f430c8c545b0",
+      "mergeable": "MERGEABLE",
+      "human_reviews": 0,
+      "human_comments": 0,
+      "automated_review_source": "github-advanced-security",
+      "codeql": {
+        "reported_alerts": [71, 72, 73, 74, 75],
+        "fixed_alerts": [71, 73, 74, 75],
+        "dismissed_alerts": [72],
+        "open_alerts": 0,
+        "dismissal_contract": "FR-022, FR-024, FR-042, and FR-043 require an operator-configured provider-neutral HTTPS endpoint after explicit consent; validation rejects HTTP, credentials, queries, and fragments, while fetch omits ambient credentials and redirects."
+      },
+      "changes": [
+        "Vue script extraction uses a bounded structural scanner instead of HTML-tag filtering regex.",
+        "Self-repository benchmark validation and reads use the same open file descriptor.",
+        "Dedicated-worker ingress rejects unexpected origins.",
+        "Error and type review findings were remediated with regression tests."
+      ],
+      "verification": [
+        "focused worker and extraction Vitest passed 28/28",
+        "web typecheck passed",
+        "scoped ESLint passed with zero errors",
+        "full web Vitest passed 27 files and 212 tests",
+        "root build passed",
+        "focused Chromium full-path suite passed 4/4",
+        "737-file self-repository runs completed in 6.05 and 5.50 seconds",
+        "latest p95 search 61.5 ms graph 73.1 ms impact 70.7 ms",
+        "latest maximum main-thread heartbeat gap 75.6 ms",
+        "CodeQL, PR-impact, dependency review, installer coverage, and the Node/platform CI matrix passed"
+      ]
+    },
+    "retrospective": {
+      "status": "completed",
+      "path": "specs/007-in-browser-indexing/retrospective.md",
+      "completion_rate": 100,
+      "spec_adherence": 100,
+      "tasks_completed": 38,
+      "tasks_total": 38,
+      "functional_requirements_implemented": 63,
+      "nonfunctional_requirements_defined": 0,
+      "success_criteria_met": 21,
+      "critical_findings": 0,
+      "proposed_spec_changes": [],
+      "self_assessment": "7/7_pass"
     }
   },
   "resume": {
-    "last_completed": "Post: PR Creation",
-    "current": "Post: Review Remediation",
-    "next": "Inspect live PR checks, reviews, and comments; remediate actionable findings",
-    "required_action": "Finish the serial post-implementation tail through PR creation, review remediation, and retrospective."
+    "last_completed": "Post: Retrospective",
+    "current": null,
+    "next": "Review and merge draft PR #185 when ready.",
+    "required_action": "None; autopilot is complete."
   }
 }

@@ -1979,8 +1979,8 @@ After each slice:
 | Post | Post: PR Packet/Body Generation | ✅ Complete | Canonical packet and packet-owned body emitted; read-only validation passed with current fingerprints. |
 | Post | Post: PR Body Generation | ✅ Complete | Packet-owned body checkpointed; persisted validation and title/scope contract passed. |
 | Post | Post: PR Creation | ✅ Complete | Draft PR [#185](https://github.com/racecraft-lab/codegraph/pull/185) created from packet-owned fields. |
-| Post | Post: Review Remediation | 🔄 In Progress | Live PR checks are running; no reviews or comments are present yet. |
-| Post | Post: Retrospective | ⏳ Pending | Final canonical post step. |
+| Post | Post: Review Remediation | ✅ Complete | Four CodeQL findings were investigated: three were fixed structurally with regression tests and the operator-configured HTTPS endpoint was classified with the ratified provider-neutral contract; the reviewed head is green with no open alert or human feedback. |
+| Post | Post: Retrospective | ✅ Complete | `retrospective.md` records 38/38 tasks, 84/84 requirements, 100% adherence, zero critical findings, and 7/7 self-assessment checks passed. |
 
 ### Reviewability Diff Gate
 
@@ -2095,20 +2095,53 @@ invoked.
   installer coverage, and PR-impact checks are queued or running; no review or
   comment exists at creation time.
 
-- [ ] All tasks in `tasks.md` are genuinely implemented and verified.
-- [ ] `npm run build` passes with shipped worker/WASM/static assets.
-- [ ] `npm test` passes.
-- [ ] Root and web typechecks pass.
-- [ ] Web lint and web Vitest pass.
-- [ ] Playwright full-mode and degradation-mode suites pass.
-- [ ] Cross-runtime extraction fixtures are deterministic across repeated runs.
-- [ ] No default network request or durable embedding credential exists.
-- [ ] Package/offline/static-host audits pass.
-- [ ] Self-repo UAT meets the 60-second and 150 ms targets or records an approved,
+### Review Remediation
+
+- Reviewed CodeGraph source head:
+  `f3a0795f54abcc1f2cb76cbb8790f430c8c545b0`.
+- GitHub Advanced Security reported four CodeQL alerts. The worker ingress now
+  rejects unexpected origins, the self-repository benchmark validates and
+  reads the same open file descriptor, and Vue script extraction uses a bounded
+  structural scanner instead of an HTML-tag filtering regular expression.
+  Focused regression tests, web typecheck, scoped lint, full web Vitest, root
+  build, focused Chromium acceptance, and self-repository performance passed.
+- The remaining client-side-request-forgery alert was classified as an
+  intentional product contract: FR-022, FR-024, FR-042, and FR-043 require an
+  operator-configured provider-neutral HTTPS embedding endpoint after explicit
+  consent. Validation rejects HTTP, URL credentials, query strings, and
+  fragments; fetch omits ambient credentials and redirects. The dismissal
+  records that a fixed hostname allowlist would violate the ratified contract.
+- Reanalysis completed with CodeQL green and zero open alerts. PR-impact,
+  dependency review, and installer coverage passed. No human review or comment
+  required a change; the only review records were GitHub Advanced Security
+  annotations.
+
+### Retrospective
+
+- Report: `specs/007-in-browser-indexing/retrospective.md`.
+- Completion: 38/38 tasks, 100%.
+- Adherence: 63/63 FRs plus 21/21 SCs, 84/84 total, 100%.
+- Critical findings: zero.
+- Proposed spec changes: none; no spec-modification human gate is required.
+- Required self-assessment: 7/7 PASS.
+- Principal lesson: estimate browser/storage/accessibility/package evidence
+  matrices separately, and preserve the nearest-marker linked-worktree
+  bootstrap regression in the authoritative runner.
+
+- [x] All tasks in `tasks.md` are genuinely implemented and verified.
+- [x] `npm run build` passes with shipped worker/WASM/static assets.
+- [x] `npm test` passes.
+- [x] Root and web typechecks pass.
+- [x] Web lint and web Vitest pass.
+- [x] Playwright full-mode and degradation-mode suites pass.
+- [x] Cross-runtime extraction fixtures are deterministic across repeated runs.
+- [x] No default network request or durable embedding credential exists.
+- [x] Package/offline/static-host audits pass.
+- [x] Self-repo UAT meets the 60-second and 150 ms targets or records an approved,
   evidence-based scope decision before merge.
-- [ ] Reviewability, code review, verify, verify-tasks, cleanup, retrospective,
+- [x] Reviewability, code review, verify, verify-tasks, cleanup, retrospective,
   PR packet, and PR gates are complete or explicitly skipped with durable reason.
-- [ ] Roadmap, workflow, autopilot state, task state, UAT evidence, and
+- [x] Roadmap, workflow, autopilot state, task state, UAT evidence, and
   retrospective agree.
 
 ---
@@ -2136,9 +2169,26 @@ slice loses an independently demonstrable user journey, re-slice before code.
 
 ## Lessons Learned
 
-Populate from the post-implementation retrospective. Preserve lessons about
-browser capability detection, OPFS recovery, shared extraction boundaries,
-package assets, privacy, and measured performance.
+1. Estimate browser, storage-failure, accessibility, package, privacy, and
+   performance acceptance matrices as separate review surfaces.
+2. Run browser-security CodeQL analysis at slice boundaries so structural
+   remediations precede the final cross-browser and self-repository matrix.
+3. Keep capability detection independent: probe picker, drop, storage, lock,
+   worker, and persistence support instead of inferring from browser identity.
+4. Preserve generation-aligned OPFS recovery: source cache, graph, manifest,
+   visible state, and semantic metadata publish together or retain the last
+   readable generation.
+5. Maintain the shared extraction kernel as the semantic boundary while
+   runtime adapters own parser and storage mechanics.
+6. Verify package assets by byte inventory and demand-driven request order, not
+   only by build success.
+7. Keep network dormancy as an executable audit; semantic egress remains
+   explicit, HTTPS-only, credential-ephemeral, and separate from keyword reads.
+8. Benchmark with descriptor-bound inputs and record both latency and main-
+   thread responsiveness.
+9. In runner bootstrap, the nearest trusted project marker must win over an
+   ancestor's vendored runner source; retain nested linked-worktree regression
+   coverage.
 
 ---
 
