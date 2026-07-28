@@ -34,8 +34,8 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 | Clarify | `/speckit-clarify` | ✅ Complete | Four sessions applied; 49 unique FRs, zero markers; G2 passed. |
 | Plan | `/speckit-plan` | ✅ Complete | Seven artifacts complete; G3 passed; estimator projected 600 LOC across 15 production files. |
 | Checklist | `/speckit-checklist` | ✅ Complete | Four domains, 129/129 rows checked, 18 initial gaps resolved; G4 passed. |
-| Tasks | `/speckit-tasks` | 🔄 In Progress | Generate TDD tasks ordered by the three vertical slices. |
-| Analyze | `/speckit-analyze` | ⏳ Pending | Check cross-artifact scope, privacy, parity, and reviewability. |
+| Tasks | `/speckit-tasks` | ✅ Complete | 38 TDD tasks, 63/63 FRs, 7/7 stories; G5 passed. |
+| Analyze | `/speckit-analyze` | 🔄 In Progress | Check cross-artifact scope, privacy, parity, and reviewability. |
 | Implement | `/speckit-implement` | ⏳ Pending | Implement only after G1-G6 are clean. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -812,10 +812,30 @@ Populate after `/speckit-tasks`:
 
 | Metric | Value |
 |---|---|
-| Total Tasks | ⏳ Pending |
+| Total Tasks | 38 |
 | Phases/Slices | 3 vertical slices plus bounded setup/polish |
-| Parallel Opportunities | ⏳ Pending |
-| User Stories Covered | Must be 7/7 |
+| Parallel Opportunities | 8 explicitly `[P]` tasks |
+| User Stories Covered | 7/7 |
+| Functional Requirements Covered | 63/63; zero unmapped |
+| TDD Structure | 38 RED / 38 GREEN / 38 REFACTOR / 38 evidence sections |
+| G5 | ✅ Passed; 38 tasks, zero markers |
+
+The required `phase-executor` route was attempted through two executor turns
+plus one resumed turn. Each remained pre-artifact and produced neither
+`tasks.md` nor an actionable blocker despite bounded and absolute-path write
+instructions. The parent orchestrator used the documented fail-open fallback,
+authored `tasks.md` from the validated canonical artifacts, and applied the
+same G5 checks. This executor failure is retained here rather than reported as
+a successful agent result.
+
+Tasks-mode `reviewability-gate` was not invoked because the installed runner
+supports setup mode only. Deferred diagnostics: helper
+`reviewability-gate`, requested mode `tasks`, reason `installed read-only
+runner supports setup mode only`. Fallback evidence permits continuation:
+setup-mode scaffold estimate 1,055 LOC / three suggested slices /
+`status=warn`; Plan `estimate-reviewable-loc` `status=pass`,
+`projected=600`, 15 production files; operator-ratified split: three vertical
+slices. No correctness blocker is present.
 
 ---
 
@@ -829,10 +849,10 @@ runner helper atomicity-route specs/007-in-browser-indexing
 
 | Field | Value | Meaning |
 |---|---|---|
-| **Route** | | `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope` |
-| **Releasable** | | `true` unless the classifier proves a release-safety risk |
-| **Signals** | | Decisive structural findings |
-| **Warnings** | | Release-safety warnings, if any |
+| **Route** | `one-navigable-PR` | Keep the ratified slices as review order inside one PR |
+| **Releasable** | `true` | No release-safety risk found |
+| **Signals** | `change-shape:modify-heavy` | The classifier found a modify-heavy integrated change |
+| **Warnings** | None | No classifier warning |
 
 The interview's three slices are review units, not permission to create branches
 or PRs before this classifier and the normal autopilot gates run.

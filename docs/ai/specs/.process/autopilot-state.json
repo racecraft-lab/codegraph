@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Phase 5: Tasks",
-  "updated_at": "2026-07-28T06:41:43Z",
+  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-28T07:11:19Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -424,7 +424,60 @@
       }
     },
     "tasks": {
-      "status": "pending"
+      "status": "completed",
+      "execution": {
+        "required_agent": "phase-executor",
+        "agent_attempts": 3,
+        "agent_outcome": "failed_pre_artifact_without_actionable_blocker",
+        "fallback": "parent_orchestrator_authored_and_validated_tasks"
+      },
+      "file": "specs/007-in-browser-indexing/tasks.md",
+      "total_tasks": 38,
+      "parallel_opportunities": 8,
+      "user_stories_covered": "7/7",
+      "functional_requirements_covered": "63/63",
+      "unmapped_functional_requirements": [],
+      "tdd_sections": {
+        "red": 38,
+        "green": 38,
+        "refactor": 38,
+        "evidence": 38
+      },
+      "unresolved_markers": 0,
+      "gate": {
+        "id": "G5",
+        "status": "passed",
+        "reason": "38 tasks found with zero markers; independent validation found 63/63 FRs and 7/7 stories"
+      },
+      "reviewability": {
+        "tasks_mode": "deferred",
+        "helper_id": "reviewability-gate",
+        "requested_mode": "tasks",
+        "deferral_reason": "installed read-only runner supports setup mode only",
+        "fallback_evidence": {
+          "setup": {
+            "estimated_loc": 1055,
+            "suggested_slices": 3,
+            "status": "warn"
+          },
+          "plan": {
+            "status": "pass",
+            "projected_loc": 600,
+            "production_files": 15
+          },
+          "operator_ratified_split": "three vertical slices"
+        },
+        "correctness_blocker": false
+      },
+      "atomicity": {
+        "route": "one-navigable-PR",
+        "releasable": true,
+        "signals": [
+          "change-shape:modify-heavy"
+        ],
+        "hints": [],
+        "warnings": []
+      }
     },
     "analyze": {
       "status": "pending"
@@ -520,11 +573,11 @@
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 6: Analyze",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 6: Analyze — Consensus",
@@ -535,7 +588,15 @@
       "status": "pending"
     },
     {
-      "step": "Phase 7: Implement — Pending task decomposition",
+      "step": "Phase 7: Implement — Slice 1 Browser Graph Bootstrap (T001–T012)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement — Slice 3 Degradation, Semantic Opt-In, and Shipping (T025–T038)",
       "status": "pending"
     },
     {
@@ -612,9 +673,9 @@
     "retrospective": "pending"
   },
   "resume": {
-    "last_completed": "Phase 4: Checklist — Consensus — Performance",
-    "current": "Phase 5: Tasks",
-    "next": "Phase 6: Analyze",
-    "required_action": "Dispatch phase-executor for Tasks, validate every FR maps to dependency-ordered TDD work, record deferred tasks-mode reviewability diagnostics, and pass G5."
+    "last_completed": "Phase 5: Tasks",
+    "current": "Phase 6: Analyze",
+    "next": "Phase 6: Analyze — Consensus",
+    "required_action": "Dispatch analyze-executor, remediate every finding, validate G6, then synthesize the mandatory analysis consensus."
   }
 }
