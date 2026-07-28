@@ -1005,9 +1005,263 @@ After each slice:
 
 | Slice | Tasks | Status | Required demonstration |
 |---|---|---|---|
-| 1 - Persistent keyword path | Assigned after G5 | ⏳ Pending | Open folder through local overview/search/symbol/source after reload |
-| 2 - Graph and lifecycle | Assigned after G5 | ⏳ Pending | Graph/impact, reconnect, refresh/rollback, storage, lock, delete |
+| 1 - Persistent keyword path | T001-T012 complete | ✅ Complete | Open folder through local overview/search/symbol/source after reload |
+| 2 - Graph and lifecycle | T013-T024 assigned | 🚧 In progress | Graph/impact, reconnect, refresh/rollback, storage, lock, delete |
 | 3 - Fallback, semantic, shipping | Assigned after G5 | ⏳ Pending | Snapshot/degradation, opt-in semantic, package/offline/performance UAT |
+
+### Implementation Evidence
+
+#### T001 - Packaged SQLite Worker/WASM Bootstrap
+
+- Required `implement-executor` dispatch occurred first, but the child inherited
+  the outer Codex task's write sandbox and could not edit this dedicated
+  worktree. The executor returned zero file/test changes with the exact binding
+  blocker. Parent-orchestrator fallback then completed the task in the verified
+  execution root using strict TDD.
+- **RED**: `npm --prefix web run test:e2e --
+  local-indexing-packaged.spec.ts --workers=1` failed the intended assertion:
+  expected `@sqlite.org/sqlite-wasm` `3.53.0-build1`, received `undefined`.
+- **GREEN**: Pinned the exact Apache-2.0 dependency, excluded it from Vite
+  dependency prebundling, declared WASM handling and the production worker
+  entry, and added the minimum worker module import.
+- **VERIFY**: Focused packaged Playwright passed 1/1; root package-asset Vitest
+  passed 3/3; `npm run build` passed. `web/dist` and copied `dist/web` each
+  contain a non-empty `local-indexing-worker-*.js` and
+  `sqlite3-*.wasm` (864,752 bytes).
+- **Bootstrap finding**: Worktree command binding is correct for the parent, but
+  collaboration child sandboxes remain rooted at the outer Codex task. Until
+  the app can rebind child writable roots, required executor dispatches must
+  record the failure and use parent TDD fallback from this exact worktree.
+
+#### T002 - Deterministic Browser-Indexing Fixtures
+
+- Required `implement-executor` dispatch again returned zero changes after
+  proving the dedicated worktree was `posix-not-writable` in the child session.
+  Parent fallback remained in the verified execution root.
+- Added a virtual browser source tree covering nested ignore rules, a custom
+  `.widget` TypeScript override, Vue-to-TypeScript delegation, binary and
+  1-MiB-plus files, relative/absolute traversal paths, and an unsupported entry
+  kind.
+- Fixed the parity contract to three accepted paths, their language map, nine
+  semantic nodes, eight semantic edges, six stable warning codes, and the
+  single lazy `typescript` grammar load. Runtime ids, timestamps, and row order
+  are removed by the semantic projection helper.
+- **Intentional RED for T004**: Focused Vitest reports 1 passing fixture-contract
+  test and 1 failing assertion: `T004 must provide
+  src/extraction/browser-kernel.ts`. This is T002's required handoff evidence,
+  not a claimed green full suite.
+
+#### T003 - Shared Source-Cache/Generation Migration
+
+- Required executor dispatch again returned the child writable-root blocker with
+  zero changes; parent fallback supplied RED/GREEN evidence.
+- **RED**: Focused real-SQLite migration suite failed three independent
+  assertions: canonical version 11 vs expected 12, missing fresh
+  `source_cache`, and missing v11 migration tables.
+- **GREEN**: Canonical schema/migration v12 adds `source_cache`,
+  `index_generations`, and `index_publications` with fresh/migrated shape
+  parity, a source-path index, generation-status index, and one-published-
+  generation uniqueness.
+- **VERIFY**: Focused migration invariants passed 5/5; shipped-schema gate
+  passed 6/6 after the normal `copy-assets` refresh; all 153 affected schema
+  regressions passed; root and web typechecks passed.
+- The schema rejects cache rows over 1 MiB, a second published generation for
+  one repository, and publication pointers without matching generation rows.
+  Existing version assertions were updated from 11 to 12 only where the
+  canonical-version bump made that necessary.
+
+#### T004 - Runtime-Neutral Browser Extraction Kernel
+
+- Required executor dispatch again returned zero changes after confirming the
+  dedicated worktree was not writable in the child sandbox; parent fallback
+  completed the strict TDD loop from the verified execution root.
+- **RED**: T002 first failed on the missing browser-kernel module. A later
+  contract assertion failed because the browser result omitted unresolved
+  references and extraction errors.
+- **GREEN**: Added the Node-free source-admission/extraction seam with injected
+  hashing, language detection, grammar loading, parsing, and release hooks;
+  deterministic bytewise path order; traversal/duplicate/ignore/size/binary
+  warnings; delegate grammar selection; and complete semantic results.
+- **VERIFY**: Browser-kernel and grammar-byte suites passed 6/6; the focused
+  existing Svelte/Vue/Astro extraction subset passed 25/25; root and web
+  typechecks passed. The repeated fixture projection remains exactly nine nodes
+  and eight edges with identical manifests, unresolved references, and errors.
+- **Retrieval guardian**: Two required guardian agents were dispatched but did
+  not return after bounded waits and explicit stop requests. Parent fail-open
+  review applied the repository checklist: budget/output/error/guidance,
+  synthesized-edge, flow, and server-instruction checks are N/A; deterministic
+  node/edge stability passes by the repeated canonical/browser projection; A/B
+  retrieval evaluation is N/A because this new browser seam is not yet wired
+  into Node or agent retrieval behavior. No blocking finding remains.
+
+#### T005 - Picked-Folder And Snapshot Source Providers
+
+- Required executor dispatch returned zero changes with the known child
+  writable-root blocker; parent fallback continued from the dedicated worktree.
+- **RED**: Focused web Vitest failed at module resolution because
+  `web/src/local-indexing/source.ts` did not exist.
+- **GREEN**: Added direct-user-activation picker gating, opaque folder/snapshot
+  identity, private live-handle ownership, recursive ancestry-derived POSIX
+  traversal, built-in/configured ignores before byte reads, deterministic
+  hashes/manifests, immutable snapshot copies, and file/depth/count/byte/
+  transfer ceilings with capped warning details plus aggregate counts.
+- **VERIFY**: Focused source-provider cases passed 5/5, web typecheck passed,
+  and `git diff --check` remained clean. Tests prove rejected, duplicate,
+  ignored, oversized, cyclic, traversal-shaped, and over-budget inputs never
+  enter accepted manifests or trigger rejected byte reads.
+
+#### T006 - SQLite-Wasm SAH-Pool Generation Storage
+
+- Required executor dispatch returned zero changes with the known child
+  writable-root blocker; parent fallback supplied the task implementation.
+- Current official SQLite documentation was checked after two Context7
+  transport failures. The adapter explicitly installs `opfs-sahpool`, which is
+  worker-only, avoids a COOP/COEP dependency, uses absolute virtual filenames,
+  reserves capacity, closes every database, and pauses the VFS on shutdown.
+- **RED**: Focused web Vitest failed because the SQLite store module was
+  missing.
+- **GREEN**: Added a browser-safe shared schema-version constant, canonical
+  schema initialization, per-generation graph/source databases, a registry
+  publication pointer, two-phase staging/commit, last-good rollback,
+  incomplete-staging recovery, bounded failure recording, and deterministic
+  close behavior.
+- **VERIFY**: Focused unit contracts passed 6/6; root and web typechecks passed;
+  the production build passed; a real Chromium worker/SQLite-Wasm/OPFS
+  SAH-pool test passed 1/1 through initial publish, injected quota failure,
+  worker restart, stale-generation cleanup, republish, source/graph reads, and
+  VFS pause. Focused Node schema/migration regressions passed 59/59 and the diff
+  whitespace gate is clean.
+
+#### T007 - Versioned Worker Operation Runtime
+
+- Required executor dispatch returned zero changes with the known child
+  writable-root blocker; parent fallback implemented the worker contract.
+- **RED**: Three focused cases failed because the worker exported neither a
+  versioned runtime nor its declared budgets. A later RED proved cancellation
+  could be falsely accepted after atomic publication had begun.
+- **GREEN**: Added protocol-v1 structured-clone-safe envelopes, exact batch/
+  payload/progress/embedding/vector budgets, batched/coalesced progress, one-
+  time lazy grammar-manifest loading through an injected adapter, operation-
+  scoped cancellation, stale request no-ops, one terminal response, plain
+  redacted failures, and deterministic grammar/store close cleanup.
+- Cancellation is accepted only before the publication point of no return; a
+  later cancel is an explicit no-op and the already-started atomic commit
+  completes rather than being mislabeled cancelled.
+- **VERIFY**: Focused worker/source/storage cases passed 10/10, web typecheck
+  passed, and `git diff --check` passed.
+
+#### T008 - Shared REST/Local Repository Client Boundary
+
+- Required executor dispatch returned zero changes with the known child
+  writable-root blocker; parent fallback supplied the typed adapters.
+- **RED**: Focused web Vitest failed because neither the shared repository
+  client nor local worker client existed.
+- **GREEN**: Added one SPA-facing method surface for repository lists/status/
+  overview, search, node/source, relationships, graph, impact, refresh,
+  cancellation, and deletion. The remote adapter delegates existing REST
+  functions; the local adapter uses protocol-v1 correlated worker requests,
+  optional transfer lists, stable error normalization, and fail-closed
+  unsupported capabilities.
+- Stale request ids, mismatched operation ids, and progress frames cannot settle
+  active calls; local failures never fall through to daemon fetches.
+- **VERIFY**: Focused client plus worker regressions passed 13/13, web typecheck
+  passed, and `git diff --check` passed.
+
+#### T009 - Deliberate Local-Folder Shell Entry
+
+- Required executor dispatch returned zero changes with the known child
+  writable-root blocker; parent fallback completed the component TDD in the
+  dedicated worktree.
+- **RED**: Three focused component cases failed on the absent Open local folder
+  control, absent Server/Local folder/Local snapshot labels, silent progress and
+  terminal states, missing cancellation, focus loss, and an opaque local root
+  displayed in the overview header.
+- **GREEN**: The existing shell now invokes the folder picker only from direct
+  button activation, hands the accepted source collection to
+  `LocalRepositoryClient`, exposes progress and operation cancellation, and
+  keeps all required runtime/state labels visible. Status/alert live regions,
+  compact wrapping, and deterministic focus return cover the accessibility
+  contract without changing server selection behavior.
+- **REFACTOR**: Runtime-label mapping and operation-state taxonomy are
+  centralized while existing Button, Progress, Badge, Select, and app-state
+  primitives remain the presentation boundary.
+- **VERIFY**: Focused local shell, existing app-shell, and local-client tests
+  passed 8/8; web typecheck and `git diff --check` passed.
+
+#### T010 - Local Routes and Inert Cached Source
+
+- Required executor dispatch returned zero changes with the known child
+  writable-root blocker; parent fallback completed the route/client TDD.
+- **RED**: Three focused browser-local route cases all failed because keyword
+  search, symbol relationships, graph, and impact still called daemon REST
+  functions; cached source was unavailable and the source viewer remained tied
+  to `/lsp`.
+- **GREEN**: App state now exposes the active typed repository client without
+  ever substituting the remote client for a disconnected local repository.
+  Search, status/overview, symbol, callers/callees, graph, impact, and cached
+  source reads use that client. Local source has a distinct React text renderer,
+  while LSP-only source intelligence and chat remain visibly server-only.
+- **SECURITY**: The focused malicious-source case renders script, image, event
+  handler, URL, and `javascript:`-looking bytes as literal text. It observes no
+  image node, code execution, `fetch`, or WebSocket construction.
+- **REFACTOR**: REST delegation remains inside the remote client, local
+  disconnection fails closed, and the existing LSP source viewer is preserved
+  unchanged behind the server-only branch.
+- **VERIFY**: Six focused shell/client/route/source files passed 98/98 tests;
+  root and web typechecks passed; web lint passed with pre-existing
+  fast-refresh/ReindexRoute warnings only; `git diff --check` passed.
+
+#### T011 - Real Chromium Folder-To-Keyword Journey
+
+- Required executor dispatch returned zero changes with the known child
+  writable-root blocker; parent fallback completed the real-browser TDD path in
+  the dedicated worktree.
+- **RED**: The first Chromium run timed out after 20 seconds waiting for
+  `Local keyword index complete.` because the production worker did not yet
+  connect picked-folder bytes to parser WASM, SQLite-Wasm publication, or the
+  local repository query surface.
+- **GREEN**: The production worker now loads shipped Tree-sitter core/grammar
+  WASM, extracts accepted TypeScript/JavaScript/Vue sources off the UI thread,
+  publishes graph/source rows through the SQLite-Wasm SAH pool, answers local
+  repository queries, persists opaque repository metadata, and reopens the
+  last-good local generation after reload without picker permission or daemon
+  fallback. Pre-publication cancellation is operation-scoped and a cancelled
+  import can be retried cleanly.
+- **DETERMINISM/PRIVACY**: The fixture publishes exactly three symbols and two
+  contains edges, searches both expected functions before and after reload,
+  renders the durable cached source, and observes zero repository-derived API,
+  LSP, WebSocket, external-origin, or CDN requests.
+- **VERIFY**: Focused worker/client/shell/route suites passed 22/22; web
+  typecheck passed; the production build emitted non-empty local worker,
+  SQLite-Wasm, Tree-sitter runtime, TypeScript, TSX, and JavaScript WASM assets;
+  real Chromium cancellation/retry/index/search/source/reload passed 1/1 in
+  1.9 seconds. The exact dependency lock was reconciled offline with npm 10 to
+  avoid unrelated npm 11 peer-metadata churn.
+
+#### T012 - Slice 1 Reviewability And Regression Checkpoint
+
+- Required executor dispatch returned zero changes and no verification after
+  proving the dedicated worktree was readable but `posix-not-writable`; parent
+  fallback completed the checkpoint from the verified execution root.
+- **RED/DIFF BUDGET**: Slice 1 changes 40 code/test files with 5,574 additions
+  and 70 deletions: 24 production/dependency files at 3,743 additions and 64
+  deletions, plus 16 test/fixture files at 1,831 additions and 6 deletions.
+  This materially exceeds the scaffold's rough 1,055-LOC estimate and remains
+  an explicit reviewability warning.
+- **BOUNDARY**: All changed behavior remains inside the ratified canonical
+  schema/migration, runtime-neutral extraction, browser source/storage/worker,
+  typed client, existing SPA shell/routes, dependency packaging, and focused
+  verification ownership. No semantic opt-in, degradation matrix, lifecycle
+  refresh/reconnect/lock/delete, or fourth slice was pulled forward. The slice
+  retains its independent folder-to-durable-keyword demonstration.
+- **GREEN**: Root production build and root/web typechecks passed; focused root
+  migration/extraction/shipped-schema tests passed 13/13; all web Vitest passed
+  142/142; lint completed with 0 errors and 15 existing export-shape/hook
+  warnings; Chromium packaged-assets, real SQLite-Wasm recovery, and full local
+  journey passed 3/3.
+- **REFACTOR**: No additional code change was justified by the green
+  checkpoint. `git diff --check` passed and the oversized-but-contained warning
+  remains visible for the final reviewability backstop.
 
 ---
 

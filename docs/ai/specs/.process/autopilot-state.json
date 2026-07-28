@@ -10,14 +10,14 @@
     "task_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/007-in-browser-indexing",
     "execution_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/007-in-browser-indexing",
     "branch": "007-in-browser-indexing",
-    "head": "7596c57bf6b1960b37818f41134eadb2a1b25f67",
+    "head": "bc2143ba2bf8f8067d9b3af689f273f06fceba03",
     "upstream": "origin/007-in-browser-indexing",
     "upstream_head": "7596c57bf6b1960b37818f41134eadb2a1b25f67",
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Phase 7: Implement — Slice 1 Browser Graph Bootstrap (T001–T012)",
-  "updated_at": "2026-07-28T07:35:03Z",
+  "active_step": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
+  "updated_at": "2026-07-28T08:52:52Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -565,8 +565,196 @@
     "implement": {
       "status": "in_progress",
       "task_decomposition": "38 task-level TDD units in 3 vertical slices",
-      "current_slice": "Slice 1 Browser Graph Bootstrap",
-      "current_task_range": "T001-T012"
+      "current_slice": "Slice 2 Local Repository Shell and Lifecycle",
+      "current_task_range": "T013-T024",
+      "current_task": "T013",
+      "completed_tasks": [
+        "T001",
+        "T002",
+        "T003",
+        "T004",
+        "T005",
+        "T006",
+        "T007",
+        "T008",
+        "T009",
+        "T010",
+        "T011",
+        "T012"
+      ],
+      "executor_binding": {
+        "status": "parent_fallback_required",
+        "agent": "implement-executor",
+        "first_observed_task": "T001",
+        "failure": "Child inherited the outer Codex task writable sandbox and could not mutate the dedicated SPEC-007 worktree.",
+        "agent_result_consumed": true,
+        "fallback": "Parent orchestrator runs strict RED-GREEN-REFACTOR from the verified execution root and records task evidence.",
+        "durability_note": "All child binding failures and parent fallbacks remain explicit in workflow/state until Codex supports rebinding child writable roots."
+      },
+      "task_results": {
+        "T001": {
+          "status": "completed",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "red": "Focused packaged Playwright failed expected 3.53.0-build1 versus undefined.",
+          "green": "Exact SQLite-Wasm dependency, Vite WASM/worker asset flow, and minimal worker entry added.",
+          "verification": [
+            "focused packaged Playwright 1/1 passed",
+            "root package asset Vitest 3/3 passed",
+            "npm run build passed",
+            "web/dist and dist/web contain non-empty worker and SQLite WASM assets"
+          ]
+        },
+        "T002": {
+          "status": "completed_with_intentional_handoff_red",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "fixture_contract": "Three accepted paths, language map, nine-node/eight-edge semantic projection, six warning codes, and one lazy grammar load are fixed.",
+          "verification": [
+            "focused fixture-contract test 1/1 passed",
+            "focused browser-kernel integration assertion intentionally fails until T004 creates src/extraction/browser-kernel.ts"
+          ]
+        },
+        "T003": {
+          "status": "completed",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "red": "Canonical version was 11 and fresh/migrated databases lacked the shared browser source-generation tables.",
+          "green": "Migration v12 adds source_cache, index_generations, and index_publications through the canonical schema and version stream.",
+          "verification": [
+            "focused real-SQLite migration/invariant test 5/5 passed",
+            "shipped-schema byte-identity suite 6/6 passed",
+            "affected schema regressions 153/153 passed",
+            "root and web typechecks passed"
+          ]
+        },
+        "T004": {
+          "status": "completed",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "red": "The browser kernel module was absent; after the first green pass, a second focused assertion exposed omitted unresolved references and extraction errors.",
+          "green": "A Node-free injected source-to-graph kernel now performs deterministic admission, lazy delegate grammar selection, extraction, complete result aggregation, and per-file release.",
+          "verification": [
+            "focused browser-kernel and grammar-byte tests 6/6 passed",
+            "focused existing Svelte/Vue/Astro extraction tests 25/25 passed",
+            "root and web typechecks passed",
+            "repeated semantic projection is stable at 9 nodes and 8 edges"
+          ],
+          "retrieval_guardian": {
+            "agent_dispatches": 2,
+            "agent_outcome": "execution_channel_failed_to_return_after_bounded_waits",
+            "parent_fallback": "completed",
+            "blocking_findings": 0,
+            "node_edge_stability": "passed by canonical-versus-browser and repeated projection assertions",
+            "ab_evidence": "not_applicable_until_browser seam affects Node or agent retrieval behavior"
+          }
+        },
+        "T005": {
+          "status": "completed",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "red": "Focused web Vitest could not resolve the missing local-indexing source-provider module.",
+          "green": "Picked-folder and immutable snapshot providers now gate picker use on direct activation, mint opaque identities, normalize ancestry-derived paths, enforce ignores and traversal/read/transfer ceilings, hash accepted bytes, and cap warning details.",
+          "verification": [
+            "focused source-provider tests 5/5 passed",
+            "web typecheck passed",
+            "git diff --check passed"
+          ]
+        },
+        "T006": {
+          "status": "completed",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "red": "Focused web Vitest could not resolve the missing browser SQLite store module.",
+          "green": "The worker now installs SQLite-Wasm opfs-sahpool, initializes the canonical schema, stages graph/source generations in separate databases, atomically advances a registry publication pointer, preserves last-good reads, recovers stale staging, and pauses the VFS on close.",
+          "verification": [
+            "focused source/storage unit contracts 6/6 passed",
+            "real Chromium worker SQLite-Wasm OPFS SAH-pool publication/recovery test 1/1 passed",
+            "root production build passed",
+            "root and web typechecks passed",
+            "focused Node schema and migration regressions 59/59 passed",
+            "git diff --check passed"
+          ],
+          "documentation": "Context7 transport closed twice; current official SQLite-Wasm persistence documentation confirmed explicit SAH-pool installation, worker-only OPFS, absolute filenames, no COOP/COEP requirement, and deterministic close/pause guidance."
+        },
+        "T007": {
+          "status": "completed",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "red": "Focused cases failed because the worker lacked the versioned runtime/budgets; a second RED showed cancellation was incorrectly accepted after publication began.",
+          "green": "Protocol v1 now emits plain structured-clone-safe responses, enforces exact budgets, coalesces progress, lazily loads each grammar manifest once, cancels only before publication, ignores stale messages, emits one terminal state, redacts runtime failures, and closes grammar/store resources.",
+          "verification": [
+            "focused worker/source/storage tests 10/10 passed",
+            "web typecheck passed",
+            "git diff --check passed"
+          ]
+        },
+      "T008": {
+          "status": "completed",
+          "executor": "implement-executor_dispatched_then_parent_fallback",
+          "red": "Focused web Vitest could not resolve the missing shared repository client and local worker adapter.",
+          "green": "A single SPA-facing repository interface now bridges existing REST calls and protocol-v1 local worker transport with correlated requests, stale-message rejection, optional transfers, normalized errors, and fail-closed unsupported capabilities.",
+          "verification": [
+            "focused repository-client and worker regressions 13/13 passed",
+            "web typecheck passed",
+          "git diff --check passed"
+        ]
+      },
+      "T009": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Three focused shell cases failed on the absent direct Open local folder action, runtime labels, progress/cancel UI, live regions, focus return, and opaque-root-safe local header.",
+        "green": "The shell now starts picker access only from direct activation, hands the accepted source collection to LocalRepositoryClient, exposes accessible progress/cancel/terminal states, retains trust-boundary runtime labels, and restores focus.",
+        "verification": [
+          "focused local shell, app-shell, and local-client tests 8/8 passed",
+          "web typecheck passed",
+          "git diff --check passed"
+        ]
+      },
+      "T010": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Three focused local-route cases failed because search, symbol relationships, graph, impact, and source still reached daemon REST or LSP-only paths.",
+        "green": "The selected RepositoryClient now owns local overview/status, keyword search, symbol/source, relationships, graph, and impact reads; disconnected local repositories fail closed; cached source renders only as React text; server-only LSP and chat are visibly disabled.",
+        "verification": [
+          "focused local route and malicious-source cases 3/3 passed",
+          "six focused shell, client, route, and source files 98/98 passed",
+          "root and web typechecks passed",
+          "web lint passed with warnings only",
+          "zero fetch and zero WebSocket calls in local route proof",
+          "git diff --check passed"
+        ]
+      },
+      "T011": {
+        "status": "completed",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "Real Chromium timed out after 20 seconds because the production picked-folder worker did not yet connect source bytes to parser WASM, SQLite-Wasm publication, and local repository queries.",
+        "green": "The shipped worker now performs real Tree-sitter WASM extraction, atomic SQLite-Wasm graph/source publication, local query serving, operation-scoped pre-publication cancellation, and durable reload without picker or daemon fallback.",
+        "verification": [
+          "focused worker, client, shell, and local-route suites 22/22 passed",
+          "web typecheck passed",
+          "production web build emitted local worker, SQLite-Wasm, Tree-sitter runtime, and required grammar WASM assets",
+          "real Chromium cancellation, retry, 3-node/2-edge index, search, cached source, and reload journey passed 1/1 in 1.9 seconds",
+          "zero repository-derived API, LSP, WebSocket, external-origin, or CDN requests",
+          "dependency lock reconciled offline without npm 11 peer-metadata churn"
+        ]
+      },
+      "T012": {
+        "status": "completed_with_reviewability_warning",
+        "executor": "implement-executor_dispatched_then_parent_fallback",
+        "red": "The Slice 1 baseline contains 40 code/test files, 5,574 additions, and 70 deletions, materially above the scaffold's rough 1,055-LOC estimate.",
+        "green": "The oversized slice remains confined to the ratified schema/extraction/source/storage/worker/client/UI/package/test ownership and preserves one independent durable keyword journey; no Slice 2 lifecycle or Slice 3 semantic/degradation capability was pulled forward.",
+        "reviewability": {
+          "all": "40 files, +5574/-70",
+          "production": "24 files, +3743/-64",
+          "tests": "16 files, +1831/-6",
+          "status": "warning_retained_for_final_backstop",
+          "undeclared_capability_surfaces": 0
+        },
+        "verification": [
+          "root production build passed with copied web/worker/WASM assets",
+          "root and web typechecks passed",
+          "focused root migration, extraction, and shipped-schema tests 13/13 passed",
+          "all web Vitest 142/142 passed",
+          "web lint completed with 0 errors and 15 warnings",
+          "Chromium package, real SQLite-Wasm recovery, and full folder journey 3/3 passed",
+          "git diff --check passed"
+        ]
+      }
+      }
     }
   },
   "plan": [
@@ -668,11 +856,11 @@
     },
     {
       "step": "Phase 7: Implement — Slice 1 Browser Graph Bootstrap (T001–T012)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement — Slice 3 Degradation, Semantic Opt-In, and Shipping (T025–T038)",
@@ -752,9 +940,9 @@
     "retrospective": "pending"
   },
   "resume": {
-    "last_completed": "Phase 6.5: Confidence Gate",
-    "current": "Phase 7: Implement — Slice 1 Browser Graph Bootstrap (T001–T012)",
-    "next": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
-    "required_action": "Dispatch one implement-executor at a time for T001 through T012 with strict RED-GREEN-REFACTOR evidence."
+    "last_completed": "Phase 7 T012 and Slice 1 checkpoint",
+    "current": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
+    "next": "T013 relationships and graph query parity",
+    "required_action": "Continue with T013 using strict RED-GREEN-REFACTOR evidence for local relationships, graph, and bounded impact parity; dispatch and consume the implement-executor first, then use the recorded parent fallback from this exact worktree if the child writable-root blocker recurs."
   }
 }

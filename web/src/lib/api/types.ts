@@ -29,6 +29,8 @@ export interface Repository {
   root: string
   name: string
   default: boolean
+  runtime?: "server" | "local"
+  sourceKind?: "picked-folder" | "snapshot"
 }
 
 export interface RepositoryStatus {

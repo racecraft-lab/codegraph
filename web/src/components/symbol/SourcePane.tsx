@@ -12,6 +12,7 @@ import {
   type SourceSnapshot,
 } from "@/lib/lsp/client"
 import { isWindowsRepositoryRoot } from "@/lib/lsp/path"
+import type { SourceResult } from "@/lib/repository-client"
 
 type ViewerState = "connecting" | "loading" | "ready" | "empty" | "render-limited" | "stale" | "unavailable" | "timed-out" | "disconnected" | "retry-required"
 type ConnectionPermission = "initial" | "connected" | "retry-required" | "retrying"
@@ -33,9 +34,50 @@ interface SourcePaneProps {
   onNavigate(location: LspLocation): void
   onClose(): void
   createClient?: (repoId: string) => BrowserLspApi
+  cachedSource?: SourceResult
+  sourcePath?: string
 }
 
-export function SourcePane({ repoId, root, location, initialSymbol, onCanonicalize, onNavigate, onClose, createClient }: SourcePaneProps) {
+export function SourcePane(props: SourcePaneProps) {
+  if (props.cachedSource) {
+    return <CachedSourcePane {...props} cachedSource={props.cachedSource} />
+  }
+  return <ServerSourcePane {...props} />
+}
+
+function CachedSourcePane({
+  cachedSource,
+  sourcePath,
+  onClose,
+}: SourcePaneProps & { cachedSource: SourceResult }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{sourcePath ?? "Cached source"}</CardTitle>
+        <CardDescription>
+          Cached browser source. LSP source intelligence is available only for
+          server repositories.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex min-w-0 flex-col gap-3">
+        <pre
+          className="max-h-[65vh] overflow-auto whitespace-pre rounded-lg bg-muted p-3 text-xs"
+          tabIndex={0}
+          aria-label={`Cached source for ${sourcePath ?? "selected symbol"}`}
+        >
+          <code>{cachedSource.text}</code>
+        </pre>
+        <div>
+          <Button variant="outline" onClick={onClose}>
+            Close source
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ServerSourcePane({ repoId, root, location, initialSymbol, onCanonicalize, onNavigate, onClose, createClient }: SourcePaneProps) {
   const factory = React.useMemo(() => createClient ?? ((id: string) => new BrowserLspClient(id)), [createClient])
   const currentLocationKey = locationKey(location)
   const keyedLocation = React.useMemo<LspLocation>(() => ({

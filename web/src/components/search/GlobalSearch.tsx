@@ -10,12 +10,11 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { errorState } from "@/lib/api/client"
-import { searchSymbols } from "@/lib/api/search"
 import type { CodeNode, SearchResult } from "@/lib/api/types"
 import { mark, measure } from "@/lib/perf/marks"
 
 export function GlobalSearch() {
-  const { selectedRepo, selectNode } = useAppState()
+  const { selectedRepo, repositoryClient, selectNode } = useAppState()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = React.useState(searchParams.get("q") ?? "")
@@ -38,7 +37,12 @@ export function GlobalSearch() {
     setStatus("loading")
     mark("search-request")
     try {
-      const next = await searchSymbols({ query: trimmedQuery, repoId: selectedRepoId, mode: "auto", limit: 50 })
+      if (!selectedRepoId) throw new Error("Select a repository before searching.")
+      const next = await repositoryClient.search(selectedRepoId, {
+        query: trimmedQuery,
+        mode: selectedRepo?.runtime === "local" ? "keyword" : "auto",
+        limit: 50,
+      })
       if (currentRequest !== requestId.current) return
       mark("search-render")
       setDurationMs(measure("search-response-render", "search-request", "search-render"))
@@ -52,7 +56,7 @@ export function GlobalSearch() {
       setStatus("error")
       setMessage(nextError.message)
     }
-  }, [selectedRepoId])
+  }, [repositoryClient, selectedRepo?.runtime, selectedRepoId])
 
   React.useEffect(() => {
     setQuery(urlQuery)

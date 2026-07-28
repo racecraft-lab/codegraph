@@ -18,6 +18,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/app/state", () => ({
   useAppState: () => ({
     selectedRepo: { id: "repo-1", root: "/repo", name: "repo", default: true },
+    repositoryClient: {
+      getNode: mocks.getSymbol,
+      getCallers: mocks.listCallers,
+      getCallees: mocks.listCallees,
+    },
     clearNode: mocks.clearNode,
     selectNode: mocks.selectNode,
   }),

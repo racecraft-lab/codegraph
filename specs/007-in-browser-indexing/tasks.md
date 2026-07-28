@@ -22,13 +22,13 @@ and records focused verification before its checkbox may be marked complete.
 **Purpose**: Establish the exact dependency, shipped-asset, and fixture seams
 needed by the first vertical slice without creating a layer-only deliverable.
 
-- [ ] T001 [US7] Pin the permissively licensed `@sqlite.org/sqlite-wasm@3.53.0-build1` dependency and declare its worker/WASM asset flow in `package.json` and `web/vite.config.ts` (`FR-003`, `FR-027`, `FR-045`, `FR-046`, `FR-062`).
+- [x] T001 [US7] Pin the permissively licensed `@sqlite.org/sqlite-wasm@3.53.0-build1` dependency and declare its worker/WASM asset flow in `package.json` and `web/vite.config.ts` (`FR-003`, `FR-027`, `FR-045`, `FR-046`, `FR-062`).
   - **RED**: Extend `web/src/tests/local-indexing-packaged.spec.ts` to fail when the exact dependency, worker entry, SQLite WASM, or package asset is missing, empty, CDN-backed, or dev-server-only.
   - **GREEN**: Add the exact dependency and minimum build/asset declarations needed for the packaged test to find same-origin assets.
   - **REFACTOR**: Centralize asset-base resolution without adding a second build path or runtime fallback.
   - **Evidence**: Focused packaged test plus `npm run build`.
 
-- [ ] T002 [P] [US1] Add deterministic browser-indexing fixture trees and semantic projection helpers under `__tests__/fixtures/browser-indexing/` and `__tests__/extraction-browser-kernel.test.ts` (`FR-005`, `FR-007`, `FR-047`, `FR-053`).
+- [x] T002 [P] [US1] Add deterministic browser-indexing fixture trees and semantic projection helpers under `__tests__/fixtures/browser-indexing/` and `__tests__/extraction-browser-kernel.test.ts` (`FR-005`, `FR-007`, `FR-047`, `FR-053`).
   - **RED**: Add fixtures whose nested ignores, extension overrides, binary/oversize files, traversal-shaped entries, and delegate grammars expose missing parity behavior.
   - **GREEN**: Define the accepted-manifest, language-map, graph projection, warning-code, and lazy-grammar expectations consumed by later tasks.
   - **REFACTOR**: Reuse canonical fixture builders and exclude runtime-specific ids, timestamps, and row order.
@@ -42,61 +42,61 @@ server or network egress.
 
 ### User Story 1 — Open a Local Folder
 
-- [ ] T003 [P] [US1] Add the shared source-cache/generation migration through `src/db/schema.sql`, `src/db/migrations.ts`, and `__tests__/db-browser-source-cache-migration.test.ts` (`FR-009`, `FR-010`, `FR-038`, `FR-039`).
+- [x] T003 [P] [US1] Add the shared source-cache/generation migration through `src/db/schema.sql`, `src/db/migrations.ts`, and `__tests__/db-browser-source-cache-migration.test.ts` (`FR-009`, `FR-010`, `FR-038`, `FR-039`).
   - **RED**: Prove the canonical migration stream lacks source-cache, generation, and publication metadata and rejects a browser-only schema fork.
   - **GREEN**: Add the smallest shared schema/migration entries needed by Node and browser storage.
   - **REFACTOR**: Preserve existing Node migrations and centralize schema-version invariants.
   - **Evidence**: Focused migration test and root typecheck.
 
-- [ ] T004 [P] [US1] Extract the runtime-neutral source-to-graph kernel in `src/extraction/browser-kernel.ts` and adapt `src/extraction/index.ts` without importing Node-only modules into the browser seam (`FR-005`, `FR-006`, `FR-007`, `FR-047`, `FR-053`, `FR-061`).
+- [x] T004 [P] [US1] Extract the runtime-neutral source-to-graph kernel in `src/extraction/browser-kernel.ts` and adapt `src/extraction/index.ts` without importing Node-only modules into the browser seam (`FR-005`, `FR-006`, `FR-007`, `FR-047`, `FR-053`, `FR-061`).
   - **RED**: Run the T002 cross-runtime fixtures and capture manifest, grammar, warning, and semantic-projection failures.
   - **GREEN**: Implement injected source/language inputs, lazy grammar selection, deterministic extraction, traversal admission, and per-file resource release.
   - **REFACTOR**: Remove duplicated Node/browser graph materialization while preserving the Node adapter and existing extraction tests.
   - **Evidence**: `npx vitest run __tests__/extraction-browser-kernel.test.ts` plus focused existing extraction tests.
 
-- [ ] T005 [US1] Implement explicit picked-folder and snapshot source providers in `web/src/local-indexing/source.ts` with focused cases in `web/src/tests/local-indexing-worker.test.ts` (`FR-002`, `FR-005`, `FR-020`, `FR-037`, `FR-040`, `FR-053`, `FR-059`).
+- [x] T005 [US1] Implement explicit picked-folder and snapshot source providers in `web/src/local-indexing/source.ts` with focused cases in `web/src/tests/local-indexing-worker.test.ts` (`FR-002`, `FR-005`, `FR-020`, `FR-037`, `FR-040`, `FR-053`, `FR-059`).
   - **RED**: Fail on automatic prompts, host-path leakage, duplicate normalized paths, recursive cycles, ignore drift, unbounded reads, and rejected files entering accepted manifests.
   - **GREEN**: Add user-activation-only handle intake, opaque identity inputs, nested selection parity, bounded batches, hashes, snapshot manifests, and warning caps.
   - **REFACTOR**: Share normalization/admission helpers with the extraction kernel without retaining live handles in transferable payloads.
   - **Evidence**: Focused source-provider cases in the worker test.
 
-- [ ] T006 [US1] Implement SQLite-Wasm SAH-pool storage and atomic generation publication in `web/src/local-indexing/sqlite.ts` with failure cases in `web/src/tests/local-indexing-worker.test.ts` (`FR-009`, `FR-010`, `FR-017`, `FR-038`, `FR-039`, `FR-055`, `FR-058`, `FR-061`).
+- [x] T006 [US1] Implement SQLite-Wasm SAH-pool storage and atomic generation publication in `web/src/local-indexing/sqlite.ts` with failure cases in `web/src/tests/local-indexing-worker.test.ts` (`FR-009`, `FR-010`, `FR-017`, `FR-038`, `FR-039`, `FR-055`, `FR-058`, `FR-061`).
   - **RED**: Demonstrate missing schema migration, partial publication, quota/write failure, stale staging, and unclosed-handle behavior against the prior readable generation.
   - **GREEN**: Open the canonical schema in OPFS, stage graph/cache/manifest/status together, publish one generation, retain the prior generation on failure, and close statements/VFS ownership deterministically.
   - **REFACTOR**: Isolate SQLite adapter boundaries and keep registry-only state outside the canonical graph schema.
   - **Evidence**: Focused real SQLite-Wasm worker test; no database mock for publication/recovery behavior.
 
-- [ ] T007 [US1] Implement versioned worker RPC, lazy grammar loading, progress, cancellation, budgets, and resource cleanup in `web/src/local-indexing/worker.ts` (`FR-006`, `FR-008`, `FR-041`, `FR-048`, `FR-059`, `FR-061`).
+- [x] T007 [US1] Implement versioned worker RPC, lazy grammar loading, progress, cancellation, budgets, and resource cleanup in `web/src/local-indexing/worker.ts` (`FR-006`, `FR-008`, `FR-041`, `FR-048`, `FR-059`, `FR-061`).
   - **RED**: Fail on raw runtime errors, multiple terminal events, stale cancel/results, eager grammars, per-item progress floods, budget overruns, cancellation publication, and unreleased resources.
   - **GREEN**: Add structured-clone-safe v1 envelopes, one terminal state, coalesced progress, operation-scoped cancel, lazy grammar manifests, bounded transfers, and close cleanup.
   - **REFACTOR**: Centralize error redaction and operation lifecycle transitions without weakening type exhaustiveness.
   - **Evidence**: `npx vitest run web/src/tests/local-indexing-worker.test.ts`.
 
-- [ ] T008 [US1] Introduce the typed repository-client boundary in `web/src/lib/repository-client.ts`, bridge existing REST behavior in `web/src/lib/api/client.ts`, and add local worker transport in `web/src/local-indexing/client.ts` (`FR-001`, `FR-008`, `FR-011`, `FR-035`, `FR-041`).
+- [x] T008 [US1] Introduce the typed repository-client boundary in `web/src/lib/repository-client.ts`, bridge existing REST behavior in `web/src/lib/api/client.ts`, and add local worker transport in `web/src/local-indexing/client.ts` (`FR-001`, `FR-008`, `FR-011`, `FR-035`, `FR-041`).
   - **RED**: Add client tests that fail when REST and local implementations diverge in result/error/status shapes or stale worker messages affect the active request.
   - **GREEN**: Implement the minimum shared methods for repositories, overview, search, symbol/source, relationships, graph, impact, refresh, and delete.
   - **REFACTOR**: Keep one SPA-facing interface and remove route-level runtime branching that the client can own.
   - **Evidence**: `npx vitest run web/src/tests/local-indexing-client.test.tsx`.
 
-- [ ] T009 [US1] Add the deliberate **Open local folder** entry, runtime labels, progress/cancel states, and focus/live-region behavior in `web/src/components/layout/RepositorySwitcher.tsx` and `web/src/routes/RepositoryOverview.tsx` (`FR-001`, `FR-002`, `FR-012`, `FR-030`, `FR-031`, `FR-050`, `FR-051`).
+- [x] T009 [US1] Add the deliberate **Open local folder** entry, runtime labels, progress/cancel states, and focus/live-region behavior in `web/src/components/layout/RepositorySwitcher.tsx` and `web/src/routes/RepositoryOverview.tsx` (`FR-001`, `FR-002`, `FR-012`, `FR-030`, `FR-031`, `FR-050`, `FR-051`).
   - **RED**: Add component tests for no automatic picker, missing Server/Local folder/Local snapshot labels, unreachable controls, focus loss, and silent progress/terminal states.
   - **GREEN**: Wire the local client from direct activation and expose accessible progress, cancellation, status, and trust-boundary labels.
   - **REFACTOR**: Reuse existing shell/status primitives and preserve server behavior.
   - **Evidence**: Focused app-shell and local-client component tests.
 
-- [ ] T010 [US2] Route local overview, keyword search, symbol, and cached source reads through `LocalRepositoryClient` in `web/src/lib/repository-client.ts`, `web/src/routes/RepositoryOverview.tsx`, `web/src/routes/SymbolDetailRoute.tsx`, `web/src/components/symbol/SourcePane.tsx`, and `web/src/lib/lsp/client.ts` (`FR-010`, `FR-011`, `FR-013`, `FR-021`, `FR-035`, `FR-044`, `FR-054`).
+- [x] T010 [US2] Route local overview, keyword search, symbol, and cached source reads through `LocalRepositoryClient` in `web/src/lib/repository-client.ts`, `web/src/routes/RepositoryOverview.tsx`, `web/src/routes/SymbolDetailRoute.tsx`, `web/src/components/symbol/SourcePane.tsx`, and `web/src/lib/lsp/client.ts` (`FR-010`, `FR-011`, `FR-013`, `FR-021`, `FR-035`, `FR-044`, `FR-054`).
   - **RED**: Add local-route cases that fail on daemon fetch fallback, any `/lsp` WebSocket connection, disabled core routes, raw HTML/source-derived URLs, or enabled LSP-only/server-only actions.
   - **GREEN**: Serve cached local source through `LocalRepositoryClient.getSource`, keep core routes enabled, render plain text/tokens, prevent `BrowserLspClient` from connecting for local repositories, and disable hover/definition/references with an honest LSP-only explanation.
   - **REFACTOR**: Share source-route presentation and source models while keeping the server LSP client available only for server repositories.
   - **Evidence**: Focused `web/src/tests/local-indexing-client.test.tsx` and malicious-source route/component tests proving local source never opens `/lsp`.
 
-- [ ] T011 [US1] Complete the real Chromium folder-to-keyword journey in `web/src/tests/local-indexing-full.spec.ts` (`FR-001` through `FR-010`, `FR-025`, `FR-027`, `FR-031`, `FR-037` through `FR-041`, `FR-044`, `FR-047`, `FR-048`).
+- [x] T011 [US1] Complete the real Chromium folder-to-keyword journey in `web/src/tests/local-indexing-full.spec.ts` (`FR-001` through `FR-010`, `FR-025`, `FR-027`, `FR-031`, `FR-037` through `FR-041`, `FR-044`, `FR-047`, `FR-048`).
   - **RED**: Record the first failing secure-context picker/import/index/reload/search/source journey using real worker, WASM, OPFS, and shipped grammar assets.
   - **GREEN**: Make the journey complete with zero repository-derived network calls, visible progress/cancel, durable cached source, and deterministic parity output.
   - **REFACTOR**: Extract stable Playwright fixtures without mocking SQLite-Wasm, OPFS, or parser WASM.
   - **Evidence**: Chromium Playwright trace plus focused unit/root suites.
 
-- [ ] T012 [US1] Run the Slice 1 reviewability and regression checkpoint, fixing only slice-owned defects (`FR-028`).
+- [x] T012 [US1] Run the Slice 1 reviewability and regression checkpoint, fixing only slice-owned defects (`FR-028`).
   - **RED**: Capture changed production files/LOC, failed focused tests, and any fourth capability surface or undeclared file.
   - **GREEN**: Keep the slice inside the declared source/storage/worker/client/UI ownership and pass root build/typecheck, focused root/web tests, and Chromium Slice 1 UAT.
   - **REFACTOR**: Simplify only code introduced in T003–T011; stop for consensus if the ratified three-slice boundary is exceeded.

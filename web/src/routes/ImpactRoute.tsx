@@ -6,13 +6,13 @@ import { ImpactState } from "@/components/impact/ImpactState"
 import { ImpactTables } from "@/components/impact/ImpactTables"
 import { StatePanel } from "@/components/layout/StatePanel"
 import { errorState } from "@/lib/api/client"
-import { getImpact } from "@/lib/api/impact"
 import type { GraphResult } from "@/lib/api/types"
 
 export function ImpactRoute() {
   const { id = "" } = useParams()
   const nodeId = id
-  const { selectedRepo, selectNode, clearNode } = useAppState()
+  const { selectedRepo, repositoryClient, selectNode, clearNode } = useAppState()
+  const selectedRepoId = selectedRepo?.id
   const [impact, setImpact] = React.useState<GraphResult | null>(null)
   const [error, setError] = React.useState<string | undefined>()
 
@@ -23,7 +23,8 @@ export function ImpactRoute() {
     clearNode()
     async function load() {
       try {
-        const next = await getImpact(nodeId, selectedRepo?.id)
+        if (!selectedRepoId) throw new Error("Select a repository before reviewing impact.")
+        const next = await repositoryClient.getImpact(selectedRepoId, nodeId)
         if (!cancelled) {
           setImpact(next)
           setError(undefined)
@@ -46,7 +47,7 @@ export function ImpactRoute() {
     return () => {
       cancelled = true
     }
-  }, [clearNode, nodeId, selectNode, selectedRepo?.id])
+  }, [clearNode, nodeId, repositoryClient, selectNode, selectedRepoId])
 
   if (!impact) {
     return (

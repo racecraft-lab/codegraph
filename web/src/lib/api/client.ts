@@ -91,11 +91,13 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return parseJson<T>(response)
 }
 
-export function errorState(error: unknown): {
+export interface ClientErrorState {
   code: string
   message: string
   status: number
-} {
+}
+
+export function normalizeApiError(error: unknown): ClientErrorState {
   if (error instanceof ApiClientError) {
     return {
       code: error.envelope.error.code,
@@ -105,3 +107,5 @@ export function errorState(error: unknown): {
   }
   return { code: "internal", message: "Unexpected web UI error.", status: 0 }
 }
+
+export const errorState = normalizeApiError

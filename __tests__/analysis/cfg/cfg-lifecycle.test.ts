@@ -291,7 +291,7 @@ describe('SPEC-014 CFG SQLite lifecycle schema', () => {
   }
 
   it('fresh schema creates CFG status, block, and edge tables with by-value ownership and required indexes', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(11);
+    expect(CURRENT_SCHEMA_VERSION).toBe(12);
 
     const db = freshDb();
     const tables = objectNames(db, 'table');

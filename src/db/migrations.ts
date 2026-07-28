@@ -5,6 +5,7 @@
  */
 
 import { SqliteDatabase } from './sqlite-adapter';
+import { SHARED_SCHEMA_VERSION } from './schema-version';
 
 const MIGRATION_LOCK_TIMEOUT_MS = 120_000;
 const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
@@ -377,13 +378,86 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 12,
+    description:
+      'Add SPEC-007 canonical source cache, generation metadata, and atomic publication pointers',
+    up: (db) => {
+      // DDL only. Browser handle/capability registry state remains outside the
+      // graph database, while accepted source, generation status, and the
+      // current/last-success pointer share this canonical migration stream.
+      // Keep these definitions in lockstep with schema.sql.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS source_cache (
+            repository_id TEXT NOT NULL,
+            generation INTEGER NOT NULL CHECK (generation > 0),
+            path TEXT NOT NULL CHECK (path <> ''),
+            content_hash TEXT NOT NULL,
+            language TEXT,
+            size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0 AND size_bytes <= 1048576),
+            mtime_hint INTEGER,
+            text TEXT NOT NULL,
+            PRIMARY KEY (repository_id, generation, path)
+        );
+
+        CREATE TABLE IF NOT EXISTS index_generations (
+            repository_id TEXT NOT NULL,
+            generation INTEGER NOT NULL CHECK (generation > 0),
+            schema_version INTEGER NOT NULL CHECK (schema_version > 0),
+            status TEXT NOT NULL CHECK (status IN ('building', 'published', 'rolled_back', 'failed', 'deleted')),
+            manifest_fingerprint TEXT,
+            manifest_json TEXT,
+            counts_json TEXT NOT NULL DEFAULT '{}',
+            warnings_json TEXT NOT NULL DEFAULT '[]',
+            started_at INTEGER NOT NULL,
+            published_at INTEGER,
+            failure_code TEXT,
+            failure_message TEXT CHECK (failure_message IS NULL OR length(failure_message) <= 240),
+            PRIMARY KEY (repository_id, generation),
+            CHECK (
+                status <> 'published'
+                OR (
+                    manifest_fingerprint IS NOT NULL
+                    AND manifest_json IS NOT NULL
+                    AND published_at IS NOT NULL
+                )
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS index_publications (
+            repository_id TEXT PRIMARY KEY,
+            current_generation INTEGER NOT NULL CHECK (current_generation > 0),
+            last_success_generation INTEGER NOT NULL CHECK (last_success_generation > 0),
+            status TEXT NOT NULL CHECK (status IN ('ready', 'partial')),
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (repository_id, current_generation)
+                REFERENCES index_generations(repository_id, generation),
+            FOREIGN KEY (repository_id, last_success_generation)
+                REFERENCES index_generations(repository_id, generation)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_source_cache_path
+            ON source_cache(repository_id, path, generation);
+        CREATE INDEX IF NOT EXISTS idx_index_generations_status
+            ON index_generations(repository_id, status, generation);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_index_generations_published
+            ON index_generations(repository_id) WHERE status = 'published';
+      `);
+    },
+  },
 ];
 
 /**
  * Current schema version — always the last migration's version (see the note
  * above the migrations array).
  */
-export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]!.version;
+const derivedSchemaVersion = migrations[migrations.length - 1]!.version;
+if (derivedSchemaVersion !== SHARED_SCHEMA_VERSION) {
+  throw new Error(
+    `Shared schema version ${SHARED_SCHEMA_VERSION} does not match last migration ${derivedSchemaVersion}`,
+  );
+}
+export const CURRENT_SCHEMA_VERSION = SHARED_SCHEMA_VERSION;
 
 /**
  * Get the current schema version from the database
