@@ -399,6 +399,9 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   await expect(request("storage-publish", { generation: generation("four") })).resolves.toMatchObject({
     generation: 4,
   })
+  await expect(request<string[]>("storage-file-names")).resolves.not.toContain(
+    "/codegraph/browser/repositories/repo_opaque/generations/1.sqlite3",
+  )
   await expect(request("storage-current", { repositoryId: "repo_opaque" })).resolves.toMatchObject({
     generation: 4,
     nodeNames: ["valuefour"],
@@ -408,6 +411,44 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   await expect(
     request("storage-publish", { generation: relationshipGeneration() }),
   ).resolves.toMatchObject({ generation: 5 })
+  await request("storage-write-vectors", {
+    repositoryId: "repo_opaque",
+    graphGeneration: 5,
+    rows: [
+      {
+        nodeId: "root",
+        model: "model-safe",
+        dimensions: 2,
+        values: [1, 0],
+        inputHash: "hash-root",
+      },
+      {
+        nodeId: "callee",
+        model: "model-safe",
+        dimensions: 2,
+        values: [0, 1],
+        inputHash: "hash-callee",
+      },
+    ],
+  })
+  await expect(
+    request("storage-semantic-search", {
+      repositoryId: "repo_opaque",
+      graphGeneration: 5,
+      model: "model-safe",
+      dimensions: 2,
+      vector: [0.9, 0.1],
+      limit: 10,
+      offset: 0,
+    }),
+  ).resolves.toMatchObject({
+    items: [
+      expect.objectContaining({ id: "root" }),
+      expect.objectContaining({ id: "callee" }),
+    ],
+    total: 2,
+    degraded: false,
+  })
 
   await expect(
     request("storage-publish", { generation: refreshInitialGeneration }),

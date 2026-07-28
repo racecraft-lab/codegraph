@@ -36,6 +36,7 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 | Checklist | `/speckit-checklist` | ✅ Complete | Four domains, 129/129 rows checked, 18 initial gaps resolved; G4 passed. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 38 TDD tasks, 63/63 FRs, 7/7 stories; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | Consensus remediated 1 HIGH and 1 MEDIUM finding; G6 passed; confidence 0.94. |
+| Confidence Gate | G6.5 | ✅ Complete | Advisory mode passed at 0.94 against the configured 0.90 threshold. |
 | Implement | `/speckit-implement` | ✅ Complete | Executed 38 task-level TDD units in three vertical slices. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -50,6 +51,7 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 | G4 | After Checklist | Every `[Gap]` marker from all four required domains is resolved or explicitly scoped out. |
 | G5 | After Tasks | Every FR and user story maps to dependency-ordered red-green-refactor tasks and UAT. |
 | G6 | After Analyze | No CRITICAL issue remains; HIGH findings are fixed or ratified with evidence. |
+| G6.5 | Before Implement | Advisory confidence is at least 0.90 or remediation guidance remains visible. |
 | G7 | After Each Slice | Focused tests, root/web gates, real browser UAT, package checks, and Git cleanliness pass. |
 
 ### Canonical Post Gates
@@ -928,6 +930,14 @@ Implementation readiness: 0.93
 
 Confidence mode is advisory; the synthesized score exceeds the configured
 0.90 threshold.
+
+---
+
+## Phase 6.5: Confidence Gate
+
+| Confidence Gate | G6.5 | Status | Notes |
+|---|---|---|---|
+| Confidence Gate | G6.5 | ✅ Complete | Advisory score 0.94 exceeded the configured 0.90 threshold; implementation proceeded with no unresolved human-review item. |
 
 ---
 
@@ -1954,6 +1964,85 @@ After each slice:
 ---
 
 ## Post-Implementation Checklist
+
+| Phase | Item | Status | Notes |
+|---|---|---|---|
+| Post | Post: Doctor Extension Check | ✅ Complete | Installed Doctor check passed before verification. |
+| Post | Post: Verify Implementation | ✅ Complete | No findings; 38/38 tasks, 63/63 FRs, and all 21 success criteria have evidence. |
+| Post | Post: Verify Tasks Phantom Check | ✅ Complete | 35 implementation tasks verified; T012, T024, and T038 are correctly recorded as process checkpoints rather than phantom code tasks. |
+| Post | Post: Code Review | ✅ Complete | Error-handling and type-design findings were remediated with regression tests; bounded re-reviews returned no findings. |
+| Post | Post: Integration Suite | ✅ Complete | Root/web tests, builds, typechecks, lint, and complete Chromium Playwright preflight passed. |
+| Post | Post: Reviewability Diff Gate | ✅ Complete | WARN: 82 files, +24,193/-2,101 overall and 33 production/config files, +10,528/-234; no correctness blocker or fourth capability class. |
+| Post | Post: Self-Review | ✅ Complete | Tests executed, all acceptance/edge-case groups mapped, FR-001–FR-063 traced, and tidiness scan passed. |
+| Post | Post: UAT Runbook Generation | ⏭️ Skipped | `generate-uat-skeleton` is deferred and no committed source-derived runbook exists; fail-open per installed runner policy. |
+| Post | Post: Final Reviewability Backstop | ⏳ Pending | Current committed reviewability evidence must proceed before PR side effects. |
+| Post | Post: PR Packet/Body Generation | ⏳ Pending | Feature-local packet and packet-owned body will be emitted and validated. |
+| Post | Post: PR Body Generation | ⏳ Pending | Packet-owned public body will be checked for current verification and UAT text. |
+| Post | Post: PR Creation | ⏳ Pending | Draft PR targets `origin` after packet validation. |
+| Post | Post: Review Remediation | ⏳ Pending | Live PR feedback and checks will be inspected after creation. |
+| Post | Post: Retrospective | ⏳ Pending | Final canonical post step. |
+
+### Reviewability Diff Gate
+
+- Live base: `origin/main` at `91cf4b24cb2d64440733675e0db67040adc9c3d6`.
+- Full feature plus review remediation: 82 files, 24,193 additions, and 2,101
+  deletions.
+- Production/config surface: 33 files, 10,528 additions, and 234 deletions;
+  tests: 25 files, 7,737 additions and 11 deletions; specification, workflow,
+  and lock evidence: 20 files, 5,895 additions and 1,854 deletions.
+- Verdict: `warn_non_blocking`. The size warning is materially above the
+  scaffold estimate, but it is the same operator-ratified three-slice feature
+  already recorded at T012, T024, and T038. Every changed capability remains
+  inside extraction, storage, worker, repository-client, UI, packaging,
+  documentation, or acceptance-test ownership; no correctness blocker or
+  fourth capability class was found. Atomicity remains
+  `one-navigable-PR`, with the three slices retained as reviewer order.
+
+### Self-Review
+
+1. **Tests executed?** Yes. The authoritative 2026-07-28 post-review runs
+   executed root build, root/web typechecks, root and web unit suites, web
+   lint, focused storage/privacy browser tests, and the complete Chromium
+   Playwright suite. Root Vitest passed 262 files/4,670 tests with 15
+   files/181 tests skipped; final web Vitest passed 27 files/210 tests; lint
+   reported zero errors and 15 existing warnings; Chromium passed 29 tests
+   with one intentional packaged-server skip.
+2. **Edge cases?** No `[edge-case-gap]` remains. User-action, denied/stale
+   handle, hostile path, binary/oversize, cancellation, malformed worker,
+   and bounded-warning cases are covered in
+   `web/src/tests/local-indexing-worker.test.ts:55`. Corrupt metadata,
+   worker crash, cleanup warning, persistence, reconnect, and bounded query
+   cases are covered in `web/src/tests/local-indexing-client.test.tsx:279`.
+   Transaction rollback/vector recovery is covered in
+   `web/src/tests/local-indexing-storage.spec.ts:15`; lock contention/crash in
+   `web/src/tests/local-indexing-locks.spec.ts:83`; unsupported capability
+   guidance in `web/src/tests/local-indexing-degradation.spec.ts:3`; malicious
+   inert source in `web/src/tests/local-repository-routes.test.tsx:122`;
+   consent and endpoint failure in
+   `web/src/tests/local-indexing-network.spec.ts:15`; missing/corrupt assets in
+   `web/src/tests/local-indexing-packaged.spec.ts:169`; and full lifecycle,
+   semantic failure/resume, accessibility, and self-repository performance in
+   `web/src/tests/local-indexing-full.spec.ts:225`.
+3. **Requirements matched?** Yes. `tasks.md` maps FR-001–FR-063 to completed
+   T001–T038. The independent phantom check records 35 code-bearing tasks as
+   verified and T012/T024/T038 as intentionally skipped process checkpoints,
+   with zero partial, weak, or missing task. The implementation verifier found
+   all 63 requirements and all 21 success criteria evidenced.
+4. **Follow-up and tidiness?** The spec, plan, tasks, and feature commit
+   messages contain no `[TODO]`, `[DEFERRED]`, or `[OUT-OF-SCOPE]` marker.
+   `git diff --check` passes. No debugger, commented-out implementation, or
+   orphaned fixture was found. The `console.info` calls in the self-repository
+   Playwright suite are deliberate machine-readable benchmark checkpoints,
+   not production logging. The 15 existing lint warnings remain visible and
+   non-blocking.
+
+### UAT Runbook Generation
+
+Skipped fail-open: the installed `generate-uat-skeleton` helper is registered
+as deferred, and no committed `specs/007-in-browser-indexing/.process/uat-runbook.md`
+exists to hand to `uat-runbook-author`. The executable UAT remains in
+`quickstart.md` and the browser acceptance suites; no deferred helper was
+invoked.
 
 - [ ] All tasks in `tasks.md` are genuinely implemented and verified.
 - [ ] `npm run build` passes with shipped worker/WASM/static assets.

@@ -103,7 +103,7 @@ javascript:alert("still text")`,
 })
 
 describe("browser-local repository routes", () => {
-  it("runs keyword search through the selected local client without daemon traffic", async () => {
+  it("runs automatic local search through the selected client without daemon traffic", async () => {
     render(
       <MemoryRouter initialEntries={["/search?q=localMain"]}>
         <GlobalSearch />
@@ -113,7 +113,7 @@ describe("browser-local repository routes", () => {
     expect(await screen.findByText("localMain")).toBeInTheDocument()
     expect(repositoryClient.search).toHaveBeenCalledWith("local-1", {
       query: "localMain",
-      mode: "keyword",
+      mode: "auto",
       limit: 50,
     })
     expect(fetch).not.toHaveBeenCalled()

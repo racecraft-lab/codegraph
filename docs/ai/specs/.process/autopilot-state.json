@@ -16,8 +16,8 @@
     "constraint": "Run every command and mutation from this exact dedicated worktree."
   },
   "status": "autopilot_in_progress",
-  "active_step": "Post: Doctor Extension Check",
-  "updated_at": "2026-07-28T13:55:41Z",
+  "active_step": "Post: Final Reviewability Backstop",
+  "updated_at": "2026-07-28T15:15:11Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -1318,39 +1318,39 @@
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Code Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Self-Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Final Reviewability Backstop",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: PR Packet/Body Generation",
@@ -1374,25 +1374,48 @@
     }
   ],
   "post": {
-    "doctor_extension_check": "pending",
-    "verify_implementation": "pending",
-    "verify_tasks_phantom_check": "pending",
-    "code_review": "pending",
-    "integration_suite": "pending",
-    "reviewability_diff_gate": "pending",
-    "self_review": "pending",
-    "uat_runbook_generation": "pending",
-    "final_reviewability_backstop": "pending",
+    "doctor_extension_check": "completed",
+    "verify_implementation": "completed",
+    "verify_tasks_phantom_check": "completed",
+    "code_review": "completed_after_remediation",
+    "integration_suite": "completed",
+    "reviewability_diff_gate": "completed_warn_non_blocking",
+    "self_review": "completed_no_gaps",
+    "uat_runbook_generation": "skipped_generate_uat_skeleton_deferred",
+    "final_reviewability_backstop": "in_progress",
     "pr_packet_body_generation": "pending",
     "pr_body_generation": "pending",
     "pr_creation": "pending",
     "review_remediation": "pending",
     "retrospective": "pending"
   },
+  "post_evidence": {
+    "live_base": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
+    "reviewability": {
+      "status": "warn_non_blocking",
+      "all": "82 files, +24193/-2101",
+      "production_and_config": "33 files, +10528/-234",
+      "tests": "25 files, +7737/-11",
+      "correctness_blocker": false,
+      "atomicity_route": "one-navigable-PR",
+      "review_order": "three operator-ratified vertical slices"
+    },
+    "self_review": {
+      "status": "completed_no_gaps",
+      "edge_case_gaps": 0,
+      "orphan_requirements": 0,
+      "silent_deferrals": 0,
+      "tidiness_findings": 0
+    },
+    "uat_runbook": {
+      "status": "skipped",
+      "reason": "generate-uat-skeleton deferred and no committed source-derived runbook exists"
+    }
+  },
   "resume": {
-    "last_completed": "Phase 7 T038 and all 38 implementation tasks",
-    "current": "Post: Doctor Extension Check",
-    "next": "Verify implementation and verify completed tasks after doctor confirms extension availability",
-    "required_action": "Run all 14 post-implementation gates in workflow order, preserving durable evidence for completion, remediation, or explicit skip reasons before PR creation."
+    "last_completed": "Post: UAT Runbook Generation",
+    "current": "Post: Final Reviewability Backstop",
+    "next": "Checkpoint the remediated implementation and current reviewability evidence, then emit and validate the PR packet",
+    "required_action": "Finish the serial post-implementation tail through PR creation, review remediation, and retrospective."
   }
 }

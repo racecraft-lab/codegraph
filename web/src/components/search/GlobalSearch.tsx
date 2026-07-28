@@ -40,7 +40,7 @@ export function GlobalSearch() {
       if (!selectedRepoId) throw new Error("Select a repository before searching.")
       const next = await repositoryClient.search(selectedRepoId, {
         query: trimmedQuery,
-        mode: selectedRepo?.runtime === "local" ? "keyword" : "auto",
+        mode: "auto",
         limit: 50,
       })
       if (currentRequest !== requestId.current) return
@@ -56,7 +56,7 @@ export function GlobalSearch() {
       setStatus("error")
       setMessage(nextError.message)
     }
-  }, [repositoryClient, selectedRepo?.runtime, selectedRepoId])
+  }, [repositoryClient, selectedRepoId])
 
   React.useEffect(() => {
     setQuery(urlQuery)

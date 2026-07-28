@@ -21,6 +21,7 @@ import type {
 import {
   WORKER_BUDGETS,
   WORKER_PROTOCOL_VERSION,
+  isWorkerResponse,
   type WorkerResponse,
 } from "./worker"
 import {
@@ -46,12 +47,12 @@ import {
 interface WorkerTransport {
   postMessage(message: unknown, transfer?: Transferable[]): void
   addEventListener(
-    type: "message",
-    listener: (event: MessageEvent) => void
+    type: "message" | "error" | "messageerror",
+    listener: EventListener
   ): void
   removeEventListener(
-    type: "message",
-    listener: (event: MessageEvent) => void
+    type: "message" | "error" | "messageerror",
+    listener: EventListener
   ): void
   terminate?(): void
 }
@@ -117,6 +118,14 @@ export interface SemanticIndexRequest {
   }
 }
 
+interface SemanticSearchSession {
+  endpointUrl: string
+  model: string
+  dimensions?: number
+  graphGeneration: number
+  credential: string
+}
+
 function createId() {
   return crypto.randomUUID()
 }
@@ -131,8 +140,10 @@ export class LocalRepositoryClient implements RepositoryClient {
   private readonly snapshotRegistry: SnapshotRepositoryRegistry
   private readonly sourceConnections = new Map<string, SourceConnection>()
   private readonly sourceIdentities = new Map<string, SourceIdentity>()
+  private readonly semanticSessions = new Map<string, SemanticSearchSession>()
   private readonly pending = new Map<string, PendingRequest>()
-  private readonly onMessage: (event: MessageEvent) => void
+  private readonly onMessage: EventListener
+  private readonly onWorkerFailure: EventListener
   private closed = false
   private closing?: Promise<void>
 
@@ -152,19 +163,35 @@ export class LocalRepositoryClient implements RepositoryClient {
       ((typeof navigator === "undefined" ? undefined : navigator.storage) as
         BrowserStorageManager | undefined) ??
       {}
-    this.onMessage = (event) => this.handleMessage(event.data)
+    this.onMessage = (event) =>
+      this.handleMessage((event as MessageEvent).data)
+    this.onWorkerFailure = () => this.failWorker()
     this.worker.addEventListener("message", this.onMessage)
+    this.worker.addEventListener("error", this.onWorkerFailure)
+    this.worker.addEventListener("messageerror", this.onWorkerFailure)
   }
 
   private handleMessage(candidate: unknown) {
     if (!candidate || typeof candidate !== "object") return
-    const message = candidate as WorkerResponse
-    if (
-      message.protocolVersion !== WORKER_PROTOCOL_VERSION ||
-      typeof message.requestId !== "string"
-    ) {
+    const requestId =
+      "requestId" in candidate && typeof candidate.requestId === "string"
+        ? candidate.requestId
+        : undefined
+    if (!isWorkerResponse(candidate)) {
+      const pending = requestId ? this.pending.get(requestId) : undefined
+      if (pending) {
+        this.pending.delete(requestId!)
+        pending.reject(
+          new RepositoryClientError(
+            "internal",
+            "The browser-local indexing worker returned an invalid response.",
+            false
+          )
+        )
+      }
       return
     }
+    const message: WorkerResponse = candidate
     const pending = this.pending.get(message.requestId)
     if (!pending) return
     if (
@@ -179,9 +206,9 @@ export class LocalRepositoryClient implements RepositoryClient {
         requestId: message.requestId,
         ...(message.operationId ? { operationId: message.operationId } : {}),
         ...(message.repositoryId ? { repositoryId: message.repositoryId } : {}),
-        phase: message.phase ?? "working",
-        completed: message.completed ?? 0,
-        total: message.total ?? 0,
+        phase: message.phase,
+        completed: message.completed,
+        total: message.total,
       })
       return
     }
@@ -197,6 +224,23 @@ export class LocalRepositoryClient implements RepositoryClient {
       return
     }
     pending.resolve(message.result)
+  }
+
+  private failWorker() {
+    if (this.closed) return
+    this.closed = true
+    this.worker.removeEventListener("message", this.onMessage)
+    this.worker.removeEventListener("error", this.onWorkerFailure)
+    this.worker.removeEventListener("messageerror", this.onWorkerFailure)
+    const error = new RepositoryClientError(
+      "unavailable",
+      "The browser-local indexing worker stopped unexpectedly.",
+      true
+    )
+    for (const pending of this.pending.values()) pending.reject(error)
+    this.pending.clear()
+    this.semanticSessions.clear()
+    this.worker.terminate?.()
   }
 
   private request<T>(
@@ -396,9 +440,33 @@ export class LocalRepositoryClient implements RepositoryClient {
   }
 
   search(repositoryId: string, request: SearchRequest) {
+    const session = this.semanticSessions.get(repositoryId)
+    if (request.mode === "semantic" && !session) {
+      return Promise.reject(
+        new RepositoryClientError(
+          "credential_required",
+          "Semantic search requires re-entering the page-session embedding credential.",
+          false
+        )
+      )
+    }
+    const semanticMode = request.mode ?? "keyword"
+    const workerRequest =
+      session &&
+      (semanticMode === "auto" ||
+        semanticMode === "hybrid" ||
+        semanticMode === "semantic")
+        ? {
+            ...request,
+            mode: semanticMode === "auto" ? ("hybrid" as const) : semanticMode,
+            semantic: session,
+          }
+        : semanticMode === "auto"
+          ? { ...request, mode: "keyword" as const }
+          : request
     return this.request<SearchResult>(
       "query",
-      { query: "search", request },
+      { query: "search", request: workerRequest },
       repositoryId
     )
   }
@@ -505,29 +573,41 @@ export class LocalRepositoryClient implements RepositoryClient {
           )
         ).payload
       : undefined
-    return this.request<Record<string, unknown>>(
+    const result = await this.request<Record<string, unknown>>(
       "refresh",
       payload,
       repositoryId,
       operationId
     )
+    this.semanticSessions.delete(repositoryId)
+    return result
   }
 
   async cancel(operationId: string) {
     await this.request("cancel", undefined, undefined, operationId)
   }
 
-  startSemanticIndexing(
+  async startSemanticIndexing(
     repositoryId: string,
     request: SemanticIndexRequest,
     operationId: string
   ) {
-    return this.request<{
+    const result = await this.request<{
       status: "complete"
       graphGeneration: number
       embedded: number
       dimensions?: number
     }>("embed", request, repositoryId, operationId)
+    this.semanticSessions.set(repositoryId, {
+      endpointUrl: request.endpointUrl,
+      model: request.model,
+      ...(result.dimensions ?? request.dimensions
+        ? { dimensions: result.dimensions ?? request.dimensions }
+        : {}),
+      graphGeneration: result.graphGeneration,
+      credential: request.credential,
+    })
+    return result
   }
 
   async deleteRepository(
@@ -539,13 +619,28 @@ export class LocalRepositoryClient implements RepositoryClient {
       { cancelActive: options.cancelActive === true },
       repositoryId
     )
+    const cleanupWarnings: string[] = []
     const identity = this.sourceIdentities.get(repositoryId)
     if (identity?.sourceKind === "picked-folder" && this.sourceRegistry) {
-      await this.sourceRegistry.forget(identity)
+      try {
+        await this.sourceRegistry.forget(identity)
+      } catch {
+        cleanupWarnings.push(
+          "Saved folder-handle cleanup could not be completed. Site-data repair may be required."
+        )
+      }
     }
-    await this.snapshotRegistry.delete(repositoryId)
+    try {
+      await this.snapshotRegistry.delete(repositoryId)
+    } catch {
+      cleanupWarnings.push(
+        "Snapshot metadata cleanup could not be completed. Site-data repair may be required."
+      )
+    }
     this.sourceConnections.delete(repositoryId)
     this.sourceIdentities.delete(repositoryId)
+    this.semanticSessions.delete(repositoryId)
+    return { deleted: true as const, cleanupWarnings }
   }
 
   async getCapabilities(): Promise<BrowserCapabilityReport> {
@@ -757,11 +852,14 @@ export class LocalRepositoryClient implements RepositoryClient {
 
   close(): Promise<void> {
     if (this.closing) return this.closing
+    if (this.closed) return Promise.resolve()
     this.closing = this.request("close")
       .catch(() => undefined)
       .then(() => {
         this.closed = true
         this.worker.removeEventListener("message", this.onMessage)
+        this.worker.removeEventListener("error", this.onWorkerFailure)
+        this.worker.removeEventListener("messageerror", this.onWorkerFailure)
         for (const pending of this.pending.values()) {
           pending.reject(
             new RepositoryClientError(
@@ -772,6 +870,7 @@ export class LocalRepositoryClient implements RepositoryClient {
           )
         }
         this.pending.clear()
+        this.semanticSessions.clear()
         this.worker.terminate?.()
       })
     return this.closing

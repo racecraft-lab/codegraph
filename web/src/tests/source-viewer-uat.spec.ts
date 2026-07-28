@@ -79,11 +79,14 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test("source viewer stays hidden until the WebSocket transport ships", async ({ page }) => {
+test("source viewer opens through the shipped WebSocket transport", async ({ page }) => {
   await installApiMocks(page)
   await page.goto("/symbol/node-a")
 
   await expect(page.getByText("export async function startWebServer(options: ServerOptions): Promise<void>", { exact: true })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Open source" })).toHaveCount(0)
-  expect(await page.evaluate(() => (window as unknown as { __sourceSockets?: unknown[] }).__sourceSockets?.length ?? 0)).toBe(0)
+  await page.getByRole("button", { name: "Open source" }).click()
+  await expect(page.getByLabel("Read-only source for src/server/index.ts")).toContainText(
+    "export async function startWebServer() {}",
+  )
+  expect(await page.evaluate(() => (window as unknown as { __sourceSockets?: unknown[] }).__sourceSockets?.length ?? 0)).toBe(1)
 })

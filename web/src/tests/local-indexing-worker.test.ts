@@ -439,6 +439,29 @@ describe("browser-local SQLite generation contract", () => {
 })
 
 describe("versioned local-index worker RPC", () => {
+  it("rejects a malformed ingress discriminant without crashing the worker", async () => {
+    const postMessage = vi
+      .spyOn(globalThis, "postMessage")
+      .mockImplementation(() => undefined)
+    await import("../local-indexing/worker")
+
+    globalThis.dispatchEvent(
+      new MessageEvent("message", {
+        data: { protocolVersion: 1, requestId: "malformed-ingress" },
+      }),
+    )
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: "malformed-ingress",
+        type: "failure",
+        terminal: "failed",
+        error: expect.objectContaining({ code: "invalid_worker_request" }),
+      }),
+    )
+    postMessage.mockRestore()
+  })
+
   const request = (
     overrides: Record<string, unknown> = {},
   ) => ({
@@ -557,7 +580,7 @@ describe("versioned local-index worker RPC", () => {
     expect(
       emitted.filter(
         (message) =>
-          (message as { operationId?: string; terminal?: string }).operationId === "operation-1" &&
+          (message as { requestId?: string }).requestId === "request-1" &&
           (message as { terminal?: string }).terminal !== undefined,
       ),
     ).toEqual([
@@ -625,7 +648,7 @@ describe("versioned local-index worker RPC", () => {
     expect(
       emitted.filter(
         (message) =>
-          (message as { operationId?: string; terminal?: string }).operationId === "operation-1" &&
+          (message as { requestId?: string }).requestId === "request-1" &&
           (message as { terminal?: string }).terminal !== undefined,
       ),
     ).toEqual([expect.objectContaining({ terminal: "complete" })])

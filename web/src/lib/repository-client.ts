@@ -39,6 +39,11 @@ export interface SourceResult {
   snapshotToken: string
 }
 
+export interface RepositoryDeletionResult {
+  deleted: true
+  cleanupWarnings: string[]
+}
+
 export const REPOSITORY_QUERY_LIMITS = {
   defaultPageSize: 100,
   maxPageSize: 500,
@@ -125,7 +130,7 @@ export interface RepositoryClient {
   getImpact(repositoryId: string, nodeId: string, request?: DepthRequest): Promise<GraphResult>
   refresh(repositoryId: string): Promise<ReindexJob | Record<string, unknown>>
   cancel(operationId: string): Promise<void>
-  deleteRepository(repositoryId: string): Promise<void>
+  deleteRepository(repositoryId: string): Promise<RepositoryDeletionResult>
 }
 
 export type RepositoryClientErrorCode =

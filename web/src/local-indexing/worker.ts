@@ -63,14 +63,76 @@ type WorkerRequestKind =
   | "close"
 type WorkerTerminal = "complete" | "cancelled" | "failed"
 
-export interface WorkerRequest {
+interface WorkerRequestBase {
   protocolVersion: number
   requestId: string
+}
+
+interface WorkerRequestEnvelope extends WorkerRequestBase {
   operationId?: string
   repositoryId?: string
-  kind: WorkerRequestKind
+  kind: string
   payload?: unknown
 }
+
+type RepositoryQueryPayload = {
+  query: string
+  request?: object
+}
+
+export type WorkerRequest =
+  | (WorkerRequestBase & {
+      kind: "capabilities" | "close"
+      operationId?: never
+      repositoryId?: never
+      payload?: never
+    })
+  | (WorkerRequestBase & {
+      kind: "cancel"
+      operationId: string
+      repositoryId?: string
+      payload?: never
+    })
+  | (WorkerRequestBase & {
+      kind: "acquire"
+      operationId?: never
+      repositoryId: string
+      payload?: never
+    })
+  | (WorkerRequestBase & {
+      kind: "index"
+      operationId: string
+      repositoryId: string
+      payload: IndexRequestPayload
+    })
+  | (WorkerRequestBase & {
+      kind: "embed"
+      operationId: string
+      repositoryId: string
+      payload: EmbedRequestPayload
+    })
+  | (WorkerRequestBase & {
+      kind:
+        | "source-batch"
+        | "open-picked-folder"
+        | "import-snapshot"
+        | "refresh"
+      operationId: string
+      repositoryId: string
+      payload: object
+    })
+  | (WorkerRequestBase & {
+      kind: "query"
+      operationId?: string
+      repositoryId?: string
+      payload: RepositoryQueryPayload
+    })
+  | (WorkerRequestBase & {
+      kind: "delete"
+      operationId?: never
+      repositoryId: string
+      payload: { cancelActive?: boolean }
+    })
 
 export interface WorkerErrorPayload {
   code: string
@@ -79,19 +141,134 @@ export interface WorkerErrorPayload {
   phase: string
 }
 
-export interface WorkerResponse {
+interface WorkerResponseBase {
   protocolVersion: typeof WORKER_PROTOCOL_VERSION
   requestId: string
   operationId?: string
   repositoryId?: string
-  type: "progress" | "result" | "failure"
-  phase?: string
-  completed?: number
-  total?: number
-  timestamp?: number
-  terminal?: WorkerTerminal
-  result?: unknown
-  error?: WorkerErrorPayload
+}
+
+export type WorkerResponseBody =
+  | {
+      type: "progress"
+      phase: string
+      completed: number
+      total: number
+      timestamp: number
+    }
+  | {
+      type: "result"
+      terminal: "complete"
+      result: unknown
+    }
+  | {
+      type: "failure"
+      terminal: "cancelled" | "failed"
+      error: WorkerErrorPayload
+    }
+
+export type WorkerResponse = WorkerResponseBase & WorkerResponseBody
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object"
+}
+
+export function isWorkerRequest(value: unknown): value is WorkerRequest {
+  if (!isRecord(value)) return false
+  if (
+    typeof value.protocolVersion !== "number" ||
+    typeof value.requestId !== "string" ||
+    typeof value.kind !== "string"
+  ) {
+    return false
+  }
+  const operationId = value.operationId
+  const repositoryId = value.repositoryId
+  const hasOperation = typeof operationId === "string" && operationId.length > 0
+  const hasRepository =
+    typeof repositoryId === "string" && repositoryId.length > 0
+  switch (value.kind as WorkerRequestKind) {
+    case "capabilities":
+    case "close":
+      return (
+        operationId === undefined &&
+        repositoryId === undefined &&
+        value.payload === undefined
+      )
+    case "cancel":
+      return (
+        hasOperation &&
+        (repositoryId === undefined || hasRepository) &&
+        value.payload === undefined
+      )
+    case "acquire":
+      return (
+        operationId === undefined &&
+        hasRepository &&
+        value.payload === undefined
+      )
+    case "index":
+    case "embed":
+    case "source-batch":
+    case "open-picked-folder":
+    case "import-snapshot":
+    case "refresh":
+      return hasOperation && hasRepository && isRecord(value.payload)
+    case "query":
+      return (
+        (operationId === undefined || hasOperation) &&
+        (repositoryId === undefined || hasRepository) &&
+        isRecord(value.payload) &&
+        typeof value.payload.query === "string"
+      )
+    case "delete":
+      return (
+        operationId === undefined &&
+        hasRepository &&
+        isRecord(value.payload) &&
+        (value.payload.cancelActive === undefined ||
+          typeof value.payload.cancelActive === "boolean")
+      )
+    default:
+      return false
+  }
+}
+
+export function isWorkerResponse(value: unknown): value is WorkerResponse {
+  if (!isRecord(value)) return false
+  if (
+    value.protocolVersion !== WORKER_PROTOCOL_VERSION ||
+    typeof value.requestId !== "string"
+  ) {
+    return false
+  }
+  if (value.type === "progress") {
+    return (
+      typeof value.phase === "string" &&
+      typeof value.completed === "number" &&
+      Number.isFinite(value.completed) &&
+      typeof value.total === "number" &&
+      Number.isFinite(value.total) &&
+      typeof value.timestamp === "number" &&
+      Number.isFinite(value.timestamp)
+    )
+  }
+  if (value.type === "result") {
+    return value.terminal === "complete" && "result" in value
+  }
+  if (value.type !== "failure") return false
+  if (
+    (value.terminal !== "failed" && value.terminal !== "cancelled") ||
+    !isRecord(value.error)
+  ) {
+    return false
+  }
+  return (
+    typeof value.error.code === "string" &&
+    typeof value.error.message === "string" &&
+    typeof value.error.retryable === "boolean" &&
+    typeof value.error.phase === "string"
+  )
 }
 
 interface IndexRequestPayload {
@@ -159,7 +336,7 @@ interface ActiveOperation {
 
 class OperationCancelled extends Error {}
 
-function responseBase(request: WorkerRequest) {
+function responseBase(request: WorkerRequestEnvelope) {
   return {
     protocolVersion: WORKER_PROTOCOL_VERSION,
     requestId: request.requestId,
@@ -185,10 +362,10 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
   const emit = (message: WorkerResponse) => dependencies.emit(message)
 
   const emitFailure = (
-    request: WorkerRequest,
+    request: WorkerRequestEnvelope,
     operation: ActiveOperation | undefined,
     error: WorkerErrorPayload,
-    terminal: WorkerTerminal = "failed"
+    terminal: Exclude<WorkerTerminal, "complete"> = "failed"
   ) => {
     if (operation?.terminal) return
     if (operation) operation.terminal = true
@@ -228,6 +405,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
     emit({
       ...responseBase(request),
       type: "result",
+      terminal: "complete",
       result: cancellable
         ? { cancelled: true, noop: false }
         : { cancelled: false, noop: true },
@@ -251,6 +429,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
       emit({
         ...responseBase(request),
         type: "result",
+        terminal: "complete",
         result: { noop: true, stale: true },
       })
       return
@@ -382,6 +561,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
       emit({
         ...responseBase(request),
         type: "result",
+        terminal: "complete",
         result: { noop: true, stale: true },
       })
       return
@@ -636,7 +816,8 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
   }
 
   return {
-    async handle(request: WorkerRequest) {
+    async handle(candidate: WorkerRequestEnvelope) {
+      const request = candidate
       if (request.protocolVersion !== WORKER_PROTOCOL_VERSION) {
         emitFailure(
           request,
@@ -644,6 +825,18 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
           plainError(
             "unsupported_protocol",
             `Worker protocol ${request.protocolVersion} is not supported.`,
+            "queued"
+          )
+        )
+        return
+      }
+      if (!isWorkerRequest(request)) {
+        emitFailure(
+          request,
+          undefined,
+          plainError(
+            "invalid_worker_request",
+            "The worker request does not match its declared operation.",
             "queued"
           )
         )
@@ -773,7 +966,7 @@ function yieldForActionableProgress() {
 
 function emitRepositoryResponse(
   request: WorkerRequest,
-  response: Omit<WorkerResponse, keyof ReturnType<typeof responseBase>>
+  response: WorkerResponseBody
 ) {
   globalThis.postMessage({
     ...responseBase(request),
@@ -1142,6 +1335,7 @@ function handleSourceBatch(request: WorkerRequest) {
     }
     emitRepositoryResponse(request, {
       type: "result",
+      terminal: "complete",
       result: {
         batchIndex,
         receivedFiles: staged.entries.length,
@@ -1443,6 +1637,7 @@ async function handleInitialSourceIndex(
   if (activePickedFolders.has(operationId)) {
     emitRepositoryResponse(request, {
       type: "result",
+      terminal: "complete",
       result: { noop: true, stale: true },
     })
     return
@@ -1613,6 +1808,7 @@ async function handleRefreshPickedFolder(request: WorkerRequest) {
   if (activePickedFolders.has(operationId)) {
     emitRepositoryResponse(request, {
       type: "result",
+      terminal: "complete",
       result: { noop: true, stale: true },
     })
     return
@@ -1679,6 +1875,7 @@ function handlePickedFolderCancel(request: WorkerRequest) {
   if (request.operationId) stagedSourceCollections.delete(request.operationId)
   emitRepositoryResponse(request, {
     type: "result",
+    terminal: "complete",
     result: {
       cancelled: cancellable,
       noop: !cancellable,
@@ -1766,6 +1963,14 @@ async function handleRepositoryQuery(request: WorkerRequest) {
           limit?: number
           offset?: number
           depth?: number
+          mode?: "keyword" | "semantic" | "hybrid" | "auto"
+          semantic?: {
+            endpointUrl: string
+            model: string
+            dimensions?: number
+            graphGeneration: number
+            credential: string
+          }
         }
       }
     | undefined
@@ -1800,12 +2005,107 @@ async function handleRepositoryQuery(request: WorkerRequest) {
           )
           break
         case "search":
-          result = store.search(
-            repositoryId,
-            String(queryRequest.query ?? ""),
-            queryRequest.limit,
-            queryRequest.offset
-          )
+          {
+            const searchText = String(queryRequest.query ?? "")
+            const mode = queryRequest.mode ?? "keyword"
+            const semantic = queryRequest.semantic
+            if (mode === "keyword") {
+              result = store.search(
+                repositoryId,
+                searchText,
+                queryRequest.limit,
+                queryRequest.offset
+              )
+              break
+            }
+            if (!semantic) {
+              const keyword = store.search(
+                repositoryId,
+                searchText,
+                queryRequest.limit,
+                queryRequest.offset
+              )
+              result = {
+                ...keyword,
+                degraded: true,
+                degradationReason:
+                  "Semantic search requires re-entering the page-session embedding credential.",
+              }
+              break
+            }
+            try {
+              const input: EmbeddingInputItem = {
+                nodeId: "__query__",
+                inputHash: await hashEmbeddingInput(searchText),
+                text: searchText,
+              }
+              const batch = await requestEmbeddingBatch({
+                endpointUrl: semantic.endpointUrl,
+                model: semantic.model,
+                credential: semantic.credential,
+                items: [input],
+              })
+              const [queryVector] = validateEmbeddingBatch([input], batch, {
+                model: semantic.model,
+                dimensions: semantic.dimensions,
+              })
+              if (!queryVector) {
+                throw new BrowserStorageError(
+                  "invalid_vector_state",
+                  "The semantic query vector is unavailable."
+                )
+              }
+              const semanticResult = store.semanticSearch(
+                repositoryId,
+                semantic.graphGeneration,
+                semantic.model,
+                queryVector.dimensions,
+                queryVector.values,
+                queryRequest.limit,
+                queryRequest.offset
+              )
+              if (mode === "semantic") {
+                result = semanticResult
+                break
+              }
+              const keyword = store.search(
+                repositoryId,
+                searchText,
+                queryRequest.limit,
+                queryRequest.offset
+              )
+              const seen = new Set<string>()
+              const items = [...semanticResult.items, ...keyword.items].filter(
+                (item) => {
+                  if (seen.has(item.id)) return false
+                  seen.add(item.id)
+                  return true
+                }
+              )
+              const limit = semanticResult.limit
+              result = {
+                ...semanticResult,
+                items: items.slice(0, limit),
+                total: items.length,
+              }
+            } catch (error) {
+              if (mode === "semantic") throw error
+              const keyword = store.search(
+                repositoryId,
+                searchText,
+                queryRequest.limit,
+                queryRequest.offset
+              )
+              result = {
+                ...keyword,
+                degraded: true,
+                degradationReason:
+                  error instanceof Error
+                    ? `${error.message} Keyword results are shown instead.`
+                    : "Semantic search failed. Keyword results are shown instead.",
+              }
+            }
+          }
           break
         case "node":
           result = store.getNode(
@@ -1856,17 +2156,25 @@ async function handleRepositoryQuery(request: WorkerRequest) {
       result,
     })
   } catch (error) {
+    const embeddingEnvelope =
+      error instanceof EmbeddingOperationError ||
+      error instanceof EmbeddingPolicyError
+        ? error.toEnvelope()
+        : undefined
     emitRepositoryResponse(request, {
       type: "failure",
       terminal: "failed",
       error: plainError(
-        error instanceof BrowserStorageError
-          ? error.code
-          : "worker_query_failed",
-        error instanceof BrowserStorageError
-          ? error.message
-          : "The browser-local query failed.",
-        "query"
+        embeddingEnvelope?.code ??
+          (error instanceof BrowserStorageError
+            ? error.code
+            : "worker_query_failed"),
+        embeddingEnvelope?.message ??
+          (error instanceof BrowserStorageError
+            ? error.message
+            : "The browser-local query failed."),
+        "query",
+        embeddingEnvelope?.retryable ?? false
       ),
     })
   }
@@ -2009,6 +2317,10 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
       if (!storage) throw new Error("Browser graph store is not open.")
       return storage.listGenerationStatuses(String(payload.repositoryId))
     }
+    case "storage-file-names": {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      return storage.listDatabaseFiles()
+    }
     case "storage-relationships": {
       if (!storage) throw new Error("Browser graph store is not open.")
       return storage.relationships(
@@ -2067,6 +2379,18 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
       if (!storage) throw new Error("Browser graph store is not open.")
       return storage.readEmbeddingVectorMetadata(String(payload.repositoryId))
     }
+    case "storage-semantic-search": {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      return storage.semanticSearch(
+        String(payload.repositoryId),
+        Number(payload.graphGeneration),
+        String(payload.model),
+        Number(payload.dimensions),
+        payload.vector as number[],
+        payload.limit === undefined ? undefined : Number(payload.limit),
+        payload.offset === undefined ? undefined : Number(payload.offset)
+      )
+    }
     case "storage-save-embedding-state": {
       if (!storage) throw new Error("Browser graph store is not open.")
       storage.saveEmbeddingState(
@@ -2096,14 +2420,35 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
 
 globalThis.addEventListener(
   "message",
-  (event: MessageEvent<StorageTestRequest>) => {
-    const request = event.data
-    if (!request || typeof request.requestId !== "string") {
+  (event: MessageEvent<unknown>) => {
+    const candidate = event.data
+    if (!isRecord(candidate) || typeof candidate.requestId !== "string") {
       return
     }
+    if (typeof candidate.kind !== "string") {
+      if (typeof candidate.protocolVersion === "number") {
+        globalThis.postMessage({
+          protocolVersion: WORKER_PROTOCOL_VERSION,
+          requestId: candidate.requestId,
+          type: "failure",
+          terminal: "failed",
+          error: plainError(
+            "invalid_worker_request",
+            "The worker request does not match its declared operation.",
+            "queued"
+          ),
+        } satisfies WorkerResponse)
+      }
+      return
+    }
+    const request = candidate as unknown as StorageTestRequest
     if (!request.kind.startsWith("storage-")) {
-      const protocolRequest = request as unknown as WorkerRequest
+      const protocolRequest = request as unknown as WorkerRequestEnvelope
       if (typeof protocolRequest.protocolVersion === "number") {
+        if (!isWorkerRequest(protocolRequest)) {
+          void protocolRuntime.handle(protocolRequest)
+          return
+        }
         if (protocolRequest.kind === "source-batch") {
           handleSourceBatch(protocolRequest)
         } else if (protocolRequest.kind === "open-picked-folder") {

@@ -353,8 +353,56 @@ test("keeps local browsing offline until explicit semantic consent", async ({
         "embed-with-consent",
         new Date().toISOString(),
       )
+      const semanticSearch = await new Promise<{
+        type: string
+        terminal?: string
+        result?: unknown
+        error?: { code?: string; message?: string }
+      }>((resolve, reject) => {
+        const requestId = crypto.randomUUID()
+        const timeout = window.setTimeout(
+          () => reject(new Error("Timed out: semantic search")),
+          10_000,
+        )
+        const onMessage = (event: MessageEvent) => {
+          const message = event.data as {
+            requestId?: string
+            terminal?: string
+            type: string
+            result?: unknown
+            error?: { code?: string; message?: string }
+          }
+          if (message.requestId !== requestId || message.terminal === undefined)
+            return
+          window.clearTimeout(timeout)
+          worker.removeEventListener("message", onMessage)
+          resolve(message)
+        }
+        worker.addEventListener("message", onMessage)
+        worker.postMessage({
+          protocolVersion: 1,
+          requestId,
+          repositoryId: "repo_semantic_network",
+          kind: "query",
+          payload: {
+            query: "search",
+            request: {
+              query: "semantic meaning",
+              mode: "semantic",
+              limit: 10,
+              semantic: {
+                endpointUrl: endpoint,
+                model: "model-safe",
+                dimensions: 2,
+                graphGeneration: 1,
+                credential,
+              },
+            },
+          },
+        })
+      })
       worker.terminate()
-      return { withoutConsent, withConsent }
+      return { withoutConsent, withConsent, semanticSearch }
     },
     {
       url: workerUrl,
@@ -373,7 +421,21 @@ test("keeps local browsing offline until explicit semantic consent", async ({
     terminal: "complete",
     result: { embedded: 1 },
   })
+  expect(semanticResult.semanticSearch).toMatchObject({
+    type: "result",
+    terminal: "complete",
+    result: {
+      items: [expect.objectContaining({ id: "node-semantic" })],
+      degraded: false,
+    },
+  })
   expect(endpointRequests).toEqual([
+    {
+      url: endpoint,
+      method: "POST",
+      authorization: `Bearer ${sessionCredential}`,
+      inputCount: 1,
+    },
     {
       url: endpoint,
       method: "POST",
@@ -385,6 +447,12 @@ test("keeps local browsing offline until explicit semantic consent", async ({
     (entry) => entry.phase === "consent" && entry.origin !== appOrigin,
   )
   expect(consentExternal).toEqual([
+    {
+      phase: "consent",
+      origin: "https://embeddings.example",
+      path: "/v1/embed",
+      resourceType: "fetch",
+    },
     {
       phase: "consent",
       origin: "https://embeddings.example",

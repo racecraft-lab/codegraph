@@ -63,23 +63,61 @@ export interface LocalOperationStatus {
 const LOCAL_REPOSITORIES_KEY = "codegraph.localRepositories.v1"
 
 function persistedLocalRepositories(): Repository[] {
-  try {
-    const parsed = JSON.parse(
-      localStorage.getItem(LOCAL_REPOSITORIES_KEY) ?? "[]"
-    ) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((candidate): candidate is Repository =>
-      Boolean(
-        candidate &&
-        typeof candidate === "object" &&
-        typeof (candidate as Repository).id === "string" &&
-        typeof (candidate as Repository).name === "string" &&
-        (candidate as Repository).runtime === "local"
-      )
+  const unreadable = () =>
+    new RepositoryClientError(
+      "internal",
+      "Browser repository metadata is unreadable. Clear or repair this site's local CodeGraph metadata before continuing.",
+      false
     )
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(LOCAL_REPOSITORIES_KEY)
   } catch {
-    return []
+    throw unreadable()
   }
+  if (raw === null) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw) as unknown
+  } catch {
+    throw unreadable()
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((candidate) => {
+      if (!candidate || typeof candidate !== "object") return true
+      const repository = candidate as Record<string, unknown>
+      const id = repository.id
+      const sourceKind = repository.sourceKind
+      const duplicate = repository.duplicateSnapshot
+      return (
+        typeof id !== "string" ||
+        id.length === 0 ||
+        repository.root !== `local://${id}` ||
+        typeof repository.name !== "string" ||
+        repository.name.length === 0 ||
+        typeof repository.default !== "boolean" ||
+        repository.runtime !== "local" ||
+        (sourceKind !== "picked-folder" &&
+          sourceKind !== "dropped-snapshot" &&
+          sourceKind !== "imported-snapshot") ||
+        (repository.snapshotImportedAt !== undefined &&
+          typeof repository.snapshotImportedAt !== "string") ||
+        (repository.manifestFingerprint !== undefined &&
+          typeof repository.manifestFingerprint !== "string") ||
+        (duplicate !== undefined &&
+          (!duplicate ||
+            typeof duplicate !== "object" ||
+            typeof (duplicate as Record<string, unknown>).repositoryId !==
+              "string" ||
+            typeof (duplicate as Record<string, unknown>).displayName !==
+              "string"))
+      )
+    })
+  ) {
+    throw unreadable()
+  }
+  return parsed as Repository[]
 }
 
 function persistLocalRepositories(repositories: Repository[]) {
@@ -257,8 +295,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const refreshRepositories = React.useCallback(async () => {
     setRepositoriesStatus("loading")
-    const persisted = persistedLocalRepositories()
+    let persisted: Repository[] = []
     try {
+      persisted = persistedLocalRepositories()
       let nextRepos: Repository[]
       if (persisted.length > 0) {
         const repositoryToAcquire =
@@ -324,6 +363,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           message: nextError.message,
           cancellable: false,
         })
+      } else if (
+        error instanceof RepositoryClientError &&
+        error.message.startsWith("Browser repository metadata is unreadable.")
+      ) {
+        setLocalOperation({
+          state: "failed",
+          message: error.message,
+          cancellable: false,
+        })
       }
       setRepositoriesStatus("error")
       setRepositoryState(
@@ -341,7 +389,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       if (!repoId)
         throw new RepositoryClientError(
           "not_found",
-          "Select a repository first.",
+          "No repository is selected.",
           false
         )
       const status = await repositoryClient.getRepositoryStatus(repoId)
@@ -354,7 +402,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       )
     } catch (error) {
       if (statusRequestRef.current !== requestId) return
-      const nextError = errorState(error)
+      const nextError =
+        error instanceof RepositoryClientError
+          ? { code: error.code, message: error.message }
+          : errorState(error)
       setRepositoryStatus(undefined)
       setRepositoryState(classifyRepositoryStatus(undefined, nextError.code))
       setStatusMessage(nextError.message)
@@ -824,28 +875,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         message: `Deleting browser-owned data for ${repository.name}.`,
         cancellable: false,
       })
+      let deletion
       try {
-        await localClient().deleteRepository(repository.id, {
+        deletion = await localClient().deleteRepository(repository.id, {
           cancelActive: options.cancelActive,
-        })
-        const remaining = repositories.filter(
-          (candidate) => candidate.id !== repository.id
-        )
-        setRepositories(remaining)
-        persistLocalRepositories(remaining)
-        setSelectedRepoId(
-          remaining.find((candidate) => candidate.default)?.id ??
-            remaining[0]?.id
-        )
-        setRepositoryStatus(undefined)
-        setStorageStatus(undefined)
-        setLocalSourceConnection(undefined)
-        embeddingProfilesRef.current?.delete(repository.id)
-        embeddingCredentialsRef.current?.clear(repository.id)
-        setLocalOperation({
-          state: "deleted",
-          message: `${repository.name} browser-owned data was deleted. Source folder files were not changed.`,
-          cancellable: false,
         })
       } catch (error) {
         setLocalOperation({
@@ -858,6 +891,42 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         })
         throw error
       }
+
+      const cleanupWarnings = [...deletion.cleanupWarnings]
+      const remaining = repositories.filter(
+        (candidate) => candidate.id !== repository.id
+      )
+      setRepositories(remaining)
+      try {
+        persistLocalRepositories(remaining)
+      } catch {
+        cleanupWarnings.push(
+          "Repository-list metadata cleanup could not be completed. Clear or repair this site's local CodeGraph metadata."
+        )
+      }
+      setSelectedRepoId(
+        remaining.find((candidate) => candidate.default)?.id ??
+          remaining[0]?.id
+      )
+      setRepositoryStatus(undefined)
+      setStorageStatus(undefined)
+      setLocalSourceConnection(undefined)
+      try {
+        embeddingProfilesRef.current?.delete(repository.id)
+      } catch {
+        cleanupWarnings.push(
+          "Semantic-profile metadata cleanup could not be completed. Clear or repair this site's local CodeGraph metadata."
+        )
+      }
+      embeddingCredentialsRef.current?.clear(repository.id)
+      setLocalOperation({
+        state: cleanupWarnings.length > 0 ? "partial-warning" : "deleted",
+        message:
+          cleanupWarnings.length > 0
+            ? `${repository.name} browser-owned graph data was deleted. ${cleanupWarnings.join(" ")} Source folder files were not changed.`
+            : `${repository.name} browser-owned data was deleted. Source folder files were not changed.`,
+        cancellable: false,
+      })
     },
     [localClient, localOperation?.state, repositories, selectedRepo]
   )

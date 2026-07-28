@@ -178,6 +178,41 @@ function encodeVector(values: readonly number[]) {
   return bytes
 }
 
+function decodeVector(value: unknown, dimensions: number) {
+  const bytes =
+    value instanceof Uint8Array
+      ? value
+      : value instanceof ArrayBuffer
+        ? new Uint8Array(value)
+        : undefined
+  if (!bytes || bytes.byteLength !== dimensions * 4) {
+    throw new BrowserStorageError(
+      "invalid_vector_state",
+      "Stored semantic vector dimensions are inconsistent."
+    )
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  return Array.from(
+    { length: dimensions },
+    (_, index) => view.getFloat32(index * 4, true)
+  )
+}
+
+function cosineSimilarity(left: readonly number[], right: readonly number[]) {
+  let dot = 0
+  let leftMagnitude = 0
+  let rightMagnitude = 0
+  for (let index = 0; index < left.length; index += 1) {
+    const leftValue = left[index] ?? 0
+    const rightValue = right[index] ?? 0
+    dot += leftValue * rightValue
+    leftMagnitude += leftValue * leftValue
+    rightMagnitude += rightValue * rightValue
+  }
+  if (leftMagnitude === 0 || rightMagnitude === 0) return -1
+  return dot / Math.sqrt(leftMagnitude * rightMagnitude)
+}
+
 function codeNode(row: Record<string, unknown>): CodeNode {
   return {
     id: String(row.id),
@@ -360,6 +395,37 @@ export class BrowserGraphStore {
     await this.pool.reserveMinimumCapacity(MINIMUM_POOL_CAPACITY)
     this.withDatabase(REGISTRY_DATABASE, () => undefined)
     this.recoverIncompleteGenerations()
+    this.cleanupRolledBackGenerationFiles()
+  }
+
+  private cleanupRolledBackGenerationFiles(repositoryId?: string): string[] {
+    const obsolete = this.withDatabase(REGISTRY_DATABASE, (db) =>
+      db.selectObjects(
+        `SELECT repository_id, generation
+         FROM index_generations
+         WHERE status = 'rolled_back'
+           AND (? IS NULL OR repository_id = ?)
+         ORDER BY repository_id, generation`,
+        [repositoryId ?? null, repositoryId ?? null]
+      )
+    )
+    const retained: string[] = []
+    for (const row of obsolete) {
+      const filename = generationDatabasePath(
+        String(row.repository_id),
+        Number(row.generation)
+      )
+      try {
+        this.unlinkDatabase(filename)
+      } catch {
+        retained.push(filename)
+      }
+    }
+    return retained
+  }
+
+  listDatabaseFiles(): string[] {
+    return this.pool.getFileNames().sort()
   }
 
   private nextGeneration(repositoryId: string) {
@@ -582,7 +648,6 @@ export class BrowserGraphStore {
           this.faultInjector?.("after-registry-publish")
         })
       })
-      return { repositoryId: input.repositoryId, generation: staged.generation }
     } catch (error) {
       const failure = storageFailure(error)
       this.markGenerationFailed(staged, failure)
@@ -593,6 +658,14 @@ export class BrowserGraphStore {
         throw storageFailure(cleanupError)
       }
       throw failure
+    }
+    const cleanupWarnings = this.cleanupRolledBackGenerationFiles(
+      input.repositoryId
+    )
+    return {
+      repositoryId: input.repositoryId,
+      generation: staged.generation,
+      ...(cleanupWarnings.length > 0 ? { cleanupWarnings } : {}),
     }
   }
 
@@ -1113,6 +1186,91 @@ export class BrowserGraphStore {
         )
         .map(codeNode)
       return { items, total, limit, offset, degraded: false }
+    })
+  }
+
+  semanticSearch(
+    repositoryId: string,
+    graphGeneration: number,
+    model: string,
+    dimensions: number,
+    vector: readonly number[],
+    limit = 50,
+    offset = 0
+  ): SearchResult {
+    const current = this.currentGeneration(repositoryId)
+    if (!current || current.generation !== graphGeneration) {
+      throw new BrowserStorageError(
+        "invalid_generation",
+        "Semantic search does not match the published graph generation."
+      )
+    }
+    if (
+      !model ||
+      !Number.isSafeInteger(dimensions) ||
+      dimensions <= 0 ||
+      vector.length !== dimensions ||
+      vector.some((value) => !Number.isFinite(value))
+    ) {
+      throw new BrowserStorageError(
+        "invalid_vector_state",
+        "The semantic query vector is invalid."
+      )
+    }
+    return this.withDatabase(current.databasePath, (db) => {
+      const metadata = new Map(
+        db
+          .selectObjects(
+            `SELECT key, value FROM project_metadata
+             WHERE key IN ('embedding_model', 'embedding_dims', 'embedding_graph_generation')`
+          )
+          .map((row) => [String(row.key), String(row.value)])
+      )
+      if (
+        metadata.get("embedding_model") !== model ||
+        Number(metadata.get("embedding_dims")) !== dimensions ||
+        Number(metadata.get("embedding_graph_generation")) !== graphGeneration
+      ) {
+        throw new BrowserStorageError(
+          "invalid_vector_state",
+          "Semantic vectors do not match the requested model, dimensions, and graph generation."
+        )
+      }
+      const scored = db
+        .selectObjects(
+          `SELECT nodes.id, nodes.kind, nodes.name, nodes.file_path,
+                  nodes.start_line, nodes.signature, nodes.docstring,
+                  node_vectors.vector
+           FROM node_vectors
+           JOIN nodes ON nodes.id = node_vectors.node_id
+           WHERE node_vectors.model = ? AND node_vectors.dims = ?`,
+          [model, dimensions]
+        )
+        .map((row) => ({
+          node: codeNode(row),
+          score: cosineSimilarity(
+            vector,
+            decodeVector(row.vector, dimensions)
+          ),
+        }))
+        .sort((left, right) => {
+          if (left.score !== right.score) return right.score - left.score
+          if (left.node.name !== right.node.name) {
+            return left.node.name < right.node.name ? -1 : 1
+          }
+          return left.node.id < right.node.id
+            ? -1
+            : left.node.id === right.node.id
+              ? 0
+              : 1
+        })
+      return {
+        items: scored.slice(offset, offset + limit).map(({ node }) => node),
+        total: scored.length,
+        limit,
+        offset,
+        degraded: false,
+      }
     })
   }
 

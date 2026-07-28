@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { createRemoteRepositoryClient, RepositoryClientError } from "../lib/repository-client"
 import { LocalRepositoryClient } from "../local-indexing/client"
 import {
+  LocalStorageSnapshotRepositoryRegistry,
   SourceHandleRegistry,
   type DirectoryHandleLike,
   type SavedSourceHandle,
@@ -17,6 +18,10 @@ class TestWorker extends EventTarget {
 
   respond(message: unknown) {
     this.dispatchEvent(new MessageEvent("message", { data: message }))
+  }
+
+  fail(type: "error" | "messageerror" = "error") {
+    this.dispatchEvent(new Event(type))
   }
 }
 
@@ -104,6 +109,7 @@ describe("shared repository client boundary", () => {
       operationId: "operation-large",
       repositoryId: pickedIdentity.id,
       type: "result",
+      terminal: "complete",
       result: { batchIndex: 0 },
     })
 
@@ -124,6 +130,7 @@ describe("shared repository client boundary", () => {
       operationId: "operation-large",
       repositoryId: pickedIdentity.id,
       type: "result",
+      terminal: "complete",
       result: { batchIndex: 1 },
     })
 
@@ -350,9 +357,44 @@ describe("shared repository client boundary", () => {
       result: { deleted: true },
     })
 
-    await expect(deleting).resolves.toBeUndefined()
+    await expect(deleting).resolves.toEqual({
+      deleted: true,
+      cleanupWarnings: [],
+    })
     expect(client.sourceConnection("local-1")).toBeUndefined()
     expect(createWritable).not.toHaveBeenCalled()
+  })
+
+  it("treats graph deletion as irreversible success when metadata cleanup warns", async () => {
+    const worker = new TestWorker()
+    const snapshotRegistry: SnapshotRepositoryRegistry = {
+      list: vi.fn(async () => []),
+      put: vi.fn(async () => undefined),
+      delete: vi.fn(async () => {
+        throw new DOMException("Storage is blocked.", "SecurityError")
+      }),
+    }
+    const client = new LocalRepositoryClient(worker, {
+      createId: () => "delete-partial",
+      snapshotRegistry,
+    })
+
+    const deleting = client.deleteRepository("local-1")
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "delete-partial",
+      repositoryId: "local-1",
+      type: "result",
+      terminal: "complete",
+      result: { deleted: true },
+    })
+
+    await expect(deleting).resolves.toEqual({
+      deleted: true,
+      cleanupWarnings: [
+        "Snapshot metadata cleanup could not be completed. Site-data repair may be required.",
+      ],
+    })
   })
 
   it("bridges existing REST behavior through the shared response shapes", async () => {
@@ -429,6 +471,7 @@ describe("shared repository client boundary", () => {
       phase: "parse",
       completed: 9,
       total: 10,
+      timestamp: 1,
     })
 
     let settled = false
@@ -453,6 +496,182 @@ describe("shared repository client boundary", () => {
       result,
     })
     await expect(pending).resolves.toEqual(result)
+  })
+
+  it("uses a completed page-session semantic profile for automatic search", async () => {
+    const worker = new TestWorker()
+    const client = new LocalRepositoryClient(worker, {
+      createId: vi
+        .fn()
+        .mockReturnValueOnce("embed-request")
+        .mockReturnValueOnce("search-request"),
+    })
+    const semanticRequest = {
+      endpointUrl: "https://embeddings.example/v1/embed",
+      model: "model-safe",
+      dimensions: 2,
+      graphGeneration: 7,
+      credential: "session-only",
+      consentGrantedAt: "2026-07-28T11:55:00.000Z",
+    }
+
+    const indexing = client.startSemanticIndexing(
+      "local-1",
+      semanticRequest,
+      "embed-operation",
+    )
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "embed-request",
+      operationId: "embed-operation",
+      repositoryId: "local-1",
+      type: "result",
+      terminal: "complete",
+      result: {
+        status: "complete",
+        graphGeneration: 7,
+        embedded: 2,
+        dimensions: 2,
+      },
+    })
+    await expect(indexing).resolves.toMatchObject({ embedded: 2 })
+
+    const searching = client.search("local-1", {
+      query: "authorization flow",
+      mode: "auto",
+      limit: 10,
+    })
+    expect(worker.postMessage).toHaveBeenLastCalledWith({
+      protocolVersion: 1,
+      requestId: "search-request",
+      repositoryId: "local-1",
+      kind: "query",
+      payload: {
+        query: "search",
+        request: {
+          query: "authorization flow",
+          mode: "hybrid",
+          limit: 10,
+          semantic: {
+            endpointUrl: semanticRequest.endpointUrl,
+            model: "model-safe",
+            dimensions: 2,
+            graphGeneration: 7,
+            credential: "session-only",
+          },
+        },
+      },
+    })
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "search-request",
+      repositoryId: "local-1",
+      type: "result",
+      terminal: "complete",
+      result: {
+        items: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+        degraded: false,
+      },
+    })
+    await expect(searching).resolves.toMatchObject({ degraded: false })
+  })
+
+  it("requires a page-session credential for explicit semantic search", async () => {
+    const worker = new TestWorker()
+    const client = new LocalRepositoryClient(worker)
+
+    await expect(
+      client.search("local-1", { query: "authorization", mode: "semantic" }),
+    ).rejects.toMatchObject({ code: "credential_required" })
+    expect(worker.postMessage).not.toHaveBeenCalled()
+  })
+
+  it("rejects every pending request and closes after a worker runtime failure", async () => {
+    const worker = new TestWorker()
+    const client = new LocalRepositoryClient(worker, {
+      createId: vi
+        .fn()
+        .mockReturnValueOnce("request-search")
+        .mockReturnValueOnce("request-status"),
+    })
+    const search = client.search("local-1", { query: "main" })
+    const status = client.getRepositoryStatus("local-1")
+
+    worker.fail("error")
+
+    await expect(search).rejects.toMatchObject({
+      code: "unavailable",
+      retryable: true,
+      message: "The browser-local indexing worker stopped unexpectedly.",
+    })
+    await expect(status).rejects.toMatchObject({ code: "unavailable" })
+    expect(worker.terminate).toHaveBeenCalledTimes(1)
+    await expect(client.search("local-1", { query: "again" })).rejects.toMatchObject({
+      code: "unavailable",
+    })
+  })
+
+  it("rejects a correlated malformed terminal worker response", async () => {
+    const worker = new TestWorker()
+    const client = new LocalRepositoryClient(worker, {
+      createId: () => "request-malformed",
+    })
+    const pending = client.search("local-1", { query: "main" })
+
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "request-malformed",
+      type: "result",
+    })
+
+    await expect(pending).rejects.toMatchObject({
+      code: "internal",
+      retryable: false,
+      message: "The browser-local indexing worker returned an invalid response.",
+    })
+  })
+
+  it("surfaces corrupt snapshot metadata instead of disabling duplicate detection", async () => {
+    const storage = {
+      getItem: vi.fn(() => "{not-json"),
+      setItem: vi.fn(),
+    }
+    const registry = new LocalStorageSnapshotRepositoryRegistry(storage)
+
+    await expect(registry.list()).rejects.toThrow(
+      "Browser snapshot metadata is unreadable. Clear or repair this site's local CodeGraph metadata before importing another snapshot.",
+    )
+  })
+
+  it("rejects incomplete snapshot registry records and storage access failures", async () => {
+    const incomplete = new LocalStorageSnapshotRepositoryRegistry({
+      getItem: vi.fn(() =>
+        JSON.stringify([
+          {
+            repositoryId: "snapshot-1",
+            sourceKind: "dropped-snapshot",
+            manifestFingerprint: "manifest-1",
+          },
+        ]),
+      ),
+      setItem: vi.fn(),
+    })
+    const inaccessible = new LocalStorageSnapshotRepositoryRegistry({
+      getItem: vi.fn(() => {
+        throw new DOMException("Storage is blocked.", "SecurityError")
+      }),
+      setItem: vi.fn(),
+    })
+
+    await expect(incomplete.list()).rejects.toThrow(
+      "Browser snapshot metadata is unreadable.",
+    )
+    await expect(inaccessible.list()).rejects.toThrow(
+      "Browser snapshot metadata is unreadable.",
+    )
   })
 
   it("clamps relationship pages and graph/impact depth identically for remote and local clients", async () => {
@@ -517,6 +736,7 @@ describe("shared repository client boundary", () => {
       protocolVersion: 1,
       requestId: "request-callers",
       type: "result",
+      terminal: "complete",
       result: { items: [], total: 0, limit: 500, offset: 0 },
     })
     await callers
@@ -536,6 +756,7 @@ describe("shared repository client boundary", () => {
       protocolVersion: 1,
       requestId: "request-graph",
       type: "result",
+      terminal: "complete",
       result: { nodes: [], edges: [], truncated: false },
     })
     await graph
@@ -555,6 +776,7 @@ describe("shared repository client boundary", () => {
       protocolVersion: 1,
       requestId: "request-impact",
       type: "result",
+      terminal: "complete",
       result: { nodes: [], edges: [], truncated: false },
     })
     await impact

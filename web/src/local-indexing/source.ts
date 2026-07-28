@@ -188,27 +188,36 @@ export class LocalStorageSnapshotRepositoryRegistry
   async list(): Promise<SnapshotRegistryRecord[]> {
     if (!this.storage) return []
     try {
-      const candidate = JSON.parse(
-        this.storage.getItem(SNAPSHOT_REGISTRY_KEY) ?? "[]",
-      ) as unknown
-      if (!Array.isArray(candidate)) return []
-      return candidate.filter(
-        (record): record is SnapshotRegistryRecord =>
-          Boolean(
-            record &&
-              typeof record === "object" &&
-              typeof (record as SnapshotRegistryRecord).repositoryId ===
-                "string" &&
-              typeof (record as SnapshotRegistryRecord).manifestFingerprint ===
-                "string" &&
-              ((record as SnapshotRegistryRecord).sourceKind ===
-                "dropped-snapshot" ||
-                (record as SnapshotRegistryRecord).sourceKind ===
-                  "imported-snapshot"),
-          ),
-      )
+      const raw = this.storage.getItem(SNAPSHOT_REGISTRY_KEY)
+      if (raw === null) return []
+      const candidate = JSON.parse(raw) as unknown
+      if (!Array.isArray(candidate)) throw new TypeError("invalid registry")
+      const valid = candidate.every((record) => {
+        if (!record || typeof record !== "object") return false
+        const value = record as Record<string, unknown>
+        return (
+          typeof value.repositoryId === "string" &&
+          value.repositoryId.length > 0 &&
+          typeof value.displayName === "string" &&
+          value.displayName.length > 0 &&
+          (value.sourceKind === "dropped-snapshot" ||
+            value.sourceKind === "imported-snapshot") &&
+          typeof value.acceptedAt === "string" &&
+          Number.isFinite(new Date(value.acceptedAt).getTime()) &&
+          typeof value.manifestFingerprint === "string" &&
+          value.manifestFingerprint.length > 0 &&
+          Number.isSafeInteger(value.fileCount) &&
+          Number(value.fileCount) >= 0 &&
+          Number.isSafeInteger(value.totalBytes) &&
+          Number(value.totalBytes) >= 0
+        )
+      })
+      if (!valid) throw new TypeError("invalid registry record")
+      return candidate as SnapshotRegistryRecord[]
     } catch {
-      return []
+      throw new Error(
+        "Browser snapshot metadata is unreadable. Clear or repair this site's local CodeGraph metadata before importing another snapshot."
+      )
     }
   }
 
