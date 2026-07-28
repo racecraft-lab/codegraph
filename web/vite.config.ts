@@ -2,15 +2,30 @@ import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import {
+  WEB_BUILD_ENTRIES,
+  validateWebAssetDirectory,
+} from "../scripts/web-asset-manifest.mjs"
 
-const buildEntries = {
-  main: path.resolve(__dirname, "./index.html"),
-  "local-indexing-worker": path.resolve(__dirname, "./src/local-indexing/worker.ts"),
-}
+const buildEntries = Object.fromEntries(
+  Object.entries(WEB_BUILD_ENTRIES).map(([name, relativePath]) => [
+    name,
+    path.resolve(__dirname, relativePath),
+  ])
+)
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: "codegraph-required-web-assets",
+      closeBundle() {
+        validateWebAssetDirectory(path.resolve(__dirname, "dist"))
+      },
+    },
+  ],
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
     exclude: ["@sqlite.org/sqlite-wasm"],

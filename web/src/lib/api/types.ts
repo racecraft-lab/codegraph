@@ -30,7 +30,13 @@ export interface Repository {
   name: string
   default: boolean
   runtime?: "server" | "local"
-  sourceKind?: "picked-folder" | "snapshot"
+  sourceKind?: "picked-folder" | "dropped-snapshot" | "imported-snapshot"
+  snapshotImportedAt?: string
+  manifestFingerprint?: string
+  duplicateSnapshot?: {
+    repositoryId: string
+    displayName: string
+  }
 }
 
 export interface RepositoryStatus {
@@ -38,6 +44,7 @@ export interface RepositoryStatus {
   repo: Pick<Repository, "id" | "root" | "name">
   index: {
     state: string
+    generation?: number
     fileCount: number
     nodeCount: number
     edgeCount: number
@@ -126,12 +133,7 @@ export interface ClusterSummary {
 }
 
 export type CatalogState =
-  | "available"
-  | "stale"
-  | "empty"
-  | "unavailable"
-  | "disabled"
-  | "not_indexed"
+  "available" | "stale" | "empty" | "unavailable" | "disabled" | "not_indexed"
 
 export interface CatalogListResult<T> extends ListResult<T> {
   sourceVersion: number
@@ -157,11 +159,7 @@ export interface ReindexProgressEvent {
 }
 
 export type ChatAvailability =
-  | "enabled"
-  | "dormant"
-  | "misconfigured"
-  | "disabled"
-  | "rate_limited"
+  "enabled" | "dormant" | "misconfigured" | "disabled" | "rate_limited"
 
 export interface ChatStatus {
   state: ChatAvailability
@@ -193,7 +191,13 @@ export interface ChatResponse {
     repo: { id: string; name: string }
     view: string
     selectedNodeId?: string
-    symbols: Array<{ id: string; name: string; kind: string; file?: string; line?: number }>
+    symbols: Array<{
+      id: string
+      name: string
+      kind: string
+      file?: string
+      line?: number
+    }>
     files: string[]
     truncated: boolean
     insufficiencyReason?: string

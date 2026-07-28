@@ -194,19 +194,19 @@ accessibility, determinism, performance, and asset completeness.
 
 ### User Story 5 — Degrade Honestly
 
-- [ ] T025 [P] [US5] Implement independent secure-context, picker, drop-entry, OPFS, persistence, and Web Lock capability probes in `web/src/local-indexing/capabilities.ts` (`FR-004`, `FR-019`, `FR-049`).
+- [x] T025 [P] [US5] Implement independent secure-context, picker, drop-entry, OPFS, persistence, and Web Lock capability probes in `web/src/local-indexing/capabilities.ts` (`FR-004`, `FR-019`, `FR-049`).
   - **RED**: Add matrix tests that fail on browser-name inference, false full-path promises, or collapsed storage/lock results.
   - **GREEN**: Return the contract-defined capability report and exact user guidance from live probes.
   - **REFACTOR**: Keep probes pure/testable and separate from permission-triggering actions.
   - **Evidence**: `npx vitest run web/src/tests/local-indexing-capabilities.test.ts`.
 
-- [ ] T026 [P] [US5] Complete bounded directory-drop snapshot identity/import in `web/src/local-indexing/source.ts` and registry client (`FR-020`, `FR-033`, `FR-037`, `FR-053`, `FR-059`).
+- [x] T026 [P] [US5] Complete bounded directory-drop snapshot identity/import in `web/src/local-indexing/source.ts` and registry client (`FR-020`, `FR-033`, `FR-037`, `FR-053`, `FR-059`).
   - **RED**: Fail on merged imports, reconnect/freshness claims, duplicate-fingerprint ambiguity, traversal admission, and unbounded transfer.
   - **GREEN**: Create a distinct opaque snapshot with import time, fingerprint warning, immutable accepted manifest, and explicit Replace choice.
   - **REFACTOR**: Reuse accepted-source admission while keeping snapshot and picked-folder semantics distinct.
   - **Evidence**: Focused snapshot source/client tests.
 
-- [ ] T027 [US5] Add Chromium full-path plus Firefox/WebKit degradation coverage in `web/src/tests/local-indexing-degradation.spec.ts` (`FR-004`, `FR-019`, `FR-020`, `FR-033`, `FR-049`, `FR-051`, `FR-053`).
+- [X] T027 [US5] Add Chromium full-path plus Firefox/WebKit degradation coverage in `web/src/tests/local-indexing-degradation.spec.ts` (`FR-004`, `FR-019`, `FR-020`, `FR-033`, `FR-049`, `FR-051`, `FR-053`).
   - **RED**: Capture missing-capability guidance, inaccessible fallback, or accidental picker/reconnect promises in each engine project.
   - **GREEN**: Pass Chromium full probes and Firefox/WebKit independent guidance/drop behavior without false parity claims.
   - **REFACTOR**: Share capability assertions while retaining engine-specific expected support.
@@ -214,31 +214,31 @@ accessibility, determinism, performance, and asset completeness.
 
 ### User Story 6 — Opt Into Semantic Search
 
-- [ ] T028 [P] [US6] Implement secret-free embedding profile persistence and memory-only credential intake in `web/src/local-indexing/embeddings.ts` (`FR-021`, `FR-022`, `FR-042`, `FR-044`).
+- [X] T028 [P] [US6] Implement secret-free embedding profile persistence and memory-only credential intake in `web/src/local-indexing/embeddings.ts` (`FR-021`, `FR-022`, `FR-042`, `FR-044`).
   - **RED**: Fail storage/URL/log/error scans when keys, authorization material, userinfo, query/fragment components, or raw source/provider data persist.
   - **GREEN**: Store only canonical origin/model/dimensions/consent/generation/coverage/hash/resume state and require key re-entry after reload.
   - **REFACTOR**: Centralize redaction and serialization allowlists.
   - **Evidence**: Focused embedding/storage tests and durable-state audit.
 
-- [ ] T029 [P] [US6] Implement fail-closed semantic endpoint validation and redacted transport/provider errors in `web/src/local-indexing/embeddings.ts` (`FR-024`, `FR-043`, `FR-045`).
+- [X] T029 [P] [US6] Implement fail-closed semantic endpoint validation and redacted transport/provider errors in `web/src/local-indexing/embeddings.ts` (`FR-024`, `FR-043`, `FR-045`).
   - **RED**: Fail insecure URL, mixed-content, CORS/TLS/network, HTTP, model/dimension, partial-response, cancel, and unavailable cases that leak details or offer unsafe bypasses.
   - **GREEN**: Emit stable safe codes, redacted origin, retry guidance, and no proxy/no-CORS/insecure override.
   - **REFACTOR**: Share error mapping with worker plain-object envelopes.
   - **Evidence**: Focused transport error table tests.
 
-- [ ] T030 [US6] Add the post-keyword cancellable/resumable embedding worker path and vector convergence checks in `web/src/local-indexing/worker.ts`, `web/src/local-indexing/sqlite.ts`, and `web/src/local-indexing/embeddings.ts` (`FR-023`, `FR-041`, `FR-056`, `FR-061`, `FR-063`).
+- [X] T030 [US6] Add the post-keyword cancellable/resumable embedding worker path and vector convergence checks in `web/src/local-indexing/worker.ts`, `web/src/local-indexing/sqlite.ts`, and `web/src/local-indexing/embeddings.ts` (`FR-023`, `FR-041`, `FR-056`, `FR-061`, `FR-063`).
   - **RED**: Fail mixed model/dimension/generation results, keyword disablement, unbounded endpoint/vector batches, post-cancel calls, and unusable resume state.
   - **GREEN**: Run a distinct operation after keyword publication, validate hashes/dimensions, batch under declared ceilings, resume safely, and mark stale/unavailable without affecting keyword reads.
   - **REFACTOR**: Reuse operation lifecycle and generation metadata without coupling keyword publication to endpoint availability.
   - **Evidence**: Focused worker/embedding tests.
 
-- [ ] T031 [US6] Enforce the no-consent and explicit-consent network boundary in `web/src/tests/local-indexing-network.spec.ts` (`FR-021`, `FR-022`, `FR-024`, `FR-042` through `FR-045`, `FR-054`, `FR-063`).
+- [X] T031 [US6] Enforce the no-consent and explicit-consent network boundary in `web/src/tests/local-indexing-network.spec.ts` (`FR-021`, `FR-022`, `FR-024`, `FR-042` through `FR-045`, `FR-054`, `FR-063`).
   - **RED**: Intercept fetch/XHR/WebSocket/beacon/external asset traffic and expose any repository-derived request before consent, including `/lsp`, or source-derived request after consent.
   - **GREEN**: Allow only enumerated same-origin shipped assets before consent, prove local source browsing opens no `/lsp` WebSocket, and allow only the configured secure endpoint with memory-only authorization afterward.
   - **REFACTOR**: Keep the request audit allowlist explicit and fail-closed.
   - **Evidence**: Network log proving zero no-consent repository egress and redacted consent traffic.
 
-- [ ] T032 [US6] Prove semantic progress/cancel/resume and concurrent local-read responsiveness in `web/src/tests/local-indexing-full.spec.ts` (`FR-023`, `FR-026`, `FR-048`, `FR-056`, `FR-059` through `FR-061`, `FR-063`).
+- [X] T032 [US6] Prove semantic progress/cancel/resume and concurrent local-read responsiveness in `web/src/tests/local-indexing-full.spec.ts` (`FR-023`, `FR-026`, `FR-048`, `FR-056`, `FR-059` through `FR-061`, `FR-063`).
   - **RED**: Capture blocked controls, post-cancel endpoint calls, stale vectors, or p95 >150 ms while embedding is active/paused/failed/cancelled.
   - **GREEN**: Keep progress/cancel actionable, resume consistent with the graph generation, and satisfy local read p95.
   - **REFACTOR**: Reuse deterministic timing and operation evidence helpers.
@@ -246,37 +246,37 @@ accessibility, determinism, performance, and asset completeness.
 
 ### User Story 7 — Verify The Shipped Build
 
-- [ ] T033 [US7] Complete fail-closed worker/WASM/grammar/database asset packaging and lazy request evidence in `package.json`, `web/vite.config.ts`, and `web/src/tests/local-indexing-packaged.spec.ts` (`FR-003`, `FR-006`, `FR-027`, `FR-045`, `FR-046`, `FR-062`).
+- [X] T033 [US7] Complete fail-closed worker/WASM/grammar/database asset packaging and lazy request evidence in `package.json`, `web/vite.config.ts`, and `web/src/tests/local-indexing-packaged.spec.ts` (`FR-003`, `FR-006`, `FR-027`, `FR-045`, `FR-046`, `FR-062`).
   - **RED**: Remove or corrupt each required asset and prove build/package/static-host verification fails; prove initial routes eagerly loading SQLite/tree-sitter/grammar assets also fail.
   - **GREEN**: Copy non-empty same-origin assets into `dist/web` and the package, resolve through asset base, and request only after local-index/language demand.
   - **REFACTOR**: Keep one asset manifest/copy source of truth.
   - **Evidence**: Root build, packaged test, byte inventory, and request-order trace.
 
-- [ ] T034 [US7] Add keyboard/focus/live-status/mobile/reduced-motion acceptance coverage to `web/src/tests/local-indexing-full.spec.ts` and component tests (`FR-012`, `FR-030`, `FR-031`, `FR-034` through `FR-036`, `FR-050` through `FR-052`).
+- [X] T034 [US7] Add keyboard/focus/live-status/mobile/reduced-motion acceptance coverage to `web/src/tests/local-indexing-full.spec.ts` and component tests (`FR-012`, `FR-030`, `FR-031`, `FR-034` through `FR-036`, `FR-050` through `FR-052`).
   - **RED**: Fail every required local flow using keyboard-only navigation, focus checks, status/alert observation, 320 CSS px viewport, and reduced-motion preference.
   - **GREEN**: Make import/reconnect/refresh/cancel/busy/quota/unsupported/semantic/delete flows pass without horizontal control/status scrolling or non-essential motion.
   - **REFACTOR**: Consolidate accessible operation/status primitives.
   - **Evidence**: Focused component tests and Playwright accessibility trace.
 
-- [ ] T035 [US7] Run and harden the documented self-repository performance/resource suite in `web/src/tests/local-indexing-full.spec.ts` (`FR-025`, `FR-026`, `FR-048`, `FR-059` through `FR-063`).
+- [X] T035 [US7] Run and harden the documented self-repository performance/resource suite in `web/src/tests/local-indexing-full.spec.ts` (`FR-025`, `FR-026`, `FR-048`, `FR-059` through `FR-063`).
   - **RED**: Capture failing ≤60-second keyword index, heartbeat/long-task, 20-sample p95, budget-overrun, query-plan, asset, and repeated cleanup evidence under disclosed conditions.
   - **GREEN**: Meet the canonical thresholds without weakening correctness, privacy, or deterministic output.
   - **REFACTOR**: Optimize only measured bottlenecks and preserve the declared budgets.
   - **Evidence**: Hardware/software disclosure, timing samples, query plans, resource high-water/post-cleanup, and run count.
 
-- [ ] T036 [US7] Complete cross-runtime, three-browser, offline/privacy, and packaged-host acceptance in `web/src/tests/local-indexing-full.spec.ts`, `web/src/tests/local-indexing-degradation.spec.ts`, `web/src/tests/local-indexing-network.spec.ts`, and `web/src/tests/local-indexing-packaged.spec.ts` (`FR-003`, `FR-007`, `FR-025`, `FR-027`, `FR-044` through `FR-049`, `FR-062`).
+- [X] T036 [US7] Complete cross-runtime, three-browser, offline/privacy, and packaged-host acceptance in `web/src/tests/local-indexing-full.spec.ts`, `web/src/tests/local-indexing-degradation.spec.ts`, `web/src/tests/local-indexing-network.spec.ts`, and `web/src/tests/local-indexing-packaged.spec.ts` (`FR-003`, `FR-007`, `FR-025`, `FR-027`, `FR-044` through `FR-049`, `FR-062`).
   - **RED**: Run the full matrix and record parity, browser-guidance, offline, CSP, network, or packaged-host failures.
   - **GREEN**: Pass deterministic semantic projections, Chromium full path, Firefox/WebKit degradation, zero no-consent egress, trusted-host CSP, and package/static-host loading.
   - **REFACTOR**: Deduplicate test fixtures without collapsing independent acceptance assertions.
   - **Evidence**: Full browser matrix and root/web verification logs.
 
-- [ ] T037 [P] [US7] Update user-facing release notes under `CHANGELOG.md` `[Unreleased]` and validate `specs/007-in-browser-indexing/quickstart.md` against the shipped flow (`FR-003`, `FR-004`, `FR-019`, `FR-022`, `FR-027`, `FR-045`, `FR-046`).
+- [X] T037 [P] [US7] Update user-facing release notes under `CHANGELOG.md` `[Unreleased]` and validate `specs/007-in-browser-indexing/quickstart.md` against the shipped flow (`FR-003`, `FR-004`, `FR-019`, `FR-022`, `FR-027`, `FR-045`, `FR-046`).
   - **RED**: Follow the current quickstart against the packaged build and record any inaccurate command, capability, security, or benchmark statement.
   - **GREEN**: Correct only verified user-facing guidance and add a symptom/capability-first changelog entry.
   - **REFACTOR**: Remove implementation-internal wording and keep non-goals explicit.
   - **Evidence**: Executed quickstart checklist and changelog diff.
 
-- [ ] T038 [US7] Run the Slice 3/final reviewability and regression checkpoint, fixing only in-scope defects (`FR-028`).
+- [X] T038 [US7] Run the Slice 3/final reviewability and regression checkpoint, fixing only in-scope defects (`FR-028`).
   - **RED**: Capture final production files/LOC, undeclared files, all focused/full failures, unresolved acceptance evidence, and any fourth capability class.
   - **GREEN**: Pass root build/typecheck/tests, web tests, Chromium full UAT, Firefox/WebKit degradation, privacy/package/performance gates, and all prior slice regressions.
   - **REFACTOR**: Simplify new code only; stop for consensus if the ratified boundary or non-goals are violated.

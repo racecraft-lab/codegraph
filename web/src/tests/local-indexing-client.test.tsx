@@ -5,6 +5,8 @@ import {
   SourceHandleRegistry,
   type DirectoryHandleLike,
   type SavedSourceHandle,
+  type SnapshotRegistryRecord,
+  type SnapshotRepositoryRegistry,
   type SourceHandleStore,
   type SourceIdentity,
 } from "../local-indexing/source"
@@ -41,6 +43,232 @@ const pickedIdentity: SourceIdentity = {
 }
 
 describe("shared repository client boundary", () => {
+  it("stages large source collections in bounded worker batches before indexing", async () => {
+    const worker = new TestWorker()
+    const requestIds = ["batch-1", "batch-2", "open-final"]
+    const client = new LocalRepositoryClient(worker, {
+      createId: () => requestIds.shift()!,
+    })
+    const entries = Array.from({ length: 65 }, (_, index) => ({
+      kind: "file" as const,
+      path: `src/file-${index}.ts`,
+      bytes: new Uint8Array([index]),
+      contentHash: `hash-${index}`,
+      size: 1,
+    }))
+    const collection = {
+      entries,
+      manifest: {
+        entries: entries.map(({ path, contentHash, size }) => ({
+          path,
+          contentHash,
+          size,
+        })),
+        fingerprint: "manifest-large",
+      },
+      warnings: { details: [], total: 0, truncated: false },
+    }
+
+    const pending = client.openPickedFolder(
+      { identity: pickedIdentity, collection },
+      pickedIdentity.id,
+      "operation-large",
+    )
+    await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledTimes(1))
+    expect(worker.postMessage.mock.calls[0]?.[0]).toMatchObject({
+      requestId: "batch-1",
+      operationId: "operation-large",
+      repositoryId: pickedIdentity.id,
+      kind: "source-batch",
+      payload: {
+        batchIndex: 0,
+        batchCount: 2,
+        totalFiles: 65,
+        totalBytes: 65,
+        entries: expect.arrayContaining([
+          expect.objectContaining({ path: "src/file-0.ts" }),
+        ]),
+      },
+    })
+    expect(
+      (
+        worker.postMessage.mock.calls[0]?.[0] as {
+          payload: { entries: unknown[] }
+        }
+      ).payload.entries,
+    ).toHaveLength(64)
+    expect(worker.postMessage.mock.calls[0]?.[1]).toHaveLength(64)
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "batch-1",
+      operationId: "operation-large",
+      repositoryId: pickedIdentity.id,
+      type: "result",
+      result: { batchIndex: 0 },
+    })
+
+    await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledTimes(2))
+    expect(worker.postMessage.mock.calls[1]?.[0]).toMatchObject({
+      requestId: "batch-2",
+      kind: "source-batch",
+      payload: {
+        batchIndex: 1,
+        batchCount: 2,
+        entries: [expect.objectContaining({ path: "src/file-64.ts" })],
+      },
+    })
+    expect(worker.postMessage.mock.calls[1]?.[1]).toHaveLength(1)
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "batch-2",
+      operationId: "operation-large",
+      repositoryId: pickedIdentity.id,
+      type: "result",
+      result: { batchIndex: 1 },
+    })
+
+    await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledTimes(3))
+    expect(worker.postMessage.mock.calls[2]?.[0]).toMatchObject({
+      requestId: "open-final",
+      operationId: "operation-large",
+      repositoryId: pickedIdentity.id,
+      kind: "open-picked-folder",
+      payload: {
+        identity: pickedIdentity,
+        collection: { entries: [] },
+        sourceBatches: {
+          batchCount: 2,
+          totalFiles: 65,
+          totalBytes: 65,
+        },
+      },
+    })
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "open-final",
+      operationId: "operation-large",
+      repositoryId: pickedIdentity.id,
+      type: "result",
+      terminal: "complete",
+      result: {
+        id: pickedIdentity.id,
+        root: pickedIdentity.virtualRoot,
+        name: pickedIdentity.displayName,
+        default: false,
+        runtime: "local",
+        sourceKind: "picked-folder",
+      },
+    })
+
+    await expect(pending).resolves.toMatchObject({ id: pickedIdentity.id })
+  })
+
+  it("imports duplicate snapshots as distinct repositories and requires explicit replacement", async () => {
+    const worker = new TestWorker()
+    const records = new Map<string, SnapshotRegistryRecord>([
+      [
+        "snapshot-existing",
+        {
+          repositoryId: "snapshot-existing",
+          displayName: "Earlier project",
+          sourceKind: "dropped-snapshot",
+          acceptedAt: "2026-07-28T10:00:00.000Z",
+          manifestFingerprint: "manifest-same",
+          fileCount: 1,
+          totalBytes: 21,
+        },
+      ],
+    ])
+    const snapshotRegistry: SnapshotRepositoryRegistry = {
+      list: vi.fn(async () => [...records.values()]),
+      put: vi.fn(async (record) => {
+        records.set(record.repositoryId, record)
+      }),
+      delete: vi.fn(async (repositoryId) => {
+        records.delete(repositoryId)
+      }),
+    }
+    const client = new LocalRepositoryClient(worker, {
+      createId: () => "snapshot-operation",
+      snapshotRegistry,
+    })
+    const identity: SourceIdentity = {
+      id: "snapshot-new",
+      sourceKind: "dropped-snapshot",
+      displayName: "project",
+      virtualRoot: "local://snapshot-new",
+      acceptedAt: "2026-07-28T11:15:00.000Z",
+    }
+    const collection = {
+      entries: [],
+      manifest: { entries: [], fingerprint: "manifest-same" },
+      warnings: { details: [], total: 0, truncated: false },
+      snapshot: {
+        acceptedAt: "2026-07-28T11:15:00.000Z",
+        fileCount: 0,
+        totalBytes: 0,
+        manifestFingerprint: "manifest-same",
+      },
+    }
+
+    const pending = client.importSnapshot({ identity, collection })
+    await vi.waitFor(() => {
+      expect(worker.postMessage).toHaveBeenCalledWith({
+        protocolVersion: 1,
+        requestId: "snapshot-operation",
+        operationId: "snapshot-operation",
+        repositoryId: "snapshot-new",
+        kind: "import-snapshot",
+        payload: { identity, collection },
+      })
+    })
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "snapshot-operation",
+      operationId: "snapshot-operation",
+      repositoryId: "snapshot-new",
+      type: "result",
+      terminal: "complete",
+      result: {
+        id: "snapshot-new",
+        root: "local://snapshot-new",
+        name: "project",
+        default: false,
+        runtime: "local",
+        sourceKind: "dropped-snapshot",
+      },
+    })
+
+    await expect(pending).resolves.toMatchObject({
+      id: "snapshot-new",
+      sourceKind: "dropped-snapshot",
+      snapshotImportedAt: "2026-07-28T11:15:00.000Z",
+      manifestFingerprint: "manifest-same",
+      duplicateSnapshot: {
+        repositoryId: "snapshot-existing",
+        displayName: "Earlier project",
+      },
+    })
+    expect(records.has("snapshot-existing")).toBe(true)
+    expect(records.has("snapshot-new")).toBe(true)
+    await expect(client.refresh("snapshot-new")).rejects.toMatchObject({
+      code: "capability_unavailable",
+    })
+    expect(worker.postMessage).toHaveBeenCalledTimes(1)
+
+    await expect(
+      client.importSnapshot({
+        identity,
+        collection,
+        replace: {
+          repositoryId: "snapshot-existing",
+          confirmed: false,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" })
+    expect(worker.postMessage).toHaveBeenCalledTimes(1)
+  })
+
   it("inspects storage without prompting and requests persistence only explicitly", async () => {
     const storageManager = {
       estimate: vi.fn().mockResolvedValue({

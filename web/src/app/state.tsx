@@ -2,7 +2,13 @@ import * as React from "react"
 
 import { errorState } from "@/lib/api/client"
 import { classifyRepositoryStatus } from "@/lib/api/repositories"
-import type { AsyncStatus, CodeNode, Repository, RepositoryState, RepositoryStatus } from "@/lib/api/types"
+import type {
+  AsyncStatus,
+  CodeNode,
+  Repository,
+  RepositoryState,
+  RepositoryStatus,
+} from "@/lib/api/types"
 import {
   createRemoteRepositoryClient,
   createUnavailableRepositoryClient,
@@ -15,11 +21,21 @@ import {
   type LocalStorageStatus,
 } from "@/local-indexing/client"
 import {
+  EmbeddingProfileStore,
+  MemoryOnlyEmbeddingCredentials,
+} from "@/local-indexing/embeddings"
+import {
   openPickedFolderFromUserAction,
   SourceHandleRegistry,
   type DirectoryHandleLike,
+  type SourceConnection,
   type SourceIdentity,
+  type SnapshotSourceProvider,
 } from "@/local-indexing/source"
+import {
+  probeBrowserCapabilities,
+  type BrowserCapabilityReport,
+} from "@/local-indexing/capabilities"
 
 export type LocalOperationState =
   | "complete"
@@ -49,18 +65,17 @@ const LOCAL_REPOSITORIES_KEY = "codegraph.localRepositories.v1"
 function persistedLocalRepositories(): Repository[] {
   try {
     const parsed = JSON.parse(
-      localStorage.getItem(LOCAL_REPOSITORIES_KEY) ?? "[]",
+      localStorage.getItem(LOCAL_REPOSITORIES_KEY) ?? "[]"
     ) as unknown
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (candidate): candidate is Repository =>
-        Boolean(
-          candidate &&
-            typeof candidate === "object" &&
-            typeof (candidate as Repository).id === "string" &&
-            typeof (candidate as Repository).name === "string" &&
-            (candidate as Repository).runtime === "local",
-        ),
+    return parsed.filter((candidate): candidate is Repository =>
+      Boolean(
+        candidate &&
+        typeof candidate === "object" &&
+        typeof (candidate as Repository).id === "string" &&
+        typeof (candidate as Repository).name === "string" &&
+        (candidate as Repository).runtime === "local"
+      )
     )
   } catch {
     return []
@@ -71,12 +86,14 @@ function persistLocalRepositories(repositories: Repository[]) {
   localStorage.setItem(
     LOCAL_REPOSITORIES_KEY,
     JSON.stringify(
-      repositories.filter((repository) => repository.runtime === "local"),
-    ),
+      repositories.filter((repository) => repository.runtime === "local")
+    )
   )
 }
 
-function pickedFolderIdentity(repository: Repository): SourceIdentity | undefined {
+function pickedFolderIdentity(
+  repository: Repository
+): SourceIdentity | undefined {
   if (
     repository.runtime !== "local" ||
     repository.sourceKind !== "picked-folder"
@@ -107,8 +124,17 @@ interface AppStateValue {
   refreshStatus: () => Promise<void>
   localOperation?: LocalOperationStatus
   storageStatus?: LocalStorageStatus
+  capabilityReport?: BrowserCapabilityReport
+  localSourceConnection?: SourceConnection
   openLocalFolder: () => Promise<void>
+  importLocalSnapshot: (provider: SnapshotSourceProvider) => Promise<void>
+  reconnectLocalRepository: () => Promise<void>
   refreshLocalRepository: () => Promise<void>
+  startSemanticIndexing: (request: {
+    endpointUrl: string
+    model: string
+    credential: string
+  }) => Promise<void>
   cancelLocalOperation: () => Promise<void>
   requestStoragePersistence: () => Promise<void>
   deleteLocalRepository: (options: {
@@ -122,57 +148,102 @@ const AppStateContext = React.createContext<AppStateValue | null>(null)
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [repositories, setRepositories] = React.useState<Repository[]>([])
-  const [repositoriesStatus, setRepositoriesStatus] = React.useState<AsyncStatus>("idle")
-  const [selectedRepoId, setSelectedRepoId] = React.useState<string | undefined>()
-  const [repositoryStatus, setRepositoryStatus] = React.useState<RepositoryStatus | undefined>()
-  const [repositoryState, setRepositoryState] = React.useState<RepositoryState>("missing")
-  const [statusMessage, setStatusMessage] = React.useState("Loading repository state.")
+  const [repositoriesStatus, setRepositoriesStatus] =
+    React.useState<AsyncStatus>("idle")
+  const [selectedRepoId, setSelectedRepoId] = React.useState<
+    string | undefined
+  >()
+  const [repositoryStatus, setRepositoryStatus] = React.useState<
+    RepositoryStatus | undefined
+  >()
+  const [repositoryState, setRepositoryState] =
+    React.useState<RepositoryState>("missing")
+  const [statusMessage, setStatusMessage] = React.useState(
+    "Loading repository state."
+  )
   const [selectedNode, setSelectedNode] = React.useState<CodeNode | undefined>()
-  const [localOperation, setLocalOperation] = React.useState<LocalOperationStatus | undefined>()
-  const [storageStatus, setStorageStatus] =
-    React.useState<LocalStorageStatus | undefined>()
-  const [activeLocalClient, setActiveLocalClient] =
-    React.useState<LocalRepositoryClient | undefined>()
+  const [localOperation, setLocalOperation] = React.useState<
+    LocalOperationStatus | undefined
+  >()
+  const [storageStatus, setStorageStatus] = React.useState<
+    LocalStorageStatus | undefined
+  >()
+  const [capabilityReport, setCapabilityReport] = React.useState<
+    BrowserCapabilityReport | undefined
+  >()
+  const [localSourceConnection, setLocalSourceConnection] = React.useState<
+    SourceConnection | undefined
+  >()
+  const [activeLocalClient, setActiveLocalClient] = React.useState<
+    LocalRepositoryClient | undefined
+  >()
   const [remoteClient] = React.useState<RepositoryClient>(() =>
-    createRemoteRepositoryClient(),
+    createRemoteRepositoryClient()
   )
   const [unavailableLocalClient] = React.useState<RepositoryClient>(() =>
-    createUnavailableRepositoryClient(),
+    createUnavailableRepositoryClient()
   )
   const statusRequestRef = React.useRef(0)
-  const localClientRef = React.useRef<LocalRepositoryClient | undefined>(undefined)
+  const localClientRef = React.useRef<LocalRepositoryClient | undefined>(
+    undefined
+  )
   const localOperationIdRef = React.useRef<string | undefined>(undefined)
+  const localOperationKindRef = React.useRef<"keyword" | "semantic">("keyword")
+  const embeddingProfilesRef = React.useRef<EmbeddingProfileStore | undefined>(
+    undefined
+  )
+  const embeddingCredentialsRef = React.useRef<
+    MemoryOnlyEmbeddingCredentials | undefined
+  >(undefined)
   const sourceRegistryRef = React.useRef<SourceHandleRegistry | undefined>(
-    undefined,
+    undefined
   )
   sourceRegistryRef.current ??= new SourceHandleRegistry()
+  embeddingProfilesRef.current ??= new EmbeddingProfileStore()
+  embeddingCredentialsRef.current ??= new MemoryOnlyEmbeddingCredentials()
 
   const selectedRepo = React.useMemo(
-    () => repositories.find((repo) => repo.id === selectedRepoId) ?? repositories.find((repo) => repo.default) ?? repositories[0],
-    [repositories, selectedRepoId],
+    () =>
+      repositories.find((repo) => repo.id === selectedRepoId) ??
+      repositories.find((repo) => repo.default) ??
+      repositories[0],
+    [repositories, selectedRepoId]
   )
   const repositoryClient =
     selectedRepo?.runtime === "local"
-      ? activeLocalClient ?? unavailableLocalClient
+      ? (activeLocalClient ?? unavailableLocalClient)
       : remoteClient
 
-  const updateLocalProgress = React.useCallback((progress: LocalRepositoryProgress) => {
-    if (progress.operationId !== localOperationIdRef.current) return
-    setLocalOperation({
-      state: "refreshing",
-      message: "Building the browser-local keyword index.",
-      phase: progress.phase,
-      completed: progress.completed,
-      total: progress.total,
-      cancellable: progress.phase !== "publish",
-    })
-  }, [])
+  const updateLocalProgress = React.useCallback(
+    (progress: LocalRepositoryProgress) => {
+      if (progress.operationId !== localOperationIdRef.current) return
+      setLocalOperation({
+        state: "refreshing",
+        message:
+          localOperationKindRef.current === "semantic"
+            ? "Building optional semantic vectors. Keyword search remains available."
+            : "Building the browser-local keyword index.",
+        phase: progress.phase,
+        completed: progress.completed,
+        total: progress.total,
+        cancellable: progress.phase !== "publish",
+      })
+    },
+    []
+  )
 
   const localClient = React.useCallback(() => {
     if (!localClientRef.current) {
+      if (typeof Worker !== "function") {
+        throw new RepositoryClientError(
+          "capability_unavailable",
+          "This browser cannot start the local indexing worker.",
+          false
+        )
+      }
       const worker = new Worker(
         new URL("../local-indexing/worker.ts", import.meta.url),
-        { type: "module", name: "codegraph-local-indexer" },
+        { type: "module", name: "codegraph-local-indexer" }
       )
       const client = new LocalRepositoryClient(worker, {
         onProgress: updateLocalProgress,
@@ -191,41 +262,49 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       let nextRepos: Repository[]
       if (persisted.length > 0) {
         const repositoryToAcquire =
-          persisted.find((repository) => repository.default) ??
-          persisted[0]
+          persisted.find((repository) => repository.default) ?? persisted[0]
         await localClient().acquireRepository(repositoryToAcquire.id)
         setStorageStatus(await localClient().getStorageStatus())
         const publishedIds = new Set(
           (await localClient().listRepositories()).map(
-            (repository) => repository.id,
-          ),
+            (repository) => repository.id
+          )
         )
         nextRepos = persisted.filter((repository) =>
-          publishedIds.has(repository.id),
+          publishedIds.has(repository.id)
         )
         await Promise.allSettled(
           nextRepos.map((repository) => {
             const identity = pickedFolderIdentity(repository)
             const activeConnection = localClient().sourceConnection(
-              repository.id,
+              repository.id
             )
             return identity
               ? activeConnection?.canRefresh
                 ? Promise.resolve(activeConnection)
                 : localClient().restorePickedFolder(identity)
               : Promise.resolve()
-          }),
+          })
+        )
+        setLocalSourceConnection(
+          localClient().sourceConnection(repositoryToAcquire.id)
         )
         persistLocalRepositories(nextRepos)
       } else {
         setStorageStatus(undefined)
+        setLocalSourceConnection(undefined)
         nextRepos = await remoteClient.listRepositories()
       }
       setRepositories(nextRepos)
-      setSelectedRepoId((current) => current ?? nextRepos.find((repo) => repo.default)?.id ?? nextRepos[0]?.id)
+      setSelectedRepoId(
+        (current) =>
+          current ??
+          nextRepos.find((repo) => repo.default)?.id ??
+          nextRepos[0]?.id
+      )
       setRepositoriesStatus("success")
       setLocalOperation((current) =>
-        current?.state === "busy" ? undefined : current,
+        current?.state === "busy" ? undefined : current
       )
     } catch (error) {
       const nextError =
@@ -238,7 +317,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           (current) =>
             current ??
             persisted.find((repository) => repository.default)?.id ??
-            persisted[0]?.id,
+            persisted[0]?.id
         )
         setLocalOperation({
           state: "busy",
@@ -247,7 +326,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         })
       }
       setRepositoriesStatus("error")
-      setRepositoryState(nextError.code === "unauthorized" ? "unauthorized" : "unavailable")
+      setRepositoryState(
+        nextError.code === "unauthorized" ? "unauthorized" : "unavailable"
+      )
       setStatusMessage(nextError.message)
     }
   }, [localClient, remoteClient])
@@ -257,13 +338,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const requestId = statusRequestRef.current + 1
     statusRequestRef.current = requestId
     try {
-      if (!repoId) throw new RepositoryClientError("not_found", "Select a repository first.", false)
+      if (!repoId)
+        throw new RepositoryClientError(
+          "not_found",
+          "Select a repository first.",
+          false
+        )
       const status = await repositoryClient.getRepositoryStatus(repoId)
       if (statusRequestRef.current !== requestId) return
       if (repoId && status.repo.id !== repoId) return
       setRepositoryStatus(status)
       setRepositoryState(classifyRepositoryStatus(status))
-      setStatusMessage(`${status.index.nodeCount.toLocaleString()} symbols across ${status.index.fileCount.toLocaleString()} files.`)
+      setStatusMessage(
+        `${status.index.nodeCount.toLocaleString()} symbols across ${status.index.fileCount.toLocaleString()} files.`
+      )
     } catch (error) {
       if (statusRequestRef.current !== requestId) return
       const nextError = errorState(error)
@@ -280,6 +368,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setRepositoryState("missing")
     setStatusMessage("Loading repository state.")
     setSelectedNode(undefined)
+    setLocalSourceConnection(localClientRef.current?.sourceConnection(repoId))
   }, [])
 
   const selectNode = React.useCallback((node: CodeNode) => {
@@ -291,6 +380,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const openLocalFolder = React.useCallback(async () => {
+    if (capabilityReport && capabilityReport.tier !== "full") {
+      throw new RepositoryClientError(
+        "capability_unavailable",
+        capabilityReport.guidance.join(" "),
+        false
+      )
+    }
     const picker = (
       window as Window & {
         showDirectoryPicker?: () => Promise<DirectoryHandleLike>
@@ -306,7 +402,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       throw new RepositoryClientError(
         "capability_unavailable",
         "This browser does not provide local folder selection.",
-        false,
+        false
       )
     }
 
@@ -326,7 +422,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           pickedHandle = await picker.call(window)
           return pickedHandle
         },
-        { userActivated: true },
+        { userActivated: true }
       )
       setLocalOperation({
         state: "refreshing",
@@ -339,16 +435,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       const collection = await provider.collect()
       const operationId = crypto.randomUUID()
       localOperationIdRef.current = operationId
+      localOperationKindRef.current = "keyword"
       const repository = await localClient().openPickedFolder(
         {
           identity: provider.identity,
           collection,
         },
         provider.identity.id,
-        operationId,
+        operationId
       )
       if (pickedHandle) {
-        localClient().connectPickedFolder(provider.identity, pickedHandle)
+        setLocalSourceConnection(
+          localClient().connectPickedFolder(provider.identity, pickedHandle)
+        )
       }
       if (
         pickedHandle?.queryPermission &&
@@ -372,13 +471,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       ])
       persistLocalRepositories([
         ...persistedLocalRepositories().filter(
-          (candidate) => candidate.id !== localRepository.id,
+          (candidate) => candidate.id !== localRepository.id
         ),
         localRepository,
       ])
       setSelectedRepoId(localRepository.id)
       setLocalOperation({
-        state: collection.warnings.details.length > 0 ? "partial-warning" : "complete",
+        state:
+          collection.warnings.details.length > 0
+            ? "partial-warning"
+            : "complete",
         message:
           collection.warnings.details.length > 0
             ? `Indexed with ${collection.warnings.total.toLocaleString()} source warnings.`
@@ -403,18 +505,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             code === "operation_cancelled"
               ? "cancelled"
               : code === "quota_exceeded"
-              ? "quota-blocked"
-              : code === "permission_denied"
-                ? "permission-blocked"
-                : code === "repository_busy"
-                  ? "busy"
-                  : "failed",
+                ? "quota-blocked"
+                : code === "permission_denied"
+                  ? "permission-blocked"
+                  : code === "repository_busy"
+                    ? "busy"
+                    : "failed",
           message:
             code === "operation_cancelled"
               ? "Local indexing was cancelled."
               : error instanceof Error
-              ? error.message
-              : "The local indexing operation failed.",
+                ? error.message
+                : "The local indexing operation failed.",
           cancellable: false,
         })
       }
@@ -422,7 +524,74 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     } finally {
       localOperationIdRef.current = undefined
     }
-  }, [localClient])
+  }, [capabilityReport, localClient])
+
+  const importLocalSnapshot = React.useCallback(
+    async (provider: SnapshotSourceProvider) => {
+      if (
+        !capabilityReport ||
+        (capabilityReport.tier !== "full" &&
+          capabilityReport.tier !== "snapshot-only")
+      ) {
+        throw new RepositoryClientError(
+          "capability_unavailable",
+          capabilityReport?.guidance.join(" ") ??
+            "Directory snapshot import is unavailable.",
+          false
+        )
+      }
+      setLocalOperation({
+        state: "snapshot",
+        message: "Reading an immutable directory snapshot.",
+        phase: "Reading files",
+        completed: 0,
+        total: 0,
+        cancellable: false,
+      })
+      try {
+        const collection = await provider.collect()
+        const repository = await localClient().importSnapshot(
+          { identity: provider.identity, collection },
+          collection.entries.map((entry) => entry.bytes.buffer as ArrayBuffer)
+        )
+        setRepositories((current) => [
+          ...current.filter((candidate) => candidate.id !== repository.id),
+          repository,
+        ])
+        persistLocalRepositories([
+          ...persistedLocalRepositories().filter(
+            (candidate) => candidate.id !== repository.id
+          ),
+          repository,
+        ])
+        setSelectedRepoId(repository.id)
+        setLocalSourceConnection(undefined)
+        setLocalOperation({
+          state: collection.warnings.total > 0 ? "partial-warning" : "snapshot",
+          message: repository.duplicateSnapshot
+            ? `Snapshot imported. Its accepted files match ${repository.duplicateSnapshot.displayName}; both repositories remain separate.`
+            : `Snapshot imported at ${new Date(
+                collection.snapshot.acceptedAt
+              ).toLocaleString()}. It will not reconnect or refresh automatically.`,
+          phase: "Complete",
+          completed: collection.snapshot.fileCount,
+          total: collection.snapshot.fileCount,
+          cancellable: false,
+        })
+      } catch (error) {
+        setLocalOperation({
+          state: "failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Directory snapshot import failed.",
+          cancellable: false,
+        })
+        throw error
+      }
+    },
+    [capabilityReport, localClient]
+  )
 
   const cancelLocalOperation = React.useCallback(async () => {
     const operationId = localOperationIdRef.current
@@ -430,12 +599,52 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     await localClient().cancel(operationId)
   }, [localClient])
 
+  const reconnectLocalRepository = React.useCallback(async () => {
+    if (!selectedRepo) {
+      throw new RepositoryClientError(
+        "invalid_request",
+        "Select a saved local folder to reconnect.",
+        false
+      )
+    }
+    const identity = pickedFolderIdentity(selectedRepo)
+    if (!identity) {
+      throw new RepositoryClientError(
+        "capability_unavailable",
+        "Snapshot repositories cannot reconnect.",
+        false
+      )
+    }
+    try {
+      const connection = await localClient().reconnectPickedFolder(identity, {
+        userActivated: true,
+      })
+      setLocalSourceConnection(connection)
+      setLocalOperation({
+        state: "complete",
+        message: `${selectedRepo.name} reconnected. Manual refresh is available.`,
+        cancellable: false,
+      })
+    } catch (error) {
+      setLocalSourceConnection(localClient().sourceConnection(selectedRepo.id))
+      setLocalOperation({
+        state: "permission-blocked",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Read permission was not granted for the saved local folder.",
+        cancellable: false,
+      })
+      throw error
+    }
+  }, [localClient, selectedRepo])
+
   const refreshLocalRepository = React.useCallback(async () => {
     if (!selectedRepo || selectedRepo.runtime !== "local") {
       throw new RepositoryClientError(
         "invalid_request",
         "Select a browser-local repository to refresh.",
-        false,
+        false
       )
     }
     setLocalOperation({
@@ -446,6 +655,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       total: 0,
       cancellable: true,
     })
+    localOperationKindRef.current = "keyword"
     try {
       const result = await localClient().refresh(selectedRepo.id)
       const changes = (result.changes ?? {}) as Record<string, number>
@@ -480,34 +690,132 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
   }, [localClient, refreshStatus, selectedRepo])
 
+  const startSemanticIndexing = React.useCallback(
+    async (request: {
+      endpointUrl: string
+      model: string
+      credential: string
+    }) => {
+      const graphGeneration = repositoryStatus?.index.generation
+      if (
+        !selectedRepo ||
+        selectedRepo.runtime !== "local" ||
+        !graphGeneration
+      ) {
+        throw new RepositoryClientError(
+          "invalid_request",
+          "Complete the browser-local keyword index before semantic indexing.",
+          false
+        )
+      }
+      const consentGrantedAt = new Date().toISOString()
+      const profile = embeddingProfilesRef.current!.save({
+        repositoryId: selectedRepo.id,
+        enabled: true,
+        consentGrantedAt,
+        endpointUrl: request.endpointUrl,
+        model: request.model,
+        graphGeneration,
+        coverage: { embedded: 0, skipped: 0 },
+        inputHashes: [],
+        resume: { status: "idle", completedItems: 0, nextBatch: 0 },
+      })
+      embeddingCredentialsRef.current!.set(selectedRepo.id, request.credential)
+      const operationId = crypto.randomUUID()
+      localOperationIdRef.current = operationId
+      localOperationKindRef.current = "semantic"
+      setLocalOperation({
+        state: "refreshing",
+        message:
+          "Building optional semantic vectors. Keyword search remains available.",
+        phase: "embedding",
+        completed: 0,
+        total: repositoryStatus.index.nodeCount,
+        cancellable: true,
+      })
+      try {
+        const result = await localClient().startSemanticIndexing(
+          selectedRepo.id,
+          {
+            endpointUrl: request.endpointUrl,
+            model: request.model,
+            graphGeneration,
+            credential:
+              embeddingCredentialsRef.current!.get(selectedRepo.id) ?? "",
+            consentGrantedAt,
+          },
+          operationId
+        )
+        embeddingProfilesRef.current!.save({
+          repositoryId: selectedRepo.id,
+          enabled: true,
+          consentGrantedAt,
+          endpointUrl: profile.endpointOrigin,
+          model: request.model,
+          ...(result.dimensions ? { dimensions: result.dimensions } : {}),
+          graphGeneration,
+          vectorGeneration: graphGeneration,
+          coverage: { embedded: result.embedded, skipped: 0 },
+          inputHashes: [],
+          resume: {
+            status: "complete",
+            completedItems: result.embedded,
+            nextBatch: result.embedded,
+          },
+        })
+        setLocalOperation({
+          state: "complete",
+          message: `Semantic indexing complete for ${result.embedded.toLocaleString()} symbols. Keyword search remains available.`,
+          phase: "Complete",
+          completed: result.embedded,
+          total: result.embedded,
+          cancellable: false,
+        })
+      } catch (error) {
+        const code =
+          error instanceof RepositoryClientError ? error.code : "internal"
+        setLocalOperation({
+          state: code === "operation_cancelled" ? "cancelled" : "failed",
+          message:
+            code === "operation_cancelled"
+              ? "Semantic indexing was cancelled. Keyword search remains available."
+              : `${error instanceof Error ? error.message : "Semantic indexing failed."} Keyword search remains available.`,
+          cancellable: false,
+        })
+        throw error
+      } finally {
+        embeddingCredentialsRef.current!.clear(selectedRepo.id)
+        localOperationIdRef.current = undefined
+      }
+    },
+    [localClient, repositoryStatus, selectedRepo]
+  )
+
   const requestStoragePersistence = React.useCallback(async () => {
     setStorageStatus(await localClient().requestPersistentStorage())
   }, [localClient])
 
   const deleteLocalRepository = React.useCallback(
-    async (options: {
-      confirmationName: string
-      cancelActive: boolean
-    }) => {
+    async (options: { confirmationName: string; cancelActive: boolean }) => {
       if (!selectedRepo || selectedRepo.runtime !== "local") {
         throw new RepositoryClientError(
           "invalid_request",
           "Select a browser-local repository to delete.",
-          false,
+          false
         )
       }
       if (options.confirmationName !== selectedRepo.name) {
         throw new RepositoryClientError(
           "invalid_request",
           "Type the displayed repository name exactly.",
-          false,
+          false
         )
       }
       if (localOperation?.state === "refreshing" && !options.cancelActive) {
         throw new RepositoryClientError(
           "conflict",
           "Choose whether to cancel the active local operation.",
-          false,
+          false
         )
       }
       const repository = selectedRepo
@@ -521,16 +829,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           cancelActive: options.cancelActive,
         })
         const remaining = repositories.filter(
-          (candidate) => candidate.id !== repository.id,
+          (candidate) => candidate.id !== repository.id
         )
         setRepositories(remaining)
         persistLocalRepositories(remaining)
         setSelectedRepoId(
           remaining.find((candidate) => candidate.default)?.id ??
-            remaining[0]?.id,
+            remaining[0]?.id
         )
         setRepositoryStatus(undefined)
         setStorageStatus(undefined)
+        setLocalSourceConnection(undefined)
+        embeddingProfilesRef.current?.delete(repository.id)
+        embeddingCredentialsRef.current?.clear(repository.id)
         setLocalOperation({
           state: "deleted",
           message: `${repository.name} browser-owned data was deleted. Source folder files were not changed.`,
@@ -548,12 +859,27 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         throw error
       }
     },
-    [localClient, localOperation?.state, repositories, selectedRepo],
+    [localClient, localOperation?.state, repositories, selectedRepo]
   )
 
   React.useEffect(() => {
     void refreshRepositories()
   }, [refreshRepositories])
+
+  React.useEffect(() => {
+    let active = true
+    const report =
+      typeof Worker === "function"
+        ? localClient().getCapabilities()
+        : probeBrowserCapabilities()
+    void report
+      .then((report) => {
+        if (active) setCapabilityReport(report)
+      })
+    return () => {
+      active = false
+    }
+  }, [localClient])
 
   React.useEffect(() => {
     void refreshStatus()
@@ -564,7 +890,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       void localClientRef.current?.close()
       localClientRef.current = undefined
     },
-    [],
+    []
   )
 
   const value = React.useMemo<AppStateValue>(
@@ -583,8 +909,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       refreshStatus,
       localOperation,
       storageStatus,
+      capabilityReport,
+      localSourceConnection,
       openLocalFolder,
+      importLocalSnapshot,
+      reconnectLocalRepository,
       refreshLocalRepository,
+      startSemanticIndexing,
       cancelLocalOperation,
       requestStoragePersistence,
       deleteLocalRepository,
@@ -605,16 +936,25 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       refreshStatus,
       localOperation,
       storageStatus,
+      capabilityReport,
+      localSourceConnection,
       openLocalFolder,
+      importLocalSnapshot,
+      reconnectLocalRepository,
       refreshLocalRepository,
+      startSemanticIndexing,
       cancelLocalOperation,
       requestStoragePersistence,
       deleteLocalRepository,
       repositoryClient,
-    ],
+    ]
   )
 
-  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
+  return (
+    <AppStateContext.Provider value={value}>
+      {children}
+    </AppStateContext.Provider>
+  )
 }
 
 export function useAppState(): AppStateValue {

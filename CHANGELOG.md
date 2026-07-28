@@ -11,6 +11,8 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### New Features
 
+- CodeGraph's packaged browser can now index an explicitly selected local folder entirely on the user's device in current desktop Chromium, persist the accepted source and graph in browser-owned storage, and provide overview, keyword search, source, relationship, graph, impact, reconnect, refresh, and deletion flows without a daemon or repository-derived network traffic. Firefox and WebKit receive live capability guidance and directory-snapshot fallback only where their APIs support it. Optional semantic indexing requires explicit consent, a direct HTTPS endpoint, and a page-only bearer key; keyword browsing remains available if it is cancelled or unavailable. All required workers, SQLite/tree-sitter WASM, and grammar assets ship from the same origin and are verified before package and static-host use.
+
 - CodeGraph now exposes its indexed, read-only intelligence through a standard local LSP command and a same-origin WebSocket used by an optional source pane in the packaged browser. Both transports stay dormant until explicitly opened, return only verified indexed source and exact graph evidence, and enforce bounded messages, requests, timeouts, and cleanup without adding editing, diagnostics, or external network access.
 
 - CodeGraph now ships a reusable PR impact GitHub Action that restores or rebuilds a validated `.codegraph` cache, runs deterministic pull-request blast-radius analysis, updates one action-owned PR report comment with summary/artifact fallback, supports opt-in caller or hub threshold failures, and keeps optional narrative prose-only and off by default.

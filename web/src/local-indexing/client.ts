@@ -18,19 +18,41 @@ import type {
   RepositoryStatus,
   SearchResult,
 } from "../lib/api/types"
-import { WORKER_PROTOCOL_VERSION, type WorkerResponse } from "./worker"
+import {
+  WORKER_BUDGETS,
+  WORKER_PROTOCOL_VERSION,
+  type WorkerResponse,
+} from "./worker"
 import {
   createPickedFolderProvider,
+  LocalStorageSnapshotRepositoryRegistry,
   type DirectoryHandleLike,
+  type SnapshotRepositoryRegistry,
+  type SnapshotSourceKind,
+  type SnapshotSourceCollection,
+  type SourceCollection,
   type SourceConnection,
   type SourceHandleRegistry,
   type SourceIdentity,
 } from "./source"
+import {
+  mergeWorkerCapabilityReport,
+  probeBrowserCapabilities,
+  type BrowserCapabilityReport,
+  type CapabilityProbeEnvironment,
+  type WorkerRuntimeCapabilityReport,
+} from "./capabilities"
 
 interface WorkerTransport {
   postMessage(message: unknown, transfer?: Transferable[]): void
-  addEventListener(type: "message", listener: (event: MessageEvent) => void): void
-  removeEventListener(type: "message", listener: (event: MessageEvent) => void): void
+  addEventListener(
+    type: "message",
+    listener: (event: MessageEvent) => void
+  ): void
+  removeEventListener(
+    type: "message",
+    listener: (event: MessageEvent) => void
+  ): void
   terminate?(): void
 }
 
@@ -45,6 +67,8 @@ export interface LocalRepositoryClientOptions {
   onProgress?: (progress: LocalRepositoryProgress) => void
   sourceRegistry?: SourceHandleRegistry
   storageManager?: BrowserStorageManager
+  capabilityEnvironment?: CapabilityProbeEnvironment
+  snapshotRegistry?: SnapshotRepositoryRegistry
 }
 
 export interface BrowserStorageManager {
@@ -68,6 +92,31 @@ export interface LocalRepositoryProgress {
   total: number
 }
 
+export interface SnapshotImportRequest {
+  identity: SourceIdentity
+  collection: SnapshotSourceCollection
+  replace?: {
+    repositoryId: string
+    confirmed: boolean
+  }
+}
+
+export interface SemanticIndexRequest {
+  endpointUrl: string
+  model: string
+  dimensions?: number
+  graphGeneration: number
+  credential: string
+  consentGrantedAt: string
+  resume?: {
+    graphGeneration: number
+    model: string
+    dimensions?: number
+    completedItems: number
+    inputHashes: string[]
+  }
+}
+
 function createId() {
   return crypto.randomUUID()
 }
@@ -78,6 +127,8 @@ export class LocalRepositoryClient implements RepositoryClient {
   private readonly onProgress?: (progress: LocalRepositoryProgress) => void
   private readonly sourceRegistry?: SourceHandleRegistry
   private readonly storageManager: BrowserStorageManager
+  private readonly capabilityEnvironment?: CapabilityProbeEnvironment
+  private readonly snapshotRegistry: SnapshotRepositoryRegistry
   private readonly sourceConnections = new Map<string, SourceConnection>()
   private readonly sourceIdentities = new Map<string, SourceIdentity>()
   private readonly pending = new Map<string, PendingRequest>()
@@ -85,16 +136,21 @@ export class LocalRepositoryClient implements RepositoryClient {
   private closed = false
   private closing?: Promise<void>
 
-  constructor(worker: WorkerTransport, options: LocalRepositoryClientOptions = {}) {
+  constructor(
+    worker: WorkerTransport,
+    options: LocalRepositoryClientOptions = {}
+  ) {
     this.worker = worker
     this.createId = options.createId ?? createId
     this.onProgress = options.onProgress
     this.sourceRegistry = options.sourceRegistry
+    this.capabilityEnvironment = options.capabilityEnvironment
+    this.snapshotRegistry =
+      options.snapshotRegistry ?? new LocalStorageSnapshotRepositoryRegistry()
     this.storageManager =
       options.storageManager ??
-      ((typeof navigator === "undefined"
-        ? undefined
-        : navigator.storage) as BrowserStorageManager | undefined) ??
+      ((typeof navigator === "undefined" ? undefined : navigator.storage) as
+        BrowserStorageManager | undefined) ??
       {}
     this.onMessage = (event) => this.handleMessage(event.data)
     this.worker.addEventListener("message", this.onMessage)
@@ -135,8 +191,8 @@ export class LocalRepositoryClient implements RepositoryClient {
         new RepositoryClientError(
           (message.error?.code ?? "internal") as RepositoryClientErrorCode,
           message.error?.message ?? "The local repository request failed.",
-          message.error?.retryable ?? false,
-        ),
+          message.error?.retryable ?? false
+        )
       )
       return
     }
@@ -148,11 +204,15 @@ export class LocalRepositoryClient implements RepositoryClient {
     payload?: unknown,
     repositoryId?: string,
     operationId?: string,
-    transfer?: Transferable[],
+    transfer?: Transferable[]
   ): Promise<T> {
     if (this.closed) {
       return Promise.reject(
-        new RepositoryClientError("unavailable", "The local repository client is closed.", false),
+        new RepositoryClientError(
+          "unavailable",
+          "The local repository client is closed.",
+          false
+        )
       )
     }
     const requestId = this.createId()
@@ -173,6 +233,92 @@ export class LocalRepositoryClient implements RepositoryClient {
       if (transfer) this.worker.postMessage(message, transfer)
       else this.worker.postMessage(message)
     })
+  }
+
+  private async batchedSourcePayload(
+    payload: {
+      identity: SourceIdentity
+      collection: SourceCollection | SnapshotSourceCollection
+    },
+    repositoryId: string,
+    operationId: string
+  ) {
+    const { entries } = payload.collection
+    const totalBytes = entries.reduce(
+      (total, entry) => total + entry.bytes.byteLength,
+      0
+    )
+    if (
+      entries.length <= WORKER_BUDGETS.maxFilesPerReadBatch &&
+      totalBytes <= WORKER_BUDGETS.maxBytesPerReadBatch
+    ) {
+      return { payload, batched: false }
+    }
+
+    const batches: typeof entries[] = []
+    let batch: typeof entries = []
+    let batchBytes = 0
+    for (const entry of entries) {
+      const entryBytes = entry.bytes.byteLength
+      if (
+        entryBytes > WORKER_BUDGETS.maxBytesPerReadBatch ||
+        entryBytes > WORKER_BUDGETS.maxBytesPerWorkerPayload
+      ) {
+        throw new RepositoryClientError(
+          "invalid_request",
+          "A source file exceeds the browser worker transfer budget.",
+          false
+        )
+      }
+      if (
+        batch.length === WORKER_BUDGETS.maxFilesPerReadBatch ||
+        batchBytes + entryBytes > WORKER_BUDGETS.maxBytesPerReadBatch
+      ) {
+        batches.push(batch)
+        batch = []
+        batchBytes = 0
+      }
+      batch.push(entry)
+      batchBytes += entryBytes
+    }
+    if (batch.length > 0) batches.push(batch)
+
+    try {
+      for (const [batchIndex, batchEntries] of batches.entries()) {
+        await this.request(
+          "source-batch",
+          {
+            sourceKind: payload.identity.sourceKind,
+            batchIndex,
+            batchCount: batches.length,
+            totalFiles: entries.length,
+            totalBytes,
+            entries: batchEntries,
+          },
+          repositoryId,
+          operationId,
+          batchEntries.map((entry) => entry.bytes.buffer as ArrayBuffer)
+        )
+      }
+    } catch (error) {
+      await this.request("cancel", undefined, repositoryId, operationId).catch(
+        () => undefined
+      )
+      throw error
+    }
+
+    return {
+      payload: {
+        identity: payload.identity,
+        collection: { ...payload.collection, entries: [] },
+        sourceBatches: {
+          batchCount: batches.length,
+          totalFiles: entries.length,
+          totalBytes,
+        },
+      },
+      batched: true,
+    }
   }
 
   listRepositories() {
@@ -222,9 +368,7 @@ export class LocalRepositoryClient implements RepositoryClient {
     try {
       return {
         ...estimate,
-        persisted: (await this.storageManager.persist())
-          ? "granted"
-          : "denied",
+        persisted: (await this.storageManager.persist()) ? "granted" : "denied",
       }
     } catch {
       return { ...estimate, persisted: "denied" }
@@ -235,7 +379,7 @@ export class LocalRepositoryClient implements RepositoryClient {
     return this.request<{ repositoryId: string; acquired: true }>(
       "acquire",
       undefined,
-      repositoryId,
+      repositoryId
     )
   }
 
@@ -243,7 +387,7 @@ export class LocalRepositoryClient implements RepositoryClient {
     return this.request<RepositoryStatus>(
       "query",
       { query: "repository-status" },
-      repositoryId,
+      repositoryId
     )
   }
 
@@ -255,7 +399,7 @@ export class LocalRepositoryClient implements RepositoryClient {
     return this.request<SearchResult>(
       "query",
       { query: "search", request },
-      repositoryId,
+      repositoryId
     )
   }
 
@@ -263,7 +407,7 @@ export class LocalRepositoryClient implements RepositoryClient {
     return this.request<CodeNode>(
       "query",
       { query: "node", request: { nodeId } },
-      repositoryId,
+      repositoryId
     )
   }
 
@@ -271,33 +415,33 @@ export class LocalRepositoryClient implements RepositoryClient {
     return this.request<SourceResult>(
       "query",
       { query: "source", request: { nodeId } },
-      repositoryId,
+      repositoryId
     )
   }
 
   getCallers(
     repositoryId: string,
     nodeId: string,
-    request?: RelationshipRequest,
+    request?: RelationshipRequest
   ) {
     const page = normalizeRelationshipRequest(request)
     return this.request<ListResult<CodeNode>>(
       "query",
       { query: "callers", request: { nodeId, ...page } },
-      repositoryId,
+      repositoryId
     )
   }
 
   getCallees(
     repositoryId: string,
     nodeId: string,
-    request?: RelationshipRequest,
+    request?: RelationshipRequest
   ) {
     const page = normalizeRelationshipRequest(request)
     return this.request<ListResult<CodeNode>>(
       "query",
       { query: "callees", request: { nodeId, ...page } },
-      repositoryId,
+      repositoryId
     )
   }
 
@@ -306,23 +450,31 @@ export class LocalRepositoryClient implements RepositoryClient {
     return this.request<GraphResult>(
       "query",
       { query: "graph", request: { nodeId, ...depth } },
-      repositoryId,
+      repositoryId
     )
   }
 
   getImpact(repositoryId: string, nodeId: string, request?: DepthRequest) {
     const depth = normalizeDepthRequest(
       request,
-      REPOSITORY_QUERY_LIMITS.defaultImpactDepth,
+      REPOSITORY_QUERY_LIMITS.defaultImpactDepth
     )
     return this.request<GraphResult>(
       "query",
       { query: "impact", request: { nodeId, ...depth } },
-      repositoryId,
+      repositoryId
     )
   }
 
   async refresh(repositoryId: string) {
+    const identity = this.sourceIdentities.get(repositoryId)
+    if (identity && identity.sourceKind !== "picked-folder") {
+      throw new RepositoryClientError(
+        "capability_unavailable",
+        "Snapshot repositories are immutable. Import a new snapshot instead.",
+        false
+      )
+    }
     if (
       this.sourceRegistry &&
       !this.sourceConnections.get(repositoryId)?.canRefresh
@@ -330,12 +482,11 @@ export class LocalRepositoryClient implements RepositoryClient {
       throw new RepositoryClientError(
         "permission_denied",
         "Reconnect the saved local folder before refreshing its index.",
-        true,
+        true
       )
     }
-    const identity = this.sourceIdentities.get(repositoryId)
     const handle = this.sourceRegistry?.connectedHandle(repositoryId)
-    const payload =
+    const sourcePayload =
       identity && handle
         ? {
             identity,
@@ -345,11 +496,20 @@ export class LocalRepositoryClient implements RepositoryClient {
           }
         : undefined
     const operationId = this.createId()
+    const payload = sourcePayload
+      ? (
+          await this.batchedSourcePayload(
+            sourcePayload,
+            repositoryId,
+            operationId
+          )
+        ).payload
+      : undefined
     return this.request<Record<string, unknown>>(
       "refresh",
       payload,
       repositoryId,
-      operationId,
+      operationId
     )
   }
 
@@ -357,53 +517,177 @@ export class LocalRepositoryClient implements RepositoryClient {
     await this.request("cancel", undefined, undefined, operationId)
   }
 
+  startSemanticIndexing(
+    repositoryId: string,
+    request: SemanticIndexRequest,
+    operationId: string
+  ) {
+    return this.request<{
+      status: "complete"
+      graphGeneration: number
+      embedded: number
+      dimensions?: number
+    }>("embed", request, repositoryId, operationId)
+  }
+
   async deleteRepository(
     repositoryId: string,
-    options: { cancelActive?: boolean } = {},
+    options: { cancelActive?: boolean } = {}
   ) {
     await this.request(
       "delete",
       { cancelActive: options.cancelActive === true },
-      repositoryId,
+      repositoryId
     )
     const identity = this.sourceIdentities.get(repositoryId)
-    if (identity && this.sourceRegistry) {
+    if (identity?.sourceKind === "picked-folder" && this.sourceRegistry) {
       await this.sourceRegistry.forget(identity)
     }
+    await this.snapshotRegistry.delete(repositoryId)
     this.sourceConnections.delete(repositoryId)
     this.sourceIdentities.delete(repositoryId)
   }
 
-  getCapabilities() {
-    return this.request<Record<string, unknown>>("capabilities")
+  async getCapabilities(): Promise<BrowserCapabilityReport> {
+    const browser = await probeBrowserCapabilities(this.capabilityEnvironment)
+    try {
+      const worker =
+        await this.request<WorkerRuntimeCapabilityReport>("capabilities")
+      return mergeWorkerCapabilityReport(browser, worker)
+    } catch {
+      return mergeWorkerCapabilityReport(browser, {
+        moduleWorker: false,
+        wasm: browser.wasm,
+        opfs: browser.opfs,
+        webLocks: browser.webLocks,
+      })
+    }
   }
 
-  openPickedFolder(
-    payload: unknown,
+  async openPickedFolder(
+    payload: {
+      identity: SourceIdentity
+      collection: SourceCollection
+    },
     repositoryId: string,
-    operationId: string,
+    operationId: string
   ) {
-    return this.request<Repository>(
-      "open-picked-folder",
+    const batched = await this.batchedSourcePayload(
       payload,
       repositoryId,
-      operationId,
+      operationId
+    )
+    return this.request<Repository>(
+      "open-picked-folder",
+      batched.payload,
+      repositoryId,
+      operationId
     )
   }
 
-  importSnapshot(payload: unknown, transfer: Transferable[] = []) {
-    return this.request<Repository>("import-snapshot", payload, undefined, undefined, transfer)
+  async importSnapshot(
+    input: SnapshotImportRequest,
+    transfer: Transferable[] = []
+  ): Promise<Repository> {
+    const { identity, collection, replace } = input
+    if (
+      (identity.sourceKind !== "dropped-snapshot" &&
+        identity.sourceKind !== "imported-snapshot") ||
+      identity.virtualRoot !== `local://${identity.id}` ||
+      Boolean(identity.handleRefId) ||
+      !identity.acceptedAt ||
+      collection.snapshot.acceptedAt !== identity.acceptedAt ||
+      collection.snapshot.manifestFingerprint !==
+        collection.manifest.fingerprint
+    ) {
+      throw new RepositoryClientError(
+        "invalid_request",
+        "The snapshot import identity or accepted manifest is invalid.",
+        false
+      )
+    }
+    if (replace && replace.confirmed !== true) {
+      throw new RepositoryClientError(
+        "invalid_request",
+        "Replacing a browser repository requires explicit confirmation.",
+        false
+      )
+    }
+
+    const existing = await this.snapshotRegistry.list()
+    const duplicate = existing.find(
+      (record) =>
+        record.manifestFingerprint ===
+          collection.snapshot.manifestFingerprint &&
+        record.repositoryId !== replace?.repositoryId
+    )
+    const repositoryId = replace?.repositoryId ?? identity.id
+    const sourceKind = identity.sourceKind as SnapshotSourceKind
+    const targetIdentity: SourceIdentity & {
+      sourceKind: SnapshotSourceKind
+    } = {
+      ...identity,
+      id: repositoryId,
+      sourceKind,
+      virtualRoot: `local://${repositoryId}`,
+    }
+    const operationId = this.createId()
+    const sourcePayload = { identity: targetIdentity, collection }
+    const batched = await this.batchedSourcePayload(
+      sourcePayload,
+      repositoryId,
+      operationId
+    )
+    const repository = await this.request<Repository>(
+      "import-snapshot",
+      batched.payload,
+      repositoryId,
+      operationId,
+      !batched.batched && transfer.length > 0 ? transfer : undefined
+    )
+    const result: Repository = {
+      ...repository,
+      id: repositoryId,
+      root: targetIdentity.virtualRoot,
+      name: targetIdentity.displayName,
+      runtime: "local",
+      sourceKind: targetIdentity.sourceKind,
+      snapshotImportedAt: collection.snapshot.acceptedAt,
+      manifestFingerprint: collection.snapshot.manifestFingerprint,
+      ...(duplicate
+        ? {
+            duplicateSnapshot: {
+              repositoryId: duplicate.repositoryId,
+              displayName: duplicate.displayName,
+            },
+          }
+        : {}),
+    }
+    if (replace && replace.repositoryId !== identity.id) {
+      await this.snapshotRegistry.delete(replace.repositoryId)
+    }
+    await this.snapshotRegistry.put({
+      repositoryId,
+      displayName: result.name,
+      sourceKind: targetIdentity.sourceKind,
+      acceptedAt: collection.snapshot.acceptedAt,
+      manifestFingerprint: collection.snapshot.manifestFingerprint,
+      fileCount: collection.snapshot.fileCount,
+      totalBytes: collection.snapshot.totalBytes,
+    })
+    this.sourceIdentities.set(repositoryId, targetIdentity)
+    return result
   }
 
   async savePickedFolder(
     identity: SourceIdentity,
-    handle: DirectoryHandleLike,
+    handle: DirectoryHandleLike
   ) {
     if (!this.sourceRegistry) {
       throw new RepositoryClientError(
         "unavailable",
         "The browser source registry is unavailable.",
-        false,
+        false
       )
     }
     const connection: SourceConnection = {
@@ -418,18 +702,14 @@ export class LocalRepositoryClient implements RepositoryClient {
     return connection
   }
 
-  connectPickedFolder(
-    identity: SourceIdentity,
-    handle: DirectoryHandleLike,
-  ) {
+  connectPickedFolder(identity: SourceIdentity, handle: DirectoryHandleLike) {
     this.sourceIdentities.set(identity.id, { ...identity })
-    const connection =
-      this.sourceRegistry?.connect(identity, handle) ?? {
-        repositoryId: identity.id,
-        handleRefId: identity.handleRefId ?? "",
-        status: "granted" as const,
-        canRefresh: true,
-      }
+    const connection = this.sourceRegistry?.connect(identity, handle) ?? {
+      repositoryId: identity.id,
+      handleRefId: identity.handleRefId ?? "",
+      status: "granted" as const,
+      canRefresh: true,
+    }
     this.sourceConnections.set(identity.id, connection)
     return connection
   }
@@ -456,14 +736,14 @@ export class LocalRepositoryClient implements RepositoryClient {
     options: {
       userActivated: boolean
       candidate?: DirectoryHandleLike
-    },
+    }
   ) {
     this.sourceIdentities.set(identity.id, { ...identity })
     if (!this.sourceRegistry) {
       throw new RepositoryClientError(
         "unavailable",
         "The browser source registry is unavailable.",
-        false,
+        false
       )
     }
     const connection = await this.sourceRegistry.reconnect(identity, options)
@@ -487,8 +767,8 @@ export class LocalRepositoryClient implements RepositoryClient {
             new RepositoryClientError(
               "unavailable",
               "The local repository client closed.",
-              false,
-            ),
+              false
+            )
           )
         }
         this.pending.clear()

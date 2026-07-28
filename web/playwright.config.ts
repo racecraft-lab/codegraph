@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test"
+import { defineConfig, devices } from "@playwright/test"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -18,12 +18,28 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "firefox",
+      testMatch: "**/local-indexing-degradation.spec.ts",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      testMatch: "**/local-indexing-degradation.spec.ts",
+      use: { ...devices["Desktop Safari"] },
+    },
+  ],
   use: {
     baseURL,
     trace: "on-first-retry",
   },
   webServer: {
-    command: `${npmCommand} run build && ${npmCommand} run preview -- --host 127.0.0.1 --port ${port}`,
+    command: `${npmCommand} run build && ${npmCommand} --prefix .. run copy-web-assets && ${npmCommand} run preview -- --host 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

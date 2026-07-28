@@ -36,7 +36,7 @@ of the autopilot loop; downstream clarification uses `/speckit-clarify`.
 | Checklist | `/speckit-checklist` | ✅ Complete | Four domains, 129/129 rows checked, 18 initial gaps resolved; G4 passed. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 38 TDD tasks, 63/63 FRs, 7/7 stories; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | Consensus remediated 1 HIGH and 1 MEDIUM finding; G6 passed; confidence 0.94. |
-| Implement | `/speckit-implement` | 🔄 In Progress | Execute 38 task-level TDD units in three vertical slices. |
+| Implement | `/speckit-implement` | ✅ Complete | Executed 38 task-level TDD units in three vertical slices. |
 
 **Status Legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -1007,7 +1007,7 @@ After each slice:
 |---|---|---|---|
 | 1 - Persistent keyword path | T001-T012 complete | ✅ Complete | Open folder through local overview/search/symbol/source after reload |
 | 2 - Graph and lifecycle | T013-T024 complete | ✅ Complete | Graph/impact, reconnect, refresh/rollback, storage, lock, delete |
-| 3 - Fallback, semantic, shipping | T025-T038 assigned | 🚧 In progress | Snapshot/degradation, opt-in semantic, package/offline/performance UAT |
+| 3 - Fallback, semantic, shipping | T025-T038 complete | ✅ Complete | Snapshot/degradation, opt-in semantic, package/offline/performance UAT |
 
 ### Implementation Evidence
 
@@ -1561,6 +1561,395 @@ After each slice:
   assets, multi-tab locks, real SQLite-Wasm storage/recovery, and the complete
   Chromium lifecycle passed 5/5. The lifecycle retained 20 samples per local
   read with p95 search 115.0 ms, graph 102.9 ms, and impact 100.6 ms.
+
+#### T025 - Live Browser Capability Report
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed the task in the verified execution root without entering T026.
+- **RED**: The focused suite first failed because the capability module did not
+  exist. Follow-up REDs proved the generic worker treated `capabilities` as an
+  invalid index request and the public client returned a raw worker subset
+  without main-thread picker/drop results.
+- **GREEN**: Independent injected probes now report secure context, folder
+  picker and policy blocking, modern/legacy/partial directory drop, OPFS and
+  quota risk, Web Locks, module-worker boot, WASM/CSP state, passive storage
+  estimates, and persistence status. Ordered guidance derives `full`,
+  `snapshot-only`, or `unsupported` from capabilities rather than browser
+  names. The protocol-v1 worker reports actual boot-time OPFS/lock/WASM state,
+  and the client merges it with main-thread picker/drop probes.
+- **REFACTOR/PRIVACY**: Probe inputs are structural and injectable; no user
+  agent or browser-family check exists. Detection never opens a picker, asks
+  permission, or calls `persist()`; exceptions normalize to stable capability
+  states instead of escaping.
+- **VERIFY**: Focused capability/client/worker Vitest passed 29/29, including
+  eight dedicated matrix/bootstrap cases. Touched-file ESLint, web typecheck,
+  production web build, and `git diff --check` passed; the packaged local
+  worker and same-origin WASM assets remain emitted.
+
+#### T026 - Immutable Directory-Drop Snapshot Import
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only the T026 source/client/worker path.
+- **RED**: Focused tests exposed the generic legacy `snapshot` identity, absent
+  import-time/fingerprint metadata, raw uncorrelated client request, missing
+  duplicate registry, implicit refresh behavior, and no explicit replacement
+  confirmation. The production worker also lacked an `import-snapshot`
+  dispatch path.
+- **GREEN**: Dropped and imported snapshots now use distinct contract source
+  kinds, opaque per-import IDs, normalized virtual roots, accepted-at time,
+  immutable copied bytes, bounded warnings, accepted file/byte counts, and the
+  manifest fingerprint as metadata rather than identity. A durable browser
+  snapshot registry retains those fields; duplicate fingerprints produce an
+  advisory link to the earlier snapshot without merging or deleting it.
+  Replacement targets an existing repository only when the caller supplies an
+  explicit confirmed Replace request. Snapshot refresh fails closed with
+  guidance to import a new snapshot, and no reconnect handle is created.
+- **REFACTOR/BOUNDARIES**: Picked-folder and snapshot indexing share the worker's
+  initial extraction/publication path while identity validation keeps their
+  permission/refresh semantics separate. Existing traversal, ignore, file,
+  total-byte, depth, count, and transfer ceilings remain the sole admission
+  path.
+- **VERIFY**: Focused source/client/shell Vitest passed 32/32; web typecheck and
+  production build passed. Real Chromium worker tests passed 2/2, including
+  snapshot publication and a local keyword query against its SQLite-Wasm
+  generation. `git diff --check` passed and no legacy snapshot source-kind
+  consumer remains.
+
+#### T027 - Chromium Full Path and Cross-Browser Degradation
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only the T027 capability UI and cross-browser coverage.
+- **RED**: The live capability result had no accessible shell report or
+  snapshot fallback controls, and Playwright had no Firefox/WebKit projects.
+  After the initial green pass, the expanded capability controls also obscured
+  Chromium's navigation target at 320 CSS pixels.
+- **GREEN**: The repository switcher now exposes an expandable live report for
+  each independently probed capability, gates folder picking from the observed
+  tier, accepts directory snapshots through both drop and a keyboard-operable
+  directory input, and states that snapshots are immutable with no automatic
+  reconnect or refresh. Chromium validates its full path while Firefox and
+  WebKit validate their own observed support and guidance without claiming
+  picker parity.
+- **REFACTOR/ACCESSIBILITY**: Modern and legacy drop entries share the existing
+  bounded accepted-source traversal. Capability and snapshot panels use compact
+  native `details` controls so mobile navigation remains available; all
+  engine projects share one behavioral assertion while preserving independent
+  runtime results.
+- **VERIFY**: Focused capability/client/shell/worker Vitest passed 40/40 and web
+  typecheck passed. Chromium, Firefox, and WebKit degradation Playwright passed
+  3/3; the complete Chromium production-worker storage and snapshot flows
+  passed 2/2. Touched-file ESLint completed with zero errors and two existing
+  fast-refresh warnings, and `git diff --check` passed.
+
+#### T028 - Secret-Free Embedding State
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T028 profile persistence and session credential intake.
+- **RED**: `web/src/local-indexing/embeddings.ts` and its focused tests were
+  absent, so the first Vitest run failed import resolution before collecting
+  tests.
+- **GREEN**: A repository-scoped profile store now persists only explicit
+  enabled consent and time, canonical endpoint origin/path, model and optional
+  dimensions, graph/vector generations, coverage, input hashes, and bounded
+  resume counters/status. Bearer credentials live in a page-lifetime Map; a
+  fresh vault after reload has no credential and durable storage is never
+  passed to that vault.
+- **REFACTOR/PRIVACY**: One projection function validates and allowlists both
+  writes and loaded records, and one serializer is the only durable profile
+  writer. URL userinfo, query, and fragment data are discarded; arbitrary
+  authorization fields, raw source/provider payloads, and raw causes cannot
+  enter the serialized entity or safe diagnostic.
+- **VERIFY**: Focused embedding security Vitest passed 4/4; embedding,
+  capability, and storage-client regressions passed 21/21. Web typecheck,
+  scoped ESLint, production build, and `git diff --check` passed. Durable-state
+  assertions scan for authorization, URL-secret, source, provider, and raw
+  cause sentinels.
+
+#### T029 - Fail-Closed Semantic Transport
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T029 endpoint policy and safe error classification.
+- **RED**: Six endpoint-policy cases and ten transport/provider classification
+  cases failed because the validator, policy error, and mapper did not exist;
+  the four prior secret-free persistence cases stayed green.
+- **GREEN**: Configuration accepts only a direct HTTPS endpoint with no URL
+  credentials, query, or fragment. Browser network/CORS/TLS policy, HTTP
+  credential/rejection/temporary failure, model, dimension, partial response,
+  cancellation, and unavailable outcomes map to stable safe codes, messages,
+  retryability, phase, and recovery guidance. When supplied, an endpoint is
+  reduced to canonical origin/path before entering the envelope.
+- **REFACTOR/PRIVACY**: One endpoint validator now protects profile writes and
+  one table-shaped failure mapper returns objects structurally compatible with
+  the worker error envelope. No `no-cors`, proxy, mixed-content bypass, raw
+  provider body, URL secret, or raw runtime cause is exposed.
+- **VERIFY**: Focused embedding policy/persistence Vitest passed 20/20;
+  embedding plus worker-envelope regression tests passed 34/34. Web typecheck,
+  scoped ESLint, and `git diff --check` passed, including redaction scans for
+  URL, provider-body, authorization, and raw-cause sentinels.
+
+#### T030 - Cancellable and Resumable Semantic Worker
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T030 worker, vector-store, and convergence behavior.
+- **RED**: Eight worker cases showed `embed` falling through to the keyword
+  index handler, publishing an undefined generation, making no endpoint calls,
+  and providing no semantic cancellation, resume, or convergence lifecycle.
+- **GREEN**: A separate protocol-v1 operation now requires the requested graph
+  generation to be published, loads deterministic symbol inputs from that
+  generation, hashes them with browser SHA-256, calls only the validated direct
+  HTTPS endpoint in at most 32-item batches, validates model, dimension,
+  node-id, input-hash, order, finite values, and completeness, and commits at
+  most 500 vector rows per transaction. Vectors use canonical `node_vectors`
+  inside the generation database; model/dimension/generation metadata and
+  secret-free operation state use `project_metadata`.
+- **REFACTOR/INTEGRITY**: Pure resume-prefix and response-convergence validators
+  live in the embedding module. The worker reuses its operation registry,
+  progress, exactly-one-terminal, cancellation, and yielding machinery; no
+  keyword generation is published, replaced, or disabled by semantic work.
+  Cancellation after an in-flight response prevents its write and all later
+  endpoint calls. A matching 32-item resume prefix skips committed work; any
+  generation/model/dimension/hash mismatch becomes stale before another write.
+- **VERIFY**: Focused worker/embedding Vitest passed 44/44. Production web build
+  and typecheck passed. Real Chromium SQLite-Wasm/OPFS journeys passed 2/2,
+  including an 8-byte two-dimension vector row and durable paused resume state.
+  Scoped ESLint and `git diff --check` passed.
+
+#### T031 - No-Consent Network Boundary
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T031 consent enforcement and browser network audit.
+- **RED**: After a fixture-only OPFS setup was replaced with the production
+  picker journey, Chromium reached the intended failure: an `embed` request
+  without explicit consent made a configured endpoint call and completed.
+- **GREEN**: The worker now requires a valid consent timestamp before endpoint
+  validation or fetch. Local folder indexing, keyword search, and cached source
+  browsing allow only enumerated same-origin shipped assets. No page fetch,
+  XHR, WebSocket, beacon, `/api`, `/lsp`, or external request occurs before
+  consent. An explicitly stamped request may call only its configured direct
+  HTTPS endpoint and carries the credential only in the active worker request
+  and Authorization header.
+- **REFACTOR/PRIVACY**: The fail-closed Playwright audit records only phase,
+  redacted origin/path, and resource type from browser requests plus instrumented
+  page network channels. It never records headers, bodies, source text, raw
+  errors, or credential values. Missing consent returns `consent_required`
+  before any endpoint call and leaves the local keyword journey readable.
+- **VERIFY**: Chromium network Playwright passed 1/1. The unstamped operation
+  produced zero endpoint calls; the stamped operation made exactly one POST and
+  completed one vector. The redacted log, localStorage, page URL, and page text
+  contained no credential. Focused worker/embedding Vitest passed 45/45; web
+  typecheck, scoped ESLint, and `git diff --check` passed.
+
+#### T032 - Semantic Lifecycle and Concurrent Local Reads
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T032 semantic lifecycle and responsiveness evidence.
+- **RED**: The new production-worker Chromium journey reached cancellation
+  with the endpoint response held in flight, then failed on the missing
+  read-only `storage-embedding-state` evidence request. That proved no test
+  seam could verify paused resume metadata or generation-local vector absence.
+- **GREEN**: Cancellation makes no post-response vector write or later endpoint
+  call; the durable state is paused at zero completed items; resume against the
+  same graph generation embeds all three symbols and converges model,
+  dimensions, hashes, and 12-byte vector payloads. A provider failure records
+  unavailable state without affecting keyword reads. Publishing generation 2
+  exposes zero vectors, and a generation-1 resume fails stale before transport.
+- **REFACTOR/EVIDENCE**: The acceptance test reuses one built-worker locator,
+  deterministic request/timing helpers, a redacted endpoint-call log, and
+  read-only semantic state/vector metadata requests. A successful run attaches
+  the operation JSON and a Playwright trace; no credential or provider body is
+  recorded.
+- **VERIFY**: Focused worker/embedding Vitest passed 45/45. Web typecheck passed;
+  lint completed with zero errors and 15 existing warnings. The complete
+  Chromium file passed 2/2. Twenty-sample p95 was 40.0 ms search, 36.3 ms graph,
+  and 38.4 ms impact while active; paused/cancelled, unavailable, and stale
+  search p95 remained 37.4–40.1 ms, all below 150 ms. The endpoint log contained
+  exactly cancel, resume, and controlled failure calls; `git diff --check`
+  passed.
+
+#### T033 - Fail-Closed Shipped Asset Inventory
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T033 asset packaging and request-order evidence.
+- **RED**: The packaged suite first failed because no shared required-asset
+  manifest existed. After the manifest and fail-closed verification were added,
+  the request audit identified the eager production worker chunk; it was
+  separated from the database/WASM/grammar deferred class, preserving the
+  intentional startup capability probe while keeping heavy runtime requests
+  lazy.
+- **GREEN**: One manifest now defines the main and local-worker entries plus
+  exact hashed-output patterns and minimum integrity for `index.html`, both
+  local worker forms, SQLite WASM/OPFS/worker assets, tree-sitter runtime, and
+  JavaScript/TypeScript/TSX grammars. Vite validates after emission; the package
+  copier validates before and after copying; the root build runs an explicit
+  `verify-web-assets` gate. Missing, ambiguous, truncated, wrong-header, or
+  malformed-entry assets fail closed.
+- **REFACTOR/EVIDENCE**: The Vite build, package copier, standalone verifier,
+  corruption matrix, byte inventory, and request classifier consume the same
+  manifest. Chromium observes zero deferred SQLite/parser/grammar requests on
+  the initial route, then same-origin SQLite WASM, tree-sitter runtime, and only
+  the demanded TypeScript grammar after the local-folder action.
+- **VERIFY**: Root build and root/web typechecks passed. The manifest verified
+  ten non-empty assets identically in `web/dist` and `dist/web`. The focused
+  packaged Chromium suite passed 3/3, including delete-and-corrupt checks for
+  every manifest row and attached request-order JSON. Scoped ESLint passed.
+  Root `npm pack --dry-run` contained 19 `dist/web` files, five WASM assets, and
+  the local-indexing worker. `git diff --check` passed.
+
+#### T034 - Keyboard, Focus, Mobile, And Reduced-Motion Acceptance
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T034 accessibility implementation and evidence.
+- **RED**: Focused component tests first failed on the missing saved-folder
+  reconnect action, semantic opt-in form, and reduced-motion status treatment.
+  The keyboard-only Chromium journey then exposed three production defects:
+  cancellation focus was overwritten by the original folder action, semantic
+  completion tried to focus its newly disabled credential-gated button, and
+  deletion lost its dialog return target. Computed progress motion also
+  remained 150 ms under a reduced-motion preference.
+- **GREEN**: Saved folders reconnect only from an explicit keyboard-reachable
+  action; semantic indexing requires endpoint, model, page-only credential, and
+  explicit consent. Cancellation focuses its terminal live status, semantic
+  completion focuses the surviving status, and deletion focuses the surviving
+  repository heading. A global reduced-motion safeguard disables nonessential
+  animation and transition duration. The complete flow remains free of
+  horizontal page overflow at 320 CSS pixels.
+- **REFACTOR/EVIDENCE**: Existing operation state drives shared status/alert
+  roles, progress, cancellation, retry, and terminal copy in the shell and
+  overview. The focused journey uses one keyboard activation helper and one
+  overflow assertion and attaches a Playwright accessibility trace without
+  credentials.
+- **VERIFY**: Focused shell/client/worker Vitest passed 44/44, web typecheck
+  passed, and scoped ESLint completed with zero errors and two existing
+  fast-refresh warnings. The complete Chromium local-indexing-full suite passed
+  3/3. Its 20-sample p95 was 111.3 ms search, 102.5 ms graph, and 100.9 ms
+  impact; semantic-active/paused/failed/stale reads stayed 35.8–46.1 ms, all
+  below 150 ms. `git diff --check` passed.
+
+#### T035 - Self-Repository Performance And Resource Evidence
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T035 performance/resource hardening and evidence.
+- **RED**: The first actual-repository run exceeded the 150 ms search p95
+  budget at 217.8 ms; after FTS repair, graph p95 remained 187.3 ms because
+  every query reopened and reinitialized the canonical schema. Once those
+  bottlenecks were removed, the disclosed 10.79 MB/737-file source set still
+  violated the worker contract by crossing one 8 MiB payload and one 64-file
+  batch.
+- **GREEN**: Browser keyword search now uses canonical prefix FTS/BM25 with a
+  bounded fallback; an owned database initializes its schema once; initial
+  publication has explicit read, grammar-load, parse, store, and publish
+  phases; and large source collections stage sequentially in protocol-v1
+  worker batches capped at 64 files and 4 MiB before atomic indexing.
+- **REFACTOR/EVIDENCE**: One staged-transfer path serves picked folders,
+  snapshots, and refresh, validates totals/order/duplicates before assembly,
+  and clears partial state on failure, cancellation, close, or delete. The
+  self-repository suite records two cold runs, 20 post-warmup samples per read,
+  query plans, heartbeat/long tasks, worker payloads, resource high-water and
+  cleanup, ten-asset inventory/request order, runtime disclosure, JSON
+  evidence, and a low-overhead Playwright trace.
+- **VERIFY**: Focused client/worker Vitest passed 35/35; web typecheck and scoped
+  ESLint passed; complete Chromium lifecycle/storage passed 6/6; and
+  `git diff --check` passed. Two cold 737-file runs completed in 5.59 and 5.54
+  seconds with deterministic 23,857-node/23,120-edge counts. Twenty-sample p95
+  was 59.4 ms search, 77.3 ms graph, and 77.1 ms impact; maximum main-thread
+  heartbeat gap was 76.5 ms. Every observed source batch stayed within 4 MiB
+  and 64 files, and every worker payload stayed within 8 MiB.
+
+#### T036 - Cross-Runtime, Browser, Offline, And Packaged Acceptance
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T036 acceptance hardening and evidence.
+- **RED**: The root package contract still asserted an obsolete literal
+  `web/dist` string after the copier moved to portable `path.join` calls. The
+  first three-browser run then proved `dist/web` could be stale because
+  Playwright rebuilt `web/dist` without invoking the authoritative package-copy
+  validation. The expanded privacy run also exposed a nondeterministic audit
+  boundary around asynchronous initial server discovery.
+- **GREEN**: The package test now verifies portable source/target construction
+  and two fail-closed manifest validations. Every Playwright server boot builds
+  the web app, refreshes and validates `dist/web`, then starts the static host.
+  Local search, graph, and impact stay functional with Chromium networking set
+  offline; the consent boundary still permits only one configured semantic
+  endpoint request.
+- **REFACTOR/EVIDENCE**: The packaged suite applies and records one explicit
+  trusted-host CSP allowing only same-origin scripts, workers, connections,
+  styles, fonts, images, and WebAssembly execution. It proves local indexing
+  and search with no CSP violation and no COOP/COEP requirement. Privacy
+  instrumentation waits for startup network idle before defining the
+  browser-local phase, eliminating cross-phase timing ambiguity.
+- **VERIFY**: Root cross-runtime and package contracts passed 5/5. The final
+  matrix passed 12/12: Chromium full lifecycle, self-repository performance,
+  semantic responsiveness, accessibility, privacy/offline, CSP, package
+  corruption, lazy assets, and capability reporting plus independent Firefox
+  and WebKit degradation. Root build copied and byte-verified all ten assets;
+  root/web typechecks, scoped ESLint, and `git diff --check` passed.
+
+#### T037 - Release Notes And Executed Quickstart
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only T037 user-facing documentation and executable policy checks.
+- **RED**: Following the quickstart against the packaged build found that it
+  named a worker `resolve` phase that is not emitted and told users to run
+  semantic search even though this slice exposes optional semantic indexing
+  while keyword search remains the shipped query path. It also omitted the
+  tested trusted-host CSP, offline scope, and dedicated package/privacy command.
+- **GREEN**: The quickstart now matches the observed read, grammar-load, parse,
+  store, and publish phases; accurately describes semantic indexing and
+  page-only credentials; documents the tested same-origin CSP and no-COOP/COEP
+  boundary; scopes offline behavior to an already loaded app/assets; and
+  includes the package/privacy acceptance command.
+- **REFACTOR/EVIDENCE**: The packaged CSP test reads the quickstart and requires
+  its exact tested policy plus the cross-origin-isolation statement. A single
+  capability-first `[Unreleased]` bullet describes local folder indexing,
+  snapshot degradation, explicit semantic consent, default network dormancy,
+  and same-origin shipped assets without internal file paths.
+- **VERIFY**: The documented Chromium package/privacy command passed 5/5 and
+  the documented Firefox/WebKit degradation command passed 2/2. The documented
+  Chromium full command passed 4/4. Scoped ESLint and `git diff --check` passed.
+
+#### T038 - Final Reviewability And Regression Checkpoint
+
+- Required executor dispatch returned zero changes/tests after reproducing the
+  dedicated worktree's `posix-not-writable` child sandbox. Parent fallback
+  completed only the final reviewability and regression checkpoint.
+- **RED**: The complete web Vitest run failed 11 generic shell cases because
+  passive capability discovery constructed `Worker` unconditionally in a
+  runtime where that capability was absent. The pre-recording implementation
+  snapshot contains 25 tracked Slice 3 files with 6,697 insertions/800
+  deletions plus nine new files with 2,378 lines; the complete feature contains
+  71 tracked files with 20,636 insertions/2,099 deletions plus those nine new
+  files. Durable T038 workflow/state evidence is intentionally excluded from
+  those implementation-only figures.
+- **GREEN**: Passive discovery now probes main-thread browser capabilities
+  without constructing a missing worker, while explicit worker acquisition
+  fails with a typed `capability_unavailable` error. The large review surface
+  remains confined to the ratified extraction, storage, worker, client, UI,
+  packaging, documentation, and acceptance-test ownership; it introduces no
+  fourth capability class and preserves all declared non-goals.
+- **REFACTOR/EVIDENCE**: The capability guard reuses the canonical probe and
+  error taxonomy. The complete root suite passed 262 files/4,670 tests with 15
+  files/181 tests skipped; web Vitest passed 27 files/199 tests; lint completed
+  with zero errors and 15 existing warnings; root build and root/web typechecks
+  passed; `git diff --check` passed.
+- **VERIFY**: The final Chromium/Firefox/WebKit lifecycle, degradation,
+  privacy, package, CSP, and performance matrix passed 12/12, and Chromium lock
+  and storage recovery passed 4/4. Two 737-file self-repository runs completed
+  in 6.57 and 5.48 seconds with deterministic 23,865-node/23,128-edge output;
+  20-sample p95 was 56.8 ms search, 71.8 ms graph, and 69.7 ms impact against
+  the 150 ms budget. Maximum main-thread heartbeat gap was 83.4 ms.
 
 ---
 

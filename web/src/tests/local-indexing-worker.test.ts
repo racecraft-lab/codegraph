@@ -318,6 +318,7 @@ describe("browser-local source providers", () => {
     const provider = source.createSnapshotProvider(input, {
       rootLabel: "/Users/alice/project",
       createId: () => "snapshot-opaque",
+      now: () => new Date("2026-07-28T11:15:00.000Z"),
       hashBytes: deterministicHash,
       ignorePatterns: ["dist/"],
       limits: {
@@ -334,14 +335,21 @@ describe("browser-local source providers", () => {
 
     expect(provider.identity).toEqual({
       id: "snapshot-opaque",
-      sourceKind: "snapshot",
+      sourceKind: "dropped-snapshot",
       displayName: "project",
       virtualRoot: "local://snapshot-opaque",
+      acceptedAt: "2026-07-28T11:15:00.000Z",
     })
     expect(JSON.stringify(provider.identity)).not.toContain("/Users/")
     expect(first.entries.map((entry) => entry.path)).toEqual(["src/main.ts"])
     expect(first.manifest.entries).toEqual(second.manifest.entries)
     expect(first.manifest.fingerprint).toBe(second.manifest.fingerprint)
+    expect(first.snapshot).toEqual({
+      acceptedAt: "2026-07-28T11:15:00.000Z",
+      fileCount: 1,
+      totalBytes: 22,
+      manifestFingerprint: first.manifest.fingerprint,
+    })
     expect(first.warnings.details.map((warning) => warning.code).sort()).toEqual([
       "duplicate_source_path",
       "file_too_large",
@@ -349,6 +357,37 @@ describe("browser-local source providers", () => {
       "invalid_source_path",
     ])
     expect(first.entries[0]?.bytes).not.toBe(input[0]?.bytes)
+  })
+
+  it("mints distinct snapshot repositories while retaining duplicate fingerprints as metadata", async () => {
+    const source = await import("../local-indexing/source")
+    const ids = ["snapshot-first", "snapshot-second"]
+    const options = {
+      rootLabel: "project",
+      createId: () => ids.shift()!,
+      now: () => new Date("2026-07-28T11:16:00.000Z"),
+      hashBytes: deterministicHash,
+    }
+    const input = [
+      {
+        kind: "file" as const,
+        path: "src/main.ts",
+        bytes: bytes("export const value = 1"),
+      },
+    ]
+    const first = source.createSnapshotProvider(input, options)
+    const second = source.createSnapshotProvider(input, options)
+    const [firstCollection, secondCollection] = await Promise.all([
+      first.collect(),
+      second.collect(),
+    ])
+
+    expect(first.identity.id).toBe("snapshot-first")
+    expect(second.identity.id).toBe("snapshot-second")
+    expect(first.identity.id).not.toBe(second.identity.id)
+    expect(firstCollection.snapshot.manifestFingerprint).toBe(
+      secondCollection.snapshot.manifestFingerprint,
+    )
   })
 
   it("rejects snapshot transfer and traversal budgets before accepting payloads", async () => {
@@ -656,5 +695,327 @@ describe("versioned local-index worker RPC", () => {
       ]),
     )
     expect(() => structuredClone(emitted)).not.toThrow()
+  })
+})
+
+describe("post-keyword semantic worker operation", () => {
+  const inputs = Array.from({ length: 35 }, (_, index) => ({
+    nodeId: `node-${index}`,
+    inputHash: `hash-${index}`,
+    text: `kind: function\nname: node-${index}`,
+  }))
+
+  const embedRequest = (
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    protocolVersion: 1 as const,
+    requestId: "embed-request",
+    operationId: "embed-operation",
+    repositoryId: "repo_opaque",
+    kind: "embed" as const,
+    payload: {
+      endpointUrl: "https://embeddings.example/v1/embed",
+      model: "model-safe",
+      dimensions: 2,
+      graphGeneration: 7,
+      credential: "session-only",
+      consentGrantedAt: "2026-07-28T11:55:00.000Z",
+      endpointBatchSize: 32,
+      vectorWriteBatchSize: 500,
+    },
+    ...overrides,
+  })
+
+  function baseRuntime(
+    worker: typeof import("../local-indexing/worker"),
+    emitted: unknown[],
+    embeddingOverrides: Record<string, unknown> = {},
+  ) {
+    const store = {
+      publishGeneration: vi.fn(async () => ({ generation: 8 })),
+      close: vi.fn(() => ({ paused: true })),
+    }
+    const embedding = {
+      getPublishedGeneration: vi.fn(async () => 7),
+      loadInputs: vi.fn(async () => inputs),
+      requestBatch: vi.fn(async ({ model, items }) => ({
+        model,
+        dimensions: 2,
+        vectors: items.map(
+          (item: { nodeId: string; inputHash: string }, index: number) => ({
+            nodeId: item.nodeId,
+            inputHash: item.inputHash,
+            values: [index + 0.25, index + 0.75],
+          }),
+        ),
+      })),
+      writeVectors: vi.fn(async () => undefined),
+      saveState: vi.fn(async () => undefined),
+      ...embeddingOverrides,
+    }
+    const runtime = worker.createWorkerRuntime({
+      store,
+      embedding,
+      loadGrammars: async () => undefined,
+      releaseGrammars: () => undefined,
+      emit: (message) => emitted.push(message),
+      yieldControl: async () => undefined,
+    })
+    return { runtime, store, embedding }
+  }
+
+  it("runs after keyword publication with bounded endpoint/vector batches and convergent metadata", async () => {
+    const worker = await import("../local-indexing/worker")
+    const emitted: unknown[] = []
+    const { runtime, store, embedding } = baseRuntime(worker, emitted)
+
+    await runtime.handle(embedRequest())
+
+    expect(embedding.requestBatch).toHaveBeenCalledTimes(2)
+    expect(
+      embedding.requestBatch.mock.calls.map(
+        ([request]) => (request as { items: unknown[] }).items.length,
+      ),
+    ).toEqual([32, 3])
+    expect(
+      embedding.writeVectors.mock.calls.every(
+        ([, , rows]) => (rows as unknown[]).length <= 500,
+      ),
+    ).toBe(true)
+    expect(embedding.writeVectors).toHaveBeenCalledTimes(2)
+    expect(store.publishGeneration).not.toHaveBeenCalled()
+    expect(embedding.saveState).toHaveBeenLastCalledWith(
+      "repo_opaque",
+      expect.objectContaining({
+        status: "complete",
+        graphGeneration: 7,
+        model: "model-safe",
+        dimensions: 2,
+        completedItems: 35,
+        inputHashes: inputs.map((item) => item.inputHash),
+      }),
+    )
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        type: "result",
+        terminal: "complete",
+        result: expect.objectContaining({
+          graphGeneration: 7,
+          embedded: 35,
+          status: "complete",
+        }),
+      }),
+    )
+  })
+
+  it("resumes only the matching graph/model/dimension/hash prefix", async () => {
+    const worker = await import("../local-indexing/worker")
+    const emitted: unknown[] = []
+    const { runtime, embedding } = baseRuntime(worker, emitted)
+
+    await runtime.handle(
+      embedRequest({
+        payload: {
+          ...(embedRequest().payload as Record<string, unknown>),
+          resume: {
+            graphGeneration: 7,
+            model: "model-safe",
+            dimensions: 2,
+            completedItems: 32,
+            inputHashes: inputs.slice(0, 32).map((item) => item.inputHash),
+          },
+        },
+      }),
+    )
+
+    expect(embedding.requestBatch).toHaveBeenCalledTimes(1)
+    expect(embedding.requestBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: inputs.slice(32),
+      }),
+    )
+    expect(embedding.writeVectors).toHaveBeenCalledTimes(1)
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        terminal: "complete",
+        result: expect.objectContaining({ embedded: 35 }),
+      }),
+    )
+  })
+
+  it.each([
+    {
+      label: "explicit consent",
+      payload: { consentGrantedAt: undefined },
+      publishedGeneration: 7,
+      resume: undefined,
+      response: undefined,
+      code: "consent_required",
+    },
+    {
+      label: "endpoint batch budget",
+      payload: { endpointBatchSize: 33 },
+      publishedGeneration: 7,
+      resume: undefined,
+      response: undefined,
+      code: "embedding_budget_exceeded",
+    },
+    {
+      label: "vector write budget",
+      payload: { vectorWriteBatchSize: 501 },
+      publishedGeneration: 7,
+      resume: undefined,
+      response: undefined,
+      code: "embedding_budget_exceeded",
+    },
+    {
+      label: "graph generation",
+      payload: {},
+      publishedGeneration: 8,
+      resume: undefined,
+      response: undefined,
+      code: "semantic_stale",
+    },
+    {
+      label: "resume hashes",
+      payload: {},
+      publishedGeneration: 7,
+      resume: {
+        graphGeneration: 7,
+        model: "model-safe",
+        dimensions: 2,
+        completedItems: 1,
+        inputHashes: ["different-hash"],
+      },
+      response: undefined,
+      code: "semantic_stale",
+    },
+    {
+      label: "response model",
+      payload: {},
+      publishedGeneration: 7,
+      resume: undefined,
+      response: {
+        model: "different-model",
+        dimensions: 2,
+        vectors: [],
+      },
+      code: "model_mismatch",
+    },
+    {
+      label: "response dimensions",
+      payload: {},
+      publishedGeneration: 7,
+      resume: undefined,
+      response: {
+        model: "model-safe",
+        dimensions: 3,
+        vectors: [],
+      },
+      code: "dimension_mismatch",
+    },
+    {
+      label: "response input hashes",
+      payload: {},
+      publishedGeneration: 7,
+      resume: undefined,
+      response: {
+        model: "model-safe",
+        dimensions: 2,
+        vectors: inputs.slice(0, 32).map((item, index) => ({
+          nodeId: item.nodeId,
+          inputHash: index === 0 ? "different-hash" : item.inputHash,
+          values: [0.25, 0.75],
+        })),
+      },
+      code: "partial_response",
+    },
+  ])(
+    "fails closed for $label without changing keyword publication",
+    async ({ payload, publishedGeneration, resume, response, code }) => {
+      const worker = await import("../local-indexing/worker")
+      const emitted: unknown[] = []
+      const { runtime, store, embedding } = baseRuntime(worker, emitted, {
+        getPublishedGeneration: vi.fn(async () => publishedGeneration),
+        ...(response
+          ? { requestBatch: vi.fn(async () => response) }
+          : {}),
+      })
+
+      await runtime.handle(
+        embedRequest({
+          payload: {
+            ...(embedRequest().payload as Record<string, unknown>),
+            ...payload,
+            ...(resume ? { resume } : {}),
+          },
+        }),
+      )
+
+      expect(embedding.writeVectors).not.toHaveBeenCalled()
+      expect(store.publishGeneration).not.toHaveBeenCalled()
+      expect(emitted).toContainEqual(
+        expect.objectContaining({
+          type: "failure",
+          terminal: "failed",
+          error: expect.objectContaining({ code }),
+        }),
+      )
+    },
+  )
+
+  it("cancels after an in-flight endpoint batch without writes or later endpoint calls", async () => {
+    const worker = await import("../local-indexing/worker")
+    const emitted: unknown[] = []
+    let releaseBatch: (() => void) | undefined
+    let requestStarted = false
+    const pendingBatch = new Promise<void>((resolve) => {
+      releaseBatch = resolve
+    })
+    const { runtime, embedding } = baseRuntime(worker, emitted, {
+      requestBatch: vi.fn(async ({ model, items }) => {
+        requestStarted = true
+        await pendingBatch
+        return {
+          model,
+          dimensions: 2,
+          vectors: items.map(
+            (item: { nodeId: string; inputHash: string }) => ({
+              nodeId: item.nodeId,
+              inputHash: item.inputHash,
+              values: [0.25, 0.75],
+            }),
+          ),
+        }
+      }),
+    })
+
+    const active = runtime.handle(embedRequest())
+    await vi.waitFor(() => expect(requestStarted).toBe(true))
+    await runtime.handle({
+      protocolVersion: 1,
+      requestId: "cancel-embed",
+      operationId: "embed-operation",
+      repositoryId: "repo_opaque",
+      kind: "cancel",
+    })
+    releaseBatch?.()
+    await active
+
+    expect(embedding.requestBatch).toHaveBeenCalledTimes(1)
+    expect(embedding.writeVectors).not.toHaveBeenCalled()
+    expect(embedding.saveState).toHaveBeenLastCalledWith(
+      "repo_opaque",
+      expect.objectContaining({
+        status: "paused",
+        completedItems: 0,
+      }),
+    )
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        terminal: "cancelled",
+        error: expect.objectContaining({ code: "operation_cancelled" }),
+      }),
+    )
   })
 })

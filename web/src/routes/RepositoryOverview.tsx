@@ -1,10 +1,22 @@
 import { Link } from "react-router-dom"
-import { BotIcon, RefreshCcwIcon, SearchIcon, Trash2Icon } from "lucide-react"
-import { useState } from "react"
+import {
+  BotIcon,
+  KeyRoundIcon,
+  RefreshCcwIcon,
+  SearchIcon,
+  Trash2Icon,
+} from "lucide-react"
+import { useRef, useState } from "react"
 
 import { useAppState } from "@/app/state"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { repositoryRuntimeLabel } from "@/components/layout/RepositorySwitcher"
 import {
@@ -42,19 +54,34 @@ export function RepositoryOverview() {
     repositoryStatus,
     repositoryState,
     localOperation,
+    localSourceConnection,
     storageStatus,
     requestStoragePersistence,
     deleteLocalRepository,
+    reconnectLocalRepository,
     refreshLocalRepository,
+    startSemanticIndexing,
   } = useAppState()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [confirmationName, setConfirmationName] = useState("")
   const [cancelActive, setCancelActive] = useState(false)
+  const [semanticEndpoint, setSemanticEndpoint] = useState("")
+  const [semanticModel, setSemanticModel] = useState("")
+  const [semanticCredential, setSemanticCredential] = useState("")
+  const [semanticConsent, setSemanticConsent] = useState(false)
+  const reconnectButtonRef = useRef<HTMLButtonElement>(null)
+  const semanticButtonRef = useRef<HTMLButtonElement>(null)
+  const operationStatusRef = useRef<HTMLParagraphElement>(null)
+  const overviewHeadingRef = useRef<HTMLHeadingElement>(null)
   const isLocal = selectedRepo?.runtime === "local"
   const localBusy = isLocal && localOperation?.state === "busy"
   const localDeleting = isLocal && localOperation?.state === "deleting"
   const localActionsBlocked = localBusy || localDeleting
   const activeOperation = localOperation?.state === "refreshing"
+  const pickedFolderDisconnected =
+    isLocal &&
+    selectedRepo?.sourceKind === "picked-folder" &&
+    !localSourceConnection?.canRefresh
   const storageUsage =
     storageStatus?.usageBytes === undefined
       ? "Storage usage is unavailable."
@@ -70,11 +97,53 @@ export function RepositoryOverview() {
           ? "Persistence status is unknown."
           : "Persistent storage requests are not supported."
 
+  async function reconnect() {
+    try {
+      await reconnectLocalRepository()
+    } finally {
+      reconnectButtonRef.current?.focus()
+    }
+  }
+
+  async function startSemantic() {
+    try {
+      await startSemanticIndexing({
+        endpointUrl: semanticEndpoint,
+        model: semanticModel,
+        credential: semanticCredential,
+      })
+      setSemanticCredential("")
+    } finally {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          ;(operationStatusRef.current ?? semanticButtonRef.current)?.focus()
+        })
+      })
+    }
+  }
+
+  async function deleteRepository() {
+    await deleteLocalRepository({
+      confirmationName,
+      cancelActive,
+    })
+    setDeleteOpen(false)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => overviewHeadingRef.current?.focus())
+    })
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-4 overflow-x-hidden p-4">
       <section className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold">Repository overview</h1>
+          <h1
+            ref={overviewHeadingRef}
+            tabIndex={-1}
+            className="text-2xl font-semibold"
+          >
+            Repository overview
+          </h1>
           <Badge variant={isLocal ? "secondary" : "outline"}>
             {repositoryRuntimeLabel(selectedRepo)}
           </Badge>
@@ -88,11 +157,16 @@ export function RepositoryOverview() {
         </p>
         {isLocal && localOperation ? (
           <p
+            ref={operationStatusRef}
+            tabIndex={-1}
             className="max-w-3xl text-sm text-muted-foreground"
             role={
-              ["failed", "busy", "quota-blocked", "permission-blocked"].includes(
-                localOperation.state,
-              )
+              [
+                "failed",
+                "busy",
+                "quota-blocked",
+                "permission-blocked",
+              ].includes(localOperation.state)
                 ? "alert"
                 : "status"
             }
@@ -106,7 +180,8 @@ export function RepositoryOverview() {
             id="local-repository-busy-actions"
             className="max-w-3xl text-sm text-muted-foreground"
           >
-            Local reads are disabled until this browser tab acquires the repository.
+            Local reads are disabled until this browser tab acquires the
+            repository.
           </p>
         ) : null}
       </section>
@@ -166,12 +241,118 @@ export function RepositoryOverview() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={localBusy || localDeleting || activeOperation}
+                disabled={
+                  localBusy ||
+                  localDeleting ||
+                  activeOperation ||
+                  pickedFolderDisconnected
+                }
                 onClick={() => void refreshLocalRepository()}
               >
                 <RefreshCcwIcon data-icon="inline-start" />
                 Refresh browser index
               </Button>
+              {pickedFolderDisconnected ? (
+                <>
+                  <Button
+                    ref={reconnectButtonRef}
+                    variant="outline"
+                    size="sm"
+                    disabled={localBusy || localDeleting}
+                    onClick={() => void reconnect()}
+                  >
+                    <RefreshCcwIcon data-icon="inline-start" />
+                    Reconnect local folder
+                  </Button>
+                  <p className="text-muted-foreground">
+                    Cached browsing remains available. Reconnect explicitly to
+                    enable manual refresh.
+                  </p>
+                </>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+        {isLocal ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Optional semantic indexing</CardTitle>
+              <CardDescription>
+                Keyword browsing stays available if semantic indexing is
+                cancelled or fails.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="flex min-w-0 flex-col gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void startSemantic()
+                }}
+              >
+                <label className="flex min-w-0 flex-col gap-1">
+                  <span>Embedding endpoint</span>
+                  <Input
+                    type="url"
+                    value={semanticEndpoint}
+                    onChange={(event) =>
+                      setSemanticEndpoint(event.target.value)
+                    }
+                  />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1">
+                  <span>Embedding model</span>
+                  <Input
+                    value={semanticModel}
+                    onChange={(event) => setSemanticModel(event.target.value)}
+                  />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1">
+                  <span>Page-session bearer key</span>
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    value={semanticCredential}
+                    onChange={(event) =>
+                      setSemanticCredential(event.target.value)
+                    }
+                  />
+                </label>
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={semanticConsent}
+                    onChange={(event) =>
+                      setSemanticConsent(event.target.checked)
+                    }
+                  />
+                  <span>
+                    I consent to semantic indexing after the local keyword index
+                    is complete.
+                  </span>
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  The bearer key remains only in this page session and is
+                  cleared after the operation.
+                </p>
+                <Button
+                  ref={semanticButtonRef}
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    localActionsBlocked ||
+                    activeOperation ||
+                    !semanticConsent ||
+                    semanticEndpoint.length === 0 ||
+                    semanticModel.length === 0 ||
+                    semanticCredential.length === 0
+                  }
+                >
+                  <KeyRoundIcon data-icon="inline-start" />
+                  Start semantic indexing
+                </Button>
+              </form>
             </CardContent>
           </Card>
         ) : null}
@@ -202,7 +383,9 @@ export function RepositoryOverview() {
         <Card>
           <CardHeader>
             <CardTitle>Graph</CardTitle>
-            <CardDescription>Explore neighborhoods after selecting a symbol.</CardDescription>
+            <CardDescription>
+              Explore neighborhoods after selecting a symbol.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-wrap gap-3">
             {ACTIONS.map((action) => {
@@ -225,10 +408,7 @@ export function RepositoryOverview() {
               }
               if (isLocal && action.localUnavailable) {
                 return (
-                  <div
-                    key={action.to}
-                    className="min-w-0 flex-1 basis-full"
-                  >
+                  <div key={action.to} className="min-w-0 flex-1 basis-full">
                     <Button
                       variant="outline"
                       size="sm"
@@ -241,7 +421,7 @@ export function RepositoryOverview() {
                     </Button>
                     <p
                       id={descriptionId}
-                      className="mt-1 break-words text-xs text-muted-foreground"
+                      className="mt-1 text-xs break-words text-muted-foreground"
                     >
                       {action.localUnavailable}
                     </p>
@@ -274,21 +454,24 @@ export function RepositoryOverview() {
               </DialogDescription>
             </DialogHeader>
             <p>
-              Graph database, accepted source cache, repository metadata,
-              saved folder handle, and semantic state will be removed.
+              Graph database, accepted source cache, repository metadata, saved
+              folder handle, and semantic state will be removed.
             </p>
             <p className="font-medium">
               Source folder files will not be changed
             </p>
             {activeOperation ? (
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={cancelActive}
-                  onChange={(event) => setCancelActive(event.target.checked)}
-                />
-                <span>Cancel the active refresh and delete</span>
-              </label>
+              <>
+                <p role="status">{localOperation.message}</p>
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={cancelActive}
+                    onChange={(event) => setCancelActive(event.target.checked)}
+                  />
+                  <span>Cancel the active local operation and delete</span>
+                </label>
+              </>
             ) : null}
             <label className="flex flex-col gap-1">
               <span>Type {selectedRepo.name} to confirm</span>
@@ -305,14 +488,7 @@ export function RepositoryOverview() {
                   confirmationName !== selectedRepo.name ||
                   (activeOperation && !cancelActive)
                 }
-                onClick={() => {
-                  void Promise.resolve(
-                    deleteLocalRepository({
-                      confirmationName,
-                      cancelActive,
-                    }),
-                  ).then(() => setDeleteOpen(false))
-                }}
+                onClick={() => void deleteRepository()}
               >
                 Delete browser data
               </Button>

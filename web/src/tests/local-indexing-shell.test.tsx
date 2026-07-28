@@ -11,6 +11,8 @@ import { RepositoryOverview } from "@/routes/RepositoryOverview"
 const openLocalFolder = vi.fn()
 const cancelLocalOperation = vi.fn()
 const refreshRepositories = vi.fn()
+const reconnectLocalRepository = vi.fn()
+const startSemanticIndexing = vi.fn()
 const requestStoragePersistence = vi.fn()
 const deleteLocalRepository = vi.fn()
 
@@ -36,7 +38,7 @@ const localSnapshotRepository = {
   name: "Imported project",
   default: false,
   runtime: "local" as const,
-  sourceKind: "snapshot" as const,
+  sourceKind: "dropped-snapshot" as const,
 }
 
 let appState: Record<string, unknown>
@@ -49,7 +51,7 @@ function renderShell(children: ReactNode) {
   return render(
     <MemoryRouter>
       <SidebarProvider>{children}</SidebarProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   )
 }
 
@@ -57,10 +59,16 @@ beforeEach(() => {
   openLocalFolder.mockReset()
   cancelLocalOperation.mockReset()
   refreshRepositories.mockReset()
+  reconnectLocalRepository.mockReset()
+  startSemanticIndexing.mockReset()
   requestStoragePersistence.mockReset()
   deleteLocalRepository.mockReset()
   appState = {
-    repositories: [serverRepository, localFolderRepository, localSnapshotRepository],
+    repositories: [
+      serverRepository,
+      localFolderRepository,
+      localSnapshotRepository,
+    ],
     selectedRepo: serverRepository,
     repositoriesStatus: "success",
     repositoryState: "ready",
@@ -69,6 +77,8 @@ beforeEach(() => {
     openLocalFolder,
     cancelLocalOperation,
     refreshRepositories,
+    reconnectLocalRepository,
+    startSemanticIndexing,
     requestStoragePersistence,
     deleteLocalRepository,
     storageStatus: undefined,
@@ -81,7 +91,7 @@ describe("browser-local workspace shell", () => {
     openLocalFolder.mockRejectedValueOnce(
       Object.assign(new Error("Folder selection was cancelled."), {
         name: "AbortError",
-      }),
+      })
     )
     renderShell(<RepositorySwitcher />)
 
@@ -125,12 +135,17 @@ describe("browser-local workspace shell", () => {
 
     expect(screen.getByText("Local folder")).toBeInTheDocument()
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Reading files 2 of 4. Reading accepted source files.",
+      "Reading files 2 of 4. Reading accepted source files."
     )
     expect(
-      document.querySelector('[data-slot="progress-indicator"]'),
+      document.querySelector('[data-slot="progress-indicator"]')
     ).toHaveClass("motion-reduce:transition-none")
-    await userEvent.click(screen.getByRole("button", { name: "Cancel local indexing" }))
+    expect(screen.getByRole("status")).toHaveClass(
+      "motion-reduce:transition-none"
+    )
+    await userEvent.click(
+      screen.getByRole("button", { name: "Cancel local indexing" })
+    )
     expect(cancelLocalOperation).toHaveBeenCalledTimes(1)
 
     appState = {
@@ -146,10 +161,10 @@ describe("browser-local workspace shell", () => {
         <SidebarProvider>
           <RepositorySwitcher />
         </SidebarProvider>
-      </MemoryRouter>,
+      </MemoryRouter>
     )
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Storage quota blocked. Browser storage quota blocked publication.",
+      "Storage quota blocked. Browser storage quota blocked publication."
     )
   })
 
@@ -161,10 +176,14 @@ describe("browser-local workspace shell", () => {
     }
     renderShell(<RepositoryOverview />)
 
-    expect(screen.getByRole("heading", { name: "Repository overview" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "Repository overview" })
+    ).toBeInTheDocument()
     expect(screen.getByText("Local snapshot")).toBeInTheDocument()
     expect(screen.getByText("Imported project")).toBeInTheDocument()
-    expect(screen.queryByText("local://opaque-snapshot")).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("local://opaque-snapshot")
+    ).not.toBeInTheDocument()
   })
 
   it("shows approximate storage status and requests persistence only from its button", async () => {
@@ -188,18 +207,74 @@ describe("browser-local workspace shell", () => {
     expect(screen.getByText("Storage is not persistent.")).toBeVisible()
     expect(
       screen.getByText(
-        "Free browser site storage, then retry. The previous complete local index remains available.",
-      ),
+        "Free browser site storage, then retry. The previous complete local index remains available."
+      )
     ).toBeVisible()
     expect(
-      screen.getByText("CodeGraph never deletes local indexes automatically."),
+      screen.getByText("CodeGraph never deletes local indexes automatically.")
     ).toBeVisible()
     expect(requestStoragePersistence).not.toHaveBeenCalled()
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Request persistent storage" }),
+      screen.getByRole("button", { name: "Request persistent storage" })
     )
     expect(requestStoragePersistence).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps reconnect and semantic opt-in explicit, keyboard reachable, and secret-safe", async () => {
+    reconnectLocalRepository.mockResolvedValueOnce(undefined)
+    startSemanticIndexing.mockResolvedValueOnce(undefined)
+    appState = {
+      ...appState,
+      selectedRepo: localFolderRepository,
+      repositoryState: "ready",
+      localSourceConnection: {
+        repositoryId: localFolderRepository.id,
+        handleRefId: "handle-local-folder",
+        status: "prompt",
+        canRefresh: false,
+      },
+    }
+    renderShell(<RepositoryOverview />)
+    const user = userEvent.setup()
+
+    const reconnect = screen.getByRole("button", {
+      name: "Reconnect local folder",
+    })
+    reconnect.focus()
+    await user.keyboard("{Enter}")
+    expect(reconnectLocalRepository).toHaveBeenCalledTimes(1)
+    expect(reconnect).toHaveFocus()
+
+    await user.type(
+      screen.getByLabelText("Embedding endpoint"),
+      "https://embeddings.example/v1/embed"
+    )
+    await user.type(screen.getByLabelText("Embedding model"), "safe-model")
+    await user.type(
+      screen.getByLabelText("Page-session bearer key"),
+      "memory-only-key"
+    )
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /I consent to semantic indexing/,
+      })
+    )
+    const semanticButton = screen.getByRole("button", {
+      name: "Start semantic indexing",
+    })
+    semanticButton.focus()
+    await user.keyboard("{Enter}")
+
+    expect(startSemanticIndexing).toHaveBeenCalledWith({
+      endpointUrl: "https://embeddings.example/v1/embed",
+      model: "safe-model",
+      credential: "memory-only-key",
+    })
+    expect(semanticButton).toHaveFocus()
+    expect(
+      screen.getByText(/bearer key remains only in this page session/i)
+    ).toBeVisible()
   })
 
   it("requires the repository name and an explicit active-operation cancellation choice", async () => {
@@ -218,15 +293,15 @@ describe("browser-local workspace shell", () => {
     renderShell(<RepositoryOverview />)
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Delete browser index" }),
+      screen.getByRole("button", { name: "Delete browser index" })
     )
     expect(screen.getByRole("dialog")).toHaveTextContent("Local folder")
     expect(screen.getByRole("dialog")).toHaveTextContent("Picked project")
     expect(screen.getByRole("dialog")).toHaveTextContent(
-      "Graph database, accepted source cache, repository metadata, saved folder handle, and semantic state",
+      "Graph database, accepted source cache, repository metadata, saved folder handle, and semantic state"
     )
     expect(screen.getByRole("dialog")).toHaveTextContent(
-      "Source folder files will not be changed",
+      "Source folder files will not be changed"
     )
 
     const deleteButton = screen.getByRole("button", {
@@ -235,13 +310,13 @@ describe("browser-local workspace shell", () => {
     expect(deleteButton).toBeDisabled()
     await userEvent.type(
       screen.getByLabelText("Type Picked project to confirm"),
-      "Picked project",
+      "Picked project"
     )
     expect(deleteButton).toBeDisabled()
     await userEvent.click(
       screen.getByRole("checkbox", {
-        name: "Cancel the active refresh and delete",
-      }),
+        name: "Cancel the active local operation and delete",
+      })
     )
     expect(deleteButton).toBeEnabled()
     await userEvent.click(deleteButton)
@@ -261,23 +336,23 @@ describe("browser-local workspace shell", () => {
     renderShell(<RepositoryOverview />)
 
     expect(
-      screen.getByRole("button", { name: "Search symbols" }),
+      screen.getByRole("button", { name: "Search symbols" })
     ).toHaveAttribute("href", "/search")
     expect(
-      screen.getByRole("button", { name: "Refresh local index" }),
+      screen.getByRole("button", { name: "Refresh local index" })
     ).toBeDisabled()
     expect(
       screen.getByText(
-        "Local refresh requires a connected folder. Server re-analysis is unavailable for local repositories.",
-      ),
+        "Local refresh requires a connected folder. Server re-analysis is unavailable for local repositories."
+      )
     ).toBeVisible()
     expect(
-      screen.getByRole("button", { name: "Ask with context" }),
+      screen.getByRole("button", { name: "Ask with context" })
     ).toBeDisabled()
     expect(
       screen.getByText(
-        "Chat is available only for server repositories. Local keyword browsing remains available.",
-      ),
+        "Chat is available only for server repositories. Local keyword browsing remains available."
+      )
     ).toBeVisible()
   })
 
@@ -286,14 +361,13 @@ describe("browser-local workspace shell", () => {
 
     expect(screen.getByRole("button", { name: "Re-analyze" })).toHaveAttribute(
       "href",
-      "/reindex",
-    )
-    expect(screen.getByRole("button", { name: "Ask with context" })).toHaveAttribute(
-      "href",
-      "/chat",
+      "/reindex"
     )
     expect(
-      screen.queryByText(/Server re-analysis is unavailable/),
+      screen.getByRole("button", { name: "Ask with context" })
+    ).toHaveAttribute("href", "/chat")
+    expect(
+      screen.queryByText(/Server re-analysis is unavailable/)
     ).not.toBeInTheDocument()
   })
 
@@ -311,12 +385,12 @@ describe("browser-local workspace shell", () => {
     const view = renderShell(<RepositorySwitcher />)
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Repository busy. Picked project is open in another tab.",
+      "Repository busy. Picked project is open in another tab."
     )
     await userEvent.click(screen.getByRole("button", { name: "Retry" }))
     expect(refreshRepositories).toHaveBeenCalledTimes(1)
     await userEvent.click(
-      screen.getByRole("button", { name: "Switch repository" }),
+      screen.getByRole("button", { name: "Switch repository" })
     )
     expect(appState.selectRepository).toHaveBeenCalledWith("server")
 
@@ -325,13 +399,13 @@ describe("browser-local workspace shell", () => {
         <SidebarProvider>
           <RepositoryOverview />
         </SidebarProvider>
-      </MemoryRouter>,
+      </MemoryRouter>
     )
     expect(screen.getByRole("button", { name: "Start search" })).toBeDisabled()
     expect(
       screen.getByText(
-        "Local reads are disabled until this browser tab acquires the repository.",
-      ),
+        "Local reads are disabled until this browser tab acquires the repository."
+      )
     ).toBeVisible()
   })
 })

@@ -24,7 +24,7 @@ Use the Vite development URL for local browser iteration. `localhost` is treated
 2. Choose the local repository mode from the repository switcher.
 3. Use the folder picker to select a fixture repository.
 4. Confirm indexing starts only after the user gesture.
-5. Observe progress phases for scan, read, grammar load, parse, store, resolve, and publish.
+5. Observe source-read, grammar-load, parse, store, and publish progress.
 6. Verify the UI remains responsive during indexing.
 7. After completion, run search, source view, graph, relationship, and impact queries from the existing routes.
 
@@ -65,18 +65,20 @@ Expected result:
 - Missing capabilities produce clear recoverable states.
 - Browser-name checks are not used as the source of truth.
 
-## Scenario 4: Semantic Search Opt-In
+## Scenario 4: Semantic Indexing Opt-In
 
 1. Complete a keyword/static graph index.
-2. Enable semantic search explicitly.
+2. Enable optional semantic indexing explicitly.
 3. Enter a direct HTTPS endpoint and model profile.
 4. Provide an API key for the current session only.
-5. Start vector generation and run semantic search.
+5. Start vector generation while continuing to use keyword search, graph, and
+   impact reads.
 6. Reload the page and verify the profile persists without the key.
 
 Expected result:
 
-- Semantic controls are unavailable before opt-in.
+- Semantic indexing starts only after explicit consent and never disables the
+  completed keyword index.
 - API keys are never written to IndexedDB, OPFS, localStorage, sessionStorage, or URL state.
 - HTTP endpoints from secure pages, URL userinfo, query-string secrets, fragments, CORS failures, TLS failures, and mixed content failures produce stable redacted errors.
 
@@ -93,6 +95,19 @@ Then serve the packaged web app from `dist/web` through the project server path 
 - `tree-sitter.wasm` loads.
 - Required grammar WASM assets load.
 - Routes do not depend on Vite dev-server-only paths.
+- The browser can continue local search, graph, and impact reads after network
+  access is disabled once the app and required same-origin assets are loaded.
+
+For a trusted HTTPS static host, serve all files from the same origin. The
+validated minimum policy is:
+
+```http
+Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'
+```
+
+Add an explicitly approved semantic endpoint origin to `connect-src` only when
+that optional endpoint is used. The selected SQLite SAH-pool path does not
+require COOP or COEP headers.
 
 ## Scenario 6: Verification Commands
 
@@ -101,6 +116,7 @@ npm run build
 npm test
 npm --prefix web run test
 npm --prefix web run test:e2e -- --project=chromium web/src/tests/local-indexing-full.spec.ts
+npm --prefix web run test:e2e -- --project=chromium web/src/tests/local-indexing-network.spec.ts web/src/tests/local-indexing-packaged.spec.ts
 npm --prefix web run test:e2e -- --project=firefox --project=webkit web/src/tests/local-indexing-degradation.spec.ts
 ```
 
@@ -110,6 +126,8 @@ Expected result:
 - Root tests cover shared schema migration and extraction-kernel parity.
 - Web tests cover worker protocol, repository-client routing, capability detection, no-default-network behavior, semantic opt-in, and UI status.
 - Chromium UAT meets the self-repo scale target.
+- Chromium network/package tests cover true-offline local reads, no-consent
+  egress, trusted-host CSP, fail-closed assets, and lazy same-origin requests.
 - Firefox/WebKit tests verify graceful degradation rather than full feature parity.
 
 ## Benchmark Capture
@@ -119,7 +137,7 @@ Capture the following values after implementation:
 - Browser, version, OS, and hardware class.
 - File count, node count, edge count, skipped count, and warning count.
 - Cold index duration and warm refresh duration.
-- Search, graph, impact, and source-view p95 latency after warmup.
+- Search, graph, and impact p95 latency after warmup.
 - Main-thread heartbeat max gap during indexing.
 - OPFS quota estimate before and after indexing.
 

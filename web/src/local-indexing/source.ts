@@ -11,7 +11,8 @@ export const DEFAULT_SOURCE_LIMITS = {
 
 const BUILT_IN_IGNORES = [".git/", ".codegraph/", "node_modules/"]
 
-export type SourceKind = "picked-folder" | "snapshot"
+export type SnapshotSourceKind = "dropped-snapshot" | "imported-snapshot"
+export type SourceKind = "picked-folder" | SnapshotSourceKind
 
 export interface SourceIdentity {
   id: string
@@ -19,6 +20,7 @@ export interface SourceIdentity {
   displayName: string
   virtualRoot: string
   handleRefId?: string
+  acceptedAt?: string
 }
 
 export interface SourceTraversalLimits {
@@ -86,9 +88,28 @@ export interface SourceCollection {
   warnings: BoundedWarnings
 }
 
+export interface SnapshotImportMetadata {
+  acceptedAt: string
+  fileCount: number
+  totalBytes: number
+  manifestFingerprint: string
+}
+
+export interface SnapshotSourceCollection extends SourceCollection {
+  snapshot: SnapshotImportMetadata
+}
+
 export interface BrowserSourceProvider {
   readonly identity: SourceIdentity
   collect(): Promise<SourceCollection>
+}
+
+export interface SnapshotSourceProvider extends BrowserSourceProvider {
+  readonly identity: SourceIdentity & {
+    sourceKind: SnapshotSourceKind
+    acceptedAt: string
+  }
+  collect(): Promise<SnapshotSourceCollection>
 }
 
 export interface FileLike {
@@ -132,6 +153,87 @@ export interface SourceConnection {
 export interface SavedSourceHandle {
   identity: SourceIdentity
   handle: DirectoryHandleLike
+}
+
+export interface SnapshotRegistryRecord {
+  repositoryId: string
+  displayName: string
+  sourceKind: SnapshotSourceKind
+  acceptedAt: string
+  manifestFingerprint: string
+  fileCount: number
+  totalBytes: number
+}
+
+export interface SnapshotRepositoryRegistry {
+  list(): Promise<SnapshotRegistryRecord[]>
+  put(record: SnapshotRegistryRecord): Promise<void>
+  delete(repositoryId: string): Promise<void>
+}
+
+const SNAPSHOT_REGISTRY_KEY = "codegraph.localSnapshotRegistry.v1"
+
+export class LocalStorageSnapshotRepositoryRegistry
+  implements SnapshotRepositoryRegistry
+{
+  private readonly storage?: Pick<Storage, "getItem" | "setItem">
+
+  constructor(
+    storage: Pick<Storage, "getItem" | "setItem"> | undefined =
+      typeof localStorage === "undefined" ? undefined : localStorage,
+  ) {
+    this.storage = storage
+  }
+
+  async list(): Promise<SnapshotRegistryRecord[]> {
+    if (!this.storage) return []
+    try {
+      const candidate = JSON.parse(
+        this.storage.getItem(SNAPSHOT_REGISTRY_KEY) ?? "[]",
+      ) as unknown
+      if (!Array.isArray(candidate)) return []
+      return candidate.filter(
+        (record): record is SnapshotRegistryRecord =>
+          Boolean(
+            record &&
+              typeof record === "object" &&
+              typeof (record as SnapshotRegistryRecord).repositoryId ===
+                "string" &&
+              typeof (record as SnapshotRegistryRecord).manifestFingerprint ===
+                "string" &&
+              ((record as SnapshotRegistryRecord).sourceKind ===
+                "dropped-snapshot" ||
+                (record as SnapshotRegistryRecord).sourceKind ===
+                  "imported-snapshot"),
+          ),
+      )
+    } catch {
+      return []
+    }
+  }
+
+  async put(record: SnapshotRegistryRecord): Promise<void> {
+    if (!this.storage) return
+    const records = (await this.list()).filter(
+      (candidate) => candidate.repositoryId !== record.repositoryId,
+    )
+    this.storage.setItem(
+      SNAPSHOT_REGISTRY_KEY,
+      JSON.stringify([...records, { ...record }]),
+    )
+  }
+
+  async delete(repositoryId: string): Promise<void> {
+    if (!this.storage) return
+    this.storage.setItem(
+      SNAPSHOT_REGISTRY_KEY,
+      JSON.stringify(
+        (await this.list()).filter(
+          (record) => record.repositoryId !== repositoryId,
+        ),
+      ),
+    )
+  }
 }
 
 export interface SourceHandleStore {
@@ -422,6 +524,36 @@ export interface PickedFolderOptions extends SourceProviderOptions {
 
 export interface SnapshotProviderOptions extends SourceProviderOptions {
   rootLabel: string
+  sourceKind?: SnapshotSourceKind
+  now?: () => Date
+}
+
+export interface DroppedDataTransferItemLike {
+  getAsFileSystemHandle?: () => Promise<SourceHandleLike | null>
+  webkitGetAsEntry?: () => LegacyFileSystemEntryLike | null
+}
+
+interface LegacyFileSystemEntryLike {
+  readonly isFile: boolean
+  readonly isDirectory: boolean
+  readonly name: string
+}
+
+interface LegacyFileSystemFileEntryLike extends LegacyFileSystemEntryLike {
+  file(
+    success: (file: FileLike) => void,
+    failure?: (error: unknown) => void,
+  ): void
+}
+
+interface LegacyFileSystemDirectoryEntryLike
+  extends LegacyFileSystemEntryLike {
+  createReader(): {
+    readEntries(
+      success: (entries: LegacyFileSystemEntryLike[]) => void,
+      failure?: (error: unknown) => void,
+    ): void
+  }
 }
 
 export class SourceProviderError extends Error {
@@ -511,14 +643,19 @@ function identityFor(
   sourceKind: SourceKind,
   displayName: string,
   options: SourceProviderOptions,
+  acceptedAt?: string,
 ): SourceIdentity {
   const id = (options.createId ?? createOpaqueId)()
   return {
     id,
     sourceKind,
-    displayName: safeDisplayName(displayName, sourceKind === "snapshot" ? "Snapshot" : "Local folder"),
+    displayName: safeDisplayName(
+      displayName,
+      sourceKind === "picked-folder" ? "Local folder" : "Snapshot",
+    ),
     virtualRoot: `local://${id}`,
     ...(sourceKind === "picked-folder" ? { handleRefId: `handle-${id}` } : {}),
+    ...(acceptedAt ? { acceptedAt } : {}),
   }
 }
 
@@ -710,8 +847,14 @@ export async function openPickedFolderFromUserAction(
 export function createSnapshotProvider(
   sourceEntries: readonly SnapshotSourceEntry[],
   options: SnapshotProviderOptions,
-): BrowserSourceProvider {
-  const identity = identityFor("snapshot", options.rootLabel, options)
+): SnapshotSourceProvider {
+  const acceptedAt = (options.now ?? (() => new Date()))().toISOString()
+  const identity = identityFor(
+    options.sourceKind ?? "dropped-snapshot",
+    options.rootLabel,
+    options,
+    acceptedAt,
+  ) as SnapshotSourceProvider["identity"]
   const limits = sourceLimits(options.limits)
   const hashBytes = options.hashBytes ?? sha256
   const snapshot = sourceEntries.map((entry) => ({
@@ -781,10 +924,150 @@ export function createSnapshotProvider(
       }
 
       entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+      const manifest = await createSourceManifest(entries, hashBytes)
       return {
         entries,
-        manifest: await createSourceManifest(entries, hashBytes),
+        manifest,
         warnings: warnings.result(),
+        snapshot: {
+          acceptedAt,
+          fileCount: entries.length,
+          totalBytes: acceptedBytes,
+          manifestFingerprint: manifest.fingerprint,
+        },
+      }
+    },
+  }
+}
+
+function readLegacyFile(entry: LegacyFileSystemFileEntryLike) {
+  return new Promise<FileLike>((resolve, reject) => {
+    entry.file(resolve, reject)
+  })
+}
+
+function readLegacyEntries(
+  reader: ReturnType<LegacyFileSystemDirectoryEntryLike["createReader"]>,
+) {
+  return new Promise<LegacyFileSystemEntryLike[]>((resolve, reject) => {
+    reader.readEntries(resolve, reject)
+  })
+}
+
+function legacyHandle(entry: LegacyFileSystemEntryLike): SourceHandleLike {
+  if (entry.isDirectory) {
+    const directory = entry as LegacyFileSystemDirectoryEntryLike
+    return {
+      kind: "directory",
+      name: entry.name,
+      async *entries() {
+        const reader = directory.createReader()
+        while (true) {
+          const batch = await readLegacyEntries(reader)
+          if (batch.length === 0) return
+          for (const child of batch) {
+            yield [child.name, legacyHandle(child)]
+          }
+        }
+      },
+    }
+  }
+  if (entry.isFile) {
+    const fileEntry = entry as LegacyFileSystemFileEntryLike
+    return {
+      kind: "file",
+      name: entry.name,
+      getFile: () => readLegacyFile(fileEntry),
+    }
+  }
+  return { kind: "unsupported", name: entry.name }
+}
+
+export async function captureDroppedDirectory(
+  items: readonly DroppedDataTransferItemLike[],
+): Promise<DirectoryHandleLike | undefined> {
+  // Browser drop handles must be captured synchronously inside the drop event.
+  // Build every promise/legacy entry before the first await.
+  const captured = items.map((item) => ({
+    modern: item.getAsFileSystemHandle?.(),
+    legacy: item.webkitGetAsEntry?.() ?? undefined,
+  }))
+  for (const candidate of captured) {
+    const modern = await candidate.modern
+    if (modern?.kind === "directory") return modern as DirectoryHandleLike
+    if (candidate.legacy?.isDirectory) {
+      return legacyHandle(candidate.legacy) as DirectoryHandleLike
+    }
+  }
+  return undefined
+}
+
+export function createDroppedSnapshotProvider(
+  root: DirectoryHandleLike,
+  options: Omit<
+    SnapshotProviderOptions,
+    "rootLabel" | "sourceKind"
+  > = {},
+): SnapshotSourceProvider {
+  const acceptedAt = (options.now ?? (() => new Date()))().toISOString()
+  const identity = identityFor(
+    "dropped-snapshot",
+    root.name,
+    options,
+    acceptedAt,
+  ) as SnapshotSourceProvider["identity"]
+  const limits = sourceLimits(options.limits)
+  const directoryProvider = createPickedFolderProvider(root, {
+    ...options,
+    createId: () => `${identity.id}_scan`,
+  })
+
+  return {
+    identity,
+    async collect() {
+      const collected = await directoryProvider.collect()
+      const entries: AcceptedSourceEntry[] = []
+      const transferWarnings: SourceWarning[] = []
+      let totalBytes = 0
+      for (const entry of collected.entries) {
+        if (
+          totalBytes + entry.bytes.byteLength >
+          limits.maxSnapshotTransferBytes
+        ) {
+          transferWarnings.push({
+            path: entry.path,
+            code: "snapshot_transfer_limit",
+          })
+          continue
+        }
+        entries.push({ ...entry, bytes: entry.bytes.slice() })
+        totalBytes += entry.bytes.byteLength
+      }
+      const manifest = await createSourceManifest(
+        entries,
+        options.hashBytes ?? sha256,
+      )
+      const totalWarnings =
+        collected.warnings.total + transferWarnings.length
+      return {
+        entries,
+        manifest,
+        warnings: {
+          details: [
+            ...collected.warnings.details,
+            ...transferWarnings,
+          ].slice(0, limits.maxWarnings),
+          total: totalWarnings,
+          truncated:
+            totalWarnings >
+            Math.min(totalWarnings, limits.maxWarnings),
+        },
+        snapshot: {
+          acceptedAt,
+          fileCount: entries.length,
+          totalBytes,
+          manifestFingerprint: manifest.fingerprint,
+        },
       }
     },
   }

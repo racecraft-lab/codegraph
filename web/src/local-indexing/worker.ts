@@ -5,6 +5,7 @@ import {
   type BrowserGenerationInput,
   type BrowserGraphStore,
   type BrowserStorageFaultPoint,
+  type StagedBrowserGeneration,
 } from "./sqlite"
 import { extractLocalSources } from "./extract"
 import type { Repository } from "../lib/api/types"
@@ -14,6 +15,26 @@ import {
   diffSourceManifests,
   type SourceManifest,
 } from "./source"
+import {
+  probeWorkerRuntimeCapabilities,
+  type WorkerRuntimeCapabilityReport,
+} from "./capabilities"
+import {
+  composeBrowserEmbeddingInput,
+  EmbeddingOperationError,
+  EmbeddingPolicyError,
+  hashEmbeddingInput,
+  mapEmbeddingFailure,
+  requestEmbeddingBatch,
+  validateEmbeddingBatch,
+  validateEmbeddingEndpoint,
+  validateEmbeddingResume,
+  type EmbeddingBatchResult,
+  type EmbeddingInputItem,
+  type EmbeddingOperationResume,
+  type EmbeddingSemanticState,
+  type EmbeddingVectorRow,
+} from "./embeddings"
 
 export const WORKER_PROTOCOL_VERSION = 1 as const
 
@@ -28,9 +49,13 @@ export const WORKER_BUDGETS = {
 } as const
 
 type WorkerRequestKind =
+  | "capabilities"
   | "index"
+  | "embed"
   | "acquire"
+  | "source-batch"
   | "open-picked-folder"
+  | "import-snapshot"
   | "query"
   | "refresh"
   | "delete"
@@ -76,15 +101,52 @@ interface IndexRequestPayload {
   estimatedPayloadBytes: number
 }
 
+interface EmbedRequestPayload {
+  endpointUrl: string
+  model: string
+  dimensions?: number
+  graphGeneration: number
+  credential: string
+  consentGrantedAt: string
+  endpointBatchSize?: number
+  vectorWriteBatchSize?: number
+  resume?: EmbeddingOperationResume
+}
+
 interface WorkerRuntimeStore {
   publishGeneration(input: BrowserGenerationInput): Promise<unknown>
   close(): unknown
 }
 
+export interface WorkerEmbeddingDependencies {
+  getPublishedGeneration(repositoryId: string): number | Promise<number>
+  loadInputs(
+    repositoryId: string,
+    graphGeneration: number
+  ): EmbeddingInputItem[] | Promise<EmbeddingInputItem[]>
+  requestBatch(request: {
+    endpointUrl: string
+    model: string
+    credential: string
+    items: EmbeddingInputItem[]
+  }): Promise<EmbeddingBatchResult>
+  writeVectors(
+    repositoryId: string,
+    graphGeneration: number,
+    rows: EmbeddingVectorRow[]
+  ): void | Promise<void>
+  saveState(
+    repositoryId: string,
+    state: EmbeddingSemanticState
+  ): void | Promise<void>
+}
+
 export interface WorkerRuntimeDependencies {
   store: WorkerRuntimeStore
+  embedding?: WorkerEmbeddingDependencies
   loadGrammars(languages: string[]): Promise<void>
   releaseGrammars(): void
+  getCapabilities?: () => Promise<WorkerRuntimeCapabilityReport>
   emit(message: WorkerResponse): void
   yieldControl(): Promise<void>
 }
@@ -110,7 +172,7 @@ function plainError(
   code: string,
   message: string,
   phase: string,
-  retryable = false,
+  retryable = false
 ): WorkerErrorPayload {
   return { code, message, retryable, phase }
 }
@@ -126,7 +188,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
     request: WorkerRequest,
     operation: ActiveOperation | undefined,
     error: WorkerErrorPayload,
-    terminal: WorkerTerminal = "failed",
+    terminal: WorkerTerminal = "failed"
   ) => {
     if (operation?.terminal) return
     if (operation) operation.terminal = true
@@ -143,7 +205,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
     request: WorkerRequest,
     phase: string,
     completedItems: number,
-    total: number,
+    total: number
   ) => {
     emit({
       ...responseBase(request),
@@ -156,8 +218,12 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
   }
 
   const handleCancel = (request: WorkerRequest) => {
-    const operation = request.operationId ? active.get(request.operationId) : undefined
-    const cancellable = Boolean(operation && !operation.terminal && !operation.publishing)
+    const operation = request.operationId
+      ? active.get(request.operationId)
+      : undefined
+    const cancellable = Boolean(
+      operation && !operation.terminal && !operation.publishing
+    )
     if (operation && cancellable) operation.cancelled = true
     emit({
       ...responseBase(request),
@@ -176,8 +242,8 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
         plainError(
           "invalid_worker_request",
           "Index requests require operation and repository identifiers.",
-          "queued",
-        ),
+          "queued"
+        )
       )
       return
     }
@@ -194,9 +260,19 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
     const estimatedPayloadBytes = Number(payload?.estimatedPayloadBytes ?? 0)
     const workItems = Math.max(0, Number(payload?.workItems ?? 0))
     const grammarLoads = Array.isArray(payload?.grammarLoads)
-      ? [...new Set(payload.grammarLoads.filter((value): value is string => typeof value === "string"))]
+      ? [
+          ...new Set(
+            payload.grammarLoads.filter(
+              (value): value is string => typeof value === "string"
+            )
+          ),
+        ]
       : []
-    const operation: ActiveOperation = { cancelled: false, terminal: false, publishing: false }
+    const operation: ActiveOperation = {
+      cancelled: false,
+      terminal: false,
+      publishing: false,
+    }
     active.set(request.operationId, operation)
 
     if (
@@ -210,8 +286,8 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
         plainError(
           "worker_payload_too_large",
           "The local indexing request exceeds the worker payload budget.",
-          "queued",
-        ),
+          "queued"
+        )
       )
       active.delete(request.operationId)
       return
@@ -219,7 +295,9 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
 
     try {
       emitProgress(request, "queued", 0, workItems)
-      const missingGrammars = grammarLoads.filter((language) => !loadedGrammars.has(language))
+      const missingGrammars = grammarLoads.filter(
+        (language) => !loadedGrammars.has(language)
+      )
       if (missingGrammars.length > 0) {
         emitProgress(request, "grammar-load", 0, missingGrammars.length)
         await dependencies.loadGrammars(missingGrammars)
@@ -230,7 +308,12 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
       for (let offset = 0; offset < workItems; offset += batchSize) {
         if (operation.cancelled) throw new OperationCancelled()
         if (offset === 0 || offset + batchSize >= workItems) {
-          emitProgress(request, "parse", Math.min(offset + batchSize, workItems), workItems)
+          emitProgress(
+            request,
+            "parse",
+            Math.min(offset + batchSize, workItems),
+            workItems
+          )
         }
         await dependencies.yieldControl()
       }
@@ -243,7 +326,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
       emitProgress(request, "publish", workItems, workItems)
       operation.publishing = true
       const result = await dependencies.store.publishGeneration(
-        payload?.generation as BrowserGenerationInput,
+        payload?.generation as BrowserGenerationInput
       )
       operation.terminal = true
       completed.add(request.operationId)
@@ -261,9 +344,9 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
           plainError(
             "operation_cancelled",
             "The local indexing operation was cancelled.",
-            "cancelled",
+            "cancelled"
           ),
-          "cancelled",
+          "cancelled"
         )
       } else {
         emitFailure(
@@ -273,10 +356,280 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
             "worker_operation_failed",
             "The local indexing operation failed.",
             "failed",
-            true,
-          ),
+            true
+          )
         )
       }
+    } finally {
+      active.delete(request.operationId)
+    }
+  }
+
+  const handleEmbed = async (request: WorkerRequest) => {
+    if (!request.operationId || !request.repositoryId) {
+      emitFailure(
+        request,
+        undefined,
+        plainError(
+          "invalid_worker_request",
+          "Embedding requests require operation and repository identifiers.",
+          "embedding"
+        )
+      )
+      return
+    }
+    if (active.has(request.operationId) || completed.has(request.operationId)) {
+      emit({
+        ...responseBase(request),
+        type: "result",
+        result: { noop: true, stale: true },
+      })
+      return
+    }
+    if (!dependencies.embedding) {
+      emitFailure(
+        request,
+        undefined,
+        plainError(
+          "capability_unavailable",
+          "Semantic indexing is unavailable in this worker.",
+          "embedding"
+        )
+      )
+      return
+    }
+
+    const payload = request.payload as Partial<EmbedRequestPayload> | undefined
+    const endpointBatchSize = Number(
+      payload?.endpointBatchSize ?? WORKER_BUDGETS.maxEmbeddingBatchItems
+    )
+    const vectorWriteBatchSize = Number(
+      payload?.vectorWriteBatchSize ??
+        WORKER_BUDGETS.maxVectorRowsPerTransaction
+    )
+    const graphGeneration = Number(payload?.graphGeneration)
+    const dimensions =
+      payload?.dimensions === undefined ? undefined : Number(payload.dimensions)
+    const operation: ActiveOperation = {
+      cancelled: false,
+      terminal: false,
+      publishing: false,
+    }
+    active.set(request.operationId, operation)
+
+    const state = (
+      status: EmbeddingSemanticState["status"],
+      completedItems: number,
+      inputHashes: string[],
+      failureCode?: string,
+      resolvedDimensions = dimensions
+    ): EmbeddingSemanticState => ({
+      status,
+      graphGeneration,
+      model: String(payload?.model ?? ""),
+      ...(resolvedDimensions ? { dimensions: resolvedDimensions } : {}),
+      completedItems,
+      inputHashes,
+      ...(failureCode ? { failureCode } : {}),
+    })
+
+    let completedItems = 0
+    let completedHashes: string[] = []
+    let resolvedDimensions = dimensions
+    try {
+      if (
+        !Number.isSafeInteger(endpointBatchSize) ||
+        endpointBatchSize <= 0 ||
+        endpointBatchSize > WORKER_BUDGETS.maxEmbeddingBatchItems ||
+        !Number.isSafeInteger(vectorWriteBatchSize) ||
+        vectorWriteBatchSize <= 0 ||
+        vectorWriteBatchSize > WORKER_BUDGETS.maxVectorRowsPerTransaction
+      ) {
+        throw new EmbeddingOperationError({
+          code: "embedding_budget_exceeded",
+          message:
+            "The semantic indexing request exceeds a declared batch budget.",
+          retryable: false,
+          phase: "embedding",
+          guidance: "Use the shipped endpoint and vector batch ceilings.",
+        })
+      }
+      if (!Number.isSafeInteger(graphGeneration) || graphGeneration <= 0) {
+        throw new EmbeddingOperationError({
+          code: "semantic_stale",
+          message: "The semantic graph generation is invalid.",
+          retryable: false,
+          phase: "embedding",
+          guidance: "Restart semantic indexing from the published graph.",
+        })
+      }
+      if (
+        dimensions !== undefined &&
+        (!Number.isSafeInteger(dimensions) || dimensions <= 0)
+      ) {
+        throw new EmbeddingOperationError(
+          mapEmbeddingFailure({ kind: "dimensions" })
+        )
+      }
+      const consentGrantedAt = new Date(String(payload?.consentGrantedAt ?? ""))
+      if (!Number.isFinite(consentGrantedAt.getTime())) {
+        throw new EmbeddingOperationError({
+          code: "consent_required",
+          message: "Semantic indexing requires explicit consent.",
+          retryable: false,
+          phase: "embedding",
+          guidance:
+            "Confirm semantic indexing and re-enter the page-session credential.",
+        })
+      }
+      const endpointUrl = validateEmbeddingEndpoint(
+        String(payload?.endpointUrl ?? "")
+      )
+      const model = String(payload?.model ?? "")
+      const credential = String(payload?.credential ?? "")
+      if (!model || !credential) {
+        throw new EmbeddingOperationError(
+          mapEmbeddingFailure(
+            credential ? { kind: "model" } : { kind: "http", status: 401 }
+          )
+        )
+      }
+      const publishedGeneration =
+        await dependencies.embedding.getPublishedGeneration(
+          request.repositoryId
+        )
+      if (publishedGeneration !== graphGeneration) {
+        throw new EmbeddingOperationError({
+          code: "semantic_stale",
+          message: "The semantic operation does not match the published graph.",
+          retryable: false,
+          phase: "embedding",
+          guidance:
+            "Restart semantic indexing for the current graph generation.",
+        })
+      }
+      const items = await dependencies.embedding.loadInputs(
+        request.repositoryId,
+        graphGeneration
+      )
+      completedItems = validateEmbeddingResume(
+        payload?.resume,
+        { graphGeneration, model, dimensions },
+        items
+      )
+      completedHashes = items
+        .slice(0, completedItems)
+        .map((item) => item.inputHash)
+      await dependencies.embedding.saveState(
+        request.repositoryId,
+        state("active", completedItems, completedHashes)
+      )
+
+      emitProgress(request, "embedding", completedItems, items.length)
+      for (
+        let offset = completedItems;
+        offset < items.length;
+        offset += endpointBatchSize
+      ) {
+        if (operation.cancelled) throw new OperationCancelled()
+        const batch = items.slice(offset, offset + endpointBatchSize)
+        const result = await dependencies.embedding.requestBatch({
+          endpointUrl,
+          model,
+          credential,
+          items: batch,
+        })
+        if (operation.cancelled) throw new OperationCancelled()
+        const rows = validateEmbeddingBatch(batch, result, {
+          model,
+          dimensions: resolvedDimensions,
+        })
+        resolvedDimensions ??= result.dimensions
+        for (
+          let writeOffset = 0;
+          writeOffset < rows.length;
+          writeOffset += vectorWriteBatchSize
+        ) {
+          if (operation.cancelled) throw new OperationCancelled()
+          await dependencies.embedding.writeVectors(
+            request.repositoryId,
+            graphGeneration,
+            rows.slice(writeOffset, writeOffset + vectorWriteBatchSize)
+          )
+        }
+        completedItems += batch.length
+        completedHashes.push(...batch.map((item) => item.inputHash))
+        emitProgress(request, "embedding", completedItems, items.length)
+        await dependencies.yieldControl()
+      }
+
+      const completeState = state(
+        "complete",
+        completedItems,
+        completedHashes,
+        undefined,
+        resolvedDimensions
+      )
+      await dependencies.embedding.saveState(
+        request.repositoryId,
+        completeState
+      )
+      operation.terminal = true
+      completed.add(request.operationId)
+      emit({
+        ...responseBase(request),
+        type: "result",
+        terminal: "complete",
+        result: {
+          status: "complete",
+          graphGeneration,
+          embedded: completedItems,
+          dimensions: resolvedDimensions,
+        },
+      })
+    } catch (error) {
+      const cancelled = error instanceof OperationCancelled
+      const envelope =
+        error instanceof EmbeddingOperationError ||
+        error instanceof EmbeddingPolicyError
+          ? error.toEnvelope()
+          : mapEmbeddingFailure({ kind: "unavailable" })
+      const failureState = state(
+        cancelled
+          ? "paused"
+          : envelope.code === "semantic_stale"
+            ? "stale"
+            : "unavailable",
+        completedItems,
+        completedHashes,
+        cancelled ? "operation_cancelled" : envelope.code,
+        resolvedDimensions
+      )
+      try {
+        await dependencies.embedding.saveState(
+          request.repositoryId,
+          failureState
+        )
+      } catch {
+        // The stable worker failure remains authoritative if advisory state save fails.
+      }
+      emitFailure(
+        request,
+        operation,
+        cancelled
+          ? plainError(
+              "operation_cancelled",
+              "The semantic indexing operation was cancelled.",
+              "embedding"
+            )
+          : {
+              code: envelope.code,
+              message: envelope.message,
+              retryable: envelope.retryable,
+              phase: envelope.phase,
+            },
+        cancelled ? "cancelled" : "failed"
+      )
     } finally {
       active.delete(request.operationId)
     }
@@ -291,8 +644,8 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
           plainError(
             "unsupported_protocol",
             `Worker protocol ${request.protocolVersion} is not supported.`,
-            "queued",
-          ),
+            "queued"
+          )
         )
         return
       }
@@ -309,6 +662,44 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
           terminal: "complete",
           result: dependencies.store.close(),
         })
+        return
+      }
+      if (request.kind === "capabilities") {
+        if (!dependencies.getCapabilities) {
+          emitFailure(
+            request,
+            undefined,
+            plainError(
+              "capability_unavailable",
+              "The worker capability probe is unavailable.",
+              "capability-check"
+            )
+          )
+          return
+        }
+        try {
+          emit({
+            ...responseBase(request),
+            type: "result",
+            terminal: "complete",
+            result: await dependencies.getCapabilities(),
+          })
+        } catch {
+          emitFailure(
+            request,
+            undefined,
+            plainError(
+              "capability_unavailable",
+              "The worker capability probe failed.",
+              "capability-check",
+              true
+            )
+          )
+        }
+        return
+      }
+      if (request.kind === "embed") {
+        await handleEmbed(request)
         return
       }
       await handleIndex(request)
@@ -329,6 +720,26 @@ const activePickedFolders = new Map<
   string,
   { cancelled: boolean; publishing: boolean; repositoryId: string }
 >()
+interface StagedSourceEntry {
+  kind?: string
+  path?: string
+  bytes?: Uint8Array
+  contentHash?: string
+  size?: number
+  mtimeHint?: number
+}
+interface StagedSourceCollection {
+  repositoryId: string
+  sourceKind: Repository["sourceKind"]
+  batchCount: number
+  totalFiles: number
+  totalBytes: number
+  nextBatch: number
+  receivedBytes: number
+  entries: StagedSourceEntry[]
+  paths: Set<string>
+}
+const stagedSourceCollections = new Map<string, StagedSourceCollection>()
 const repositoryMetadata = new Map<
   string,
   Pick<Repository, "name" | "sourceKind">
@@ -341,7 +752,7 @@ interface RepositoryLockManager {
   request(
     name: string,
     options: { mode: "exclusive"; ifAvailable: true },
-    callback: (lock: object | null) => Promise<void>,
+    callback: (lock: object | null) => Promise<void>
   ): Promise<void>
 }
 const heldRepositoryLocks = new Map<string, HeldRepositoryLock>()
@@ -362,7 +773,7 @@ function yieldForActionableProgress() {
 
 function emitRepositoryResponse(
   request: WorkerRequest,
-  response: Omit<WorkerResponse, keyof ReturnType<typeof responseBase>>,
+  response: Omit<WorkerResponse, keyof ReturnType<typeof responseBase>>
 ) {
   globalThis.postMessage({
     ...responseBase(request),
@@ -398,7 +809,7 @@ async function acquireRepositoryOwnership(repositoryId: string) {
     if (!locks) {
       throw new BrowserStorageError(
         "repository_busy",
-        "This browser cannot acquire exclusive ownership of the local repository.",
+        "This browser cannot acquire exclusive ownership of the local repository."
       )
     }
 
@@ -419,7 +830,7 @@ async function acquireRepositoryOwnership(repositoryId: string) {
         async (lock) => {
           signalAcquired(lock)
           if (lock) await released
-        },
+        }
       )
       .catch((error: unknown) => {
         signalFailed(error)
@@ -430,7 +841,7 @@ async function acquireRepositoryOwnership(repositoryId: string) {
       await settled
       throw new BrowserStorageError(
         "repository_busy",
-        "This local repository is open in another browser tab.",
+        "This local repository is open in another browser tab."
       )
     }
     heldRepositoryLocks.set(repositoryId, { release, settled })
@@ -456,9 +867,7 @@ async function closeRepositoryStorageAndRelease() {
     const ownerships = [...heldRepositoryLocks.values()]
     heldRepositoryLocks.clear()
     for (const ownership of ownerships) ownership.release()
-    await Promise.allSettled(
-      ownerships.map((ownership) => ownership.settled),
-    )
+    await Promise.allSettled(ownerships.map((ownership) => ownership.settled))
   }
   if (closeError) throw closeError
   return result
@@ -473,7 +882,7 @@ async function handleRepositoryAcquire(request: WorkerRequest) {
       error: plainError(
         "invalid_repository_id",
         "Repository ownership requires a repository id.",
-        "acquire",
+        "acquire"
       ),
     })
     return
@@ -498,7 +907,7 @@ async function handleRepositoryAcquire(request: WorkerRequest) {
           ? error.message
           : "The browser-local repository could not be acquired.",
         "acquire",
-        true,
+        true
       ),
     })
   }
@@ -508,6 +917,7 @@ async function handleRepositoryClose(request: WorkerRequest) {
   for (const operation of activePickedFolders.values()) {
     if (!operation.publishing) operation.cancelled = true
   }
+  stagedSourceCollections.clear()
   try {
     const result = await closeRepositoryStorageAndRelease()
     emitRepositoryResponse(request, {
@@ -526,7 +936,7 @@ async function handleRepositoryClose(request: WorkerRequest) {
         error instanceof Error
           ? error.message
           : "The browser-local repository could not close cleanly.",
-        "close",
+        "close"
       ),
     })
   }
@@ -537,6 +947,8 @@ interface PickedFolderPayload {
     id?: string
     displayName?: string
     virtualRoot?: string
+    sourceKind?: Repository["sourceKind"]
+    acceptedAt?: string
   }
   collection?: {
     entries?: Array<{
@@ -556,12 +968,241 @@ interface PickedFolderPayload {
       total?: number
       truncated?: boolean
     }
+    snapshot?: {
+      acceptedAt?: string
+      fileCount?: number
+      totalBytes?: number
+      manifestFingerprint?: string
+    }
   }
+  sourceBatches?: {
+    batchCount?: number
+    totalFiles?: number
+    totalBytes?: number
+  }
+}
+
+class SourceBatchValidationError extends Error {
+  readonly code: "invalid_worker_request" | "worker_payload_too_large"
+
+  constructor(code: "invalid_worker_request" | "worker_payload_too_large") {
+    super("The browser source transfer is invalid.")
+    this.code = code
+  }
+}
+
+function requireBatchInteger(
+  value: unknown,
+  minimum: number,
+  maximum: number
+) {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < minimum ||
+    value > maximum
+  ) {
+    throw new SourceBatchValidationError("invalid_worker_request")
+  }
+  return value
+}
+
+function sourceTransferLimit(sourceKind: Repository["sourceKind"]) {
+  return sourceKind === "picked-folder"
+    ? DEFAULT_SOURCE_LIMITS.maxTotalBytes
+    : WORKER_BUDGETS.maxBytesPerSnapshotTransfer
+}
+
+function handleSourceBatch(request: WorkerRequest) {
+  const operationId = request.operationId
+  const repositoryId = request.repositoryId
+  try {
+    if (
+      request.protocolVersion !== WORKER_PROTOCOL_VERSION ||
+      !operationId ||
+      !repositoryId
+    ) {
+      throw new SourceBatchValidationError("invalid_worker_request")
+    }
+    const payload = request.payload as
+      | {
+          sourceKind?: Repository["sourceKind"]
+          batchIndex?: number
+          batchCount?: number
+          totalFiles?: number
+          totalBytes?: number
+          entries?: StagedSourceEntry[]
+        }
+      | undefined
+    const sourceKind = payload?.sourceKind
+    if (
+      sourceKind !== "picked-folder" &&
+      sourceKind !== "dropped-snapshot" &&
+      sourceKind !== "imported-snapshot"
+    ) {
+      throw new SourceBatchValidationError("invalid_worker_request")
+    }
+    const batchCount = requireBatchInteger(
+      payload?.batchCount,
+      1,
+      DEFAULT_SOURCE_LIMITS.maxFiles
+    )
+    const batchIndex = requireBatchInteger(
+      payload?.batchIndex,
+      0,
+      batchCount - 1
+    )
+    const totalFiles = requireBatchInteger(
+      payload?.totalFiles,
+      1,
+      DEFAULT_SOURCE_LIMITS.maxFiles
+    )
+    const totalBytes = requireBatchInteger(
+      payload?.totalBytes,
+      0,
+      sourceTransferLimit(sourceKind)
+    )
+    const entries = payload?.entries
+    if (
+      !Array.isArray(entries) ||
+      entries.length === 0 ||
+      entries.length > WORKER_BUDGETS.maxFilesPerReadBatch
+    ) {
+      throw new SourceBatchValidationError("worker_payload_too_large")
+    }
+
+    let batchBytes = 0
+    const batchPaths = new Set<string>()
+    for (const entry of entries) {
+      if (
+        entry?.kind !== "file" ||
+        typeof entry.path !== "string" ||
+        !entry.path ||
+        !(entry.bytes instanceof Uint8Array) ||
+        typeof entry.contentHash !== "string" ||
+        typeof entry.size !== "number" ||
+        entry.size !== entry.bytes.byteLength ||
+        entry.bytes.byteLength > DEFAULT_SOURCE_LIMITS.maxFileBytes ||
+        batchPaths.has(entry.path)
+      ) {
+        throw new SourceBatchValidationError("invalid_worker_request")
+      }
+      batchPaths.add(entry.path)
+      batchBytes += entry.bytes.byteLength
+    }
+    if (
+      batchBytes > WORKER_BUDGETS.maxBytesPerReadBatch ||
+      batchBytes > WORKER_BUDGETS.maxBytesPerWorkerPayload
+    ) {
+      throw new SourceBatchValidationError("worker_payload_too_large")
+    }
+
+    let staged = stagedSourceCollections.get(operationId)
+    if (!staged) {
+      if (batchIndex !== 0) {
+        throw new SourceBatchValidationError("invalid_worker_request")
+      }
+      staged = {
+        repositoryId,
+        sourceKind,
+        batchCount,
+        totalFiles,
+        totalBytes,
+        nextBatch: 0,
+        receivedBytes: 0,
+        entries: [],
+        paths: new Set(),
+      }
+      stagedSourceCollections.set(operationId, staged)
+    }
+    if (
+      staged.repositoryId !== repositoryId ||
+      staged.sourceKind !== sourceKind ||
+      staged.batchCount !== batchCount ||
+      staged.totalFiles !== totalFiles ||
+      staged.totalBytes !== totalBytes ||
+      staged.nextBatch !== batchIndex ||
+      entries.some((entry) => staged.paths.has(entry.path!)) ||
+      staged.entries.length + entries.length > totalFiles ||
+      staged.receivedBytes + batchBytes > totalBytes
+    ) {
+      throw new SourceBatchValidationError("invalid_worker_request")
+    }
+
+    staged.entries.push(...entries)
+    for (const entry of entries) staged.paths.add(entry.path!)
+    staged.receivedBytes += batchBytes
+    staged.nextBatch += 1
+    if (
+      staged.nextBatch === staged.batchCount &&
+      (staged.entries.length !== staged.totalFiles ||
+        staged.receivedBytes !== staged.totalBytes)
+    ) {
+      throw new SourceBatchValidationError("invalid_worker_request")
+    }
+    emitRepositoryResponse(request, {
+      type: "result",
+      result: {
+        batchIndex,
+        receivedFiles: staged.entries.length,
+        receivedBytes: staged.receivedBytes,
+      },
+    })
+  } catch (error) {
+    if (request.operationId) {
+      stagedSourceCollections.delete(request.operationId)
+    }
+    emitRepositoryResponse(request, {
+      type: "failure",
+      terminal: "failed",
+      error: plainError(
+        error instanceof SourceBatchValidationError
+          ? error.code
+          : "invalid_worker_request",
+        error instanceof SourceBatchValidationError &&
+          error.code === "worker_payload_too_large"
+          ? "The browser source transfer exceeds the worker budget."
+          : "The browser source transfer is invalid.",
+        "read"
+      ),
+    })
+  }
+}
+
+function resolveSourceCollection(
+  request: WorkerRequest,
+  payload: PickedFolderPayload | undefined
+) {
+  const collection = payload?.collection
+  const batchMetadata = payload?.sourceBatches
+  if (!batchMetadata) return collection
+  const operationId = request.operationId
+  const repositoryId = request.repositoryId
+  const staged = operationId
+    ? stagedSourceCollections.get(operationId)
+    : undefined
+  if (
+    !operationId ||
+    !repositoryId ||
+    !staged ||
+    staged.repositoryId !== repositoryId ||
+    staged.nextBatch !== staged.batchCount ||
+    staged.batchCount !== batchMetadata.batchCount ||
+    staged.totalFiles !== batchMetadata.totalFiles ||
+    staged.totalBytes !== batchMetadata.totalBytes ||
+    !collection ||
+    !Array.isArray(collection.entries) ||
+    collection.entries.length !== 0
+  ) {
+    throw new SourceBatchValidationError("invalid_worker_request")
+  }
+  stagedSourceCollections.delete(operationId)
+  return { ...collection, entries: staged.entries }
 }
 
 function normalizedManifest(
   candidate: unknown,
-  fallbackFingerprint: string,
+  fallbackFingerprint: string
 ): SourceManifest {
   if (candidate && typeof candidate === "object") {
     const value = candidate as {
@@ -593,10 +1234,10 @@ function browserSources(
     path: string
     contentHash: string
     language: string
-  }>,
+  }>
 ) {
   const sourceByPath = new Map(
-    collection.entries?.map((entry) => [String(entry.path), entry]) ?? [],
+    collection.entries?.map((entry) => [String(entry.path), entry]) ?? []
   )
   return acceptedManifest.map((entry) => {
     const source = sourceByPath.get(entry.path)
@@ -617,23 +1258,22 @@ function browserSources(
 
 async function initialGeneration(
   repositoryId: string,
-  collection: NonNullable<PickedFolderPayload["collection"]>,
+  collection: NonNullable<PickedFolderPayload["collection"]>
 ) {
   const entries = collection.entries ?? []
   const extraction = await extractLocalSources(
     entries.map((entry) => ({
       kind: entry.kind === "file" ? "file" : "directory",
       path: String(entry.path ?? ""),
-      bytes:
-        entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(),
-    })),
+      bytes: entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(),
+    }))
   )
   const sources = browserSources(collection, extraction.acceptedManifest)
   const manifest = await createSourceManifest(sources)
   const providerWarnings = collection.warnings?.details ?? []
   const warnings = [...providerWarnings, ...extraction.warnings].slice(
     0,
-    DEFAULT_SOURCE_LIMITS.maxWarnings,
+    DEFAULT_SOURCE_LIMITS.maxWarnings
   )
   const warningCount =
     Number(collection.warnings?.total ?? providerWarnings.length) +
@@ -661,12 +1301,12 @@ async function initialGeneration(
 export async function refreshPublishedGeneration(
   store: BrowserGraphStore,
   repositoryId: string,
-  collection: NonNullable<PickedFolderPayload["collection"]>,
+  collection: NonNullable<PickedFolderPayload["collection"]>
 ) {
   const base = store.readRefreshBase(repositoryId)
   const candidateManifest = normalizedManifest(
     collection.manifest,
-    collection.manifest?.fingerprint ?? "",
+    collection.manifest?.fingerprint ?? ""
   )
   const diff = diffSourceManifests(base.manifest, candidateManifest)
   const extractedPaths = [...diff.added, ...diff.changed].sort()
@@ -679,41 +1319,41 @@ export async function refreshPublishedGeneration(
         path: String(entry.path ?? ""),
         bytes:
           entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(),
-      })),
+      }))
   )
   const acceptedChangedPaths = new Set(
-    extraction.acceptedManifest.map((entry) => entry.path),
+    extraction.acceptedManifest.map((entry) => entry.path)
   )
   const unchangedPaths = new Set(diff.unchanged)
   const retainedSources = base.sources.filter((source) =>
-    unchangedPaths.has(source.path),
+    unchangedPaths.has(source.path)
   )
   const changedSources = browserSources(collection, extraction.acceptedManifest)
   const sources = [...retainedSources, ...changedSources].sort((left, right) =>
-    left.path.localeCompare(right.path),
+    left.path.localeCompare(right.path)
   )
   const retainedNodes = base.nodes.filter((node) =>
-    unchangedPaths.has(node.filePath),
+    unchangedPaths.has(node.filePath)
   )
   const retainedNodeIds = new Set(retainedNodes.map((node) => node.id))
   const retainedEdges = base.edges.filter(
     (edge) =>
-      retainedNodeIds.has(edge.source) && retainedNodeIds.has(edge.target),
+      retainedNodeIds.has(edge.source) && retainedNodeIds.has(edge.target)
   )
   const nodes = [...retainedNodes, ...extraction.nodes].sort((left, right) =>
-    left.id.localeCompare(right.id),
+    left.id.localeCompare(right.id)
   )
   const edges = [...retainedEdges, ...extraction.edges].sort(
     (left, right) =>
       left.source.localeCompare(right.source) ||
       left.target.localeCompare(right.target) ||
-      left.kind.localeCompare(right.kind),
+      left.kind.localeCompare(right.kind)
   )
   const manifest = await createSourceManifest(sources)
   const providerWarnings = collection.warnings?.details ?? []
   const warnings = [...providerWarnings, ...extraction.warnings].slice(
     0,
-    DEFAULT_SOURCE_LIMITS.maxWarnings,
+    DEFAULT_SOURCE_LIMITS.maxWarnings
   )
   const warningCount =
     Number(collection.warnings?.total ?? providerWarnings.length) +
@@ -738,40 +1378,63 @@ export async function refreshPublishedGeneration(
     ...publication,
     changes: {
       added: diff.added.filter((path) => acceptedChangedPaths.has(path)).length,
-      changed: diff.changed.filter((path) =>
-        acceptedChangedPaths.has(path),
-      ).length,
+      changed: diff.changed.filter((path) => acceptedChangedPaths.has(path))
+        .length,
       deleted: diff.deleted.length,
       unchanged: diff.unchanged.length,
-      skipped: extractedPaths.filter(
-        (path) => !acceptedChangedPaths.has(path),
-      ).length,
+      skipped: extractedPaths.filter((path) => !acceptedChangedPaths.has(path))
+        .length,
     },
     counts,
     extractedPaths,
   }
 }
 
-async function handleOpenPickedFolder(request: WorkerRequest) {
+async function handleInitialSourceIndex(
+  request: WorkerRequest,
+  sourceKind: "picked-folder" | "dropped-snapshot" | "imported-snapshot"
+) {
   const operationId = request.operationId
   const repositoryId = request.repositoryId
   const payload = request.payload as PickedFolderPayload | undefined
   const identity = payload?.identity
-  const collection = payload?.collection
+  let collection: PickedFolderPayload["collection"]
+  try {
+    collection = resolveSourceCollection(request, payload)
+  } catch {
+    if (operationId) stagedSourceCollections.delete(operationId)
+    emitRepositoryResponse(request, {
+      type: "failure",
+      terminal: "failed",
+      error: plainError(
+        "invalid_worker_request",
+        "The browser source transfer is incomplete.",
+        "queued"
+      ),
+    })
+    return
+  }
   if (
     !operationId ||
     !repositoryId ||
     identity?.id !== repositoryId ||
+    identity.sourceKind !== sourceKind ||
     !Array.isArray(collection?.entries) ||
-    typeof collection.manifest?.fingerprint !== "string"
+    typeof collection.manifest?.fingerprint !== "string" ||
+    (sourceKind !== "picked-folder" &&
+      (collection.snapshot?.acceptedAt !== identity.acceptedAt ||
+        collection.snapshot?.manifestFingerprint !==
+          collection.manifest.fingerprint))
   ) {
     emitRepositoryResponse(request, {
       type: "failure",
       terminal: "failed",
       error: plainError(
         "invalid_worker_request",
-        "The picked-folder request is incomplete.",
-        "queued",
+        sourceKind === "picked-folder"
+          ? "The picked-folder request is incomplete."
+          : "The snapshot import request is incomplete.",
+        "queued"
       ),
     })
     return
@@ -786,6 +1449,9 @@ async function handleOpenPickedFolder(request: WorkerRequest) {
   }
   const operation = { cancelled: false, publishing: false, repositoryId }
   activePickedFolders.set(operationId, operation)
+  let staged: StagedBrowserGeneration | undefined
+  let publicationStarted = false
+  let activeStore: BrowserGraphStore | undefined
 
   try {
     await acquireRepositoryOwnership(repositoryId)
@@ -799,6 +1465,7 @@ async function handleOpenPickedFolder(request: WorkerRequest) {
     await yieldForActionableProgress()
     throwIfPickedFolderCancelled(operation)
     const store = await ensureRepositoryStorage()
+    activeStore = store
     emitRepositoryResponse(request, {
       type: "progress",
       phase: "grammar-load",
@@ -808,7 +1475,7 @@ async function handleOpenPickedFolder(request: WorkerRequest) {
     })
     const { extraction, generation } = await initialGeneration(
       repositoryId,
-      collection,
+      collection
     )
     throwIfPickedFolderCancelled(operation)
     emitRepositoryResponse(request, {
@@ -819,7 +1486,18 @@ async function handleOpenPickedFolder(request: WorkerRequest) {
       timestamp: Date.now(),
     })
     throwIfPickedFolderCancelled(operation)
+    emitRepositoryResponse(request, {
+      type: "progress",
+      phase: "store",
+      completed: extraction.acceptedManifest.length,
+      total: extraction.acceptedManifest.length,
+      timestamp: Date.now(),
+    })
+    staged = await store.stageGeneration(generation)
+    await yieldForActionableProgress()
+    throwIfPickedFolderCancelled(operation)
     operation.publishing = true
+    publicationStarted = true
     emitRepositoryResponse(request, {
       type: "progress",
       phase: "publish",
@@ -827,14 +1505,20 @@ async function handleOpenPickedFolder(request: WorkerRequest) {
       total: extraction.acceptedManifest.length,
       timestamp: Date.now(),
     })
-    await store.publishGeneration(generation)
+    await store.commitStagedGeneration(generation, staged)
     const repository: Repository = {
       id: repositoryId,
       root: identity.virtualRoot ?? `local://${repositoryId}`,
       name: identity.displayName ?? "Browser repository",
       default: false,
       runtime: "local",
-      sourceKind: "picked-folder",
+      sourceKind,
+      ...(sourceKind === "picked-folder"
+        ? {}
+        : {
+            snapshotImportedAt: collection.snapshot!.acceptedAt,
+            manifestFingerprint: collection.snapshot!.manifestFingerprint,
+          }),
     }
     repositoryMetadata.set(repositoryId, {
       name: repository.name,
@@ -847,6 +1531,9 @@ async function handleOpenPickedFolder(request: WorkerRequest) {
     })
   } catch (error) {
     const cancelled = error instanceof PickedFolderCancelled
+    if (cancelled && staged && !publicationStarted) {
+      activeStore?.discardStagedGeneration(staged)
+    }
     emitRepositoryResponse(request, {
       type: "failure",
       terminal: cancelled ? "cancelled" : "failed",
@@ -859,22 +1546,53 @@ async function handleOpenPickedFolder(request: WorkerRequest) {
         cancelled
           ? "The browser-local indexing operation was cancelled."
           : error instanceof BrowserStorageError
-          ? error.message
-          : "The browser-local indexing operation failed.",
+            ? error.message
+            : "The browser-local indexing operation failed.",
         cancelled ? "cancelled" : "failed",
-        !cancelled,
+        !cancelled
       ),
     })
   } finally {
     activePickedFolders.delete(operationId)
+    stagedSourceCollections.delete(operationId)
   }
+}
+
+function handleOpenPickedFolder(request: WorkerRequest) {
+  return handleInitialSourceIndex(request, "picked-folder")
+}
+
+function handleSnapshotImport(request: WorkerRequest) {
+  const sourceKind = (request.payload as PickedFolderPayload | undefined)
+    ?.identity?.sourceKind
+  return handleInitialSourceIndex(
+    request,
+    sourceKind === "imported-snapshot"
+      ? "imported-snapshot"
+      : "dropped-snapshot"
+  )
 }
 
 async function handleRefreshPickedFolder(request: WorkerRequest) {
   const operationId = request.operationId
   const repositoryId = request.repositoryId
-  const collection = (request.payload as PickedFolderPayload | undefined)
-    ?.collection
+  const payload = request.payload as PickedFolderPayload | undefined
+  let collection: PickedFolderPayload["collection"]
+  try {
+    collection = resolveSourceCollection(request, payload)
+  } catch {
+    if (operationId) stagedSourceCollections.delete(operationId)
+    emitRepositoryResponse(request, {
+      type: "failure",
+      terminal: "failed",
+      error: plainError(
+        "invalid_worker_request",
+        "The browser source transfer is incomplete.",
+        "queued"
+      ),
+    })
+    return
+  }
   if (
     !operationId ||
     !repositoryId ||
@@ -887,7 +1605,7 @@ async function handleRefreshPickedFolder(request: WorkerRequest) {
       error: plainError(
         "invalid_worker_request",
         "The refresh request is incomplete.",
-        "queued",
+        "queued"
       ),
     })
     return
@@ -915,7 +1633,7 @@ async function handleRefreshPickedFolder(request: WorkerRequest) {
     const result = await refreshPublishedGeneration(
       store,
       repositoryId,
-      collection,
+      collection
     )
     operation.publishing = true
     emitRepositoryResponse(request, {
@@ -940,11 +1658,12 @@ async function handleRefreshPickedFolder(request: WorkerRequest) {
             ? error.message
             : "The browser-local refresh failed.",
         cancelled ? "cancelled" : "failed",
-        !cancelled,
+        !cancelled
       ),
     })
   } finally {
     activePickedFolders.delete(operationId)
+    stagedSourceCollections.delete(operationId)
   }
 }
 
@@ -952,8 +1671,12 @@ function handlePickedFolderCancel(request: WorkerRequest) {
   const operation = request.operationId
     ? activePickedFolders.get(request.operationId)
     : undefined
-  const cancellable = Boolean(operation && !operation.publishing)
+  const staged = request.operationId
+    ? stagedSourceCollections.has(request.operationId)
+    : false
+  const cancellable = staged || Boolean(operation && !operation.publishing)
   if (operation && cancellable) operation.cancelled = true
+  if (request.operationId) stagedSourceCollections.delete(request.operationId)
   emitRepositoryResponse(request, {
     type: "result",
     result: {
@@ -975,27 +1698,32 @@ async function handleRepositoryDelete(request: WorkerRequest) {
       error: plainError(
         "invalid_repository_id",
         "Repository deletion requires a repository id.",
-        "delete",
+        "delete"
       ),
     })
     return
   }
   try {
     await acquireRepositoryOwnership(repositoryId)
+    for (const [operationId, staged] of stagedSourceCollections) {
+      if (staged.repositoryId === repositoryId) {
+        stagedSourceCollections.delete(operationId)
+      }
+    }
     const active = [...activePickedFolders.values()].find(
-      (operation) => operation.repositoryId === repositoryId,
+      (operation) => operation.repositoryId === repositoryId
     )
     if (active) {
       if (!cancelActive || active.publishing) {
         throw new BrowserStorageError(
           "storage_write_failed",
-          "An active local operation must be cancelled before deletion.",
+          "An active local operation must be cancelled before deletion."
         )
       }
       active.cancelled = true
       while (
         [...activePickedFolders.values()].some(
-          (operation) => operation.repositoryId === repositoryId,
+          (operation) => operation.repositoryId === repositoryId
         )
       ) {
         await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1022,7 +1750,7 @@ async function handleRepositoryDelete(request: WorkerRequest) {
           ? error.message
           : "Browser repository deletion failed.",
         "delete",
-        true,
+        true
       ),
     })
   }
@@ -1049,7 +1777,7 @@ async function handleRepositoryQuery(request: WorkerRequest) {
       if (heldRepositoryLocks.size === 0) {
         throw new BrowserStorageError(
           "repository_busy",
-          "Acquire a local repository before reading browser storage.",
+          "Acquire a local repository before reading browser storage."
         )
       }
       const store = await ensureRepositoryStorage()
@@ -1058,7 +1786,7 @@ async function handleRepositoryQuery(request: WorkerRequest) {
       if (!repositoryId) {
         throw new BrowserStorageError(
           "invalid_repository_id",
-          "A browser-local query requires a repository id.",
+          "A browser-local query requires a repository id."
         )
       }
       await acquireRepositoryOwnership(repositoryId)
@@ -1068,7 +1796,7 @@ async function handleRepositoryQuery(request: WorkerRequest) {
         case "repository-status":
           result = store.getRepositoryStatus(
             repositoryId,
-            repositoryMetadata.get(repositoryId)?.name,
+            repositoryMetadata.get(repositoryId)?.name
           )
           break
         case "search":
@@ -1076,14 +1804,20 @@ async function handleRepositoryQuery(request: WorkerRequest) {
             repositoryId,
             String(queryRequest.query ?? ""),
             queryRequest.limit,
-            queryRequest.offset,
+            queryRequest.offset
           )
           break
         case "node":
-          result = store.getNode(repositoryId, String(queryRequest.nodeId ?? ""))
+          result = store.getNode(
+            repositoryId,
+            String(queryRequest.nodeId ?? "")
+          )
           break
         case "source":
-          result = store.getSource(repositoryId, String(queryRequest.nodeId ?? ""))
+          result = store.getSource(
+            repositoryId,
+            String(queryRequest.nodeId ?? "")
+          )
           break
         case "callers":
         case "callees":
@@ -1092,27 +1826,27 @@ async function handleRepositoryQuery(request: WorkerRequest) {
             String(queryRequest.nodeId ?? ""),
             query,
             queryRequest.limit,
-            queryRequest.offset,
+            queryRequest.offset
           )
           break
         case "graph":
           result = store.graph(
             repositoryId,
             String(queryRequest.nodeId ?? ""),
-            queryRequest.depth,
+            queryRequest.depth
           )
           break
         case "impact":
           result = store.impact(
             repositoryId,
             String(queryRequest.nodeId ?? ""),
-            queryRequest.depth,
+            queryRequest.depth
           )
           break
         default:
           throw new BrowserStorageError(
             "invalid_generation",
-            "The browser-local query is not supported.",
+            "The browser-local query is not supported."
           )
       }
     }
@@ -1126,11 +1860,13 @@ async function handleRepositoryQuery(request: WorkerRequest) {
       type: "failure",
       terminal: "failed",
       error: plainError(
-        error instanceof BrowserStorageError ? error.code : "worker_query_failed",
+        error instanceof BrowserStorageError
+          ? error.code
+          : "worker_query_failed",
         error instanceof BrowserStorageError
           ? error.message
           : "The browser-local query failed.",
-        "query",
+        "query"
       ),
     })
   }
@@ -1148,20 +1884,62 @@ const protocolRuntime = createWorkerRuntime({
       return result
     },
   },
+  embedding: {
+    getPublishedGeneration(repositoryId) {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      return storage.getPublishedGeneration(repositoryId)
+    },
+    async loadInputs(repositoryId, graphGeneration) {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      const symbols = storage.listEmbeddingSymbols(
+        repositoryId,
+        graphGeneration
+      )
+      return Promise.all(
+        symbols.map(async (symbol) => {
+          const text = composeBrowserEmbeddingInput(symbol)
+          return {
+            nodeId: symbol.nodeId,
+            inputHash: await hashEmbeddingInput(text),
+            text,
+          }
+        })
+      )
+    },
+    requestBatch: requestEmbeddingBatch,
+    writeVectors(repositoryId, graphGeneration, rows) {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      storage.writeEmbeddingVectors(repositoryId, graphGeneration, rows)
+    },
+    saveState(repositoryId, state) {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      storage.saveEmbeddingState(repositoryId, state)
+    },
+  },
   loadGrammars: async () => undefined,
   releaseGrammars: () => undefined,
+  getCapabilities: probeWorkerRuntimeCapabilities,
   emit: (message) => globalThis.postMessage(message),
   yieldControl: () => new Promise((resolve) => setTimeout(resolve, 0)),
 })
 
 function faultInjector(point: BrowserStorageFaultPoint) {
-  if (requestedFault === "quota-before-publication" && point === "before-publication") {
-    throw new BrowserStorageError("quota_exceeded", "Injected browser storage quota failure.")
+  if (
+    requestedFault === "quota-before-publication" &&
+    point === "before-publication"
+  ) {
+    throw new BrowserStorageError(
+      "quota_exceeded",
+      "Injected browser storage quota failure."
+    )
   }
-  if (requestedFault === "migration-failed" && point === "after-generation-write") {
+  if (
+    requestedFault === "migration-failed" &&
+    point === "after-generation-write"
+  ) {
     throw new BrowserStorageError(
       "schema_version_mismatch",
-      "Injected browser schema migration failure.",
+      "Injected browser schema migration failure."
     )
   }
   if (
@@ -1170,7 +1948,7 @@ function faultInjector(point: BrowserStorageFaultPoint) {
   ) {
     throw new BrowserStorageError(
       "storage_write_failed",
-      "Injected browser staging write failure before cleanup.",
+      "Injected browser staging write failure before cleanup."
     )
   }
   if (
@@ -1185,7 +1963,7 @@ function faultInjector(point: BrowserStorageFaultPoint) {
   ) {
     throw new BrowserStorageError(
       "storage_write_failed",
-      `Injected browser storage failure at ${point}.`,
+      `Injected browser storage failure at ${point}.`
     )
   }
 }
@@ -1207,16 +1985,21 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
     }
     case "storage-publish": {
       if (!storage) throw new Error("Browser graph store is not open.")
-      requestedFault = typeof payload.fault === "string" ? payload.fault : undefined
+      requestedFault =
+        typeof payload.fault === "string" ? payload.fault : undefined
       try {
-        return await storage.publishGeneration(payload.generation as unknown as BrowserGenerationInput)
+        return await storage.publishGeneration(
+          payload.generation as unknown as BrowserGenerationInput
+        )
       } finally {
         requestedFault = undefined
       }
     }
     case "storage-leave-staging": {
       if (!storage) throw new Error("Browser graph store is not open.")
-      return storage.stageGeneration(payload.generation as unknown as BrowserGenerationInput)
+      return storage.stageGeneration(
+        payload.generation as unknown as BrowserGenerationInput
+      )
     }
     case "storage-current": {
       if (!storage) throw new Error("Browser graph store is not open.")
@@ -1233,7 +2016,7 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
         String(payload.nodeId),
         payload.direction === "callees" ? "callees" : "callers",
         payload.limit === undefined ? undefined : Number(payload.limit),
-        payload.offset === undefined ? undefined : Number(payload.offset),
+        payload.offset === undefined ? undefined : Number(payload.offset)
       )
     }
     case "storage-graph": {
@@ -1241,7 +2024,7 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
       return storage.graph(
         String(payload.repositoryId),
         String(payload.nodeId),
-        payload.depth === undefined ? undefined : Number(payload.depth),
+        payload.depth === undefined ? undefined : Number(payload.depth)
       )
     }
     case "storage-impact": {
@@ -1249,7 +2032,7 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
       return storage.impact(
         String(payload.repositoryId),
         String(payload.nodeId),
-        payload.depth === undefined ? undefined : Number(payload.depth),
+        payload.depth === undefined ? undefined : Number(payload.depth)
       )
     }
     case "storage-refresh": {
@@ -1257,12 +2040,44 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
       return refreshPublishedGeneration(
         storage,
         String(payload.repositoryId),
-        payload.collection as NonNullable<PickedFolderPayload["collection"]>,
+        payload.collection as NonNullable<PickedFolderPayload["collection"]>
       )
     }
     case "storage-query-plans": {
       if (!storage) throw new Error("Browser graph store is not open.")
       return storage.queryPlans(String(payload.repositoryId))
+    }
+    case "storage-embedding-symbols": {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      return storage.listEmbeddingSymbols(
+        String(payload.repositoryId),
+        Number(payload.graphGeneration)
+      )
+    }
+    case "storage-write-vectors": {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      storage.writeEmbeddingVectors(
+        String(payload.repositoryId),
+        Number(payload.graphGeneration),
+        payload.rows as EmbeddingVectorRow[]
+      )
+      return storage.readEmbeddingVectorMetadata(String(payload.repositoryId))
+    }
+    case "storage-vector-metadata": {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      return storage.readEmbeddingVectorMetadata(String(payload.repositoryId))
+    }
+    case "storage-save-embedding-state": {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      storage.saveEmbeddingState(
+        String(payload.repositoryId),
+        payload.state as EmbeddingSemanticState
+      )
+      return storage.readEmbeddingState(String(payload.repositoryId))
+    }
+    case "storage-embedding-state": {
+      if (!storage) throw new Error("Browser graph store is not open.")
+      return storage.readEmbeddingState(String(payload.repositoryId))
     }
     case "storage-delete": {
       if (!storage) throw new Error("Browser graph store is not open.")
@@ -1279,51 +2094,67 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
   }
 }
 
-globalThis.addEventListener("message", (event: MessageEvent<StorageTestRequest>) => {
-  const request = event.data
-  if (!request || typeof request.requestId !== "string") {
-    return
-  }
-  if (!request.kind.startsWith("storage-")) {
-    const protocolRequest = request as unknown as WorkerRequest
-    if (typeof protocolRequest.protocolVersion === "number") {
-      if (protocolRequest.kind === "open-picked-folder") {
-        void handleOpenPickedFolder(protocolRequest)
-      } else if (protocolRequest.kind === "acquire") {
-        void handleRepositoryAcquire(protocolRequest)
-      } else if (protocolRequest.kind === "refresh") {
-        void handleRefreshPickedFolder(protocolRequest)
-      } else if (protocolRequest.kind === "query") {
-        void handleRepositoryQuery(protocolRequest)
-      } else if (protocolRequest.kind === "delete") {
-        void handleRepositoryDelete(protocolRequest)
-      } else if (
-        protocolRequest.kind === "cancel" &&
-        protocolRequest.operationId &&
-        activePickedFolders.has(protocolRequest.operationId)
-      ) {
-        handlePickedFolderCancel(protocolRequest)
-      } else if (protocolRequest.kind === "close") {
-        void handleRepositoryClose(protocolRequest)
-      } else {
-        void protocolRuntime.handle(protocolRequest)
-      }
+globalThis.addEventListener(
+  "message",
+  (event: MessageEvent<StorageTestRequest>) => {
+    const request = event.data
+    if (!request || typeof request.requestId !== "string") {
+      return
     }
-    return
+    if (!request.kind.startsWith("storage-")) {
+      const protocolRequest = request as unknown as WorkerRequest
+      if (typeof protocolRequest.protocolVersion === "number") {
+        if (protocolRequest.kind === "source-batch") {
+          handleSourceBatch(protocolRequest)
+        } else if (protocolRequest.kind === "open-picked-folder") {
+          void handleOpenPickedFolder(protocolRequest)
+        } else if (protocolRequest.kind === "import-snapshot") {
+          void handleSnapshotImport(protocolRequest)
+        } else if (protocolRequest.kind === "acquire") {
+          void handleRepositoryAcquire(protocolRequest)
+        } else if (protocolRequest.kind === "refresh") {
+          void handleRefreshPickedFolder(protocolRequest)
+        } else if (protocolRequest.kind === "query") {
+          void handleRepositoryQuery(protocolRequest)
+        } else if (protocolRequest.kind === "delete") {
+          void handleRepositoryDelete(protocolRequest)
+        } else if (
+          protocolRequest.kind === "cancel" &&
+          protocolRequest.operationId &&
+          (activePickedFolders.has(protocolRequest.operationId) ||
+            stagedSourceCollections.has(protocolRequest.operationId))
+        ) {
+          handlePickedFolderCancel(protocolRequest)
+        } else if (protocolRequest.kind === "close") {
+          void handleRepositoryClose(protocolRequest)
+        } else {
+          void protocolRuntime.handle(protocolRequest)
+        }
+      }
+      return
+    }
+    void handleStorageTestRequest(request).then(
+      (result) =>
+        globalThis.postMessage({
+          requestId: request.requestId,
+          ok: true,
+          result,
+        }),
+      (error: unknown) => {
+        const code =
+          error instanceof BrowserStorageError
+            ? error.code
+            : "storage_worker_failed"
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Browser storage worker failed."
+        globalThis.postMessage({
+          requestId: request.requestId,
+          ok: false,
+          error: { code, message: message.slice(0, 240) },
+        })
+      }
+    )
   }
-  void handleStorageTestRequest(request).then(
-    (result) => globalThis.postMessage({ requestId: request.requestId, ok: true, result }),
-    (error: unknown) => {
-      const code =
-        error instanceof BrowserStorageError
-          ? error.code
-          : "storage_worker_failed"
-      const message = error instanceof Error ? error.message : "Browser storage worker failed."
-      globalThis.postMessage({
-        requestId: request.requestId,
-        ok: false,
-        error: { code, message: message.slice(0, 240) },
-      })
-    },
-  )
-})
+)

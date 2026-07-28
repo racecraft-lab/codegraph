@@ -309,6 +309,61 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     sourceText: 'export const value = "one"',
     schemaVersion: 12,
   })
+  await expect(
+    request("storage-embedding-symbols", {
+      repositoryId: "repo_opaque",
+      graphGeneration: 1,
+    }),
+  ).resolves.toEqual([
+    {
+      nodeId: "node-one",
+      kind: "variable",
+      name: "valueone",
+    },
+  ])
+  await expect(
+    request("storage-write-vectors", {
+      repositoryId: "repo_opaque",
+      graphGeneration: 1,
+      rows: [
+        {
+          nodeId: "node-one",
+          model: "model-safe",
+          dimensions: 2,
+          values: [0.25, 0.75],
+          inputHash: "hash-one",
+        },
+      ],
+    }),
+  ).resolves.toEqual([
+    {
+      nodeId: "node-one",
+      model: "model-safe",
+      dimensions: 2,
+      inputHash: "hash-one",
+      byteLength: 8,
+    },
+  ])
+  await expect(
+    request("storage-save-embedding-state", {
+      repositoryId: "repo_opaque",
+      state: {
+        status: "paused",
+        graphGeneration: 1,
+        model: "model-safe",
+        dimensions: 2,
+        completedItems: 1,
+        inputHashes: ["hash-one"],
+      },
+    }),
+  ).resolves.toEqual({
+    status: "paused",
+    graphGeneration: 1,
+    model: "model-safe",
+    dimensions: 2,
+    completedItems: 1,
+    inputHashes: ["hash-one"],
+  })
 
   await expect(
     request("storage-publish", {
@@ -668,4 +723,139 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   await expect(request<{ paused: boolean }>("storage-close")).resolves.toEqual({
     paused: true,
   })
+})
+
+test("imports an immutable dropped snapshot through the production worker", async ({
+  page,
+}) => {
+  const workerFile = listFiles(path.join(webRoot, "dist")).find((file) =>
+    /local-indexing-worker[^/]*\.js$/.test(file),
+  )
+  expect(workerFile, "built local-indexing worker").toBeDefined()
+  const workerUrl = `/${path
+    .relative(path.join(webRoot, "dist"), workerFile!)
+    .replaceAll(path.sep, "/")}`
+  await page.goto("/")
+
+  const result = await page.evaluate(
+    ({ url }) =>
+      new Promise<{
+        repository: { sourceKind: string; snapshotImportedAt?: string }
+        search: { total: number }
+      }>((resolve, reject) => {
+        const worker = new Worker(url, { type: "module" })
+        const repositoryId = `snapshot_${crypto.randomUUID().replaceAll("-", "_")}`
+        const acceptedAt = "2026-07-28T11:15:00.000Z"
+        const timeout = window.setTimeout(() => {
+          worker.terminate()
+          reject(new Error("Timed out importing the dropped snapshot"))
+        }, 15_000)
+        const request = (
+          requestId: string,
+          kind: string,
+          payload?: unknown,
+          operationId?: string,
+        ) =>
+          new Promise<unknown>((requestResolve, requestReject) => {
+            const onMessage = (event: MessageEvent) => {
+              const message = event.data as {
+                requestId?: string
+                type?: string
+                result?: unknown
+                error?: { code?: string; message?: string }
+              }
+              if (
+                message.requestId !== requestId ||
+                message.type === "progress"
+              ) {
+                return
+              }
+              worker.removeEventListener("message", onMessage)
+              if (message.type === "result") requestResolve(message.result)
+              else {
+                requestReject(
+                  new Error(
+                    `${message.error?.code}: ${message.error?.message}`,
+                  ),
+                )
+              }
+            }
+            worker.addEventListener("message", onMessage)
+            worker.postMessage({
+              protocolVersion: 1,
+              requestId,
+              ...(operationId ? { operationId } : {}),
+              repositoryId,
+              kind,
+              ...(payload === undefined ? {} : { payload }),
+            })
+          })
+
+        void request(
+          "snapshot-import",
+          "import-snapshot",
+          {
+            identity: {
+              id: repositoryId,
+              sourceKind: "dropped-snapshot",
+              displayName: "Dropped project",
+              virtualRoot: `local://${repositoryId}`,
+              acceptedAt,
+            },
+            collection: {
+              entries: [
+                {
+                  kind: "file",
+                  path: "src/main.ts",
+                  bytes: new TextEncoder().encode(
+                    "export const snapshotValue = 1",
+                  ),
+                  contentHash: "snapshot-content",
+                  size: 30,
+                },
+              ],
+              manifest: {
+                entries: [],
+                fingerprint: "snapshot-manifest",
+              },
+              warnings: { details: [], total: 0, truncated: false },
+              snapshot: {
+                acceptedAt,
+                fileCount: 1,
+                totalBytes: 30,
+                manifestFingerprint: "snapshot-manifest",
+              },
+            },
+          },
+          "snapshot-operation",
+        )
+          .then(async (repository) => {
+            const search = await request("snapshot-search", "query", {
+              query: "search",
+              request: { query: "snapshotValue", limit: 10 },
+            })
+            window.clearTimeout(timeout)
+            worker.terminate()
+            resolve({
+              repository: repository as {
+                sourceKind: string
+                snapshotImportedAt?: string
+              },
+              search: search as { total: number },
+            })
+          })
+          .catch((error) => {
+            window.clearTimeout(timeout)
+            worker.terminate()
+            reject(error)
+          })
+      }),
+    { url: workerUrl },
+  )
+
+  expect(result.repository).toMatchObject({
+    sourceKind: "dropped-snapshot",
+    snapshotImportedAt: "2026-07-28T11:15:00.000Z",
+  })
+  expect(result.search.total).toBeGreaterThan(0)
 })

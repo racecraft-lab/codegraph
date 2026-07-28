@@ -19,8 +19,14 @@ import {
   REPOSITORY_QUERY_LIMITS,
   type SourceResult,
 } from "../lib/repository-client"
+import type {
+  BrowserEmbeddingSymbol,
+  EmbeddingSemanticState,
+  EmbeddingVectorRow,
+} from "./embeddings"
 
 export const BROWSER_SCHEMA_VERSION = SHARED_SCHEMA_VERSION
+export const BROWSER_VECTOR_WRITE_LIMIT = 500
 
 const REGISTRY_DATABASE = "/codegraph/browser/registry.sqlite3"
 const OPAQUE_REPOSITORY_ID = /^[A-Za-z0-9_-]+$/
@@ -37,7 +43,7 @@ const IMPACT_CONTAINER_KINDS = new Set([
 
 const canonicalSchema = canonicalSchemaSource.replace(
   "INSERT INTO schema_versions (version, applied_at, description)",
-  "INSERT OR IGNORE INTO schema_versions (version, applied_at, description)",
+  "INSERT OR IGNORE INTO schema_versions (version, applied_at, description)"
 )
 
 export interface BrowserGenerationSource {
@@ -106,6 +112,7 @@ export interface BrowserRefreshBase {
 }
 
 export interface BrowserQueryPlanEvidence {
+  search: string[]
   callers: string[]
   callees: string[]
   graph: string[]
@@ -121,6 +128,8 @@ export class BrowserStorageError extends Error {
     | "storage_write_failed"
     | "store_closed"
     | "schema_version_mismatch"
+    | "invalid_vector_state"
+    | "operation_cancelled"
 
   constructor(code: BrowserStorageError["code"], message: string) {
     super(message)
@@ -133,15 +142,21 @@ export function registryDatabasePath() {
   return REGISTRY_DATABASE
 }
 
-export function generationDatabasePath(repositoryId: string, generation: number) {
+export function generationDatabasePath(
+  repositoryId: string,
+  generation: number
+) {
   if (!OPAQUE_REPOSITORY_ID.test(repositoryId)) {
     throw new BrowserStorageError(
       "invalid_repository_id",
-      "Browser storage requires an opaque repository id.",
+      "Browser storage requires an opaque repository id."
     )
   }
   if (!Number.isSafeInteger(generation) || generation <= 0) {
-    throw new BrowserStorageError("invalid_generation", "Browser generation must be a positive integer.")
+    throw new BrowserStorageError(
+      "invalid_generation",
+      "Browser generation must be a positive integer."
+    )
   }
   return `/codegraph/browser/repositories/${repositoryId}/generations/${generation}.sqlite3`
 }
@@ -156,6 +171,13 @@ function run(db: Database, sql: string, bindings: readonly unknown[] = []) {
   }
 }
 
+function encodeVector(values: readonly number[]) {
+  const bytes = new Uint8Array(values.length * 4)
+  const view = new DataView(bytes.buffer)
+  values.forEach((value, index) => view.setFloat32(index * 4, value, true))
+  return bytes
+}
+
 function codeNode(row: Record<string, unknown>): CodeNode {
   return {
     id: String(row.id),
@@ -168,20 +190,29 @@ function codeNode(row: Record<string, unknown>): CodeNode {
   }
 }
 
+function ftsPrefixQuery(query: string) {
+  return query
+    .replace(/::/g, " ")
+    .replace(/['"*():^]/g, "")
+    .split(/\s+/)
+    .filter((term) => term.length > 0)
+    .filter((term) => !/^(AND|OR|NOT|NEAR)$/i.test(term))
+    .map((term) => `"${term}"*`)
+    .join(" OR ")
+}
+
 function codeEdge(row: Record<string, unknown>): CodeEdge {
   return {
     source: String(row.source),
     target: String(row.target),
     kind: String(row.kind),
-    ...(row.provenance == null
-      ? {}
-      : { provenance: String(row.provenance) }),
+    ...(row.provenance == null ? {} : { provenance: String(row.provenance) }),
   }
 }
 
 function storedNode(row: Record<string, unknown>): Node {
   const parseArray = (value: unknown) =>
-    value == null ? undefined : JSON.parse(String(value)) as string[]
+    value == null ? undefined : (JSON.parse(String(value)) as string[])
   return {
     id: String(row.id),
     kind: String(row.kind) as Node["kind"],
@@ -220,7 +251,9 @@ function storedEdge(row: Record<string, unknown>): Edge {
     kind: String(row.kind) as Edge["kind"],
     ...(row.metadata == null
       ? {}
-      : { metadata: JSON.parse(String(row.metadata)) as Record<string, unknown> }),
+      : {
+          metadata: JSON.parse(String(row.metadata)) as Record<string, unknown>,
+        }),
     ...(row.line == null ? {} : { line: Number(row.line) }),
     ...(row.col == null ? {} : { column: Number(row.col) }),
     ...(row.provenance == null
@@ -232,29 +265,35 @@ function storedEdge(row: Record<string, unknown>): Edge {
 function ensureCanonicalSchema(db: Database) {
   const hasVersionTable = Number(
     db.selectValue(
-      "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'schema_versions'",
-    ) ?? 0,
+      "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'schema_versions'"
+    ) ?? 0
   )
   const recorded = hasVersionTable
-    ? Number(db.selectValue("SELECT COALESCE(MAX(version), 0) FROM schema_versions") ?? 0)
+    ? Number(
+        db.selectValue(
+          "SELECT COALESCE(MAX(version), 0) FROM schema_versions"
+        ) ?? 0
+      )
     : 0
   if (recorded > BROWSER_SCHEMA_VERSION) {
     throw new BrowserStorageError(
       "schema_version_mismatch",
-      `Browser database schema ${recorded} is newer than supported schema ${BROWSER_SCHEMA_VERSION}.`,
+      `Browser database schema ${recorded} is newer than supported schema ${BROWSER_SCHEMA_VERSION}.`
     )
   }
   db.exec(canonicalSchema)
   run(
     db,
     "INSERT OR IGNORE INTO schema_versions(version, applied_at, description) VALUES (?, ?, ?)",
-    [BROWSER_SCHEMA_VERSION, Date.now(), "Canonical browser schema"],
+    [BROWSER_SCHEMA_VERSION, Date.now(), "Canonical browser schema"]
   )
-  const current = Number(db.selectValue("SELECT MAX(version) FROM schema_versions") ?? 0)
+  const current = Number(
+    db.selectValue("SELECT MAX(version) FROM schema_versions") ?? 0
+  )
   if (current !== BROWSER_SCHEMA_VERSION) {
     throw new BrowserStorageError(
       "schema_version_mismatch",
-      `Browser database schema ${current} does not match ${BROWSER_SCHEMA_VERSION}.`,
+      `Browser database schema ${current} does not match ${BROWSER_SCHEMA_VERSION}.`
     )
   }
 }
@@ -262,22 +301,28 @@ function ensureCanonicalSchema(db: Database) {
 function storageFailure(error: unknown) {
   if (error instanceof BrowserStorageError) return error
   if (error instanceof DOMException && error.name === "QuotaExceededError") {
-    return new BrowserStorageError("quota_exceeded", "Browser storage quota was exceeded.")
+    return new BrowserStorageError(
+      "quota_exceeded",
+      "Browser storage quota was exceeded."
+    )
   }
   return new BrowserStorageError(
     "storage_write_failed",
-    error instanceof Error ? error.message.slice(0, 240) : "Browser storage write failed.",
+    error instanceof Error
+      ? error.message.slice(0, 240)
+      : "Browser storage write failed."
   )
 }
 
 export class BrowserGraphStore {
   private closed = false
+  private readonly initializedDatabases = new Set<string>()
   private readonly pool: SAHPoolUtil
   private readonly faultInjector?: (point: BrowserStorageFaultPoint) => void
 
   constructor(
     pool: SAHPoolUtil,
-    faultInjector?: (point: BrowserStorageFaultPoint) => void,
+    faultInjector?: (point: BrowserStorageFaultPoint) => void
   ) {
     this.pool = pool
     this.faultInjector = faultInjector
@@ -285,7 +330,10 @@ export class BrowserGraphStore {
 
   private openDatabase(filename: string) {
     if (this.closed) {
-      throw new BrowserStorageError("store_closed", "Browser graph store is closed.")
+      throw new BrowserStorageError(
+        "store_closed",
+        "Browser graph store is closed."
+      )
     }
     return new this.pool.OpfsSAHPoolDb(filename)
   }
@@ -293,11 +341,19 @@ export class BrowserGraphStore {
   private withDatabase<T>(filename: string, callback: (db: Database) => T): T {
     const db = this.openDatabase(filename)
     try {
-      ensureCanonicalSchema(db)
+      if (!this.initializedDatabases.has(filename)) {
+        ensureCanonicalSchema(db)
+        this.initializedDatabases.add(filename)
+      }
       return callback(db)
     } finally {
       db.close()
     }
+  }
+
+  private unlinkDatabase(filename: string) {
+    this.initializedDatabases.delete(filename)
+    this.pool.unlink(filename)
   }
 
   async initialize() {
@@ -310,13 +366,16 @@ export class BrowserGraphStore {
     return this.withDatabase(REGISTRY_DATABASE, (db) => {
       const value = db.selectValue(
         "SELECT COALESCE(MAX(generation), 0) + 1 FROM index_generations WHERE repository_id = ?",
-        [repositoryId],
+        [repositoryId]
       )
       return Number(value ?? 1)
     })
   }
 
-  private insertRegistryStaging(input: BrowserGenerationInput, generation: number) {
+  private insertRegistryStaging(
+    input: BrowserGenerationInput,
+    generation: number
+  ) {
     this.withDatabase(REGISTRY_DATABASE, (db) => {
       run(
         db,
@@ -333,12 +392,15 @@ export class BrowserGraphStore {
           JSON.stringify(input.counts),
           JSON.stringify(input.warnings),
           Date.now(),
-        ],
+        ]
       )
     })
   }
 
-  private writeGenerationDatabase(input: BrowserGenerationInput, staged: StagedBrowserGeneration) {
+  private writeGenerationDatabase(
+    input: BrowserGenerationInput,
+    staged: StagedBrowserGeneration
+  ) {
     this.withDatabase(staged.databasePath, (db) => {
       db.transaction("IMMEDIATE", () => {
         for (const source of input.sources) {
@@ -357,7 +419,7 @@ export class BrowserGraphStore {
               source.size,
               source.mtimeHint ?? null,
               source.text,
-            ],
+            ]
           )
           run(
             db,
@@ -371,7 +433,7 @@ export class BrowserGraphStore {
               source.size,
               source.mtimeHint ?? 0,
               Date.now(),
-            ],
+            ]
           )
         }
         this.faultInjector?.("after-source-staging")
@@ -406,7 +468,7 @@ export class BrowserGraphStore {
               node.typeParameters ? JSON.stringify(node.typeParameters) : null,
               node.returnType ?? null,
               node.updatedAt,
-            ],
+            ]
           )
         }
         for (const edge of input.edges) {
@@ -422,7 +484,7 @@ export class BrowserGraphStore {
               edge.line ?? null,
               edge.column ?? null,
               edge.provenance ?? null,
-            ],
+            ]
           )
         }
         this.faultInjector?.("after-graph-write")
@@ -442,13 +504,15 @@ export class BrowserGraphStore {
             JSON.stringify(input.warnings),
             Date.now(),
             Date.now(),
-          ],
+          ]
         )
       })
     })
   }
 
-  async stageGeneration(input: BrowserGenerationInput): Promise<StagedBrowserGeneration> {
+  async stageGeneration(
+    input: BrowserGenerationInput
+  ): Promise<StagedBrowserGeneration> {
     const generation = this.nextGeneration(input.repositoryId)
     const staged = {
       repositoryId: input.repositoryId,
@@ -464,7 +528,7 @@ export class BrowserGraphStore {
     } catch (error) {
       const failure = storageFailure(error)
       this.markGenerationFailed(staged, failure)
-      this.pool.unlink(staged.databasePath)
+      this.unlinkDatabase(staged.databasePath)
       try {
         this.faultInjector?.("after-delete-cleanup")
       } catch (cleanupError) {
@@ -476,7 +540,7 @@ export class BrowserGraphStore {
 
   async commitStagedGeneration(
     input: BrowserGenerationInput,
-    staged: StagedBrowserGeneration,
+    staged: StagedBrowserGeneration
   ) {
     try {
       this.faultInjector?.("before-publication")
@@ -487,14 +551,14 @@ export class BrowserGraphStore {
             `UPDATE index_generations
              SET status = 'rolled_back'
              WHERE repository_id = ? AND status = 'published'`,
-            [input.repositoryId],
+            [input.repositoryId]
           )
           run(
             db,
             `UPDATE index_generations
              SET status = 'published', published_at = ?
              WHERE repository_id = ? AND generation = ? AND status = 'building'`,
-            [Date.now(), input.repositoryId, staged.generation],
+            [Date.now(), input.repositoryId, staged.generation]
           )
           this.faultInjector?.("after-status-update")
           run(
@@ -513,7 +577,7 @@ export class BrowserGraphStore {
               staged.generation,
               input.warnings.length > 0 ? "partial" : "ready",
               Date.now(),
-            ],
+            ]
           )
           this.faultInjector?.("after-registry-publish")
         })
@@ -522,7 +586,7 @@ export class BrowserGraphStore {
     } catch (error) {
       const failure = storageFailure(error)
       this.markGenerationFailed(staged, failure)
-      this.pool.unlink(staged.databasePath)
+      this.unlinkDatabase(staged.databasePath)
       try {
         this.faultInjector?.("after-delete-cleanup")
       } catch (cleanupError) {
@@ -537,9 +601,20 @@ export class BrowserGraphStore {
     return this.commitStagedGeneration(input, staged)
   }
 
+  discardStagedGeneration(staged: StagedBrowserGeneration) {
+    this.markGenerationFailed(
+      staged,
+      new BrowserStorageError(
+        "operation_cancelled",
+        "Browser generation staging was cancelled before publication."
+      )
+    )
+    this.unlinkDatabase(staged.databasePath)
+  }
+
   private markGenerationFailed(
     staged: StagedBrowserGeneration,
-    failure: BrowserStorageError,
+    failure: BrowserStorageError
   ) {
     try {
       this.withDatabase(REGISTRY_DATABASE, (db) => {
@@ -553,7 +628,7 @@ export class BrowserGraphStore {
             failure.message.slice(0, 240),
             staged.repositoryId,
             staged.generation,
-          ],
+          ]
         )
       })
     } catch {
@@ -567,8 +642,8 @@ export class BrowserGraphStore {
         `SELECT repository_id, generation
          FROM index_generations
          WHERE status = 'building'
-         ORDER BY repository_id, generation`,
-      ),
+         ORDER BY repository_id, generation`
+      )
     )
     if (incomplete.length === 0) return
     this.withDatabase(REGISTRY_DATABASE, (db) => {
@@ -580,14 +655,17 @@ export class BrowserGraphStore {
              SET status = 'failed', failure_code = 'incomplete_staging',
                  failure_message = 'Incomplete staging recovered on open.'
              WHERE repository_id = ? AND generation = ? AND status = 'building'`,
-            [String(row.repository_id), Number(row.generation)],
+            [String(row.repository_id), Number(row.generation)]
           )
         }
       })
     })
     for (const row of incomplete) {
-      this.pool.unlink(
-        generationDatabasePath(String(row.repository_id), Number(row.generation)),
+      this.unlinkDatabase(
+        generationDatabasePath(
+          String(row.repository_id),
+          Number(row.generation)
+        )
       )
     }
   }
@@ -602,31 +680,41 @@ export class BrowserGraphStore {
            ON g.repository_id = p.repository_id
           AND g.generation = p.current_generation
          WHERE p.repository_id = ?`,
-        [repositoryId],
-      ),
+        [repositoryId]
+      )
     )
     if (!publication) return null
     const generation = Number(publication.current_generation)
-    return this.withDatabase(generationDatabasePath(repositoryId, generation), (db) => ({
-      repositoryId,
-      generation,
-      schemaVersion: Number(publication.schema_version),
-      manifestFingerprint: String(publication.manifest_fingerprint),
-      nodeNames: db.selectValues("SELECT name FROM nodes ORDER BY name").map(String),
-      sourceText: (db.selectValue("SELECT text FROM source_cache ORDER BY path LIMIT 1") as
-        | string
-        | undefined) ?? null,
-      sourcePaths: db
-        .selectValues("SELECT path FROM source_cache ORDER BY path")
-        .map(String),
-      edgeCount: Number(db.selectValue("SELECT COUNT(*) FROM edges") ?? 0),
-      manifest: JSON.parse(String(publication.manifest_json ?? "[]")) as unknown,
-      counts: JSON.parse(String(publication.counts_json ?? "{}")) as Record<
-        string,
-        number
-      >,
-      warnings: JSON.parse(String(publication.warnings_json ?? "[]")) as unknown[],
-    }))
+    return this.withDatabase(
+      generationDatabasePath(repositoryId, generation),
+      (db) => ({
+        repositoryId,
+        generation,
+        schemaVersion: Number(publication.schema_version),
+        manifestFingerprint: String(publication.manifest_fingerprint),
+        nodeNames: db
+          .selectValues("SELECT name FROM nodes ORDER BY name")
+          .map(String),
+        sourceText:
+          (db.selectValue(
+            "SELECT text FROM source_cache ORDER BY path LIMIT 1"
+          ) as string | undefined) ?? null,
+        sourcePaths: db
+          .selectValues("SELECT path FROM source_cache ORDER BY path")
+          .map(String),
+        edgeCount: Number(db.selectValue("SELECT COUNT(*) FROM edges") ?? 0),
+        manifest: JSON.parse(
+          String(publication.manifest_json ?? "[]")
+        ) as unknown,
+        counts: JSON.parse(String(publication.counts_json ?? "{}")) as Record<
+          string,
+          number
+        >,
+        warnings: JSON.parse(
+          String(publication.warnings_json ?? "[]")
+        ) as unknown[],
+      })
+    )
   }
 
   private currentGeneration(repositoryId: string) {
@@ -639,8 +727,8 @@ export class BrowserGraphStore {
            ON g.repository_id = p.repository_id
           AND g.generation = p.current_generation
          WHERE p.repository_id = ?`,
-        [repositoryId],
-      ),
+        [repositoryId]
+      )
     )
     if (!publication) return null
     const generation = Number(publication.current_generation)
@@ -649,12 +737,16 @@ export class BrowserGraphStore {
       databasePath: generationDatabasePath(repositoryId, generation),
       status: String(publication.status),
       manifestFingerprint: String(publication.manifest_fingerprint),
-      manifest: JSON.parse(String(publication.manifest_json ?? "[]")) as unknown,
+      manifest: JSON.parse(
+        String(publication.manifest_json ?? "[]")
+      ) as unknown,
       counts: JSON.parse(String(publication.counts_json ?? "{}")) as Record<
         string,
         number
       >,
-      warnings: JSON.parse(String(publication.warnings_json ?? "[]")) as unknown[],
+      warnings: JSON.parse(
+        String(publication.warnings_json ?? "[]")
+      ) as unknown[],
       publishedAt:
         publication.published_at == null
           ? null
@@ -662,12 +754,221 @@ export class BrowserGraphStore {
     }
   }
 
+  getPublishedGeneration(repositoryId: string): number {
+    const current = this.currentGeneration(repositoryId)
+    if (!current) {
+      throw new BrowserStorageError(
+        "invalid_generation",
+        "The browser-local repository has no published generation."
+      )
+    }
+    return current.generation
+  }
+
+  listEmbeddingSymbols(
+    repositoryId: string,
+    graphGeneration: number
+  ): BrowserEmbeddingSymbol[] {
+    const current = this.currentGeneration(repositoryId)
+    if (!current || current.generation !== graphGeneration) {
+      throw new BrowserStorageError(
+        "invalid_generation",
+        "Semantic inputs do not match the published graph generation."
+      )
+    }
+    return this.withDatabase(current.databasePath, (db) =>
+      db
+        .selectObjects(
+          `SELECT id, kind, name, signature, docstring
+           FROM nodes
+           ORDER BY id`
+        )
+        .map((row) => ({
+          nodeId: String(row.id),
+          kind: String(row.kind),
+          name: String(row.name),
+          ...(row.signature == null
+            ? {}
+            : { signature: String(row.signature) }),
+          ...(row.docstring == null
+            ? {}
+            : { docstring: String(row.docstring) }),
+        }))
+    )
+  }
+
+  writeEmbeddingVectors(
+    repositoryId: string,
+    graphGeneration: number,
+    rows: readonly EmbeddingVectorRow[]
+  ): void {
+    const current = this.currentGeneration(repositoryId)
+    if (!current || current.generation !== graphGeneration) {
+      throw new BrowserStorageError(
+        "invalid_generation",
+        "Semantic vector writes do not match the published graph generation."
+      )
+    }
+    if (rows.length > BROWSER_VECTOR_WRITE_LIMIT) {
+      throw new BrowserStorageError(
+        "invalid_vector_state",
+        "Semantic vector writes exceed the transaction row budget."
+      )
+    }
+    if (rows.length === 0) return
+    const model = rows[0]?.model
+    const dimensions = rows[0]?.dimensions
+    if (
+      !model ||
+      !Number.isSafeInteger(dimensions) ||
+      (dimensions ?? 0) <= 0 ||
+      rows.some(
+        (row) =>
+          row.model !== model ||
+          row.dimensions !== dimensions ||
+          row.values.length !== dimensions ||
+          row.values.some((value) => !Number.isFinite(value)) ||
+          row.inputHash.length === 0
+      )
+    ) {
+      throw new BrowserStorageError(
+        "invalid_vector_state",
+        "Semantic vector rows must converge on one model and dimension."
+      )
+    }
+    this.withDatabase(current.databasePath, (db) => {
+      db.transaction("IMMEDIATE", () => {
+        for (const row of rows) {
+          const nodeExists = Number(
+            db.selectValue("SELECT COUNT(*) FROM nodes WHERE id = ?", [
+              row.nodeId,
+            ]) ?? 0
+          )
+          if (nodeExists !== 1) {
+            throw new BrowserStorageError(
+              "invalid_vector_state",
+              "Semantic vector target is absent from the published graph."
+            )
+          }
+          run(
+            db,
+            `INSERT INTO node_vectors(node_id, model, dims, vector, input_hash)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(node_id) DO UPDATE SET
+               model = excluded.model,
+               dims = excluded.dims,
+               vector = excluded.vector,
+               input_hash = excluded.input_hash`,
+            [
+              row.nodeId,
+              row.model,
+              row.dimensions,
+              encodeVector(row.values),
+              row.inputHash,
+            ]
+          )
+        }
+        const metadata = [
+          ["embedding_model", model],
+          ["embedding_dims", String(dimensions)],
+          ["embedding_graph_generation", String(graphGeneration)],
+        ] as const
+        for (const [key, value] of metadata) {
+          run(
+            db,
+            `INSERT INTO project_metadata(key, value, updated_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET
+               value = excluded.value,
+               updated_at = excluded.updated_at`,
+            [key, value, Date.now()]
+          )
+        }
+      })
+    })
+  }
+
+  readEmbeddingVectorMetadata(repositoryId: string): Array<{
+    nodeId: string
+    model: string
+    dimensions: number
+    inputHash: string
+    byteLength: number
+  }> {
+    const current = this.currentGeneration(repositoryId)
+    if (!current) return []
+    return this.withDatabase(current.databasePath, (db) =>
+      db
+        .selectObjects(
+          `SELECT node_id, model, dims, input_hash, length(vector) AS byte_length
+           FROM node_vectors
+           ORDER BY node_id`
+        )
+        .map((row) => ({
+          nodeId: String(row.node_id),
+          model: String(row.model),
+          dimensions: Number(row.dims),
+          inputHash: String(row.input_hash),
+          byteLength: Number(row.byte_length),
+        }))
+    )
+  }
+
+  saveEmbeddingState(
+    repositoryId: string,
+    state: EmbeddingSemanticState
+  ): void {
+    const current = this.currentGeneration(repositoryId)
+    if (!current || current.generation !== state.graphGeneration) {
+      throw new BrowserStorageError(
+        "invalid_generation",
+        "Semantic state does not match the published graph generation."
+      )
+    }
+    const safeState: EmbeddingSemanticState = {
+      status: state.status,
+      graphGeneration: state.graphGeneration,
+      model: state.model,
+      ...(state.dimensions ? { dimensions: state.dimensions } : {}),
+      completedItems: state.completedItems,
+      inputHashes: [...state.inputHashes],
+      ...(state.failureCode ? { failureCode: state.failureCode } : {}),
+    }
+    this.withDatabase(current.databasePath, (db) => {
+      run(
+        db,
+        `INSERT INTO project_metadata(key, value, updated_at)
+         VALUES ('browser_embedding_state', ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           updated_at = excluded.updated_at`,
+        [JSON.stringify(safeState), Date.now()]
+      )
+    })
+  }
+
+  readEmbeddingState(repositoryId: string): EmbeddingSemanticState | undefined {
+    const current = this.currentGeneration(repositoryId)
+    if (!current) return undefined
+    return this.withDatabase(current.databasePath, (db) => {
+      const value = db.selectValue(
+        "SELECT value FROM project_metadata WHERE key = 'browser_embedding_state'"
+      )
+      if (typeof value !== "string") return undefined
+      try {
+        return JSON.parse(value) as EmbeddingSemanticState
+      } catch {
+        return undefined
+      }
+    })
+  }
+
   readRefreshBase(repositoryId: string): BrowserRefreshBase {
     const current = this.currentGeneration(repositoryId)
     if (!current) {
       throw new BrowserStorageError(
         "invalid_generation",
-        "The browser-local repository has no published refresh base.",
+        "The browser-local repository has no published refresh base."
       )
     }
     return this.withDatabase(current.databasePath, (db) => ({
@@ -680,7 +981,7 @@ export class BrowserGraphStore {
            FROM source_cache
            WHERE repository_id = ? AND generation = ?
            ORDER BY path`,
-          [repositoryId, current.generation],
+          [repositoryId, current.generation]
         )
         .map((row) => ({
           path: String(row.path),
@@ -702,15 +1003,17 @@ export class BrowserGraphStore {
   }
 
   listRepositories(
-    metadata: ReadonlyMap<string, Pick<Repository, "name" | "sourceKind">> =
-      new Map(),
+    metadata: ReadonlyMap<
+      string,
+      Pick<Repository, "name" | "sourceKind">
+    > = new Map()
   ): Repository[] {
     const ids = this.withDatabase(REGISTRY_DATABASE, (db) =>
       db
         .selectValues(
-          "SELECT repository_id FROM index_publications ORDER BY updated_at DESC",
+          "SELECT repository_id FROM index_publications ORDER BY updated_at DESC"
         )
-        .map(String),
+        .map(String)
     )
     return ids.map((id, index) => ({
       id,
@@ -724,13 +1027,13 @@ export class BrowserGraphStore {
 
   getRepositoryStatus(
     repositoryId: string,
-    name = "Browser repository",
+    name = "Browser repository"
   ): RepositoryStatus {
     const current = this.currentGeneration(repositoryId)
     if (!current) {
       throw new BrowserStorageError(
         "invalid_generation",
-        "The browser-local repository has no published generation.",
+        "The browser-local repository has no published generation."
       )
     }
     return this.withDatabase(current.databasePath, (db) => ({
@@ -742,8 +1045,9 @@ export class BrowserGraphStore {
       },
       index: {
         state: current.status === "partial" ? "partial-warning" : "ready",
+        generation: current.generation,
         fileCount: Number(
-          db.selectValue("SELECT COUNT(*) FROM source_cache") ?? 0,
+          db.selectValue("SELECT COUNT(*) FROM source_cache") ?? 0
         ),
         nodeCount: Number(db.selectValue("SELECT COUNT(*) FROM nodes") ?? 0),
         edgeCount: Number(db.selectValue("SELECT COUNT(*) FROM edges") ?? 0),
@@ -759,20 +1063,44 @@ export class BrowserGraphStore {
     repositoryId: string,
     query: string,
     limit = 50,
-    offset = 0,
+    offset = 0
   ): SearchResult {
     const current = this.currentGeneration(repositoryId)
     if (!current) {
       return { items: [], total: 0, limit, offset, degraded: false }
     }
-    const pattern = `%${query}%`
     return this.withDatabase(current.databasePath, (db) => {
+      const ftsQuery = ftsPrefixQuery(query)
+      if (ftsQuery) {
+        const total = Number(
+          db.selectValue(
+            `SELECT COUNT(*) FROM nodes_fts WHERE nodes_fts MATCH ?`,
+            [ftsQuery]
+          ) ?? 0
+        )
+        if (total > 0) {
+          const items = db
+            .selectObjects(
+              `SELECT nodes.id, nodes.kind, nodes.name, nodes.file_path,
+                      nodes.start_line, nodes.signature, nodes.docstring
+               FROM nodes_fts
+               JOIN nodes ON nodes_fts.id = nodes.id
+               WHERE nodes_fts MATCH ?
+               ORDER BY bm25(nodes_fts, 0, 20, 5, 1, 2), nodes.name, nodes.id
+               LIMIT ? OFFSET ?`,
+              [ftsQuery, limit, offset]
+            )
+            .map(codeNode)
+          return { items, total, limit, offset, degraded: false }
+        }
+      }
+      const pattern = `%${query}%`
       const total = Number(
         db.selectValue(
           `SELECT COUNT(*) FROM nodes
            WHERE name LIKE ? OR qualified_name LIKE ? OR file_path LIKE ?`,
-          [pattern, pattern, pattern],
-        ) ?? 0,
+          [pattern, pattern, pattern]
+        ) ?? 0
       )
       const items = db
         .selectObjects(
@@ -781,7 +1109,7 @@ export class BrowserGraphStore {
            WHERE name LIKE ? OR qualified_name LIKE ? OR file_path LIKE ?
            ORDER BY name, id
            LIMIT ? OFFSET ?`,
-          [pattern, pattern, pattern, limit, offset],
+          [pattern, pattern, pattern, limit, offset]
         )
         .map(codeNode)
       return { items, total, limit, offset, degraded: false }
@@ -795,14 +1123,14 @@ export class BrowserGraphStore {
           db.selectObject(
             `SELECT id, kind, name, file_path, start_line, signature, docstring
              FROM nodes WHERE id = ?`,
-            [nodeId],
-          ),
+            [nodeId]
+          )
         )
       : undefined
     if (!row) {
       throw new BrowserStorageError(
         "invalid_generation",
-        "The requested browser-local symbol is unavailable.",
+        "The requested browser-local symbol is unavailable."
       )
     }
     return codeNode(row)
@@ -817,14 +1145,14 @@ export class BrowserGraphStore {
              FROM nodes n
              JOIN source_cache s ON s.path = n.file_path
              WHERE n.id = ? AND s.repository_id = ? AND s.generation = ?`,
-            [nodeId, repositoryId, current.generation],
-          ),
+            [nodeId, repositoryId, current.generation]
+          )
         )
       : undefined
     if (!row) {
       throw new BrowserStorageError(
         "invalid_generation",
-        "The requested cached browser source is unavailable.",
+        "The requested cached browser source is unavailable."
       )
     }
     return {
@@ -840,7 +1168,7 @@ export class BrowserGraphStore {
     nodeId: string,
     direction: "callers" | "callees",
     limit?: number,
-    offset?: number,
+    offset?: number
   ): ListResult<CodeNode> {
     const page = normalizeRelationshipRequest({ limit, offset })
     const current = this.currentGeneration(repositoryId)
@@ -864,8 +1192,8 @@ export class BrowserGraphStore {
           `SELECT COUNT(DISTINCT ${joinColumn})
            FROM edges INDEXED BY ${edgeIndex}
            WHERE kind = 'calls' AND ${matchColumn} = ?`,
-          [nodeId],
-        ) ?? 0,
+          [nodeId]
+        ) ?? 0
       )
       const items = db
         .selectObjects(
@@ -876,7 +1204,7 @@ export class BrowserGraphStore {
            WHERE e.kind = 'calls' AND e.${matchColumn} = ?
            ORDER BY n.name, n.id
            LIMIT ? OFFSET ?`,
-          [nodeId, page.limit, page.offset],
+          [nodeId, page.limit, page.offset]
         )
         .map(codeNode)
       return {
@@ -897,12 +1225,12 @@ export class BrowserGraphStore {
         `SELECT id, kind, name, file_path, start_line, signature, docstring
          FROM nodes
          WHERE id = ?`,
-        [nodeId],
+        [nodeId]
       )
       if (!focal) {
         throw new BrowserStorageError(
           "invalid_generation",
-          "The requested browser-local graph root is unavailable.",
+          "The requested browser-local graph root is unavailable."
         )
       }
 
@@ -932,11 +1260,7 @@ export class BrowserGraphStore {
               OR target IN (${placeholders})
            ORDER BY source, target, kind
            LIMIT ?`,
-          [
-            ...frontier,
-            ...frontier,
-            remainingCandidates + 1,
-          ],
+          [...frontier, ...frontier, remainingCandidates + 1]
         )
         if (candidates.length > remainingCandidates) truncated = true
         const next = new Set<string>()
@@ -981,7 +1305,7 @@ export class BrowserGraphStore {
            FROM nodes
            WHERE id IN (${placeholders})
            ORDER BY id`,
-          ids,
+          ids
         )
         .map(codeNode)
       return {
@@ -995,7 +1319,7 @@ export class BrowserGraphStore {
   impact(repositoryId: string, nodeId: string, depth?: number): GraphResult {
     const impactDepth = normalizeDepthRequest(
       { depth },
-      REPOSITORY_QUERY_LIMITS.defaultImpactDepth,
+      REPOSITORY_QUERY_LIMITS.defaultImpactDepth
     ).depth
     const current = this.currentGeneration(repositoryId)
     if (!current) return { nodes: [], edges: [], truncated: false }
@@ -1004,12 +1328,12 @@ export class BrowserGraphStore {
         `SELECT id, kind, name, file_path, start_line, signature, docstring
          FROM nodes
          WHERE id = ?`,
-        [nodeId],
+        [nodeId]
       )
       if (!focal) {
         throw new BrowserStorageError(
           "invalid_generation",
-          "The requested browser-local impact root is unavailable.",
+          "The requested browser-local impact root is unavailable."
         )
       }
 
@@ -1028,7 +1352,7 @@ export class BrowserGraphStore {
       const recordCandidates = (
         candidates: Array<Record<string, unknown>>,
         adjacentColumn: "source" | "target",
-        next: Set<string>,
+        next: Set<string>
       ) => {
         const remaining = remainingEdgeBudget()
         if (candidates.length > remaining) truncated = true
@@ -1069,7 +1393,7 @@ export class BrowserGraphStore {
       ) {
         const sameDepth = new Set(frontier)
         let containerFrontier = frontier.filter((id) =>
-          IMPACT_CONTAINER_KINDS.has(String(nodeRows.get(id)?.kind ?? "")),
+          IMPACT_CONTAINER_KINDS.has(String(nodeRows.get(id)?.kind ?? ""))
         )
 
         while (containerFrontier.length > 0 && remainingEdgeBudget() > 0) {
@@ -1084,7 +1408,7 @@ export class BrowserGraphStore {
                AND e.kind = 'contains'
              ORDER BY e.source, e.target, e.kind
              LIMIT ?`,
-            [...containerFrontier, remainingEdgeBudget() + 1],
+            [...containerFrontier, remainingEdgeBudget() + 1]
           )
           const added = new Set<string>()
           recordCandidates(candidates, "target", added)
@@ -1093,9 +1417,7 @@ export class BrowserGraphStore {
           }
           containerFrontier = [...added]
             .filter((id) =>
-              IMPACT_CONTAINER_KINDS.has(
-                String(nodeRows.get(id)?.kind ?? ""),
-              ),
+              IMPACT_CONTAINER_KINDS.has(String(nodeRows.get(id)?.kind ?? ""))
             )
             .sort()
         }
@@ -1116,7 +1438,7 @@ export class BrowserGraphStore {
              AND e.kind <> 'contains'
            ORDER BY e.target, e.source, e.kind
            LIMIT ?`,
-          [...currentIds, remainingEdgeBudget() + 1],
+          [...currentIds, remainingEdgeBudget() + 1]
         )
         const next = new Set<string>()
         recordCandidates(candidates, "source", next)
@@ -1131,7 +1453,7 @@ export class BrowserGraphStore {
            FROM nodes
            WHERE id IN (${placeholders})
            ORDER BY id`,
-          ids,
+          ids
         )
         .map(codeNode)
       return {
@@ -1141,7 +1463,7 @@ export class BrowserGraphStore {
             (left, right) =>
               String(left.source).localeCompare(String(right.source)) ||
               String(left.target).localeCompare(String(right.target)) ||
-              String(left.kind).localeCompare(String(right.kind)),
+              String(left.kind).localeCompare(String(right.kind))
           )
           .map(codeEdge),
         truncated,
@@ -1154,7 +1476,7 @@ export class BrowserGraphStore {
     if (!current) {
       throw new BrowserStorageError(
         "invalid_generation",
-        "The browser-local repository has no published query plan.",
+        "The browser-local repository has no published query plan."
       )
     }
     return this.withDatabase(current.databasePath, (db) => {
@@ -1163,6 +1485,15 @@ export class BrowserGraphStore {
           .selectObjects(`EXPLAIN QUERY PLAN ${sql}`, bindings as never)
           .map((row) => String(row.detail))
       return {
+        search: explain(
+          `SELECT nodes.id
+           FROM nodes_fts
+           JOIN nodes ON nodes_fts.id = nodes.id
+           WHERE nodes_fts MATCH ?
+           ORDER BY bm25(nodes_fts, 0, 20, 5, 1, 2), nodes.name, nodes.id
+           LIMIT ? OFFSET ?`,
+          ['"query"*', 50, 0]
+        ),
         callers: explain(
           `SELECT DISTINCT n.id, n.name
            FROM edges e INDEXED BY idx_edges_target_kind
@@ -1170,7 +1501,7 @@ export class BrowserGraphStore {
            WHERE e.kind = 'calls' AND e.target = ?
            ORDER BY n.name, n.id
            LIMIT ? OFFSET ?`,
-          ["query-plan-node", 100, 0],
+          ["query-plan-node", 100, 0]
         ),
         callees: explain(
           `SELECT DISTINCT n.id, n.name
@@ -1179,7 +1510,7 @@ export class BrowserGraphStore {
            WHERE e.kind = 'calls' AND e.source = ?
            ORDER BY n.name, n.id
            LIMIT ? OFFSET ?`,
-          ["query-plan-node", 100, 0],
+          ["query-plan-node", 100, 0]
         ),
         graph: explain(
           `SELECT source, target, kind, provenance
@@ -1191,7 +1522,7 @@ export class BrowserGraphStore {
             "query-plan-node",
             "query-plan-node",
             REPOSITORY_QUERY_LIMITS.maxGraphEdges,
-          ],
+          ]
         ),
         impact: explain(
           `SELECT e.source, e.target, e.kind, e.provenance
@@ -1200,7 +1531,7 @@ export class BrowserGraphStore {
              AND e.kind <> 'contains'
            ORDER BY e.target, e.source, e.kind
            LIMIT ?`,
-          ["query-plan-node", REPOSITORY_QUERY_LIMITS.maxGraphEdges],
+          ["query-plan-node", REPOSITORY_QUERY_LIMITS.maxGraphEdges]
         ),
       }
     })
@@ -1214,12 +1545,12 @@ export class BrowserGraphStore {
            FROM index_generations
            WHERE repository_id = ?
            ORDER BY generation`,
-          [repositoryId],
+          [repositoryId]
         )
         .map((row) => ({
           generation: Number(row.generation),
           status: String(row.status),
-        })),
+        }))
     )
   }
 
@@ -1227,7 +1558,7 @@ export class BrowserGraphStore {
     if (!OPAQUE_REPOSITORY_ID.test(repositoryId)) {
       throw new BrowserStorageError(
         "invalid_repository_id",
-        "Browser storage requires an opaque repository id.",
+        "Browser storage requires an opaque repository id."
       )
     }
     const generations = this.withDatabase(REGISTRY_DATABASE, (db) =>
@@ -1237,9 +1568,9 @@ export class BrowserGraphStore {
            FROM index_generations
            WHERE repository_id = ?
            ORDER BY generation`,
-          [repositoryId],
+          [repositoryId]
         )
-        .map(Number),
+        .map(Number)
     )
     this.withDatabase(REGISTRY_DATABASE, (db) => {
       db.transaction("IMMEDIATE", () => {
@@ -1252,7 +1583,7 @@ export class BrowserGraphStore {
       })
     })
     for (const generation of generations) {
-      this.pool.unlink(generationDatabasePath(repositoryId, generation))
+      this.unlinkDatabase(generationDatabasePath(repositoryId, generation))
     }
     return {
       repositoryId,
@@ -1270,7 +1601,9 @@ export class BrowserGraphStore {
   }
 }
 
-export async function openBrowserGraphStore(options: BrowserGraphStoreOptions = {}) {
+export async function openBrowserGraphStore(
+  options: BrowserGraphStoreOptions = {}
+) {
   const configTarget = globalThis as typeof globalThis & {
     sqlite3ApiConfig?: { disable?: { vfs?: Record<string, boolean> } }
   }
@@ -1282,7 +1615,7 @@ export async function openBrowserGraphStore(options: BrowserGraphStoreOptions = 
   if (!OPAQUE_REPOSITORY_ID.test(poolName)) {
     throw new BrowserStorageError(
       "invalid_repository_id",
-      "Browser storage pool name must be opaque.",
+      "Browser storage pool name must be opaque."
     )
   }
   const pool = await sqlite3.installOpfsSAHPoolVfs({
