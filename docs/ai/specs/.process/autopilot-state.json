@@ -4,20 +4,21 @@
   "spec_id": "SPEC-007",
   "feature_dir": "specs/007-in-browser-indexing",
   "branch": "007-in-browser-indexing",
-  "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/007-in-browser-indexing",
+  "worktree": null,
   "worktree_binding": {
-    "status": "verified",
-    "task_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/007-in-browser-indexing",
-    "execution_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/007-in-browser-indexing",
-    "branch": "007-in-browser-indexing",
-    "head": "bc2143ba2bf8f8067d9b3af689f273f06fceba03",
-    "upstream": "origin/007-in-browser-indexing",
-    "upstream_head": "7596c57bf6b1960b37818f41134eadb2a1b25f67",
-    "constraint": "Run every command and mutation from this exact dedicated worktree."
+    "status": "archived",
+    "task_root": null,
+    "execution_root": null,
+    "archive_execution_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/007-in-browser-indexing",
+    "branch": "codex/spec-007-archive-cleanup",
+    "head": "0f733908866f3ee08ce3381c41f6cbda60afde4d",
+    "upstream": "origin/main",
+    "upstream_head": "0f733908866f3ee08ce3381c41f6cbda60afde4d",
+    "constraint": "The feature worktree is historical; recover removed artifacts from the recorded merge commit when needed."
   },
-  "status": "autopilot_complete",
-  "active_step": null,
-  "updated_at": "2026-07-28T16:10:09Z",
+  "status": "completed_archived",
+  "active_step": "Archive complete",
+  "updated_at": "2026-07-29T22:47:57Z",
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -28,18 +29,33 @@
     "source": "defaults; no project-local settings file"
   },
   "archive_sweep": {
-    "status": "completed_no_candidates",
-    "execution_path": "installed archive extension contract",
-    "mode": "dry_run",
+    "status": "cleanup_applied",
+    "execution_path": "extension_contract",
+    "mode": "apply_cleanup",
+    "invocation_available": true,
+    "prerequisite_available": true,
+    "prerequisite_mode": "merge_provenance_confirmed_on_origin_main",
     "archive_extension_installed": true,
-    "eligible_previous_specs": [],
-    "excluded_current_spec": "specs/007-in-browser-indexing",
-    "active_spec_directories": [
+    "eligible_previous_specs": [
       "specs/007-in-browser-indexing"
     ],
-    "cleanup_applied": false,
-    "safeToApplyCleanup": false,
-    "notes": "The current target was the only active spec directory. Earlier merged specs already have durable memory records."
+    "removed_specs": [
+      "specs/007-in-browser-indexing"
+    ],
+    "excluded_current_spec": null,
+    "active_spec_directories": [],
+    "cleanup_applied": true,
+    "cleanup_mode": "single_merged_spec",
+    "safeToApplyCleanup": true,
+    "base": "origin/main",
+    "base_commit": "0f733908866f3ee08ce3381c41f6cbda60afde4d",
+    "merged_prs": [
+      185,
+      188
+    ],
+    "report": ".specify/memory/archive-reports/2026-07-29-SPEC-007.md",
+    "applied_at": "2026-07-29T22:47:57Z",
+    "notes": "SPEC-007 was the only active candidate. Both implementation and follow-up remediation are merged; process artifacts remain under docs/ai/specs/.process/."
   },
   "prerequisites": {
     "status": "passed",
@@ -1371,6 +1387,10 @@
     {
       "step": "Post: Retrospective",
       "status": "completed"
+    },
+    {
+      "step": "Post: Archive Cleanup",
+      "status": "completed"
     }
   ],
   "post": {
@@ -1387,7 +1407,8 @@
     "pr_body_generation": "completed_validated",
     "pr_creation": "completed_draft",
     "review_remediation": "completed",
-    "retrospective": "completed"
+    "retrospective": "completed",
+    "archive_cleanup": "completed"
   },
   "post_evidence": {
     "live_base": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
@@ -1519,9 +1540,9 @@
     }
   },
   "resume": {
-    "last_completed": "Post: Retrospective",
+    "last_completed": "Post: Archive Cleanup",
     "current": null,
-    "next": "Review and merge draft PR #185 when ready.",
-    "required_action": "None; autopilot is complete."
+    "next": null,
+    "required_action": "None; SPEC-007 is merged and archived."
   }
 }

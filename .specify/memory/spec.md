@@ -231,3 +231,25 @@ code, 43/43 verified tasks, green cross-platform checks, post-merge dogfood,
 and preserved workflow/design evidence carry the durable record. SPEC-015 is
 now ready because its required persisted CFG substrate and read contracts are
 merged.
+
+## SPEC-007 - In-Browser Indexing (archived 2026-07-29)
+
+Private browser-local repositories shipped in PR #185 with review remediation
+in PR #188. The existing SPA can deliberately open a local folder or supported
+snapshot, build and persist a deterministic origin-private SQLite-Wasm graph,
+and provide keyword search, cached source, relationships, graph, and bounded
+impact without a daemon. Refresh, cancellation, generation recovery, locking,
+safe deletion, capability-specific degradation, packaged assets, and explicit
+HTTPS semantic opt-in preserve local-first and dormant-by-default behavior.
+Canonical implementation lives in `src/extraction/`,
+`web/src/local-indexing/`, `web/src/lib/repository-client.ts`, shared
+schema/migrations, the web package pipeline, focused root/web/browser tests,
+and durable operator guidance in `docs/browser-local-indexing.md`. [Source:
+specs/007-in-browser-indexing]
+
+Detailed provenance and recovery:
+[archive-reports/2026-07-29-SPEC-007.md](archive-reports/2026-07-29-SPEC-007.md).
+The active `specs/007-in-browser-indexing/` folder was removed because merged
+code, 38/38 completed tasks, 63/63 implemented FRs, 21/21 met success criteria,
+green cross-platform checks, full live dogfood, and preserved workflow/design
+evidence carry the durable record. No pending spec used SPEC-007 as a blocker.

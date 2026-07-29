@@ -109,7 +109,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-004 | Web Framework Research Spike | ✅ Complete | [SPEC-004-workflow.md](.process/SPEC-004-workflow.md) | Merged (#19); archived in `.specify/memory/archive-reports/2026-07-05-SPEC-004.md` |
 | SPEC-005 | Local HTTP Server & REST API | ✅ Complete | [SPEC-005-workflow.md](.process/SPEC-005-workflow.md) | Merged (#41, #42); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-005.md` |
 | SPEC-006 | Web UI: Graph Browser | ✅ Complete | [SPEC-006-workflow.md](.process/SPEC-006-workflow.md) | Merged (#153); archived in `.specify/memory/archive-reports/2026-07-16-SPEC-006.md` |
-| SPEC-007 | In-Browser Indexing | 🔄 In Progress | [SPEC-007-workflow.md](.process/SPEC-007-workflow.md) | Scaffolded on `007-in-browser-indexing`; SPEC-006 dependency is complete |
+| SPEC-007 | In-Browser Indexing | ✅ Complete | [SPEC-007-workflow.md](.process/SPEC-007-workflow.md) | Merged (#185, remediation #188); archived in `.specify/memory/archive-reports/2026-07-29-SPEC-007.md` |
 | SPEC-008 | LSP Client Integration | ✅ Complete | [SPEC-008-workflow.md](.process/SPEC-008-workflow.md) | Merged implementation (#23-#27) plus regression follow-up #40; archived in `.specify/memory/archive-reports/2026-07-07-SPEC-008.md` |
 | SPEC-009 | LSP Server Facade | ✅ Complete | [SPEC-009-workflow.md](.process/SPEC-009-workflow.md) | Merged (#159-#162); archived in `.specify/memory/archive-reports/2026-07-24-SPEC-009.md` |
 | SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
@@ -330,8 +330,9 @@ Budget result: warning accepted — under the greenfield block line (1200); esti
 
 **Priority:** P1 | **Depends On:** SPEC-006 | **Enables:** zero-install demo/eval path
 
-**Status:** In Progress — scaffolded on branch `007-in-browser-indexing`; workflow at
-[`SPEC-007-workflow.md`](.process/SPEC-007-workflow.md).
+**Status:** Complete — merged in PR #185 with follow-up review remediation in
+PR #188; archived in
+[`2026-07-29-SPEC-007.md`](../../../.specify/memory/archive-reports/2026-07-29-SPEC-007.md).
 
 **Goal:** Open a local folder in the browser and get the same browse/search/impact experience with all parsing and storage happening client-side.
 
@@ -359,6 +360,8 @@ plan estimator projects 720 reviewable LOC from declared production files
 - `web/src/routes/SymbolDetailRoute.tsx`,
   `web/src/components/symbol/SourcePane.tsx`, and `web/src/lib/lsp/client.ts` —
   cached local source routing with no local `/lsp` connection
+- `docs/browser-local-indexing.md` — durable operator, CSP, package, and
+  verification guidance
 
 ---
 

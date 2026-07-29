@@ -171,3 +171,18 @@ MCP, and project status share the same result contract. The original
 reviewability forecast was exceeded, so delivery used eleven ordered marker
 PRs (#169-#179) and workflow/evidence PR #180. Full plan recoverable:
 `git show 6dbf309:specs/014-control-flow-graphs/plan.md`.
+
+## SPEC-007 - In-Browser Indexing (archived 2026-07-29)
+
+Plan shape that shipped: one shared SPA with a typed server/browser repository
+client boundary; a dedicated worker owning SQLite-Wasm OPFS storage, parsing,
+publication, and optional embedding work; canonical schema/migrations and
+runtime-neutral extraction semantics; explicit picker/snapshot admission;
+transactional refresh and last-good recovery; capability-specific browser
+degradation; and same-origin fail-closed package assets. Keyword reads remain
+network-dormant, while semantic indexing is a separate cancellable/resumable
+operation requiring explicit consent, an operator-selected HTTPS endpoint, and
+page-memory-only credentials. Delivery retained the ratified three-slice
+review order despite materially exceeding the scaffold estimate. [Source:
+specs/007-in-browser-indexing] Full plan recoverable:
+`git show 0f733908:specs/007-in-browser-indexing/plan.md`.

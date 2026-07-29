@@ -1978,9 +1978,10 @@ After each slice:
 | Post | Post: Final Reviewability Backstop | ✅ Complete | Proceed with warning at committed checkpoint `8e55cac1`; 83 files, +24,406/-2,099, no correctness blocker. |
 | Post | Post: PR Packet/Body Generation | ✅ Complete | Canonical packet and packet-owned body emitted; read-only validation passed with current fingerprints. |
 | Post | Post: PR Body Generation | ✅ Complete | Packet-owned body checkpointed; persisted validation and title/scope contract passed. |
-| Post | Post: PR Creation | ✅ Complete | Draft PR [#185](https://github.com/racecraft-lab/codegraph/pull/185) created from packet-owned fields. |
-| Post | Post: Review Remediation | ✅ Complete | Four CodeQL findings were investigated: three were fixed structurally with regression tests and the operator-configured HTTPS endpoint was classified with the ratified provider-neutral contract; the reviewed head is green with no open alert or human feedback. |
+| Post | Post: PR Creation | ✅ Complete | PR [#185](https://github.com/racecraft-lab/codegraph/pull/185) merged at 2026-07-29T00:11:38Z as `57a42c6f`. |
+| Post | Post: Review Remediation | ✅ Complete | Initial CodeQL findings were resolved before #185; the recovered P1/P2 parity, lifecycle, recovery, and package remediation then merged in follow-up PR [#188](https://github.com/racecraft-lab/codegraph/pull/188) as `0f733908`. |
 | Post | Post: Retrospective | ✅ Complete | `retrospective.md` records 38/38 tasks, 84/84 requirements, 100% adherence, zero critical findings, and 7/7 self-assessment checks passed. |
+| Post | Post: Archive Cleanup | ✅ Complete | Active spec removed after both PRs merged; provenance and recovery are recorded in `.specify/memory/archive-reports/2026-07-29-SPEC-007.md`. |
 
 ### Reviewability Diff Gate
 
