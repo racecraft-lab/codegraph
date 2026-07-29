@@ -54,7 +54,7 @@ jobs:
             targets: x86_64-pc-windows-msvc aarch64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build kernel prebuilds
         shell: bash
         run: |
@@ -62,7 +62,7 @@ jobs:
             bash scripts/build-kernel.sh --target "$t"
           done
           ls -R codegraph-kernel/prebuilds
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kernel-${{ matrix.runner }}
           path: codegraph-kernel/prebuilds/
@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: kernel
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           # Default checkout is detached at a SHA; we need an actual branch
           # so the CHANGELOG-promote commit knows where to push.
@@ -170,7 +170,7 @@ jobs:
       - name: Download kernel prebuilds
         # All legs are required (see the kernel job), so every target's
         # <target>/codegraph-kernel.node must be present in release/kernel/.
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: kernel-*
           merge-multiple: true
