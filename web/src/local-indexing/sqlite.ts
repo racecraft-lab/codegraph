@@ -75,6 +75,7 @@ export type BrowserStorageFaultPoint =
   | "after-status-update"
   | "after-registry-publish"
   | "after-delete-cleanup"
+  | "before-delete-unlink"
 
 export interface BrowserGraphStoreOptions {
   poolName?: string
@@ -192,9 +193,8 @@ function decodeVector(value: unknown, dimensions: number) {
     )
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  return Array.from(
-    { length: dimensions },
-    (_, index) => view.getFloat32(index * 4, true)
+  return Array.from({ length: dimensions }, (_, index) =>
+    view.getFloat32(index * 4, true)
   )
 }
 
@@ -401,9 +401,9 @@ export class BrowserGraphStore {
   private cleanupRolledBackGenerationFiles(repositoryId?: string): string[] {
     const obsolete = this.withDatabase(REGISTRY_DATABASE, (db) =>
       db.selectObjects(
-        `SELECT repository_id, generation
+        `SELECT repository_id, generation, status
          FROM index_generations
-         WHERE status = 'rolled_back'
+         WHERE status IN ('rolled_back', 'deleted')
            AND (? IS NULL OR repository_id = ?)
          ORDER BY repository_id, generation`,
         [repositoryId ?? null, repositoryId ?? null]
@@ -417,6 +417,15 @@ export class BrowserGraphStore {
       )
       try {
         this.unlinkDatabase(filename)
+        this.withDatabase(REGISTRY_DATABASE, (db) => {
+          run(
+            db,
+            `DELETE FROM index_generations
+             WHERE repository_id = ? AND generation = ?
+               AND status IN ('rolled_back', 'deleted')`,
+            [String(row.repository_id), Number(row.generation)]
+          )
+        })
       } catch {
         retained.push(filename)
       }
@@ -1081,21 +1090,47 @@ export class BrowserGraphStore {
       Pick<Repository, "name" | "sourceKind">
     > = new Map()
   ): Repository[] {
-    const ids = this.withDatabase(REGISTRY_DATABASE, (db) =>
-      db
-        .selectValues(
-          "SELECT repository_id FROM index_publications ORDER BY updated_at DESC"
-        )
-        .map(String)
+    const publications = this.withDatabase(REGISTRY_DATABASE, (db) =>
+      db.selectObjects(
+        `SELECT p.repository_id, g.manifest_json
+           FROM index_publications p
+           JOIN index_generations g
+             ON g.repository_id = p.repository_id
+            AND g.generation = p.current_generation
+           ORDER BY p.updated_at DESC`
+      )
     )
-    return ids.map((id, index) => ({
-      id,
-      root: `local://${id}`,
-      name: metadata.get(id)?.name ?? "Browser repository",
-      default: index === 0,
-      runtime: "local",
-      sourceKind: metadata.get(id)?.sourceKind ?? "picked-folder",
-    }))
+    return publications.map((publication, index) => {
+      const id = String(publication.repository_id)
+      let durable: SourceManifest["repository"]
+      try {
+        const manifest = JSON.parse(
+          String(publication.manifest_json ?? "{}")
+        ) as SourceManifest
+        if (
+          manifest.repository &&
+          typeof manifest.repository.name === "string" &&
+          (manifest.repository.sourceKind === "picked-folder" ||
+            manifest.repository.sourceKind === "dropped-snapshot" ||
+            manifest.repository.sourceKind === "imported-snapshot")
+        ) {
+          durable = manifest.repository
+        }
+      } catch {
+        durable = undefined
+      }
+      return {
+        id,
+        root: `local://${id}`,
+        name: metadata.get(id)?.name ?? durable?.name ?? "Browser repository",
+        default: index === 0,
+        runtime: "local",
+        sourceKind:
+          metadata.get(id)?.sourceKind ??
+          durable?.sourceKind ??
+          "picked-folder",
+      }
+    })
   }
 
   getRepositoryStatus(
@@ -1248,10 +1283,7 @@ export class BrowserGraphStore {
         )
         .map((row) => ({
           node: codeNode(row),
-          score: cosineSimilarity(
-            vector,
-            decodeVector(row.vector, dimensions)
-          ),
+          score: cosineSimilarity(vector, decodeVector(row.vector, dimensions)),
         }))
         .sort((left, right) => {
           if (left.score !== right.score) return right.score - left.score
@@ -1735,18 +1767,38 @@ export class BrowserGraphStore {
         run(db, "DELETE FROM index_publications WHERE repository_id = ?", [
           repositoryId,
         ])
-        run(db, "DELETE FROM index_generations WHERE repository_id = ?", [
-          repositoryId,
-        ])
+        run(
+          db,
+          "UPDATE index_generations SET status = 'deleted' WHERE repository_id = ?",
+          [repositoryId]
+        )
       })
     })
+    const cleanupWarnings: string[] = []
     for (const generation of generations) {
-      this.unlinkDatabase(generationDatabasePath(repositoryId, generation))
+      const databasePath = generationDatabasePath(repositoryId, generation)
+      try {
+        this.faultInjector?.("before-delete-unlink")
+        this.unlinkDatabase(databasePath)
+        this.withDatabase(REGISTRY_DATABASE, (db) => {
+          run(
+            db,
+            `DELETE FROM index_generations
+             WHERE repository_id = ? AND generation = ? AND status = 'deleted'`,
+            [repositoryId, generation]
+          )
+        })
+      } catch {
+        cleanupWarnings.push(
+          `Generation ${generation} remains queued for browser-storage cleanup.`
+        )
+      }
     }
     return {
       repositoryId,
       deleted: true,
       generations: generations.length,
+      cleanupWarnings,
     }
   }
 

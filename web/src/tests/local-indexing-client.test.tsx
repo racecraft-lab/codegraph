@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
-import { createRemoteRepositoryClient, RepositoryClientError } from "../lib/repository-client"
+import {
+  createRemoteRepositoryClient,
+  RepositoryClientError,
+} from "../lib/repository-client"
 import { LocalRepositoryClient } from "../local-indexing/client"
 import {
   LocalStorageSnapshotRepositoryRegistry,
@@ -77,7 +80,7 @@ describe("shared repository client boundary", () => {
     const pending = client.openPickedFolder(
       { identity: pickedIdentity, collection },
       pickedIdentity.id,
-      "operation-large",
+      "operation-large"
     )
     await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledTimes(1))
     expect(worker.postMessage.mock.calls[0]?.[0]).toMatchObject({
@@ -100,7 +103,7 @@ describe("shared repository client boundary", () => {
         worker.postMessage.mock.calls[0]?.[0] as {
           payload: { entries: unknown[] }
         }
-      ).payload.entries,
+      ).payload.entries
     ).toHaveLength(64)
     expect(worker.postMessage.mock.calls[0]?.[1]).toHaveLength(64)
     worker.respond({
@@ -271,9 +274,75 @@ describe("shared repository client boundary", () => {
           repositoryId: "snapshot-existing",
           confirmed: false,
         },
-      }),
+      })
     ).rejects.toMatchObject({ code: "invalid_request" })
     expect(worker.postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns a published snapshot with a warning when registry persistence fails afterward", async () => {
+    const worker = new TestWorker()
+    const snapshotRegistry: SnapshotRepositoryRegistry = {
+      list: vi.fn(async () => []),
+      put: vi.fn(async () => {
+        throw new DOMException("Storage is blocked.", "SecurityError")
+      }),
+      delete: vi.fn(async () => undefined),
+    }
+    const client = new LocalRepositoryClient(worker, {
+      createId: () => "snapshot-published",
+      snapshotRegistry,
+    })
+    const identity: SourceIdentity = {
+      id: "snapshot-published",
+      sourceKind: "dropped-snapshot",
+      displayName: "project",
+      virtualRoot: "local://snapshot-published",
+      acceptedAt: "2026-07-28T11:15:00.000Z",
+    }
+    const collection = {
+      entries: [],
+      manifest: { entries: [], fingerprint: "manifest-published" },
+      warnings: { details: [], total: 0, truncated: false },
+      snapshot: {
+        acceptedAt: identity.acceptedAt,
+        fileCount: 0,
+        totalBytes: 0,
+        manifestFingerprint: "manifest-published",
+      },
+    }
+
+    const pending = client.importSnapshot({ identity, collection })
+    await vi.waitFor(() =>
+      expect(worker.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "snapshot-published",
+          kind: "import-snapshot",
+        })
+      )
+    )
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "snapshot-published",
+      operationId: "snapshot-published",
+      repositoryId: "snapshot-published",
+      type: "result",
+      terminal: "complete",
+      result: {
+        id: "snapshot-published",
+        root: "local://snapshot-published",
+        name: "project",
+        default: false,
+        runtime: "local",
+        sourceKind: "dropped-snapshot",
+      },
+    })
+
+    await expect(pending).resolves.toMatchObject({
+      id: "snapshot-published",
+      metadataWarnings: [
+        "Snapshot registry metadata could not be saved; the published index remains available.",
+      ],
+    })
   })
 
   it("inspects storage without prompting and requests persistence only explicitly", async () => {
@@ -386,12 +455,18 @@ describe("shared repository client boundary", () => {
       repositoryId: "local-1",
       type: "result",
       terminal: "complete",
-      result: { deleted: true },
+      result: {
+        deleted: true,
+        cleanupWarnings: [
+          "Generation 1 remains queued for browser-storage cleanup.",
+        ],
+      },
     })
 
     await expect(deleting).resolves.toEqual({
       deleted: true,
       cleanupWarnings: [
+        "Generation 1 remains queued for browser-storage cleanup.",
         "Snapshot metadata cleanup could not be completed. Site-data repair may be required.",
       ],
     })
@@ -402,9 +477,11 @@ describe("shared repository client boundary", () => {
       .fn()
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify([{ id: "server", root: "/repo", name: "Repo", default: true }]),
-          { status: 200 },
-        ),
+          JSON.stringify([
+            { id: "server", root: "/repo", name: "Repo", default: true },
+          ]),
+          { status: 200 }
+        )
       )
       .mockResolvedValueOnce(
         new Response(
@@ -415,8 +492,8 @@ describe("shared repository client boundary", () => {
             offset: 0,
             degraded: false,
           }),
-          { status: 200 },
-        ),
+          { status: 200 }
+        )
       )
     vi.stubGlobal("fetch", fetchMock)
     const client = createRemoteRepositoryClient()
@@ -424,16 +501,22 @@ describe("shared repository client boundary", () => {
     await expect(client.listRepositories()).resolves.toEqual([
       { id: "server", root: "/repo", name: "Repo", default: true },
     ])
-    await expect(client.search("server", { query: "main", limit: 20 })).resolves.toMatchObject({
+    await expect(
+      client.search("server", { query: "main", limit: 20 })
+    ).resolves.toMatchObject({
       total: 1,
       degraded: false,
     })
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/repos",
-      expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/json" }) }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Accept: "application/json" }),
+      })
     )
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/search?q=main&limit=20&repo=server")
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/search?q=main&limit=20&repo=server"
+    )
     await expect(client.getSource("server", "node-1")).rejects.toMatchObject({
       code: "capability_unavailable",
     })
@@ -518,7 +601,7 @@ describe("shared repository client boundary", () => {
     const indexing = client.startSemanticIndexing(
       "local-1",
       semanticRequest,
-      "embed-operation",
+      "embed-operation"
     )
     worker.respond({
       protocolVersion: 1,
@@ -579,12 +662,89 @@ describe("shared repository client boundary", () => {
     await expect(searching).resolves.toMatchObject({ degraded: false })
   })
 
+  it("rejects malformed semantic results before they can populate a search session", async () => {
+    const worker = new TestWorker()
+    const client = new LocalRepositoryClient(worker, {
+      createId: vi
+        .fn()
+        .mockReturnValueOnce("embed-malformed")
+        .mockReturnValueOnce("search-after-malformed"),
+    })
+    const semanticRequest = {
+      endpointUrl: "https://embeddings.example/v1/embed",
+      model: "model-safe",
+      dimensions: 2,
+      graphGeneration: 7,
+      credential: "session-only",
+      consentGrantedAt: "2026-07-28T11:55:00.000Z",
+    }
+
+    const indexing = client.startSemanticIndexing(
+      "local-1",
+      semanticRequest,
+      "embed-operation"
+    )
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "embed-malformed",
+      operationId: "embed-operation",
+      repositoryId: "local-1",
+      type: "result",
+      terminal: "complete",
+      result: {
+        status: "complete",
+        graphGeneration: 7,
+        embedded: "not-a-count",
+        dimensions: 2,
+      },
+    })
+    await expect(indexing).rejects.toMatchObject({
+      code: "internal",
+      message: "The browser-local indexing worker returned an invalid result.",
+    })
+
+    const searching = client.search("local-1", {
+      query: "authorization flow",
+      mode: "auto",
+      limit: 10,
+    })
+    expect(worker.postMessage).toHaveBeenLastCalledWith({
+      protocolVersion: 1,
+      requestId: "search-after-malformed",
+      repositoryId: "local-1",
+      kind: "query",
+      payload: {
+        query: "search",
+        request: {
+          query: "authorization flow",
+          mode: "keyword",
+          limit: 10,
+        },
+      },
+    })
+    worker.respond({
+      protocolVersion: 1,
+      requestId: "search-after-malformed",
+      repositoryId: "local-1",
+      type: "result",
+      terminal: "complete",
+      result: {
+        items: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+        degraded: false,
+      },
+    })
+    await expect(searching).resolves.toMatchObject({ degraded: false })
+  })
+
   it("requires a page-session credential for explicit semantic search", async () => {
     const worker = new TestWorker()
     const client = new LocalRepositoryClient(worker)
 
     await expect(
-      client.search("local-1", { query: "authorization", mode: "semantic" }),
+      client.search("local-1", { query: "authorization", mode: "semantic" })
     ).rejects.toMatchObject({ code: "credential_required" })
     expect(worker.postMessage).not.toHaveBeenCalled()
   })
@@ -609,7 +769,9 @@ describe("shared repository client boundary", () => {
     })
     await expect(status).rejects.toMatchObject({ code: "unavailable" })
     expect(worker.terminate).toHaveBeenCalledTimes(1)
-    await expect(client.search("local-1", { query: "again" })).rejects.toMatchObject({
+    await expect(
+      client.search("local-1", { query: "again" })
+    ).rejects.toMatchObject({
       code: "unavailable",
     })
   })
@@ -630,7 +792,8 @@ describe("shared repository client boundary", () => {
     await expect(pending).rejects.toMatchObject({
       code: "internal",
       retryable: false,
-      message: "The browser-local indexing worker returned an invalid response.",
+      message:
+        "The browser-local indexing worker returned an invalid response.",
     })
   })
 
@@ -642,7 +805,7 @@ describe("shared repository client boundary", () => {
     const registry = new LocalStorageSnapshotRepositoryRegistry(storage)
 
     await expect(registry.list()).rejects.toThrow(
-      "Browser snapshot metadata is unreadable. Clear or repair this site's local CodeGraph metadata before importing another snapshot.",
+      "Browser snapshot metadata is unreadable. Clear or repair this site's local CodeGraph metadata before importing another snapshot."
     )
   })
 
@@ -655,7 +818,7 @@ describe("shared repository client boundary", () => {
             sourceKind: "dropped-snapshot",
             manifestFingerprint: "manifest-1",
           },
-        ]),
+        ])
       ),
       setItem: vi.fn(),
     })
@@ -667,29 +830,27 @@ describe("shared repository client boundary", () => {
     })
 
     await expect(incomplete.list()).rejects.toThrow(
-      "Browser snapshot metadata is unreadable.",
+      "Browser snapshot metadata is unreadable."
     )
     await expect(inaccessible.list()).rejects.toThrow(
-      "Browser snapshot metadata is unreadable.",
+      "Browser snapshot metadata is unreadable."
     )
   })
 
   it("clamps relationship pages and graph/impact depth identically for remote and local clients", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementation(() =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({
-              items: [],
-              total: 0,
-              limit: 500,
-              offset: 0,
-            }),
-            { status: 200 },
-          ),
-        ),
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            items: [],
+            total: 0,
+            limit: 500,
+            offset: 0,
+          }),
+          { status: 200 }
+        )
       )
+    )
     vi.stubGlobal("fetch", fetchMock)
     const remote = createRemoteRepositoryClient()
 
@@ -701,13 +862,13 @@ describe("shared repository client boundary", () => {
     await remote.getImpact("server", "node-1")
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "/api/callers/node-1?limit=500&offset=0&repo=server",
+      "/api/callers/node-1?limit=500&offset=0&repo=server"
     )
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "/api/graph/node-1?depth=3&repo=server",
+      "/api/graph/node-1?depth=3&repo=server"
     )
     expect(fetchMock.mock.calls[2]?.[0]).toBe(
-      "/api/impact/node-1?depth=3&repo=server",
+      "/api/impact/node-1?depth=3&repo=server"
     )
 
     const worker = new TestWorker()
@@ -803,7 +964,8 @@ describe("shared repository client boundary", () => {
       "cancel",
       "deleteRepository",
     ] as const
-    for (const method of expectedMethods) expect(client[method]).toEqual(expect.any(Function))
+    for (const method of expectedMethods)
+      expect(client[method]).toEqual(expect.any(Function))
 
     const pending = client.getNode("local-1", "missing")
     worker.respond({
@@ -824,10 +986,12 @@ describe("shared repository client boundary", () => {
         code: "capability_unavailable",
         message: "This local query is not available.",
         retryable: false,
-      }),
+      })
     )
     await expect(
-      Promise.reject(new RepositoryClientError("quota_exceeded", "Storage full.", false)),
+      Promise.reject(
+        new RepositoryClientError("quota_exceeded", "Storage full.", false)
+      )
     ).rejects.toMatchObject({ code: "quota_exceeded" })
 
     const closing = client.close()
@@ -856,7 +1020,9 @@ describe("shared repository client boundary", () => {
       sourceRegistry: registry,
     })
 
-    await expect(client.restorePickedFolder(pickedIdentity)).resolves.toMatchObject({
+    await expect(
+      client.restorePickedFolder(pickedIdentity)
+    ).resolves.toMatchObject({
       status: "stale",
       canRefresh: false,
     })
@@ -899,8 +1065,8 @@ describe("shared repository client boundary", () => {
               warnings: { details: [], total: 0, truncated: false },
             }),
           },
-        }),
-      ),
+        })
+      )
     )
     worker.respond({
       protocolVersion: 1,

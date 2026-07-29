@@ -10,6 +10,9 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { Parser, Language as WasmLanguage } from 'web-tree-sitter';
 import { Language } from '../types';
+import { EXTENSION_MAP } from './extension-map';
+
+export { EXTENSION_MAP } from './extension-map';
 
 export type GrammarLanguage = Exclude<Language, 'svelte' | 'vue' | 'astro' | 'liquid' | 'razor' | 'yaml' | 'twig' | 'xml' | 'properties' | 'unknown'>;
 type InternalGrammarKey = 'ocaml_interface';
@@ -54,130 +57,6 @@ const WASM_GRAMMAR_FILES: Record<GrammarKey, string> = {
   terraform: 'tree-sitter-terraform.wasm',
   arkts: 'tree-sitter-arkts.wasm',
   nix: 'tree-sitter-nix.wasm',
-};
-
-/**
- * File extension to Language mapping
- */
-export const EXTENSION_MAP: Record<string, Language> = {
-  '.ts': 'typescript',
-  '.tsx': 'tsx',
-  // ESM/CJS TypeScript module extensions — parsed as TS (no JSX). (#366)
-  '.mts': 'typescript',
-  '.cts': 'typescript',
-  // ArkTS (HarmonyOS / OpenHarmony) — a TypeScript superset with declarative
-  // UI (`@Component struct` + `build()`). Own grammar (a tree-sitter-typescript
-  // -style fork); plain `.ts` in an ArkTS project stays TypeScript. (#648)
-  '.ets': 'arkts',
-  '.js': 'javascript',
-  '.mjs': 'javascript',
-  '.cjs': 'javascript',
-  // SAP HANA XS Classic server-side JavaScript. (#556)
-  '.xsjs': 'javascript',
-  '.xsjslib': 'javascript',
-  '.jsx': 'jsx',
-  '.py': 'python',
-  '.pyw': 'python',
-  '.go': 'go',
-  '.rs': 'rust',
-  '.java': 'java',
-  '.c': 'c',
-  '.h': 'c', // Could also be C++, defaulting to C
-  '.cpp': 'cpp',
-  '.cc': 'cpp',
-  '.cxx': 'cpp',
-  '.hpp': 'cpp',
-  '.hxx': 'cpp',
-  '.cs': 'csharp',
-  // ASP.NET Razor / Blazor markup — custom RazorExtractor (links @model/@inject/
-  // component tags to their C# types; markup isn't a tree-sitter grammar).
-  '.cshtml': 'razor',
-  '.razor': 'razor',
-  '.php': 'php',
-  // Drupal-specific PHP file extensions
-  '.module': 'php',
-  '.install': 'php',
-  '.theme': 'php',
-  '.inc': 'php',
-  // YAML (used for Drupal routing files; no symbol extraction, file-level tracking only)
-  '.yml': 'yaml',
-  '.yaml': 'yaml',
-  // Twig templates (file-level tracking only, no symbol extraction)
-  '.twig': 'twig',
-  '.rb': 'ruby',
-  '.rake': 'ruby',
-  '.swift': 'swift',
-  '.kt': 'kotlin',
-  '.kts': 'kotlin',
-  '.dart': 'dart',
-  '.liquid': 'liquid',
-  '.svelte': 'svelte',
-  '.vue': 'vue',
-  '.astro': 'astro',
-  '.r': 'r',
-  '.pas': 'pascal',
-  '.dpr': 'pascal',
-  '.dpk': 'pascal',
-  '.lpr': 'pascal',
-  '.dfm': 'pascal',
-  '.fmx': 'pascal',
-  '.scala': 'scala',
-  '.sc': 'scala',
-  '.lua': 'lua',
-  '.luau': 'luau',
-  '.m': 'objc',
-  '.mm': 'objc',
-  '.sol': 'solidity',
-  // CFML: .cfc/.cfm parse with the tag-aware `cfml` grammar (custom CfmlExtractor
-  // dialect-switches to cfscript for bare-script content); .cfs is pure CFScript.
-  '.cfc': 'cfml',
-  '.cfm': 'cfml',
-  '.cfs': 'cfscript',
-  // Metal Shading Language ≈ C++14: the C++ grammar extracts its functions,
-  // structs, and calls. MSL-specific `[[attribute]]` annotations are blanked
-  // pre-parse for `.metal` files (see blankMetalAttributes in c-cpp.ts). (#1121)
-  '.metal': 'cpp',
-  // CUDA ≈ C++ plus execution-space specifiers (`__global__` …) and
-  // `<<<grid, block>>>` kernel-launch syntax: the C++ grammar extracts its
-  // functions/structs/classes/calls once blankCudaConstructs (pre-parse; gated
-  // by these extensions OR by content for CUDA living in `.h`/`.hpp` headers —
-  // see c-cpp.ts) blanks the CUDA-only tokens. (#387)
-  '.cu': 'cpp',
-  '.cuh': 'cpp',
-  '.nix': 'nix',
-  // XML: file-level tracking; the MyBatis extractor matches `<mapper namespace="...">`
-  // shape and emits SQL-statement nodes (other XML returns empty).
-  '.xml': 'xml',
-  // COBOL: programs (.cbl/.cob) and copybooks (.cpy). Vendored grammar
-  // (patched yutaro-sakamoto/tree-sitter-cobol) handles fixed-format column
-  // rules, EXEC CICS/SQL blocks, and standalone copybook fragments.
-  '.cbl': 'cobol',
-  '.cob': 'cobol',
-  '.cobol': 'cobol',
-  '.cpy': 'cobol',
-  // VB.NET: vendored grammar (patched govindbanura/tree-sitter-vbnet) — classes,
-  // modules, interfaces, structures, properties, events, Handles clauses, LINQ.
-  '.vb': 'vbnet',
-  // Erlang: modules (.erl) and header files (.hrl). Vendored WhatsApp/
-  // tree-sitter-erlang grammar (the ELP grammar).
-  '.erl': 'erlang',
-  '.hrl': 'erlang',
-  // escripts parse natively — the grammar has a first-class `shebang` node.
-  // (`.app`/`.app.src` resource files route via isErlangAppFile below: their
-  // last-dot extension is too generic for this map.)
-  '.escript': 'erlang',
-  // OCaml implementation and interface files. Both report as public language
-  // `ocaml`; parser selection uses the extension-aware internal grammar key.
-  '.ml': 'ocaml',
-  '.mli': 'ocaml',
-  // Spring config: `application.properties` / `application-*.properties`. Same
-  // shape as the `.yml` variants — the YAML/properties extractor emits one node
-  // per leaf key, and the Spring resolver links `@Value("${k}")` references.
-  '.properties': 'properties',
-  // Terraform / OpenTofu / HCL config — tree-sitter-terraform dialect of HCL.
-  '.tf': 'terraform',
-  '.tfvars': 'terraform',
-  '.tofu': 'terraform',
 };
 
 /**

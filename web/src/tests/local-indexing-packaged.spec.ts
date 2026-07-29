@@ -77,15 +77,10 @@ test("runs packaged local indexing under the trusted-host CSP without cross-orig
   page,
 }, testInfo) => {
   const quickstart = fs.readFileSync(
-    path.join(
-      webRoot,
-      "../specs/007-in-browser-indexing/quickstart.md"
-    ),
+    path.join(webRoot, "../specs/007-in-browser-indexing/quickstart.md"),
     "utf8"
   )
-  expect(quickstart).toContain(
-    `Content-Security-Policy: ${TRUSTED_HOST_CSP}`
-  )
+  expect(quickstart).toContain(`Content-Security-Policy: ${TRUSTED_HOST_CSP}`)
   expect(quickstart).toMatch(/does not\s+require COOP or COEP/)
   await context.route("**/*", async (route) => {
     if (route.request().resourceType() !== "document") {
@@ -102,10 +97,9 @@ test("runs packaged local indexing under the trusted-host CSP without cross-orig
     })
   })
   await page.addInitScript(() => {
-    const source = "export function trustedHost() { return true }\n"
-    const file = {
+    const sourceFile = (name: string, source: string) => ({
       kind: "file",
-      name: "trusted.ts",
+      name,
       async getFile() {
         const bytes = new TextEncoder().encode(source)
         return {
@@ -116,13 +110,26 @@ test("runs packaged local indexing under the trusted-host CSP without cross-orig
           },
         }
       },
-    }
+    })
     Object.assign(window, {
       showDirectoryPicker: async () => ({
         kind: "directory",
         name: "Trusted host",
         async *entries() {
-          yield ["trusted.ts", file] as const
+          yield [
+            "trusted.ts",
+            sourceFile(
+              "trusted.ts",
+              "export function trustedHost() { return true }\n"
+            ),
+          ] as const
+          yield [
+            "trusted.py",
+            sourceFile(
+              "trusted.py",
+              "def trusted_python():\n    return True\n"
+            ),
+          ] as const
         },
       }),
     })
@@ -149,6 +156,13 @@ test("runs packaged local indexing under the trusted-host CSP without cross-orig
   await page.locator("form").getByRole("button", { name: "Search" }).click()
   await expect(
     page.getByRole("cell", { name: "trustedHost", exact: true })
+  ).toBeVisible()
+  await page
+    .getByRole("textbox", { name: "Search symbols" })
+    .fill("trusted_python")
+  await page.locator("form").getByRole("button", { name: "Search" }).click()
+  await expect(
+    page.getByRole("cell", { name: "trusted_python", exact: true })
   ).toBeVisible()
   expect(cspViolations).toEqual([])
 

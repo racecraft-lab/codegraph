@@ -29,18 +29,19 @@ Rules:
 - Long-running requests have an `operationId`.
 - Responses include the matching `requestId` and `operationId` when present.
 - Payloads are structured-clone safe. No `Error` instances or DOM nodes cross the boundary.
-- Transferable `ArrayBuffer` values are allowed for snapshot file content when useful.
+- Transferable `ArrayBuffer` values carry bounded picked-folder and snapshot source batches.
 
 ## Request Kinds
 
 | Kind | Payload | Result |
 |------|---------|--------|
 | `capabilities` | none | `CapabilityReport` |
-| `open-picked-folder` | Granted `FileSystemDirectoryHandle`, config | `LocalRepository` and indexing operation |
-| `import-snapshot` | Snapshot manifest and file buffers/text | `LocalRepository` and indexing operation |
-| `reconnect` | Granted handle ref metadata | `LocalRepository` |
-| `index` | Repository id and source provider | Published generation |
-| `refresh` | Repository id | Published generation or warnings |
+| `acquire` | Repository id | Exclusive browser-storage ownership acknowledgement |
+| `source-batch` | Bounded accepted source entries plus batch totals | Batch acknowledgement |
+| `open-picked-folder` | Source identity, accepted manifest/rules, and inline entries or completed source-batch descriptor | `LocalRepository` after atomic publication |
+| `import-snapshot` | Snapshot identity, accepted manifest/rules, snapshot metadata, and inline entries or completed source-batch descriptor | `LocalRepository` after atomic publication |
+| `index` | Repository id and bounded generic index payload | Published generation |
+| `refresh` | Repository id, accepted manifest/rules, and inline entries or completed source-batch descriptor | Published generation or warnings |
 | `query` | Query kind and typed request | Existing API result shape |
 | `embed` | Session credential, endpoint profile, model settings | Vector generation summary |
 | `cancel` | Operation id | Cancellation acknowledgement |
@@ -117,8 +118,8 @@ Rules:
 
 ## Source Rules
 
-- The main thread may pass handles only after user-activation permission checks.
-- The worker performs reads only through granted handles or immutable snapshots.
+- The main thread owns granted `FileSystemDirectoryHandle` objects, permission checks, directory enumeration, nested ignore/config evaluation, and bounded file reads.
+- Directory handles never cross the worker boundary. The worker receives only normalized accepted-source metadata and bounded transferable bytes from granted handles or immutable snapshots.
 - Paths are normalized to POSIX-style relative paths before database writes.
 - The worker admits only paths derived from source-provider ancestry metadata; absolute paths, empty segments, `.`, `..`, separator escapes, duplicate normalized paths, unsupported entry kinds, recursive cycles, and configured traversal budget overruns are warnings before source text is read.
 - Files above 1 MiB, binary files, unreadable files, and unsupported languages produce warnings.

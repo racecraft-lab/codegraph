@@ -61,6 +61,24 @@ export interface LocalOperationStatus {
 }
 
 const LOCAL_REPOSITORIES_KEY = "codegraph.localRepositories.v1"
+const LOCAL_INDEX_RECOVERY_KEY = "codegraph.localIndexRecovery.v1"
+
+function localIndexRecoveryHint() {
+  try {
+    return localStorage.getItem(LOCAL_INDEX_RECOVERY_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function markLocalIndexExpected() {
+  try {
+    localStorage.setItem(LOCAL_INDEX_RECOVERY_KEY, "1")
+    return true
+  } catch {
+    return false
+  }
+}
 
 function persistedLocalRepositories(): Repository[] {
   const unreadable = () =>
@@ -121,12 +139,19 @@ function persistedLocalRepositories(): Repository[] {
 }
 
 function persistLocalRepositories(repositories: Repository[]) {
+  const localRepositories = repositories.filter(
+    (repository) => repository.runtime === "local"
+  )
+  if (localRepositories.length > 0) {
+    localStorage.setItem(LOCAL_INDEX_RECOVERY_KEY, "1")
+  }
   localStorage.setItem(
     LOCAL_REPOSITORIES_KEY,
-    JSON.stringify(
-      repositories.filter((repository) => repository.runtime === "local")
-    )
+    JSON.stringify(localRepositories)
   )
+  if (localRepositories.length === 0) {
+    localStorage.removeItem(LOCAL_INDEX_RECOVERY_KEY)
+  }
 }
 
 function pickedFolderIdentity(
@@ -227,6 +252,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   )
   const localOperationIdRef = React.useRef<string | undefined>(undefined)
   const localOperationKindRef = React.useRef<"keyword" | "semantic">("keyword")
+  const deletingRepositoryIdsRef = React.useRef(new Set<string>())
+  const deletedRepositoryIdsRef = React.useRef(new Set<string>())
   const embeddingProfilesRef = React.useRef<EmbeddingProfileStore | undefined>(
     undefined
   )
@@ -296,22 +323,44 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const refreshRepositories = React.useCallback(async () => {
     setRepositoriesStatus("loading")
     let persisted: Repository[] = []
+    let metadataWarning: string | undefined
     try {
-      persisted = persistedLocalRepositories()
+      try {
+        persisted = persistedLocalRepositories()
+      } catch (error) {
+        metadataWarning =
+          error instanceof Error
+            ? error.message
+            : "Browser repository metadata could not be read."
+      }
       let nextRepos: Repository[]
-      if (persisted.length > 0) {
+      let published: Repository[] = []
+      const recoveryHint = localIndexRecoveryHint()
+      if (metadataWarning !== undefined && !recoveryHint) {
+        throw new RepositoryClientError("internal", metadataWarning, false)
+      }
+      const shouldReconcileLocalStorage = persisted.length > 0 || recoveryHint
+      if (shouldReconcileLocalStorage) {
+        published = await localClient().listRepositories()
+      }
+      if (published.length > 0) {
+        const persistedById = new Map(
+          persisted.map((repository) => [repository.id, repository])
+        )
+        nextRepos = published.map((repository) => ({
+          ...repository,
+          ...persistedById.get(repository.id),
+          id: repository.id,
+          root: repository.root,
+          runtime: "local" as const,
+          sourceKind:
+            persistedById.get(repository.id)?.sourceKind ??
+            repository.sourceKind,
+        }))
         const repositoryToAcquire =
-          persisted.find((repository) => repository.default) ?? persisted[0]
+          nextRepos.find((repository) => repository.default) ?? nextRepos[0]
         await localClient().acquireRepository(repositoryToAcquire.id)
         setStorageStatus(await localClient().getStorageStatus())
-        const publishedIds = new Set(
-          (await localClient().listRepositories()).map(
-            (repository) => repository.id
-          )
-        )
-        nextRepos = persisted.filter((repository) =>
-          publishedIds.has(repository.id)
-        )
         await Promise.allSettled(
           nextRepos.map((repository) => {
             const identity = pickedFolderIdentity(repository)
@@ -328,8 +377,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         setLocalSourceConnection(
           localClient().sourceConnection(repositoryToAcquire.id)
         )
-        persistLocalRepositories(nextRepos)
+        try {
+          persistLocalRepositories(nextRepos)
+        } catch {
+          metadataWarning ??=
+            "Browser repository-list metadata could not be repaired, but the published local index remains available."
+        }
       } else {
+        if (shouldReconcileLocalStorage) {
+          try {
+            persistLocalRepositories([])
+          } catch {
+            // Existing metadata warning already explains inaccessible storage.
+          }
+        }
         setStorageStatus(undefined)
         setLocalSourceConnection(undefined)
         nextRepos = await remoteClient.listRepositories()
@@ -343,7 +404,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       )
       setRepositoriesStatus("success")
       setLocalOperation((current) =>
-        current?.state === "busy" ? undefined : current
+        metadataWarning
+          ? {
+              state: "partial-warning",
+              message: metadataWarning,
+              cancellable: false,
+            }
+          : current?.state === "busy"
+            ? undefined
+            : current
       )
     } catch (error) {
       const nextError =
@@ -361,15 +430,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         setLocalOperation({
           state: "busy",
           message: nextError.message,
-          cancellable: false,
-        })
-      } else if (
-        error instanceof RepositoryClientError &&
-        error.message.startsWith("Browser repository metadata is unreadable.")
-      ) {
-        setLocalOperation({
-          state: "failed",
-          message: error.message,
           cancellable: false,
         })
       }
@@ -466,6 +526,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       cancellable: false,
     })
 
+    let operationId: string | undefined
     try {
       let pickedHandle: DirectoryHandleLike | undefined
       const provider = await openPickedFolderFromUserAction(
@@ -484,9 +545,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         cancellable: false,
       })
       const collection = await provider.collect()
-      const operationId = crypto.randomUUID()
+      operationId = crypto.randomUUID()
       localOperationIdRef.current = operationId
       localOperationKindRef.current = "keyword"
+      const recoveryHintSaved = markLocalIndexExpected()
       const repository = await localClient().openPickedFolder(
         {
           identity: provider.identity,
@@ -495,18 +557,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         provider.identity.id,
         operationId
       )
-      if (pickedHandle) {
-        setLocalSourceConnection(
-          localClient().connectPickedFolder(provider.identity, pickedHandle)
-        )
-      }
-      if (
-        pickedHandle?.queryPermission &&
-        pickedHandle.requestPermission &&
-        pickedHandle.isSameEntry
-      ) {
-        await localClient().savePickedFolder(provider.identity, pickedHandle)
-      }
       const localRepository: Repository = {
         ...repository,
         id: provider.identity.id,
@@ -520,21 +570,51 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         ...current.filter((candidate) => candidate.id !== localRepository.id),
         localRepository,
       ])
-      persistLocalRepositories([
-        ...persistedLocalRepositories().filter(
-          (candidate) => candidate.id !== localRepository.id
-        ),
-        localRepository,
-      ])
       setSelectedRepoId(localRepository.id)
+      const metadataWarnings: string[] = []
+      if (!recoveryHintSaved) {
+        metadataWarnings.push(
+          "A local-index recovery marker could not be saved; reload recovery may require site-storage repair."
+        )
+      }
+      if (pickedHandle) {
+        setLocalSourceConnection(
+          localClient().connectPickedFolder(provider.identity, pickedHandle)
+        )
+      }
+      if (
+        pickedHandle?.queryPermission &&
+        pickedHandle.requestPermission &&
+        pickedHandle.isSameEntry
+      ) {
+        try {
+          await localClient().savePickedFolder(provider.identity, pickedHandle)
+        } catch {
+          metadataWarnings.push(
+            "The saved folder handle could not be persisted; reconnect after reload."
+          )
+        }
+      }
+      try {
+        persistLocalRepositories([
+          ...persistedLocalRepositories().filter(
+            (candidate) => candidate.id !== localRepository.id
+          ),
+          localRepository,
+        ])
+      } catch {
+        metadataWarnings.push(
+          "Repository-list metadata could not be saved; the published local index remains available."
+        )
+      }
+      const warningCount = collection.warnings.total + metadataWarnings.length
+      const metadataWarningMessage =
+        metadataWarnings.length > 0 ? ` ${metadataWarnings.join(" ")}` : ""
       setLocalOperation({
-        state:
-          collection.warnings.details.length > 0
-            ? "partial-warning"
-            : "complete",
+        state: warningCount > 0 ? "partial-warning" : "complete",
         message:
-          collection.warnings.details.length > 0
-            ? `Indexed with ${collection.warnings.total.toLocaleString()} source warnings.`
+          warningCount > 0
+            ? `Local keyword index complete with ${warningCount.toLocaleString()} warning${warningCount === 1 ? "" : "s"}.${metadataWarningMessage}`
             : "Local keyword index complete.",
         phase: "Complete",
         completed: collection.entries.length,
@@ -573,7 +653,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
       throw error
     } finally {
-      localOperationIdRef.current = undefined
+      if (localOperationIdRef.current === operationId) {
+        localOperationIdRef.current = undefined
+      }
     }
   }, [capabilityReport, localClient])
 
@@ -601,6 +683,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       })
       try {
         const collection = await provider.collect()
+        const recoveryHintSaved = markLocalIndexExpected()
         const repository = await localClient().importSnapshot(
           { identity: provider.identity, collection },
           collection.entries.map((entry) => entry.bytes.buffer as ArrayBuffer)
@@ -609,21 +692,38 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           ...current.filter((candidate) => candidate.id !== repository.id),
           repository,
         ])
-        persistLocalRepositories([
-          ...persistedLocalRepositories().filter(
-            (candidate) => candidate.id !== repository.id
-          ),
-          repository,
-        ])
+        const metadataWarnings = [...(repository.metadataWarnings ?? [])]
+        if (!recoveryHintSaved) {
+          metadataWarnings.push(
+            "A local-index recovery marker could not be saved; reload recovery may require site-storage repair."
+          )
+        }
+        try {
+          persistLocalRepositories([
+            ...persistedLocalRepositories().filter(
+              (candidate) => candidate.id !== repository.id
+            ),
+            repository,
+          ])
+        } catch {
+          metadataWarnings.push(
+            "Repository-list metadata could not be saved; the published snapshot remains available."
+          )
+        }
         setSelectedRepoId(repository.id)
         setLocalSourceConnection(undefined)
         setLocalOperation({
-          state: collection.warnings.total > 0 ? "partial-warning" : "snapshot",
-          message: repository.duplicateSnapshot
-            ? `Snapshot imported. Its accepted files match ${repository.duplicateSnapshot.displayName}; both repositories remain separate.`
-            : `Snapshot imported at ${new Date(
-                collection.snapshot.acceptedAt
-              ).toLocaleString()}. It will not reconnect or refresh automatically.`,
+          state:
+            collection.warnings.total > 0 || metadataWarnings.length > 0
+              ? "partial-warning"
+              : "snapshot",
+          message: `${
+            repository.duplicateSnapshot
+              ? `Snapshot imported. Its accepted files match ${repository.duplicateSnapshot.displayName}; both repositories remain separate.`
+              : `Snapshot imported at ${new Date(
+                  collection.snapshot.acceptedAt
+                ).toLocaleString()}. It will not reconnect or refresh automatically.`
+          } ${metadataWarnings.join(" ")}`,
           phase: "Complete",
           completed: collection.snapshot.fileCount,
           total: collection.snapshot.fileCount,
@@ -707,8 +807,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       cancellable: true,
     })
     localOperationKindRef.current = "keyword"
+    const operationId = crypto.randomUUID()
+    localOperationIdRef.current = operationId
     try {
-      const result = await localClient().refresh(selectedRepo.id)
+      const result = await localClient().refresh(selectedRepo.id, operationId)
+      if (
+        deletingRepositoryIdsRef.current.has(selectedRepo.id) ||
+        deletedRepositoryIdsRef.current.has(selectedRepo.id)
+      ) {
+        return
+      }
       const changes = (result.changes ?? {}) as Record<string, number>
       setLocalOperation({
         state: (result.counts as { warnings?: number } | undefined)?.warnings
@@ -720,6 +828,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       })
       await refreshStatus()
     } catch (error) {
+      if (
+        deletingRepositoryIdsRef.current.has(selectedRepo.id) ||
+        deletedRepositoryIdsRef.current.has(selectedRepo.id)
+      ) {
+        return
+      }
       const code =
         error instanceof RepositoryClientError ? error.code : "internal"
       setLocalOperation({
@@ -738,6 +852,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         cancellable: false,
       })
       throw error
+    } finally {
+      if (localOperationIdRef.current === operationId) {
+        localOperationIdRef.current = undefined
+      }
     }
   }, [localClient, refreshStatus, selectedRepo])
 
@@ -797,6 +915,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           },
           operationId
         )
+        if (
+          deletingRepositoryIdsRef.current.has(selectedRepo.id) ||
+          deletedRepositoryIdsRef.current.has(selectedRepo.id)
+        ) {
+          return
+        }
         embeddingProfilesRef.current!.save({
           repositoryId: selectedRepo.id,
           enabled: true,
@@ -823,6 +947,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           cancellable: false,
         })
       } catch (error) {
+        if (
+          deletingRepositoryIdsRef.current.has(selectedRepo.id) ||
+          deletedRepositoryIdsRef.current.has(selectedRepo.id)
+        ) {
+          return
+        }
         const code =
           error instanceof RepositoryClientError ? error.code : "internal"
         setLocalOperation({
@@ -836,7 +966,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         throw error
       } finally {
         embeddingCredentialsRef.current!.clear(selectedRepo.id)
-        localOperationIdRef.current = undefined
+        if (localOperationIdRef.current === operationId) {
+          localOperationIdRef.current = undefined
+        }
       }
     },
     [localClient, repositoryStatus, selectedRepo]
@@ -876,11 +1008,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         cancellable: false,
       })
       let deletion
+      deletingRepositoryIdsRef.current.add(repository.id)
       try {
         deletion = await localClient().deleteRepository(repository.id, {
           cancelActive: options.cancelActive,
         })
       } catch (error) {
+        deletingRepositoryIdsRef.current.delete(repository.id)
         setLocalOperation({
           state: "failed",
           message:
@@ -891,6 +1025,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         })
         throw error
       }
+      deletingRepositoryIdsRef.current.delete(repository.id)
+      deletedRepositoryIdsRef.current.add(repository.id)
 
       const cleanupWarnings = [...deletion.cleanupWarnings]
       const remaining = repositories.filter(
@@ -905,8 +1041,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         )
       }
       setSelectedRepoId(
-        remaining.find((candidate) => candidate.default)?.id ??
-          remaining[0]?.id
+        remaining.find((candidate) => candidate.default)?.id ?? remaining[0]?.id
       )
       setRepositoryStatus(undefined)
       setStorageStatus(undefined)
@@ -941,18 +1076,24 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       typeof Worker === "function"
         ? localClient().getCapabilities()
         : probeBrowserCapabilities()
-    void report
-      .then((report) => {
-        if (active) setCapabilityReport(report)
-      })
+    void report.then((report) => {
+      if (active) setCapabilityReport(report)
+    })
     return () => {
       active = false
     }
   }, [localClient])
 
   React.useEffect(() => {
+    if (repositoriesStatus !== "success") return
+    if (!selectedRepo) {
+      setRepositoryStatus(undefined)
+      setRepositoryState("missing")
+      setStatusMessage("No repository is selected.")
+      return
+    }
     void refreshStatus()
-  }, [refreshStatus])
+  }, [refreshStatus, repositoriesStatus, selectedRepo])
 
   React.useEffect(
     () => () => {

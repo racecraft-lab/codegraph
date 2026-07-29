@@ -7,8 +7,11 @@ import { fileURLToPath } from "node:url"
 
 import {
   classifyWebAssetPath,
+  REQUIRED_WEB_ASSETS,
   validateWebAssetDirectory,
 } from "../../../scripts/web-asset-manifest.mjs"
+
+test.describe.configure({ mode: "default" })
 
 const READ_SAMPLE_COUNT = 20
 const READ_P95_BUDGET_MS = 150
@@ -1282,7 +1285,9 @@ test("indexes the actual CodeGraph repository within declared performance and re
     ).toBeVisible()
     await page.getByRole("button", { name: "Overview" }).click()
     await expect(
-      page.getByText("Local keyword index complete.", { exact: true })
+      page.getByText(
+        /^Local keyword index complete(?: with \d+ warnings?)?\.$/
+      )
     ).toBeVisible({ timeout: 60_000 })
     const elapsedMs = await endBenchmarkRun(startedAt)
     indexDurationsMs.push(elapsedMs)
@@ -1563,7 +1568,7 @@ test("indexes the actual CodeGraph repository within declared performance and re
         WORKER_READ_BATCH_BUDGET_BYTES
       )
     }
-    expect(assetInventory).toHaveLength(10)
+    expect(assetInventory).toHaveLength(REQUIRED_WEB_ASSETS.length)
   } finally {
     if (testInfo.retry === 0) {
       await context.tracing.stop({ path: tracePath }).catch(() => undefined)
@@ -1835,6 +1840,9 @@ test("indexes, browses, and reloads a picked folder entirely in Chromium", async
   })
 
   await page.goto("/")
+  await expect(
+    page.getByText(/\d[\d,]* symbols across \d[\d,]* files\./).first()
+  ).toBeVisible()
   expect(
     await page.evaluate(
       () =>

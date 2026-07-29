@@ -1,4 +1,7 @@
 import ignore from "ignore"
+import { DEFAULT_IGNORE_PATTERNS } from "../../../src/extraction/default-ignore-patterns"
+import { EXTENSION_MAP } from "../../../src/extraction/extension-map"
+import { LANGUAGES, type Language } from "../../../src/types"
 
 export const DEFAULT_SOURCE_LIMITS = {
   maxDepth: 32,
@@ -9,7 +12,8 @@ export const DEFAULT_SOURCE_LIMITS = {
   maxWarnings: 100,
 } as const
 
-const BUILT_IN_IGNORES = [".git/", ".codegraph/", "node_modules/"]
+const HARD_IGNORED_DIRECTORIES = new Set([".git", ".codegraph"])
+const PROJECT_CONFIG_FILENAME = "codegraph.json"
 
 export type SnapshotSourceKind = "dropped-snapshot" | "imported-snapshot"
 export type SourceKind = "picked-folder" | SnapshotSourceKind
@@ -44,6 +48,7 @@ export type SourceWarningCode =
   | "snapshot_transfer_limit"
   | "max_depth_exceeded"
   | "unreadable_file"
+  | "unsupported_language"
 
 export interface SourceWarning {
   path: string
@@ -73,6 +78,10 @@ export type SourceManifestEntry = Pick<
 export interface SourceManifest {
   entries: SourceManifestEntry[]
   fingerprint: string
+  repository?: {
+    name: string
+    sourceKind: SourceKind
+  }
 }
 
 export interface SourceManifestDiff {
@@ -86,6 +95,11 @@ export interface SourceCollection {
   entries: AcceptedSourceEntry[]
   manifest: SourceManifest
   warnings: BoundedWarnings
+  rules?: SourceCollectionRules
+}
+
+export interface SourceCollectionRules {
+  extensionOverrides: Record<string, Language>
 }
 
 export interface SnapshotImportMetadata {
@@ -139,9 +153,7 @@ export type SourceHandleLike =
   | { readonly kind: string; readonly name: string }
 
 export type SourcePermissionState = "granted" | "prompt" | "denied"
-export type SourceConnectionStatus =
-  | SourcePermissionState
-  | "stale"
+export type SourceConnectionStatus = SourcePermissionState | "stale"
 
 export interface SourceConnection {
   repositoryId: string
@@ -173,14 +185,15 @@ export interface SnapshotRepositoryRegistry {
 
 const SNAPSHOT_REGISTRY_KEY = "codegraph.localSnapshotRegistry.v1"
 
-export class LocalStorageSnapshotRepositoryRegistry
-  implements SnapshotRepositoryRegistry
-{
+export class LocalStorageSnapshotRepositoryRegistry implements SnapshotRepositoryRegistry {
   private readonly storage?: Pick<Storage, "getItem" | "setItem">
 
   constructor(
-    storage: Pick<Storage, "getItem" | "setItem"> | undefined =
-      typeof localStorage === "undefined" ? undefined : localStorage,
+    storage:
+      Pick<Storage, "getItem" | "setItem"> | undefined = typeof localStorage ===
+    "undefined"
+      ? undefined
+      : localStorage
   ) {
     this.storage = storage
   }
@@ -224,11 +237,11 @@ export class LocalStorageSnapshotRepositoryRegistry
   async put(record: SnapshotRegistryRecord): Promise<void> {
     if (!this.storage) return
     const records = (await this.list()).filter(
-      (candidate) => candidate.repositoryId !== record.repositoryId,
+      (candidate) => candidate.repositoryId !== record.repositoryId
     )
     this.storage.setItem(
       SNAPSHOT_REGISTRY_KEY,
-      JSON.stringify([...records, { ...record }]),
+      JSON.stringify([...records, { ...record }])
     )
   }
 
@@ -238,9 +251,9 @@ export class LocalStorageSnapshotRepositoryRegistry
       SNAPSHOT_REGISTRY_KEY,
       JSON.stringify(
         (await this.list()).filter(
-          (record) => record.repositoryId !== repositoryId,
-        ),
-      ),
+          (record) => record.repositoryId !== repositoryId
+        )
+      )
     )
   }
 }
@@ -280,13 +293,19 @@ function idbTransaction(transaction: IDBTransaction): Promise<void> {
     transaction.addEventListener("complete", () => resolve(), { once: true })
     transaction.addEventListener(
       "abort",
-      () => reject(transaction.error ?? new Error("Source registry transaction aborted.")),
-      { once: true },
+      () =>
+        reject(
+          transaction.error ?? new Error("Source registry transaction aborted.")
+        ),
+      { once: true }
     )
     transaction.addEventListener(
       "error",
-      () => reject(transaction.error ?? new Error("Source registry transaction failed.")),
-      { once: true },
+      () =>
+        reject(
+          transaction.error ?? new Error("Source registry transaction failed.")
+        ),
+      { once: true }
     )
   })
 }
@@ -318,9 +337,9 @@ export class IndexedDbSourceHandleStore implements SourceHandleStore {
     const database = await this.open()
     const transaction = database.transaction(SOURCE_REGISTRY_STORE, "readonly")
     const completed = idbTransaction(transaction)
-    const record = await idbRequest(
-      transaction.objectStore(SOURCE_REGISTRY_STORE).get(handleRefId),
-    ) as PersistedSourceHandle | undefined
+    const record = (await idbRequest(
+      transaction.objectStore(SOURCE_REGISTRY_STORE).get(handleRefId)
+    )) as PersistedSourceHandle | undefined
     await completed
     if (!record) return undefined
     return {
@@ -368,7 +387,7 @@ function assertPickedFolderIdentity(identity: SourceIdentity) {
   ) {
     throw new SourceProviderError(
       "invalid_source_identity",
-      "Saved folders require an opaque browser-local identity.",
+      "Saved folders require an opaque browser-local identity."
     )
   }
 }
@@ -438,20 +457,20 @@ export class SourceHandleRegistry {
     options: {
       userActivated: boolean
       candidate?: DirectoryHandleLike
-    },
+    }
   ): Promise<SourceConnection> {
     assertPickedFolderIdentity(identity)
     if (!options.userActivated) {
       throw new SourceProviderError(
         "user_activation_required",
-        "Reconnecting a local folder requires direct user activation.",
+        "Reconnecting a local folder requires direct user activation."
       )
     }
     const record = await this.store.get(identity.handleRefId!)
     if (!record) {
       throw new SourceProviderError(
         "stale_handle",
-        "The saved folder handle is unavailable. Select the original folder again.",
+        "The saved folder handle is unavailable. Select the original folder again."
       )
     }
     const handle = options.candidate ?? record.handle
@@ -463,7 +482,7 @@ export class SourceHandleRegistry {
       if (!sameEntry) {
         throw new SourceProviderError(
           "source_mismatch",
-          "The selected folder does not match this browser-local repository.",
+          "The selected folder does not match this browser-local repository."
         )
       }
     }
@@ -476,7 +495,7 @@ export class SourceHandleRegistry {
       this.liveHandles.delete(identity.id)
       throw new SourceProviderError(
         "permission_denied",
-        "Read permission was not granted for the saved local folder.",
+        "Read permission was not granted for the saved local folder."
       )
     }
     this.liveHandles.set(identity.id, handle)
@@ -551,16 +570,15 @@ interface LegacyFileSystemEntryLike {
 interface LegacyFileSystemFileEntryLike extends LegacyFileSystemEntryLike {
   file(
     success: (file: FileLike) => void,
-    failure?: (error: unknown) => void,
+    failure?: (error: unknown) => void
   ): void
 }
 
-interface LegacyFileSystemDirectoryEntryLike
-  extends LegacyFileSystemEntryLike {
+interface LegacyFileSystemDirectoryEntryLike extends LegacyFileSystemEntryLike {
   createReader(): {
     readEntries(
       success: (entries: LegacyFileSystemEntryLike[]) => void,
-      failure?: (error: unknown) => void,
+      failure?: (error: unknown) => void
     ): void
   }
 }
@@ -573,10 +591,7 @@ export class SourceProviderError extends Error {
     | "source_mismatch"
     | "permission_denied"
 
-  constructor(
-    code: SourceProviderError["code"],
-    message: string,
-  ) {
+  constructor(code: SourceProviderError["code"], message: string) {
     super(message)
     this.code = code
     this.name = "SourceProviderError"
@@ -608,7 +623,9 @@ class WarningCollector {
   }
 }
 
-function sourceLimits(overrides?: Partial<SourceTraversalLimits>): SourceTraversalLimits {
+function sourceLimits(
+  overrides?: Partial<SourceTraversalLimits>
+): SourceTraversalLimits {
   return { ...DEFAULT_SOURCE_LIMITS, ...overrides }
 }
 
@@ -620,7 +637,9 @@ async function sha256(bytes: Uint8Array) {
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
   const digest = await crypto.subtle.digest("SHA-256", copy.buffer)
-  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("")
+  return [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")
 }
 
 function safeDisplayName(candidate: string, fallback: string) {
@@ -630,19 +649,27 @@ function safeDisplayName(candidate: string, fallback: string) {
 }
 
 export function normalizeSourcePath(candidate: string): string | null {
-  if (!candidate || candidate.startsWith("/") || /^[A-Za-z]:[\\/]/.test(candidate)) {
+  if (
+    !candidate ||
+    candidate.startsWith("/") ||
+    /^[A-Za-z]:[\\/]/.test(candidate)
+  ) {
     return null
   }
   const normalized = candidate.replaceAll("\\", "/")
   const segments = normalized.split("/")
-  if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+  if (
+    segments.some((segment) => !segment || segment === "." || segment === "..")
+  ) {
     return null
   }
   return segments.join("/")
 }
 
 function ancestryPath(segments: readonly string[]): string | null {
-  if (segments.some((segment) => segment.includes("/") || segment.includes("\\"))) {
+  if (
+    segments.some((segment) => segment.includes("/") || segment.includes("\\"))
+  ) {
     return null
   }
   return normalizeSourcePath(segments.join("/"))
@@ -652,7 +679,7 @@ function identityFor(
   sourceKind: SourceKind,
   displayName: string,
   options: SourceProviderOptions,
-  acceptedAt?: string,
+  acceptedAt?: string
 ): SourceIdentity {
   const id = (options.createId ?? createOpaqueId)()
   return {
@@ -660,7 +687,7 @@ function identityFor(
     sourceKind,
     displayName: safeDisplayName(
       displayName,
-      sourceKind === "picked-folder" ? "Local folder" : "Snapshot",
+      sourceKind === "picked-folder" ? "Local folder" : "Snapshot"
     ),
     virtualRoot: `local://${id}`,
     ...(sourceKind === "picked-folder" ? { handleRefId: `handle-${id}` } : {}),
@@ -668,30 +695,228 @@ function identityFor(
   }
 }
 
-function ignoreMatcher(patterns: readonly string[] = []) {
-  return ignore().add([...BUILT_IN_IGNORES, ...patterns])
+interface ProjectSourceRules extends SourceCollectionRules {
+  include: string[]
+  exclude: string[]
 }
 
-function isIgnored(
-  matcher: ReturnType<typeof ignore>,
+interface ScopedIgnore {
+  base: string[]
+  matcher: ReturnType<typeof ignore>
+}
+
+const SUPPORTED_LANGUAGES = new Set<Language>(
+  LANGUAGES.filter((language) => language !== "unknown")
+)
+
+function createIgnoreMatcher(patterns: readonly string[]) {
+  const matcher = ignore()
+  for (const pattern of patterns) {
+    try {
+      matcher.add(pattern)
+    } catch {
+      // Invalid user patterns degrade to no-op, matching the Node config path.
+    }
+  }
+  return matcher
+}
+
+function decodeMetadata(bytes: Uint8Array) {
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+}
+
+function normalizedPatterns(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) =>
+    typeof entry === "string" && entry.trim() ? [entry.trim()] : []
+  )
+}
+
+function normalizeExtension(raw: string) {
+  let extension = raw.trim().toLowerCase()
+  if (!extension.startsWith(".")) extension = `.${extension}`
+  const body = extension.slice(1)
+  return !body ||
+    body.includes(".") ||
+    body.includes("/") ||
+    body.includes("\\")
+    ? undefined
+    : extension
+}
+
+function parseProjectSourceRules(bytes?: Uint8Array): ProjectSourceRules {
+  const empty = {
+    extensionOverrides: {},
+    include: [],
+    exclude: [],
+  } satisfies ProjectSourceRules
+  if (!bytes) return empty
+  try {
+    const candidate = JSON.parse(decodeMetadata(bytes)) as unknown
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate)
+    ) {
+      return empty
+    }
+    const config = candidate as Record<string, unknown>
+    const extensionOverrides: Record<string, Language> = {}
+    if (
+      config.extensions &&
+      typeof config.extensions === "object" &&
+      !Array.isArray(config.extensions)
+    ) {
+      for (const [rawExtension, rawLanguage] of Object.entries(
+        config.extensions
+      )) {
+        const extension = normalizeExtension(rawExtension)
+        if (
+          extension &&
+          typeof rawLanguage === "string" &&
+          SUPPORTED_LANGUAGES.has(rawLanguage as Language)
+        ) {
+          extensionOverrides[extension] = rawLanguage as Language
+        }
+      }
+    }
+    return {
+      extensionOverrides,
+      include: normalizedPatterns(config.include),
+      exclude: normalizedPatterns(config.exclude),
+    }
+  } catch {
+    return empty
+  }
+}
+
+function sourceExtension(path: string) {
+  const name = path.split("/").at(-1) ?? ""
+  const dot = name.lastIndexOf(".")
+  return dot < 0 ? "" : name.slice(dot).toLowerCase()
+}
+
+function isSupportedSourcePath(
   path: string,
-  directory: boolean,
+  overrides: Record<string, Language>
 ) {
-  return matcher.ignores(directory ? `${path}/` : path)
+  const normalized = path.toLowerCase()
+  if (
+    normalized === "conf/routes" ||
+    normalized.endsWith("/conf/routes") ||
+    normalized.endsWith(".routes") ||
+    /\.app(?:\.src)?$/i.test(path)
+  ) {
+    return true
+  }
+  const parts = normalized.split("/")
+  if (
+    parts.at(-1)?.endsWith(".json") &&
+    parts.some(
+      (part, index) =>
+        (part === "templates" || part === "sections") &&
+        index < parts.length - 1
+    )
+  ) {
+    return true
+  }
+  const extension = sourceExtension(path)
+  return extension in overrides || extension in EXTENSION_MAP
+}
+
+function relativeTo(base: readonly string[], path: string) {
+  const segments = path.split("/")
+  if (base.some((segment, index) => segments[index] !== segment)) return ""
+  return segments.slice(base.length).join("/")
+}
+
+function ignoredBy(
+  matchers: readonly ScopedIgnore[],
+  path: string,
+  directory: boolean
+) {
+  let ignored = false
+  for (const { base, matcher } of matchers) {
+    const relative = relativeTo(base, path)
+    if (!relative) continue
+    const result = matcher.test(directory ? `${relative}/` : relative)
+    if (result.ignored) ignored = true
+    if (result.unignored) ignored = false
+  }
+  return ignored
+}
+
+function matcherIncludes(
+  matcher: ReturnType<typeof ignore> | undefined,
+  path: string,
+  directory: boolean
+) {
+  return matcher?.ignores(directory ? `${path}/` : path) ?? false
+}
+
+const GLOB_META = /[*?[\]{}!]/
+
+function includeStaticRoots(patterns: readonly string[]) {
+  return patterns.map((pattern) => {
+    let normalized = pattern.replace(/^\/+/, "")
+    const trailingSlash = normalized.endsWith("/")
+    if (trailingSlash) normalized = normalized.slice(0, -1)
+    const segments = normalized.split("/").filter(Boolean)
+    const prefix: string[] = []
+    for (const segment of segments) {
+      if (GLOB_META.test(segment)) break
+      prefix.push(segment)
+    }
+    if (
+      prefix.length === segments.length &&
+      !trailingSlash &&
+      prefix.length > 0
+    ) {
+      prefix.pop()
+    }
+    return prefix.join("/")
+  })
+}
+
+function mayContainIncludedPath(
+  directory: string,
+  includeRoots: readonly string[]
+) {
+  return includeRoots.some(
+    (root) =>
+      !root ||
+      root === directory ||
+      root.startsWith(`${directory}/`) ||
+      directory.startsWith(`${root}/`)
+  )
+}
+
+async function readHandleBytes(handle: FileHandleLike) {
+  const file = await handle.getFile()
+  return new Uint8Array(await file.arrayBuffer())
+}
+
+function sourceRules(rules: ProjectSourceRules): SourceCollectionRules {
+  return { extensionOverrides: { ...rules.extensionOverrides } }
 }
 
 export async function createSourceManifest(
   entries: readonly SourceManifestEntry[],
-  hashBytes: (bytes: Uint8Array) => Promise<string> = sha256,
+  hashBytes: (bytes: Uint8Array) => Promise<string> = sha256
 ): Promise<SourceManifest> {
-  const manifestEntries = entries.map(({ path, contentHash, size, mtimeHint }) => ({
-    path,
-    contentHash,
-    size,
-    ...(mtimeHint === undefined ? {} : { mtimeHint }),
-  }))
+  const manifestEntries = entries.map(
+    ({ path, contentHash, size, mtimeHint }) => ({
+      path,
+      contentHash,
+      size,
+      ...(mtimeHint === undefined ? {} : { mtimeHint }),
+    })
+  )
   const canonical = manifestEntries
-    .map(({ path, contentHash, size, mtimeHint }) => `${path}\0${contentHash}\0${size}\0${mtimeHint ?? ""}`)
+    .map(
+      ({ path, contentHash, size, mtimeHint }) =>
+        `${path}\0${contentHash}\0${size}\0${mtimeHint ?? ""}`
+    )
     .join("\n")
   return {
     entries: manifestEntries,
@@ -701,13 +926,13 @@ export async function createSourceManifest(
 
 export function diffSourceManifests(
   previous: SourceManifest,
-  current: SourceManifest,
+  current: SourceManifest
 ): SourceManifestDiff {
   const previousByPath = new Map(
-    previous.entries.map((entry) => [entry.path, entry]),
+    previous.entries.map((entry) => [entry.path, entry])
   )
   const currentByPath = new Map(
-    current.entries.map((entry) => [entry.path, entry]),
+    current.entries.map((entry) => [entry.path, entry])
   )
   const added: string[] = []
   const changed: string[] = []
@@ -731,7 +956,7 @@ export function diffSourceManifests(
 
 export function createPickedFolderProvider(
   root: DirectoryHandleLike,
-  options: SourceProviderOptions = {},
+  options: SourceProviderOptions = {}
 ): BrowserSourceProvider {
   const identity = identityFor("picked-folder", root.name, options)
   const limits = sourceLimits(options.limits)
@@ -740,101 +965,239 @@ export function createPickedFolderProvider(
   return {
     identity,
     async collect() {
-      const matcher = ignoreMatcher(options.ignorePatterns)
       const warnings = new WarningCollector(limits.maxWarnings)
       const seenPaths = new Set<string>()
       const visitedDirectories = new Set<DirectoryHandleLike>()
       const entries: AcceptedSourceEntry[] = []
       let acceptedBytes = 0
 
-      const visit = async (directory: DirectoryHandleLike, ancestry: string[]): Promise<void> => {
+      let rootHandles: Array<[string, SourceHandleLike]>
+      try {
+        rootHandles = []
+        for await (const entry of root.entries()) rootHandles.push(entry)
+      } catch {
+        warnings.add("", "unreadable_file")
+        return {
+          entries,
+          manifest: await createSourceManifest(entries, hashBytes),
+          warnings: warnings.result(),
+          rules: sourceRules(parseProjectSourceRules()),
+        }
+      }
+
+      const rootFile = (name: string) =>
+        rootHandles.find(
+          ([entryName, handle]) => entryName === name && handle.kind === "file"
+        )?.[1] as FileHandleLike | undefined
+      let configBytes: Uint8Array | undefined
+      try {
+        const config = rootFile(PROJECT_CONFIG_FILENAME)
+        if (config) configBytes = await readHandleBytes(config)
+      } catch {
+        warnings.add(PROJECT_CONFIG_FILENAME, "unreadable_file")
+      }
+      const projectRules = parseProjectSourceRules(configBytes)
+      let rootGitignorePatterns: string[] = []
+      try {
+        const gitignore = rootFile(".gitignore")
+        if (gitignore) {
+          rootGitignorePatterns = decodeMetadata(
+            await readHandleBytes(gitignore)
+          ).split(/\r?\n/)
+        }
+      } catch {
+        warnings.add(".gitignore", "unreadable_file")
+      }
+
+      const rootMatcher = createIgnoreMatcher([
+        ...DEFAULT_IGNORE_PATTERNS,
+        ...(options.ignorePatterns ?? []),
+        ...rootGitignorePatterns,
+      ])
+      const builtInPolicyMatcher = createIgnoreMatcher([
+        ...DEFAULT_IGNORE_PATTERNS,
+        ...rootGitignorePatterns.filter((pattern) =>
+          pattern.trimStart().startsWith("!")
+        ),
+      ])
+      const includeMatcher =
+        projectRules.include.length > 0
+          ? createIgnoreMatcher(projectRules.include)
+          : undefined
+      const excludeMatcher =
+        projectRules.exclude.length > 0
+          ? createIgnoreMatcher(projectRules.exclude)
+          : undefined
+      const includeRoots = includeStaticRoots(projectRules.include)
+
+      const visit = async (
+        directory: DirectoryHandleLike,
+        ancestry: string[],
+        inherited: ScopedIgnore[],
+        provided?: Array<[string, SourceHandleLike]>
+      ): Promise<void> => {
         if (visitedDirectories.has(directory)) {
-          warnings.add(ancestryPath(ancestry) ?? ancestry.join("/"), "recursive_cycle")
+          warnings.add(
+            ancestryPath(ancestry) ?? ancestry.join("/"),
+            "recursive_cycle"
+          )
           return
         }
         visitedDirectories.add(directory)
 
+        let directoryEntries: Array<[string, SourceHandleLike]>
         try {
-          for await (const [entryName, handle] of directory.entries()) {
-            const path = ancestryPath([...ancestry, entryName])
-            if (!path) {
-              warnings.add(entryName, "invalid_source_path")
-              continue
-            }
-            if (seenPaths.has(path)) {
-              warnings.add(path, "duplicate_source_path")
-              continue
-            }
-            seenPaths.add(path)
-
-            if (path.split("/").length > limits.maxDepth) {
-              warnings.add(path, "max_depth_exceeded")
-              continue
-            }
-            if (handle.kind === "directory") {
-              if (isIgnored(matcher, path, true)) {
-                warnings.add(path, "ignored_path")
-                continue
-              }
-              await visit(handle as DirectoryHandleLike, [...ancestry, entryName])
-              continue
-            }
-            if (handle.kind !== "file") {
-              warnings.add(path, "unsupported_entry_kind")
-              continue
-            }
-            if (isIgnored(matcher, path, false)) {
-              warnings.add(path, "ignored_path")
-              continue
-            }
-            if (entries.length >= limits.maxFiles) {
-              warnings.add(path, "file_count_limit")
-              continue
-            }
-
-            try {
-              const file = await (handle as FileHandleLike).getFile()
-              if (file.size > limits.maxFileBytes) {
-                warnings.add(path, "file_too_large")
-                continue
-              }
-              if (acceptedBytes + file.size > limits.maxTotalBytes) {
-                warnings.add(path, "total_bytes_limit")
-                continue
-              }
-              const bytes = new Uint8Array(await file.arrayBuffer())
-              if (bytes.byteLength > limits.maxFileBytes) {
-                warnings.add(path, "file_too_large")
-                continue
-              }
-              if (acceptedBytes + bytes.byteLength > limits.maxTotalBytes) {
-                warnings.add(path, "total_bytes_limit")
-                continue
-              }
-              entries.push({
-                kind: "file",
-                path,
-                bytes,
-                contentHash: await hashBytes(bytes),
-                size: bytes.byteLength,
-                ...(file.lastModified === undefined ? {} : { mtimeHint: file.lastModified }),
-              })
-              acceptedBytes += bytes.byteLength
-            } catch {
-              warnings.add(path, "unreadable_file")
+          if (provided) {
+            directoryEntries = provided
+          } else {
+            directoryEntries = []
+            for await (const entry of directory.entries()) {
+              directoryEntries.push(entry)
             }
           }
         } catch {
-          warnings.add(ancestryPath(ancestry) ?? ancestry.join("/"), "unreadable_file")
+          warnings.add(
+            ancestryPath(ancestry) ?? ancestry.join("/"),
+            "unreadable_file"
+          )
+          return
+        }
+
+        let active = inherited
+        if (ancestry.length > 0) {
+          const ownGitignore = directoryEntries.find(
+            ([name, handle]) => name === ".gitignore" && handle.kind === "file"
+          )?.[1] as FileHandleLike | undefined
+          if (ownGitignore) {
+            try {
+              const patterns = decodeMetadata(
+                await readHandleBytes(ownGitignore)
+              ).split(/\r?\n/)
+              active = [
+                ...inherited,
+                {
+                  base: ancestry,
+                  matcher: createIgnoreMatcher(patterns),
+                },
+              ]
+            } catch {
+              warnings.add(
+                `${ancestry.join("/")}/.gitignore`,
+                "unreadable_file"
+              )
+            }
+          }
+        }
+
+        for (const [entryName, handle] of directoryEntries) {
+          const path = ancestryPath([...ancestry, entryName])
+          if (!path) {
+            warnings.add(entryName, "invalid_source_path")
+            continue
+          }
+          if (seenPaths.has(path)) {
+            warnings.add(path, "duplicate_source_path")
+            continue
+          }
+          seenPaths.add(path)
+
+          if (path.split("/").length > limits.maxDepth) {
+            warnings.add(path, "max_depth_exceeded")
+            continue
+          }
+          if (handle.kind === "directory") {
+            if (HARD_IGNORED_DIRECTORIES.has(entryName)) {
+              warnings.add(path, "ignored_path")
+              continue
+            }
+            const excluded = matcherIncludes(excludeMatcher, path, true)
+            const ignored = ignoredBy(active, path, true)
+            const builtInIgnored = builtInPolicyMatcher.ignores(`${path}/`)
+            const canReachIncluded =
+              mayContainIncludedPath(path, includeRoots) && !builtInIgnored
+            if (excluded || (ignored && !canReachIncluded)) {
+              warnings.add(path, "ignored_path")
+              continue
+            }
+            await visit(
+              handle as DirectoryHandleLike,
+              [...ancestry, entryName],
+              active
+            )
+            continue
+          }
+          if (handle.kind !== "file") {
+            warnings.add(path, "unsupported_entry_kind")
+            continue
+          }
+          if (
+            entryName === ".gitignore" ||
+            (ancestry.length === 0 && entryName === PROJECT_CONFIG_FILENAME)
+          ) {
+            continue
+          }
+          const excluded = matcherIncludes(excludeMatcher, path, false)
+          const ignored = ignoredBy(active, path, false)
+          const included = matcherIncludes(includeMatcher, path, false)
+          const builtInIgnored = builtInPolicyMatcher.ignores(path)
+          if (excluded || (ignored && (!included || builtInIgnored))) {
+            warnings.add(path, "ignored_path")
+            continue
+          }
+          if (!isSupportedSourcePath(path, projectRules.extensionOverrides)) {
+            warnings.add(path, "unsupported_language")
+            continue
+          }
+          if (entries.length >= limits.maxFiles) {
+            warnings.add(path, "file_count_limit")
+            continue
+          }
+
+          try {
+            const file = await (handle as FileHandleLike).getFile()
+            if (file.size > limits.maxFileBytes) {
+              warnings.add(path, "file_too_large")
+              continue
+            }
+            if (acceptedBytes + file.size > limits.maxTotalBytes) {
+              warnings.add(path, "total_bytes_limit")
+              continue
+            }
+            const bytes = new Uint8Array(await file.arrayBuffer())
+            if (bytes.byteLength > limits.maxFileBytes) {
+              warnings.add(path, "file_too_large")
+              continue
+            }
+            if (acceptedBytes + bytes.byteLength > limits.maxTotalBytes) {
+              warnings.add(path, "total_bytes_limit")
+              continue
+            }
+            entries.push({
+              kind: "file",
+              path,
+              bytes,
+              contentHash: await hashBytes(bytes),
+              size: bytes.byteLength,
+              ...(file.lastModified === undefined
+                ? {}
+                : { mtimeHint: file.lastModified }),
+            })
+            acceptedBytes += bytes.byteLength
+          } catch {
+            warnings.add(path, "unreadable_file")
+          }
         }
       }
 
-      await visit(root, [])
-      entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+      await visit(root, [], [{ base: [], matcher: rootMatcher }], rootHandles)
+      entries.sort((left, right) =>
+        left.path < right.path ? -1 : left.path > right.path ? 1 : 0
+      )
       return {
         entries,
         manifest: await createSourceManifest(entries, hashBytes),
         warnings: warnings.result(),
+        rules: sourceRules(projectRules),
       }
     },
   }
@@ -842,12 +1205,12 @@ export function createPickedFolderProvider(
 
 export async function openPickedFolderFromUserAction(
   pickDirectory: () => Promise<DirectoryHandleLike>,
-  options: PickedFolderOptions,
+  options: PickedFolderOptions
 ) {
   if (!options.userActivated) {
     throw new SourceProviderError(
       "user_activation_required",
-      "Opening a local folder requires direct user activation.",
+      "Opening a local folder requires direct user activation."
     )
   }
   return createPickedFolderProvider(await pickDirectory(), options)
@@ -855,14 +1218,14 @@ export async function openPickedFolderFromUserAction(
 
 export function createSnapshotProvider(
   sourceEntries: readonly SnapshotSourceEntry[],
-  options: SnapshotProviderOptions,
+  options: SnapshotProviderOptions
 ): SnapshotSourceProvider {
   const acceptedAt = (options.now ?? (() => new Date()))().toISOString()
   const identity = identityFor(
     options.sourceKind ?? "dropped-snapshot",
     options.rootLabel,
     options,
-    acceptedAt,
+    acceptedAt
   ) as SnapshotSourceProvider["identity"]
   const limits = sourceLimits(options.limits)
   const hashBytes = options.hashBytes ?? sha256
@@ -874,11 +1237,60 @@ export function createSnapshotProvider(
   return {
     identity,
     async collect() {
-      const matcher = ignoreMatcher(options.ignorePatterns)
       const warnings = new WarningCollector(limits.maxWarnings)
       const seenPaths = new Set<string>()
       const entries: AcceptedSourceEntry[] = []
       let acceptedBytes = 0
+      const normalizedFiles = new Map<string, SnapshotSourceEntry>()
+      for (const candidate of snapshot) {
+        const path = normalizeSourcePath(candidate.path)
+        if (path && candidate.kind === "file" && !normalizedFiles.has(path)) {
+          normalizedFiles.set(path, candidate)
+        }
+      }
+      const projectRules = parseProjectSourceRules(
+        normalizedFiles.get(PROJECT_CONFIG_FILENAME)?.bytes
+      )
+      let rootGitignorePatterns: string[] = []
+      const nestedMatchers: ScopedIgnore[] = []
+      for (const [path, candidate] of normalizedFiles) {
+        if (path !== ".gitignore" && !path.endsWith("/.gitignore")) continue
+        try {
+          const patterns = decodeMetadata(candidate.bytes).split(/\r?\n/)
+          if (path === ".gitignore") rootGitignorePatterns = patterns
+          else {
+            nestedMatchers.push({
+              base: path.split("/").slice(0, -1),
+              matcher: createIgnoreMatcher(patterns),
+            })
+          }
+        } catch {
+          warnings.add(path, "unreadable_file")
+        }
+      }
+      const rootMatcher = createIgnoreMatcher([
+        ...DEFAULT_IGNORE_PATTERNS,
+        ...(options.ignorePatterns ?? []),
+        ...rootGitignorePatterns,
+      ])
+      const builtInPolicyMatcher = createIgnoreMatcher([
+        ...DEFAULT_IGNORE_PATTERNS,
+        ...rootGitignorePatterns.filter((pattern) =>
+          pattern.trimStart().startsWith("!")
+        ),
+      ])
+      const includeMatcher =
+        projectRules.include.length > 0
+          ? createIgnoreMatcher(projectRules.include)
+          : undefined
+      const excludeMatcher =
+        projectRules.exclude.length > 0
+          ? createIgnoreMatcher(projectRules.exclude)
+          : undefined
+      const activeMatchers: ScopedIgnore[] = [
+        { base: [], matcher: rootMatcher },
+        ...nestedMatchers,
+      ]
 
       for (const candidate of snapshot) {
         const path = normalizeSourcePath(candidate.path)
@@ -899,8 +1311,30 @@ export function createSnapshotProvider(
           warnings.add(path, "unsupported_entry_kind")
           continue
         }
-        if (isIgnored(matcher, path, false)) {
+        if (
+          path === ".gitignore" ||
+          path.endsWith("/.gitignore") ||
+          path === PROJECT_CONFIG_FILENAME
+        ) {
+          continue
+        }
+        const hardIgnored = path
+          .split("/")
+          .some((segment) => HARD_IGNORED_DIRECTORIES.has(segment))
+        const excluded = matcherIncludes(excludeMatcher, path, false)
+        const ignored = ignoredBy(activeMatchers, path, false)
+        const included = matcherIncludes(includeMatcher, path, false)
+        const builtInIgnored = builtInPolicyMatcher.ignores(path)
+        if (
+          hardIgnored ||
+          excluded ||
+          (ignored && (!included || builtInIgnored))
+        ) {
           warnings.add(path, "ignored_path")
+          continue
+        }
+        if (!isSupportedSourcePath(path, projectRules.extensionOverrides)) {
+          warnings.add(path, "unsupported_language")
           continue
         }
         if (entries.length >= limits.maxFiles) {
@@ -911,7 +1345,10 @@ export function createSnapshotProvider(
           warnings.add(path, "file_too_large")
           continue
         }
-        if (acceptedBytes + candidate.bytes.byteLength > limits.maxSnapshotTransferBytes) {
+        if (
+          acceptedBytes + candidate.bytes.byteLength >
+          limits.maxSnapshotTransferBytes
+        ) {
           warnings.add(path, "snapshot_transfer_limit")
           continue
         }
@@ -927,17 +1364,22 @@ export function createSnapshotProvider(
           bytes,
           contentHash: await hashBytes(bytes),
           size: bytes.byteLength,
-          ...(candidate.mtimeHint === undefined ? {} : { mtimeHint: candidate.mtimeHint }),
+          ...(candidate.mtimeHint === undefined
+            ? {}
+            : { mtimeHint: candidate.mtimeHint }),
         })
         acceptedBytes += bytes.byteLength
       }
 
-      entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+      entries.sort((left, right) =>
+        left.path < right.path ? -1 : left.path > right.path ? 1 : 0
+      )
       const manifest = await createSourceManifest(entries, hashBytes)
       return {
         entries,
         manifest,
         warnings: warnings.result(),
+        rules: sourceRules(projectRules),
         snapshot: {
           acceptedAt,
           fileCount: entries.length,
@@ -956,7 +1398,7 @@ function readLegacyFile(entry: LegacyFileSystemFileEntryLike) {
 }
 
 function readLegacyEntries(
-  reader: ReturnType<LegacyFileSystemDirectoryEntryLike["createReader"]>,
+  reader: ReturnType<LegacyFileSystemDirectoryEntryLike["createReader"]>
 ) {
   return new Promise<LegacyFileSystemEntryLike[]>((resolve, reject) => {
     reader.readEntries(resolve, reject)
@@ -993,7 +1435,7 @@ function legacyHandle(entry: LegacyFileSystemEntryLike): SourceHandleLike {
 }
 
 export async function captureDroppedDirectory(
-  items: readonly DroppedDataTransferItemLike[],
+  items: readonly DroppedDataTransferItemLike[]
 ): Promise<DirectoryHandleLike | undefined> {
   // Browser drop handles must be captured synchronously inside the drop event.
   // Build every promise/legacy entry before the first await.
@@ -1013,17 +1455,14 @@ export async function captureDroppedDirectory(
 
 export function createDroppedSnapshotProvider(
   root: DirectoryHandleLike,
-  options: Omit<
-    SnapshotProviderOptions,
-    "rootLabel" | "sourceKind"
-  > = {},
+  options: Omit<SnapshotProviderOptions, "rootLabel" | "sourceKind"> = {}
 ): SnapshotSourceProvider {
   const acceptedAt = (options.now ?? (() => new Date()))().toISOString()
   const identity = identityFor(
     "dropped-snapshot",
     root.name,
     options,
-    acceptedAt,
+    acceptedAt
   ) as SnapshotSourceProvider["identity"]
   const limits = sourceLimits(options.limits)
   const directoryProvider = createPickedFolderProvider(root, {
@@ -1054,23 +1493,22 @@ export function createDroppedSnapshotProvider(
       }
       const manifest = await createSourceManifest(
         entries,
-        options.hashBytes ?? sha256,
+        options.hashBytes ?? sha256
       )
-      const totalWarnings =
-        collected.warnings.total + transferWarnings.length
+      const totalWarnings = collected.warnings.total + transferWarnings.length
       return {
         entries,
         manifest,
         warnings: {
-          details: [
-            ...collected.warnings.details,
-            ...transferWarnings,
-          ].slice(0, limits.maxWarnings),
+          details: [...collected.warnings.details, ...transferWarnings].slice(
+            0,
+            limits.maxWarnings
+          ),
           total: totalWarnings,
           truncated:
-            totalWarnings >
-            Math.min(totalWarnings, limits.maxWarnings),
+            totalWarnings > Math.min(totalWarnings, limits.maxWarnings),
         },
+        rules: collected.rules,
         snapshot: {
           acceptedAt,
           fileCount: entries.length,

@@ -6,6 +6,43 @@ import { expect } from "vitest"
 // can otherwise extend the wrong `expect` after dependency hoisting.
 expect.extend(domMatchers)
 
+class MemoryStorage implements Storage {
+  readonly #entries = new Map<string, string>()
+
+  get length() {
+    return this.#entries.size
+  }
+
+  clear() {
+    this.#entries.clear()
+  }
+
+  getItem(key: string) {
+    return this.#entries.get(String(key)) ?? null
+  }
+
+  key(index: number) {
+    return [...this.#entries.keys()][index] ?? null
+  }
+
+  removeItem(key: string) {
+    this.#entries.delete(String(key))
+  }
+
+  setItem(key: string, value: string) {
+    this.#entries.set(String(key), String(value))
+  }
+}
+
+Object.defineProperty(globalThis, "Storage", {
+  value: MemoryStorage,
+  configurable: true,
+})
+Object.defineProperty(globalThis, "localStorage", {
+  value: new MemoryStorage(),
+  configurable: true,
+})
+
 class MockEventSource extends EventTarget {
   readonly url: string
 

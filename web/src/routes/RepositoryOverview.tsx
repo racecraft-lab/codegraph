@@ -332,8 +332,9 @@ export function RepositoryOverview() {
                   </span>
                 </label>
                 <p className="text-xs text-muted-foreground">
-                  The bearer key remains only in this page session and is
-                  cleared after the operation.
+                  The bearer key remains only in memory for semantic searches
+                  during this page session. It is cleared when the local client
+                  closes or the page reloads and is never stored durably.
                 </p>
                 <Button
                   ref={semanticButtonRef}

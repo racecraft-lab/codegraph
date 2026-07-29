@@ -13,6 +13,7 @@ import {
   createSourceManifest,
   DEFAULT_SOURCE_LIMITS,
   diffSourceManifests,
+  type SourceCollectionRules,
   type SourceManifest,
 } from "./source"
 import {
@@ -48,7 +49,7 @@ export const WORKER_BUDGETS = {
   maxVectorRowsPerTransaction: 500,
 } as const
 
-type WorkerRequestKind =
+export type WorkerRequestKind =
   | "capabilities"
   | "index"
   | "embed"
@@ -113,10 +114,7 @@ export type WorkerRequest =
     })
   | (WorkerRequestBase & {
       kind:
-        | "source-batch"
-        | "open-picked-folder"
-        | "import-snapshot"
-        | "refresh"
+        "source-batch" | "open-picked-folder" | "import-snapshot" | "refresh"
       operationId: string
       repositoryId: string
       payload: object
@@ -332,6 +330,7 @@ interface ActiveOperation {
   cancelled: boolean
   terminal: boolean
   publishing: boolean
+  repositoryId: string
 }
 
 class OperationCancelled extends Error {}
@@ -451,6 +450,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
       cancelled: false,
       terminal: false,
       publishing: false,
+      repositoryId: request.repositoryId,
     }
     active.set(request.operationId, operation)
 
@@ -594,6 +594,7 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
       cancelled: false,
       terminal: false,
       publishing: false,
+      repositoryId: request.repositoryId,
     }
     active.set(request.operationId, operation)
 
@@ -816,6 +817,30 @@ export function createWorkerRuntime(dependencies: WorkerRuntimeDependencies) {
   }
 
   return {
+    async cancelRepositoryOperations(
+      repositoryId: string,
+      cancelActive: boolean
+    ) {
+      const matches = () =>
+        [...active.values()].filter(
+          (operation) => operation.repositoryId === repositoryId
+        )
+      const operations = matches()
+      if (operations.length === 0) return
+      if (
+        !cancelActive ||
+        operations.some((operation) => operation.publishing)
+      ) {
+        throw new BrowserStorageError(
+          "storage_write_failed",
+          "An active local operation must be cancelled before deletion."
+        )
+      }
+      for (const operation of operations) operation.cancelled = true
+      while (matches().length > 0) {
+        await dependencies.yieldControl()
+      }
+    },
     async handle(candidate: WorkerRequestEnvelope) {
       const request = candidate
       if (request.protocolVersion !== WORKER_PROTOCOL_VERSION) {
@@ -1048,6 +1073,14 @@ async function acquireRepositoryOwnership(repositoryId: string) {
   }
 }
 
+async function releaseRepositoryOwnership(repositoryId: string) {
+  const ownership = heldRepositoryLocks.get(repositoryId)
+  if (!ownership) return
+  heldRepositoryLocks.delete(repositoryId)
+  ownership.release()
+  await Promise.allSettled([ownership.settled])
+}
+
 async function closeRepositoryStorageAndRelease() {
   let result: unknown = { paused: true }
   let closeError: unknown
@@ -1089,6 +1122,7 @@ async function handleRepositoryAcquire(request: WorkerRequest) {
       result: { repositoryId, acquired: true },
     })
   } catch (error) {
+    await releaseRepositoryOwnership(repositoryId)
     emitRepositoryResponse(request, {
       type: "failure",
       terminal: "failed",
@@ -1155,7 +1189,9 @@ interface PickedFolderPayload {
     manifest?: {
       entries?: unknown[]
       fingerprint?: string
+      repository?: SourceManifest["repository"]
     }
+    rules?: SourceCollectionRules
     warnings?: {
       details?: unknown[]
       total?: number
@@ -1184,11 +1220,7 @@ class SourceBatchValidationError extends Error {
   }
 }
 
-function requireBatchInteger(
-  value: unknown,
-  minimum: number,
-  maximum: number
-) {
+function requireBatchInteger(value: unknown, minimum: number, maximum: number) {
   if (
     typeof value !== "number" ||
     !Number.isSafeInteger(value) ||
@@ -1402,14 +1434,27 @@ function normalizedManifest(
     const value = candidate as {
       entries?: unknown
       fingerprint?: unknown
+      repository?: unknown
     }
     if (Array.isArray(value.entries)) {
+      const repository =
+        value.repository &&
+        typeof value.repository === "object" &&
+        typeof (value.repository as { name?: unknown }).name === "string" &&
+        ["picked-folder", "dropped-snapshot", "imported-snapshot"].includes(
+          String(
+            (value.repository as { sourceKind?: unknown }).sourceKind ?? ""
+          )
+        )
+          ? (value.repository as NonNullable<SourceManifest["repository"]>)
+          : undefined
       return {
         entries: value.entries as SourceManifest["entries"],
         fingerprint:
           typeof value.fingerprint === "string"
             ? value.fingerprint
             : fallbackFingerprint,
+        ...(repository ? { repository } : {}),
       }
     }
   }
@@ -1452,7 +1497,8 @@ function browserSources(
 
 async function initialGeneration(
   repositoryId: string,
-  collection: NonNullable<PickedFolderPayload["collection"]>
+  collection: NonNullable<PickedFolderPayload["collection"]>,
+  identity: NonNullable<PickedFolderPayload["identity"]>
 ) {
   const entries = collection.entries ?? []
   const extraction = await extractLocalSources(
@@ -1460,10 +1506,17 @@ async function initialGeneration(
       kind: entry.kind === "file" ? "file" : "directory",
       path: String(entry.path ?? ""),
       bytes: entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(),
-    }))
+    })),
+    collection.rules
   )
   const sources = browserSources(collection, extraction.acceptedManifest)
-  const manifest = await createSourceManifest(sources)
+  const manifest: SourceManifest = {
+    ...(await createSourceManifest(sources)),
+    repository: {
+      name: identity.displayName ?? "Browser repository",
+      sourceKind: identity.sourceKind ?? "picked-folder",
+    },
+  }
   const providerWarnings = collection.warnings?.details ?? []
   const warnings = [...providerWarnings, ...extraction.warnings].slice(
     0,
@@ -1495,7 +1548,11 @@ async function initialGeneration(
 export async function refreshPublishedGeneration(
   store: BrowserGraphStore,
   repositoryId: string,
-  collection: NonNullable<PickedFolderPayload["collection"]>
+  collection: NonNullable<PickedFolderPayload["collection"]>,
+  lifecycle: {
+    beforePublish?: () => void
+    markPublishing?: () => void
+  } = {}
 ) {
   const base = store.readRefreshBase(repositoryId)
   const candidateManifest = normalizedManifest(
@@ -1513,7 +1570,8 @@ export async function refreshPublishedGeneration(
         path: String(entry.path ?? ""),
         bytes:
           entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(),
-      }))
+      })),
+    collection.rules
   )
   const acceptedChangedPaths = new Set(
     extraction.acceptedManifest.map((entry) => entry.path)
@@ -1543,7 +1601,12 @@ export async function refreshPublishedGeneration(
       left.target.localeCompare(right.target) ||
       left.kind.localeCompare(right.kind)
   )
-  const manifest = await createSourceManifest(sources)
+  const manifest: SourceManifest = {
+    ...(await createSourceManifest(sources)),
+    ...(base.manifest.repository
+      ? { repository: base.manifest.repository }
+      : {}),
+  }
   const providerWarnings = collection.warnings?.details ?? []
   const warnings = [...providerWarnings, ...extraction.warnings].slice(
     0,
@@ -1558,7 +1621,7 @@ export async function refreshPublishedGeneration(
     edges: edges.length,
     warnings: warningCount,
   }
-  const publication = await store.publishGeneration({
+  const generation = {
     repositoryId,
     manifestFingerprint: manifest.fingerprint,
     manifest,
@@ -1567,7 +1630,27 @@ export async function refreshPublishedGeneration(
     sources,
     nodes,
     edges,
-  })
+  } satisfies BrowserGenerationInput
+  const staged = await store.stageGeneration(generation)
+  let publicationStarted = false
+  let publication: Awaited<
+    ReturnType<BrowserGraphStore["commitStagedGeneration"]>
+  >
+  try {
+    lifecycle.beforePublish?.()
+    lifecycle.markPublishing?.()
+    publicationStarted = true
+    publication = await store.commitStagedGeneration(generation, staged)
+  } catch (error) {
+    if (!publicationStarted) {
+      try {
+        store.discardStagedGeneration(staged)
+      } catch {
+        // The failed generation row remains recoverable on the next storage open.
+      }
+    }
+    throw error
+  }
   return {
     ...publication,
     changes: {
@@ -1670,7 +1753,8 @@ async function handleInitialSourceIndex(
     })
     const { extraction, generation } = await initialGeneration(
       repositoryId,
-      collection
+      collection,
+      identity
     )
     throwIfPickedFolderCancelled(operation)
     emitRepositoryResponse(request, {
@@ -1829,9 +1913,14 @@ async function handleRefreshPickedFolder(request: WorkerRequest) {
     const result = await refreshPublishedGeneration(
       store,
       repositoryId,
-      collection
+      collection,
+      {
+        beforePublish: () => throwIfPickedFolderCancelled(operation),
+        markPublishing: () => {
+          operation.publishing = true
+        },
+      }
     )
-    operation.publishing = true
     emitRepositoryResponse(request, {
       type: "result",
       terminal: "complete",
@@ -1900,13 +1989,22 @@ async function handleRepositoryDelete(request: WorkerRequest) {
     })
     return
   }
+  let result!: ReturnType<BrowserGraphStore["deleteRepository"]>
   try {
     await acquireRepositoryOwnership(repositoryId)
-    for (const [operationId, staged] of stagedSourceCollections) {
-      if (staged.repositoryId === repositoryId) {
-        stagedSourceCollections.delete(operationId)
-      }
+    const stagedOperationIds = [...stagedSourceCollections]
+      .filter(([, staged]) => staged.repositoryId === repositoryId)
+      .map(([operationId]) => operationId)
+    if (stagedOperationIds.length > 0 && !cancelActive) {
+      throw new BrowserStorageError(
+        "storage_write_failed",
+        "An active local operation must be cancelled before deletion."
+      )
     }
+    for (const operationId of stagedOperationIds) {
+      stagedSourceCollections.delete(operationId)
+    }
+    await protocolRuntime.cancelRepositoryOperations(repositoryId, cancelActive)
     const active = [...activePickedFolders.values()].find(
       (operation) => operation.repositoryId === repositoryId
     )
@@ -1927,14 +2025,8 @@ async function handleRepositoryDelete(request: WorkerRequest) {
       }
     }
     const store = await ensureRepositoryStorage()
-    const result = store.deleteRepository(repositoryId)
+    result = store.deleteRepository(repositoryId)
     repositoryMetadata.delete(repositoryId)
-    await closeRepositoryStorageAndRelease()
-    emitRepositoryResponse(request, {
-      type: "result",
-      terminal: "complete",
-      result,
-    })
   } catch (error) {
     emitRepositoryResponse(request, {
       type: "failure",
@@ -1950,7 +2042,21 @@ async function handleRepositoryDelete(request: WorkerRequest) {
         true
       ),
     })
+    return
   }
+
+  try {
+    await closeRepositoryStorageAndRelease()
+  } catch {
+    result.cleanupWarnings.push(
+      "Browser storage closed with a cleanup warning; the repository remains logically deleted."
+    )
+  }
+  emitRepositoryResponse(request, {
+    type: "result",
+    terminal: "complete",
+    result,
+  })
 }
 
 async function handleRepositoryQuery(request: WorkerRequest) {
@@ -1979,14 +2085,19 @@ async function handleRepositoryQuery(request: WorkerRequest) {
     const repositoryId = request.repositoryId
     let result: unknown
     if (query === "list-repositories") {
-      if (heldRepositoryLocks.size === 0) {
-        throw new BrowserStorageError(
-          "repository_busy",
-          "Acquire a local repository before reading browser storage."
-        )
+      const discoveryRepositoryId = "registry-discovery"
+      const discoveryLock = heldRepositoryLocks.size === 0
+      if (discoveryLock) {
+        await acquireRepositoryOwnership(discoveryRepositoryId)
       }
-      const store = await ensureRepositoryStorage()
-      result = store.listRepositories(repositoryMetadata)
+      try {
+        const store = await ensureRepositoryStorage()
+        result = store.listRepositories(repositoryMetadata)
+      } finally {
+        if (discoveryLock) {
+          await closeRepositoryStorageAndRelease()
+        }
+      }
     } else {
       if (!repositoryId) {
         throw new BrowserStorageError(
@@ -2267,6 +2378,7 @@ function faultInjector(point: BrowserStorageFaultPoint) {
       "after-status-update",
       "after-registry-publish",
       "after-delete-cleanup",
+      "before-delete-unlink",
     ].includes(point)
   ) {
     throw new BrowserStorageError(
@@ -2405,7 +2517,13 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
     }
     case "storage-delete": {
       if (!storage) throw new Error("Browser graph store is not open.")
-      return storage.deleteRepository(String(payload.repositoryId))
+      requestedFault =
+        typeof payload.fault === "string" ? payload.fault : undefined
+      try {
+        return storage.deleteRepository(String(payload.repositoryId))
+      } finally {
+        requestedFault = undefined
+      }
     }
     case "storage-close": {
       if (!storage) return { paused: true }
@@ -2418,94 +2536,88 @@ async function handleStorageTestRequest(request: StorageTestRequest) {
   }
 }
 
-globalThis.addEventListener(
-  "message",
-  (event: MessageEvent<unknown>) => {
-    if (
-      event.origin !== "" &&
-      event.origin !== globalThis.location.origin
-    ) {
-      return
-    }
-    const candidate = event.data
-    if (!isRecord(candidate) || typeof candidate.requestId !== "string") {
-      return
-    }
-    if (typeof candidate.kind !== "string") {
-      if (typeof candidate.protocolVersion === "number") {
-        globalThis.postMessage({
-          protocolVersion: WORKER_PROTOCOL_VERSION,
-          requestId: candidate.requestId,
-          type: "failure",
-          terminal: "failed",
-          error: plainError(
-            "invalid_worker_request",
-            "The worker request does not match its declared operation.",
-            "queued"
-          ),
-        } satisfies WorkerResponse)
-      }
-      return
-    }
-    const request = candidate as unknown as StorageTestRequest
-    if (!request.kind.startsWith("storage-")) {
-      const protocolRequest = request as unknown as WorkerRequestEnvelope
-      if (typeof protocolRequest.protocolVersion === "number") {
-        if (!isWorkerRequest(protocolRequest)) {
-          void protocolRuntime.handle(protocolRequest)
-          return
-        }
-        if (protocolRequest.kind === "source-batch") {
-          handleSourceBatch(protocolRequest)
-        } else if (protocolRequest.kind === "open-picked-folder") {
-          void handleOpenPickedFolder(protocolRequest)
-        } else if (protocolRequest.kind === "import-snapshot") {
-          void handleSnapshotImport(protocolRequest)
-        } else if (protocolRequest.kind === "acquire") {
-          void handleRepositoryAcquire(protocolRequest)
-        } else if (protocolRequest.kind === "refresh") {
-          void handleRefreshPickedFolder(protocolRequest)
-        } else if (protocolRequest.kind === "query") {
-          void handleRepositoryQuery(protocolRequest)
-        } else if (protocolRequest.kind === "delete") {
-          void handleRepositoryDelete(protocolRequest)
-        } else if (
-          protocolRequest.kind === "cancel" &&
-          protocolRequest.operationId &&
-          (activePickedFolders.has(protocolRequest.operationId) ||
-            stagedSourceCollections.has(protocolRequest.operationId))
-        ) {
-          handlePickedFolderCancel(protocolRequest)
-        } else if (protocolRequest.kind === "close") {
-          void handleRepositoryClose(protocolRequest)
-        } else {
-          void protocolRuntime.handle(protocolRequest)
-        }
-      }
-      return
-    }
-    void handleStorageTestRequest(request).then(
-      (result) =>
-        globalThis.postMessage({
-          requestId: request.requestId,
-          ok: true,
-          result,
-        }),
-      (error: unknown) => {
-        const code =
-          error instanceof BrowserStorageError
-            ? error.code
-            : "storage_worker_failed"
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Browser storage worker failed."
-        globalThis.postMessage({
-          requestId: request.requestId,
-          ok: false,
-          error: { code, message: message.slice(0, 240) },
-        })
-      }
-    )
+globalThis.addEventListener("message", (event: MessageEvent<unknown>) => {
+  if (event.origin !== "" && event.origin !== globalThis.location.origin) {
+    return
   }
-)
+  const candidate = event.data
+  if (!isRecord(candidate) || typeof candidate.requestId !== "string") {
+    return
+  }
+  if (typeof candidate.kind !== "string") {
+    if (typeof candidate.protocolVersion === "number") {
+      globalThis.postMessage({
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+        requestId: candidate.requestId,
+        type: "failure",
+        terminal: "failed",
+        error: plainError(
+          "invalid_worker_request",
+          "The worker request does not match its declared operation.",
+          "queued"
+        ),
+      } satisfies WorkerResponse)
+    }
+    return
+  }
+  const request = candidate as unknown as StorageTestRequest
+  if (!request.kind.startsWith("storage-")) {
+    const protocolRequest = request as unknown as WorkerRequestEnvelope
+    if (typeof protocolRequest.protocolVersion === "number") {
+      if (!isWorkerRequest(protocolRequest)) {
+        void protocolRuntime.handle(protocolRequest)
+        return
+      }
+      if (protocolRequest.kind === "source-batch") {
+        handleSourceBatch(protocolRequest)
+      } else if (protocolRequest.kind === "open-picked-folder") {
+        void handleOpenPickedFolder(protocolRequest)
+      } else if (protocolRequest.kind === "import-snapshot") {
+        void handleSnapshotImport(protocolRequest)
+      } else if (protocolRequest.kind === "acquire") {
+        void handleRepositoryAcquire(protocolRequest)
+      } else if (protocolRequest.kind === "refresh") {
+        void handleRefreshPickedFolder(protocolRequest)
+      } else if (protocolRequest.kind === "query") {
+        void handleRepositoryQuery(protocolRequest)
+      } else if (protocolRequest.kind === "delete") {
+        void handleRepositoryDelete(protocolRequest)
+      } else if (
+        protocolRequest.kind === "cancel" &&
+        protocolRequest.operationId &&
+        (activePickedFolders.has(protocolRequest.operationId) ||
+          stagedSourceCollections.has(protocolRequest.operationId))
+      ) {
+        handlePickedFolderCancel(protocolRequest)
+      } else if (protocolRequest.kind === "close") {
+        void handleRepositoryClose(protocolRequest)
+      } else {
+        void protocolRuntime.handle(protocolRequest)
+      }
+    }
+    return
+  }
+  void handleStorageTestRequest(request).then(
+    (result) =>
+      globalThis.postMessage({
+        requestId: request.requestId,
+        ok: true,
+        result,
+      }),
+    (error: unknown) => {
+      const code =
+        error instanceof BrowserStorageError
+          ? error.code
+          : "storage_worker_failed"
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Browser storage worker failed."
+      globalThis.postMessage({
+        requestId: request.requestId,
+        ok: false,
+        error: { code, message: message.slice(0, 240) },
+      })
+    }
+  )
+})
