@@ -34,6 +34,7 @@ import ignore, { Ignore } from 'ignore';
 import { detectFrameworks } from '../resolution/frameworks';
 import type { ResolutionContext } from '../resolution/types';
 import { createYielder, type MaybeYield } from '../resolution/cooperative-yield';
+import { DEFAULT_IGNORE_PATTERNS } from './default-ignore-patterns';
 
 /**
  * Number of files to read in parallel during indexing.
@@ -132,89 +133,6 @@ export function hashContent(content: string): string {
  * symbols. 1 MB covers essentially all hand-written source.
  */
 const MAX_FILE_SIZE = 1024 * 1024;
-
-/**
- * Directory names that are dependency, build, cache, or tooling output across the
- * languages/frameworks CodeGraph supports — curated from the canonical
- * github/gitignore templates. Excluded by default so the graph reflects your code,
- * not third-party noise, without requiring a `.gitignore` (issue #407). The
- * exclusion applies uniformly (git or not, tracked or not); the only opt-in is an
- * explicit `.gitignore` negation (e.g. `!vendor/`). First-party-prone or generic
- * names (`packages`, `lib`, `app`, `bin`, `src`, `deps`, `env`, `tmp`, `storage`,
- * `Library`) are deliberately NOT listed, to avoid ever hiding real source.
- *
- * Only dirs that actually contain *indexable source* (or are enormous) earn a slot
- * — IDE/state dirs like `.idea`/`.vs` are omitted because CodeGraph indexes only
- * recognized source extensions, so they produce no symbols regardless.
- */
-const DEFAULT_IGNORE_DIRS: ReadonlySet<string> = new Set([
-  // JS / TS — dependency directories
-  'node_modules', 'bower_components', 'jspm_packages', 'web_modules',
-  '.yarn', '.pnpm-store',
-  // JS / TS — framework & bundler build / cache / deploy output
-  '.next', '.nuxt', '.svelte-kit', '.turbo', '.vite', '.parcel-cache', '.angular',
-  '.docusaurus', 'storybook-static', '.vinxi', '.nitro', 'out-tsc',
-  '.vercel', '.netlify', '.wrangler',
-  // Build output (common across ecosystems)
-  'dist', 'build', 'out', '.output',
-  // Test / coverage
-  'coverage', '.nyc_output',
-  // Python
-  '__pycache__', '__pypackages__', '.venv', 'venv', '.pixi', '.pdm-build',
-  '.mypy_cache', '.pytest_cache', '.ruff_cache', '.tox', '.nox', '.hypothesis',
-  '.ipynb_checkpoints', '.eggs',
-  // Rust / JVM (Maven, Gradle, Scala)
-  'target', '.gradle',
-  // .NET
-  'obj',
-  // Vendored deps (Go, PHP/Composer, Ruby/Bundler)
-  'vendor',
-  // Swift / iOS
-  '.build', 'Pods', 'Carthage', 'DerivedData', '.swiftpm',
-  // Dart / Flutter
-  '.dart_tool', '.pub-cache',
-  // Native (Android NDK, C/C++ deps)
-  '.cxx', '.externalNativeBuild', 'vcpkg_installed',
-  // Scala tooling
-  '.bloop', '.metals',
-  // Lua / Luau (LuaRocks)
-  'lua_modules', '.luarocks',
-  // Delphi / RAD Studio IDE backups (duplicate .pas source — would double-count)
-  '__history', '__recovery',
-  // Generic cache
-  '.cache',
-]);
-
-/**
- * Android resource directory types. A `res/` tree holds ONLY non-code resources —
- * layouts, drawables, value bags (strings/colors/styles), menus, navigation
- * graphs — split into one typed subdirectory per kind, optionally density/locale/
- * version-qualified (`values-es`, `drawable-hdpi`, `layout-v21`, …). None of it
- * yields an extractable code symbol, yet on an Android app it DOMINATES the tree
- * (one report: 26k XML files = 97% of the project, 0 symbols), bloating the DB,
- * slowing indexing, and skewing both the file count and `codegraph_explore`
- * results (#1047). So these are excluded by default. The structure is
- * self-identifying — a non-Android project has no `res/layout/` etc., so it's
- * untouched — and the only XML that DOES produce symbols (MyBatis mappers) lives
- * under `src/main/resources/`, never `res/`, so nothing useful is dropped.
- * `res/raw/` is deliberately NOT here: it holds arbitrary bundled assets that can
- * be code-ish (a `.sql` schema, a `.js`), so we leave it indexed. Override any of
- * these with a `.gitignore` negation (e.g. `!res/values/`).
- */
-const ANDROID_RES_TYPES: readonly string[] = [
-  'anim', 'animator', 'color', 'drawable', 'font', 'layout',
-  'menu', 'mipmap', 'navigation', 'transition', 'values', 'xml',
-];
-
-/** Gitignore-style patterns for the `ignore` matcher: the dirs above plus a few globs. */
-const DEFAULT_IGNORE_PATTERNS: string[] = [
-  ...Array.from(DEFAULT_IGNORE_DIRS, (d) => `${d}/`),
-  '*.egg-info/',     // Python packaging metadata
-  'cmake-build-*/',  // CLion / CMake build trees
-  'bazel-*/',        // Bazel output symlink trees
-  // Android resource dirs at any depth, with their qualifier variants (#1047).
-  ...ANDROID_RES_TYPES.map((t) => `**/res/${t}*/`),
-];
 
 /** True if `buf` decodes as strict UTF-8 (no invalid byte sequences). */
 function isValidUtf8(buf: Buffer): boolean {

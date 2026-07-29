@@ -400,7 +400,9 @@ export class TreeSitterExtractor {
   // value consumers ("change this constant/table, affect its readers").
   private static readonly VALUE_REF_LANGS = new Set<string>(['typescript', 'javascript', 'tsx', 'arkts', 'go', 'python', 'rust', 'ruby', 'c', 'java', 'csharp', 'php', 'scala', 'kotlin', 'swift', 'dart', 'pascal']);
   private static readonly MAX_VALUE_REF_NODES = 20_000;
-  private readonly valueRefsEnabled = process.env.CODEGRAPH_VALUE_REFS !== '0';
+  private readonly valueRefsEnabled =
+    typeof process === 'undefined' ||
+    process.env?.CODEGRAPH_VALUE_REFS !== '0';
   private fileScopeValues = new Map<string, string>();
   private fileScopeValueCounts = new Map<string, number>(); // file-scope nodes per name (conditional-def detection)
   private valueRefScopes: Array<{ id: string; node: SyntaxNode; name: string }> = [];

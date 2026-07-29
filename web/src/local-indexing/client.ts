@@ -21,7 +21,9 @@ import type {
 import {
   WORKER_BUDGETS,
   WORKER_PROTOCOL_VERSION,
+  isWorkerRequest,
   isWorkerResponse,
+  type WorkerRequestKind,
   type WorkerResponse,
 } from "./worker"
 import {
@@ -130,6 +132,68 @@ function createId() {
   return crypto.randomUUID()
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function isRepository(value: unknown): value is Repository {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.root === "string" &&
+    typeof value.name === "string" &&
+    typeof value.default === "boolean"
+  )
+}
+
+function invalidWorkerResult(): never {
+  throw new RepositoryClientError(
+    "internal",
+    "The browser-local indexing worker returned an invalid result.",
+    false
+  )
+}
+
+function decodeWorkerResult<T>(
+  kind: WorkerRequestKind,
+  payload: unknown,
+  value: unknown
+): T {
+  if (
+    kind === "query" &&
+    isRecord(payload) &&
+    payload.query === "list-repositories"
+  ) {
+    if (!Array.isArray(value) || !value.every(isRepository)) {
+      return invalidWorkerResult()
+    }
+    return value as T
+  }
+  if (kind === "open-picked-folder" || kind === "import-snapshot") {
+    if (!isRepository(value)) return invalidWorkerResult()
+    return value as T
+  }
+  if (kind === "embed") {
+    if (
+      !isRecord(value) ||
+      value.status !== "complete" ||
+      !Number.isSafeInteger(value.graphGeneration) ||
+      Number(value.graphGeneration) <= 0 ||
+      !Number.isSafeInteger(value.embedded) ||
+      Number(value.embedded) < 0 ||
+      (value.dimensions !== undefined &&
+        (!Number.isSafeInteger(value.dimensions) ||
+          Number(value.dimensions) <= 0))
+    ) {
+      return invalidWorkerResult()
+    }
+    return value as T
+  }
+  if (!isRecord(value)) return invalidWorkerResult()
+  return value as T
+}
+
 export class LocalRepositoryClient implements RepositoryClient {
   private readonly worker: WorkerTransport
   private readonly createId: () => string
@@ -163,8 +227,7 @@ export class LocalRepositoryClient implements RepositoryClient {
       ((typeof navigator === "undefined" ? undefined : navigator.storage) as
         BrowserStorageManager | undefined) ??
       {}
-    this.onMessage = (event) =>
-      this.handleMessage((event as MessageEvent).data)
+    this.onMessage = (event) => this.handleMessage((event as MessageEvent).data)
     this.onWorkerFailure = () => this.failWorker()
     this.worker.addEventListener("message", this.onMessage)
     this.worker.addEventListener("error", this.onWorkerFailure)
@@ -244,7 +307,7 @@ export class LocalRepositoryClient implements RepositoryClient {
   }
 
   private request<T>(
-    kind: string,
+    kind: WorkerRequestKind,
     payload?: unknown,
     repositoryId?: string,
     operationId?: string,
@@ -260,20 +323,35 @@ export class LocalRepositoryClient implements RepositoryClient {
       )
     }
     const requestId = this.createId()
+    const message = {
+      protocolVersion: WORKER_PROTOCOL_VERSION,
+      requestId,
+      ...(operationId ? { operationId } : {}),
+      ...(repositoryId ? { repositoryId } : {}),
+      kind,
+      ...(payload === undefined ? {} : { payload }),
+    }
+    if (!isWorkerRequest(message)) {
+      return Promise.reject(
+        new RepositoryClientError(
+          "invalid_request",
+          "The browser-local client constructed an invalid worker request.",
+          false
+        )
+      )
+    }
     return new Promise<T>((resolve, reject) => {
       this.pending.set(requestId, {
         ...(operationId ? { operationId } : {}),
-        resolve: (value) => resolve(value as T),
+        resolve: (value) => {
+          try {
+            resolve(decodeWorkerResult<T>(kind, payload, value))
+          } catch (error) {
+            reject(error)
+          }
+        },
         reject,
       })
-      const message = {
-        protocolVersion: WORKER_PROTOCOL_VERSION,
-        requestId,
-        ...(operationId ? { operationId } : {}),
-        ...(repositoryId ? { repositoryId } : {}),
-        kind,
-        ...(payload === undefined ? {} : { payload }),
-      }
       if (transfer) this.worker.postMessage(message, transfer)
       else this.worker.postMessage(message)
     })
@@ -299,7 +377,7 @@ export class LocalRepositoryClient implements RepositoryClient {
       return { payload, batched: false }
     }
 
-    const batches: typeof entries[] = []
+    const batches: (typeof entries)[] = []
     let batch: typeof entries = []
     let batchBytes = 0
     for (const entry of entries) {
@@ -534,7 +612,7 @@ export class LocalRepositoryClient implements RepositoryClient {
     )
   }
 
-  async refresh(repositoryId: string) {
+  async refresh(repositoryId: string, operationId = this.createId()) {
     const identity = this.sourceIdentities.get(repositoryId)
     if (identity && identity.sourceKind !== "picked-folder") {
       throw new RepositoryClientError(
@@ -563,7 +641,6 @@ export class LocalRepositoryClient implements RepositoryClient {
             }).collect(),
           }
         : undefined
-    const operationId = this.createId()
     const payload = sourcePayload
       ? (
           await this.batchedSourcePayload(
@@ -601,7 +678,7 @@ export class LocalRepositoryClient implements RepositoryClient {
     this.semanticSessions.set(repositoryId, {
       endpointUrl: request.endpointUrl,
       model: request.model,
-      ...(result.dimensions ?? request.dimensions
+      ...((result.dimensions ?? request.dimensions)
         ? { dimensions: result.dimensions ?? request.dimensions }
         : {}),
       graphGeneration: result.graphGeneration,
@@ -614,12 +691,11 @@ export class LocalRepositoryClient implements RepositoryClient {
     repositoryId: string,
     options: { cancelActive?: boolean } = {}
   ) {
-    await this.request(
-      "delete",
-      { cancelActive: options.cancelActive === true },
-      repositoryId
-    )
-    const cleanupWarnings: string[] = []
+    const deletion = await this.request<{
+      deleted: boolean
+      cleanupWarnings?: string[]
+    }>("delete", { cancelActive: options.cancelActive === true }, repositoryId)
+    const cleanupWarnings = [...(deletion.cleanupWarnings ?? [])]
     const identity = this.sourceIdentities.get(repositoryId)
     if (identity?.sourceKind === "picked-folder" && this.sourceRegistry) {
       try {
@@ -683,7 +759,7 @@ export class LocalRepositoryClient implements RepositoryClient {
   async importSnapshot(
     input: SnapshotImportRequest,
     transfer: Transferable[] = []
-  ): Promise<Repository> {
+  ): Promise<Repository & { metadataWarnings?: string[] }> {
     const { identity, collection, replace } = input
     if (
       (identity.sourceKind !== "dropped-snapshot" &&
@@ -758,20 +834,36 @@ export class LocalRepositoryClient implements RepositoryClient {
           }
         : {}),
     }
+    const metadataWarnings: string[] = []
     if (replace && replace.repositoryId !== identity.id) {
-      await this.snapshotRegistry.delete(replace.repositoryId)
+      try {
+        await this.snapshotRegistry.delete(replace.repositoryId)
+      } catch {
+        metadataWarnings.push(
+          "Previous snapshot metadata could not be removed."
+        )
+      }
     }
-    await this.snapshotRegistry.put({
-      repositoryId,
-      displayName: result.name,
-      sourceKind: targetIdentity.sourceKind,
-      acceptedAt: collection.snapshot.acceptedAt,
-      manifestFingerprint: collection.snapshot.manifestFingerprint,
-      fileCount: collection.snapshot.fileCount,
-      totalBytes: collection.snapshot.totalBytes,
-    })
+    try {
+      await this.snapshotRegistry.put({
+        repositoryId,
+        displayName: result.name,
+        sourceKind: targetIdentity.sourceKind,
+        acceptedAt: collection.snapshot.acceptedAt,
+        manifestFingerprint: collection.snapshot.manifestFingerprint,
+        fileCount: collection.snapshot.fileCount,
+        totalBytes: collection.snapshot.totalBytes,
+      })
+    } catch {
+      metadataWarnings.push(
+        "Snapshot registry metadata could not be saved; the published index remains available."
+      )
+    }
     this.sourceIdentities.set(repositoryId, targetIdentity)
-    return result
+    return {
+      ...result,
+      ...(metadataWarnings.length > 0 ? { metadataWarnings } : {}),
+    }
   }
 
   async savePickedFolder(

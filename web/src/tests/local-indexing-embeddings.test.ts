@@ -30,7 +30,7 @@ function memoryStorage() {
 }
 
 function profileInput(
-  overrides: Partial<EmbeddingProfileInput> = {},
+  overrides: Partial<EmbeddingProfileInput> = {}
 ): EmbeddingProfileInput {
   return {
     repositoryId: "local-repository",
@@ -122,10 +122,10 @@ describe("secret-free embedding state", () => {
 
     expect(credentials.get("local-repository")).toBe("session-bearer-secret")
     expect(storage.value(EMBEDDING_PROFILE_STORAGE_KEY)).not.toContain(
-      "session-bearer-secret",
+      "session-bearer-secret"
     )
     expect(new MemoryOnlyEmbeddingCredentials().get("local-repository")).toBe(
-      undefined,
+      undefined
     )
     credentials.clear("local-repository")
     expect(credentials.get("local-repository")).toBeUndefined()
@@ -149,8 +149,7 @@ describe("secret-free embedding state", () => {
           endpointOrigin: "https://other.example/embed",
           endpointUrl: undefined,
         },
-        { repositoryId: 42, endpointOrigin: "not a URL" },
-      ]),
+      ])
     )
     const store = new EmbeddingProfileStore(storage)
 
@@ -169,11 +168,30 @@ describe("secret-free embedding state", () => {
     expect(durable).not.toContain("stored source")
   })
 
+  it("refuses lossy reads and rewrites when any durable profile is malformed", () => {
+    const storage = memoryStorage()
+    const durable = JSON.stringify([
+      profileInput(),
+      { repositoryId: 42, endpointOrigin: "not a URL" },
+    ])
+    storage.setItem(EMBEDDING_PROFILE_STORAGE_KEY, durable)
+    const store = new EmbeddingProfileStore(storage)
+
+    expect(() => store.list()).toThrow(/metadata is unreadable/i)
+    expect(() =>
+      store.save(profileInput({ repositoryId: "new-repository" }))
+    ).toThrow(/metadata is unreadable/i)
+    expect(() => store.delete("local-repository")).toThrow(
+      /metadata is unreadable/i
+    )
+    expect(storage.value(EMBEDDING_PROFILE_STORAGE_KEY)).toBe(durable)
+  })
+
   it("builds stable diagnostics without retaining URL secrets or raw provider causes", () => {
     const diagnostic = safeEmbeddingDiagnostic(
       "network_blocked",
       "https://user:password@example.test/v1/embed?token=secret#provider",
-      new Error("provider said bearer-secret"),
+      new Error("provider said bearer-secret")
     )
 
     expect(diagnostic).toEqual({
@@ -189,10 +207,7 @@ describe("fail-closed embedding transport policy", () => {
     ["invalid URL", "not a URL"],
     ["insecure scheme", "http://embeddings.example/v1/embed"],
     ["mixed content", "http://localhost:8787/v1/embed"],
-    [
-      "URL credentials",
-      "https://user:password@embeddings.example/v1/embed",
-    ],
+    ["URL credentials", "https://user:password@embeddings.example/v1/embed"],
     ["query credential", "https://embeddings.example/v1/embed?token=secret"],
     ["fragment data", "https://embeddings.example/v1/embed#secret"],
   ])("rejects %s without an unsafe bypass", (_label, endpointUrl) => {
@@ -214,7 +229,7 @@ describe("fail-closed embedding transport policy", () => {
         "Choose a direct HTTPS endpoint without URL credentials, query parameters, or fragments.",
     })
     const publicFailure = JSON.stringify(
-      (failure as EmbeddingPolicyError).toEnvelope(),
+      (failure as EmbeddingPolicyError).toEnvelope()
     )
     expect(publicFailure).not.toContain(endpointUrl)
     expect(publicFailure).not.toMatch(/no-cors|proxy|override/i)
@@ -222,7 +237,7 @@ describe("fail-closed embedding transport policy", () => {
 
   it("accepts only a direct canonical HTTPS endpoint", () => {
     expect(
-      validateEmbeddingEndpoint("https://embeddings.example/v1/embed"),
+      validateEmbeddingEndpoint("https://embeddings.example/v1/embed")
     ).toBe("https://embeddings.example/v1/embed")
   })
 
@@ -369,6 +384,6 @@ describe("fail-closed embedding transport policy", () => {
       ]) {
         expect(publicFailure).not.toContain(forbidden)
       }
-    },
+    }
   )
 })

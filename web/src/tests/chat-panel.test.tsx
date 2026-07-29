@@ -62,8 +62,10 @@ describe("ChatPanel", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Chat dormant")).toBeInTheDocument()
+      expect(
+        screen.getByText("No LLM provider is configured.")
+      ).toBeInTheDocument()
     })
-    expect(screen.getByText("No LLM provider is configured.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Ask" })).toBeDisabled()
   })
 

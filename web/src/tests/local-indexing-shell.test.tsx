@@ -272,9 +272,7 @@ describe("browser-local workspace shell", () => {
       credential: "memory-only-key",
     })
     expect(semanticButton).toHaveFocus()
-    expect(
-      screen.getByText(/bearer key remains only in this page session/i)
-    ).toBeVisible()
+    expect(screen.getByText(/bearer key remains only in memory/i)).toBeVisible()
   })
 
   it("requires the repository name and an explicit active-operation cancellation choice", async () => {

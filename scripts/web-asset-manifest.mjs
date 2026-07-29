@@ -6,6 +6,53 @@ export const WEB_BUILD_ENTRIES = Object.freeze({
   "local-indexing-worker": "./src/local-indexing/worker.ts",
 });
 
+const BROWSER_GRAMMARS = Object.freeze([
+  "arkts",
+  "c",
+  "c_sharp",
+  "cfml",
+  "cfquery",
+  "cfscript",
+  "cobol",
+  "cpp",
+  "dart",
+  "erlang",
+  "go",
+  "java",
+  "javascript",
+  "kotlin",
+  "lua",
+  "luau",
+  "nix",
+  "objc",
+  "ocaml",
+  "ocaml_interface",
+  "pascal",
+  "php",
+  "python",
+  "r",
+  "ruby",
+  "rust",
+  "scala",
+  "solidity",
+  "swift",
+  "terraform",
+  "tsx",
+  "typescript",
+  "vbnet",
+]);
+
+const grammarAssetPatterns = BROWSER_GRAMMARS.map((language) => ({
+  id: `grammar-${language}`,
+  pattern: new RegExp(
+    `^assets/tree-sitter-${language}-[^/]+\\.wasm$`,
+  ),
+  minimumBytes: 1_024,
+  integrity: "wasm",
+}));
+
+const grammarAlternation = BROWSER_GRAMMARS.join("|");
+
 export const REQUIRED_WEB_ASSETS = Object.freeze([
   {
     id: "index-html",
@@ -45,29 +92,13 @@ export const REQUIRED_WEB_ASSETS = Object.freeze([
   },
   {
     id: "tree-sitter-runtime",
-    pattern:
-      /^assets\/tree-sitter-(?!javascript-|typescript-|tsx-)[^/]+\.wasm$/,
+    pattern: new RegExp(
+      `^assets/tree-sitter-(?!(?:${grammarAlternation})-)[^/]+\\.wasm$`,
+    ),
     minimumBytes: 1_024,
     integrity: "wasm",
   },
-  {
-    id: "grammar-javascript",
-    pattern: /^assets\/tree-sitter-javascript-[^/]+\.wasm$/,
-    minimumBytes: 1_024,
-    integrity: "wasm",
-  },
-  {
-    id: "grammar-typescript",
-    pattern: /^assets\/tree-sitter-typescript-[^/]+\.wasm$/,
-    minimumBytes: 1_024,
-    integrity: "wasm",
-  },
-  {
-    id: "grammar-tsx",
-    pattern: /^assets\/tree-sitter-tsx-[^/]+\.wasm$/,
-    minimumBytes: 1_024,
-    integrity: "wasm",
-  },
+  ...grammarAssetPatterns,
 ]);
 
 export const DEFERRED_WEB_ASSET_IDS = Object.freeze(

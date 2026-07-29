@@ -4,7 +4,8 @@ import type {
   SourceHandleStore,
 } from "../local-indexing/source"
 
-type EntryHandle = TestDirectoryHandle | TestFileHandle | { kind: "unsupported"; name: string }
+type EntryHandle =
+  TestDirectoryHandle | TestFileHandle | { kind: "unsupported"; name: string }
 
 class TestFileHandle {
   readonly kind = "file" as const
@@ -13,7 +14,7 @@ class TestFileHandle {
     readonly name: string,
     private readonly bytes: Uint8Array,
     readonly read = vi.fn(),
-    private readonly declaredSize = bytes.byteLength,
+    private readonly declaredSize = bytes.byteLength
   ) {}
 
   async getFile() {
@@ -49,7 +50,8 @@ class PermissionDirectoryHandle extends TestDirectoryHandle {
 }
 
 const bytes = (value: string) => new TextEncoder().encode(value)
-const deterministicHash = async (value: Uint8Array) => `hash-${value.byteLength}-${value[0] ?? 0}`
+const deterministicHash = async (value: Uint8Array) =>
+  `hash-${value.byteLength}-${value[0] ?? 0}`
 
 describe("browser-local source providers", () => {
   it("opens picked folders only from direct user activation and mints opaque identity", async () => {
@@ -62,7 +64,7 @@ describe("browser-local source providers", () => {
         userActivated: false,
         createId: () => "repo-opaque",
         hashBytes: deterministicHash,
-      }),
+      })
     ).rejects.toMatchObject({ code: "user_activation_required" })
     expect(picker).not.toHaveBeenCalled()
 
@@ -113,9 +115,9 @@ describe("browser-local source providers", () => {
       canRefresh: true,
     })
     expect(granted.requestPermission).not.toHaveBeenCalled()
-    expect(JSON.stringify(records.get("handle-repo-opaque")?.identity)).not.toContain(
-      "/Users/",
-    )
+    expect(
+      JSON.stringify(records.get("handle-repo-opaque")?.identity)
+    ).not.toContain("/Users/")
 
     const prompted = new PermissionDirectoryHandle("project")
     prompted.queryPermission.mockResolvedValue("prompt")
@@ -129,11 +131,11 @@ describe("browser-local source providers", () => {
     })
     expect(prompted.requestPermission).not.toHaveBeenCalled()
     await expect(
-      registry.reconnect(identity, { userActivated: false }),
+      registry.reconnect(identity, { userActivated: false })
     ).rejects.toMatchObject({ code: "user_activation_required" })
     expect(prompted.requestPermission).not.toHaveBeenCalled()
     await expect(
-      registry.reconnect(identity, { userActivated: true }),
+      registry.reconnect(identity, { userActivated: true })
     ).resolves.toMatchObject({ status: "granted", canRefresh: true })
     expect(prompted.requestPermission).toHaveBeenCalledTimes(1)
   })
@@ -169,7 +171,7 @@ describe("browser-local source providers", () => {
     denied.requestPermission.mockResolvedValue("denied")
     records.set("handle-repo-opaque", { identity, handle: denied })
     await expect(
-      registry.reconnect(identity, { userActivated: true }),
+      registry.reconnect(identity, { userActivated: true })
     ).rejects.toMatchObject({ code: "permission_denied" })
 
     const saved = new PermissionDirectoryHandle("project")
@@ -180,7 +182,7 @@ describe("browser-local source providers", () => {
       registry.reconnect(identity, {
         userActivated: true,
         candidate: new PermissionDirectoryHandle("different"),
-      }),
+      })
     ).rejects.toMatchObject({ code: "source_mismatch" })
 
     await expect(
@@ -190,8 +192,8 @@ describe("browser-local source providers", () => {
           id: "/Users/alice/project",
           virtualRoot: "local:///Users/alice/project",
         },
-        saved,
-      ),
+        saved
+      )
     ).rejects.toMatchObject({ code: "invalid_source_identity" })
   })
 
@@ -199,11 +201,19 @@ describe("browser-local source providers", () => {
     const source = await import("../local-indexing/source")
     const root = new TestDirectoryHandle("project")
     const src = new TestDirectoryHandle("src")
-    const main = new TestFileHandle("main.ts", bytes("export const main = true"))
+    const main = new TestFileHandle(
+      "main.ts",
+      bytes("export const main = true")
+    )
     const duplicate = new TestFileHandle("main.ts", bytes("duplicate"))
     const ignored = new TestFileHandle("secret.ts", bytes("do not read"))
     const oversizedRead = vi.fn()
-    const oversized = new TestFileHandle("huge.ts", bytes("x"), oversizedRead, 101)
+    const oversized = new TestFileHandle(
+      "huge.ts",
+      bytes("x"),
+      oversizedRead,
+      101
+    )
     const traversal = new TestFileHandle("..", bytes("escape"))
 
     src.children.push(
@@ -213,7 +223,7 @@ describe("browser-local source providers", () => {
       ["huge.ts", oversized],
       ["..", traversal],
       ["loop", root],
-      ["device", { kind: "unsupported", name: "device" }],
+      ["device", { kind: "unsupported", name: "device" }]
     )
     root.children.push(["src", src])
 
@@ -233,8 +243,12 @@ describe("browser-local source providers", () => {
     const result = await provider.collect()
 
     expect(result.entries.map((entry) => entry.path)).toEqual(["src/main.ts"])
-    expect(result.manifest.entries.map((entry) => entry.path)).toEqual(["src/main.ts"])
-    expect(result.warnings.details.map((warning) => warning.code).sort()).toEqual([
+    expect(result.manifest.entries.map((entry) => entry.path)).toEqual([
+      "src/main.ts",
+    ])
+    expect(
+      result.warnings.details.map((warning) => warning.code).sort()
+    ).toEqual([
       "duplicate_source_path",
       "file_too_large",
       "ignored_path",
@@ -249,11 +263,115 @@ describe("browser-local source providers", () => {
     expect(traversal.read).not.toHaveBeenCalled()
   })
 
+  it("applies shared defaults, layered gitignores, and project source rules before reading files", async () => {
+    const source = await import("../local-indexing/source")
+    const root = new TestDirectoryHandle("project")
+    const src = new TestDirectoryHandle("src")
+    const generated = new TestDirectoryHandle("generated")
+    const dist = new TestDirectoryHandle("dist")
+    const dependencies = new TestDirectoryHandle("node_modules")
+    const keep = new TestFileHandle(
+      "keep.ts",
+      bytes("export const keep = true")
+    )
+    const drop = new TestFileHandle(
+      "drop.ts",
+      bytes("export const drop = true")
+    )
+    const excluded = new TestFileHandle(
+      "excluded.ts",
+      bytes("export const excluded = true")
+    )
+    const forced = new TestFileHandle(
+      "forced.ts",
+      bytes("export const forced = true")
+    )
+    const revived = new TestFileHandle(
+      "revived.ts",
+      bytes("export const revived = true")
+    )
+    const dependency = new TestFileHandle(
+      "dependency.ts",
+      bytes("export const dependency = true")
+    )
+    const unsupported = new TestFileHandle("README.md", bytes("# project"))
+    const custom = new TestFileHandle(
+      "view.tpl",
+      bytes("export const custom = true")
+    )
+
+    src.children.push(
+      [".gitignore", new TestFileHandle(".gitignore", bytes("!keep.ts\n"))],
+      ["keep.ts", keep],
+      ["drop.ts", drop],
+      ["excluded.ts", excluded]
+    )
+    generated.children.push(["forced.ts", forced])
+    dist.children.push(["revived.ts", revived])
+    dependencies.children.push(["dependency.ts", dependency])
+    root.children.push(
+      [
+        "codegraph.json",
+        new TestFileHandle(
+          "codegraph.json",
+          bytes(
+            JSON.stringify({
+              extensions: { ".tpl": "typescript" },
+              include: ["generated/forced.ts"],
+              exclude: ["src/excluded.ts"],
+            })
+          )
+        ),
+      ],
+      [
+        ".gitignore",
+        new TestFileHandle(
+          ".gitignore",
+          bytes("src/*.ts\ngenerated/\n!dist/\n")
+        ),
+      ],
+      ["src", src],
+      ["generated", generated],
+      ["dist", dist],
+      ["node_modules", dependencies],
+      ["README.md", unsupported],
+      ["view.tpl", custom]
+    )
+
+    const result = await source
+      .createPickedFolderProvider(root, {
+        createId: () => "repo-policy",
+        hashBytes: deterministicHash,
+      })
+      .collect()
+
+    expect(result.entries.map((entry) => entry.path)).toEqual([
+      "dist/revived.ts",
+      "generated/forced.ts",
+      "src/keep.ts",
+      "view.tpl",
+    ])
+    expect(result.rules).toEqual({
+      extensionOverrides: { ".tpl": "typescript" },
+    })
+    expect(drop.read).not.toHaveBeenCalled()
+    expect(excluded.read).not.toHaveBeenCalled()
+    expect(dependency.read).not.toHaveBeenCalled()
+    expect(unsupported.read).not.toHaveBeenCalled()
+    expect(keep.read).toHaveBeenCalledTimes(1)
+    expect(forced.read).toHaveBeenCalledTimes(1)
+    expect(revived.read).toHaveBeenCalledTimes(1)
+    expect(custom.read).toHaveBeenCalledTimes(1)
+  })
+
   it("caps warning details while retaining aggregate counts", async () => {
     const source = await import("../local-indexing/source")
     const root = new TestDirectoryHandle("project")
     for (let index = 0; index < 6; index += 1) {
-      root.children.push(["..", new TestFileHandle(`bad-${index}`, bytes("bad"))])
+      root.children.push([
+        "..",
+        new TestFileHandle(`bad-${index}`, bytes("bad")),
+      ])
     }
 
     const result = await source
@@ -295,8 +413,8 @@ describe("browser-local source providers", () => {
             { path: "changed.ts", contentHash: "new", size: 1 },
             { path: "unchanged.ts", contentHash: "same", size: 99 },
           ],
-        },
-      ),
+        }
+      )
     ).toEqual({
       added: ["added.ts"],
       changed: ["changed.ts"],
@@ -308,11 +426,27 @@ describe("browser-local source providers", () => {
   it("builds immutable snapshot manifests without path leakage or rejected payloads", async () => {
     const source = await import("../local-indexing/source")
     const input = [
-      { kind: "file" as const, path: "src/main.ts", bytes: bytes("export const value = 1") },
-      { kind: "file" as const, path: "src\\main.ts", bytes: bytes("duplicate") },
-      { kind: "file" as const, path: "/Users/alice/secret.ts", bytes: bytes("secret") },
+      {
+        kind: "file" as const,
+        path: "src/main.ts",
+        bytes: bytes("export const value = 1"),
+      },
+      {
+        kind: "file" as const,
+        path: "src\\main.ts",
+        bytes: bytes("duplicate"),
+      },
+      {
+        kind: "file" as const,
+        path: "/Users/alice/secret.ts",
+        bytes: bytes("secret"),
+      },
       { kind: "file" as const, path: "dist/out.ts", bytes: bytes("ignored") },
-      { kind: "file" as const, path: "src/huge.ts", bytes: new Uint8Array(101) },
+      {
+        kind: "file" as const,
+        path: "src/huge.ts",
+        bytes: new Uint8Array(101),
+      },
     ]
 
     const provider = source.createSnapshotProvider(input, {
@@ -350,7 +484,9 @@ describe("browser-local source providers", () => {
       totalBytes: 22,
       manifestFingerprint: first.manifest.fingerprint,
     })
-    expect(first.warnings.details.map((warning) => warning.code).sort()).toEqual([
+    expect(
+      first.warnings.details.map((warning) => warning.code).sort()
+    ).toEqual([
       "duplicate_source_path",
       "file_too_large",
       "ignored_path",
@@ -386,7 +522,7 @@ describe("browser-local source providers", () => {
     expect(second.identity.id).toBe("snapshot-second")
     expect(first.identity.id).not.toBe(second.identity.id)
     expect(firstCollection.snapshot.manifestFingerprint).toBe(
-      secondCollection.snapshot.manifestFingerprint,
+      secondCollection.snapshot.manifestFingerprint
     )
   })
 
@@ -410,15 +546,14 @@ describe("browser-local source providers", () => {
           maxSnapshotTransferBytes: 10,
           maxWarnings: 100,
         },
-      },
+      }
     )
     const result = await provider.collect()
 
     expect(result.entries.map((entry) => entry.path)).toEqual(["a.ts"])
-    expect(result.warnings.details.map((warning) => warning.code).sort()).toEqual([
-      "max_depth_exceeded",
-      "snapshot_transfer_limit",
-    ])
+    expect(
+      result.warnings.details.map((warning) => warning.code).sort()
+    ).toEqual(["max_depth_exceeded", "snapshot_transfer_limit"])
   })
 })
 
@@ -427,18 +562,56 @@ describe("browser-local SQLite generation contract", () => {
     const sqlite = await import("../local-indexing/sqlite")
 
     expect(sqlite.BROWSER_SCHEMA_VERSION).toBe(12)
-    expect(sqlite.registryDatabasePath()).toBe("/codegraph/browser/registry.sqlite3")
+    expect(sqlite.registryDatabasePath()).toBe(
+      "/codegraph/browser/registry.sqlite3"
+    )
     expect(sqlite.generationDatabasePath("repo_opaque-1", 7)).toBe(
-      "/codegraph/browser/repositories/repo_opaque-1/generations/7.sqlite3",
+      "/codegraph/browser/repositories/repo_opaque-1/generations/7.sqlite3"
     )
     expect(() => sqlite.generationDatabasePath("/Users/alice/repo", 1)).toThrow(
-      /opaque repository id/,
+      /opaque repository id/
     )
-    expect(() => sqlite.generationDatabasePath("repo", 0)).toThrow(/positive integer/)
+    expect(() => sqlite.generationDatabasePath("repo", 0)).toThrow(
+      /positive integer/
+    )
   })
 })
 
 describe("versioned local-index worker RPC", () => {
+  it("keeps browser language admission aligned with the canonical language and extension tables", async () => {
+    const [{ EXTENSION_MAP }, { LANGUAGES }, browserGrammars] =
+      await Promise.all([
+        import("../../../src/extraction/extension-map"),
+        import("../../../src/types"),
+        import("../local-indexing/browser-grammars"),
+      ])
+
+    expect(
+      LANGUAGES.filter((language) => language !== "unknown").filter(
+        (language) => !browserGrammars.isLanguageSupported(language)
+      )
+    ).toEqual([])
+    for (const [extension, language] of Object.entries(EXTENSION_MAP)) {
+      expect(
+        browserGrammars.detectLanguage(`source${extension}`),
+        extension
+      ).toBe(language)
+    }
+    expect(browserGrammars.detectLanguage("conf/routes")).toBe("yaml")
+    expect(browserGrammars.detectLanguage("templates/product.json")).toBe(
+      "liquid"
+    )
+    expect(browserGrammars.detectLanguage("service.app.src")).toBe("erlang")
+  })
+
+  it("uses canonical SHA-256 ids without importing Node crypto", async () => {
+    const { createHash } = await import("../local-indexing/browser-crypto")
+
+    expect(createHash("sha256").update("abc").digest("hex")).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    )
+  })
+
   it("ignores messages that declare a different origin", async () => {
     const postMessage = vi
       .spyOn(globalThis, "postMessage")
@@ -453,7 +626,7 @@ describe("versioned local-index worker RPC", () => {
           kind: "close",
         },
         origin: "https://attacker.example",
-      }),
+      })
     )
 
     expect(postMessage).not.toHaveBeenCalled()
@@ -469,7 +642,7 @@ describe("versioned local-index worker RPC", () => {
     globalThis.dispatchEvent(
       new MessageEvent("message", {
         data: { protocolVersion: 1, requestId: "malformed-ingress" },
-      }),
+      })
     )
 
     expect(postMessage).toHaveBeenCalledWith(
@@ -478,36 +651,32 @@ describe("versioned local-index worker RPC", () => {
         type: "failure",
         terminal: "failed",
         error: expect.objectContaining({ code: "invalid_worker_request" }),
-      }),
+      })
     )
     postMessage.mockRestore()
   })
 
   it("extracts Vue script blocks without relying on HTML tag filtering", async () => {
-    const { extractVueScriptSource } = await import(
-      "../local-indexing/extract"
-    )
+    const { extractVueScriptSource } = await import("../local-indexing/extract")
 
     expect(
       extractVueScriptSource(
-        "<template><p>hello</p></template><script>const answer = 42</script >",
-      ),
+        "<template><p>hello</p></template><script>const answer = 42</script >"
+      )
     ).toBe("const answer = 42")
     expect(
       extractVueScriptSource(
-        '<script data-label="a > b">const answer = 43</script\t\n ignored>',
-      ),
+        '<script data-label="a > b">const answer = 43</script\t\n ignored>'
+      )
     ).toBe("const answer = 43")
     expect(
       extractVueScriptSource(
-        "<scripture>ignore</scripture><script>const answer = 44</script>",
-      ),
+        "<scripture>ignore</scripture><script>const answer = 44</script>"
+      )
     ).toBe("const answer = 44")
   })
 
-  const request = (
-    overrides: Record<string, unknown> = {},
-  ) => ({
+  const request = (overrides: Record<string, unknown> = {}) => ({
     protocolVersion: 1 as const,
     requestId: "request-1",
     operationId: "operation-1",
@@ -554,23 +723,22 @@ describe("versioned local-index worker RPC", () => {
       request({
         requestId: "request-2",
         operationId: "operation-2",
-      }),
+      })
     )
 
     expect(loadGrammars).toHaveBeenCalledTimes(1)
     expect(loadGrammars).toHaveBeenCalledWith(["typescript"])
     expect(store.publishGeneration).toHaveBeenCalledTimes(2)
     const progress = emitted.filter(
-      (message) => (message as { type?: string }).type === "progress",
+      (message) => (message as { type?: string }).type === "progress"
     )
     expect(progress.length).toBeLessThanOrEqual(12)
     const terminals = emitted.filter(
-      (message) => (message as { terminal?: string }).terminal !== undefined,
+      (message) => (message as { terminal?: string }).terminal !== undefined
     )
-    expect(terminals.map((message) => (message as { terminal: string }).terminal)).toEqual([
-      "complete",
-      "complete",
-    ])
+    expect(
+      terminals.map((message) => (message as { terminal: string }).terminal)
+    ).toEqual(["complete", "complete"])
     expect(() => structuredClone(emitted)).not.toThrow()
 
     await runtime.handle({
@@ -624,8 +792,8 @@ describe("versioned local-index worker RPC", () => {
       emitted.filter(
         (message) =>
           (message as { requestId?: string }).requestId === "request-1" &&
-          (message as { terminal?: string }).terminal !== undefined,
-      ),
+          (message as { terminal?: string }).terminal !== undefined
+      )
     ).toEqual([
       expect.objectContaining({
         terminal: "cancelled",
@@ -656,7 +824,7 @@ describe("versioned local-index worker RPC", () => {
           new Promise<{ generation: number }>((resolve) => {
             publishing = true
             finishPublish = () => resolve({ generation: 1 })
-          }),
+          })
       ),
       close: vi.fn(() => ({ paused: true })),
     }
@@ -682,8 +850,9 @@ describe("versioned local-index worker RPC", () => {
 
     expect(
       emitted.find(
-        (message) => (message as { requestId?: string }).requestId === "cancel-publishing",
-      ),
+        (message) =>
+          (message as { requestId?: string }).requestId === "cancel-publishing"
+      )
     ).toMatchObject({
       type: "result",
       result: { cancelled: false, noop: true },
@@ -692,8 +861,8 @@ describe("versioned local-index worker RPC", () => {
       emitted.filter(
         (message) =>
           (message as { requestId?: string }).requestId === "request-1" &&
-          (message as { terminal?: string }).terminal !== undefined,
-      ),
+          (message as { terminal?: string }).terminal !== undefined
+      )
     ).toEqual([expect.objectContaining({ terminal: "complete" })])
   })
 
@@ -724,15 +893,16 @@ describe("versioned local-index worker RPC", () => {
           generation: {},
           grammarLoads: [],
           workItems: 1,
-          estimatedPayloadBytes: worker.WORKER_BUDGETS.maxBytesPerWorkerPayload + 1,
+          estimatedPayloadBytes:
+            worker.WORKER_BUDGETS.maxBytesPerWorkerPayload + 1,
         },
-      }),
+      })
     )
     await runtime.handle(
       request({
         requestId: "request-error",
         operationId: "operation-error",
-      }),
+      })
     )
 
     expect(loadGrammars).toHaveBeenCalledTimes(1)
@@ -758,7 +928,7 @@ describe("versioned local-index worker RPC", () => {
             message: "The local indexing operation failed.",
           }),
         }),
-      ]),
+      ])
     )
     expect(() => structuredClone(emitted)).not.toThrow()
   })
@@ -771,9 +941,7 @@ describe("post-keyword semantic worker operation", () => {
     text: `kind: function\nname: node-${index}`,
   }))
 
-  const embedRequest = (
-    overrides: Record<string, unknown> = {},
-  ) => ({
+  const embedRequest = (overrides: Record<string, unknown> = {}) => ({
     protocolVersion: 1 as const,
     requestId: "embed-request",
     operationId: "embed-operation",
@@ -795,7 +963,7 @@ describe("post-keyword semantic worker operation", () => {
   function baseRuntime(
     worker: typeof import("../local-indexing/worker"),
     emitted: unknown[],
-    embeddingOverrides: Record<string, unknown> = {},
+    embeddingOverrides: Record<string, unknown> = {}
   ) {
     const store = {
       publishGeneration: vi.fn(async () => ({ generation: 8 })),
@@ -812,7 +980,7 @@ describe("post-keyword semantic worker operation", () => {
             nodeId: item.nodeId,
             inputHash: item.inputHash,
             values: [index + 0.25, index + 0.75],
-          }),
+          })
         ),
       })),
       writeVectors: vi.fn(async () => undefined),
@@ -840,13 +1008,13 @@ describe("post-keyword semantic worker operation", () => {
     expect(embedding.requestBatch).toHaveBeenCalledTimes(2)
     expect(
       embedding.requestBatch.mock.calls.map(
-        ([request]) => (request as { items: unknown[] }).items.length,
-      ),
+        ([request]) => (request as { items: unknown[] }).items.length
+      )
     ).toEqual([32, 3])
     expect(
       embedding.writeVectors.mock.calls.every(
-        ([, , rows]) => (rows as unknown[]).length <= 500,
-      ),
+        ([, , rows]) => (rows as unknown[]).length <= 500
+      )
     ).toBe(true)
     expect(embedding.writeVectors).toHaveBeenCalledTimes(2)
     expect(store.publishGeneration).not.toHaveBeenCalled()
@@ -859,7 +1027,7 @@ describe("post-keyword semantic worker operation", () => {
         dimensions: 2,
         completedItems: 35,
         inputHashes: inputs.map((item) => item.inputHash),
-      }),
+      })
     )
     expect(emitted).toContainEqual(
       expect.objectContaining({
@@ -870,7 +1038,7 @@ describe("post-keyword semantic worker operation", () => {
           embedded: 35,
           status: "complete",
         }),
-      }),
+      })
     )
   })
 
@@ -891,21 +1059,21 @@ describe("post-keyword semantic worker operation", () => {
             inputHashes: inputs.slice(0, 32).map((item) => item.inputHash),
           },
         },
-      }),
+      })
     )
 
     expect(embedding.requestBatch).toHaveBeenCalledTimes(1)
     expect(embedding.requestBatch).toHaveBeenCalledWith(
       expect.objectContaining({
         items: inputs.slice(32),
-      }),
+      })
     )
     expect(embedding.writeVectors).toHaveBeenCalledTimes(1)
     expect(emitted).toContainEqual(
       expect.objectContaining({
         terminal: "complete",
         result: expect.objectContaining({ embedded: 35 }),
-      }),
+      })
     )
   })
 
@@ -1003,9 +1171,7 @@ describe("post-keyword semantic worker operation", () => {
       const emitted: unknown[] = []
       const { runtime, store, embedding } = baseRuntime(worker, emitted, {
         getPublishedGeneration: vi.fn(async () => publishedGeneration),
-        ...(response
-          ? { requestBatch: vi.fn(async () => response) }
-          : {}),
+        ...(response ? { requestBatch: vi.fn(async () => response) } : {}),
       })
 
       await runtime.handle(
@@ -1015,7 +1181,7 @@ describe("post-keyword semantic worker operation", () => {
             ...payload,
             ...(resume ? { resume } : {}),
           },
-        }),
+        })
       )
 
       expect(embedding.writeVectors).not.toHaveBeenCalled()
@@ -1025,9 +1191,9 @@ describe("post-keyword semantic worker operation", () => {
           type: "failure",
           terminal: "failed",
           error: expect.objectContaining({ code }),
-        }),
+        })
       )
-    },
+    }
   )
 
   it("cancels after an in-flight endpoint batch without writes or later endpoint calls", async () => {
@@ -1045,13 +1211,11 @@ describe("post-keyword semantic worker operation", () => {
         return {
           model,
           dimensions: 2,
-          vectors: items.map(
-            (item: { nodeId: string; inputHash: string }) => ({
-              nodeId: item.nodeId,
-              inputHash: item.inputHash,
-              values: [0.25, 0.75],
-            }),
-          ),
+          vectors: items.map((item: { nodeId: string; inputHash: string }) => ({
+            nodeId: item.nodeId,
+            inputHash: item.inputHash,
+            values: [0.25, 0.75],
+          })),
         }
       }),
     })
@@ -1075,13 +1239,13 @@ describe("post-keyword semantic worker operation", () => {
       expect.objectContaining({
         status: "paused",
         completedItems: 0,
-      }),
+      })
     )
     expect(emitted).toContainEqual(
       expect.objectContaining({
         terminal: "cancelled",
         error: expect.objectContaining({ code: "operation_cancelled" }),
-      }),
+      })
     )
   })
 })

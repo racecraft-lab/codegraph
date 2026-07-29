@@ -3,7 +3,10 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+const webRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../.."
+)
 
 function listFiles(root: string): string[] {
   return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
@@ -16,7 +19,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   page,
 }) => {
   const workerFile = listFiles(path.join(webRoot, "dist")).find((file) =>
-    /local-indexing-worker[^/]*\.js$/.test(file),
+    /local-indexing-worker[^/]*\.js$/.test(file)
   )
   expect(workerFile, "built local-indexing worker").toBeDefined()
   const workerUrl = `/${path.relative(path.join(webRoot, "dist"), workerFile!).replaceAll(path.sep, "/")}`
@@ -28,22 +31,27 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     page.evaluate(
       ({ url }) => {
         const worker = new Worker(url, { type: "module" })
-        ;(window as typeof window & { spec007Worker?: Worker }).spec007Worker = worker
+        ;(window as typeof window & { spec007Worker?: Worker }).spec007Worker =
+          worker
       },
-      { url: workerUrl },
+      { url: workerUrl }
     )
 
   const request = <T>(kind: string, payload: unknown = {}) =>
     page.evaluate(
       ({ kind: requestKind, payload: requestPayload }) =>
         new Promise<T>((resolve, reject) => {
-          const worker = (window as typeof window & { spec007Worker?: Worker }).spec007Worker
+          const worker = (window as typeof window & { spec007Worker?: Worker })
+            .spec007Worker
           if (!worker) {
             reject(new Error("SPEC-007 worker is not running"))
             return
           }
           const requestId = crypto.randomUUID()
-          const timeout = window.setTimeout(() => reject(new Error(`Timed out: ${requestKind}`)), 10_000)
+          const timeout = window.setTimeout(
+            () => reject(new Error(`Timed out: ${requestKind}`)),
+            10_000
+          )
           const onMessage = (event: MessageEvent) => {
             const message = event.data as {
               requestId?: string
@@ -55,18 +63,27 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
             window.clearTimeout(timeout)
             worker.removeEventListener("message", onMessage)
             if (message.ok) resolve(message.result as T)
-            else reject(new Error(`${message.error?.code}: ${message.error?.message}`))
+            else
+              reject(
+                new Error(`${message.error?.code}: ${message.error?.message}`)
+              )
           }
           worker.addEventListener("message", onMessage)
-          worker.postMessage({ requestId, kind: requestKind, payload: requestPayload })
+          worker.postMessage({
+            requestId,
+            kind: requestKind,
+            payload: requestPayload,
+          })
         }),
-      { kind, payload },
+      { kind, payload }
     )
 
   const generation = (label: string) => ({
     repositoryId: "repo_opaque",
     manifestFingerprint: `manifest-${label}`,
-    manifest: [{ path: "src/main.ts", contentHash: `hash-${label}`, size: label.length }],
+    manifest: [
+      { path: "src/main.ts", contentHash: `hash-${label}`, size: label.length },
+    ],
     counts: { files: 1, nodes: 1, edges: 0, warnings: 0 },
     warnings: [],
     sources: [
@@ -113,7 +130,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
       updatedAt: 1,
     })
     const leaves = Array.from({ length: 2_005 }, (_, index) =>
-      node(`leaf-${index.toString().padStart(4, "0")}`),
+      node(`leaf-${index.toString().padStart(4, "0")}`)
     )
     const nodes = [
       node("root"),
@@ -300,10 +317,14 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
 
   await spawnWorker()
   await request("storage-open", { poolName, clearOnInit: true })
-  await expect(request("storage-publish", { generation: generation("one") })).resolves.toMatchObject({
+  await expect(
+    request("storage-publish", { generation: generation("one") })
+  ).resolves.toMatchObject({
     generation: 1,
   })
-  await expect(request("storage-current", { repositoryId: "repo_opaque" })).resolves.toMatchObject({
+  await expect(
+    request("storage-current", { repositoryId: "repo_opaque" })
+  ).resolves.toMatchObject({
     generation: 1,
     nodeNames: ["valueone"],
     sourceText: 'export const value = "one"',
@@ -313,7 +334,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     request("storage-embedding-symbols", {
       repositoryId: "repo_opaque",
       graphGeneration: 1,
-    }),
+    })
   ).resolves.toEqual([
     {
       nodeId: "node-one",
@@ -334,7 +355,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
           inputHash: "hash-one",
         },
       ],
-    }),
+    })
   ).resolves.toEqual([
     {
       nodeId: "node-one",
@@ -355,7 +376,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
         completedItems: 1,
         inputHashes: ["hash-one"],
       },
-    }),
+    })
   ).resolves.toEqual({
     status: "paused",
     graphGeneration: 1,
@@ -369,9 +390,11 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     request("storage-publish", {
       generation: generation("quota"),
       fault: "quota-before-publication",
-    }),
+    })
   ).rejects.toThrow(/quota_exceeded/)
-  await expect(request("storage-current", { repositoryId: "repo_opaque" })).resolves.toMatchObject({
+  await expect(
+    request("storage-current", { repositoryId: "repo_opaque" })
+  ).resolves.toMatchObject({
     generation: 1,
     nodeNames: ["valueone"],
   })
@@ -386,30 +409,38 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
 
   await spawnWorker()
   await request("storage-open", { poolName, clearOnInit: false })
-  await expect(request("storage-statuses", { repositoryId: "repo_opaque" })).resolves.toEqual([
+  await expect(
+    request("storage-statuses", { repositoryId: "repo_opaque" })
+  ).resolves.toEqual([
     { generation: 1, status: "published" },
     { generation: 2, status: "failed" },
     { generation: 3, status: "failed" },
   ])
-  await expect(request("storage-current", { repositoryId: "repo_opaque" })).resolves.toMatchObject({
+  await expect(
+    request("storage-current", { repositoryId: "repo_opaque" })
+  ).resolves.toMatchObject({
     generation: 1,
     nodeNames: ["valueone"],
   })
 
-  await expect(request("storage-publish", { generation: generation("four") })).resolves.toMatchObject({
+  await expect(
+    request("storage-publish", { generation: generation("four") })
+  ).resolves.toMatchObject({
     generation: 4,
   })
   await expect(request<string[]>("storage-file-names")).resolves.not.toContain(
-    "/codegraph/browser/repositories/repo_opaque/generations/1.sqlite3",
+    "/codegraph/browser/repositories/repo_opaque/generations/1.sqlite3"
   )
-  await expect(request("storage-current", { repositoryId: "repo_opaque" })).resolves.toMatchObject({
+  await expect(
+    request("storage-current", { repositoryId: "repo_opaque" })
+  ).resolves.toMatchObject({
     generation: 4,
     nodeNames: ["valuefour"],
     sourceText: 'export const value = "four"',
   })
 
   await expect(
-    request("storage-publish", { generation: relationshipGeneration() }),
+    request("storage-publish", { generation: relationshipGeneration() })
   ).resolves.toMatchObject({ generation: 5 })
   await request("storage-write-vectors", {
     repositoryId: "repo_opaque",
@@ -440,7 +471,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
       vector: [0.9, 0.1],
       limit: 10,
       offset: 0,
-    }),
+    })
   ).resolves.toMatchObject({
     items: [
       expect.objectContaining({ id: "root" }),
@@ -451,7 +482,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   })
 
   await expect(
-    request("storage-publish", { generation: refreshInitialGeneration }),
+    request("storage-publish", { generation: refreshInitialGeneration })
   ).resolves.toMatchObject({ repositoryId: "repo_refresh", generation: 1 })
   const encoder = new TextEncoder()
   const refreshCollection = {
@@ -500,7 +531,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     request("storage-refresh", {
       repositoryId: "repo_refresh",
       collection: refreshCollection,
-    }),
+    })
   ).resolves.toEqual({
     repositoryId: "repo_refresh",
     generation: 2,
@@ -515,7 +546,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     extractedPaths: ["added.ts", "changed.ts", "skipped.txt"],
   })
   await expect(
-    request("storage-current", { repositoryId: "repo_refresh" }),
+    request("storage-current", { repositoryId: "repo_refresh" })
   ).resolves.toMatchObject({
     generation: 2,
     counts: { files: 3, nodes: 6, edges: 3, warnings: 1 },
@@ -549,7 +580,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
       direction: "callers",
       limit: 999,
       offset: 0,
-    }),
+    })
   ).resolves.toEqual({
     items: [
       expect.objectContaining({ id: "caller-a", name: "caller-a" }),
@@ -564,7 +595,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
       repositoryId: "repo_opaque",
       nodeId: "root",
       direction: "callees",
-    }),
+    })
   ).resolves.toMatchObject({
     items: [expect.objectContaining({ id: "callee" })],
     total: 1,
@@ -578,8 +609,8 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
         repositoryId: "repo_opaque",
         nodeId: "root",
         depth: 99,
-      },
-    ),
+      }
+    )
   ).resolves.toMatchObject({
     nodes: expect.arrayContaining([expect.objectContaining({ id: "root" })]),
     truncated: true,
@@ -596,10 +627,9 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   expect(graph.nodes).toHaveLength(2_000)
   expect(graph.edges.length).toBeLessThanOrEqual(10_000)
 
-  const plans = await request<Record<string, string[]>>(
-    "storage-query-plans",
-    { repositoryId: "repo_opaque" },
-  )
+  const plans = await request<Record<string, string[]>>("storage-query-plans", {
+    repositoryId: "repo_opaque",
+  })
   expect(plans.callers.join(" ")).toContain("idx_edges_target_kind")
   expect(plans.callees.join(" ")).toContain("idx_edges_source_kind")
   expect(plans.graph.join(" ")).toContain("MULTI-INDEX OR")
@@ -610,7 +640,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
       repositoryId: "repo_opaque",
       nodeId: "root",
       depth: 99,
-    }),
+    })
   ).resolves.toEqual({
     nodes: [
       expect.objectContaining({ id: "caller-a", file: "src/caller-a.ts" }),
@@ -644,9 +674,11 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     request("storage-impact", {
       repositoryId: "repo_opaque",
       nodeId: "isolated",
-    }),
+    })
   ).resolves.toEqual({
-    nodes: [expect.objectContaining({ id: "isolated", file: "src/isolated.ts" })],
+    nodes: [
+      expect.objectContaining({ id: "isolated", file: "src/isolated.ts" }),
+    ],
     edges: [],
     truncated: false,
   })
@@ -659,7 +691,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
       repositoryId: "repo_opaque",
       nodeId: "root",
       direction: "callers",
-    }),
+    })
   ).resolves.toMatchObject({
     items: [
       expect.objectContaining({ id: "caller-a" }),
@@ -671,7 +703,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     request("storage-impact", {
       repositoryId: "repo_opaque",
       nodeId: "root",
-    }),
+    })
   ).resolves.toMatchObject({
     nodes: expect.not.arrayContaining([
       expect.objectContaining({ id: "caller-stale" }),
@@ -684,7 +716,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   await expect(
     request("storage-publish", {
       generation: recoveryGeneration("base"),
-    }),
+    })
   ).resolves.toMatchObject({
     repositoryId: "repo_recovery",
     generation: 1,
@@ -703,17 +735,17 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
       request("storage-publish", {
         generation: recoveryGeneration(fault),
         fault,
-      }),
+      })
     ).rejects.toThrow(expected)
     await expect(
-      request("storage-current", { repositoryId: "repo_recovery" }),
+      request("storage-current", { repositoryId: "repo_recovery" })
     ).resolves.toMatchObject({
       generation: 1,
       nodeNames: ["valuerecovery-base"],
     })
   }
   await expect(
-    request("storage-statuses", { repositoryId: "repo_recovery" }),
+    request("storage-statuses", { repositoryId: "repo_recovery" })
   ).resolves.toEqual([
     { generation: 1, status: "published" },
     ...recoveryFaults.map((_, index) => ({
@@ -724,7 +756,9 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   await request("storage-leave-staging", {
     generation: recoveryGeneration("crashed"),
   })
-  await expect(request<{ paused: boolean }>("storage-close")).resolves.toEqual({ paused: true })
+  await expect(request<{ paused: boolean }>("storage-close")).resolves.toEqual({
+    paused: true,
+  })
   await page.evaluate(() => {
     const target = window as typeof window & { spec007Worker?: Worker }
     target.spec007Worker?.terminate()
@@ -733,7 +767,7 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
   await spawnWorker()
   await request("storage-open", { poolName, clearOnInit: false })
   await expect(
-    request("storage-statuses", { repositoryId: "repo_recovery" }),
+    request("storage-statuses", { repositoryId: "repo_recovery" })
   ).resolves.toEqual([
     { generation: 1, status: "published" },
     ...recoveryFaults.map((_, index) => ({
@@ -743,23 +777,67 @@ test("publishes and recovers real SQLite-Wasm SAH-pool generations in a worker",
     { generation: recoveryFaults.length + 2, status: "failed" },
   ])
   await expect(
-    request("storage-current", { repositoryId: "repo_recovery" }),
+    request("storage-current", { repositoryId: "repo_recovery" })
   ).resolves.toMatchObject({
     generation: 1,
     nodeNames: ["valuerecovery-base"],
   })
   await expect(
-    request("storage-delete", { repositoryId: "repo_recovery" }),
+    request("storage-publish", {
+      generation: {
+        ...recoveryGeneration("delete-retry"),
+        repositoryId: "repo_delete_retry",
+      },
+    })
+  ).resolves.toMatchObject({
+    repositoryId: "repo_delete_retry",
+    generation: 1,
+  })
+  await expect(
+    request("storage-delete", {
+      repositoryId: "repo_delete_retry",
+      fault: "before-delete-unlink",
+    })
+  ).resolves.toEqual({
+    repositoryId: "repo_delete_retry",
+    deleted: true,
+    generations: 1,
+    cleanupWarnings: [
+      "Generation 1 remains queued for browser-storage cleanup.",
+    ],
+  })
+  await expect(
+    request("storage-current", { repositoryId: "repo_delete_retry" })
+  ).resolves.toBeNull()
+  await expect(
+    request("storage-statuses", { repositoryId: "repo_delete_retry" })
+  ).resolves.toEqual([{ generation: 1, status: "deleted" }])
+  await expect(request<{ paused: boolean }>("storage-close")).resolves.toEqual({
+    paused: true,
+  })
+  await page.evaluate(() => {
+    const target = window as typeof window & { spec007Worker?: Worker }
+    target.spec007Worker?.terminate()
+    delete target.spec007Worker
+  })
+  await spawnWorker()
+  await request("storage-open", { poolName, clearOnInit: false })
+  await expect(
+    request("storage-statuses", { repositoryId: "repo_delete_retry" })
+  ).resolves.toEqual([])
+  await expect(
+    request("storage-delete", { repositoryId: "repo_recovery" })
   ).resolves.toEqual({
     repositoryId: "repo_recovery",
     deleted: true,
     generations: recoveryFaults.length + 2,
+    cleanupWarnings: [],
   })
   await expect(
-    request("storage-current", { repositoryId: "repo_recovery" }),
+    request("storage-current", { repositoryId: "repo_recovery" })
   ).resolves.toBeNull()
   await expect(
-    request("storage-statuses", { repositoryId: "repo_recovery" }),
+    request("storage-statuses", { repositoryId: "repo_recovery" })
   ).resolves.toEqual([])
   await expect(request<{ paused: boolean }>("storage-close")).resolves.toEqual({
     paused: true,
@@ -770,7 +848,7 @@ test("imports an immutable dropped snapshot through the production worker", asyn
   page,
 }) => {
   const workerFile = listFiles(path.join(webRoot, "dist")).find((file) =>
-    /local-indexing-worker[^/]*\.js$/.test(file),
+    /local-indexing-worker[^/]*\.js$/.test(file)
   )
   expect(workerFile, "built local-indexing worker").toBeDefined()
   const workerUrl = `/${path
@@ -795,7 +873,7 @@ test("imports an immutable dropped snapshot through the production worker", asyn
           requestId: string,
           kind: string,
           payload?: unknown,
-          operationId?: string,
+          operationId?: string
         ) =>
           new Promise<unknown>((requestResolve, requestReject) => {
             const onMessage = (event: MessageEvent) => {
@@ -815,9 +893,7 @@ test("imports an immutable dropped snapshot through the production worker", asyn
               if (message.type === "result") requestResolve(message.result)
               else {
                 requestReject(
-                  new Error(
-                    `${message.error?.code}: ${message.error?.message}`,
-                  ),
+                  new Error(`${message.error?.code}: ${message.error?.message}`)
                 )
               }
             }
@@ -849,7 +925,7 @@ test("imports an immutable dropped snapshot through the production worker", asyn
                   kind: "file",
                   path: "src/main.ts",
                   bytes: new TextEncoder().encode(
-                    "export const snapshotValue = 1",
+                    "export const snapshotValue = 1"
                   ),
                   contentHash: "snapshot-content",
                   size: 30,
@@ -868,7 +944,7 @@ test("imports an immutable dropped snapshot through the production worker", asyn
               },
             },
           },
-          "snapshot-operation",
+          "snapshot-operation"
         )
           .then(async (repository) => {
             const search = await request("snapshot-search", "query", {
@@ -891,7 +967,7 @@ test("imports an immutable dropped snapshot through the production worker", asyn
             reject(error)
           })
       }),
-    { url: workerUrl },
+    { url: workerUrl }
   )
 
   expect(result.repository).toMatchObject({

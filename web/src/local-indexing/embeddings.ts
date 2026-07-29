@@ -1,12 +1,7 @@
-export const EMBEDDING_PROFILE_STORAGE_KEY =
-  "codegraph.embeddingProfiles.v1"
+export const EMBEDDING_PROFILE_STORAGE_KEY = "codegraph.embeddingProfiles.v1"
 
 export type EmbeddingResumeStatus =
-  | "idle"
-  | "paused"
-  | "failed"
-  | "cancelled"
-  | "complete"
+  "idle" | "paused" | "failed" | "cancelled" | "complete"
 
 export interface EmbeddingCoverage {
   embedded: number
@@ -57,16 +52,15 @@ export interface EmbeddingErrorEnvelope {
   endpointOrigin?: string
 }
 
-export type EmbeddingFailure =
-  (
-    | { kind: "network"; cause?: unknown }
-    | { kind: "http"; status: number; providerBody?: unknown }
-    | { kind: "model"; providerBody?: unknown }
-    | { kind: "dimensions"; providerBody?: unknown }
-    | { kind: "partial-response"; providerBody?: unknown }
-    | { kind: "cancelled"; cause?: unknown }
-    | { kind: "unavailable"; cause?: unknown }
-  ) & { endpointUrl?: string }
+export type EmbeddingFailure = (
+  | { kind: "network"; cause?: unknown }
+  | { kind: "http"; status: number; providerBody?: unknown }
+  | { kind: "model"; providerBody?: unknown }
+  | { kind: "dimensions"; providerBody?: unknown }
+  | { kind: "partial-response"; providerBody?: unknown }
+  | { kind: "cancelled"; cause?: unknown }
+  | { kind: "unavailable"; cause?: unknown }
+) & { endpointUrl?: string }
 
 export interface EmbeddingInputItem {
   nodeId: string
@@ -148,7 +142,7 @@ function safeIdentifier(value: unknown, label: string): string {
 
 function optionalPositiveInteger(
   value: unknown,
-  label: string,
+  label: string
 ): number | undefined {
   if (value === undefined) return undefined
   if (!Number.isSafeInteger(value) || (value as number) <= 0) {
@@ -249,7 +243,7 @@ export function validateEmbeddingResume(
     model: string
     dimensions?: number
   },
-  items: readonly EmbeddingInputItem[],
+  items: readonly EmbeddingInputItem[]
 ): number {
   if (!resume) return 0
   if (
@@ -263,14 +257,14 @@ export function validateEmbeddingResume(
   ) {
     return semanticStale(
       "The saved semantic resume state does not match the published graph.",
-      "Restart semantic indexing for the current graph generation.",
+      "Restart semantic indexing for the current graph generation."
     )
   }
   for (let index = 0; index < resume.completedItems; index += 1) {
     if (resume.inputHashes[index] !== items[index]?.inputHash) {
       return semanticStale(
         "The saved semantic inputs are stale.",
-        "Restart semantic indexing for the current graph generation.",
+        "Restart semantic indexing for the current graph generation."
       )
     }
   }
@@ -280,12 +274,10 @@ export function validateEmbeddingResume(
 export function validateEmbeddingBatch(
   items: readonly EmbeddingInputItem[],
   result: EmbeddingBatchResult,
-  profile: { model: string; dimensions?: number },
+  profile: { model: string; dimensions?: number }
 ): EmbeddingVectorRow[] {
   if (result.model !== profile.model) {
-    throw new EmbeddingOperationError(
-      mapEmbeddingFailure({ kind: "model" }),
-    )
+    throw new EmbeddingOperationError(mapEmbeddingFailure({ kind: "model" }))
   }
   const dimensions = profile.dimensions ?? result.dimensions
   if (
@@ -294,12 +286,12 @@ export function validateEmbeddingBatch(
     result.dimensions !== dimensions
   ) {
     throw new EmbeddingOperationError(
-      mapEmbeddingFailure({ kind: "dimensions" }),
+      mapEmbeddingFailure({ kind: "dimensions" })
     )
   }
   if (result.vectors.length !== items.length) {
     throw new EmbeddingOperationError(
-      mapEmbeddingFailure({ kind: "partial-response" }),
+      mapEmbeddingFailure({ kind: "partial-response" })
     )
   }
   return items.map((item, index) => {
@@ -310,7 +302,7 @@ export function validateEmbeddingBatch(
       vector.inputHash !== item.inputHash
     ) {
       throw new EmbeddingOperationError(
-        mapEmbeddingFailure({ kind: "partial-response" }),
+        mapEmbeddingFailure({ kind: "partial-response" })
       )
     }
     if (
@@ -318,7 +310,7 @@ export function validateEmbeddingBatch(
       vector.values.some((value) => !Number.isFinite(value))
     ) {
       throw new EmbeddingOperationError(
-        mapEmbeddingFailure({ kind: "dimensions" }),
+        mapEmbeddingFailure({ kind: "dimensions" })
       )
     }
     return {
@@ -331,7 +323,7 @@ export function validateEmbeddingBatch(
 }
 
 export function composeBrowserEmbeddingInput(
-  symbol: BrowserEmbeddingSymbol,
+  symbol: BrowserEmbeddingSymbol
 ): string {
   const normalize = (value: string) => value.replace(/\r\n?/g, "\n")
   const lines = [
@@ -380,7 +372,7 @@ export async function requestEmbeddingBatch(request: {
     })
   } catch {
     throw new EmbeddingOperationError(
-      mapEmbeddingFailure({ kind: "network", endpointUrl }),
+      mapEmbeddingFailure({ kind: "network", endpointUrl })
     )
   }
   if (!response.ok) {
@@ -390,7 +382,7 @@ export async function requestEmbeddingBatch(request: {
         kind: "http",
         status: response.status,
         endpointUrl,
-      }),
+      })
     )
   }
   let candidate: unknown
@@ -398,15 +390,13 @@ export async function requestEmbeddingBatch(request: {
     candidate = JSON.parse(await response.text()) as unknown
   } catch {
     throw new EmbeddingOperationError(
-      mapEmbeddingFailure({ kind: "partial-response", endpointUrl }),
+      mapEmbeddingFailure({ kind: "partial-response", endpointUrl })
     )
   }
   const body = record(candidate)
   const data = Array.isArray(body?.data) ? body.data : []
   const vectors = request.items.map((item, index) => {
-    const entry = data.find(
-      (value) => record(value)?.index === index,
-    )
+    const entry = data.find((value) => record(value)?.index === index)
     const values = record(entry)?.embedding
     return {
       nodeId: item.nodeId,
@@ -443,10 +433,7 @@ function coverage(value: unknown): EmbeddingCoverage {
       ? undefined
       : safeIdentifier(candidate.lastFailureCode, "Embedding failure code")
   return {
-    embedded: nonnegativeInteger(
-      candidate.embedded,
-      "Embedded coverage count",
-    ),
+    embedded: nonnegativeInteger(candidate.embedded, "Embedded coverage count"),
     skipped: nonnegativeInteger(candidate.skipped, "Skipped coverage count"),
     ...(lastFailureCode ? { lastFailureCode } : {}),
   }
@@ -473,12 +460,9 @@ function resumeState(value: unknown): EmbeddingResumeState | undefined {
     status: candidate.status as EmbeddingResumeStatus,
     completedItems: nonnegativeInteger(
       candidate.completedItems,
-      "Completed embedding item count",
+      "Completed embedding item count"
     ),
-    nextBatch: nonnegativeInteger(
-      candidate.nextBatch,
-      "Next embedding batch",
-    ),
+    nextBatch: nonnegativeInteger(candidate.nextBatch, "Next embedding batch"),
   }
 }
 
@@ -495,15 +479,15 @@ function projectProfile(value: unknown): EmbeddingProfile {
   const resume = resumeState(candidate.resume)
   const dimensions = optionalPositiveInteger(
     candidate.dimensions,
-    "Embedding dimensions",
+    "Embedding dimensions"
   )
   const graphGeneration = optionalPositiveInteger(
     candidate.graphGeneration,
-    "Graph generation",
+    "Graph generation"
   )
   const vectorGeneration = optionalPositiveInteger(
     candidate.vectorGeneration,
-    "Vector generation",
+    "Vector generation"
   )
   const consentGrantedAt = optionalTimestamp(candidate.consentGrantedAt)
   return {
@@ -522,7 +506,7 @@ function projectProfile(value: unknown): EmbeddingProfile {
 }
 
 export function serializeEmbeddingProfiles(
-  profiles: readonly EmbeddingProfile[],
+  profiles: readonly EmbeddingProfile[]
 ): string {
   return JSON.stringify(profiles.map((profile) => projectProfile(profile)))
 }
@@ -531,28 +515,28 @@ export class EmbeddingProfileStore {
   private readonly storage?: EmbeddingProfileStorage
 
   constructor(
-    storage: EmbeddingProfileStorage | undefined =
-      typeof localStorage === "undefined" ? undefined : localStorage,
+    storage: EmbeddingProfileStorage | undefined = typeof localStorage ===
+    "undefined"
+      ? undefined
+      : localStorage
   ) {
     this.storage = storage
   }
 
   list(): EmbeddingProfile[] {
     if (!this.storage) return []
+    const unreadable = () =>
+      new Error(
+        "Browser embedding profile metadata is unreadable. Clear or repair this site's local CodeGraph metadata before changing semantic settings."
+      )
     try {
       const parsed = JSON.parse(
-        this.storage.getItem(EMBEDDING_PROFILE_STORAGE_KEY) ?? "[]",
+        this.storage.getItem(EMBEDDING_PROFILE_STORAGE_KEY) ?? "[]"
       ) as unknown
-      if (!Array.isArray(parsed)) return []
-      return parsed.flatMap((candidate) => {
-        try {
-          return [projectProfile(candidate)]
-        } catch {
-          return []
-        }
-      })
+      if (!Array.isArray(parsed)) throw unreadable()
+      return parsed.map((candidate) => projectProfile(candidate))
     } catch {
-      return []
+      throw unreadable()
     }
   }
 
@@ -564,11 +548,11 @@ export class EmbeddingProfileStore {
     const profile = projectProfile(input)
     if (!this.storage) return profile
     const profiles = this.list().filter(
-      (candidate) => candidate.repositoryId !== profile.repositoryId,
+      (candidate) => candidate.repositoryId !== profile.repositoryId
     )
     this.storage.setItem(
       EMBEDDING_PROFILE_STORAGE_KEY,
-      serializeEmbeddingProfiles([...profiles, profile]),
+      serializeEmbeddingProfiles([...profiles, profile])
     )
     return profile
   }
@@ -576,7 +560,7 @@ export class EmbeddingProfileStore {
   delete(repositoryId: string): void {
     if (!this.storage) return
     const profiles = this.list().filter(
-      (profile) => profile.repositoryId !== repositoryId,
+      (profile) => profile.repositoryId !== repositoryId
     )
     if (profiles.length === 0) {
       this.storage.removeItem(EMBEDDING_PROFILE_STORAGE_KEY)
@@ -584,7 +568,7 @@ export class EmbeddingProfileStore {
     }
     this.storage.setItem(
       EMBEDDING_PROFILE_STORAGE_KEY,
-      serializeEmbeddingProfiles(profiles),
+      serializeEmbeddingProfiles(profiles)
     )
   }
 }
@@ -623,7 +607,7 @@ function embeddingEnvelope(
   message: string,
   retryable: boolean,
   guidance: string,
-  endpointUrl?: string,
+  endpointUrl?: string
 ): EmbeddingErrorEnvelope {
   let endpointOrigin: string | undefined
   try {
@@ -643,7 +627,7 @@ function embeddingEnvelope(
 }
 
 export function mapEmbeddingFailure(
-  failure: EmbeddingFailure,
+  failure: EmbeddingFailure
 ): EmbeddingErrorEnvelope {
   switch (failure.kind) {
     case "network":
@@ -652,7 +636,7 @@ export function mapEmbeddingFailure(
         "The browser blocked the embedding endpoint request.",
         true,
         "Check endpoint availability, TLS, CORS, and site policy, then retry securely.",
-        failure.endpointUrl,
+        failure.endpointUrl
       )
     case "http":
       if (failure.status === 401 || failure.status === 403) {
@@ -661,7 +645,7 @@ export function mapEmbeddingFailure(
           "The embedding endpoint rejected the session credential.",
           false,
           "Re-enter a valid credential for this page session.",
-          failure.endpointUrl,
+          failure.endpointUrl
         )
       }
       if (
@@ -675,7 +659,7 @@ export function mapEmbeddingFailure(
           "The embedding endpoint is temporarily unavailable.",
           true,
           "Retry later; keyword search remains available.",
-          failure.endpointUrl,
+          failure.endpointUrl
         )
       }
       return embeddingEnvelope(
@@ -683,7 +667,7 @@ export function mapEmbeddingFailure(
         "The embedding endpoint rejected the request.",
         false,
         "Review the endpoint model configuration.",
-        failure.endpointUrl,
+        failure.endpointUrl
       )
     case "model":
       return embeddingEnvelope(
@@ -691,7 +675,7 @@ export function mapEmbeddingFailure(
         "The embedding response model does not match the profile.",
         false,
         "Select the configured model and rebuild semantic vectors.",
-        failure.endpointUrl,
+        failure.endpointUrl
       )
     case "dimensions":
       return embeddingEnvelope(
@@ -699,7 +683,7 @@ export function mapEmbeddingFailure(
         "The embedding dimensions do not match the profile.",
         false,
         "Correct the expected dimensions and rebuild semantic vectors.",
-        failure.endpointUrl,
+        failure.endpointUrl
       )
     case "partial-response":
       return embeddingEnvelope(
@@ -707,7 +691,7 @@ export function mapEmbeddingFailure(
         "The embedding endpoint returned an incomplete batch.",
         true,
         "Retry the incomplete batch; keyword search remains available.",
-        failure.endpointUrl,
+        failure.endpointUrl
       )
     case "cancelled":
       return embeddingEnvelope(
@@ -715,7 +699,7 @@ export function mapEmbeddingFailure(
         "The semantic indexing operation was cancelled.",
         false,
         "Resume semantic indexing when ready.",
-        failure.endpointUrl,
+        failure.endpointUrl
       )
     case "unavailable":
       return embeddingEnvelope(
@@ -723,7 +707,7 @@ export function mapEmbeddingFailure(
         "The embedding endpoint is unavailable.",
         true,
         "Retry later; keyword search remains available.",
-        failure.endpointUrl,
+        failure.endpointUrl
       )
   }
 }
@@ -731,7 +715,7 @@ export function mapEmbeddingFailure(
 export function safeEmbeddingDiagnostic(
   code: string,
   endpointUrl: string,
-  rawCause?: unknown,
+  rawCause?: unknown
 ): SafeEmbeddingDiagnostic {
   void rawCause
   return {
