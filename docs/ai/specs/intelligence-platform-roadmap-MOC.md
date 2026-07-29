@@ -27,7 +27,7 @@ Navigation map for the CodeGraph Intelligence Platform roadmap. This home note c
 - [SPEC-004 Web Framework Research Spike](.process/SPEC-004-workflow.md)
 - [SPEC-005 Local HTTP Server & REST API](.process/SPEC-005-workflow.md)
 - [SPEC-006 Web UI: Graph Browser](.process/SPEC-006-workflow.md)
-- [SPEC-007 In-Browser Indexing](SPEC-007-workflow.md)
+- [SPEC-007 In-Browser Indexing](.process/SPEC-007-workflow.md)
 
 **Why:** The human-facing surface — spike gates the stack, server precedes UI, in-browser indexing gives a zero-install path.
 

@@ -76,12 +76,16 @@ test("runs packaged local indexing under the trusted-host CSP without cross-orig
   context,
   page,
 }, testInfo) => {
-  const quickstart = fs.readFileSync(
-    path.join(webRoot, "../specs/007-in-browser-indexing/quickstart.md"),
+  const browserLocalIndexingGuide = fs.readFileSync(
+    path.join(webRoot, "../docs/browser-local-indexing.md"),
     "utf8"
   )
-  expect(quickstart).toContain(`Content-Security-Policy: ${TRUSTED_HOST_CSP}`)
-  expect(quickstart).toMatch(/does not\s+require COOP or COEP/)
+  expect(browserLocalIndexingGuide).toContain(
+    `Content-Security-Policy: ${TRUSTED_HOST_CSP}`
+  )
+  expect(browserLocalIndexingGuide).toMatch(
+    /does not\s+require COOP or COEP/
+  )
   await context.route("**/*", async (route) => {
     if (route.request().resourceType() !== "document") {
       await route.continue()

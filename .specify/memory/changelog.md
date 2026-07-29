@@ -117,3 +117,11 @@
   `specs/014-control-flow-graphs/` was removed with provenance in
   [archive-reports/2026-07-27-SPEC-014.md](archive-reports/2026-07-27-SPEC-014.md);
   `.specify/feature.json` was cleared because no active spec remains.
+
+- **2026-07-29** - SPEC-007 archived. PR #185 (`57a42c6`) merged private
+  in-browser indexing and PR #188 (`0f733908`) merged the recovered P1/P2 review
+  remediation. The roadmap row flipped to complete; no downstream readiness
+  changed because SPEC-007 is a dependency-graph leaf.
+  `specs/007-in-browser-indexing/` was removed with provenance in
+  [archive-reports/2026-07-29-SPEC-007.md](archive-reports/2026-07-29-SPEC-007.md);
+  `.specify/feature.json` was cleared because no active spec remains.
