@@ -412,3 +412,66 @@ WHEN NEW.state <> 'available' AND EXISTS (
 BEGIN
     SELECT RAISE(ABORT, 'cfg non-available status cannot retain blocks');
 END;
+
+-- =============================================================================
+-- SPEC-007 — Browser source cache and atomic generation publication
+-- =============================================================================
+-- These tables are part of the canonical graph schema and migration stream.
+-- Browser-only handle/capability registry state remains outside this database,
+-- but maps to repository_id and the published generation recorded here.
+-- Keep these definitions in lockstep with migration v12.
+
+CREATE TABLE IF NOT EXISTS source_cache (
+    repository_id TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK (generation > 0),
+    path TEXT NOT NULL CHECK (path <> ''),
+    content_hash TEXT NOT NULL,
+    language TEXT,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0 AND size_bytes <= 1048576),
+    mtime_hint INTEGER,
+    text TEXT NOT NULL,
+    PRIMARY KEY (repository_id, generation, path)
+);
+
+CREATE TABLE IF NOT EXISTS index_generations (
+    repository_id TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK (generation > 0),
+    schema_version INTEGER NOT NULL CHECK (schema_version > 0),
+    status TEXT NOT NULL CHECK (status IN ('building', 'published', 'rolled_back', 'failed', 'deleted')),
+    manifest_fingerprint TEXT,
+    manifest_json TEXT,
+    counts_json TEXT NOT NULL DEFAULT '{}',
+    warnings_json TEXT NOT NULL DEFAULT '[]',
+    started_at INTEGER NOT NULL,
+    published_at INTEGER,
+    failure_code TEXT,
+    failure_message TEXT CHECK (failure_message IS NULL OR length(failure_message) <= 240),
+    PRIMARY KEY (repository_id, generation),
+    CHECK (
+        status <> 'published'
+        OR (
+            manifest_fingerprint IS NOT NULL
+            AND manifest_json IS NOT NULL
+            AND published_at IS NOT NULL
+        )
+    )
+);
+
+CREATE TABLE IF NOT EXISTS index_publications (
+    repository_id TEXT PRIMARY KEY,
+    current_generation INTEGER NOT NULL CHECK (current_generation > 0),
+    last_success_generation INTEGER NOT NULL CHECK (last_success_generation > 0),
+    status TEXT NOT NULL CHECK (status IN ('ready', 'partial')),
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (repository_id, current_generation)
+        REFERENCES index_generations(repository_id, generation),
+    FOREIGN KEY (repository_id, last_success_generation)
+        REFERENCES index_generations(repository_id, generation)
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_cache_path
+    ON source_cache(repository_id, path, generation);
+CREATE INDEX IF NOT EXISTS idx_index_generations_status
+    ON index_generations(repository_id, status, generation);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_index_generations_published
+    ON index_generations(repository_id) WHERE status = 'published';

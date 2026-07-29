@@ -12,6 +12,7 @@ const repo = {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 })
   vi.stubGlobal(
     "fetch",
@@ -37,6 +38,44 @@ beforeEach(() => {
 })
 
 describe("App shell", () => {
+  it("reports corrupt browser repository metadata without silently using the daemon", async () => {
+    localStorage.setItem("codegraph.localRepositories.v1", "{not-json")
+    renderApp()
+
+    expect(
+      await screen.findByText(/browser repository metadata is unreadable/i),
+    ).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("rejects incomplete browser repository records", async () => {
+    localStorage.setItem(
+      "codegraph.localRepositories.v1",
+      JSON.stringify([{ id: "local-1", name: "Incomplete", runtime: "local" }]),
+    )
+    renderApp()
+
+    expect(
+      await screen.findByText(/browser repository metadata is unreadable/i),
+    ).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("reports blocked browser repository storage access actionably", async () => {
+    const getItem = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new DOMException("Storage is blocked.", "SecurityError")
+      })
+    renderApp()
+
+    expect(
+      await screen.findByText(/browser repository metadata is unreadable/i),
+    ).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
+    getItem.mockRestore()
+  })
+
   it("renders repository navigation and status taxonomy", async () => {
     renderApp()
 

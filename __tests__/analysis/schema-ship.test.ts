@@ -80,7 +80,7 @@ describe('SPEC-011 catalog schema ships + migrates in lockstep', () => {
   });
 
   it('CURRENT_SCHEMA_VERSION includes later schema migrations after SPEC-011 v10', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(11);
+    expect(CURRENT_SCHEMA_VERSION).toBe(12);
   });
 
   it('a fresh DB (schema.sql path) has all five catalog tables + sort indexes', () => {

@@ -35,8 +35,9 @@ describe('SPEC-006 web package assets', () => {
     expect(webPkg.dependencies['@tailwindcss/vite']).toBeDefined();
     expect(webPkg.devDependencies.vitest).toBeDefined();
     expect(html).not.toMatch(/https?:\/\//);
-    expect(copyScript).toContain('web/dist');
-    expect(copyScript).toContain("'dist', 'web'");
+    expect(copyScript).toContain('path.join(root, "web", "dist")');
+    expect(copyScript).toContain('path.join(root, "dist", "web")');
+    expect(copyScript.match(/validateWebAssetDirectory\(/g)).toHaveLength(2);
   });
 
   it('serves copied production web assets through the package static mount', () => {

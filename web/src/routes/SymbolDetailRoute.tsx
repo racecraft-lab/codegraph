@@ -17,13 +17,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator"
 import { listClusters, listFlows } from "@/lib/api/catalogs"
 import { errorState } from "@/lib/api/client"
-import { listCallees, listCallers } from "@/lib/api/relationships"
-import { getSymbol } from "@/lib/api/symbols"
 import type { ClusterSummary, CodeNode, FlowSummary } from "@/lib/api/types"
 import { SOURCE_VIEWER_TRANSPORT_AVAILABLE } from "@/lib/lsp/availability"
 import type { LspLocation, LspRange } from "@/lib/lsp/client"
 import { isWindowsRepositoryRoot } from "@/lib/lsp/path"
 import { mark, measure } from "@/lib/perf/marks"
+import type { SourceResult } from "@/lib/repository-client"
 
 const loadingRelationships: RelationshipPanelState = { status: "loading" }
 const loadingCatalog: CatalogPanelState<FlowSummary> = { status: "loading" }
@@ -33,7 +32,7 @@ export function SymbolDetailRoute() {
   const { id = "" } = useParams()
   const nodeId = id
   const [searchParams, setSearchParams] = useSearchParams()
-  const { selectedRepo, selectNode, clearNode } = useAppState()
+  const { selectedRepo, repositoryClient, selectNode, clearNode } = useAppState()
   const [node, setNode] = React.useState<CodeNode | null>(null)
   const [callers, setCallers] = React.useState<RelationshipPanelState>(loadingRelationships)
   const [callees, setCallees] = React.useState<RelationshipPanelState>(loadingRelationships)
@@ -43,10 +42,18 @@ export function SymbolDetailRoute() {
   const [partialError, setPartialError] = React.useState<string | undefined>()
   const [durationMs, setDurationMs] = React.useState<number | null>(null)
   const [openSourceIntent, setOpenSourceIntent] = React.useState<{ targetKey: string; reached: boolean } | null>(null)
+  const [localSourceOpen, setLocalSourceOpen] = React.useState(false)
+  const [localSource, setLocalSource] = React.useState<SourceResult | null>(null)
+  const [localSourceError, setLocalSourceError] = React.useState<string | undefined>()
   const openSourceRef = React.useRef<HTMLButtonElement>(null)
-  const sourceOpen = SOURCE_VIEWER_TRANSPORT_AVAILABLE
-    && selectedRepo !== undefined
-    && sourceSearchIsForRepo(searchParams, selectedRepo.id)
+  const selectedRepoId = selectedRepo?.id
+  const selectedRepoRoot = selectedRepo?.root
+  const isLocal = selectedRepo?.runtime === "local"
+  const sourceOpen = isLocal
+    ? localSourceOpen
+    : SOURCE_VIEWER_TRANSPORT_AVAILABLE
+      && selectedRepo !== undefined
+      && sourceSearchIsForRepo(searchParams, selectedRepo.id)
 
   React.useEffect(() => {
     let cancelled = false
@@ -57,33 +64,48 @@ export function SymbolDetailRoute() {
     setClusters(loadingClusters)
     setDurationMs(null)
     setPartialError(undefined)
+    setLocalSourceOpen(false)
+    setLocalSource(null)
+    setLocalSourceError(undefined)
     setMessage("Loading symbol context.")
     clearNode()
     async function load() {
       mark("symbol-request")
       try {
-        const nextNode = await getSymbol(nodeId, selectedRepo?.id)
+        if (!selectedRepoId) throw new Error("Select a repository before opening a symbol.")
+        const nextNode = await repositoryClient.getNode(selectedRepoId, nodeId)
         if (cancelled) return
         mark("symbol-render")
         setDurationMs(measure("symbol-response-render", "symbol-request", "symbol-render"))
         setNode(nextNode)
         selectNode(nextNode)
         setMessage("Symbol context loaded.")
-        const [nextCallers, nextCallees, nextFlows, nextClusters] = await Promise.allSettled([
-          listCallers(nodeId, selectedRepo?.id),
-          listCallees(nodeId, selectedRepo?.id),
-          listFlows(selectedRepo?.id),
-          listClusters(selectedRepo?.id),
-        ])
+        const [nextCallers, nextCallees, nextFlows, nextClusters] =
+          await Promise.allSettled([
+            repositoryClient.getCallers(selectedRepoId, nodeId),
+            repositoryClient.getCallees(selectedRepoId, nodeId),
+            isLocal
+              ? Promise.reject(
+                  new Error("Flow catalogs are available only for server repositories."),
+                )
+              : listFlows(selectedRepoId),
+            isLocal
+              ? Promise.reject(
+                  new Error("Cluster catalogs are available only for server repositories."),
+                )
+              : listClusters(selectedRepoId),
+          ])
         if (cancelled) return
         const partial = [nextCallers, nextCallees, nextFlows, nextClusters].some((result) => result.status === "rejected")
         setCallers(nextCallers.status === "fulfilled" ? { status: "success", result: nextCallers.value } : { status: "error", message: errorState(nextCallers.reason).message })
         setCallees(nextCallees.status === "fulfilled" ? { status: "success", result: nextCallees.value } : { status: "error", message: errorState(nextCallees.reason).message })
         setFlows(nextFlows.status === "fulfilled" ? { status: "success", result: nextFlows.value } : { status: "error", message: errorState(nextFlows.reason).message })
         setClusters(nextClusters.status === "fulfilled" ? { status: "success", result: nextClusters.value } : { status: "error", message: errorState(nextClusters.reason).message })
-        if (partial) {
+        if (partial && !isLocal) {
           setMessage("Symbol loaded with partial relationship context.")
           setPartialError("Some relationship or catalog context could not be loaded.")
+        } else if (isLocal) {
+          setMessage("Browser-local symbol context loaded.")
         }
       } catch (error) {
         if (cancelled) return
@@ -102,20 +124,23 @@ export function SymbolDetailRoute() {
     return () => {
       cancelled = true
     }
-  }, [clearNode, nodeId, selectNode, selectedRepo?.id])
+  }, [clearNode, isLocal, nodeId, repositoryClient, selectNode, selectedRepoId])
 
   const fallbackLocation = React.useMemo(() => {
-    if (!node?.file || !selectedRepo) return null
+    if (isLocal || !node?.file || !selectedRepoRoot) return null
     const line = Math.max(0, (node.line ?? 1) - 1)
     return {
-      uri: fileUriForPath(selectedRepo.root, node.file),
+      uri: fileUriForPath(selectedRepoRoot, node.file),
       range: { start: { line, character: 0 }, end: { line, character: 1 } },
     } satisfies LspLocation
-  }, [node, selectedRepo])
+  }, [isLocal, node, selectedRepoRoot])
 
   const restoredLocation = React.useMemo(
-    () => selectedRepo ? parseViewerLocation(searchParams, selectedRepo.id, selectedRepo.root) : null,
-    [searchParams, selectedRepo],
+    () =>
+      !isLocal && selectedRepoId && selectedRepoRoot
+        ? parseViewerLocation(searchParams, selectedRepoId, selectedRepoRoot)
+        : null,
+    [isLocal, searchParams, selectedRepoId, selectedRepoRoot],
   )
   const sourceLocation = restoredLocation ?? fallbackLocation
   const restoredLocationKey = restoredLocation ? sourceLocationKey(restoredLocation) : null
@@ -131,10 +156,10 @@ export function SymbolDetailRoute() {
   }, [restoredLocationKey])
 
   React.useEffect(() => {
-    if (!selectedRepo || !searchParams.has("source") || sourceSearchIsForRepo(searchParams, selectedRepo.id)) return
+    if (!selectedRepoId || !searchParams.has("source") || sourceSearchIsForRepo(searchParams, selectedRepoId)) return
     setOpenSourceIntent(null)
     setSearchParams((current) => clearSourceSearch(current), { replace: true })
-  }, [searchParams, selectedRepo, setSearchParams])
+  }, [searchParams, selectedRepoId, setSearchParams])
 
   const navigateSource = React.useCallback((location: LspLocation) => {
     if (!selectedRepo || !relativePathFromFileUri(selectedRepo.root, location.uri)) return
@@ -149,18 +174,35 @@ export function SymbolDetailRoute() {
   }, [selectedRepo, setSearchParams])
 
   React.useEffect(() => {
-    if (!sourceOpen || restoredLocation || !fallbackLocation || !selectedRepo) return
+    if (isLocal || !sourceOpen || restoredLocation || !fallbackLocation || !selectedRepoId || !selectedRepoRoot) return
     setSearchParams(
-      (current) => locationSearch(current, selectedRepo.id, selectedRepo.root, fallbackLocation),
+      (current) => locationSearch(current, selectedRepoId, selectedRepoRoot, fallbackLocation),
       { replace: true },
     )
-  }, [fallbackLocation, restoredLocation, selectedRepo, setSearchParams, sourceOpen])
+  }, [fallbackLocation, isLocal, restoredLocation, selectedRepoId, selectedRepoRoot, setSearchParams, sourceOpen])
 
   const closeSource = React.useCallback(() => {
     openSourceRef.current?.focus()
+    setLocalSourceOpen(false)
+    setLocalSource(null)
+    setLocalSourceError(undefined)
     setOpenSourceIntent(null)
-    setSearchParams((current) => clearSourceSearch(current), { replace: true })
-  }, [setSearchParams])
+    if (!isLocal) {
+      setSearchParams((current) => clearSourceSearch(current), { replace: true })
+    }
+  }, [isLocal, setSearchParams])
+
+  const openLocalSource = React.useCallback(async () => {
+    if (!selectedRepo) return
+    setLocalSourceOpen(true)
+    setLocalSource(null)
+    setLocalSourceError(undefined)
+    try {
+      setLocalSource(await repositoryClient.getSource(selectedRepo.id, nodeId))
+    } catch (error) {
+      setLocalSourceError(errorState(error).message)
+    }
+  }, [nodeId, repositoryClient, selectedRepo])
 
   if (!node) {
     return (
@@ -193,16 +235,35 @@ export function SymbolDetailRoute() {
               <RadiusIcon data-icon="inline-start" />
               Review impact
             </Button>
-            <Button variant="outline" nativeButton={false} render={<Link to="/chat" />}>
-              <BotIcon data-icon="inline-start" />
-              Ask with context
-            </Button>
-            {SOURCE_VIEWER_TRANSPORT_AVAILABLE && fallbackLocation ? (
+            {isLocal ? (
+              <Button
+                variant="outline"
+                disabled
+                title="Chat is available only for server repositories."
+              >
+                <BotIcon data-icon="inline-start" />
+                Ask with context
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={<Link to="/chat" />}
+              >
+                <BotIcon data-icon="inline-start" />
+                Ask with context
+              </Button>
+            )}
+            {(isLocal ? Boolean(node.file) : SOURCE_VIEWER_TRANSPORT_AVAILABLE && fallbackLocation) ? (
               <Button
                 ref={openSourceRef}
                 variant="outline"
                 onClick={() => {
-                  if (!selectedRepo) return
+                  if (isLocal) {
+                    void openLocalSource()
+                    return
+                  }
+                  if (!selectedRepo || !fallbackLocation) return
                   setOpenSourceIntent({ targetKey: sourceLocationKey(fallbackLocation), reached: false })
                   setSearchParams(
                     (current) => locationSearch(current, selectedRepo.id, selectedRepo.root, fallbackLocation),
@@ -219,7 +280,35 @@ export function SymbolDetailRoute() {
           </pre>
         </CardContent>
       </Card>
-      {SOURCE_VIEWER_TRANSPORT_AVAILABLE && sourceOpen && sourceLocation && selectedRepo ? (
+      {isLocal && sourceOpen && localSourceError ? (
+        <StatePanel kind="error" title="Cached source unavailable">
+          {localSourceError}
+        </StatePanel>
+      ) : null}
+      {isLocal && sourceOpen && !localSource && !localSourceError ? (
+        <StatePanel kind="loading" title="Cached source">
+          Loading cached browser source.
+        </StatePanel>
+      ) : null}
+      {isLocal && sourceOpen && localSource && selectedRepo ? (
+        <SourcePane
+          key={`${selectedRepo.id}:${node.id}:local`}
+          repoId={selectedRepo.id}
+          root={selectedRepo.root}
+          location={{
+            uri: `${selectedRepo.root}/${node.file ?? "source"}`,
+            range: {
+              start: { line: Math.max(0, (node.line ?? 1) - 1), character: 0 },
+              end: { line: Math.max(0, (node.line ?? 1) - 1), character: 1 },
+            },
+          }}
+          cachedSource={localSource}
+          sourcePath={node.file}
+          onNavigate={() => undefined}
+          onClose={closeSource}
+        />
+      ) : null}
+      {!isLocal && SOURCE_VIEWER_TRANSPORT_AVAILABLE && sourceOpen && sourceLocation && selectedRepo ? (
         <SourcePane
           key={`${selectedRepo.id}:${node.id}`}
           repoId={selectedRepo.id}
@@ -234,6 +323,12 @@ export function SymbolDetailRoute() {
       {partialError ? (
         <StatePanel kind="degraded" title="Partial relationship context">
           {partialError}
+        </StatePanel>
+      ) : null}
+      {isLocal ? (
+        <StatePanel kind="degraded" title="Server-only source intelligence">
+          LSP source intelligence is available only for server repositories.
+          Cached source remains available as inert text.
         </StatePanel>
       ) : null}
       <RelationshipState state={flows.status === "success" ? flows.result.state : "available"} />

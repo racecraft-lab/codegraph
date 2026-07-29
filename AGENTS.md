@@ -32,6 +32,16 @@ chmods the CLI. Any new SQL, WASM, or shipped static asset must be wired into
 Node engines are `>=20.0.0 <25.0.0`. Source runs that touch `node:sqlite` need
 Node 22.5+; the bundled runtime satisfies that.
 
+## Feature Worktree Preflight
+
+- For every newly created feature worktree, use the canonical install, build,
+  index, and health-check sequence in the technical roadmap's
+  [Dogfooding Protocol, rung 6](docs/ai/specs/intelligence-platform-technical-roadmap.md#dogfooding-protocol).
+- Before running that sequence, display its exact command block and wait for
+  explicit operator approval. Do not infer or simplify a substitute sequence.
+- Activate the runtime named by `.nvmrc`. After the approved sequence, run
+  `git status --porcelain` and stop on unexpected tracked changes.
+
 ## Working Rules
 
 - Think before coding. State assumptions, surface competing interpretations,

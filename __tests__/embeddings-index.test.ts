@@ -110,8 +110,8 @@ describe.skipIf(!HAS_SQLITE)('node_vectors schema convergence (FR-012)', () => {
     }
   });
 
-  it('CURRENT_SCHEMA_VERSION is 11 (v10 = SPEC-011 catalogs; SPEC-009 adds no migration; v11 = SPEC-014 CFG tables)', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(11);
+  it('CURRENT_SCHEMA_VERSION includes the SPEC-007 browser source-generation migration', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(12);
   });
 
   it('a fresh schema.sql DB and a v7→current upgraded DB yield an identical node_vectors shape', () => {

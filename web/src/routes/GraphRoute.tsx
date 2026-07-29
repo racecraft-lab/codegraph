@@ -9,7 +9,6 @@ import { GraphSummary } from "@/components/graph/GraphSummary"
 import { GraphToolbar } from "@/components/graph/GraphToolbar"
 import { StatePanel } from "@/components/layout/StatePanel"
 import { errorState } from "@/lib/api/client"
-import { getGraph } from "@/lib/api/graph"
 import type { GraphResult } from "@/lib/api/types"
 import { summarizeGraph } from "@/lib/graph/transform"
 
@@ -17,7 +16,8 @@ export function GraphRoute() {
   const { id = "" } = useParams()
   const nodeId = id
   const navigate = useNavigate()
-  const { selectedRepo, selectNode, clearNode } = useAppState()
+  const { selectedRepo, repositoryClient, selectNode, clearNode } = useAppState()
+  const selectedRepoId = selectedRepo?.id
   const [depth, setDepth] = React.useState(1)
   const [filter, setFilter] = React.useState("")
   const [graph, setGraph] = React.useState<GraphResult | null>(null)
@@ -31,7 +31,8 @@ export function GraphRoute() {
     clearNode()
     async function load() {
       try {
-        const next = await getGraph(nodeId, selectedRepo?.id, depth)
+        if (!selectedRepoId) throw new Error("Select a repository before opening the graph.")
+        const next = await repositoryClient.getGraph(selectedRepoId, nodeId, { depth })
         if (!cancelled) {
           setGraph(next)
           setError(undefined)
@@ -54,7 +55,7 @@ export function GraphRoute() {
     return () => {
       cancelled = true
     }
-  }, [clearNode, depth, nodeId, selectNode, selectedRepo?.id])
+  }, [clearNode, depth, nodeId, repositoryClient, selectNode, selectedRepoId])
 
   const filteredGraph = React.useMemo(() => {
     if (!graph || !filter.trim()) return graph

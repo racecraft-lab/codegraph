@@ -2781,3 +2781,11 @@ export class ExtractionOrchestrator {
 // Re-export useful types and functions
 export { extractFromSource } from './tree-sitter';
 export { detectLanguage, isSourceFile, isLanguageSupported, isGrammarLoaded, getSupportedLanguages, initGrammars, loadGrammarsForLanguages, loadAllGrammars } from './grammars';
+export { extractBrowserSources, requiredGrammarLanguages } from './browser-kernel';
+export type {
+  BrowserExtractionAdapters,
+  BrowserExtractionResult,
+  BrowserSourceEntry,
+  BrowserSourceManifestEntry,
+  BrowserSourceWarning,
+} from './browser-kernel';
