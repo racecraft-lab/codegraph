@@ -21,6 +21,10 @@ const CYPHER_T032_TIMEOUT_QUERY =
   'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p /* codegraph-test-force-timeout */';
 const CYPHER_T032_OUTPUT_TOO_LARGE_QUERY = 'MATCH (a:function)-[:calls]->(b:function) RETURN a, b LIMIT 1000';
 
+function oversizedCypherQueryText(secretPrefix = 'oversized'): string {
+  return `MATCH (n:function) WHERE n.name = '${secretPrefix}-${'oversized'.repeat(1_260)}' RETURN n.name LIMIT 1`;
+}
+
 type T032ParityState = {
   readonly name: string;
   readonly query: string;
@@ -810,7 +814,7 @@ describe('SPEC-013 MCP codegraph_query contracts', () => {
     },
     {
       name: 'oversized input diagnostic',
-      query: `MATCH (n:function) WHERE n.name = '${'oversized'.repeat(1_260)}' RETURN n.name LIMIT 1`,
+      query: oversizedCypherQueryText(),
       expectedStatus: 'diagnostic',
       expectedCode: 'CYPHER_INPUT_TOO_LONG',
     },
@@ -852,6 +856,122 @@ describe('SPEC-013 MCP codegraph_query contracts', () => {
       if (projectPath !== fixture.projectRoot) {
         fs.rmSync(projectPath, { recursive: true, force: true });
       }
+    }
+  });
+
+  it.each<T032ParityState>([
+    {
+      name: 'valid result',
+      query: CYPHER_T032_VALID_QUERY,
+      expectedStatus: 'success',
+      expectedRows: 1,
+      expectedTruncated: false,
+    },
+    {
+      name: 'empty success',
+      query: CYPHER_T032_EMPTY_QUERY,
+      expectedStatus: 'success',
+      expectedRows: 0,
+      expectedTruncated: false,
+    },
+    {
+      name: 'capped/truncated result',
+      query: CYPHER_T032_CAPPED_QUERY,
+      expectedStatus: 'success',
+      expectedRows: 1,
+      expectedTruncated: true,
+    },
+    {
+      name: 'syntax diagnostic',
+      query: CYPHER_T032_SYNTAX_QUERY,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_SYNTAX',
+    },
+    {
+      name: 'unsupported write diagnostic',
+      query: CYPHER_T032_UNSUPPORTED_WRITE_QUERY,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_UNSUPPORTED',
+    },
+    {
+      name: 'oversized input diagnostic',
+      query: oversizedCypherQueryText('final-oversized-secret'),
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_INPUT_TOO_LONG',
+    },
+    {
+      name: 'output-too-large diagnostic',
+      query: CYPHER_T032_OUTPUT_TOO_LARGE_QUERY,
+      prepare: addOversizedCypherPayloadRows,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_OUTPUT_TOO_LARGE',
+    },
+    {
+      name: 'timeout state',
+      query: CYPHER_T032_TIMEOUT_QUERY,
+      expectedStatus: 'timeout',
+      expectedCode: 'CYPHER_TIMEOUT',
+    },
+    {
+      name: 'not-indexed diagnostic',
+      query: CYPHER_T032_VALID_QUERY,
+      useUnindexedProject: true,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_NOT_INDEXED',
+    },
+  ])('matches final T059 CLI --json bytes for $name', async (scenario) => {
+    const projectPath = scenario.useUnindexedProject === true
+      ? fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-mcp-cypher-t059-not-indexed-'))
+      : fixture.projectRoot;
+    try {
+      scenario.prepare?.(projectPath);
+      const mcpResult = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath,
+        query: scenario.query,
+      });
+      const mcp = expectT032McpPayload(mcpResult, scenario);
+      const cliBytes = runCliCypherJsonBytes(projectPath, scenario.query);
+
+      expect(cliBytes).toEqual(mcp.bytes);
+      if (scenario.name === 'oversized input diagnostic') {
+        const combined = mcp.bytes.toString('utf8');
+        expect(combined).not.toContain('final-oversized-secret');
+        expect(combined).not.toContain('oversizedoversized');
+      }
+    } finally {
+      if (projectPath !== fixture.projectRoot) {
+        fs.rmSync(projectPath, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('keeps final T059 path/access refusals error-shaped while expected Cypher states stay success-shaped', async () => {
+    const notIndexed = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-mcp-cypher-t059-expected-'));
+    const missingPath = path.join(os.tmpdir(), `codegraph-mcp-cypher-t059-missing-${Date.now()}`, 'missing');
+    try {
+      const expectedState = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: notIndexed,
+        query: CYPHER_T032_VALID_QUERY,
+      });
+      expectMcpCypherDiagnostic(expectedState, 'CYPHER_NOT_INDEXED', 'T059 expected not-indexed state');
+      expect(expectedState.isError).not.toBe(true);
+
+      const refusedPath = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
+      const accessRefusal = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: refusedPath,
+        query: CYPHER_T032_VALID_QUERY,
+      });
+      expectMcpIsError(accessRefusal);
+      expect(rawMcpText(accessRefusal)).not.toContain('"status":"diagnostic"');
+
+      const missingRefusal = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: missingPath,
+        query: CYPHER_T032_VALID_QUERY,
+      });
+      expectMcpIsError(missingRefusal);
+      expect(rawMcpText(missingRefusal)).not.toContain('"status":"diagnostic"');
+    } finally {
+      fs.rmSync(notIndexed, { recursive: true, force: true });
     }
   });
 

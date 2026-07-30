@@ -212,10 +212,11 @@ function createCypherCliProject(): string {
 }
 
 function oversizedCypherInputBytes(): Buffer {
-  return Buffer.from(
-    `MATCH (n:function) WHERE n.name = '${'oversized'.repeat(1_260)}' RETURN n.name LIMIT 1`,
-    'utf8',
-  );
+  return Buffer.from(oversizedCypherQueryText(), 'utf8');
+}
+
+function oversizedCypherQueryText(secretPrefix = 'oversized'): string {
+  return `MATCH (n:function) WHERE n.name = '${secretPrefix}-${'oversized'.repeat(1_260)}' RETURN n.name LIMIT 1`;
 }
 
 function addOversizedCypherPayloadRows(projectPath: string): void {
@@ -481,6 +482,40 @@ describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
     });
     expect(String(diagnostic.message)).not.toContain('c328');
     expect(previewBuffer(result.stderr)).not.toContain('c328');
+  });
+
+  it('covers final T059 malformed stdin and positional oversized query privacy diagnostics', () => {
+    const malformed = runCliQueryStdin(tempDir, malformedCliStdinBytes(), ['--json']);
+    const malformedDiagnostic = expectCypherCliDiagnostic(
+      malformed,
+      'CYPHER_INVALID_STDIN_ENCODING',
+      'T059 malformed UTF-8 stdin',
+    );
+    expectNoTrailingNewline(malformed, 'T059 malformed UTF-8 stdin');
+    expect(malformedDiagnostic).toMatchObject({
+      offset: 0,
+      line: 1,
+      column: 0,
+      expected: 'valid UTF-8 stdin',
+      anchor: 'cli-input',
+      excerpt: '',
+      truncatedBefore: false,
+      truncatedAfter: false,
+    });
+    expect(`${malformed.stdout.toString('utf8')} ${malformed.stderr.toString('utf8')}`).not.toContain('c328');
+
+    const oversizedQuery = oversizedCypherQueryText('final-oversized-secret');
+    const oversized = runCliQueryMatch(tempDir, oversizedQuery, ['--json']);
+    const oversizedDiagnostic = expectCypherCliDiagnostic(
+      oversized,
+      'CYPHER_INPUT_TOO_LONG',
+      'T059 positional oversized query text',
+    );
+    expectNoTrailingNewline(oversized, 'T059 positional oversized query text');
+    expect(oversizedDiagnostic.excerpt).toBe('');
+    expect(String(oversizedDiagnostic.message)).toContain('10000');
+    expect(`${oversized.stdout.toString('utf8')} ${oversized.stderr.toString('utf8')}`).not.toContain('final-oversized-secret');
+    expect(`${oversized.stdout.toString('utf8')} ${oversized.stderr.toString('utf8')}`).not.toContain('oversizedoversized');
   });
 
   it('rejects stdin text longer than the 10,000 UTF-16 code unit ceiling before parsing', () => {

@@ -68,6 +68,17 @@ function cypherQuerySection(text: string): string {
   return nextHeading === -1 ? text.slice(headingStart) : text.slice(headingStart, nextHeading);
 }
 
+function defaultStaticToolNames(): string[] {
+  const original = process.env[ENV];
+  delete process.env[ENV];
+  try {
+    return getStaticTools().map((tool) => tool.name);
+  } finally {
+    if (original === undefined) delete process.env[ENV];
+    else process.env[ENV] = original;
+  }
+}
+
 describe('SERVER_INSTRUCTIONS — codegraph_rename write-tool guidance (T047)', () => {
   it('mentions codegraph_rename, dry-run-by-default, and explicit apply', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/codegraph_rename/);
@@ -185,6 +196,50 @@ describe('SERVER_INSTRUCTIONS — codegraph_query deliberate Cypher steering (SP
     expect(howToQuery).toMatch(/flow[\s\S]*codegraph_explore/);
     expect(howToQuery).toMatch(/Reading or editing[\s\S]*codegraph_explore/);
     expect(howToQuery).not.toContain('codegraph_query');
+  });
+});
+
+describe('SERVER_INSTRUCTIONS — final retrieval steering regression surface (SPEC-013 T060)', () => {
+  it('pins the default-listed tool surface without promoting Cypher over explore', () => {
+    const names = defaultStaticToolNames();
+    const tinyProject = { getStats: () => ({ fileCount: 1 }) } as ConstructorParameters<typeof ToolHandler>[0];
+    const liveNames = new ToolHandler(tinyProject).getTools().map((tool) => tool.name);
+
+    expect(names).toEqual([
+      'codegraph_query',
+      'codegraph_detect_changes',
+      'codegraph_explore',
+      'codegraph_rename',
+      'codegraph_get_cfg',
+    ]);
+    expect(new Set(names).size).toBe(names.length);
+    expect(liveNames).toEqual(names);
+    expect(names).toContain('codegraph_query');
+    expect(names).toContain('codegraph_explore');
+    expect(names).not.toContain('codegraph_node');
+    expect(names).not.toContain('codegraph_search');
+    expect(names).not.toContain('codegraph_callers');
+    expect(names).not.toContain('codegraph_callees');
+  });
+
+  it('contains no final T060 steering that prefers Cypher or codegraph_query over explore', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cypherQuerySection(text);
+
+      expect(text).not.toMatch(/prefer\s+(?:`codegraph_query`|Cypher)[\s\S]{0,120}(?:over|instead of)[\s\S]{0,120}`codegraph_explore`/i);
+      expect(text).not.toMatch(/(?:`codegraph_query`|Cypher)[\s\S]{0,120}(?:primary|default)\s+retrieval/i);
+      expect(section).not.toMatch(/prefer\s+(?:`codegraph_query`|Cypher)/i);
+      expect(section).not.toMatch(/(?:replace|supersede|instead of)\s+`codegraph_explore`/i);
+    }
+  });
+
+  it('uses explicit reserved codegraph_query language for deliberate structured graph-language requests', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cypherQuerySection(text);
+
+      expect(section).toMatch(/\breserved\b[\s\S]{0,120}`codegraph_query`|`codegraph_query`[\s\S]{0,120}\breserved\b/i);
+      expect(section).toMatch(/deliberate structured graph-language requests/i);
+    }
   });
 });
 

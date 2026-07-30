@@ -769,8 +769,18 @@ type CypherRuntimeTestOptions = {
   readonly forceTimeout?: boolean;
   readonly payloadLimitBytes?: number;
   readonly onSqlPrepare?: (sql: string) => void;
+  readonly onQueryPlan?: (evidence: CypherPerformancePlanEvidence) => void;
   readonly onRowsInspected?: (count: number) => void;
   readonly onRowsMaterialized?: (count: number) => void;
+};
+
+type CypherPerformancePlanEvidence = {
+  readonly probeId: string;
+  readonly query: string;
+  readonly details: readonly string[];
+  readonly edgeIndexes: readonly string[];
+  readonly tempWork: readonly string[];
+  readonly boundedBy: string;
 };
 
 type CypherRuntimeTestState = {
@@ -1683,6 +1693,121 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnos
     expect(fixture.snapshot()).toEqual(before);
   });
 
+  it('keeps final mutating/direct-SQL guardrails before prepare with no graph storage drift', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const before = fixture.snapshot();
+    const preparedSql: string[] = [];
+
+    const mutating = await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH (n:function)-[:calls]->(m:function) CREATE (x:function {name: 'forbidden'}) RETURN n",
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    );
+    const directSql = await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "UPDATE nodes SET name = 'forbidden' WHERE id = 'fn:entry'",
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    );
+
+    expectDiagnostic(mutating, 'CYPHER_UNSUPPORTED_CLAUSE');
+    expectDiagnostic(directSql, 'CYPHER_DIRECT_SQL_UNSUPPORTED');
+    expect(preparedSql).toEqual([]);
+    expect(fixture.snapshot()).toMatchObject({
+      sqliteSchemaVersion: before.sqliteSchemaVersion,
+      sqliteDataVersion: before.sqliteDataVersion,
+      schemaVersions: before.schemaVersions,
+      nodeCount: before.nodeCount,
+      edgeCount: before.edgeCount,
+      activeEdgeCount: before.activeEdgeCount,
+      inactiveLspSuppressedEdgeCount: before.inactiveLspSuppressedEdgeCount,
+      representativeNode: before.representativeNode,
+      representativeEdge: before.representativeEdge,
+    });
+  });
+
+  it('rejects external parameter syntax before prepare without graph storage drift', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const before = fixture.snapshot();
+    const preparedSql: string[] = [];
+
+    const result = await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      'MATCH (entry:function)-[:calls]->(target:function) WHERE entry.name = $entryName RETURN target.name',
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    );
+
+    expect(preparedSql).toEqual([]);
+    expect(fixture.snapshot()).toEqual(before);
+    expectDiagnostic(result, 'CYPHER_EXTERNAL_PARAMETER_UNSUPPORTED');
+  });
+
+  it('rejects unsupported openCypher clauses before prepare without graph storage drift', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const before = fixture.snapshot();
+    const preparedSql: string[] = [];
+
+    const unsupported = await Promise.all([
+      runtime.queryCypherForTests(
+        fixture.projectRoot,
+        'OPTIONAL MATCH (entry:function)-[:calls]->(target:function) RETURN target.name',
+        { onSqlPrepare: (sql) => preparedSql.push(sql) },
+      ),
+      runtime.queryCypherForTests(
+        fixture.projectRoot,
+        'MATCH (entry:function)-[:calls]->(target:function) WITH entry RETURN entry.name',
+        { onSqlPrepare: (sql) => preparedSql.push(sql) },
+      ),
+    ]);
+
+    expect(preparedSql).toEqual([]);
+    expect(fixture.snapshot()).toEqual(before);
+    for (const result of unsupported) {
+      expectDiagnostic(result, 'CYPHER_UNSUPPORTED_OPENCYPHER');
+    }
+  });
+
+  it('keeps read-only connection dormancy separate from timeout worker replacement', async () => {
+    const boundary = await loadCypherRuntimeBoundaryContract();
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const beforeSnapshot = fixture.snapshot();
+    const beforeState = runtime.getCypherRuntimeStateForTests();
+    const readOnlyDb = boundary.openCypherReadOnlyDatabaseForTests(fixture.dbPath);
+
+    try {
+      expect(readOnlyDb.prepare('SELECT count(*) AS count FROM nodes').get()).toEqual({ count: beforeSnapshot.nodeCount });
+      expect(() => {
+        readOnlyDb.prepare("UPDATE nodes SET name = 'forbidden' WHERE id = 'fn:entry'").run();
+      }).toThrow();
+    } finally {
+      readOnlyDb.close();
+    }
+
+    expect(runtime.getCypherRuntimeStateForTests()).toEqual(beforeState);
+    expect(fixture.snapshot()).toEqual(beforeSnapshot);
+
+    expectTimeout(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH p = (hub:function)-[:calls*1..8]->(target:function) WHERE hub.name = 'hub' RETURN p",
+      { forceTimeout: true },
+    ));
+
+    const afterTimeoutState = runtime.getCypherRuntimeStateForTests();
+    expect(afterTimeoutState.activeWorkers).toBe(0);
+    expect(afterTimeoutState.terminatedWorkers).toBe(beforeState.terminatedWorkers + 1);
+    expect(fixture.snapshot()).toEqual(beforeSnapshot);
+
+    const followup = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (entry:function)-[:calls]->(target:function) WHERE entry.name = 'entry' RETURN target.name AS name ORDER BY target.name LIMIT 1",
+    ));
+    expect(followup.rows.map((row) => scalarValue(row, 'name'))).toEqual(['helper']);
+    expect(runtime.getCypherRuntimeStateForTests().activeWorkers).toBe(0);
+  }, 7000);
+
   it('returns a stable not-indexed diagnostic without initializing or healing repository state', async () => {
     const runtime = await loadCypherRuntimeContract();
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cypher-not-indexed-'));
@@ -1720,4 +1845,108 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnos
     ));
     expect(followup.rows.map((row) => scalarValue(row, 'name'))).toEqual(['helper']);
   });
+});
+
+describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — final performance probes (T061)', () => {
+  it('captures representative query-plan evidence for variable paths, edge index use, grouped ordering, and bounded temp work', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    addLayeredVariablePathDensity(fixture, 't061Plan', 10);
+    const preparedSql: string[] = [];
+    const materializedRows: number[] = [];
+    const inspectedRows: number[] = [];
+    const planEvidence: CypherPerformancePlanEvidence[] = [];
+    const query = [
+      'MATCH p = (start:function)-[:calls*1..2]->(finish:function)',
+      "WHERE start.name STARTS WITH 't061PlanL0'",
+      'RETURN start.name AS startName, count(finish.name) AS reachable',
+      'ORDER BY reachable DESC, startName ASC',
+      'LIMIT 5',
+    ].join(' ');
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      query,
+      {
+        onSqlPrepare: (sql) => preparedSql.push(sql),
+        onRowsMaterialized: (count) => materializedRows.push(count),
+        onRowsInspected: (count) => inspectedRows.push(count),
+        onQueryPlan: (evidence) => planEvidence.push(evidence),
+      },
+    ));
+
+    expect(result.effectiveCap).toBe(5);
+    expect(result.rows).toHaveLength(5);
+    expect(result.truncated).toBe(true);
+    expect(result.rows.map((row) => [
+      scalarValue(row, 'startName'),
+      scalarValue(row, 'reachable'),
+    ])).toEqual([
+      ['t061PlanL001', 110],
+      ['t061PlanL002', 110],
+      ['t061PlanL003', 110],
+      ['t061PlanL004', 110],
+      ['t061PlanL005', 110],
+    ]);
+    expect(Math.max(...materializedRows)).toBeLessThanOrEqual(6);
+    expect(Math.max(...inspectedRows)).toBeLessThanOrEqual(6);
+
+    const recursiveSql = preparedSql.find((sql) => /^WITH RECURSIVE\b/i.test(sql));
+    expect(recursiveSql).toBeDefined();
+    expect(recursiveSql).toContain('JOIN edges e0 INDEXED BY idx_edges_source_kind ON e0.source = n0.id');
+    expect(recursiveSql).toContain('GROUP BY');
+    expect(recursiveSql).toContain('ORDER BY');
+
+    expect(planEvidence, 'T061 requires EXPLAIN QUERY PLAN or equivalent evidence rows').not.toEqual([]);
+    expect(planEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        probeId: 'PERF-VARIABLE-PATH-PLAN',
+        query,
+        edgeIndexes: expect.arrayContaining(['idx_edges_source_kind']),
+        boundedBy: expect.stringMatching(/effectiveCap \+ 1|LIMIT 5|timeout/i),
+      }),
+    ]));
+    expect(planEvidence.flatMap((evidence) => evidence.details).join('\n')).toMatch(/QUERY PLAN|SEARCH|SCAN/i);
+    expect(planEvidence.flatMap((evidence) => evidence.tempWork).join('\n')).toMatch(/TEMP|ORDER BY|GROUP BY/i);
+  });
+
+  it('keeps row-cap, stable ordering, output-size, and timeout performance probes bounded', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    addFanout(fixture, 't061Cap', 24);
+
+    const inspectedRows: number[] = [];
+    const capped = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH (hub:function)-[:calls]->(target:function) WHERE hub.name = 't061CapHub' RETURN target.name AS name LIMIT 5",
+      { onRowsInspected: (count) => inspectedRows.push(count) },
+    ));
+    expect(capped.effectiveCap).toBe(5);
+    expect(capped.rows).toHaveLength(5);
+    expect(capped.truncated).toBe(true);
+    expect(capped.rows.map((row) => scalarValue(row, 'name'))).toEqual([
+      't061CapTarget0001',
+      't061CapTarget0002',
+      't061CapTarget0003',
+      't061CapTarget0004',
+      't061CapTarget0005',
+    ]);
+    expect(Math.max(...inspectedRows)).toBeLessThanOrEqual(6);
+    expect(capped).not.toHaveProperty('totalRows');
+
+    const payloadTooLarge = await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH (hub:function)-[:calls]->(target:function) WHERE hub.name = 't061CapHub' RETURN target.name AS name ORDER BY target.name",
+      { payloadLimitBytes: 180 },
+    );
+    expectDiagnostic(payloadTooLarge, 'CYPHER_OUTPUT_TOO_LARGE');
+    expect(payloadTooLarge).not.toHaveProperty('rows');
+
+    expectTimeout(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH p = (hub:function)-[:calls*1..8]->(target:function) WHERE hub.name = 't061CapHub' RETURN p",
+      { forceTimeout: true },
+    ));
+    expect(runtime.getCypherRuntimeStateForTests().activeWorkers).toBe(0);
+  }, 7000);
 });

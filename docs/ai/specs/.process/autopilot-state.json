@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: T058 final runtime guardrail RED contracts",
-  "updated_at": "2026-07-30T12:06:54Z",
+  "active_step": "Phase 7: T062 complete defense-in-depth read-only validation",
+  "updated_at": "2026-07-30T12:29:56Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -626,7 +626,11 @@
       "T054",
       "T055",
       "T056",
-      "T057"
+      "T057",
+      "T058",
+      "T059",
+      "T060",
+      "T061"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -718,6 +722,7 @@
         "completed": 17,
         "total": 17,
         "red_checkpoint_commit": "651d1a1b",
+        "checkpoint_commit": "0b2bfdaf",
         "red_evidence": {
           "command": "npx vitest run __tests__/cypher-parser.test.ts __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/cypher-recipes.test.ts",
           "test_files": "5 failed / 5 total",
@@ -761,7 +766,23 @@
       },
       "final_us3": {
         "status": "in_progress",
-        "tasks": "T058-T070"
+        "tasks": "T058-T070",
+        "completed": 4,
+        "total": 13,
+        "red_evidence": {
+          "command": "npx vitest run __tests__/cypher-runtime.test.ts __tests__/cypher-recipes.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/mcp-server-instructions.test.ts",
+          "test_files": "4 failed, 1 passed, 5 total",
+          "tests": "6 failed, 124 passed, 130 total",
+          "expected_failure_categories": [
+            "external parameter syntax needs a stable dedicated diagnostic code",
+            "unsupported openCypher clauses need a stable dedicated diagnostic code",
+            "representative query-plan evidence needs an EXPLAIN or equivalent capture",
+            "missing MCP projectPath needs an error-shaped path/access refusal",
+            "retrieval instructions need explicit reserved codegraph_query wording",
+            "recipe documentation needs final PERF probe slots"
+          ],
+          "unexpected_failures": 0
+        }
       },
       "polish_and_delivery": {
         "status": "pending",

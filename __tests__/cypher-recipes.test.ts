@@ -54,6 +54,27 @@ type GuardProbeDefinition = {
   readonly expectedEmptyReason: string;
 };
 
+type PerformanceProbeDefinition = {
+  readonly id: string;
+  readonly title: string;
+  readonly input: string;
+  readonly slice: RecipeSlice;
+  readonly surfaces: readonly RecipeSurface[];
+  readonly expectedState: ExpectedState;
+  readonly planEvidence: {
+    readonly requiresExplainTranscript: boolean;
+    readonly edgeIndexes: readonly string[];
+    readonly tempWork: readonly string[];
+    readonly boundedBy: string;
+  };
+  readonly commandSlots: LiveSelfIndexRecipeSlot['commandSlots'];
+  readonly artifact: string;
+  readonly reviewer: string;
+  readonly date: string;
+  readonly representativeOutput: string;
+  readonly expectedEmptyReason: string;
+};
+
 type ParityHashCapture = {
   readonly cliHash: string;
   readonly mcpHash: string;
@@ -215,6 +236,129 @@ const REQUIRED_GUARD_PROBES: readonly GuardProbeDefinition[] = [
   }),
 ];
 
+const REQUIRED_PERFORMANCE_PROBES: readonly PerformanceProbeDefinition[] = [
+  performanceProbe({
+    id: 'PERF-VARIABLE-PATH-PLAN',
+    title: 'Variable path plan and bounded recursion',
+    input: 'MATCH p = (start:function)-[:calls*1..2]->(finish:function) RETURN p LIMIT 5',
+    slice: 'Slice 1',
+    surfaces: ['package', 'docs', 'live UAT'],
+    expectedState: 'success',
+    planEvidence: {
+      requiresExplainTranscript: true,
+      edgeIndexes: ['idx_edges_source_kind'],
+      tempWork: [],
+      boundedBy: 'relationship depth, effectiveCap + 1, and five-second timeout',
+    },
+    commandSlots: placeholderCommandSlots(),
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  performanceProbe({
+    id: 'PERF-STABLE-ORDERING',
+    title: 'Stable default and explicit ordering',
+    input: 'MATCH (hub:function)-[:calls]->(target:function) RETURN target.name LIMIT 5',
+    slice: 'Cross-slice',
+    surfaces: ['package', 'docs', 'live UAT'],
+    expectedState: 'success',
+    planEvidence: {
+      requiresExplainTranscript: true,
+      edgeIndexes: ['idx_edges_source_kind'],
+      tempWork: ['ORDER BY'],
+      boundedBy: 'effectiveCap + 1 or explicit LIMIT',
+    },
+    commandSlots: placeholderCommandSlots(),
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  performanceProbe({
+    id: 'PERF-COUNT-GROUPING',
+    title: 'Count and implicit grouping work',
+    input: 'MATCH (caller:function)-[:calls]->(target:function) RETURN caller.name AS callerName, count(*) AS calls ORDER BY calls DESC LIMIT 5',
+    slice: 'Slice 2',
+    surfaces: ['package', 'docs', 'live UAT'],
+    expectedState: 'success',
+    planEvidence: {
+      requiresExplainTranscript: true,
+      edgeIndexes: ['idx_edges_source_kind'],
+      tempWork: ['GROUP BY', 'ORDER BY'],
+      boundedBy: 'group cardinality, effectiveCap + 1, and timeout',
+    },
+    commandSlots: placeholderCommandSlots(),
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  performanceProbe({
+    id: 'PERF-ROW-CAP-TRUNCATION',
+    title: 'Row-cap truncation existence probe',
+    input: 'MATCH (n:function) RETURN n.name',
+    slice: 'Cross-slice',
+    surfaces: ['package', 'CLI', 'MCP', 'docs', 'live UAT'],
+    expectedState: 'success',
+    planEvidence: {
+      requiresExplainTranscript: true,
+      edgeIndexes: [],
+      tempWork: [],
+      boundedBy: 'default cap plus one inspected row',
+    },
+    commandSlots: placeholderCommandSlots(),
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  performanceProbe({
+    id: 'PERF-PAYLOAD-CEILING',
+    title: 'Canonical output-size rejection',
+    input: 'MATCH (n:function) RETURN n',
+    slice: 'Cross-slice',
+    surfaces: ['package', 'CLI', 'MCP', 'docs'],
+    expectedState: 'diagnostic',
+    planEvidence: {
+      requiresExplainTranscript: true,
+      edgeIndexes: [],
+      tempWork: [],
+      boundedBy: 'fixed 1 MiB UTF-8 canonical JSON ceiling',
+    },
+    commandSlots: placeholderCommandSlots(),
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  performanceProbe({
+    id: 'PERF-INCOMING-EDGE-INDEX',
+    title: 'Incoming edge index use',
+    input: 'MATCH (caller:function)<-[:calls]-(target:function) RETURN caller.name, target.name LIMIT 5',
+    slice: 'Slice 1',
+    surfaces: ['package', 'docs', 'live UAT'],
+    expectedState: 'success or empty',
+    planEvidence: {
+      requiresExplainTranscript: true,
+      edgeIndexes: ['idx_edges_target_kind'],
+      tempWork: [],
+      boundedBy: 'effectiveCap + 1 and timeout',
+    },
+    commandSlots: placeholderCommandSlots(),
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+];
+
 const REQUIRED_RECIPE_DOC_FIELDS = [
   'Category',
   'Query',
@@ -242,6 +386,24 @@ const REQUIRED_GUARD_DOC_FIELDS = [
   'Representative output',
   'Expected-empty reason',
   'Parity hash',
+  'Artifact',
+  'Reviewer',
+  'Date',
+] as const;
+
+const REQUIRED_PERFORMANCE_DOC_FIELDS = [
+  'Input',
+  'Surfaces',
+  'Package API command',
+  'CLI --json command',
+  'MCP text command',
+  'Expected state',
+  'Plan transcript',
+  'Edge index evidence',
+  'Temporary work evidence',
+  'Bounded-by note',
+  'Representative output',
+  'Expected-empty reason',
   'Artifact',
   'Reviewer',
   'Date',
@@ -308,6 +470,19 @@ function guardProbe(probe: GuardProbeDefinition): GuardProbeDefinition {
   return { ...probe };
 }
 
+function performanceProbe(probe: PerformanceProbeDefinition): PerformanceProbeDefinition {
+  if (!probe.id.trim()) {
+    throw new Error('Performance probe id is required');
+  }
+  if (!probe.input.trim()) {
+    throw new Error(`Performance probe ${probe.id} input is required`);
+  }
+  if (!probe.planEvidence.requiresExplainTranscript) {
+    throw new Error(`Performance probe ${probe.id} must require query-plan evidence`);
+  }
+  return { ...probe };
+}
+
 function requireRecipeDoc(): string {
   return fs.readFileSync(RECIPE_DOC_PATH, 'utf8');
 }
@@ -332,6 +507,19 @@ function unresolvedGuardEvidenceCount(probes: readonly GuardProbeDefinition[]): 
     probe.commandSlots.cliJson,
     probe.commandSlots.mcpText,
     probe.parityHash,
+    probe.artifact,
+    probe.reviewer,
+    probe.date,
+    probe.representativeOutput,
+    probe.expectedEmptyReason,
+  ]), 0);
+}
+
+function unresolvedPerformanceEvidenceCount(probes: readonly PerformanceProbeDefinition[]): number {
+  return probes.reduce((count, probe) => count + unresolvedEvidenceValues([
+    probe.commandSlots.packageApi,
+    probe.commandSlots.cliJson,
+    probe.commandSlots.mcpText,
     probe.artifact,
     probe.reviewer,
     probe.date,
@@ -499,5 +687,40 @@ describe('SPEC-013 recipe helper contracts', () => {
       guardProbeFields: 63,
       documentationPlaceholders: 0,
     });
+  });
+
+  it('defines final T061 performance probe slots for query-plan and bounded-work evidence', () => {
+    expect(REQUIRED_PERFORMANCE_PROBES.map((probe) => probe.id)).toEqual([
+      'PERF-VARIABLE-PATH-PLAN',
+      'PERF-STABLE-ORDERING',
+      'PERF-COUNT-GROUPING',
+      'PERF-ROW-CAP-TRUNCATION',
+      'PERF-PAYLOAD-CEILING',
+      'PERF-INCOMING-EDGE-INDEX',
+    ]);
+    expect(REQUIRED_PERFORMANCE_PROBES.every((probe) => probe.planEvidence.requiresExplainTranscript)).toBe(true);
+    expect(REQUIRED_PERFORMANCE_PROBES.flatMap((probe) => probe.planEvidence.edgeIndexes)).toEqual(
+      expect.arrayContaining(['idx_edges_source_kind', 'idx_edges_target_kind']),
+    );
+    expect(REQUIRED_PERFORMANCE_PROBES.flatMap((probe) => probe.planEvidence.tempWork)).toEqual(
+      expect.arrayContaining(['ORDER BY', 'GROUP BY']),
+    );
+    expect(unresolvedPerformanceEvidenceCount(REQUIRED_PERFORMANCE_PROBES)).toBe(48);
+  });
+
+  it('documents final T061 performance probe placeholders with required plan evidence fields', () => {
+    const markdown = requireRecipeDoc();
+
+    for (const probe of REQUIRED_PERFORMANCE_PROBES) {
+      expect(markdown).toContain(`## ${probe.id}`);
+      expect(markdown).toContain(probe.input);
+      expect(markdown).toContain(probe.planEvidence.boundedBy);
+      for (const indexName of probe.planEvidence.edgeIndexes) {
+        expect(markdown).toContain(indexName);
+      }
+      for (const field of REQUIRED_PERFORMANCE_DOC_FIELDS) {
+        expect(markdown).toContain(`- ${field}:`);
+      }
+    }
   });
 });
