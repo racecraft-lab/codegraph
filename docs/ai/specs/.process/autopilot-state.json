@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: T071 update Unreleased changelog",
-  "updated_at": "2026-07-30T13:32:12Z",
+  "active_step": "Post: Doctor Extension Check",
+  "updated_at": "2026-07-30T14:34:55Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -568,7 +568,7 @@
     "warning": "Confidence helper NO_DATA may indicate a synthesizer-prompt regression; advisory mode requires logging and proceeding."
   },
   "phase_7": {
-    "status": "in_progress",
+    "status": "completed",
     "completed_tasks": [
       "T001",
       "T002",
@@ -639,7 +639,16 @@
       "T067",
       "T068",
       "T069",
-      "T070"
+      "T070",
+      "T071",
+      "T072",
+      "T073",
+      "T074",
+      "T075",
+      "T076",
+      "T077",
+      "T078",
+      "T079"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -844,8 +853,21 @@
         "reviewability_signal": "T067 removed three net lines, but src/query/cypher/index.ts is 3995 lines and remains materially above the planning estimate; carry this warning into post reviewability gates."
       },
       "polish_and_delivery": {
-        "status": "in_progress",
-        "tasks": "T071-T079"
+        "status": "completed",
+        "tasks": "T071-T079",
+        "completed": 9,
+        "total": 9,
+        "verification": {
+          "changelog_and_quickstart": "Unreleased changelog entry added; self-contained package, CLI, MCP, parity, guardrail, live-index, and retrieval-authorization commands documented.",
+          "full_local_validation": "Build and typecheck passed; npm test passed with 266 files passed, 15 skipped, 4810 tests passed, and 181 skipped.",
+          "live_self_index": "Existing index reused without init/index; status healthy with 939 files, 16980 nodes, 72612 edges, zero pending references, and no reindex requirement.",
+          "recipe_uat": "All 12 documented recipes ran on package, CLI, and MCP surfaces with byte-identical payloads; ten returned rows and two returned truthful empty success states.",
+          "incoming_edge_plan": "Live bounded incoming variable-path aggregate captured idx_edges_target_kind in setup and recursive EXPLAIN rows, five rows, effectiveCap 5, and truncated=true.",
+          "pr_packet": "Review-ready description records scope, non-goals, review order, verification, known gaps, and rollback.",
+          "stack_disposition": "One-navigable-PR route retained; no gh-stack submit/view or PR mutation occurred during Phase 7.",
+          "hygiene": "Recipe-doc placeholders reconciled to real evidence; focused recipe tests, git diff --check, status capture, and unresolved task-marker scan passed."
+        },
+        "reviewability_signal": "src/query/cypher/index.ts is 3995 lines and materially exceeds the planning estimate; a lazy public wrapper prevents unrelated CLI commands from eagerly loading it, but the size warning remains mandatory post-implementation review evidence."
       }
     }
   },
@@ -964,11 +986,11 @@
     },
     {
       "step": "Phase 7: Implement polish and delivery evidence (T071-T079)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Verify Implementation",

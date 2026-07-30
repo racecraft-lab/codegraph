@@ -1013,31 +1013,40 @@ For each task:
 | 1 — safe-surface closure | T032-T040 | 9/9 | Complete: 81/81 focused safety tests pass; all nine CLI/MCP states are byte-identical; read-only snapshots, timeout worker cleanup, malformed stdin, and retrieval steering are verified. |
 | 2 — language and recipe closure | T041-T057 | 17/17 | Complete: parser 24/24, runtime 31/31, CLI 29/29, MCP 27/27, and recipes 4/4 pass; the exact live CLI/MCP aggregate query returns 9 byte-identical rows with SHA-256 c8bb672e40cd28585fc46efae272af21cc8902d96fb3f82a1a3c920a1654fa06. T057 required one node-only MATCH remediation. The private query module is 3,924 lines and remains a material reviewability signal. |
 | Final safety and retrieval closure | T058-T070 | 13/13 | Complete with external block: final guardrails pass 130/130; retrieval guardian passes five code checks; all local parity/read-only/timeout/malformed/payload/listing/steering evidence passes. Retrieval A/B is `BLOCKED_BY_AUTHORIZATION`; external runs=0, sends=0, cost=0. The private query module is 3,995 lines and remains a material reviewability signal. |
-| Polish and delivery evidence | T071-T079 | 0/9 | In progress: changelog, UAT, parity, PR packet, and hygiene, beginning at T071. |
+| Polish and delivery evidence | T071-T079 | 9/9 | Complete: changelog, runnable quickstart, 4,810-test full suite, live self-index UAT, 12 package/CLI/MCP recipe parity runs, real incoming-edge EXPLAIN evidence, PR description, one-PR disposition, and final hygiene. |
+
+**G7 disposition:** Passed for all local implementation and acceptance checks.
+The mandatory external retrieval A/B remains `BLOCKED_BY_AUTHORIZATION` with
+zero external runs, sends, or cost; this is a declared pre-ship gap, not a
+fabricated pass. The private `src/query/cypher/index.ts` remains 3,995 lines and
+must stay visible through the post-implementation reviewability gates.
 
 ---
 
 ## Post-Implementation Checklist
 
-- [ ] Every task marked complete in `tasks.md` is verified as real, not phantom.
-- [ ] Focused tests pass for lexer, parser, planner, SQL emission, runtime,
+- [x] Every implementation task T001-T079 is complete in `tasks.md`; the
+  independent post-implementation phantom check remains scheduled.
+- [x] Focused tests pass for lexer, parser, planner, SQL emission, runtime,
   library, CLI, MCP, serializers, and diagnostics.
-- [ ] `npm run build` passes on the pinned runtime.
-- [ ] `npm test` passes.
-- [ ] No new runtime dependency or unexpected schema migration was added.
-- [ ] Dedicated read-only connection and mutating-syntax rejection are proven.
-- [ ] Row, path, input, deadline, and diagnostic bounds are proven.
-- [ ] CLI `--json` and MCP text are byte-identical for success, truncation,
+- [x] `npm run build` passes on the pinned runtime.
+- [x] `npm test` passes: 266 files passed, 15 skipped; 4,810 tests passed,
+  181 skipped.
+- [x] No new runtime dependency or unexpected schema migration was added.
+- [x] Dedicated read-only connection and mutating-syntax rejection are proven.
+- [x] Row, path, input, deadline, and diagnostic bounds are proven.
+- [x] CLI `--json` and MCP text are byte-identical for success, truncation,
   timeout, and syntax-error fixtures.
-- [ ] At least ten recipes pass against the live self-index and representative
-  answers are manually reviewed.
-- [ ] `codegraph_explore` remains primary in default MCP guidance.
+- [x] Twelve recipes pass against the live self-index and representative
+  answers were manually reviewed; ten returned rows and two returned truthful
+  empty success states.
+- [x] `codegraph_explore` remains primary in default MCP guidance.
 - [ ] Retrieval A/B and retrieval-guardian gates pass.
 - [ ] Per-PR reviewability gates pass.
-- [ ] If multiple PRs were required, `gh stack view --json` proves the intended
-  bottom-to-top chain against `origin`.
-- [ ] User-facing `CHANGELOG.md` entry is under `## [Unreleased]`.
-- [ ] PR packet includes scope, non-goals, review order, budget, traceability,
+- [x] Multiple PRs were not required; the recorded one-navigable-PR route makes
+  `gh stack view --json` inapplicable.
+- [x] User-facing `CHANGELOG.md` entry is under `## [Unreleased]`.
+- [x] PR description includes scope, non-goals, review order, budget, traceability,
   evidence, known gaps, and rollback/flag notes.
 - [ ] Final `git diff --check` passes and the worktree is clean after commits.
 

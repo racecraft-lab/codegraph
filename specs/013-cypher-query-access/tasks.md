@@ -198,15 +198,15 @@
 
 **Purpose**: Finish user-facing documentation, validation, traceability, and PR evidence without expanding implementation scope.
 
-- [ ] T071 [P] Update `CHANGELOG.md` under `## [Unreleased]` with a user-facing Cypher query access capability note and no internal implementation-path language.
-- [ ] T072 [P] Update `specs/013-cypher-query-access/quickstart.md` with runnable focused, full, CLI, MCP, live self-index, recipe, parity, guardrail, and retrieval authorization validation commands.
-- [ ] T073 Complete `specs/013-cypher-query-access/evidence-matrix.md` rows for every FR, SC, recipe, guard probe, performance probe, retrieval-guardian result, retrieval A/B authorization disposition, slice demo, and parity hash.
-- [ ] T074 Run full local validation and record output in `specs/013-cypher-query-access/evidence-matrix.md`: `npm run build`, `npm run typecheck`, and `npm test`.
-- [ ] T075 Run live self-index UAT and record output in `specs/013-cypher-query-access/evidence-matrix.md`: `node dist/bin/codegraph.js status . --json`, `node dist/bin/codegraph.js query "MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5" --json`, and `printf '%s' 'MATCH (n:function) RETURN n.name ORDER BY n.name LIMIT 5' | node dist/bin/codegraph.js query - --json`.
-- [ ] T076 Compare CLI `--json` bytes and MCP `codegraph_query` text bytes for valid, capped, diagnostic, timeout, not-indexed, malformed stdin, and payload-too-large states; record parity hashes in `specs/013-cypher-query-access/evidence-matrix.md`.
-- [ ] T077 Prepare PR description content from `specs/013-cypher-query-access/evidence-matrix.md` with what changed, why, non-goals, review order, scope budget, traceability, verification evidence, known gaps, rollback or feature-flag notes, and the selected one-PR or gh-stack route.
-- [ ] T078 If split-PR delivery was selected by G5, run `gh stack submit --auto --remote origin`, then `gh stack view --json`, and record JSON proof in `specs/013-cypher-query-access/evidence-matrix.md`; if one PR was selected, record gh-stack proof as not applicable and do not manufacture stack evidence.
-- [ ] T079 Run final hygiene checks and record status in `specs/013-cypher-query-access/evidence-matrix.md`: `git diff --check`, `git status --porcelain=v1 --untracked-files=all`, and unresolved-marker scan in `specs/013-cypher-query-access/tasks.md`.
+- [X] T071 [P] Update `CHANGELOG.md` under `## [Unreleased]` with a user-facing Cypher query access capability note and no internal implementation-path language.
+- [X] T072 [P] Update `specs/013-cypher-query-access/quickstart.md` with runnable focused, full, CLI, MCP, live self-index, recipe, parity, guardrail, and retrieval authorization validation commands.
+- [X] T073 Complete `specs/013-cypher-query-access/evidence-matrix.md` rows for every FR, SC, recipe, guard probe, performance probe, retrieval-guardian result, retrieval A/B authorization disposition, slice demo, and parity hash.
+- [X] T074 Run full local validation and record output in `specs/013-cypher-query-access/evidence-matrix.md`: `npm run build`, `npm run typecheck`, and `npm test`.
+- [X] T075 Run live self-index UAT and record output in `specs/013-cypher-query-access/evidence-matrix.md`: `node dist/bin/codegraph.js status . --json`, `node dist/bin/codegraph.js query "MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5" --json`, and `printf '%s' 'MATCH (n:function) RETURN n.name ORDER BY n.name LIMIT 5' | node dist/bin/codegraph.js query - --json`.
+- [X] T076 Compare CLI `--json` bytes and MCP `codegraph_query` text bytes for valid, capped, diagnostic, timeout, not-indexed, malformed stdin, and payload-too-large states; record parity hashes in `specs/013-cypher-query-access/evidence-matrix.md`.
+- [X] T077 Prepare PR description content from `specs/013-cypher-query-access/evidence-matrix.md` with what changed, why, non-goals, review order, scope budget, traceability, verification evidence, known gaps, rollback or feature-flag notes, and the selected one-PR or gh-stack route.
+- [X] T078 If split-PR delivery was selected by G5, run `gh stack submit --auto --remote origin`, then `gh stack view --json`, and record JSON proof in `specs/013-cypher-query-access/evidence-matrix.md`; if one PR was selected, record gh-stack proof as not applicable and do not manufacture stack evidence.
+- [X] T079 Run final hygiene checks and record status in `specs/013-cypher-query-access/evidence-matrix.md`: `git diff --check`, `git status --porcelain=v1 --untracked-files=all`, and unresolved-marker scan in `specs/013-cypher-query-access/tasks.md`.
 
 ---
 

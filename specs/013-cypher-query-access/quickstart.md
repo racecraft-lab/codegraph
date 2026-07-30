@@ -1,103 +1,292 @@
 # Quickstart: Cypher Query Access
 
-## Prerequisites
-
-- Use the repository-pinned Node runtime: `nvm use`.
-- Work from branch `013-cypher-query-access`.
-- Use an initialized CodeGraph self-index. Do not run `codegraph init` unless the operator explicitly asks.
-- Do not perform off-box retrieval evaluation unless the operator explicitly records runtime authorization for provider, endpoints, repository context, retention/training setting, cost/time limit, and timestamp.
-
-## Focused Validation
+Use this runbook from the SPEC-013 worktree:
 
 ```bash
-npx vitest run __tests__/cypher-parser.test.ts
-npx vitest run __tests__/cypher-runtime.test.ts
-npx vitest run __tests__/cli-query-command.test.ts
-npx vitest run __tests__/mcp-cypher-query.test.ts
-npx vitest run __tests__/cypher-recipes.test.ts
-npx vitest run __tests__/mcp-server-instructions.test.ts
+cd /Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/013-cypher-query-access
 ```
 
-Expected result: all focused tests pass. Tests use real temporary files and real SQLite.
+Do not run `codegraph init` here unless the operator explicitly asks. The live
+self-index commands below expect an existing `.codegraph/codegraph.db`.
 
-## Full Validation
+## Node 24 Activation
 
 ```bash
-npm run build
-npm run typecheck
-npm test
+nvm use
+node -v
 ```
 
-Expected result: build, typecheck, and full test suite pass on Node 24.11.1.
-
-## Slice 1 Demonstration
-
-Package API:
+Expected runtime: `v24.11.1`, matching `.nvmrc`. If shell startup does not load
+`nvm`, use the pinned binary explicitly:
 
 ```bash
-npx vitest run __tests__/cypher-runtime.test.ts
+export PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin
+node -v
 ```
 
-CLI:
+## Focused Tests
+
+Run the focused contract and guardrail suites:
 
 ```bash
-node dist/bin/codegraph.js query "MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5" --json
-printf '%s' 'MATCH (n:function)-[:calls]->(m:function) RETURN n.name, m.name ORDER BY n.name LIMIT 5' | node dist/bin/codegraph.js query - --json
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/cypher-parser.test.ts
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/cypher-runtime.test.ts
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/cli-query-command.test.ts
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/mcp-cypher-query.test.ts
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/mcp-server-instructions.test.ts
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/cypher-recipes.test.ts
 ```
 
-MCP:
-
-```text
-Call codegraph_query with query:
-MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5
-```
-
-Expected result: package, CLI, and MCP return the same bounded typed graph evidence. CLI `--json` and MCP text are byte-identical canonical JSON for the same state.
-
-## Slice 2 Demonstration
+Run the final focused guardrail bundle:
 
 ```bash
-node dist/bin/codegraph.js query "MATCH (n:function)-[:calls]->(m:function) WHERE n.name STARTS WITH 'get' RETURN n.name AS caller, count(m) AS calls ORDER BY calls DESC LIMIT 10" --json
-node dist/bin/codegraph.js query "MATCH (`source function`:function)-[:calls]->(target:function) RETURN `source function`.name, target.name LIMIT 5" --json
-node dist/bin/codegraph.js search "MATCH literal search term"
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/mcp-server-instructions.test.ts __tests__/cypher-recipes.test.ts
 ```
 
-Expected result: count/grouping, string predicates, backtick identifiers, aliases, stable ordering, and `search` alias behavior match the contracts.
+## Full Tests
 
-## Guard Probes
+```bash
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npm run build
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npm run typecheck
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npm test
+```
 
-| Probe | Command shape | Expected state |
-|---|---|---|
-| Oversized input | submit >10,000 characters | `CYPHER_INPUT_TOO_LONG`, no excerpt |
-| Unsupported write | `MATCH (n) DELETE n RETURN n` | diagnostic before execution |
-| Direct SQL | `SELECT * FROM nodes` | diagnostic before execution |
-| Undirected relationship | `MATCH (a)-[:calls]-(b) RETURN a` | diagnostic |
-| Unbounded path | `MATCH p = (a)-[:calls*]->(b) RETURN p` | `CYPHER_UNBOUNDED_PATH` |
-| Too-deep path | `MATCH p = (a)-[:calls*1..9]->(b) RETURN p` | `CYPHER_PATH_TOO_DEEP` |
-| Unknown property | `MATCH (n:function) RETURN n.updatedAt` | `CYPHER_UNKNOWN_PROPERTY` |
-| Timeout | deliberately expensive bounded query fixture | `CYPHER_TIMEOUT`, no rows |
-| Row cap | query with >100 rows and no `LIMIT` | 100 rows, `truncated: true` |
-| Read-only proof | run valid and invalid query then compare schema/data counts | unchanged |
+`npm run build` refreshes `dist/`; the package, CLI, and MCP examples below use
+the current built output.
 
-## Live Self-Index Recipes
+## Package API Example
 
-Record at least ten recipe rows in the evidence matrix. Required categories:
+```bash
+node <<'JS'
+const { queryCypher } = require('./dist/index.js');
 
-- callers of a function
-- bounded path between functions
-- hubs by count
-- potentially dead exports
-- route/component neighborhood
-- imports by module
-- async function callers
-- heuristic edge review
-- file-local relationship summary
-- source-position filtered relationship review
+(async () => {
+  const result = await queryCypher(
+    process.cwd(),
+    'MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5',
+  );
+  process.stdout.write(JSON.stringify(result));
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+JS
+```
 
-For each row, record query, surface, expected state, observed row count, truncation flag, representative output or expected-empty reason, parity hash when applicable, artifact path, reviewer, and date.
+Expected state: canonical Cypher result-union JSON. The result may be `success`,
+`diagnostic`, or `timeout`; do not fabricate row counts.
 
-## Retrieval Gates
+## CLI Examples
 
-1. Run retrieval-guardian after any change under `src/mcp/`.
-2. Run retrieval A/B only after explicit runtime operator authorization for off-box evaluation.
-3. If authorization is absent, record the retrieval A/B gate as blocked, not skipped or passed.
+Run a bounded Cypher query:
+
+```bash
+node dist/bin/codegraph.js query "MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5" --path "$PWD" --json
+```
+
+Run a bounded stdin query:
+
+```bash
+printf '%s' 'MATCH (n:function)-[:calls]->(m:function) RETURN n.name, m.name LIMIT 5' | node dist/bin/codegraph.js query - --path "$PWD" --json
+```
+
+Use the explicit keyword-search escape hatch (`codegraph search`) for non-Cypher
+search:
+
+```bash
+node dist/bin/codegraph.js search "MATCH" --path "$PWD" --json --limit 3
+```
+
+`codegraph query` enters Cypher mode only for `MATCH ...` input. Cypher mode
+uses `LIMIT` inside the query text; CLI search flags such as `--kind`, `--mode`,
+`--limit`, and `--file` are for keyword or hybrid search, not Cypher execution.
+
+## MCP Example
+
+The MCP tool is named `codegraph_query`; its schema requires `query` and accepts
+optional `projectPath`.
+
+```bash
+node <<'JS'
+const { ToolHandler } = require('./dist/mcp/tools');
+
+(async () => {
+  const handler = new ToolHandler(null);
+  try {
+    const result = await handler.execute('codegraph_query', {
+      projectPath: process.cwd(),
+      query: 'MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5',
+    });
+    const text = result.content.find((part) => part.type === 'text')?.text ?? '';
+    process.stdout.write(text);
+  } finally {
+    handler.closeAll();
+  }
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+JS
+```
+
+Expected state: `isError` remains false for success, empty, diagnostic,
+not-indexed, and timeout result-union states. `isError` is reserved for path or
+access refusals and tool malfunctions.
+
+## Existing Self-Index
+
+Check the current local index:
+
+```bash
+node dist/bin/codegraph.js status . --json
+```
+
+Run bounded live self-index queries:
+
+```bash
+node dist/bin/codegraph.js query "MATCH (n:function) WHERE n.name STARTS WITH 'q' RETURN n.filePath, count(*) AS callers ORDER BY callers DESC LIMIT 10" --path "$PWD" --json
+node dist/bin/codegraph.js query "MATCH (caller:function)-[:calls]->(target:function) RETURN caller.name AS callerName, target.name AS targetName ORDER BY callerName ASC, targetName ASC LIMIT 10" --path "$PWD" --json
+```
+
+Expected state: successful bounded rows, a truthful empty `success`, or a
+bounded diagnostic. Record actual output in evidence tasks; do not invent it.
+
+## Recipes
+
+Recipe commands live in
+`docs/ai/specs/013-cypher-query-access-recipes.md`. Validate the recipe document:
+
+```bash
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/cypher-recipes.test.ts
+```
+
+For each recipe used as evidence, run the package API, CLI, or MCP command from
+the recipe entry against the live self-index and record the actual state, row
+count, truncation flag, representative output or expected-empty reason, parity
+hash when applicable, artifact, reviewer, and date.
+
+## CLI/MCP Parity Hash Workflow
+
+Run this self-contained comparison against the current built `dist/`:
+
+```bash
+node <<'JS'
+const { createHash } = require('node:crypto');
+const { spawnSync } = require('node:child_process');
+const { ToolHandler } = require('./dist/mcp/tools');
+
+(async () => {
+  const projectRoot = process.cwd();
+  const query =
+    'MATCH (n:function) RETURN n.name ORDER BY n.name LIMIT 5';
+  const cli = spawnSync(
+    process.execPath,
+    ['dist/bin/codegraph.js', 'query', query, '--path', projectRoot, '--json'],
+  );
+  if (cli.status !== 0) {
+    process.stderr.write(cli.stderr);
+    process.exit(cli.status ?? 1);
+  }
+
+  const handler = new ToolHandler(null);
+  try {
+    const response = await handler.execute('codegraph_query', {
+      projectPath: projectRoot,
+      query,
+    });
+    const text = response.content.find((part) => part.type === 'text')?.text;
+    if (typeof text !== 'string') throw new Error('MCP response has no text');
+    const mcp = Buffer.from(text, 'utf8');
+    if (!cli.stdout.equals(mcp)) throw new Error('CLI/MCP byte mismatch');
+    process.stdout.write(
+      `${createHash('sha256').update(cli.stdout).digest('hex')}  ${cli.stdout.length} bytes\n`,
+    );
+  } finally {
+    handler.closeAll();
+  }
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+JS
+```
+
+Required result: the command prints one SHA-256 and byte count. A mismatch exits
+nonzero. Replace `query` with another bounded state when collecting a specific
+evidence row; the focused CLI/MCP suites cover valid, empty, capped, syntax,
+unsupported-write, oversized-input, payload-ceiling, timeout, and not-indexed
+states.
+
+## Guardrail Probes
+
+Run the focused guardrail suites:
+
+```bash
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts
+```
+
+Public CLI guard examples:
+
+```bash
+node dist/bin/codegraph.js query "MATCH (n) DELETE n RETURN n" --path "$PWD" --json
+node -e 'process.stdout.write("MATCH (n:function) WHERE n.name = \"" + "oversized".repeat(1260) + "\" RETURN n.name LIMIT 1")' | node dist/bin/codegraph.js query - --path "$PWD" --json
+printf '\377' | node dist/bin/codegraph.js query - --path "$PWD" --json
+```
+
+Package API direct-SQL guard:
+
+```bash
+node <<'JS'
+const { queryCypher } = require('./dist/index.js');
+
+(async () => {
+  const result = await queryCypher(
+    process.cwd(),
+    "UPDATE nodes SET name = 'forbidden' WHERE id = 'fn:entry'",
+  );
+  process.stdout.write(JSON.stringify(result));
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+JS
+```
+
+Required result: mutation and direct SQL are rejected before execution, oversized
+input returns `CYPHER_INPUT_TOO_LONG`, malformed stdin returns
+`CYPHER_INVALID_STDIN_ENCODING`, payload ceiling returns
+`CYPHER_OUTPUT_TOO_LARGE`, read-only snapshots remain unchanged, and timeout
+workers are replaced with no active-worker leak.
+
+## Retrieval A/B Authorization
+
+`codegraph_explore` remains the primary MCP retrieval tool. `codegraph_query` is
+default-listed for deliberate structured graph-language requests only.
+
+Run local retrieval steering checks:
+
+```bash
+env PATH=/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin:/usr/bin:/bin npx vitest run __tests__/mcp-server-instructions.test.ts
+```
+
+Do not run external/off-box retrieval A/B unless the operator explicitly records
+all of these authorization fields first:
+
+- provider
+- model/tool endpoints
+- repository context to send
+- retention/training setting
+- cost/time limit
+- approval timestamp
+
+If any field is absent, record `BLOCKED_BY_AUTHORIZATION` in
+`specs/013-cypher-query-access/evidence-matrix.md` and preserve local-only
+state:
+
+```bash
+rg -n "BLOCKED_BY_AUTHORIZATION|external runs=0|external sends=0|cost=0" specs/013-cypher-query-access/evidence-matrix.md
+```
+
+Blocked-without-authorization is an explicit T069 disposition. It does not prove
+external retrieval parity; it preserves the repository until a fully recorded
+runtime authorization exists.
