@@ -1278,6 +1278,57 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — Slice 2 count
     ]);
   });
 
+  it('groups node-only matches for the exact T057 single-node aggregate demo query', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const preparedSql: string[] = [];
+    const updatedAt = 1700000000000;
+    insertNode(fixture.db, {
+      id: 'fn:t057:queryCypher',
+      name: 'queryCypher',
+      qualifiedName: 'src/query/cypher.queryCypher',
+      filePath: 'src/query/cypher/index.ts',
+      startLine: 1200,
+    }, updatedAt);
+    insertNode(fixture.db, {
+      id: 'fn:t057:quoteIdentifier',
+      name: 'quoteIdentifier',
+      qualifiedName: 'src/query/cypher.quoteIdentifier',
+      filePath: 'src/query/cypher/index.ts',
+      startLine: 1210,
+    }, updatedAt);
+    insertNode(fixture.db, {
+      id: 'fn:t057:queryCommand',
+      name: 'queryCommand',
+      qualifiedName: 'src/bin.queryCommand',
+      filePath: 'src/bin/codegraph.ts',
+      startLine: 1220,
+    }, updatedAt);
+
+    const result = await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH (n:function) WHERE n.name STARTS WITH 'q' RETURN n.filePath, count(*) AS callers ORDER BY callers DESC LIMIT 10",
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    );
+
+    expect(result).not.toMatchObject({ status: 'diagnostic', code: 'CYPHER_DISCONNECTED_PATTERN' });
+    const success = expectSuccess(result);
+    expect(success.columns.map((column) => column.name)).toEqual(['n.filePath', 'callers']);
+    expect(success.effectiveCap).toBe(10);
+    expect(success.truncated).toBe(false);
+    expect(success.rows.map((row) => ({
+      filePath: scalarValue(row, 'n.filePath'),
+      callers: scalarValue(row, 'callers'),
+    }))).toEqual([
+      { filePath: 'src/query/cypher/index.ts', callers: 2 },
+      { filePath: 'src/bin/codegraph.ts', callers: 1 },
+    ]);
+    expect(preparedSql).toHaveLength(1);
+    expect(preparedSql[0]).toContain('FROM nodes n0');
+    expect(preparedSql[0]).toContain('GROUP BY n0.file_path');
+    expect(preparedSql[0]).not.toContain('JOIN edges');
+  });
+
   it('applies STARTS WITH, ENDS WITH, and CONTAINS while preserving Cypher null predicate semantics', async () => {
     const runtime = await loadCypherRuntimeContract();
     const fixture = createCypherRuntimeFixture();

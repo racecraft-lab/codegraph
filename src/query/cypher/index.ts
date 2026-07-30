@@ -112,6 +112,7 @@ type CypherParseSuccess = {
   };
   readonly where?: AstWhereClause;
   readonly returns: readonly AstReturnItem[];
+  readonly groupingKeys: readonly string[];
   readonly orderBy: readonly AstOrderItem[];
   readonly limit?: number;
   readonly literals: readonly AstLiteral[];
@@ -162,6 +163,12 @@ type AstRelationshipPattern = {
 type AstReturnItem = {
   readonly expression: string;
   readonly alias?: string;
+  readonly aggregate?: AstAggregateExpression;
+};
+
+type AstAggregateExpression = {
+  readonly function: 'count';
+  readonly argument: '*' | string;
 };
 
 type AstWhereClause = {
@@ -302,6 +309,13 @@ const CLAUSE_BOUNDARY_KEYWORDS = new Set(['RETURN', 'ORDER', 'LIMIT']);
 class DiagnosticThrown {
   constructor(readonly diagnostic: CypherDiagnostic) {}
 }
+
+type RuntimeStringPredicateOperator = 'STARTS WITH' | 'ENDS WITH' | 'CONTAINS';
+
+type SqlOperand = {
+  readonly sql: string;
+  readonly parameters: readonly unknown[];
+};
 
 class Lexer {
   private readonly tokens: Token[] = [];
@@ -462,7 +476,7 @@ class Lexer {
         return;
       }
 
-      if (current === '\\' && this.peek(1) === 'u') {
+      if (current === '\\' && (this.peek(1) === 'u' || this.peek(1) === 'U')) {
         this.failAt(
           startOffset,
           startLine,
@@ -475,7 +489,7 @@ class Lexer {
       }
 
       const codeUnit = current.charCodeAt(0);
-      if (codeUnit < 0x20) {
+      if (codeUnit < 0x20 || codeUnit === 0x7f) {
         this.failAt(
           startOffset,
           startLine,
@@ -751,6 +765,9 @@ class Parser {
     }
 
     const returns = this.parseReturnClause();
+    const groupingKeys = uniqueStrings(
+      returns.filter((item) => item.aggregate === undefined).map((item) => item.expression),
+    );
 
     const orderBy = this.isAtKeyword('ORDER') ? this.parseOrderByClause() : [];
     const limit = this.isAtKeyword('LIMIT') ? this.parseLimitClause() : undefined;
@@ -770,6 +787,7 @@ class Parser {
       status: 'success',
       match,
       returns,
+      groupingKeys,
       orderBy,
       ...(limit === undefined ? {} : { limit }),
       literals: this.literals,
@@ -831,12 +849,13 @@ class Parser {
       );
     }
 
-    if (relationships.length === 0) {
-      this.failCurrent(
+    if (relationships.length === 0 && pathVariableToken !== undefined) {
+      this.failToken(
+        pathVariableToken,
         'CYPHER_DISCONNECTED_PATTERN',
         'connected relationship pattern',
         'matchClause',
-        'MATCH requires one connected node-relationship chain.',
+        'Path variables require one connected node-relationship chain.',
       );
     }
 
@@ -1101,14 +1120,57 @@ class Parser {
   }
 
   private parseReturnItem(): AstReturnItem {
-    const expression = this.parseExpression('returnClause');
+    const aggregate = this.parseAggregateReturnExpression();
+    const expression = aggregate?.expression ?? this.parseExpression('returnClause');
     if (this.isAtKeyword('AS')) {
       this.advance();
       const alias = this.consumeIdentifier('alias identifier', 'returnClause').value;
       this.returnAliases.add(alias);
-      return { expression, alias };
+      return aggregate === undefined ? { expression, alias } : { expression, alias, aggregate: aggregate.aggregate };
     }
-    return { expression };
+    return aggregate === undefined ? { expression } : { expression, aggregate: aggregate.aggregate };
+  }
+
+  private parseAggregateReturnExpression(): { readonly expression: string; readonly aggregate: AstAggregateExpression } | undefined {
+    const functionToken = this.current();
+    if (functionToken.kind !== 'identifier' || !this.peekPunctuation(1, '(')) {
+      return undefined;
+    }
+
+    this.advance();
+    this.consumePunctuation('(', '"(" after aggregate function', 'returnClause');
+
+    const functionName = functionToken.value.toLowerCase();
+    if (functionName !== 'count') {
+      this.failToken(
+        functionToken,
+        'CYPHER_UNSUPPORTED_AGGREGATION',
+        'count(*) or count(expression)',
+        'returnClause',
+        'Only count aggregation is supported.',
+      );
+    }
+
+    if (this.isAtKeyword('DISTINCT')) {
+      this.failCurrent(
+        'CYPHER_UNSUPPORTED_CLAUSE',
+        'count argument without DISTINCT',
+        'returnClause',
+        'DISTINCT is not supported.',
+      );
+    }
+
+    const argument = this.isAtPunctuation('*') ? this.advance().value : this.parseExpression('returnClause');
+    this.consumePunctuation(')', '")" after aggregate argument', 'returnClause');
+
+    const aggregate: AstAggregateExpression = {
+      function: 'count',
+      argument: argument === '*' ? '*' : argument,
+    };
+    return {
+      expression: `count(${aggregate.argument})`,
+      aggregate,
+    };
   }
 
   private parseOrderByClause(): AstOrderItem[] {
@@ -1616,7 +1678,7 @@ function emitFixedRelationshipSql(parsed: CypherParseSuccess): CypherPlanSuccess
   const capPlan = createCapPlan(parsed.limit);
 
   const selectList = parsed.returns.map((item) => {
-    return `${emitReturnExpression(item.expression, context)} AS ${quoteIdentifier(item.alias ?? item.expression)}`;
+    return `${emitReturnItemExpression(item, context)} AS ${quoteIdentifier(item.alias ?? item.expression)}`;
   });
   const lines = [`SELECT ${selectList.join(', ')}`, 'FROM nodes n0'];
 
@@ -1643,6 +1705,10 @@ function emitFixedRelationshipSql(parsed: CypherParseSuccess): CypherPlanSuccess
   ];
   if (wherePredicates.length > 0) {
     lines.push(`WHERE ${wherePredicates.join(' AND ')}`);
+  }
+  const groupByClause = emitGroupByClause(parsed, context);
+  if (groupByClause !== undefined) {
+    lines.push(`GROUP BY ${groupByClause}`);
   }
   lines.push(`ORDER BY ${emitOrderByClause(parsed, context)}`);
   parameters.push(capPlan.probeLimit);
@@ -1691,11 +1757,13 @@ function emitVariableRelationshipSql(
     parameters,
   };
   const capPlan = createCapPlan(parsed.limit);
+  const aggregatesReturns = hasAggregateReturns(parsed);
+  const frontierCapBase = aggregatesReturns ? HARD_RESULT_CAP : capPlan.probeLimit;
   const frontierGuard = Math.max(
     capPlan.probeLimit,
-    capPlan.probeLimit * Math.max(1, range.upper) * VARIABLE_PATH_FRONTIER_MULTIPLIER,
+    frontierCapBase * Math.max(1, range.upper) * VARIABLE_PATH_FRONTIER_MULTIPLIER,
   );
-  const outputGuard = capPlan.probeLimit;
+  const outputGuard = aggregatesReturns ? frontierGuard : capPlan.probeLimit;
   const edgeAlias = `e${relationshipIndex}`;
   const edgeIndexName = edgeIndexNameForDirection(relationship.direction);
   const seedEdgePredicates = [
@@ -1712,18 +1780,19 @@ function emitVariableRelationshipSql(
     `instr(cg_path_0.visited_edge_ids, ',' || ${edgeAlias}.id || ',') = 0`,
   ].filter(isPresent);
   const selectList = parsed.returns.map((item) => {
-    return `${emitReturnExpression(item.expression, context)} AS ${quoteIdentifier(item.alias ?? item.expression)}`;
+    return `${emitReturnItemExpression(item, context)} AS ${quoteIdentifier(item.alias ?? item.expression)}`;
   });
   const internalSelectList = [
     `cg_bounded_paths.start_node_id AS ${quoteIdentifier(INTERNAL_PATH_START_COLUMN)}`,
     `cg_bounded_paths.current_node_id AS ${quoteIdentifier(INTERNAL_PATH_CURRENT_COLUMN)}`,
     `cg_bounded_paths.visited_edge_ids AS ${quoteIdentifier(INTERNAL_PATH_EDGE_IDS_COLUMN)}`,
   ];
+  const outputSelectList = aggregatesReturns ? selectList : [...selectList, ...internalSelectList];
   const startNodePredicates = emitNodePatternPredicates(startNode, 'n0', parameters);
   const orderByClause = parsed.orderBy.length > 0
     ? emitOrderByClause(parsed, context)
     : emitVariablePathIdentityOrder('cg_bounded_paths');
-  const boundedOrderByClause = parsed.orderBy.length > 0
+  const boundedOrderByClause = parsed.orderBy.length > 0 && !aggregatesReturns
     ? emitOrderByClause(parsed, boundedContext)
     : emitVariablePathIdentityOrder('cg_path_0');
 
@@ -1759,10 +1828,11 @@ function emitVariableRelationshipSql(
     `  ORDER BY ${boundedOrderByClause}`,
     '  LIMIT ?',
     ')',
-    `SELECT ${[...selectList, ...internalSelectList].join(', ')}`,
+    `SELECT ${outputSelectList.join(', ')}`,
     'FROM cg_bounded_paths',
     'JOIN nodes n0 ON n0.id = cg_bounded_paths.start_node_id',
     `JOIN nodes n${relationshipIndex + 1} ON n${relationshipIndex + 1}.id = cg_bounded_paths.current_node_id`,
+    emitGroupByClause(parsed, context) === undefined ? undefined : `GROUP BY ${emitGroupByClause(parsed, context)}`,
     `ORDER BY ${orderByClause}`,
     'LIMIT ?',
     capPlan.comment,
@@ -1828,6 +1898,26 @@ function emitReturnExpression(expression: string, context: SqlEmitContext): stri
   return emitPropertyExpression(propertyAccess.variable, propertyAccess.property, context);
 }
 
+function emitReturnItemExpression(item: AstReturnItem, context: SqlEmitContext): string {
+  return item.aggregate === undefined
+    ? emitReturnExpression(item.expression, context)
+    : emitAggregateExpression(item.aggregate, context);
+}
+
+function emitAggregateExpression(aggregate: AstAggregateExpression, context: SqlEmitContext): string {
+  if (aggregate.argument === '*') {
+    return 'count(*)';
+  }
+  return `count(${emitReturnExpression(aggregate.argument, context)})`;
+}
+
+function emitGroupByClause(parsed: CypherParseSuccess, context: SqlEmitContext): string | undefined {
+  if (!hasAggregateReturns(parsed) || parsed.groupingKeys.length === 0) {
+    return undefined;
+  }
+  return parsed.groupingKeys.map((expression) => emitReturnExpression(expression, context)).join(', ');
+}
+
 function emitOrderByClause(parsed: CypherParseSuccess, context: SqlEmitContext): string {
   if (parsed.orderBy.length > 0) {
     return parsed.orderBy.map((item) => emitOrderItem(item, parsed, context)).join(', ');
@@ -1840,14 +1930,25 @@ function emitOrderByClause(parsed: CypherParseSuccess, context: SqlEmitContext):
 }
 
 function emitOrderItem(item: AstOrderItem, parsed: CypherParseSuccess, context: SqlEmitContext): string {
-  const expression = expressionForAlias(item.expression, parsed.returns) ?? item.expression;
-  const sqlExpression = expression.includes('.') ? emitReturnExpression(expression, context) : expression;
+  const returnItem = returnItemForAlias(item.expression, parsed.returns);
+  const expression = returnItem?.expression ?? item.expression;
+  const sqlExpression = returnItem === undefined
+    ? emitReturnExpression(expression, context)
+    : emitReturnItemExpression(returnItem, context);
   const nullOrdering = item.direction === 'DESC' ? 'NULLS FIRST' : 'NULLS LAST';
   return `${sqlExpression} ${item.direction} ${nullOrdering}`;
 }
 
 function expressionForAlias(alias: string, returns: readonly AstReturnItem[]): string | undefined {
   return returns.find((item) => item.alias === alias)?.expression;
+}
+
+function returnItemForAlias(alias: string, returns: readonly AstReturnItem[]): AstReturnItem | undefined {
+  return returns.find((item) => item.alias === alias);
+}
+
+function hasAggregateReturns(parsed: CypherParseSuccess): boolean {
+  return parsed.returns.some((item) => item.aggregate !== undefined);
 }
 
 function emitMatchedChainIdentityOrder(match: CypherParseSuccess['match']): readonly string[] {
@@ -1991,46 +2092,84 @@ class WhereSqlEmitter {
       return `${left} IS NULL`;
     }
 
+    const stringPredicate = this.matchStringPredicateOperator();
+    if (stringPredicate !== undefined) {
+      return this.emitStringPredicateExpression(left, stringPredicate);
+    }
+
     const operator = this.consumeComparisonOperator();
     const right = this.emitValueOperand();
     return `${left} ${operator} ${right}`;
   }
 
   private emitPropertyOperand(): string {
+    return this.emitPropertyOperandSql().sql;
+  }
+
+  private emitPropertyOperandSql(): SqlOperand {
     const property = this.consumePropertyAccess();
-    return emitPropertyExpression(property.variable, property.property, this.context);
+    return {
+      sql: emitPropertyExpression(property.variable, property.property, this.context),
+      parameters: [],
+    };
   }
 
   private emitValueOperand(): string {
+    const operand = this.emitValueOperandSql();
+    this.context.parameters.push(...operand.parameters);
+    return operand.sql;
+  }
+
+  private emitValueOperandSql(): SqlOperand {
     const token = this.current();
     if (token?.kind === 'string') {
       this.advance();
-      this.context.parameters.push(token.value);
-      return '?';
+      return { sql: '?', parameters: [token.value] };
     }
     if (token?.kind === 'integer') {
       this.advance();
-      this.context.parameters.push(Number(token.value));
-      return '?';
+      return { sql: '?', parameters: [Number(token.value)] };
     }
     if (isKeywordToken(token, 'TRUE')) {
       this.advance();
-      this.context.parameters.push(1);
-      return '?';
+      return { sql: '?', parameters: [1] };
     }
     if (isKeywordToken(token, 'FALSE')) {
       this.advance();
-      this.context.parameters.push(0);
-      return '?';
+      return { sql: '?', parameters: [0] };
     }
     if (isKeywordToken(token, 'NULL')) {
       this.advance();
-      return 'NULL';
+      return { sql: 'NULL', parameters: [] };
     }
     if (this.isAtPropertyAccess()) {
-      return this.emitPropertyOperand();
+      return this.emitPropertyOperandSql();
     }
     throw new Error('SPEC-013 WHERE emitter expected a value operand.');
+  }
+
+  private emitStringPredicateExpression(leftSql: string, operator: RuntimeStringPredicateOperator): string {
+    const right = this.emitValueOperandSql();
+    const left = (): string => leftSql;
+    const rightSql = (): string => {
+      this.context.parameters.push(...right.parameters);
+      return right.sql;
+    };
+
+    const comparison =
+      operator === 'STARTS WITH'
+        ? `substr(${left()}, 1, length(${rightSql()})) = ${rightSql()}`
+        : operator === 'ENDS WITH'
+          ? `substr(${left()}, -length(${rightSql()})) = ${rightSql()}`
+          : `instr(${left()}, ${rightSql()}) > 0`;
+
+    return [
+      '(CASE',
+      `WHEN ${left()} IS NULL OR ${rightSql()} IS NULL THEN NULL`,
+      `WHEN typeof(${left()}) <> 'text' OR typeof(${rightSql()}) <> 'text' THEN NULL`,
+      `ELSE ${comparison}`,
+      'END)',
+    ].join(' ');
   }
 
   private consumePropertyAccess(): { readonly variable: string; readonly property: string } {
@@ -2072,6 +2211,21 @@ class WhereSqlEmitter {
     }
 
     throw new Error('SPEC-013 WHERE emitter expected comparison operator.');
+  }
+
+  private matchStringPredicateOperator(): RuntimeStringPredicateOperator | undefined {
+    if (this.matchKeyword('STARTS')) {
+      this.consumeKeyword('WITH');
+      return 'STARTS WITH';
+    }
+    if (this.matchKeyword('ENDS')) {
+      this.consumeKeyword('WITH');
+      return 'ENDS WITH';
+    }
+    if (this.matchKeyword('CONTAINS')) {
+      return 'CONTAINS';
+    }
+    return undefined;
   }
 
   private consumeKeyword(keyword: string): void {
@@ -2298,6 +2452,7 @@ type RuntimeGraphLoadResult =
 type SortableRuntimeRow = {
   readonly match: RuntimeMatch;
   readonly row: CypherRow;
+  readonly sortValues?: ReadonlyMap<string, unknown>;
 };
 
 type RuntimeMatchVisitor = (match: RuntimeMatch) => boolean;
@@ -2353,6 +2508,9 @@ async function queryCypherInternal(
     return parsed;
   }
 
+  const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
+  const shouldUseVariableSqlPlan = variableRelationshipIndex !== -1;
+  const shouldUseNodeOnlyAggregateSqlPlan = canUseNodeOnlyAggregateSqlPlan(parsed);
   const plan = emitParameterizedSql(parsed);
 
   if (options.forceTimeout === true) {
@@ -2366,9 +2524,15 @@ async function queryCypherInternal(
       : timeoutProbe;
   }
 
-  const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
-  if (variableRelationshipIndex !== -1) {
+  if (shouldUseVariableSqlPlan) {
+    if (hasAggregateReturns(parsed)) {
+      return queryAggregateCypherWithSqlPlan(projectRoot, parsed, plan, options);
+    }
     return queryVariableCypherWithSqlPlan(projectRoot, parsed, variableRelationshipIndex, plan, options);
+  }
+
+  if (shouldUseNodeOnlyAggregateSqlPlan) {
+    return queryAggregateCypherWithSqlPlan(projectRoot, parsed, plan, options);
   }
 
   const graphResult = await loadRuntimeGraph(projectRoot, options);
@@ -2385,14 +2549,16 @@ async function queryCypherInternal(
 
   const probedRows = orderedRows.slice(0, capPlan.effectiveCap + 1);
   const truncated = probedRows.length > capPlan.effectiveCap;
-  const result: CypherSuccessResult = {
+  return finalizeCypherSuccessResult({
     status: 'success',
     columns: parsed.returns.map((item) => ({ name: item.alias ?? item.expression })),
     rows: probedRows.slice(0, capPlan.effectiveCap).map((item) => item.row),
     effectiveCap: capPlan.effectiveCap,
     truncated,
-  };
+  }, options);
+}
 
+function finalizeCypherSuccessResult(result: CypherSuccessResult, options: CypherRuntimeTestOptions): CypherQueryResult {
   const serialized = serializeCypherResult(result, { payloadLimitBytes: options.payloadLimitBytes });
   return typeof serialized === 'string' ? result : serialized;
 }
@@ -2502,16 +2668,74 @@ async function queryVariableCypherWithSqlPlan(
 
   options.onRowsInspected?.(Math.min(projectedRows.length, capPlan.probeLimit));
   const probedRows = projectedRows.slice(0, capPlan.probeLimit);
-  const result: CypherSuccessResult = {
+  return finalizeCypherSuccessResult({
     status: 'success',
     columns: parsed.returns.map((item) => ({ name: item.alias ?? item.expression })),
     rows: probedRows.slice(0, capPlan.effectiveCap).map((item) => item.row),
     effectiveCap: capPlan.effectiveCap,
     truncated: sqlRowsResult.rows.length > capPlan.effectiveCap || probedRows.length > capPlan.effectiveCap,
-  };
+  }, options);
+}
 
-  const serialized = serializeCypherResult(result, { payloadLimitBytes: options.payloadLimitBytes });
-  return typeof serialized === 'string' ? result : serialized;
+async function queryAggregateCypherWithSqlPlan(
+  projectRoot: string,
+  parsed: CypherParseSuccess,
+  plan: CypherPlanSuccess,
+  options: CypherRuntimeTestOptions,
+): Promise<CypherQueryResult> {
+  const capPlan = createCapPlan(parsed.limit);
+  const sqlRowsResult = await executeCypherSqlForTests(
+    projectRoot,
+    { sql: plan.sql, boundParameters: plan.boundParameters, effectiveCap: capPlan.probeLimit },
+    { onSqlPrepare: options.onSqlPrepare },
+  );
+  if (sqlRowsResult.status !== 'success') {
+    return sqlRowsResult;
+  }
+
+  options.onRowsMaterialized?.(sqlRowsResult.rows.length);
+  options.onRowsInspected?.(Math.min(sqlRowsResult.rows.length, capPlan.probeLimit));
+  const probedRows = sqlRowsResult.rows.slice(0, capPlan.probeLimit);
+  return finalizeCypherSuccessResult({
+    status: 'success',
+    columns: parsed.returns.map((item) => ({ name: item.alias ?? item.expression })),
+    rows: probedRows.slice(0, capPlan.effectiveCap).map((row) => projectSqlAggregateRow(parsed, row)),
+    effectiveCap: capPlan.effectiveCap,
+    truncated: sqlRowsResult.rows.length > capPlan.effectiveCap,
+  }, options);
+}
+
+function projectSqlAggregateRow(parsed: CypherParseSuccess, sqlRow: Record<string, unknown>): CypherRow {
+  const row: CypherRow = {};
+  for (const item of parsed.returns) {
+    const columnName = item.alias ?? item.expression;
+    row[columnName] = { type: 'scalar', value: sqlProjectionScalarValue(sqlRow[columnName]) };
+  }
+  return row;
+}
+
+function canUseNodeOnlyAggregateSqlPlan(parsed: CypherParseSuccess): boolean {
+  return (
+    parsed.match.relationships.length === 0 &&
+    hasAggregateReturns(parsed) &&
+    parsed.returns.every((item) => item.aggregate !== undefined || splitPropertyAccess(item.expression) !== undefined)
+  );
+}
+
+function sqlProjectionScalarValue(value: unknown): CypherScalar {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (isRuntimeRecord(value)) {
+    return value;
+  }
+  return String(value);
 }
 
 type StorageNodeMapLoadResult =
@@ -2630,12 +2854,20 @@ function uniqueNumbers(values: readonly number[]): readonly number[] {
   return [...new Set(values)];
 }
 
+function uniqueStrings(values: readonly string[]): readonly string[] {
+  return [...new Set(values)];
+}
+
 function evaluateRuntimeRows(
   parsed: CypherParseSuccess,
   graph: RuntimeGraph,
   earlyRowLimit: number | undefined,
   options: CypherRuntimeTestOptions,
 ): readonly SortableRuntimeRow[] {
+  if (hasAggregateReturns(parsed)) {
+    return evaluateAggregateRuntimeRows(parsed, graph, options);
+  }
+
   const rows: SortableRuntimeRow[] = [];
   visitRuntimeMatches(parsed, graph, (match) => {
     if (evaluateWhereClause(parsed.where, match) !== true) {
@@ -2649,6 +2881,122 @@ function evaluateRuntimeRows(
     return earlyRowLimit === undefined || rows.length < earlyRowLimit;
   });
   return rows;
+}
+
+type RuntimeAggregateGroup = {
+  readonly keyValues: ReadonlyMap<string, CypherValue>;
+  readonly counts: Map<string, number>;
+  readonly firstMatch: RuntimeMatch;
+};
+
+function evaluateAggregateRuntimeRows(
+  parsed: CypherParseSuccess,
+  graph: RuntimeGraph,
+  options: CypherRuntimeTestOptions,
+): readonly SortableRuntimeRow[] {
+  const groups = new Map<string, RuntimeAggregateGroup>();
+
+  visitRuntimeMatches(parsed, graph, (match) => {
+    if (evaluateWhereClause(parsed.where, match) !== true) {
+      return true;
+    }
+
+    const keyValues = new Map(parsed.groupingKeys.map((expression) => {
+      return [expression, cypherValueForExpression(expression, match)] as const;
+    }));
+    const key = aggregateGroupKey(parsed.groupingKeys, keyValues);
+    let group = groups.get(key);
+    if (group === undefined) {
+      group = {
+        keyValues,
+        counts: initialAggregateCounts(parsed),
+        firstMatch: match,
+      };
+      groups.set(key, group);
+    }
+
+    for (const item of parsed.returns) {
+      if (item.aggregate === undefined) {
+        continue;
+      }
+      const current = group.counts.get(item.expression) ?? 0;
+      group.counts.set(item.expression, current + aggregateIncrement(item.aggregate, match));
+    }
+
+    options.onRowsMaterialized?.(groups.size);
+    return true;
+  });
+
+  if (groups.size === 0 && parsed.groupingKeys.length === 0) {
+    const emptyGroup: RuntimeAggregateGroup = {
+      keyValues: new Map(),
+      counts: initialAggregateCounts(parsed),
+      firstMatch: emptyRuntimeMatch(),
+    };
+    groups.set('__cg_aggregate_empty__', emptyGroup);
+  }
+
+  return [...groups.values()].map((group) => aggregateGroupToSortableRow(parsed, group));
+}
+
+function aggregateIncrement(aggregate: AstAggregateExpression, match: RuntimeMatch): number {
+  if (aggregate.argument === '*') {
+    return 1;
+  }
+  return isCountableCypherValue(cypherValueForExpression(aggregate.argument, match)) ? 1 : 0;
+}
+
+function initialAggregateCounts(parsed: CypherParseSuccess): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of parsed.returns) {
+    if (item.aggregate !== undefined) {
+      counts.set(item.expression, 0);
+    }
+  }
+  return counts;
+}
+
+function aggregateGroupToSortableRow(parsed: CypherParseSuccess, group: RuntimeAggregateGroup): SortableRuntimeRow {
+  const row: CypherRow = {};
+  const sortValues = new Map<string, unknown>();
+
+  for (const item of parsed.returns) {
+    const columnName = item.alias ?? item.expression;
+    const value = item.aggregate === undefined
+      ? group.keyValues.get(item.expression) ?? cypherValueForExpression(item.expression, group.firstMatch)
+      : { type: 'scalar' as const, value: group.counts.get(item.expression) ?? 0 };
+    row[columnName] = value;
+
+    const sortValue = sortValueForCypherValue(value);
+    sortValues.set(item.expression, sortValue);
+    if (item.alias !== undefined) {
+      sortValues.set(item.alias, sortValue);
+    }
+  }
+
+  return {
+    match: group.firstMatch,
+    row,
+    sortValues,
+  };
+}
+
+function aggregateGroupKey(
+  groupingKeys: readonly string[],
+  keyValues: ReadonlyMap<string, CypherValue>,
+): string {
+  return JSON.stringify(groupingKeys.map((expression) => {
+    const value = keyValues.get(expression);
+    return value === undefined ? null : sortValueForCypherValue(value);
+  }));
+}
+
+function emptyRuntimeMatch(): RuntimeMatch {
+  return {
+    nodes: new Map(),
+    relationships: new Map(),
+    identity: [],
+  };
 }
 
 function visitRuntimeMatches(parsed: CypherParseSuccess, graph: RuntimeGraph, visitor: RuntimeMatchVisitor): void {
@@ -2950,6 +3298,11 @@ class RuntimeWhereEvaluator {
       return isNot ? !isNull : isNull;
     }
 
+    const stringPredicate = this.matchStringPredicateOperator();
+    if (stringPredicate !== undefined) {
+      return evaluateRuntimeStringPredicate(left, this.evaluateValueOperand(), stringPredicate);
+    }
+
     const operator = this.consumeComparisonOperator();
     const right = this.evaluateValueOperand();
     if (left === null || right === null) {
@@ -3051,6 +3404,25 @@ class RuntimeWhereEvaluator {
     return '=';
   }
 
+  private matchStringPredicateOperator(): RuntimeStringPredicateOperator | undefined {
+    if (this.matchKeyword('STARTS')) {
+      if (!this.matchKeyword('WITH')) {
+        return undefined;
+      }
+      return 'STARTS WITH';
+    }
+    if (this.matchKeyword('ENDS')) {
+      if (!this.matchKeyword('WITH')) {
+        return undefined;
+      }
+      return 'ENDS WITH';
+    }
+    if (this.matchKeyword('CONTAINS')) {
+      return 'CONTAINS';
+    }
+    return undefined;
+  }
+
   private matchKeyword(keyword: string): boolean {
     if (!isKeywordToken(this.current(), keyword)) {
       return false;
@@ -3083,6 +3455,28 @@ class RuntimeWhereEvaluator {
 
   private advance(): void {
     this.index += 1;
+  }
+}
+
+function evaluateRuntimeStringPredicate(
+  left: CypherScalar,
+  right: CypherScalar,
+  operator: RuntimeStringPredicateOperator,
+): RuntimeTruth {
+  if (left === null || right === null) {
+    return null;
+  }
+  if (typeof left !== 'string' || typeof right !== 'string') {
+    return null;
+  }
+
+  switch (operator) {
+    case 'STARTS WITH':
+      return left.startsWith(right);
+    case 'ENDS WITH':
+      return left.endsWith(right);
+    case 'CONTAINS':
+      return left.includes(right);
   }
 }
 
@@ -3127,8 +3521,8 @@ function compareRuntimeRows(left: SortableRuntimeRow, right: SortableRuntimeRow,
     for (const item of parsed.orderBy) {
       const expression = expressionForAlias(item.expression, parsed.returns) ?? item.expression;
       const comparison = compareNullableSortValues(
-        sortValueForExpression(expression, left.match),
-        sortValueForExpression(expression, right.match),
+        sortValueForSortableExpression(expression, left),
+        sortValueForSortableExpression(expression, right),
         item.direction,
       );
       if (comparison !== 0) {
@@ -3140,8 +3534,8 @@ function compareRuntimeRows(left: SortableRuntimeRow, right: SortableRuntimeRow,
 
   for (const item of parsed.returns) {
     const comparison = compareNullableSortValues(
-      sortValueForExpression(item.expression, left.match),
-      sortValueForExpression(item.expression, right.match),
+      sortValueForSortableExpression(item.expression, left),
+      sortValueForSortableExpression(item.expression, right),
       'ASC',
     );
     if (comparison !== 0) {
@@ -3151,8 +3545,19 @@ function compareRuntimeRows(left: SortableRuntimeRow, right: SortableRuntimeRow,
   return compareSortLists(left.match.identity, right.match.identity);
 }
 
+function sortValueForSortableExpression(expression: string, row: SortableRuntimeRow): unknown {
+  if (row.sortValues?.has(expression)) {
+    return row.sortValues.get(expression);
+  }
+  return sortValueForExpression(expression, row.match);
+}
+
 function sortValueForExpression(expression: string, match: RuntimeMatch): unknown {
   const value = cypherValueForExpression(expression, match);
+  return sortValueForCypherValue(value);
+}
+
+function sortValueForCypherValue(value: CypherValue): unknown {
   switch (value.type) {
     case 'scalar':
       return value.value;
@@ -3167,6 +3572,10 @@ function sortValueForExpression(expression: string, match: RuntimeMatch): unknow
         ...value.value.relationships.map(relationshipIdentity),
       ];
   }
+}
+
+function isCountableCypherValue(value: CypherValue): boolean {
+  return value.type !== 'scalar' || value.value !== null;
 }
 
 function nodePropertyValue(node: StorageNodeRow, property: string): CypherScalar {

@@ -1011,8 +1011,8 @@ For each task:
 | Foundational test harness | T008-T012 | 5/5 | Complete: real SQLite, CLI, MCP, recipe, and evidence helpers; 4 files/6 tests passed. |
 | 1 — bounded connected-path querying | T013-T031 | 19/19 | Complete. T031 remediated the live variable-path OOM and subsequent false-empty frontier starvation; package API, positional CLI, and MCP now return the same non-empty 9,658-byte canonical payload, and all focused suites/build/typecheck pass. The private query module still exceeds the planning estimate, so the size signal remains for the reviewability gate. |
 | 1 — safe-surface closure | T032-T040 | 9/9 | Complete: 81/81 focused safety tests pass; all nine CLI/MCP states are byte-identical; read-only snapshots, timeout worker cleanup, malformed stdin, and retrieval steering are verified. |
-| 2 — language and recipe closure | T041-T057 | 7/17 | RED complete: 25 intended failures, 89 passes, and 0 unexpected failures across parser, runtime, CLI, MCP, and recipe suites; GREEN begins at T048. |
-| Final safety and retrieval closure | T058-T070 | 0/13 | US3 guardrails, parity, retrieval gates, and evidence. |
+| 2 — language and recipe closure | T041-T057 | 17/17 | Complete: parser 24/24, runtime 31/31, CLI 29/29, MCP 27/27, and recipes 4/4 pass; the exact live CLI/MCP aggregate query returns 9 byte-identical rows with SHA-256 c8bb672e40cd28585fc46efae272af21cc8902d96fb3f82a1a3c920a1654fa06. T057 required one node-only MATCH remediation. The private query module is 3,924 lines and remains a material reviewability signal. |
+| Final safety and retrieval closure | T058-T070 | 0/13 | In progress: US3 guardrails, parity, retrieval gates, and evidence, beginning at T058. |
 | Polish and delivery evidence | T071-T079 | 0/9 | Changelog, UAT, parity, PR packet, and hygiene. |
 
 ---

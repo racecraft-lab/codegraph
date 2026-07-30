@@ -138,22 +138,22 @@
 
 ### GREEN: Implementation
 
-- [ ] T048 [US2] Implement `count(*)`, `count(expr)`, implicit grouping by every returned non-aggregate item, rejected unsupported aggregation, and aggregate-aware ordering in `src/query/cypher/index.ts`. Satisfies FR-017, FR-018, FR-019.
-- [ ] T049 [US2] Implement `STARTS WITH`, `ENDS WITH`, and `CONTAINS` with documented three-valued null semantics and supported string-value checks in `src/query/cypher/index.ts`. Satisfies FR-011, FR-012.
-- [ ] T050 [US2] Implement backtick-escaped identifiers and aliases, doubled-backtick unescaping, unsupported control/Unicode escape diagnostics, exact case-sensitive name matching, and no Unicode normalization in `src/query/cypher/index.ts`. Satisfies FR-014, FR-015.
-- [ ] T051 [US2] Extend canonical serialization in `src/query/cypher/serializer.ts` for aggregate rows, opaque values by canonical JSON bytes, deterministic grouped results, recipe output states, and output-size diagnostics. Satisfies FR-019, FR-020, FR-026.
-- [ ] T052 [US2] Add `codegraph search <text>` and final table rendering polish in `src/bin/codegraph.ts`, preserving legacy `query` behavior outside Cypher routing and keeping Cypher limits inside query text. Satisfies FR-001, FR-025, FR-027.
-- [ ] T053 [US2] Complete final MCP schema, guidance text, recipe-compatible result mapping, and success-shaped diagnostic/timeout states in `src/mcp/tools.ts`. Satisfies FR-028.
-- [ ] T054 [US2] Write at least ten documented recipes and guard probes in `docs/ai/specs/013-cypher-query-access-recipes.md`, including callers, path, hub, dead-export, count/grouping, string predicate, backtick identifier, row cap, path cap, timeout, read-only, malformed input, payload ceiling, CLI/MCP parity, and expected-empty examples. Satisfies FR-029, SC-004.
-- [ ] T055 [US2] Run Slice 2 focused green tests and record commands/statuses in `specs/013-cypher-query-access/evidence-matrix.md`: `npx vitest run __tests__/cypher-parser.test.ts`, `npx vitest run __tests__/cypher-runtime.test.ts`, `npx vitest run __tests__/cli-query-command.test.ts`, `npx vitest run __tests__/mcp-cypher-query.test.ts`, and `npx vitest run __tests__/cypher-recipes.test.ts`.
+- [X] T048 [US2] Implement `count(*)`, `count(expr)`, implicit grouping by every returned non-aggregate item, rejected unsupported aggregation, and aggregate-aware ordering in `src/query/cypher/index.ts`. Satisfies FR-017, FR-018, FR-019.
+- [X] T049 [US2] Implement `STARTS WITH`, `ENDS WITH`, and `CONTAINS` with documented three-valued null semantics and supported string-value checks in `src/query/cypher/index.ts`. Satisfies FR-011, FR-012.
+- [X] T050 [US2] Implement backtick-escaped identifiers and aliases, doubled-backtick unescaping, unsupported control/Unicode escape diagnostics, exact case-sensitive name matching, and no Unicode normalization in `src/query/cypher/index.ts`. Satisfies FR-014, FR-015.
+- [X] T051 [US2] Extend canonical serialization in `src/query/cypher/serializer.ts` for aggregate rows, opaque values by canonical JSON bytes, deterministic grouped results, recipe output states, and output-size diagnostics. Satisfies FR-019, FR-020, FR-026.
+- [X] T052 [US2] Add `codegraph search <text>` and final table rendering polish in `src/bin/codegraph.ts`, preserving legacy `query` behavior outside Cypher routing and keeping Cypher limits inside query text. Satisfies FR-001, FR-025, FR-027.
+- [X] T053 [US2] Complete final MCP schema, guidance text, recipe-compatible result mapping, and success-shaped diagnostic/timeout states in `src/mcp/tools.ts`. Satisfies FR-028.
+- [X] T054 [US2] Write at least ten documented recipes and guard probes in `docs/ai/specs/013-cypher-query-access-recipes.md`, including callers, path, hub, dead-export, count/grouping, string predicate, backtick identifier, row cap, path cap, timeout, read-only, malformed input, payload ceiling, CLI/MCP parity, and expected-empty examples. Satisfies FR-029, SC-004.
+- [X] T055 [US2] Run Slice 2 focused green tests and record commands/statuses in `specs/013-cypher-query-access/evidence-matrix.md`: `npx vitest run __tests__/cypher-parser.test.ts`, `npx vitest run __tests__/cypher-runtime.test.ts`, `npx vitest run __tests__/cli-query-command.test.ts`, `npx vitest run __tests__/mcp-cypher-query.test.ts`, and `npx vitest run __tests__/cypher-recipes.test.ts`.
 
 ### REFACTOR
 
-- [ ] T056 [US2] Refactor `src/query/cypher/index.ts`, `src/query/cypher/serializer.ts`, `src/bin/codegraph.ts`, and `src/mcp/tools.ts` only after green tests to keep the language subset private, remove duplication, preserve public contracts, and stay within the Slice 2 reviewability budget.
+- [X] T056 [US2] Refactor `src/query/cypher/index.ts`, `src/query/cypher/serializer.ts`, `src/bin/codegraph.ts`, and `src/mcp/tools.ts` only after green tests to keep the language subset private, remove duplication, preserve public contracts, and stay within the Slice 2 reviewability budget.
 
 ### VERIFY
 
-- [ ] T057 [US2] Demonstrate Slice 2 independently and record evidence in `specs/013-cypher-query-access/evidence-matrix.md`: package API count/grouping query, CLI `node dist/bin/codegraph.js query "MATCH (n:function) WHERE n.name STARTS WITH 'q' RETURN n.filePath, count(*) AS callers ORDER BY callers DESC LIMIT 10" --json`, CLI `codegraph search` escape-hatch search, MCP `codegraph_query` parity hash, and representative recipe outputs or expected-empty dispositions.
+- [X] T057 [US2] Demonstrate Slice 2 independently and record evidence in `specs/013-cypher-query-access/evidence-matrix.md`: package API count/grouping query, CLI `node dist/bin/codegraph.js query "MATCH (n:function) WHERE n.name STARTS WITH 'q' RETURN n.filePath, count(*) AS callers ORDER BY callers DESC LIMIT 10" --json`, CLI `codegraph search` escape-hatch search, MCP `codegraph_query` parity hash, and representative recipe outputs or expected-empty dispositions.
 
 **Checkpoint**: Slice 2 is independently demonstrable across package API, CLI, MCP, documented recipes, and live self-index evidence slots.
 

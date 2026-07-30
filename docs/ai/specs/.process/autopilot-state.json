@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: T048 implement count and implicit grouping",
-  "updated_at": "2026-07-30T10:40:00Z",
+  "active_step": "Phase 7: T058 final runtime guardrail RED contracts",
+  "updated_at": "2026-07-30T12:06:54Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -616,7 +616,17 @@
       "T044",
       "T045",
       "T046",
-      "T047"
+      "T047",
+      "T048",
+      "T049",
+      "T050",
+      "T051",
+      "T052",
+      "T053",
+      "T054",
+      "T055",
+      "T056",
+      "T057"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -703,10 +713,11 @@
         "reviewability_signal": "T039 removed 27 net lines across shared transport mapping, but the private query module remains materially larger than the planning estimate; carry the size warning into the reviewability gate."
       },
       "slice_2_us2": {
-        "status": "in_progress",
+        "status": "completed",
         "tasks": "T041-T057",
-        "completed": 7,
+        "completed": 17,
         "total": 17,
+        "red_checkpoint_commit": "651d1a1b",
         "red_evidence": {
           "command": "npx vitest run __tests__/cypher-parser.test.ts __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/cypher-recipes.test.ts",
           "test_files": "5 failed / 5 total",
@@ -720,10 +731,36 @@
             "recipe evidence placeholders"
           ],
           "unexpected_failures": 0
-        }
+        },
+        "green_evidence": {
+          "parser": "24/24 passed",
+          "runtime": "31/31 passed including exact node-only aggregate acceptance regression",
+          "cli": "29/29 passed",
+          "mcp": "27/27 passed",
+          "recipes": "4/4 passed",
+          "combined": "115/115 passed after the added T057 acceptance regression; parser plus runtime 55/55.",
+          "typecheck": "passed",
+          "build": "passed",
+          "diff_check": "passed"
+        },
+        "live_evidence": {
+          "package_count_grouping": "success; 10 rows; SHA-256 0ae6cbecc7574ce6fd673f68a2f53d5bf9c17f5745e37a51470e26ed48c5d122",
+          "required_cli": "success; 9 grouped rows; 1136 bytes; SHA-256 c8bb672e40cd28585fc46efae272af21cc8902d96fb3f82a1a3c920a1654fa06",
+          "mcp_parity": "isError=false; byte-identical to CLI; SHA-256 c8bb672e40cd28585fc46efae272af21cc8902d96fb3f82a1a3c920a1654fa06",
+          "search_escape_hatch": "success; 3 results",
+          "recipes": "three representative successes plus one deliberate expected-empty success",
+          "self_index": "existing local index reused; no init or index"
+        },
+        "acceptance_remediation": {
+          "status": "resolved",
+          "observed": "The exact required node-only aggregate query initially returned CYPHER_DISCONNECTED_PATTERN.",
+          "resolution": "Node-only MATCH patterns are accepted and node-only aggregate projections execute through the bounded read-only SQL plan; path-variable patterns still require a connected relationship.",
+          "regression": "Real SQLite exact-query test asserts grouping, ordering, cap behavior, one prepared SQL statement, nodes source, GROUP BY, and no edge join."
+        },
+        "reviewability_signal": "T056 removed four net lines, but src/query/cypher/index.ts is 3924 lines after the T057 remediation and remains materially above the planning estimate; carry this warning into post reviewability gates."
       },
       "final_us3": {
-        "status": "pending",
+        "status": "in_progress",
         "tasks": "T058-T070"
       },
       "polish_and_delivery": {
@@ -839,11 +876,11 @@
     },
     {
       "step": "Phase 7: Implement Slice 2 US2 practical recipes (T041-T057)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement final US3 safety and retrieval closure (T058-T070)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement polish and delivery evidence (T071-T079)",

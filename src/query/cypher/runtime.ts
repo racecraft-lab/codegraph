@@ -251,7 +251,7 @@ function timeoutResult(): CypherRuntimeTimeoutResult {
     status: 'timeout',
     code: 'CYPHER_TIMEOUT',
     deadlineMs: CYPHER_RUNTIME_DEADLINE_MS,
-    guidance: 'Query exceeded the fixed Cypher deadline; narrow MATCH, WHERE, RETURN, or LIMIT.',
+    guidance: 'Query exceeded the fixed Cypher deadline; narrow MATCH relationship depth, WHERE, RETURN, or LIMIT.',
   };
 }
 

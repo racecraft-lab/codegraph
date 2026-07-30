@@ -410,6 +410,124 @@ function startsWithCypherMatch(query: string): boolean {
   return /^\s*MATCH\b/i.test(query);
 }
 
+type LegacySearchCliOptions = {
+  readonly path?: string;
+  readonly limit?: string;
+  readonly kind?: string;
+  readonly mode?: string;
+  readonly json?: boolean;
+};
+
+async function runLegacySearchCli(searchText: string, options: LegacySearchCliOptions): Promise<void> {
+  const projectPath = resolveProjectPath(options.path);
+
+  if (!isInitialized(projectPath)) {
+    error(`CodeGraph not initialized in ${projectPath}`);
+    process.exit(1);
+  }
+
+  const { default: CodeGraph } = await loadCodeGraph();
+  const cg = await CodeGraph.open(projectPath);
+
+  const limit = parseInt(options.limit || '10', 10);
+
+  // Coerce mode in the action handler (SPEC-003 FR-002; contracts/mcp-cli-surface.md):
+  // the CLI surface defaults an unspecified OR unknown/out-of-enum value to `auto`
+  // — NEVER a commander `choices()` rejection, so a mistyped mode still returns
+  // keyword-eligible results and exits 0 (never-error posture, Constitution VI).
+  const mode: SearchMode =
+    options.mode === 'keyword' ||
+    options.mode === 'semantic' ||
+    options.mode === 'hybrid' ||
+    options.mode === 'auto'
+      ? options.mode
+      : 'auto';
+
+  // Production async-acquisition pattern: for any semantic-eligible mode warm the
+  // bounded, budget-capped query-vector cache BEFORE the synchronous search so the
+  // fused arm can consume it. `acquireQueryVectorForSearch` NEVER rejects (returns
+  // `{ vector: null, model: null }` with no provider), so this degrades cleanly to
+  // keyword when no embedding endpoint is configured.
+  if (mode !== 'keyword') {
+    await cg.acquireQueryVectorForSearch(searchText);
+  }
+
+  const detailed = cg.searchNodesDetailed(searchText, {
+    limit,
+    kinds: options.kind ? [options.kind as any] : undefined,
+    mode,
+  });
+  const rawResults = detailed.results;
+
+  // Mirror the MCP search down-rank so the CLI also surfaces the
+  // hand-written implementation before protobuf/gRPC scaffolding
+  // when both share a name. See extraction/generated-detection.ts.
+  const { isGeneratedFile } = await import('../extraction/generated-detection');
+  const results = [...rawResults].sort((a, b) => {
+    const aGen = isGeneratedFile(a.node.filePath) ? 1 : 0;
+    const bGen = isGeneratedFile(b.node.filePath) ? 1 : 0;
+    return aGen - bGen;
+  });
+
+  if (options.json) {
+    // FR-008 machine fields: attach embedMs/fusionMs to each result when the semantic
+    // arm ran; a no-op (identity) on the keyword/degraded path so the dormant --json
+    // shape stays byte-stable (no added fields).
+    console.log(JSON.stringify(withJsonTiming(results, detailed.timing), null, 2));
+  } else {
+    if (results.length === 0) {
+      info(`No results found for "${searchText}"`);
+      // FR-015 / review item 1: a degraded-AND-empty search still shows the hint —
+      // the early return here used to drop it (the footer only rendered on the
+      // non-empty branch). Printed WITHOUT chalk so the pinned contract string stays
+      // byte-exact; keyword/healthy-empty carry a null degradation → no footer, so
+      // explicit `--mode keyword` empty output stays byte-identical to today (SC-004).
+      if (detailed.degradation) {
+        console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
+      }
+    } else {
+      console.log(chalk.bold(`\nSearch Results for "${searchText}":\n`));
+
+      // Results arrive already ranked by relevance, so the order conveys
+      // it. We don't print the raw score: it's an unbounded BM25/FTS value
+      // (relative-ranking only), and the old `(score * 100)%` rendered it
+      // as nonsensical percentages like "12042%" (#1045). The MCP search
+      // tool likewise shows no score. Raw `score` stays in --json output.
+      for (const result of results) {
+        const node = result.node;
+        const location = `${node.filePath}:${node.startLine}`;
+
+        // FR-012: append the inline provenance tag on the primary line in fused modes.
+        // `provenanceTag` returns '' for a keyword/degraded hit (no `matchType`), so the
+        // #1045 no-score human layout stays byte-identical on the dormant path (SC-004).
+        console.log(
+          chalk.cyan(node.kind.padEnd(12)) +
+          chalk.white(node.name) +
+          chalk.dim(provenanceTag(result.matchType))
+        );
+        console.log(chalk.dim(`  ${location}`));
+        if (node.signature) {
+          console.log(chalk.dim(`  ${node.signature}`));
+        }
+        console.log();
+      }
+
+      // Results LEAD (FR-005); the FR-008 timing footer (semantic arm ran) or the
+      // FR-015 degradation hint (degraded) FOLLOWS. Mutually exclusive; keyword mode
+      // and the healthy-empty case emit neither (byte-identical to today, SC-004).
+      // Printed WITHOUT chalk so the pinned contract strings stay byte-exact — no ANSI
+      // escapes wrapping the FR-015 literals a consumer may parse.
+      if (detailed.timing) {
+        console.log(timingFooterLine(detailed.timing));
+      } else if (detailed.degradation) {
+        console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
+      }
+    }
+  }
+
+  cg.destroy();
+}
+
 function unsupportedCypherCliFlagDiagnostic(argv: readonly string[] = process.argv): CypherDiagnosticResult | undefined {
   for (const flag of CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS) {
     const matched = argv.find((arg) => {
@@ -1611,6 +1729,27 @@ program
   });
 
 /**
+ * codegraph search <search>
+ */
+program
+  .command('search <search>')
+  .description('Search for symbols in the codebase')
+  .option('-p, --path <path>', 'Project path')
+  .option('-l, --limit <number>', 'Maximum results', '10')
+  .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
+  .option('-m, --mode <mode>', 'Search mode: keyword | semantic | hybrid | auto (default: auto)')
+  .option('--file <file>', 'Search file filter')
+  .option('-j, --json', 'Output as JSON')
+  .action(async (search: string, options: LegacySearchCliOptions) => {
+    try {
+      await runLegacySearchCli(search, options);
+    } catch (err) {
+      error(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+/**
  * codegraph query <search>
  */
 program
@@ -1653,111 +1792,7 @@ program
         return;
       }
 
-      if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
-        process.exit(1);
-      }
-
-      const { default: CodeGraph } = await loadCodeGraph();
-      const cg = await CodeGraph.open(projectPath);
-
-      const limit = parseInt(options.limit || '10', 10);
-
-      // Coerce mode in the action handler (SPEC-003 FR-002; contracts/mcp-cli-surface.md):
-      // the CLI surface defaults an unspecified OR unknown/out-of-enum value to `auto`
-      // — NEVER a commander `choices()` rejection, so a mistyped mode still returns
-      // keyword-eligible results and exits 0 (never-error posture, Constitution VI).
-      const mode: SearchMode =
-        options.mode === 'keyword' ||
-        options.mode === 'semantic' ||
-        options.mode === 'hybrid' ||
-        options.mode === 'auto'
-          ? options.mode
-          : 'auto';
-
-      // Production async-acquisition pattern: for any semantic-eligible mode warm the
-      // bounded, budget-capped query-vector cache BEFORE the synchronous search so the
-      // fused arm can consume it. `acquireQueryVectorForSearch` NEVER rejects (returns
-      // `{ vector: null, model: null }` with no provider), so this degrades cleanly to
-      // keyword when no embedding endpoint is configured.
-      if (mode !== 'keyword') {
-        await cg.acquireQueryVectorForSearch(searchText);
-      }
-
-      const detailed = cg.searchNodesDetailed(searchText, {
-        limit,
-        kinds: options.kind ? [options.kind as any] : undefined,
-        mode,
-      });
-      const rawResults = detailed.results;
-
-      // Mirror the MCP search down-rank so the CLI also surfaces the
-      // hand-written implementation before protobuf/gRPC scaffolding
-      // when both share a name. See extraction/generated-detection.ts.
-      const { isGeneratedFile } = await import('../extraction/generated-detection');
-      const results = [...rawResults].sort((a, b) => {
-        const aGen = isGeneratedFile(a.node.filePath) ? 1 : 0;
-        const bGen = isGeneratedFile(b.node.filePath) ? 1 : 0;
-        return aGen - bGen;
-      });
-
-      if (options.json) {
-        // FR-008 machine fields: attach embedMs/fusionMs to each result when the semantic
-        // arm ran; a no-op (identity) on the keyword/degraded path so the dormant --json
-        // shape stays byte-stable (no added fields).
-        console.log(JSON.stringify(withJsonTiming(results, detailed.timing), null, 2));
-      } else {
-        if (results.length === 0) {
-          info(`No results found for "${searchText}"`);
-          // FR-015 / review item 1: a degraded-AND-empty search still shows the hint —
-          // the early return here used to drop it (the footer only rendered on the
-          // non-empty branch). Printed WITHOUT chalk so the pinned contract string stays
-          // byte-exact; keyword/healthy-empty carry a null degradation → no footer, so
-          // explicit `--mode keyword` empty output stays byte-identical to today (SC-004).
-          if (detailed.degradation) {
-            console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
-          }
-        } else {
-          console.log(chalk.bold(`\nSearch Results for "${searchText}":\n`));
-
-          // Results arrive already ranked by relevance, so the order conveys
-          // it. We don't print the raw score: it's an unbounded BM25/FTS value
-          // (relative-ranking only), and the old `(score * 100)%` rendered it
-          // as nonsensical percentages like "12042%" (#1045). The MCP search
-          // tool likewise shows no score. Raw `score` stays in --json output.
-          for (const result of results) {
-            const node = result.node;
-            const location = `${node.filePath}:${node.startLine}`;
-
-            // FR-012: append the inline provenance tag on the primary line in fused modes.
-            // `provenanceTag` returns '' for a keyword/degraded hit (no `matchType`), so the
-            // #1045 no-score human layout stays byte-identical on the dormant path (SC-004).
-            console.log(
-              chalk.cyan(node.kind.padEnd(12)) +
-              chalk.white(node.name) +
-              chalk.dim(provenanceTag(result.matchType))
-            );
-            console.log(chalk.dim(`  ${location}`));
-            if (node.signature) {
-              console.log(chalk.dim(`  ${node.signature}`));
-            }
-            console.log();
-          }
-
-          // Results LEAD (FR-005); the FR-008 timing footer (semantic arm ran) or the
-          // FR-015 degradation hint (degraded) FOLLOWS. Mutually exclusive; keyword mode
-          // and the healthy-empty case emit neither (byte-identical to today, SC-004).
-          // Printed WITHOUT chalk so the pinned contract strings stay byte-exact — no ANSI
-          // escapes wrapping the FR-015 literals a consumer may parse.
-          if (detailed.timing) {
-            console.log(timingFooterLine(detailed.timing));
-          } else if (detailed.degradation) {
-            console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
-          }
-        }
-      }
-
-      cg.destroy();
+      await runLegacySearchCli(searchText, options);
     } catch (err) {
       error(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
