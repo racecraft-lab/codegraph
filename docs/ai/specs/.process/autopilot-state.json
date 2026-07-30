@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: Implement Slice 1 US1 bounded graph evidence (T013-T031)",
-  "updated_at": "2026-07-30T05:54:04Z",
+  "active_step": "Phase 7: T018 lexer, tokens, private AST, and parser",
+  "updated_at": "2026-07-30T06:22:23Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -581,7 +581,12 @@
       "T009",
       "T010",
       "T011",
-      "T012"
+      "T012",
+      "T013",
+      "T014",
+      "T015",
+      "T016",
+      "T017"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -614,8 +619,20 @@
       "slice_1_us1": {
         "status": "in_progress",
         "tasks": "T013-T031",
-        "completed": 0,
-        "total": 19
+        "completed": 5,
+        "total": 19,
+        "red_evidence": {
+          "command": "npx vitest run __tests__/cypher-parser.test.ts __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts",
+          "test_files": "4 failed / 4 total",
+          "tests": "37 failed, 6 passed, 43 total",
+          "expected_failure_categories": [
+            "parser/planner seams missing",
+            "queryCypher runtime/public API missing",
+            "CLI still routes through legacy search",
+            "codegraph_query MCP tool missing"
+          ],
+          "unexpected_failures": 0
+        }
       },
       "slice_1_us3": {
         "status": "pending",

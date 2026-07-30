@@ -108,6 +108,135 @@ function query(cwd: string, extraArgs: string[]): string {
   });
 }
 
+type CypherCliJson = Record<string, unknown> & {
+  readonly status: string;
+};
+
+const CYPHER_CLI_MATCH_QUERY =
+  "MATCH (caller:function)-[:calls]->(callee:function) WHERE caller.name = 'entry' RETURN caller.name AS caller, callee.name AS callee ORDER BY callee.name LIMIT 1";
+
+function createCypherCliProject(): string {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-cypher-cli-'));
+  fs.mkdirSync(path.join(tempDir, 'src'));
+  fs.writeFileSync(
+    path.join(tempDir, 'src/main.ts'),
+    [
+      'export function helper(value: string): string {',
+      '  return value.trim();',
+      '}',
+      '',
+      'export function entry(value: string): string {',
+      '  return helper(value);',
+      '}',
+      '',
+      'export function parseToken(token: string): string {',
+      '  return helper(token);',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  const cg = CodeGraph.initSync(tempDir);
+  cg.close();
+  return tempDir;
+}
+
+async function indexCypherCliProject(tempDir: string): Promise<void> {
+  const cg = await CodeGraph.open(tempDir);
+  try {
+    await cg.indexAll();
+  } finally {
+    cg.close();
+  }
+}
+
+function previewBuffer(buffer: Buffer): string {
+  return buffer.toString('utf8').replace(/\s+/g, ' ').slice(0, 220);
+}
+
+function parseJsonPayload(result: CliProcessResult, context: string): unknown {
+  const text = result.stdout.toString('utf8');
+  if (text.length === 0) {
+    throw new Error(
+      `SPEC-013 Cypher CLI contract missing: ${context} expected canonical JSON on stdout, ` +
+        `but stdout was empty. exit=${result.exitCode} stderr="${previewBuffer(result.stderr)}"`,
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      `SPEC-013 Cypher CLI contract missing: ${context} expected parseable canonical JSON. ` +
+        `exit=${result.exitCode} stdout="${previewBuffer(result.stdout)}" ` +
+        `stderr="${previewBuffer(result.stderr)}" ` +
+        `parseError=${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function expectCypherResultObject(result: CliProcessResult, context: string): CypherCliJson {
+  const parsed = parseJsonPayload(result, context);
+  if (Array.isArray(parsed)) {
+    throw new Error(
+      `SPEC-013 Cypher CLI routing contract missing: ${context} returned legacy search JSON array ` +
+        'instead of a Cypher result union object.',
+    );
+  }
+  if (!parsed || typeof parsed !== 'object' || !('status' in parsed)) {
+    throw new Error(
+      `SPEC-013 Cypher CLI result contract missing: ${context} expected a result union object with status. ` +
+        `payload="${previewBuffer(result.stdout)}"`,
+    );
+  }
+  return parsed as CypherCliJson;
+}
+
+function expectNoTrailingNewline(result: CliProcessResult, context: string): void {
+  expect(result.stdout.length, `${context} stdout length`).toBeGreaterThan(0);
+  const lastByte = result.stdout[result.stdout.length - 1];
+  if (lastByte === 0x0a || lastByte === 0x0d) {
+    throw new Error(
+      `SPEC-013 Cypher CLI canonical JSON contract missing: ${context} emitted trailing newline/framing byte.`,
+    );
+  }
+}
+
+function expectCypherCliSuccess(result: CliProcessResult, context: string): CypherCliJson {
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `SPEC-013 Cypher CLI success contract missing: ${context} expected exit 0. ` +
+        `exit=${result.exitCode} stdout="${previewBuffer(result.stdout)}" stderr="${previewBuffer(result.stderr)}"`,
+    );
+  }
+  const payload = expectCypherResultObject(result, context);
+  expect(payload.status).toBe('success');
+  expect(Array.isArray(payload.columns)).toBe(true);
+  expect(Array.isArray(payload.rows)).toBe(true);
+  return payload;
+}
+
+function expectCypherCliDiagnostic(result: CliProcessResult, code: string, context: string): CypherCliJson {
+  if (result.exitCode === 0) {
+    throw new Error(
+      `SPEC-013 Cypher CLI failure-exit contract missing: ${context} expected non-zero exit for ${code}. ` +
+        `stdout="${previewBuffer(result.stdout)}" stderr="${previewBuffer(result.stderr)}"`,
+    );
+  }
+  const payload = expectCypherResultObject(result, context);
+  expect(payload.status).toBe('diagnostic');
+  expect(payload.code).toBe(code);
+  expect(typeof payload.message).toBe('string');
+  expect(typeof payload.offset).toBe('number');
+  expect(typeof payload.line).toBe('number');
+  expect(typeof payload.column).toBe('number');
+  expect(typeof payload.expected).toBe('string');
+  expect(typeof payload.anchor).toBe('string');
+  expect(typeof payload.excerpt).toBe('string');
+  expect(typeof payload.truncatedBefore).toBe('boolean');
+  expect(typeof payload.truncatedAfter).toBe('boolean');
+  return payload;
+}
+
 describe('codegraph query — score rendering (#1045)', () => {
   let tempDir: string;
 
@@ -142,6 +271,126 @@ describe('codegraph query — score rendering (#1045)', () => {
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed.length).toBeGreaterThan(0);
     expect(typeof parsed[0].score).toBe('number');
+  });
+});
+
+describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = createCypherCliProject();
+    await indexCypherCliProject(tempDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('routes positional MATCH text through Cypher mode with shared --path and --json result union', () => {
+    const result = runCliQueryMatch(tempDir, CYPHER_CLI_MATCH_QUERY, ['--json']);
+
+    expect(result.args).toEqual([BIN, 'query', CYPHER_CLI_MATCH_QUERY, '--json', '--path', tempDir]);
+    const payload = expectCypherCliSuccess(result, 'positional MATCH --json query');
+    expect(JSON.stringify(payload)).toContain('entry');
+    expect(JSON.stringify(payload)).toContain('helper');
+    expect(payload).toMatchObject({
+      status: 'success',
+      effectiveCap: 1,
+      truncated: false,
+    });
+  });
+
+  it('emits canonical minified JSON bytes for Cypher --json without a trailing newline', () => {
+    const result = runCliQueryMatch(tempDir, CYPHER_CLI_MATCH_QUERY, ['--json']);
+
+    expectNoTrailingNewline(result, 'positional MATCH --json query');
+    expect(result.stdout.toString('utf8')).not.toContain('\n');
+    expect(result.stdout.toString('utf8')).not.toContain('  ');
+    expectCypherCliSuccess(result, 'canonical Cypher --json query');
+  });
+
+  it('reads bounded UTF-8 Cypher text from query - stdin', () => {
+    const stdin = Buffer.from(CYPHER_CLI_MATCH_QUERY, 'utf8');
+    const result = runCliQueryStdin(tempDir, stdin, ['--json']);
+
+    expect(result.args).toEqual([BIN, 'query', '-', '--json', '--path', tempDir]);
+    const payload = expectCypherCliSuccess(result, 'stdin - Cypher query');
+    expect(JSON.stringify(payload)).toContain('entry');
+    expect(JSON.stringify(payload)).toContain('helper');
+  });
+
+  it('rejects malformed stdin bytes before parsing or execution with a failure exit', () => {
+    const result = runCliQueryStdin(tempDir, malformedCliStdinBytes(), ['--json']);
+
+    const diagnostic = expectCypherCliDiagnostic(result, 'CYPHER_INVALID_STDIN_ENCODING', 'malformed UTF-8 stdin');
+    expect(diagnostic).toMatchObject({
+      offset: 0,
+      line: 1,
+      column: 0,
+      expected: 'valid UTF-8 stdin',
+      anchor: 'cli-input',
+      excerpt: '',
+      truncatedBefore: false,
+      truncatedAfter: false,
+    });
+    expect(String(diagnostic.message)).not.toContain('c328');
+    expect(previewBuffer(result.stderr)).not.toContain('c328');
+  });
+
+  it('rejects stdin text longer than the 10,000 UTF-16 code unit ceiling before parsing', () => {
+    const oversized = Buffer.from(`MATCH ${'x'.repeat(10_050)}`, 'utf8');
+    const result = runCliQueryStdin(tempDir, oversized, ['--json']);
+
+    const diagnostic = expectCypherCliDiagnostic(result, 'CYPHER_INPUT_TOO_LONG', 'oversized stdin query');
+    expect(diagnostic.excerpt).toBe('');
+    expect(String(diagnostic.message)).toContain('10000');
+    expect(String(diagnostic.message)).not.toContain('xxxxxxxx');
+  });
+
+  it.each([
+    ['--kind', 'function'],
+    ['--mode', 'keyword'],
+    ['--limit', '1'],
+    ['--file', 'src/main.ts'],
+  ])('rejects search-only flag %s in Cypher mode before execution', (flag, value) => {
+    const result = runCliQueryMatch(tempDir, CYPHER_CLI_MATCH_QUERY, ['--json', flag, value]);
+
+    const diagnostic = expectCypherCliDiagnostic(result, 'CYPHER_UNSUPPORTED', `${flag} in Cypher mode`);
+    expect(String(diagnostic.message)).toContain(flag);
+    expect(JSON.stringify(diagnostic)).not.toContain('entry');
+    expect(JSON.stringify(diagnostic)).not.toContain('helper');
+  });
+
+  it('requires Cypher row limits inside query text instead of CLI --limit', () => {
+    const inTextLimit = runCliQueryMatch(tempDir, CYPHER_CLI_MATCH_QUERY, ['--json']);
+    const payload = expectCypherCliSuccess(inTextLimit, 'Cypher LIMIT inside query text');
+    expect(payload.effectiveCap).toBe(1);
+
+    const cliLimit = runCliQueryMatch(tempDir, CYPHER_CLI_MATCH_QUERY, ['--json', '--limit', '1']);
+    expectCypherCliDiagnostic(cliLimit, 'CYPHER_UNSUPPORTED', 'CLI --limit in Cypher mode');
+  });
+
+  it('preserves legacy symbol search for non-MATCH query text', () => {
+    const result = runCliQueryMatch(tempDir, 'parseToken', ['--json']);
+
+    expect(result.exitCode).toBe(0);
+    const payload = parseJsonPayload(result, 'legacy non-MATCH query');
+    expect(Array.isArray(payload)).toBe(true);
+    expect(JSON.stringify(payload)).toContain('parseToken');
+    expect(JSON.stringify(payload)).toContain('score');
+  });
+
+  it('maps Cypher diagnostics to failure exits with canonical JSON payloads', () => {
+    const result = runCliQueryMatch(
+      tempDir,
+      'MATCH (caller:function)-[:calls]-> RETURN caller.name LIMIT 1',
+      ['--json'],
+    );
+
+    const diagnostic = expectCypherCliDiagnostic(result, 'CYPHER_SYNTAX', 'invalid Cypher syntax');
+    expect(String(diagnostic.expected).length).toBeGreaterThan(0);
+    expect(String(diagnostic.anchor).length).toBeGreaterThan(0);
+    expect(result.stdout.toString('utf8')).not.toContain('\n');
   });
 });
 

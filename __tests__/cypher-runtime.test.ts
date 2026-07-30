@@ -466,3 +466,508 @@ describe.skipIf(!nodeSqliteAvailable)('cypher runtime fixture helpers', () => {
     expect(fixture.nodes.highDegreeTargets).toHaveLength(12);
   });
 });
+
+type CypherColumn = {
+  readonly name: string;
+};
+
+type PublicNode = Record<string, unknown> & {
+  readonly id: string;
+  readonly kind: string;
+  readonly name: string;
+};
+
+type PublicRelationship = Record<string, unknown> & {
+  readonly source: string;
+  readonly target: string;
+  readonly kind: string;
+  readonly line: number | null;
+  readonly column: number | null;
+  readonly provenance: string | null;
+};
+
+type CypherPath = {
+  readonly nodes: readonly PublicNode[];
+  readonly relationships: readonly PublicRelationship[];
+  readonly length: number;
+};
+
+type CypherValue =
+  | { readonly type: 'node'; readonly value: PublicNode }
+  | { readonly type: 'relationship'; readonly value: PublicRelationship }
+  | { readonly type: 'path'; readonly value: CypherPath }
+  | { readonly type: 'scalar'; readonly value: null | boolean | number | string | Record<string, unknown> | unknown[] };
+
+type CypherRow = Record<string, CypherValue>;
+
+type CypherSuccessResult = {
+  readonly status: 'success';
+  readonly columns: readonly CypherColumn[];
+  readonly rows: readonly CypherRow[];
+  readonly effectiveCap: number;
+  readonly truncated: boolean;
+};
+
+type CypherDiagnosticResult = {
+  readonly status: 'diagnostic';
+  readonly code: string;
+  readonly message: string;
+  readonly offset: number;
+  readonly line: number;
+  readonly column: number;
+  readonly expected: string;
+  readonly anchor: string;
+  readonly excerpt: string;
+  readonly truncatedBefore: boolean;
+  readonly truncatedAfter: boolean;
+};
+
+type CypherTimeoutResult = {
+  readonly status: 'timeout';
+  readonly code: 'CYPHER_TIMEOUT';
+  readonly deadlineMs: 5000;
+  readonly guidance: string;
+};
+
+type CypherQueryResult = CypherSuccessResult | CypherDiagnosticResult | CypherTimeoutResult;
+
+type CypherRuntimeTestOptions = {
+  readonly forceTimeout?: boolean;
+  readonly payloadLimitBytes?: number;
+  readonly onSqlPrepare?: (sql: string) => void;
+  readonly onRowsInspected?: (count: number) => void;
+};
+
+type CypherRuntimeTestState = {
+  readonly activeWorkers: number;
+  readonly terminatedWorkers: number;
+};
+
+type CypherRuntimeContract = {
+  readonly queryCypher: (projectRoot: string, query: string) => Promise<CypherQueryResult>;
+  readonly queryCypherForTests: (
+    projectRoot: string,
+    query: string,
+    options?: CypherRuntimeTestOptions,
+  ) => Promise<CypherQueryResult>;
+  readonly getCypherRuntimeStateForTests: () => CypherRuntimeTestState;
+};
+
+async function loadCypherRuntimeContract(): Promise<CypherRuntimeContract> {
+  let publicMod: unknown;
+  let cypherMod: unknown;
+  try {
+    publicMod = await import('../src');
+    cypherMod = await import('../src/query/cypher/index');
+  } catch (error) {
+    throw new Error(
+      'SPEC-013 Cypher runtime production contract missing: expected ' +
+        '`src/index.ts` to export public `queryCypher(projectRoot, query)` and ' +
+        '`src/query/cypher/index.ts` to export internal test seams ' +
+        '`queryCypherForTests(projectRoot, query, options)` and ' +
+        '`getCypherRuntimeStateForTests()`. ' +
+        `Original load failure: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const publicContract = publicMod as Partial<CypherRuntimeContract>;
+  const internalContract = cypherMod as Partial<CypherRuntimeContract>;
+  expect(typeof publicContract.queryCypher, 'queryCypher public export').toBe('function');
+  expect(typeof internalContract.queryCypherForTests, 'queryCypherForTests export').toBe('function');
+  expect(typeof internalContract.getCypherRuntimeStateForTests, 'getCypherRuntimeStateForTests export').toBe('function');
+
+  return {
+    queryCypher: publicContract.queryCypher as CypherRuntimeContract['queryCypher'],
+    queryCypherForTests: internalContract.queryCypherForTests as CypherRuntimeContract['queryCypherForTests'],
+    getCypherRuntimeStateForTests: internalContract.getCypherRuntimeStateForTests as CypherRuntimeContract['getCypherRuntimeStateForTests'],
+  };
+}
+
+function expectSuccess(result: CypherQueryResult): CypherSuccessResult {
+  expect(result.status).toBe('success');
+  return result as CypherSuccessResult;
+}
+
+function expectDiagnostic(result: CypherQueryResult, code: string): CypherDiagnosticResult {
+  expect(result.status).toBe('diagnostic');
+  const diagnostic = result as CypherDiagnosticResult;
+  expect(diagnostic.code).toBe(code);
+  expect(typeof diagnostic.offset).toBe('number');
+  expect(typeof diagnostic.line).toBe('number');
+  expect(typeof diagnostic.column).toBe('number');
+  expect(diagnostic.expected.length).toBeGreaterThan(0);
+  expect(diagnostic.anchor.length).toBeGreaterThan(0);
+  expect(diagnostic.excerpt.length).toBeLessThanOrEqual(160);
+  expect(typeof diagnostic.truncatedBefore).toBe('boolean');
+  expect(typeof diagnostic.truncatedAfter).toBe('boolean');
+  return diagnostic;
+}
+
+function expectTimeout(result: CypherQueryResult): CypherTimeoutResult {
+  expect(result.status).toBe('timeout');
+  const timeout = result as CypherTimeoutResult;
+  expect(timeout.code).toBe('CYPHER_TIMEOUT');
+  expect(timeout.deadlineMs).toBe(5000);
+  expect(timeout.guidance).toContain('narrow');
+  expect(result).not.toHaveProperty('rows');
+  return timeout;
+}
+
+function rowValue(row: CypherRow, column: string): CypherValue {
+  expect(row).toHaveProperty(column);
+  return row[column];
+}
+
+function scalarValue(row: CypherRow, column: string): CypherValue['value'] {
+  const value = rowValue(row, column);
+  expect(value.type).toBe('scalar');
+  return (value as Extract<CypherValue, { type: 'scalar' }>).value;
+}
+
+function nodeValue(row: CypherRow, column: string): PublicNode {
+  const value = rowValue(row, column);
+  expect(value.type).toBe('node');
+  return (value as Extract<CypherValue, { type: 'node' }>).value;
+}
+
+function relationshipValue(row: CypherRow, column: string): PublicRelationship {
+  const value = rowValue(row, column);
+  expect(value.type).toBe('relationship');
+  return (value as Extract<CypherValue, { type: 'relationship' }>).value;
+}
+
+function pathValue(row: CypherRow, column: string): CypherPath {
+  const value = rowValue(row, column);
+  expect(value.type).toBe('path');
+  return (value as Extract<CypherValue, { type: 'path' }>).value;
+}
+
+function addFanout(fixture: CypherRuntimeFixture, prefix: string, count: number): {
+  readonly hubId: string;
+  readonly targetIds: readonly string[];
+} {
+  const updatedAt = 1700000000000;
+  const hubId = insertNode(fixture.db, {
+    id: `fn:${prefix}:hub`,
+    name: `${prefix}Hub`,
+    qualifiedName: `src/main.${prefix}Hub`,
+    startLine: 200,
+  }, updatedAt);
+  const targetIds = Array.from({ length: count }, (_, index) => {
+    const ordinal = String(index + 1).padStart(4, '0');
+    const targetId = insertNode(fixture.db, {
+      id: `fn:${prefix}:target${ordinal}`,
+      name: `${prefix}Target${ordinal}`,
+      qualifiedName: `src/main.${prefix}Target${ordinal}`,
+      startLine: 201 + index,
+    }, updatedAt);
+    insertEdge(
+      fixture.db,
+      hubId,
+      targetId,
+      'calls',
+      JSON.stringify({ fanout: index + 1 }),
+      300 + index,
+      index,
+      'tree-sitter',
+    );
+    return targetId;
+  });
+
+  return { hubId, targetIds };
+}
+
+describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API and graph mapping', () => {
+  it('exports queryCypher and maps active fixed traversals to public nodes and relationships', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (entry:function)-[call:calls]->(target:function) WHERE entry.name = 'entry' RETURN entry, call, target ORDER BY target.name",
+    ));
+
+    expect(result.columns.map((column) => column.name)).toEqual(['entry', 'call', 'target']);
+    expect(result.effectiveCap).toBe(100);
+    expect(result.truncated).toBe(false);
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows.map((row) => nodeValue(row, 'target').name)).toEqual(['helper', 'heuristicTarget', 'lspTarget']);
+    expect(result.rows.map((row) => nodeValue(row, 'target').name)).not.toContain('staleLspTarget');
+
+    const entry = nodeValue(result.rows[0], 'entry');
+    expect(entry).toMatchObject({
+      id: fixture.nodes.entry,
+      kind: 'function',
+      name: 'entry',
+      qualifiedName: 'src/main.entry',
+      filePath: 'src/main.ts',
+      startLine: 3,
+      startColumn: 0,
+      isExported: true,
+      returnType: 'void',
+    });
+    expect(entry).not.toHaveProperty('updatedAt');
+    expect(entry).not.toHaveProperty('qualified_name');
+
+    const call = relationshipValue(result.rows[0], 'call');
+    expect(call).toMatchObject({
+      source: fixture.nodes.entry,
+      target: fixture.nodes.helper,
+      kind: 'calls',
+      line: 5,
+      column: 2,
+      provenance: 'tree-sitter',
+      metadata: { resolvedBy: 'static' },
+    });
+    expect(call).not.toHaveProperty('col');
+  });
+
+  it('returns bounded relationship-simple variable paths with recurring nodes in ordered typed path values', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH p = (start:function)-[:calls*1..8]->(finish:function) WHERE start.name = 'cycleA' AND finish.name = 'cycleA' RETURN p",
+    ));
+
+    expect(result.rows).toHaveLength(1);
+    const pathResult = pathValue(result.rows[0], 'p');
+    expect(pathResult.length).toBe(3);
+    expect(pathResult.nodes.map((node) => node.id)).toEqual([
+      fixture.nodes.cycleA,
+      fixture.nodes.cycleB,
+      fixture.nodes.cycleC,
+      fixture.nodes.cycleA,
+    ]);
+    expect(pathResult.relationships.map((relationship) => [
+      relationship.source,
+      relationship.target,
+      relationship.kind,
+      relationship.line,
+      relationship.column,
+    ])).toEqual([
+      [fixture.nodes.cycleA, fixture.nodes.cycleB, 'calls', 41, 0],
+      [fixture.nodes.cycleB, fixture.nodes.cycleC, 'calls', 45, 0],
+      [fixture.nodes.cycleC, fixture.nodes.cycleA, 'calls', 49, 0],
+    ]);
+
+    const relationshipIdentities = pathResult.relationships.map((relationship) => [
+      relationship.source,
+      relationship.target,
+      relationship.kind,
+      relationship.line,
+      relationship.column,
+    ].join('|'));
+    expect(new Set(relationshipIdentities).size).toBe(pathResult.relationships.length);
+  });
+
+  it('applies top-level property filters, null checks, boolean operators, and comparisons with Cypher null semantics', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry'",
+        'AND (target.signature IS NULL OR target.startLine >= 20)',
+        'AND NOT target.endLine = 18',
+        "AND target.name <> 'staleLspTarget'",
+        'RETURN target.name AS name, target.signature AS signature, target.startLine AS line',
+        'ORDER BY target.name',
+      ].join(' '),
+    ));
+
+    expect(result.rows.map((row) => scalarValue(row, 'name'))).toEqual(['heuristicTarget', 'lspTarget']);
+    expect(result.rows.map((row) => scalarValue(row, 'signature'))).toEqual([null, null]);
+    expect(result.rows.map((row) => scalarValue(row, 'line'))).toEqual([26, 20]);
+  });
+
+  it('returns opaque JSON fields only as valid public shapes and rejects opaque WHERE predicates', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const activeOpaque = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (entry:function)-[call:calls]->(target:function) WHERE entry.name = 'entry' RETURN entry.decorators AS decorators, entry.typeParameters AS typeParameters, call.metadata AS metadata ORDER BY target.name LIMIT 1",
+    ));
+    expect(scalarValue(activeOpaque.rows[0], 'decorators')).toEqual(['@trace']);
+    expect(scalarValue(activeOpaque.rows[0], 'typeParameters')).toEqual(['T']);
+    expect(scalarValue(activeOpaque.rows[0], 'metadata')).toEqual({ resolvedBy: 'static' });
+
+    const malformedOpaque = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (helper:function)-[call:calls]->(target:function) WHERE helper.name = 'helper' RETURN target.decorators AS decorators, target.typeParameters AS typeParameters, call.metadata AS metadata",
+    ));
+    expect(scalarValue(malformedOpaque.rows[0], 'decorators')).toBeNull();
+    expect(scalarValue(malformedOpaque.rows[0], 'typeParameters')).toBeNull();
+    expect(scalarValue(malformedOpaque.rows[0], 'metadata')).toBeNull();
+    expect(JSON.stringify(malformedOpaque.rows)).not.toContain('broken json');
+    expect(JSON.stringify(malformedOpaque.rows)).not.toContain('{bad decorators');
+    expect(JSON.stringify(malformedOpaque.rows)).not.toContain('"wrong":"shape"');
+
+    expectDiagnostic(
+      await runtime.queryCypher(
+        fixture.projectRoot,
+        'MATCH (entry:function)-[:calls]->(target:function) WHERE entry.decorators IS NOT NULL RETURN target.name',
+      ),
+      'CYPHER_UNSUPPORTED_OPAQUE_FILTER',
+    );
+  });
+
+  it('uses deterministic stable ordering by projected values and honors explicit ORDER BY null placement', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const defaultOrdered = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (hub:function)-[:calls]->(target:function) WHERE hub.name = 'hub' RETURN target.name AS name LIMIT 5",
+    ));
+    expect(defaultOrdered.rows.map((row) => scalarValue(row, 'name'))).toEqual([
+      'target01',
+      'target02',
+      'target03',
+      'target04',
+      'target05',
+    ]);
+
+    const explicitDescending = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (hub:function)-[:calls]->(target:function) WHERE hub.name = 'hub' RETURN target.name AS name ORDER BY target.name DESC LIMIT 3",
+    ));
+    expect(explicitDescending.rows.map((row) => scalarValue(row, 'name'))).toEqual([
+      'target12',
+      'target11',
+      'target10',
+    ]);
+
+    const nullsAfter = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (entry:function)-[:calls]->(target:function) WHERE entry.name = 'entry' RETURN target.signature AS signature, target.name AS name ORDER BY target.signature ASC, target.name ASC",
+    ));
+    expect(nullsAfter.rows.map((row) => scalarValue(row, 'name'))).toEqual(['helper', 'heuristicTarget', 'lspTarget']);
+
+    const nullsBefore = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (entry:function)-[:calls]->(target:function) WHERE entry.name = 'entry' RETURN target.signature AS signature, target.name AS name ORDER BY target.signature DESC, target.name ASC",
+    ));
+    expect(nullsBefore.rows.map((row) => scalarValue(row, 'name'))).toEqual(['heuristicTarget', 'lspTarget', 'helper']);
+  });
+});
+
+describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnostics, and execution safety', () => {
+  it('applies LIMIT, default cap, hard cap, truncation, effectiveCap, and effectiveCap plus one inspection', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    addFanout(fixture, 'cap', 1005);
+
+    const defaultCapped = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (hub:function)-[:calls]->(target:function) WHERE hub.name = 'capHub' RETURN target.name AS name",
+    ));
+    expect(defaultCapped.effectiveCap).toBe(100);
+    expect(defaultCapped.rows).toHaveLength(100);
+    expect(defaultCapped.truncated).toBe(true);
+    expect(defaultCapped).not.toHaveProperty('totalRows');
+
+    const inspectedRows: number[] = [];
+    const limited = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH (hub:function)-[:calls]->(target:function) WHERE hub.name = 'capHub' RETURN target.name AS name ORDER BY target.name LIMIT 5",
+      { onRowsInspected: (count) => inspectedRows.push(count) },
+    ));
+    expect(limited.effectiveCap).toBe(5);
+    expect(limited.rows).toHaveLength(5);
+    expect(limited.truncated).toBe(true);
+    expect(Math.max(...inspectedRows)).toBeLessThanOrEqual(6);
+
+    const hardCapped = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (hub:function)-[:calls]->(target:function) WHERE hub.name = 'capHub' RETURN target.name AS name ORDER BY target.name LIMIT 1500",
+    ));
+    expect(hardCapped.effectiveCap).toBe(1000);
+    expect(hardCapped.rows).toHaveLength(1000);
+    expect(hardCapped.truncated).toBe(true);
+  });
+
+  it('returns output-too-large diagnostic without partial rows when canonical JSON exceeds the payload ceiling', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const result = await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH (entry:function)-[call:calls]->(target:function) WHERE entry.name = 'entry' RETURN entry, call, target ORDER BY target.name",
+      { payloadLimitBytes: 512 },
+    );
+
+    const diagnostic = expectDiagnostic(result, 'CYPHER_OUTPUT_TOO_LARGE');
+    expect(diagnostic.message).toContain('narrow');
+    expect(result).not.toHaveProperty('rows');
+  });
+
+  it('rejects mutating and direct-SQL input before SQLite prepare and leaves the database unchanged', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const before = fixture.snapshot();
+    const preparedSql: string[] = [];
+
+    expectDiagnostic(
+      await runtime.queryCypherForTests(
+        fixture.projectRoot,
+        'MATCH (n:function)-[:calls]->(m:function) DELETE m RETURN n',
+        { onSqlPrepare: (sql) => preparedSql.push(sql) },
+      ),
+      'CYPHER_UNSUPPORTED_CLAUSE',
+    );
+    expectDiagnostic(
+      await runtime.queryCypherForTests(
+        fixture.projectRoot,
+        'PRAGMA database_list',
+        { onSqlPrepare: (sql) => preparedSql.push(sql) },
+      ),
+      'CYPHER_DIRECT_SQL_UNSUPPORTED',
+    );
+
+    expect(preparedSql).toEqual([]);
+    expect(fixture.snapshot()).toEqual(before);
+  });
+
+  it('returns a stable not-indexed diagnostic without initializing or healing repository state', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cypher-not-indexed-'));
+
+    try {
+      const result = await runtime.queryCypher(
+        projectRoot,
+        'MATCH (n:function)-[:calls]->(m:function) RETURN n.name',
+      );
+      expectDiagnostic(result, 'CYPHER_NOT_INDEXED');
+      expect(fs.existsSync(path.join(projectRoot, '.codegraph'))).toBe(false);
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('returns timeout state with no partial rows and cleans terminated workers before reuse', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const beforeState = runtime.getCypherRuntimeStateForTests();
+
+    expectTimeout(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      "MATCH p = (hub:function)-[:calls*1..8]->(target:function) WHERE hub.name = 'hub' RETURN p",
+      { forceTimeout: true },
+    ));
+
+    const afterState = runtime.getCypherRuntimeStateForTests();
+    expect(afterState.activeWorkers).toBe(0);
+    expect(afterState.terminatedWorkers).toBe(beforeState.terminatedWorkers + 1);
+
+    const followup = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      "MATCH (entry:function)-[:calls]->(target:function) WHERE entry.name = 'entry' RETURN target.name AS name ORDER BY target.name LIMIT 1",
+    ));
+    expect(followup.rows.map((row) => scalarValue(row, 'name'))).toEqual(['helper']);
+  });
+});
