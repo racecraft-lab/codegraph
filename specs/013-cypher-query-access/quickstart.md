@@ -258,6 +258,11 @@ input returns `CYPHER_INPUT_TOO_LONG`, malformed stdin returns
 `CYPHER_OUTPUT_TOO_LARGE`, read-only snapshots remain unchanged, and timeout
 workers are replaced with no active-worker leak.
 
+Bounded ranged expansion also fails closed rather than returning partial rows:
+when a depth-scaled pure, mixed, or aggregate path-expansion budget is
+exceeded, all public surfaces return `CYPHER_PATH_EXPANSION_LIMIT` with
+guidance to narrow `MATCH` or the relationship range.
+
 ## Retrieval A/B Authorization
 
 `codegraph_explore` remains the primary MCP retrieval tool. `codegraph_query` is

@@ -34,10 +34,11 @@ Delivery route: one navigable PR. The work includes two internal slice checkpoin
 
 ## Scope budget and reviewability
 
-- Current `origin/main` diff: 39 files, `+15292/-1458`, net `+13834`.
+- Current `origin/main` diff: 41 files and roughly 16k net-added lines,
+  including specification/process evidence and the final phantom-task report.
 - This includes generated process/spec evidence.
 - Production entries: 7.
-- `src/query/cypher/index.ts` is 3995 lines, materially above the planning estimate. That is a candid reviewability warning; review parser/planner/runtime sections deliberately rather than treating it as a small patch.
+- `src/query/cypher/index.ts` is 4,765 lines, materially above the planning estimate. That is a candid reviewability warning; review parser/planner/runtime sections deliberately rather than treating it as a small patch.
 
 ## Traceability
 
@@ -49,8 +50,11 @@ Delivery route: one navigable PR. The work includes two internal slice checkpoin
 
 - `npm run build`: pass.
 - `npm run typecheck`: pass.
-- `npm test`: pass, 266 files passed, 4810 tests passed, 181 skipped.
-- Focused final guardrail suite: pass, 130 tests.
+- `npm test`: pass, 266 files passed, 4,839 tests passed, 181 skipped.
+- Focused final SPEC-013 suite: pass, 183 tests.
+- Independent post-review verdict: `NO FINDINGS` after 18 findings were closed
+  with RED/GREEN regressions.
+- Fresh phantom-task verification: 79 VERIFIED, 0 flagged.
 - Live self-index UAT: 939 files, 16980 nodes, 72612 edges.
 - Twelve documented recipes: package = CLI = MCP bytes for all recipes; MCP results are success-shaped.
 - Final parity hashes recorded in the matrix:
@@ -68,6 +72,10 @@ Delivery route: one navigable PR. The work includes two internal slice checkpoin
 ## Known gaps and caveats
 
 - Retrieval A/B is `BLOCKED_BY_AUTHORIZATION`. External runs: 0. External sends: 0. Cost: 0.
+- Ranged expansion is finite and fail-closed. Pure/mixed nonaggregate depth-1
+  plans succeed through 16,000 candidates and return
+  `CYPHER_PATH_EXPANSION_LIMIT` without partial rows at 16,001; aggregate
+  depth-3 plans are exact through 48,000 and fail closed above that budget.
 - The stored status includes a pre-existing csharp LSP server crash. It did not block live UAT.
 - No hidden claim is made for external retrieval validation or gh-stack proof.
 

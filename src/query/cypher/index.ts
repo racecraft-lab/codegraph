@@ -43,10 +43,10 @@ export type CypherNode = {
   readonly docstring: string | null;
   readonly signature: string | null;
   readonly visibility: string | null;
-  readonly isExported: boolean;
-  readonly isAsync: boolean;
-  readonly isStatic: boolean;
-  readonly isAbstract: boolean;
+  readonly isExported: boolean | null;
+  readonly isAsync: boolean | null;
+  readonly isStatic: boolean | null;
+  readonly isAbstract: boolean | null;
   readonly decorators: readonly unknown[] | null;
   readonly typeParameters: readonly unknown[] | null;
   readonly returnType: string | null;
@@ -126,6 +126,7 @@ type CypherPlanSuccess = {
   readonly status: 'success';
   readonly sql: string;
   readonly boundParameters: readonly unknown[];
+  readonly pathExpansionGuard?: number;
 };
 
 type CypherPlanResult = CypherPlanSuccess | CypherDiagnostic;
@@ -188,7 +189,7 @@ type LexSuccess = {
   readonly literals: readonly AstLiteral[];
 };
 
-type VariableBindingKind = 'node' | 'relationship' | 'path';
+type VariableBindingKind = 'node' | 'relationship' | 'relationship-list' | 'path';
 type PropertyScope = 'node' | 'relationship';
 type ExpressionAccess = 'bare' | 'property';
 
@@ -201,6 +202,10 @@ const VARIABLE_PATH_FRONTIER_MULTIPLIER = 16;
 const INTERNAL_PATH_START_COLUMN = '__cg_start_node_id';
 const INTERNAL_PATH_CURRENT_COLUMN = '__cg_current_node_id';
 const INTERNAL_PATH_EDGE_IDS_COLUMN = '__cg_visited_edge_ids';
+const INTERNAL_PATH_FRONTIER_COUNT_COLUMN = '__cg_path_frontier_count';
+const INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN = '__cg_path_frontier_sentinel';
+const INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN = '__cg_aggregate_result_order';
+const INTERNAL_RELATIONSHIP_STORAGE_ID_FIELD = '__cgStorageId';
 
 const PUBLIC_NODE_LABELS = new Set([
   'file',
@@ -321,6 +326,15 @@ const CLAUSE_BOUNDARY_KEYWORDS = new Set(['RETURN', 'ORDER', 'LIMIT']);
 
 class DiagnosticThrown {
   constructor(readonly diagnostic: CypherDiagnostic) {}
+}
+
+class WhereSyntaxError extends Error {
+  constructor(
+    readonly tokenIndex: number,
+    readonly expected: string,
+  ) {
+    super(`Invalid WHERE expression: expected ${expected}.`);
+  }
 }
 
 type RuntimeStringPredicateOperator = 'STARTS WITH' | 'ENDS WITH' | 'CONTAINS';
@@ -720,6 +734,7 @@ class Lexer {
 
 class Parser {
   private index = 0;
+  private rangedRelationshipCount = 0;
   private readonly variableBindings = new Map<string, VariableBindingKind>();
   private readonly returnAliases = new Set<string>();
 
@@ -962,12 +977,28 @@ class Parser {
     const variableToken = this.isAtIdentifier() ? this.advance() : undefined;
     const variable = variableToken?.value;
     const type = this.isAtPunctuation(':') ? this.parseRelationshipType() : undefined;
-    const range = this.isAtPunctuation('*') ? this.parseRange() : undefined;
+    let range: AstRelationshipPattern['range'];
+    if (this.isAtPunctuation('*')) {
+      if (this.rangedRelationshipCount > 0) {
+        this.failCurrent(
+          'CYPHER_UNSUPPORTED',
+          'at most one ranged relationship segment',
+          'relationshipPattern',
+          'Multiple ranged relationship segments are not supported.',
+        );
+      }
+      this.rangedRelationshipCount += 1;
+      range = this.parseRange();
+    }
 
     this.consumePunctuation(']', '"]" to close relationship pattern', 'relationshipPattern');
 
     if (variableToken !== undefined) {
-      this.declareVariable(variableToken, 'relationship', 'relationshipPattern');
+      this.declareVariable(
+        variableToken,
+        range === undefined ? 'relationship' : 'relationship-list',
+        'relationshipPattern',
+      );
     }
 
     return {
@@ -1115,6 +1146,26 @@ class Parser {
     }
 
     this.validatePropertyAccesses(expressionTokens, 'whereClause');
+    try {
+      new WhereSqlEmitter(expressionTokens, {
+        nodeAliases: new Map(),
+        relationshipAliases: new Map(),
+        pathAliases: new Map(),
+        parameters: [],
+      }).emit();
+    } catch (error) {
+      if (error instanceof WhereSyntaxError) {
+        const token = expressionTokens[error.tokenIndex] ?? this.current();
+        this.failToken(
+          token,
+          'CYPHER_SYNTAX',
+          error.expected,
+          'whereClause',
+          `Invalid WHERE expression; expected ${error.expected}.`,
+        );
+      }
+      throw error;
+    }
     return {
       text: expressionTokens.map((token) => token.raw).join(' '),
       tokens: expressionTokens,
@@ -1313,6 +1364,15 @@ class Parser {
           'node or relationship property access',
           anchor,
           'Path variables do not support property access.',
+        );
+      }
+      if (bindingKind === 'relationship-list' && access === 'property') {
+        this.failToken(
+          rootToken,
+          'CYPHER_UNSUPPORTED',
+          'bare ranged relationship variable',
+          anchor,
+          'Ranged relationship variables are relationship lists and do not support property access.',
         );
       }
       return;
@@ -1701,8 +1761,37 @@ type SqlEmitContext = {
   readonly nodeAliases: ReadonlyMap<string, string>;
   readonly relationshipAliases: ReadonlyMap<string, string>;
   readonly pathAliases: ReadonlyMap<string, string>;
+  readonly publicPathIdentityAliases?: ReadonlyMap<string, string>;
+  readonly publicRelationshipSequenceIdentityAliases?: ReadonlyMap<string, string>;
+  readonly publicMatchIdentityExpression?: string;
   readonly parameters: unknown[];
 };
+
+function createRangedFrontierContext(
+  base: SqlEmitContext,
+  publicPathIdentityExpression: string,
+  publicRelationshipIdentityExpression: string,
+  pathVariable: string | undefined,
+  relationshipVariable: string | undefined,
+): SqlEmitContext {
+  const publicPathIdentityAliases = new Map<string, string>();
+  if (pathVariable !== undefined) {
+    publicPathIdentityAliases.set(pathVariable, publicPathIdentityExpression);
+  }
+  const publicRelationshipSequenceIdentityAliases = new Map<string, string>();
+  if (relationshipVariable !== undefined) {
+    publicRelationshipSequenceIdentityAliases.set(
+      relationshipVariable,
+      publicRelationshipIdentityExpression,
+    );
+  }
+  return {
+    ...base,
+    publicPathIdentityAliases,
+    publicRelationshipSequenceIdentityAliases,
+    publicMatchIdentityExpression: publicPathIdentityExpression,
+  };
+}
 
 function emitParameterizedSql(parsed: CypherParseSuccess): CypherPlanSuccess {
   const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
@@ -1719,10 +1808,17 @@ function emitFixedRelationshipSql(parsed: CypherParseSuccess): CypherPlanSuccess
   const parameters: unknown[] = [];
   const nodeAliases = createNodeAliasMap(parsed.match.nodes);
   const relationshipAliases = createRelationshipAliasMap(parsed.match.relationships);
+  const pathEdgeIdsExpression = emitEdgeIdListExpression(
+    parsed.match.relationships.map((_relationship, relationshipIndex) => `e${relationshipIndex}`),
+  );
+  const pathAliases = new Map<string, string>();
+  if (parsed.match.pathVariable !== undefined) {
+    pathAliases.set(parsed.match.pathVariable, pathEdgeIdsExpression);
+  }
   const context: SqlEmitContext = {
     nodeAliases,
     relationshipAliases,
-    pathAliases: new Map<string, string>(),
+    pathAliases,
     parameters,
   };
   const capPlan = createCapPlan(parsed.limit);
@@ -1730,7 +1826,15 @@ function emitFixedRelationshipSql(parsed: CypherParseSuccess): CypherPlanSuccess
   const selectList = parsed.returns.map((item) => {
     return `${emitReturnItemExpression(item, context)} AS ${quoteIdentifier(item.alias ?? item.expression)}`;
   });
-  const lines = [`SELECT ${selectList.join(', ')}`, 'FROM nodes n0'];
+  const outputSelectList = hasAggregateReturns(parsed)
+    ? selectList
+    : [
+        ...selectList,
+        `n0.id AS ${quoteIdentifier(INTERNAL_PATH_START_COLUMN)}`,
+        `n${parsed.match.nodes.length - 1}.id AS ${quoteIdentifier(INTERNAL_PATH_CURRENT_COLUMN)}`,
+        `${pathEdgeIdsExpression} AS ${quoteIdentifier(INTERNAL_PATH_EDGE_IDS_COLUMN)}`,
+      ];
+  const lines = [`SELECT ${outputSelectList.join(', ')}`, 'FROM nodes n0'];
 
   parsed.match.relationships.forEach((relationship, relationshipIndex) => {
     const edgeAlias = `e${relationshipIndex}`;
@@ -1751,6 +1855,7 @@ function emitFixedRelationshipSql(parsed: CypherParseSuccess): CypherPlanSuccess
 
   const wherePredicates = [
     ...parsed.match.nodes.flatMap((node, nodeIndex) => emitNodePatternPredicates(node, `n${nodeIndex}`, parameters)),
+    ...emitFixedRelationshipUniquenessPredicates(parsed.match.relationships.length),
     ...emitWherePredicates(parsed.where, context),
   ];
   if (wherePredicates.length > 0) {
@@ -1781,6 +1886,9 @@ function emitVariableRelationshipSql(
   if (relationship === undefined || range === undefined) {
     throw new Error('Internal SPEC-013 planner invariant violated: missing variable relationship range.');
   }
+  if (parsed.match.relationships.length > 1) {
+    return emitMixedVariableRelationshipSql(parsed, relationshipIndex, relationship, range);
+  }
 
   const parameters: unknown[] = [];
   const startNode = parsed.match.nodes[relationshipIndex];
@@ -1790,29 +1898,60 @@ function emitVariableRelationshipSql(
   if (parsed.match.pathVariable !== undefined) {
     pathAliases.set(parsed.match.pathVariable, 'cg_bounded_paths.visited_edge_ids');
   }
+  if (relationship.variable !== undefined) {
+    pathAliases.set(relationship.variable, 'cg_bounded_paths.visited_edge_ids');
+  }
+  const publicPathIdentityAliases = new Map<string, string>();
+  if (parsed.match.pathVariable !== undefined) {
+    publicPathIdentityAliases.set(parsed.match.pathVariable, 'cg_bounded_paths.public_identity');
+  }
+  const publicRelationshipSequenceIdentityAliases = new Map<string, string>();
+  if (relationship.variable !== undefined) {
+    publicRelationshipSequenceIdentityAliases.set(
+      relationship.variable,
+      'cg_bounded_paths.relationship_identity',
+    );
+  }
   const context: SqlEmitContext = {
     nodeAliases,
     relationshipAliases: new Map<string, string>(),
     pathAliases,
+    publicPathIdentityAliases,
+    publicRelationshipSequenceIdentityAliases,
+    publicMatchIdentityExpression: 'cg_bounded_paths.public_identity',
     parameters,
   };
   const boundedPathAliases = new Map<string, string>();
   if (parsed.match.pathVariable !== undefined) {
     boundedPathAliases.set(parsed.match.pathVariable, 'cg_path_0.visited_edge_ids');
   }
+  if (relationship.variable !== undefined) {
+    boundedPathAliases.set(relationship.variable, 'cg_path_0.visited_edge_ids');
+  }
+  const boundedPublicPathIdentityAliases = new Map<string, string>();
+  if (parsed.match.pathVariable !== undefined) {
+    boundedPublicPathIdentityAliases.set(parsed.match.pathVariable, 'cg_path_0.public_identity');
+  }
+  const boundedPublicRelationshipSequenceIdentityAliases = new Map<string, string>();
+  if (relationship.variable !== undefined) {
+    boundedPublicRelationshipSequenceIdentityAliases.set(
+      relationship.variable,
+      'cg_path_0.relationship_identity',
+    );
+  }
   const boundedContext: SqlEmitContext = {
     nodeAliases,
     relationshipAliases: new Map<string, string>(),
     pathAliases: boundedPathAliases,
+    publicPathIdentityAliases: boundedPublicPathIdentityAliases,
+    publicRelationshipSequenceIdentityAliases: boundedPublicRelationshipSequenceIdentityAliases,
+    publicMatchIdentityExpression: 'cg_path_0.public_identity',
     parameters,
   };
   const capPlan = createCapPlan(parsed.limit);
   const aggregatesReturns = hasAggregateReturns(parsed);
-  const frontierCapBase = aggregatesReturns ? HARD_RESULT_CAP : capPlan.probeLimit;
-  const frontierGuard = Math.max(
-    capPlan.probeLimit,
-    frontierCapBase * Math.max(1, range.upper) * VARIABLE_PATH_FRONTIER_MULTIPLIER,
-  );
+  const frontierGuard =
+    HARD_RESULT_CAP * Math.max(1, range.upper) * VARIABLE_PATH_FRONTIER_MULTIPLIER;
   const outputGuard = aggregatesReturns ? frontierGuard : capPlan.probeLimit;
   const edgeAlias = `e${relationshipIndex}`;
   const edgeIndexName = edgeIndexNameForDirection(relationship.direction);
@@ -1829,6 +1968,17 @@ function emitVariableRelationshipSql(
     activeEdgePredicate(edgeAlias),
     `instr(cg_path_0.visited_edge_ids, ',' || ${edgeAlias}.id || ',') = 0`,
   ].filter(isPresent);
+  const seedPublicIdentity = emitVariablePathIdentitySeed('n0.id', edgeAlias, nextNodeExpression);
+  const recursivePublicIdentity = emitVariablePathIdentityAppend(
+    'cg_path_0.public_identity',
+    edgeAlias,
+    nextNodeExpression,
+  );
+  const seedRelationshipIdentity = emitRelationshipSequenceIdentitySeed(edgeAlias);
+  const recursiveRelationshipIdentity = emitRelationshipSequenceIdentityAppend(
+    'cg_path_0.relationship_identity',
+    edgeAlias,
+  );
   const selectList = parsed.returns.map((item) => {
     return `${emitReturnItemExpression(item, context)} AS ${quoteIdentifier(item.alias ?? item.expression)}`;
   });
@@ -1838,16 +1988,49 @@ function emitVariableRelationshipSql(
     `cg_bounded_paths.visited_edge_ids AS ${quoteIdentifier(INTERNAL_PATH_EDGE_IDS_COLUMN)}`,
   ];
   const outputSelectList = aggregatesReturns ? selectList : [...selectList, ...internalSelectList];
+  const guardedResultRowsName = aggregatesReturns ? 'cg_aggregate_rows' : 'cg_result_rows';
+  const guardedOutputColumnNames = [
+    ...parsed.returns.map((item) => item.alias ?? item.expression),
+    ...(aggregatesReturns
+      ? []
+      : [INTERNAL_PATH_START_COLUMN, INTERNAL_PATH_CURRENT_COLUMN, INTERNAL_PATH_EDGE_IDS_COLUMN]),
+  ];
+  const guardedOutputSelectList = guardedOutputColumnNames.map((columnName) => {
+    const column = quoteIdentifier(columnName);
+    return `${guardedResultRowsName}.${column} AS ${column}`;
+  });
+  const guardedSentinelSelectList = guardedOutputColumnNames.map((columnName) => {
+    return `NULL AS ${quoteIdentifier(columnName)}`;
+  });
   const startNodePredicates = emitNodePatternPredicates(startNode, 'n0', parameters);
-  const orderByClause = parsed.orderBy.length > 0
-    ? emitOrderByClause(parsed, context)
-    : emitVariablePathIdentityOrder('cg_bounded_paths');
-  const boundedOrderByClause = parsed.orderBy.length > 0 && !aggregatesReturns
-    ? emitOrderByClause(parsed, boundedContext)
-    : emitVariablePathIdentityOrder('cg_path_0');
+  const orderByClause = emitOrderByClause(parsed, context);
+  const boundedOrderByClause = aggregatesReturns
+    ? emitVariablePathIdentityOrder('cg_path_0')
+    : emitOrderByClause(parsed, boundedContext);
+  const seedFrontierContext = createRangedFrontierContext(
+    boundedContext,
+    seedPublicIdentity,
+    seedRelationshipIdentity,
+    parsed.match.pathVariable,
+    relationship.variable,
+  );
+  const recursiveFrontierContext = createRangedFrontierContext(
+    boundedContext,
+    recursivePublicIdentity,
+    recursiveRelationshipIdentity,
+    parsed.match.pathVariable,
+    relationship.variable,
+  );
+  const seedFrontierOrderTerms = aggregatesReturns
+    ? []
+    : emitRangedFrontierOrderTerms(parsed, seedFrontierContext);
+  const recursiveFrontierOrderTerms = aggregatesReturns
+    ? []
+    : emitRangedFrontierOrderTerms(parsed, recursiveFrontierContext);
+  const frontierOrderColumns = seedFrontierOrderTerms.map((_term, index) => `frontier_order_${index}`);
 
   parameters.push(range.upper);
-  parameters.push(frontierGuard);
+  parameters.push(frontierGuard + 1);
   parameters.push(range.lower);
   parameters.push(range.upper);
   const finalWherePredicates = [
@@ -1857,16 +2040,46 @@ function emitVariableRelationshipSql(
   parameters.push(outputGuard);
 
   const lines = [
-    'WITH RECURSIVE cg_path_0(depth, start_node_id, current_node_id, visited_edge_ids) AS (',
-    `  SELECT 1, n0.id, ${nextNodeExpression}, ',' || ${edgeAlias}.id || ','`,
+    `WITH RECURSIVE cg_path_0(${[
+      'depth',
+      'start_node_id',
+      'current_node_id',
+      'visited_edge_ids',
+      'public_identity',
+      'relationship_identity',
+      ...frontierOrderColumns,
+    ].join(', ')}) AS (`,
+    `  SELECT ${[
+      '1',
+      'n0.id',
+      nextNodeExpression,
+      `',' || ${edgeAlias}.id || ','`,
+      seedPublicIdentity,
+      seedRelationshipIdentity,
+      ...seedFrontierOrderTerms.map((term) => term.expression),
+    ].join(', ')}`,
     '  FROM nodes n0',
     `  JOIN edges ${edgeAlias} INDEXED BY ${edgeIndexName} ON ${seedEdgePredicates.join(' AND ')}`,
+    `  JOIN nodes n1 ON n1.id = ${nextNodeExpression}`,
     startNodePredicates.length === 0 ? undefined : `  WHERE ${startNodePredicates.join(' AND ')}`,
     '  UNION ALL',
-    `  SELECT cg_path_0.depth + 1, cg_path_0.start_node_id, ${nextNodeExpression}, cg_path_0.visited_edge_ids || ${edgeAlias}.id || ','`,
+    `  SELECT ${[
+      'cg_path_0.depth + 1',
+      'cg_path_0.start_node_id',
+      nextNodeExpression,
+      `cg_path_0.visited_edge_ids || ${edgeAlias}.id || ','`,
+      recursivePublicIdentity,
+      recursiveRelationshipIdentity,
+      ...recursiveFrontierOrderTerms.map((term) => term.expression),
+    ].join(', ')}`,
     '  FROM cg_path_0',
+    '  JOIN nodes n0 ON n0.id = cg_path_0.start_node_id',
     `  JOIN edges ${edgeAlias} INDEXED BY ${edgeIndexName} ON ${recursiveEdgePredicates.join(' AND ')}`,
+    `  JOIN nodes n1 ON n1.id = ${nextNodeExpression}`,
     '  WHERE cg_path_0.depth < ?',
+    aggregatesReturns
+      ? '  ORDER BY 5 ASC'
+      : `  ORDER BY ${emitRangedFrontierOrderByClause(recursiveFrontierOrderTerms, 7)}`,
     '  LIMIT ?',
     '),',
     'cg_bounded_paths AS (',
@@ -1877,14 +2090,38 @@ function emitVariableRelationshipSql(
     `  WHERE ${['cg_path_0.depth BETWEEN ? AND ?', ...finalWherePredicates].join(' AND ')}`,
     `  ORDER BY ${boundedOrderByClause}`,
     '  LIMIT ?',
-    ')',
-    `SELECT ${outputSelectList.join(', ')}`,
-    'FROM cg_bounded_paths',
-    'JOIN nodes n0 ON n0.id = cg_bounded_paths.start_node_id',
-    `JOIN nodes n${relationshipIndex + 1} ON n${relationshipIndex + 1}.id = cg_bounded_paths.current_node_id`,
-    emitGroupByClause(parsed, context) === undefined ? undefined : `GROUP BY ${emitGroupByClause(parsed, context)}`,
-    `ORDER BY ${orderByClause}`,
-    'LIMIT ?',
+    '),',
+    `${guardedResultRowsName} AS (`,
+    `  SELECT ${[
+      ...outputSelectList,
+      `row_number() OVER (ORDER BY ${orderByClause}) AS ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)}`,
+    ].join(', ')}`,
+    '  FROM cg_bounded_paths',
+    '  JOIN nodes n0 ON n0.id = cg_bounded_paths.start_node_id',
+    `  JOIN nodes n${relationshipIndex + 1} ON n${relationshipIndex + 1}.id = cg_bounded_paths.current_node_id`,
+    emitGroupByClause(parsed, context) === undefined
+      ? undefined
+      : `  GROUP BY ${emitGroupByClause(parsed, context)}`,
+    `  ORDER BY ${orderByClause}`,
+    '  LIMIT ?',
+    '),',
+    `cg_path_frontier AS (SELECT count(*) AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)} FROM cg_path_0)`,
+    `SELECT ${[
+      ...guardedSentinelSelectList,
+      `cg_path_frontier.${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)} AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)}`,
+      `1 AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN)}`,
+      `0 AS ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)}`,
+    ].join(', ')}`,
+    'FROM cg_path_frontier',
+    'UNION ALL',
+    `SELECT ${[
+      ...guardedOutputSelectList,
+      `cg_path_frontier.${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)} AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)}`,
+      `0 AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN)}`,
+      `${guardedResultRowsName}.${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)} AS ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)}`,
+    ].join(', ')}`,
+    `FROM ${guardedResultRowsName} CROSS JOIN cg_path_frontier`,
+    `ORDER BY ${quoteIdentifier(INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN)} DESC, ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)} ASC`,
     capPlan.comment,
   ].filter(isPresent);
   parameters.push(capPlan.probeLimit);
@@ -1893,6 +2130,347 @@ function emitVariableRelationshipSql(
     status: 'success',
     sql: lines.join('\n'),
     boundParameters: parameters,
+    pathExpansionGuard: frontierGuard,
+  };
+}
+
+function emitMixedVariableRelationshipSql(
+  parsed: CypherParseSuccess,
+  relationshipIndex: number,
+  variableRelationship: AstRelationshipPattern,
+  range: NonNullable<AstRelationshipPattern['range']>,
+): CypherPlanSuccess {
+  const parameters: unknown[] = [];
+  const capPlan = createCapPlan(parsed.limit);
+  const aggregatesReturns = hasAggregateReturns(parsed);
+  const frontierGuard =
+    HARD_RESULT_CAP * Math.max(1, range.upper) * VARIABLE_PATH_FRONTIER_MULTIPLIER;
+  const finalNodeIndex = parsed.match.nodes.length - 1;
+  const variableEdgeAlias = `e${relationshipIndex}`;
+  const prefixEdgeAliases = parsed.match.relationships
+    .slice(0, relationshipIndex)
+    .map((_relationship, index) => `e${index}`);
+  const suffixEdgeAliases = parsed.match.relationships
+    .slice(relationshipIndex + 1)
+    .map((_relationship, index) => `e${relationshipIndex + 1 + index}`);
+  const prefixNodeIdColumns = Array.from(
+    { length: relationshipIndex + 1 },
+    (_value, index) => `node_${index}_id`,
+  );
+  const prefixEdgeIdColumns = prefixEdgeAliases.map((_alias, index) => `edge_${index}_id`);
+  const cteColumns = [
+    'depth',
+    ...prefixNodeIdColumns,
+    ...prefixEdgeIdColumns,
+    'current_node_id',
+    'current_edge_id',
+    'variable_edge_ids',
+    'visited_edge_ids',
+    'public_identity',
+    'relationship_identity',
+  ];
+
+  const seedLines = ['  FROM nodes n0'];
+  for (let index = 0; index < relationshipIndex; index += 1) {
+    const fixedRelationship = parsed.match.relationships[index];
+    if (fixedRelationship === undefined) {
+      continue;
+    }
+    const edgeAlias = `e${index}`;
+    const edgePredicates = [
+      `${edgeAlias}.${edgeAnchorColumn(fixedRelationship.direction)} = n${index}.id`,
+      fixedRelationship.type === undefined ? undefined : `${edgeAlias}.kind = ${sqlStringLiteral(fixedRelationship.type)}`,
+      activeEdgePredicate(edgeAlias),
+      ...prefixEdgeAliases.slice(0, index).map((priorAlias) => `${edgeAlias}.id <> ${priorAlias}.id`),
+    ].filter(isPresent);
+    seedLines.push(
+      `  JOIN edges ${edgeAlias} INDEXED BY ${edgeIndexNameForDirection(fixedRelationship.direction)} ON ${edgePredicates.join(' AND ')}`,
+      `  JOIN nodes n${index + 1} ON ${edgeAlias}.${edgeNextColumn(fixedRelationship.direction)} = n${index + 1}.id`,
+    );
+  }
+
+  const variableSeedPredicates = [
+    `${variableEdgeAlias}.${edgeAnchorColumn(variableRelationship.direction)} = n${relationshipIndex}.id`,
+    variableRelationship.type === undefined
+      ? undefined
+      : `${variableEdgeAlias}.kind = ${sqlStringLiteral(variableRelationship.type)}`,
+    activeEdgePredicate(variableEdgeAlias),
+    ...prefixEdgeAliases.map((priorAlias) => `${variableEdgeAlias}.id <> ${priorAlias}.id`),
+  ].filter(isPresent);
+  seedLines.push(
+    `  JOIN edges ${variableEdgeAlias} INDEXED BY ${edgeIndexNameForDirection(variableRelationship.direction)} ON ${variableSeedPredicates.join(' AND ')}`,
+    `  JOIN nodes n${relationshipIndex + 1} ON n${relationshipIndex + 1}.id = ${variableEdgeAlias}.${edgeNextColumn(variableRelationship.direction)}`,
+  );
+
+  const seedNodePredicates = parsed.match.nodes
+    .slice(0, relationshipIndex + 1)
+    .flatMap((node, index) => emitNodePatternPredicates(node, `n${index}`, parameters));
+  const seedVisitedEdgeIds = emitEdgeIdListExpression([...prefixEdgeAliases, variableEdgeAlias]);
+  const variableNextNodeExpression =
+    `${variableEdgeAlias}.${edgeNextColumn(variableRelationship.direction)}`;
+  const seedPublicIdentity = emitMixedVariablePathIdentitySeed(
+    relationshipIndex,
+    variableEdgeAlias,
+    variableNextNodeExpression,
+  );
+  const seedRelationshipIdentity = emitRelationshipSequenceIdentitySeed(variableEdgeAlias);
+  const seedSelectValues = [
+    '1',
+    ...prefixNodeIdColumns.map((_column, index) => `n${index}.id`),
+    ...prefixEdgeAliases.map((alias) => `${alias}.id`),
+    variableNextNodeExpression,
+    `${variableEdgeAlias}.id`,
+    `',' || ${variableEdgeAlias}.id || ','`,
+    seedVisitedEdgeIds,
+    seedPublicIdentity,
+    seedRelationshipIdentity,
+  ];
+
+  parameters.push(range.upper);
+  parameters.push(frontierGuard + 1);
+
+  const outerJoinLines: string[] = [];
+  for (let index = 0; index <= relationshipIndex; index += 1) {
+    outerJoinLines.push(`JOIN nodes n${index} ON n${index}.id = cg_path_0.node_${index}_id`);
+  }
+  for (let index = 0; index < relationshipIndex; index += 1) {
+    outerJoinLines.push(`JOIN edges e${index} ON e${index}.id = cg_path_0.edge_${index}_id`);
+  }
+  outerJoinLines.push(
+    `JOIN edges ${variableEdgeAlias} ON ${variableEdgeAlias}.id = cg_path_0.current_edge_id`,
+    `JOIN nodes n${relationshipIndex + 1} ON n${relationshipIndex + 1}.id = cg_path_0.current_node_id`,
+  );
+
+  let usedEdgeIdsExpression = 'cg_path_0.visited_edge_ids';
+  for (let index = relationshipIndex + 1; index < parsed.match.relationships.length; index += 1) {
+    const fixedRelationship = parsed.match.relationships[index];
+    if (fixedRelationship === undefined) {
+      continue;
+    }
+    const edgeAlias = `e${index}`;
+    const edgePredicates = [
+      `${edgeAlias}.${edgeAnchorColumn(fixedRelationship.direction)} = n${index}.id`,
+      fixedRelationship.type === undefined ? undefined : `${edgeAlias}.kind = ${sqlStringLiteral(fixedRelationship.type)}`,
+      activeEdgePredicate(edgeAlias),
+      `instr(${usedEdgeIdsExpression}, ',' || ${edgeAlias}.id || ',') = 0`,
+    ].filter(isPresent);
+    outerJoinLines.push(
+      `JOIN edges ${edgeAlias} INDEXED BY ${edgeIndexNameForDirection(fixedRelationship.direction)} ON ${edgePredicates.join(' AND ')}`,
+      `JOIN nodes n${index + 1} ON ${edgeAlias}.${edgeNextColumn(fixedRelationship.direction)} = n${index + 1}.id`,
+    );
+    usedEdgeIdsExpression = `${usedEdgeIdsExpression} || ${edgeAlias}.id || ','`;
+  }
+
+  const nodeAliases = createNodeAliasMap(parsed.match.nodes);
+  const relationshipAliases = createRelationshipAliasMap(parsed.match.relationships);
+  const fullVisitedEdgeIds = suffixEdgeAliases.length === 0
+    ? 'cg_path_0.visited_edge_ids'
+    : `cg_path_0.visited_edge_ids ${suffixEdgeAliases.map((alias) => `|| ${alias}.id || ','`).join(' ')}`;
+  let fullPublicIdentity = 'cg_path_0.public_identity';
+  for (let index = relationshipIndex + 1; index < parsed.match.relationships.length; index += 1) {
+    fullPublicIdentity = emitVariablePathIdentityAppend(
+      fullPublicIdentity,
+      `e${index}`,
+      `n${index + 1}.id`,
+    );
+  }
+  const pathAliases = new Map<string, string>();
+  if (parsed.match.pathVariable !== undefined) {
+    pathAliases.set(parsed.match.pathVariable, fullVisitedEdgeIds);
+  }
+  if (variableRelationship.variable !== undefined) {
+    pathAliases.set(variableRelationship.variable, 'cg_path_0.variable_edge_ids');
+  }
+  const publicPathIdentityAliases = new Map<string, string>();
+  if (parsed.match.pathVariable !== undefined) {
+    publicPathIdentityAliases.set(parsed.match.pathVariable, fullPublicIdentity);
+  }
+  const publicRelationshipSequenceIdentityAliases = new Map<string, string>();
+  if (variableRelationship.variable !== undefined) {
+    publicRelationshipSequenceIdentityAliases.set(
+      variableRelationship.variable,
+      'cg_path_0.relationship_identity',
+    );
+  }
+  const context: SqlEmitContext = {
+    nodeAliases,
+    relationshipAliases,
+    pathAliases,
+    publicPathIdentityAliases,
+    publicRelationshipSequenceIdentityAliases,
+    publicMatchIdentityExpression: fullPublicIdentity,
+    parameters,
+  };
+  const selectList = parsed.returns.map((item) => {
+    return `${emitReturnItemExpression(item, context)} AS ${quoteIdentifier(item.alias ?? item.expression)}`;
+  });
+  const outputSelectList = aggregatesReturns
+    ? selectList
+    : [
+        ...selectList,
+        `n0.id AS ${quoteIdentifier(INTERNAL_PATH_START_COLUMN)}`,
+        `n${finalNodeIndex}.id AS ${quoteIdentifier(INTERNAL_PATH_CURRENT_COLUMN)}`,
+        `${fullVisitedEdgeIds} AS ${quoteIdentifier(INTERNAL_PATH_EDGE_IDS_COLUMN)}`,
+      ];
+  const guardedResultRowsName = aggregatesReturns ? 'cg_aggregate_rows' : 'cg_result_rows';
+  const guardedOutputColumnNames = [
+    ...parsed.returns.map((item) => item.alias ?? item.expression),
+    ...(aggregatesReturns
+      ? []
+      : [INTERNAL_PATH_START_COLUMN, INTERNAL_PATH_CURRENT_COLUMN, INTERNAL_PATH_EDGE_IDS_COLUMN]),
+  ];
+  const guardedOutputSelectList = guardedOutputColumnNames.map((columnName) => {
+    const column = quoteIdentifier(columnName);
+    return `${guardedResultRowsName}.${column} AS ${column}`;
+  });
+  const guardedSentinelSelectList = guardedOutputColumnNames.map((columnName) => {
+    return `NULL AS ${quoteIdentifier(columnName)}`;
+  });
+
+  parameters.push(range.lower);
+  parameters.push(range.upper);
+  const finalWherePredicates = [
+    'cg_path_0.depth BETWEEN ? AND ?',
+    ...parsed.match.nodes
+      .slice(relationshipIndex + 1)
+      .flatMap((node, index) => emitNodePatternPredicates(node, `n${relationshipIndex + 1 + index}`, parameters)),
+    ...emitWherePredicates(parsed.where, context),
+  ];
+  const groupByClause = emitGroupByClause(parsed, context);
+  parameters.push(capPlan.probeLimit);
+
+  const recursiveCarryValues = [
+    'cg_path_0.depth + 1',
+    ...prefixNodeIdColumns.map((column) => `cg_path_0.${column}`),
+    ...prefixEdgeIdColumns.map((column) => `cg_path_0.${column}`),
+    variableNextNodeExpression,
+    `${variableEdgeAlias}.id`,
+    `cg_path_0.variable_edge_ids || ${variableEdgeAlias}.id || ','`,
+    `cg_path_0.visited_edge_ids || ${variableEdgeAlias}.id || ','`,
+    emitVariablePathIdentityAppend(
+      'cg_path_0.public_identity',
+      variableEdgeAlias,
+      variableNextNodeExpression,
+    ),
+    emitRelationshipSequenceIdentityAppend(
+      'cg_path_0.relationship_identity',
+      variableEdgeAlias,
+    ),
+  ];
+  const supportsProjectionAwareFrontier = !aggregatesReturns && suffixEdgeAliases.length === 0;
+  const seedFrontierContext = createRangedFrontierContext(
+    context,
+    seedPublicIdentity,
+    seedRelationshipIdentity,
+    parsed.match.pathVariable,
+    variableRelationship.variable,
+  );
+  const recursivePublicIdentity = emitVariablePathIdentityAppend(
+    'cg_path_0.public_identity',
+    variableEdgeAlias,
+    variableNextNodeExpression,
+  );
+  const recursiveRelationshipIdentity = emitRelationshipSequenceIdentityAppend(
+    'cg_path_0.relationship_identity',
+    variableEdgeAlias,
+  );
+  const recursiveFrontierContext = createRangedFrontierContext(
+    context,
+    recursivePublicIdentity,
+    recursiveRelationshipIdentity,
+    parsed.match.pathVariable,
+    variableRelationship.variable,
+  );
+  const seedFrontierOrderTerms = supportsProjectionAwareFrontier
+    ? emitRangedFrontierOrderTerms(parsed, seedFrontierContext)
+    : [];
+  const recursiveFrontierOrderTerms = supportsProjectionAwareFrontier
+    ? emitRangedFrontierOrderTerms(parsed, recursiveFrontierContext)
+    : [];
+  const frontierOrderFirstOrdinal = cteColumns.length + 1;
+  seedFrontierOrderTerms.forEach((_term, index) => cteColumns.push(`frontier_order_${index}`));
+  seedSelectValues.push(...seedFrontierOrderTerms.map((term) => term.expression));
+  recursiveCarryValues.push(...recursiveFrontierOrderTerms.map((term) => term.expression));
+  const recursiveEdgePredicates = [
+    `${variableEdgeAlias}.${edgeAnchorColumn(variableRelationship.direction)} = cg_path_0.current_node_id`,
+    variableRelationship.type === undefined
+      ? undefined
+      : `${variableEdgeAlias}.kind = ${sqlStringLiteral(variableRelationship.type)}`,
+    activeEdgePredicate(variableEdgeAlias),
+    `instr(cg_path_0.visited_edge_ids, ',' || ${variableEdgeAlias}.id || ',') = 0`,
+  ].filter(isPresent);
+  const recursiveFrontierJoinLines: string[] = [];
+  if (supportsProjectionAwareFrontier) {
+    for (let index = 0; index <= relationshipIndex; index += 1) {
+      recursiveFrontierJoinLines.push(
+        `  JOIN nodes n${index} ON n${index}.id = cg_path_0.node_${index}_id`,
+      );
+    }
+    for (let index = 0; index < relationshipIndex; index += 1) {
+      recursiveFrontierJoinLines.push(
+        `  JOIN edges e${index} ON e${index}.id = cg_path_0.edge_${index}_id`,
+      );
+    }
+    recursiveFrontierJoinLines.push(
+      `  JOIN nodes n${relationshipIndex + 1} ON n${relationshipIndex + 1}.id = ${variableNextNodeExpression}`,
+    );
+  }
+
+  const lines = [
+    `WITH RECURSIVE cg_path_0(${cteColumns.join(', ')}) AS (`,
+    `  SELECT ${seedSelectValues.join(', ')}`,
+    ...seedLines,
+    seedNodePredicates.length === 0 ? undefined : `  WHERE ${seedNodePredicates.join(' AND ')}`,
+    '  UNION ALL',
+    `  SELECT ${recursiveCarryValues.join(', ')}`,
+    '  FROM cg_path_0',
+    `  JOIN edges ${variableEdgeAlias} INDEXED BY ${edgeIndexNameForDirection(variableRelationship.direction)} ON ${recursiveEdgePredicates.join(' AND ')}`,
+    ...recursiveFrontierJoinLines,
+    '  WHERE cg_path_0.depth < ?',
+    supportsProjectionAwareFrontier
+      ? `  ORDER BY ${emitRangedFrontierOrderByClause(recursiveFrontierOrderTerms, frontierOrderFirstOrdinal)}`
+      : `  ORDER BY ${cteColumns.indexOf('public_identity') + 1} ASC`,
+    '  LIMIT ?',
+    '),',
+    `${guardedResultRowsName} AS (`,
+    `  SELECT ${[
+      ...outputSelectList,
+      `row_number() OVER (ORDER BY ${emitOrderByClause(parsed, context)}) AS ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)}`,
+    ].join(', ')}`,
+    '  FROM cg_path_0',
+    ...outerJoinLines.map((line) => `  ${line}`),
+    `  WHERE ${finalWherePredicates.join(' AND ')}`,
+    groupByClause === undefined
+      ? undefined
+      : `  GROUP BY ${groupByClause}`,
+    `  ORDER BY ${emitOrderByClause(parsed, context)}`,
+    '  LIMIT ?',
+    '),',
+    `cg_path_frontier AS (SELECT count(*) AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)} FROM cg_path_0)`,
+    `SELECT ${[
+      ...guardedSentinelSelectList,
+      `cg_path_frontier.${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)} AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)}`,
+      `1 AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN)}`,
+      `0 AS ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)}`,
+    ].join(', ')}`,
+    'FROM cg_path_frontier',
+    'UNION ALL',
+    `SELECT ${[
+      ...guardedOutputSelectList,
+      `cg_path_frontier.${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)} AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_COUNT_COLUMN)}`,
+      `0 AS ${quoteIdentifier(INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN)}`,
+      `${guardedResultRowsName}.${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)} AS ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)}`,
+    ].join(', ')}`,
+    `FROM ${guardedResultRowsName} CROSS JOIN cg_path_frontier`,
+    `ORDER BY ${quoteIdentifier(INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN)} DESC, ${quoteIdentifier(INTERNAL_AGGREGATE_RESULT_ORDER_COLUMN)} ASC`,
+    capPlan.comment,
+  ].filter(isPresent);
+
+  return {
+    status: 'success',
+    sql: lines.join('\n'),
+    boundParameters: parameters,
+    pathExpansionGuard: frontierGuard,
   };
 }
 
@@ -1973,20 +2551,159 @@ function emitOrderByClause(parsed: CypherParseSuccess, context: SqlEmitContext):
     return parsed.orderBy.map((item) => emitOrderItem(item, parsed, context)).join(', ');
   }
 
+  const matchIdentityOrder = context.publicMatchIdentityExpression === undefined
+    ? emitMatchedChainIdentityOrder(parsed.match)
+    : [`${context.publicMatchIdentityExpression} ASC`];
   return [
-    ...parsed.returns.map((item) => `${item.expression} ASC NULLS LAST`),
-    ...emitMatchedChainIdentityOrder(parsed.match),
+    ...parsed.returns.flatMap((item) => emitDefaultProjectedValueOrder(item, parsed, context)),
+    ...matchIdentityOrder,
   ].join(', ');
 }
 
+function emitDefaultProjectedValueOrder(
+  item: AstReturnItem,
+  parsed: CypherParseSuccess,
+  context: SqlEmitContext,
+): readonly string[] {
+  if (item.aggregate !== undefined) {
+    return [`${emitReturnItemExpression(item, context)} ASC NULLS LAST`];
+  }
+
+  const publicPathIdentity = context.publicPathIdentityAliases?.get(item.expression);
+  if (publicPathIdentity !== undefined) {
+    return [`${publicPathIdentity} ASC`];
+  }
+
+  const publicRelationshipSequenceIdentity =
+    context.publicRelationshipSequenceIdentityAliases?.get(item.expression);
+  if (publicRelationshipSequenceIdentity !== undefined) {
+    return [`${publicRelationshipSequenceIdentity} ASC`];
+  }
+
+  const nodeIndex = parsed.match.nodes.findIndex((node) => node.variable === item.expression);
+  if (nodeIndex !== -1) {
+    return [`n${nodeIndex}.id ASC`];
+  }
+
+  const relationshipIndex = parsed.match.relationships.findIndex((relationship) => {
+    return relationship.variable === item.expression && relationship.range === undefined;
+  });
+  if (relationshipIndex !== -1) {
+    return emitRelationshipIdentityOrder(`e${relationshipIndex}`);
+  }
+
+  if (
+    parsed.match.pathVariable === item.expression &&
+    parsed.match.relationships.every((relationship) => relationship.range === undefined)
+  ) {
+    return emitMatchedChainIdentityOrder(parsed.match);
+  }
+
+  return [`${emitReturnItemExpression(item, context)} ASC NULLS LAST`];
+}
+
+function emitRelationshipIdentityOrder(edgeAlias: string): readonly string[] {
+  return [
+    `${edgeAlias}.source ASC`,
+    `${edgeAlias}.target ASC`,
+    `${edgeAlias}.kind ASC`,
+    `${edgeAlias}.line ASC NULLS LAST`,
+    `${edgeAlias}.col ASC NULLS LAST`,
+  ];
+}
+
+type RangedFrontierOrderTerm = {
+  readonly expression: string;
+  readonly direction: 'ASC' | 'DESC';
+  readonly nullOrdering?: 'NULLS FIRST' | 'NULLS LAST';
+};
+
+function emitRangedFrontierOrderTerms(
+  parsed: CypherParseSuccess,
+  context: SqlEmitContext,
+): readonly RangedFrontierOrderTerm[] {
+  if (parsed.orderBy.length > 0) {
+    return parsed.orderBy.map((item) => ({
+      expression: emitOrderItemExpression(item, parsed, context),
+      direction: item.direction,
+      nullOrdering: item.direction === 'DESC' ? 'NULLS FIRST' : 'NULLS LAST',
+    }));
+  }
+
+  const terms: RangedFrontierOrderTerm[] = [];
+  for (const item of parsed.returns) {
+    if (item.aggregate !== undefined) {
+      continue;
+    }
+    const publicIdentity =
+      context.publicPathIdentityAliases?.get(item.expression) ??
+      context.publicRelationshipSequenceIdentityAliases?.get(item.expression);
+    if (publicIdentity !== undefined) {
+      terms.push({ expression: publicIdentity, direction: 'ASC' });
+      continue;
+    }
+    const nodeAlias = context.nodeAliases.get(item.expression);
+    if (nodeAlias !== undefined) {
+      terms.push({ expression: `${nodeAlias}.id`, direction: 'ASC' });
+      continue;
+    }
+    const fixedRelationshipAlias = context.relationshipAliases.get(item.expression);
+    if (fixedRelationshipAlias !== undefined) {
+      terms.push(
+        { expression: `${fixedRelationshipAlias}.source`, direction: 'ASC' },
+        { expression: `${fixedRelationshipAlias}.target`, direction: 'ASC' },
+        { expression: `${fixedRelationshipAlias}.kind`, direction: 'ASC' },
+        { expression: `${fixedRelationshipAlias}.line`, direction: 'ASC', nullOrdering: 'NULLS LAST' },
+        { expression: `${fixedRelationshipAlias}.col`, direction: 'ASC', nullOrdering: 'NULLS LAST' },
+      );
+      continue;
+    }
+    terms.push({
+      expression: emitReturnItemExpression(item, context),
+      direction: 'ASC',
+      nullOrdering: 'NULLS LAST',
+    });
+  }
+  if (context.publicMatchIdentityExpression !== undefined) {
+    terms.push({ expression: context.publicMatchIdentityExpression, direction: 'ASC' });
+  }
+  return terms;
+}
+
+function emitRangedFrontierOrderByClause(
+  terms: readonly RangedFrontierOrderTerm[],
+  firstOrdinal: number,
+): string {
+  return terms.map((term, index) => {
+    return [
+      String(firstOrdinal + index),
+      term.direction,
+      term.nullOrdering,
+    ].filter(isPresent).join(' ');
+  }).join(', ');
+}
+
 function emitOrderItem(item: AstOrderItem, parsed: CypherParseSuccess, context: SqlEmitContext): string {
-  const returnItem = returnItemForAlias(item.expression, parsed.returns);
-  const expression = returnItem?.expression ?? item.expression;
-  const sqlExpression = returnItem === undefined
-    ? emitReturnExpression(expression, context)
-    : emitReturnItemExpression(returnItem, context);
+  const sqlExpression = emitOrderItemExpression(item, parsed, context);
   const nullOrdering = item.direction === 'DESC' ? 'NULLS FIRST' : 'NULLS LAST';
   return `${sqlExpression} ${item.direction} ${nullOrdering}`;
+}
+
+function emitOrderItemExpression(
+  item: AstOrderItem,
+  parsed: CypherParseSuccess,
+  context: SqlEmitContext,
+): string {
+  const returnItem = returnItemForAlias(item.expression, parsed.returns);
+  const expression = returnItem?.expression ?? item.expression;
+  const publicIdentityExpression =
+    context.publicPathIdentityAliases?.get(expression) ??
+    context.publicRelationshipSequenceIdentityAliases?.get(expression);
+  const sqlExpression = publicIdentityExpression ??
+    (returnItem === undefined
+      ? emitReturnExpression(expression, context)
+      : emitReturnItemExpression(returnItem, context));
+  return sqlExpression;
 }
 
 function expressionForAlias(alias: string, returns: readonly AstReturnItem[]): string | undefined {
@@ -2008,55 +2725,148 @@ function emitMatchedChainIdentityOrder(match: CypherParseSuccess['match']): read
     const relationship = match.relationships[nodeIndex];
     if (relationship !== undefined) {
       const edgeAlias = `e${nodeIndex}`;
-      orderItems.push(
-        `${edgeAlias}.source ASC`,
-        `${edgeAlias}.target ASC`,
-        `${edgeAlias}.kind ASC`,
-        `${edgeAlias}.line ASC NULLS LAST`,
-        `${edgeAlias}.col ASC NULLS LAST`,
-      );
+      orderItems.push(...emitRelationshipIdentityOrder(edgeAlias));
     }
   });
   return orderItems;
 }
 
 function emitVariablePathIdentityOrder(pathAlias: string): string {
+  return `${pathAlias}.public_identity ASC`;
+}
+
+function emitVariablePathIdentitySeed(
+  startNodeExpression: string,
+  edgeAlias: string,
+  nextNodeExpression: string,
+): string {
+  return emitIdentityKey([
+    emitTextIdentityComponent(startNodeExpression),
+    ...emitRelationshipIdentityComponents(edgeAlias),
+    emitTextIdentityComponent(nextNodeExpression),
+  ]);
+}
+
+function emitMixedVariablePathIdentitySeed(
+  relationshipIndex: number,
+  variableEdgeAlias: string,
+  nextNodeExpression: string,
+): string {
+  const components: string[] = [];
+  for (let nodeIndex = 0; nodeIndex <= relationshipIndex; nodeIndex += 1) {
+    components.push(emitTextIdentityComponent(`n${nodeIndex}.id`));
+    if (nodeIndex < relationshipIndex) {
+      components.push(...emitRelationshipIdentityComponents(`e${nodeIndex}`));
+    }
+  }
+  components.push(
+    ...emitRelationshipIdentityComponents(variableEdgeAlias),
+    emitTextIdentityComponent(nextNodeExpression),
+  );
+  return emitIdentityKey(components);
+}
+
+function emitVariablePathIdentityAppend(
+  pathIdentityExpression: string,
+  edgeAlias: string,
+  nextNodeExpression: string,
+): string {
   return [
-    `${pathAlias}.depth ASC`,
-    `${pathAlias}.start_node_id ASC`,
-    `${pathAlias}.current_node_id ASC`,
-    `${pathAlias}.visited_edge_ids ASC`,
-  ].join(', ');
+    `substr(${pathIdentityExpression}, 1, length(${pathIdentityExpression}) - 1)`,
+    emitIdentityKey([
+      ...emitRelationshipIdentityComponents(edgeAlias),
+      emitTextIdentityComponent(nextNodeExpression),
+    ]),
+  ].join(' || ');
+}
+
+function emitRelationshipSequenceIdentitySeed(edgeAlias: string): string {
+  return emitIdentityKey(emitRelationshipIdentityComponents(edgeAlias));
+}
+
+function emitRelationshipSequenceIdentityAppend(
+  relationshipIdentityExpression: string,
+  edgeAlias: string,
+): string {
+  return [
+    `substr(${relationshipIdentityExpression}, 1, length(${relationshipIdentityExpression}) - 1)`,
+    emitRelationshipSequenceIdentitySeed(edgeAlias),
+  ].join(' || ');
+}
+
+function emitRelationshipIdentityComponents(edgeAlias: string): readonly string[] {
+  return [
+    emitTextIdentityComponent(`${edgeAlias}.source`),
+    emitTextIdentityComponent(`${edgeAlias}.target`),
+    emitTextIdentityComponent(`${edgeAlias}.kind`),
+    emitNullableIntegerIdentityComponent(`${edgeAlias}.line`),
+    emitNullableIntegerIdentityComponent(`${edgeAlias}.col`),
+  ];
+}
+
+function emitTextIdentityComponent(expression: string): string {
+  return `hex(CAST(${expression} AS BLOB)) || '/'`;
+}
+
+function emitNullableIntegerIdentityComponent(expression: string): string {
+  return [
+    'CASE',
+    `WHEN ${expression} IS NULL THEN '2'`,
+    `WHEN ${expression} < 0 THEN '0' || printf('%019d', (9223372036854775807 + ${expression}) + 1)`,
+    `ELSE '1' || printf('%019d', ${expression})`,
+    "END || '/'",
+  ].join(' ');
+}
+
+function emitIdentityKey(components: readonly string[]): string {
+  return [
+    ...components.map((component) => `(${component})`),
+    "'~'",
+  ].join(' || ');
 }
 
 function emitNodeProjection(nodeAlias: string): string {
-  return [
-    'json_object(',
-    "'id', " + `${nodeAlias}.id`,
-    "'kind', " + `${nodeAlias}.kind`,
-    "'name', " + `${nodeAlias}.name`,
-    "'qualifiedName', " + `${nodeAlias}.qualified_name`,
-    "'filePath', " + `${nodeAlias}.file_path`,
-    "'language', " + `${nodeAlias}.language`,
-    "'startLine', " + `${nodeAlias}.start_line`,
-    "'endLine', " + `${nodeAlias}.end_line`,
-    "'startColumn', " + `${nodeAlias}.start_column`,
-    "'endColumn', " + `${nodeAlias}.end_column`,
-    ')',
-  ].join(' ');
+  return `json_object(${[
+    `'id', ${nodeAlias}.id`,
+    `'kind', ${nodeAlias}.kind`,
+    `'name', ${nodeAlias}.name`,
+    `'qualifiedName', ${nodeAlias}.qualified_name`,
+    `'filePath', ${nodeAlias}.file_path`,
+    `'language', ${nodeAlias}.language`,
+    `'startLine', ${nodeAlias}.start_line`,
+    `'endLine', ${nodeAlias}.end_line`,
+    `'startColumn', ${nodeAlias}.start_column`,
+    `'endColumn', ${nodeAlias}.end_column`,
+  ].join(', ')})`;
 }
 
 function emitRelationshipProjection(edgeAlias: string): string {
-  return [
-    'json_object(',
-    "'source', " + `${edgeAlias}.source`,
-    "'target', " + `${edgeAlias}.target`,
-    "'kind', " + `${edgeAlias}.kind`,
-    "'line', " + `${edgeAlias}.line`,
-    "'column', " + `${edgeAlias}.col`,
-    "'provenance', " + `${edgeAlias}.provenance`,
-    ')',
-  ].join(' ');
+  return `json_object(${[
+    `'${INTERNAL_RELATIONSHIP_STORAGE_ID_FIELD}', ${edgeAlias}.id`,
+    `'source', ${edgeAlias}.source`,
+    `'target', ${edgeAlias}.target`,
+    `'kind', ${edgeAlias}.kind`,
+    `'line', ${edgeAlias}.line`,
+    `'column', ${edgeAlias}.col`,
+    `'provenance', ${edgeAlias}.provenance`,
+  ].join(', ')})`;
+}
+
+function emitEdgeIdListExpression(edgeAliases: readonly string[]): string {
+  if (edgeAliases.length === 0) {
+    return "''";
+  }
+  return `',' ${edgeAliases.map((alias) => `|| ${alias}.id || ','`).join(' ')}`;
+}
+
+function emitFixedRelationshipUniquenessPredicates(relationshipCount: number): readonly string[] {
+  const predicates: string[] = [];
+  for (let relationshipIndex = 1; relationshipIndex < relationshipCount; relationshipIndex += 1) {
+    for (let priorIndex = 0; priorIndex < relationshipIndex; priorIndex += 1) {
+      predicates.push(`e${relationshipIndex}.id <> e${priorIndex}.id`);
+    }
+  }
+  return predicates;
 }
 
 function createCapPlan(requestedLimit: number | undefined): {
@@ -2091,7 +2901,7 @@ class WhereSqlEmitter {
   emit(): string {
     const expression = this.emitOrExpression();
     if (!this.isAtEnd()) {
-      throw new Error('SPEC-013 WHERE emitter did not consume every predicate token.');
+      throw this.syntaxError('end of WHERE expression');
     }
     return expression;
   }
@@ -2195,7 +3005,7 @@ class WhereSqlEmitter {
     if (this.isAtPropertyAccess()) {
       return this.emitPropertyOperandSql();
     }
-    throw new Error('SPEC-013 WHERE emitter expected a value operand.');
+    throw this.syntaxError('value operand');
   }
 
   private emitStringPredicateExpression(leftSql: string, operator: RuntimeStringPredicateOperator): string {
@@ -2225,7 +3035,7 @@ class WhereSqlEmitter {
   private consumePropertyAccess(): { readonly variable: string; readonly property: string } {
     const property = propertyAccessFromTokens(this.tokens, this.index);
     if (property === undefined) {
-      throw new Error('SPEC-013 WHERE emitter expected property access.');
+      throw this.syntaxError('property access');
     }
     this.index += 3;
     return property;
@@ -2234,7 +3044,7 @@ class WhereSqlEmitter {
   private consumeComparisonOperator(): string {
     const token = this.current();
     if (token?.kind !== 'punctuation') {
-      throw new Error('SPEC-013 WHERE emitter expected comparison operator.');
+      throw this.syntaxError('comparison operator');
     }
 
     if (token.value === '<' && this.peekPunctuation('=')) {
@@ -2260,7 +3070,7 @@ class WhereSqlEmitter {
       return token.value;
     }
 
-    throw new Error('SPEC-013 WHERE emitter expected comparison operator.');
+    throw this.syntaxError('comparison operator');
   }
 
   private matchStringPredicateOperator(): RuntimeStringPredicateOperator | undefined {
@@ -2280,13 +3090,13 @@ class WhereSqlEmitter {
 
   private consumeKeyword(keyword: string): void {
     if (!this.matchKeyword(keyword)) {
-      throw new Error(`SPEC-013 WHERE emitter expected ${keyword}.`);
+      throw this.syntaxError(keyword);
     }
   }
 
   private consumePunctuation(punctuation: string): void {
     if (!this.matchPunctuation(punctuation)) {
-      throw new Error(`SPEC-013 WHERE emitter expected ${punctuation}.`);
+      throw this.syntaxError(punctuation);
     }
   }
 
@@ -2326,6 +3136,10 @@ class WhereSqlEmitter {
 
   private advance(): void {
     this.index += 1;
+  }
+
+  private syntaxError(expected: string): WhereSyntaxError {
+    return new WhereSyntaxError(this.index, expected);
   }
 }
 
@@ -2474,14 +3288,6 @@ type StorageEdgeRow = {
   readonly provenance: string | null;
 };
 
-type RuntimeGraph = {
-  readonly nodes: readonly StorageNodeRow[];
-  readonly edges: readonly StorageEdgeRow[];
-  readonly nodesById: ReadonlyMap<string, StorageNodeRow>;
-  readonly outgoingEdgesByNodeId: ReadonlyMap<string, readonly StorageEdgeRow[]>;
-  readonly incomingEdgesByNodeId: ReadonlyMap<string, readonly StorageEdgeRow[]>;
-};
-
 type RuntimePathBinding = {
   readonly nodes: readonly StorageNodeRow[];
   readonly relationships: readonly StorageEdgeRow[];
@@ -2490,14 +3296,10 @@ type RuntimePathBinding = {
 type RuntimeMatch = {
   readonly nodes: ReadonlyMap<string, StorageNodeRow>;
   readonly relationships: ReadonlyMap<string, StorageEdgeRow>;
+  readonly relationshipLists: ReadonlyMap<string, readonly StorageEdgeRow[]>;
   readonly path?: RuntimePathBinding;
   readonly identity: readonly unknown[];
 };
-
-type RuntimeGraphLoadResult =
-  | { readonly status: 'success'; readonly graph: RuntimeGraph }
-  | CypherDiagnosticResult
-  | CypherTimeoutResult;
 
 type SortableRuntimeRow = {
   readonly match: RuntimeMatch;
@@ -2505,25 +3307,7 @@ type SortableRuntimeRow = {
   readonly sortValues?: ReadonlyMap<string, unknown>;
 };
 
-type RuntimeMatchVisitor = (match: RuntimeMatch) => boolean;
-
 type RuntimeTruth = boolean | null;
-
-const CYPHER_NODE_LOAD_SQL = [
-  'SELECT id, kind, name, qualified_name, file_path, language,',
-  '       start_line, end_line, start_column, end_column,',
-  '       docstring, signature, visibility,',
-  '       is_exported, is_async, is_static, is_abstract,',
-  '       decorators, type_parameters, return_type',
-  'FROM nodes',
-  'ORDER BY id',
-].join('\n');
-
-const CYPHER_EDGE_LOAD_SQL = [
-  'SELECT id, source, target, kind, metadata, line, col, provenance',
-  'FROM edges',
-  'ORDER BY source, target, kind, line, col, id',
-].join('\n');
 
 export async function queryCypher(projectRoot: string, query: string): Promise<CypherQueryResult> {
   return queryCypherInternal(projectRoot, query, {});
@@ -2558,9 +3342,6 @@ async function queryCypherInternal(
     return parsed;
   }
 
-  const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
-  const shouldUseVariableSqlPlan = variableRelationshipIndex !== -1;
-  const shouldUseNodeOnlyAggregateSqlPlan = canUseNodeOnlyAggregateSqlPlan(parsed);
   const plan = emitParameterizedSql(parsed);
 
   if (options.forceTimeout === true) {
@@ -2574,35 +3355,11 @@ async function queryCypherInternal(
       : timeoutProbe;
   }
 
-  if ((shouldUseVariableSqlPlan && hasAggregateReturns(parsed)) || shouldUseNodeOnlyAggregateSqlPlan) {
+  if (hasAggregateReturns(parsed)) {
     return queryAggregateCypherWithSqlPlan(projectRoot, query, parsed, plan, options);
   }
 
-  if (shouldUseVariableSqlPlan) {
-    return queryVariableCypherWithSqlPlan(projectRoot, parsed, variableRelationshipIndex, plan, options);
-  }
-
-  const graphResult = await loadRuntimeGraph(projectRoot, options);
-  if (graphResult.status !== 'success') {
-    return graphResult;
-  }
-
-  const capPlan = createCapPlan(parsed.limit);
-  const earlyRowLimit = parsed.orderBy.length === 0 ? capPlan.effectiveCap + 1 : undefined;
-  const evaluatedRows = evaluateRuntimeRows(parsed, graphResult.graph, earlyRowLimit, options);
-  const orderedRows = [...evaluatedRows].sort((left, right) => compareRuntimeRows(left, right, parsed));
-  const inspectedCount = Math.min(orderedRows.length, capPlan.effectiveCap + 1);
-  options.onRowsInspected?.(inspectedCount);
-
-  const probedRows = orderedRows.slice(0, capPlan.effectiveCap + 1);
-  const truncated = probedRows.length > capPlan.effectiveCap;
-  return finalizeCypherSuccessResult({
-    status: 'success',
-    columns: parsed.returns.map((item) => ({ name: item.alias ?? item.expression })),
-    rows: probedRows.slice(0, capPlan.effectiveCap).map((item) => item.row),
-    effectiveCap: capPlan.effectiveCap,
-    truncated,
-  }, options);
+  return queryMatchedCypherWithSqlPlan(projectRoot, parsed, plan, options);
 }
 
 function finalizeCypherSuccessResult(result: CypherSuccessResult, options: CypherRuntimeTestOptions): CypherQueryResult {
@@ -2610,71 +3367,48 @@ function finalizeCypherSuccessResult(result: CypherSuccessResult, options: Cyphe
   return typeof serialized === 'string' ? result : serialized;
 }
 
-async function loadRuntimeGraph(
-  projectRoot: string,
-  options: CypherRuntimeTestOptions,
-): Promise<RuntimeGraphLoadResult> {
-  const nodeResult = await executeCypherSqlForTests(
-    projectRoot,
-    { sql: CYPHER_NODE_LOAD_SQL },
-    { onSqlPrepare: options.onSqlPrepare },
-  );
-  if (nodeResult.status !== 'success') {
-    return nodeResult;
-  }
-
-  const edgeResult = await executeCypherSqlForTests(
-    projectRoot,
-    { sql: CYPHER_EDGE_LOAD_SQL },
-    { onSqlPrepare: options.onSqlPrepare },
-  );
-  if (edgeResult.status !== 'success') {
-    return edgeResult;
-  }
-
-  const nodes = nodeResult.rows.map(toStorageNodeRow);
-  const edges = edgeResult.rows.map(toStorageEdgeRow).filter(isActiveStorageEdge);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const outgoingEdgesByNodeId = groupEdgesByNodeId(edges, 'source');
-  const incomingEdgesByNodeId = groupEdgesByNodeId(edges, 'target');
-
-  return {
-    status: 'success',
-    graph: {
-      nodes,
-      edges,
-      nodesById,
-      outgoingEdgesByNodeId,
-      incomingEdgesByNodeId,
-    },
-  };
-}
-
-async function queryVariableCypherWithSqlPlan(
+async function queryMatchedCypherWithSqlPlan(
   projectRoot: string,
   parsed: CypherParseSuccess,
-  relationshipIndex: number,
   plan: CypherPlanSuccess,
   options: CypherRuntimeTestOptions,
 ): Promise<CypherQueryResult> {
   const capPlan = createCapPlan(parsed.limit);
   const sqlRowsResult = await executeCypherSqlForTests(
     projectRoot,
-    { sql: plan.sql, boundParameters: plan.boundParameters, effectiveCap: capPlan.probeLimit },
+    {
+      sql: plan.sql,
+      boundParameters: plan.boundParameters,
+      effectiveCap: capPlan.probeLimit + (plan.pathExpansionGuard === undefined ? 0 : 1),
+    },
     { onSqlPrepare: options.onSqlPrepare },
   );
   if (sqlRowsResult.status !== 'success') {
     return sqlRowsResult;
   }
+  if (
+    plan.pathExpansionGuard !== undefined &&
+    sqlRowsResult.rows.some((row) => {
+      return numberFromStorage(row[INTERNAL_PATH_FRONTIER_COUNT_COLUMN]) >
+        plan.pathExpansionGuard!;
+    })
+  ) {
+    return makePathExpansionLimitDiagnostic();
+  }
+  const sqlRows = plan.pathExpansionGuard === undefined
+    ? sqlRowsResult.rows
+    : sqlRowsResult.rows.filter((row) => {
+        return numberFromStorage(row[INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN]) !== 1;
+      });
 
-  const edgeIdsByRow = sqlRowsResult.rows.map((row) => edgeIdsFromVisitedEdgeIds(row[INTERNAL_PATH_EDGE_IDS_COLUMN]));
+  const edgeIdsByRow = sqlRows.map((row) => edgeIdsFromVisitedEdgeIds(row[INTERNAL_PATH_EDGE_IDS_COLUMN]));
   const edgeMapResult = await loadStorageEdgesById(projectRoot, uniqueNumbers(edgeIdsByRow.flat()), options);
   if (edgeMapResult.status !== 'success') {
     return edgeMapResult;
   }
 
   const nodeIds = new Set<string>();
-  for (const row of sqlRowsResult.rows) {
+  for (const row of sqlRows) {
     nodeIds.add(stringFromStorage(row[INTERNAL_PATH_START_COLUMN]));
   }
   for (const edge of edgeMapResult.rows.values()) {
@@ -2687,18 +3421,13 @@ async function queryVariableCypherWithSqlPlan(
     return nodeMapResult;
   }
 
-  const relationship = parsed.match.relationships[relationshipIndex];
-  if (relationship === undefined) {
-    return makeDiagnostic('', 0, 1, 0, 'CYPHER_RUNTIME_ERROR', 'variable relationship', 'runtime', 'Cypher runtime could not reconstruct a variable relationship path.');
-  }
-
   const projectedRows: SortableRuntimeRow[] = [];
-  for (let rowIndex = 0; rowIndex < sqlRowsResult.rows.length; rowIndex += 1) {
-    const sqlRow = sqlRowsResult.rows[rowIndex];
+  for (let rowIndex = 0; rowIndex < sqlRows.length; rowIndex += 1) {
+    const sqlRow = sqlRows[rowIndex];
     if (sqlRow === undefined) {
       continue;
     }
-    const path = reconstructRuntimePath(sqlRow, edgeIdsByRow[rowIndex] ?? [], edgeMapResult.rows, nodeMapResult.rows, relationship);
+    const path = reconstructRuntimePath(sqlRow, edgeIdsByRow[rowIndex] ?? [], edgeMapResult.rows, nodeMapResult.rows, parsed);
     if (path === undefined) {
       return makeDiagnostic('', 0, 1, 0, 'CYPHER_RUNTIME_ERROR', 'bounded path rows', 'runtime', 'Cypher runtime could not reconstruct bounded path rows.');
     }
@@ -2713,14 +3442,15 @@ async function queryVariableCypherWithSqlPlan(
     options.onRowsMaterialized?.(projectedRows.length);
   }
 
-  options.onRowsInspected?.(Math.min(projectedRows.length, capPlan.probeLimit));
-  const probedRows = projectedRows.slice(0, capPlan.probeLimit);
+  const orderedRows = [...projectedRows].sort((left, right) => compareRuntimeRows(left, right, parsed));
+  options.onRowsInspected?.(Math.min(orderedRows.length, capPlan.probeLimit));
+  const probedRows = orderedRows.slice(0, capPlan.probeLimit);
   return finalizeCypherSuccessResult({
     status: 'success',
     columns: parsed.returns.map((item) => ({ name: item.alias ?? item.expression })),
     rows: probedRows.slice(0, capPlan.effectiveCap).map((item) => item.row),
     effectiveCap: capPlan.effectiveCap,
-    truncated: sqlRowsResult.rows.length > capPlan.effectiveCap || probedRows.length > capPlan.effectiveCap,
+    truncated: sqlRows.length > capPlan.effectiveCap || orderedRows.length > capPlan.effectiveCap,
   }, options);
 }
 
@@ -2740,7 +3470,7 @@ async function queryAggregateCypherWithSqlPlan(
     {
       sql: plan.sql,
       boundParameters: plan.boundParameters,
-      effectiveCap: capPlan.probeLimit,
+      effectiveCap: capPlan.probeLimit + (plan.pathExpansionGuard === undefined ? 0 : 1),
       queryPlanProbe,
     },
     { onSqlPrepare: options.onSqlPrepare, onQueryPlan: options.onQueryPlan },
@@ -2748,17 +3478,54 @@ async function queryAggregateCypherWithSqlPlan(
   if (sqlRowsResult.status !== 'success') {
     return sqlRowsResult;
   }
+  const aggregateRows = plan.pathExpansionGuard === undefined
+    ? sqlRowsResult.rows
+    : sqlRowsResult.rows.filter((row) => {
+        return numberFromStorage(row[INTERNAL_PATH_FRONTIER_SENTINEL_COLUMN]) !== 1;
+      });
+  if (
+    plan.pathExpansionGuard !== undefined &&
+    sqlRowsResult.rows.some((row) => {
+      return numberFromStorage(row[INTERNAL_PATH_FRONTIER_COUNT_COLUMN]) >
+        plan.pathExpansionGuard!;
+    })
+  ) {
+    return makePathExpansionLimitDiagnostic();
+  }
 
-  options.onRowsMaterialized?.(sqlRowsResult.rows.length);
-  options.onRowsInspected?.(Math.min(sqlRowsResult.rows.length, capPlan.probeLimit));
-  const probedRows = sqlRowsResult.rows.slice(0, capPlan.probeLimit);
+  const projectedRowsResult = await projectSqlAggregateRows(
+    projectRoot,
+    parsed,
+    aggregateRows,
+    options,
+  );
+  if (projectedRowsResult.status !== 'success') {
+    return projectedRowsResult;
+  }
+
+  options.onRowsMaterialized?.(aggregateRows.length);
+  options.onRowsInspected?.(Math.min(aggregateRows.length, capPlan.probeLimit));
+  const probedRows = projectedRowsResult.rows.slice(0, capPlan.probeLimit);
   return finalizeCypherSuccessResult({
     status: 'success',
     columns: parsed.returns.map((item) => ({ name: item.alias ?? item.expression })),
-    rows: probedRows.slice(0, capPlan.effectiveCap).map((row) => projectSqlAggregateRow(parsed, row)),
+    rows: probedRows.slice(0, capPlan.effectiveCap),
     effectiveCap: capPlan.effectiveCap,
-    truncated: sqlRowsResult.rows.length > capPlan.effectiveCap,
+    truncated: aggregateRows.length > capPlan.effectiveCap,
   }, options);
+}
+
+function makePathExpansionLimitDiagnostic(): CypherDiagnosticResult {
+  return makeDiagnostic(
+    '',
+    0,
+    1,
+    0,
+    'CYPHER_PATH_EXPANSION_LIMIT',
+    'narrower MATCH pattern or bounded path range',
+    'runtime',
+    'Cypher path expansion exceeded the bounded aggregate match limit. Narrow the MATCH pattern or path range.',
+  );
 }
 
 function createPerformanceQueryPlanProbe(
@@ -2785,12 +3552,210 @@ function projectSqlAggregateRow(parsed: CypherParseSuccess, sqlRow: Record<strin
   return row;
 }
 
-function canUseNodeOnlyAggregateSqlPlan(parsed: CypherParseSuccess): boolean {
-  return (
-    parsed.match.relationships.length === 0 &&
-    hasAggregateReturns(parsed) &&
-    parsed.returns.every((item) => item.aggregate !== undefined || splitPropertyAccess(item.expression) !== undefined)
+type SqlAggregateProjectionResult =
+  | { readonly status: 'success'; readonly rows: readonly CypherRow[] }
+  | CypherDiagnosticResult
+  | CypherTimeoutResult;
+
+async function projectSqlAggregateRows(
+  projectRoot: string,
+  parsed: CypherParseSuccess,
+  sqlRows: readonly Record<string, unknown>[],
+  options: CypherRuntimeTestOptions,
+): Promise<SqlAggregateProjectionResult> {
+  const pathVariable = parsed.match.pathVariable;
+  const pathReturnItems = pathVariable === undefined
+    ? []
+    : parsed.returns.filter((item) => item.aggregate === undefined && item.expression === pathVariable);
+  const nodeVariables = new Set(parsed.match.nodes.map((node) => node.variable).filter(isPresent));
+  const fixedRelationshipVariables = new Set(
+    parsed.match.relationships
+      .filter((relationship) => relationship.range === undefined)
+      .map((relationship) => relationship.variable)
+      .filter(isPresent),
   );
+  const rangedRelationshipVariables = new Set(
+    parsed.match.relationships
+      .filter((relationship) => relationship.range !== undefined)
+      .map((relationship) => relationship.variable)
+      .filter(isPresent),
+  );
+  const nodeReturnItems = parsed.returns.filter((item) => {
+    return item.aggregate === undefined && nodeVariables.has(item.expression);
+  });
+  const fixedRelationshipReturnItems = parsed.returns.filter((item) => {
+    return item.aggregate === undefined && fixedRelationshipVariables.has(item.expression);
+  });
+  const rangedRelationshipReturnItems = parsed.returns.filter((item) => {
+    return item.aggregate === undefined && rangedRelationshipVariables.has(item.expression);
+  });
+  if (
+    pathReturnItems.length === 0 &&
+    nodeReturnItems.length === 0 &&
+    fixedRelationshipReturnItems.length === 0 &&
+    rangedRelationshipReturnItems.length === 0
+  ) {
+    return {
+      status: 'success',
+      rows: sqlRows.map((row) => projectSqlAggregateRow(parsed, row)),
+    };
+  }
+
+  const edgeIds = new Set<number>();
+  const nodeIds = new Set<string>();
+  for (const sqlRow of sqlRows) {
+    for (const item of nodeReturnItems) {
+      const nodeId = stringFieldFromSqlProjection(sqlRow[item.alias ?? item.expression], 'id');
+      if (nodeId !== undefined) {
+        nodeIds.add(nodeId);
+      }
+    }
+    for (const item of fixedRelationshipReturnItems) {
+      const edgeId = numberFieldFromSqlProjection(
+        sqlRow[item.alias ?? item.expression],
+        INTERNAL_RELATIONSHIP_STORAGE_ID_FIELD,
+      );
+      if (edgeId !== undefined) {
+        edgeIds.add(edgeId);
+      }
+    }
+    for (const item of [...pathReturnItems, ...rangedRelationshipReturnItems]) {
+      for (const edgeId of edgeIdsFromVisitedEdgeIds(sqlRow[item.alias ?? item.expression])) {
+        edgeIds.add(edgeId);
+      }
+    }
+  }
+
+  const edgeMapResult = await loadStorageEdgesById(projectRoot, [...edgeIds], options);
+  if (edgeMapResult.status !== 'success') {
+    return edgeMapResult;
+  }
+
+  for (const edge of edgeMapResult.rows.values()) {
+    nodeIds.add(edge.source);
+    nodeIds.add(edge.target);
+  }
+  const nodeMapResult = await loadStorageNodesById(projectRoot, [...nodeIds], options);
+  if (nodeMapResult.status !== 'success') {
+    return nodeMapResult;
+  }
+
+  const projectedRows: CypherRow[] = [];
+  for (const sqlRow of sqlRows) {
+    const projectedRow = projectSqlAggregateRow(parsed, sqlRow);
+    for (const item of nodeReturnItems) {
+      const columnName = item.alias ?? item.expression;
+      const nodeId = stringFieldFromSqlProjection(sqlRow[columnName], 'id');
+      const node = nodeId === undefined ? undefined : nodeMapResult.rows.get(nodeId);
+      if (node === undefined) {
+        return makeAggregateHydrationDiagnostic('grouped node rows');
+      }
+      projectedRow[columnName] = { type: 'node', value: publicNodeFromStorage(node) };
+    }
+
+    for (const item of fixedRelationshipReturnItems) {
+      const columnName = item.alias ?? item.expression;
+      const edgeId = numberFieldFromSqlProjection(
+        sqlRow[columnName],
+        INTERNAL_RELATIONSHIP_STORAGE_ID_FIELD,
+      );
+      const edge = edgeId === undefined ? undefined : edgeMapResult.rows.get(edgeId);
+      if (edge === undefined) {
+        return makeAggregateHydrationDiagnostic('grouped relationship rows');
+      }
+      projectedRow[columnName] = {
+        type: 'relationship',
+        value: publicRelationshipFromStorage(edge),
+      };
+    }
+
+    for (const item of pathReturnItems) {
+      const columnName = item.alias ?? item.expression;
+      const pathEdgeIds = edgeIdsFromVisitedEdgeIds(sqlRow[columnName]);
+      const startNodeId = startNodeIdForPath(pathEdgeIds, edgeMapResult.rows, parsed);
+      const path = startNodeId === undefined
+        ? undefined
+        : reconstructRuntimePathFromStartNodeId(
+            startNodeId,
+            pathEdgeIds,
+            edgeMapResult.rows,
+            nodeMapResult.rows,
+            parsed,
+          );
+      if (path === undefined) {
+        return makeAggregateHydrationDiagnostic('grouped path rows');
+      }
+      projectedRow[columnName] = {
+        type: 'path',
+        value: publicPathFromStorage(path),
+      };
+    }
+
+    for (const item of rangedRelationshipReturnItems) {
+      const columnName = item.alias ?? item.expression;
+      const relationships = edgeIdsFromVisitedEdgeIds(sqlRow[columnName]).map((edgeId) => {
+        return edgeMapResult.rows.get(edgeId);
+      });
+      if (relationships.some((relationship) => relationship === undefined)) {
+        return makeAggregateHydrationDiagnostic('grouped ranged relationship rows');
+      }
+      projectedRow[columnName] = {
+        type: 'scalar',
+        value: relationships.filter(isPresent).map(publicRelationshipFromStorage),
+      };
+    }
+    projectedRows.push(projectedRow);
+  }
+  return { status: 'success', rows: projectedRows };
+}
+
+function makeAggregateHydrationDiagnostic(expected: string): CypherDiagnosticResult {
+  return makeDiagnostic(
+    '',
+    0,
+    1,
+    0,
+    'CYPHER_RUNTIME_ERROR',
+    expected,
+    'runtime',
+    `Cypher runtime could not reconstruct ${expected}.`,
+  );
+}
+
+function stringFieldFromSqlProjection(value: unknown, field: string): string | undefined {
+  const record = recordFromSqlProjection(value);
+  const fieldValue = record?.[field];
+  return typeof fieldValue === 'string' ? fieldValue : undefined;
+}
+
+function numberFieldFromSqlProjection(value: unknown, field: string): number | undefined {
+  const record = recordFromSqlProjection(value);
+  const fieldValue = record?.[field];
+  return typeof fieldValue === 'number' ? fieldValue : undefined;
+}
+
+function recordFromSqlProjection(value: unknown): Record<string, unknown> | undefined {
+  if (isRuntimeRecord(value)) {
+    return value;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const parsed = parseJson(value);
+  return isRuntimeRecord(parsed) ? parsed : undefined;
+}
+
+function startNodeIdForPath(
+  edgeIds: readonly number[],
+  edgeMap: ReadonlyMap<number, StorageEdgeRow>,
+  parsed: CypherParseSuccess,
+): string | undefined {
+  const firstEdgeId = edgeIds[0];
+  const firstRelationship = parsed.match.relationships[0];
+  if (firstEdgeId === undefined || firstRelationship === undefined) {
+    return undefined;
+  }
+  return edgeMap.get(firstEdgeId)?.[edgeAnchorColumn(firstRelationship.direction)];
 }
 
 function sqlProjectionScalarValue(value: unknown): CypherScalar {
@@ -2890,18 +3855,51 @@ function reconstructRuntimePath(
   edgeIds: readonly number[],
   edgeMap: ReadonlyMap<number, StorageEdgeRow>,
   nodeMap: ReadonlyMap<string, StorageNodeRow>,
-  relationship: AstRelationshipPattern,
+  parsed: CypherParseSuccess,
 ): RuntimePathBinding | undefined {
-  const startNode = nodeMap.get(stringFromStorage(sqlRow[INTERNAL_PATH_START_COLUMN]));
+  return reconstructRuntimePathFromStartNodeId(
+    stringFromStorage(sqlRow[INTERNAL_PATH_START_COLUMN]),
+    edgeIds,
+    edgeMap,
+    nodeMap,
+    parsed,
+  );
+}
+
+function reconstructRuntimePathFromStartNodeId(
+  startNodeId: string,
+  edgeIds: readonly number[],
+  edgeMap: ReadonlyMap<number, StorageEdgeRow>,
+  nodeMap: ReadonlyMap<string, StorageNodeRow>,
+  parsed: CypherParseSuccess,
+): RuntimePathBinding | undefined {
+  const startNode = nodeMap.get(startNodeId);
   if (startNode === undefined) {
     return undefined;
   }
 
   const nodes: StorageNodeRow[] = [startNode];
   const relationships: StorageEdgeRow[] = [];
-  for (const edgeId of edgeIds) {
+  const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
+  const variableDepth = variableRelationshipIndex === -1
+    ? 0
+    : edgeIds.length - (parsed.match.relationships.length - 1);
+  for (let edgeIndex = 0; edgeIndex < edgeIds.length; edgeIndex += 1) {
+    const edgeId = edgeIds[edgeIndex];
+    if (edgeId === undefined) {
+      return undefined;
+    }
     const edge = edgeMap.get(edgeId);
     if (edge === undefined) {
+      return undefined;
+    }
+    const relationshipIndex = relationshipIndexForPathEdge(
+      edgeIndex,
+      variableRelationshipIndex,
+      variableDepth,
+    );
+    const relationship = parsed.match.relationships[relationshipIndex];
+    if (relationship === undefined) {
       return undefined;
     }
     const nextNode = nodeMap.get(edge[edgeNextColumn(relationship.direction)]);
@@ -2912,6 +3910,20 @@ function reconstructRuntimePath(
     nodes.push(nextNode);
   }
   return { nodes, relationships };
+}
+
+function relationshipIndexForPathEdge(
+  pathEdgeIndex: number,
+  variableRelationshipIndex: number,
+  variableDepth: number,
+): number {
+  if (variableRelationshipIndex === -1 || pathEdgeIndex < variableRelationshipIndex) {
+    return pathEdgeIndex;
+  }
+  if (pathEdgeIndex < variableRelationshipIndex + variableDepth) {
+    return variableRelationshipIndex;
+  }
+  return pathEdgeIndex - variableDepth + 1;
 }
 
 function edgeIdsFromVisitedEdgeIds(value: unknown): readonly number[] {
@@ -2929,312 +3941,6 @@ function uniqueStrings(values: readonly string[]): readonly string[] {
   return [...new Set(values)];
 }
 
-function evaluateRuntimeRows(
-  parsed: CypherParseSuccess,
-  graph: RuntimeGraph,
-  earlyRowLimit: number | undefined,
-  options: CypherRuntimeTestOptions,
-): readonly SortableRuntimeRow[] {
-  if (hasAggregateReturns(parsed)) {
-    return evaluateAggregateRuntimeRows(parsed, graph, options);
-  }
-
-  const rows: SortableRuntimeRow[] = [];
-  visitRuntimeMatches(parsed, graph, (match) => {
-    if (evaluateWhereClause(parsed.where, match) !== true) {
-      return true;
-    }
-    rows.push({
-      match,
-      row: projectRuntimeRow(parsed.returns, match),
-    });
-    options.onRowsMaterialized?.(rows.length);
-    return earlyRowLimit === undefined || rows.length < earlyRowLimit;
-  });
-  return rows;
-}
-
-type RuntimeAggregateGroup = {
-  readonly keyValues: ReadonlyMap<string, CypherValue>;
-  readonly counts: Map<string, number>;
-  readonly firstMatch: RuntimeMatch;
-};
-
-function evaluateAggregateRuntimeRows(
-  parsed: CypherParseSuccess,
-  graph: RuntimeGraph,
-  options: CypherRuntimeTestOptions,
-): readonly SortableRuntimeRow[] {
-  const groups = new Map<string, RuntimeAggregateGroup>();
-
-  visitRuntimeMatches(parsed, graph, (match) => {
-    if (evaluateWhereClause(parsed.where, match) !== true) {
-      return true;
-    }
-
-    const keyValues = new Map(parsed.groupingKeys.map((expression) => {
-      return [expression, cypherValueForExpression(expression, match)] as const;
-    }));
-    const key = aggregateGroupKey(parsed.groupingKeys, keyValues);
-    let group = groups.get(key);
-    if (group === undefined) {
-      group = {
-        keyValues,
-        counts: initialAggregateCounts(parsed),
-        firstMatch: match,
-      };
-      groups.set(key, group);
-    }
-
-    for (const item of parsed.returns) {
-      if (item.aggregate === undefined) {
-        continue;
-      }
-      const current = group.counts.get(item.expression) ?? 0;
-      group.counts.set(item.expression, current + aggregateIncrement(item.aggregate, match));
-    }
-
-    options.onRowsMaterialized?.(groups.size);
-    return true;
-  });
-
-  if (groups.size === 0 && parsed.groupingKeys.length === 0) {
-    const emptyGroup: RuntimeAggregateGroup = {
-      keyValues: new Map(),
-      counts: initialAggregateCounts(parsed),
-      firstMatch: emptyRuntimeMatch(),
-    };
-    groups.set('__cg_aggregate_empty__', emptyGroup);
-  }
-
-  return [...groups.values()].map((group) => aggregateGroupToSortableRow(parsed, group));
-}
-
-function aggregateIncrement(aggregate: AstAggregateExpression, match: RuntimeMatch): number {
-  if (aggregate.argument === '*') {
-    return 1;
-  }
-  return isCountableCypherValue(cypherValueForExpression(aggregate.argument, match)) ? 1 : 0;
-}
-
-function initialAggregateCounts(parsed: CypherParseSuccess): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const item of parsed.returns) {
-    if (item.aggregate !== undefined) {
-      counts.set(item.expression, 0);
-    }
-  }
-  return counts;
-}
-
-function aggregateGroupToSortableRow(parsed: CypherParseSuccess, group: RuntimeAggregateGroup): SortableRuntimeRow {
-  const row: CypherRow = {};
-  const sortValues = new Map<string, unknown>();
-
-  for (const item of parsed.returns) {
-    const columnName = item.alias ?? item.expression;
-    const value = item.aggregate === undefined
-      ? group.keyValues.get(item.expression) ?? cypherValueForExpression(item.expression, group.firstMatch)
-      : { type: 'scalar' as const, value: group.counts.get(item.expression) ?? 0 };
-    row[columnName] = value;
-
-    const sortValue = sortValueForCypherValue(value);
-    sortValues.set(item.expression, sortValue);
-    if (item.alias !== undefined) {
-      sortValues.set(item.alias, sortValue);
-    }
-  }
-
-  return {
-    match: group.firstMatch,
-    row,
-    sortValues,
-  };
-}
-
-function aggregateGroupKey(
-  groupingKeys: readonly string[],
-  keyValues: ReadonlyMap<string, CypherValue>,
-): string {
-  return JSON.stringify(groupingKeys.map((expression) => {
-    const value = keyValues.get(expression);
-    return value === undefined ? null : sortValueForCypherValue(value);
-  }));
-}
-
-function emptyRuntimeMatch(): RuntimeMatch {
-  return {
-    nodes: new Map(),
-    relationships: new Map(),
-    identity: [],
-  };
-}
-
-function visitRuntimeMatches(parsed: CypherParseSuccess, graph: RuntimeGraph, visitor: RuntimeMatchVisitor): void {
-  const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
-  if (variableRelationshipIndex !== -1) {
-    visitVariableRelationshipMatches(parsed, graph, variableRelationshipIndex, visitor);
-    return;
-  }
-  visitFixedRelationshipMatches(parsed, graph, visitor);
-}
-
-function visitFixedRelationshipMatches(
-  parsed: CypherParseSuccess,
-  graph: RuntimeGraph,
-  visitor: RuntimeMatchVisitor,
-): void {
-  const startPattern = parsed.match.nodes[0];
-  if (startPattern === undefined) {
-    return;
-  }
-
-  for (const node of graph.nodes) {
-    if (!nodeMatchesPattern(node, startPattern)) {
-      continue;
-    }
-    if (!walkFixedRuntimeMatch(parsed, graph, 0, [node], [], visitor)) {
-      return;
-    }
-  }
-}
-
-function walkFixedRuntimeMatch(
-  parsed: CypherParseSuccess,
-  graph: RuntimeGraph,
-  relationshipIndex: number,
-  pathNodes: readonly StorageNodeRow[],
-  pathRelationships: readonly StorageEdgeRow[],
-  visitor: RuntimeMatchVisitor,
-): boolean {
-  if (relationshipIndex >= parsed.match.relationships.length) {
-    return visitor(createRuntimeMatch(parsed, pathNodes, pathRelationships));
-  }
-
-  const relationship = parsed.match.relationships[relationshipIndex];
-  const nextNodePattern = parsed.match.nodes[relationshipIndex + 1];
-  const currentNode = pathNodes[pathNodes.length - 1];
-  if (relationship === undefined || nextNodePattern === undefined || currentNode === undefined) {
-    return true;
-  }
-
-  for (const edge of candidateEdgesForPattern(graph, currentNode.id, relationship)) {
-    if (pathRelationships.some((usedEdge) => usedEdge.id === edge.id)) {
-      continue;
-    }
-    const nextNodeId = edge[edgeNextColumn(relationship.direction)];
-    const nextNode = graph.nodesById.get(nextNodeId);
-    if (nextNode === undefined || !nodeMatchesPattern(nextNode, nextNodePattern)) {
-      continue;
-    }
-    if (!walkFixedRuntimeMatch(
-      parsed,
-      graph,
-      relationshipIndex + 1,
-      [...pathNodes, nextNode],
-      [...pathRelationships, edge],
-      visitor,
-    )) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function visitVariableRelationshipMatches(
-  parsed: CypherParseSuccess,
-  graph: RuntimeGraph,
-  relationshipIndex: number,
-  visitor: RuntimeMatchVisitor,
-): void {
-  const relationship = parsed.match.relationships[relationshipIndex];
-  const range = relationship?.range;
-  const startPattern = parsed.match.nodes[relationshipIndex];
-  const finishPattern = parsed.match.nodes[relationshipIndex + 1];
-  if (
-    relationship === undefined ||
-    range === undefined ||
-    startPattern === undefined ||
-    finishPattern === undefined ||
-    parsed.match.relationships.length !== 1
-  ) {
-    return;
-  }
-
-  for (const startNode of graph.nodes) {
-    if (!nodeMatchesPattern(startNode, startPattern)) {
-      continue;
-    }
-    if (!walkVariableRuntimeMatch(
-      parsed,
-      graph,
-      relationship,
-      finishPattern,
-      range,
-      startNode,
-      0,
-      [startNode],
-      [],
-      new Set<number>(),
-      visitor,
-    )) {
-      return;
-    }
-  }
-}
-
-function walkVariableRuntimeMatch(
-  parsed: CypherParseSuccess,
-  graph: RuntimeGraph,
-  relationship: AstRelationshipPattern,
-  finishPattern: AstNodePattern,
-  range: NonNullable<AstRelationshipPattern['range']>,
-  currentNode: StorageNodeRow,
-  depth: number,
-  pathNodes: readonly StorageNodeRow[],
-  pathRelationships: readonly StorageEdgeRow[],
-  usedEdgeIds: ReadonlySet<number>,
-  visitor: RuntimeMatchVisitor,
-): boolean {
-  if (depth >= range.lower && nodeMatchesPattern(currentNode, finishPattern)) {
-    if (!visitor(createRuntimeMatch(parsed, pathNodes, pathRelationships))) {
-      return false;
-    }
-  }
-  if (depth >= range.upper) {
-    return true;
-  }
-
-  for (const edge of candidateEdgesForPattern(graph, currentNode.id, relationship)) {
-    if (usedEdgeIds.has(edge.id)) {
-      continue;
-    }
-    const nextNodeId = edge[edgeNextColumn(relationship.direction)];
-    const nextNode = graph.nodesById.get(nextNodeId);
-    if (nextNode === undefined) {
-      continue;
-    }
-    const nextUsedEdgeIds = new Set(usedEdgeIds);
-    nextUsedEdgeIds.add(edge.id);
-    if (!walkVariableRuntimeMatch(
-      parsed,
-      graph,
-      relationship,
-      finishPattern,
-      range,
-      nextNode,
-      depth + 1,
-      [...pathNodes, nextNode],
-      [...pathRelationships, edge],
-      nextUsedEdgeIds,
-      visitor,
-    )) {
-      return false;
-    }
-  }
-  return true;
-}
-
 function createRuntimeMatch(
   parsed: CypherParseSuccess,
   pathNodes: readonly StorageNodeRow[],
@@ -3249,8 +3955,17 @@ function createRuntimeMatch(
   });
 
   const relationshipBindings = new Map<string, StorageEdgeRow>();
+  const relationshipListBindings = new Map<string, readonly StorageEdgeRow[]>();
   parsed.match.relationships.forEach((relationship, index) => {
-    const storageEdge = pathRelationships[index];
+    if (relationship.variable !== undefined && relationship.range !== undefined) {
+      const variableDepth = pathRelationships.length - parsed.match.relationships.length + 1;
+      relationshipListBindings.set(
+        relationship.variable,
+        pathRelationships.slice(index, index + variableDepth),
+      );
+      return;
+    }
+    const storageEdge = pathRelationshipForPatternIndex(parsed, pathRelationships, index);
     if (relationship.variable !== undefined && storageEdge !== undefined) {
       relationshipBindings.set(relationship.variable, storageEdge);
     }
@@ -3259,6 +3974,7 @@ function createRuntimeMatch(
   return {
     nodes: nodeBindings,
     relationships: relationshipBindings,
+    relationshipLists: relationshipListBindings,
     ...(parsed.match.pathVariable === undefined ? {} : { path: { nodes: pathNodes, relationships: pathRelationships } }),
     identity: matchIdentity(pathNodes, pathRelationships),
   };
@@ -3270,34 +3986,24 @@ function pathNodeForPatternIndex(
   patternIndex: number,
 ): StorageNodeRow | undefined {
   const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
-  if (variableRelationshipIndex !== -1 && patternIndex === variableRelationshipIndex + 1) {
-    return pathNodes[pathNodes.length - 1];
+  if (variableRelationshipIndex === -1 || patternIndex <= variableRelationshipIndex) {
+    return pathNodes[patternIndex];
   }
-  return pathNodes[patternIndex];
+  const variableDepth = pathNodes.length - parsed.match.nodes.length + 1;
+  return pathNodes[patternIndex + variableDepth - 1];
 }
 
-function candidateEdgesForPattern(
-  graph: RuntimeGraph,
-  nodeId: string,
-  relationship: AstRelationshipPattern,
-): readonly StorageEdgeRow[] {
-  const edgePool =
-    relationship.direction === 'outgoing'
-      ? graph.outgoingEdgesByNodeId.get(nodeId) ?? []
-      : graph.incomingEdgesByNodeId.get(nodeId) ?? [];
-  return relationship.type === undefined ? edgePool : edgePool.filter((edge) => edge.kind === relationship.type);
-}
-
-function nodeMatchesPattern(node: StorageNodeRow, pattern: AstNodePattern): boolean {
-  if (pattern.label !== undefined && node.kind !== pattern.label) {
-    return false;
+function pathRelationshipForPatternIndex(
+  parsed: CypherParseSuccess,
+  pathRelationships: readonly StorageEdgeRow[],
+  patternIndex: number,
+): StorageEdgeRow | undefined {
+  const variableRelationshipIndex = parsed.match.relationships.findIndex((relationship) => relationship.range !== undefined);
+  if (variableRelationshipIndex === -1 || patternIndex <= variableRelationshipIndex) {
+    return pathRelationships[patternIndex];
   }
-  if (pattern.properties === undefined) {
-    return true;
-  }
-  return Object.entries(pattern.properties).every(([property, value]) => {
-    return compareRuntimeScalars(nodePropertyValue(node, property), value) === 0;
-  });
+  const variableDepth = pathRelationships.length - parsed.match.relationships.length + 1;
+  return pathRelationships[patternIndex + variableDepth - 1];
 }
 
 function evaluateWhereClause(where: AstWhereClause | undefined, match: RuntimeMatch): RuntimeTruth {
@@ -3581,6 +4287,13 @@ function cypherValueForExpression(expression: string, match: RuntimeMatch): Cyph
   if (relationship !== undefined) {
     return { type: 'relationship', value: publicRelationshipFromStorage(relationship) };
   }
+  const relationshipList = match.relationshipLists.get(expression);
+  if (relationshipList !== undefined) {
+    return {
+      type: 'scalar',
+      value: relationshipList.map(publicRelationshipFromStorage),
+    };
+  }
   if (match.path !== undefined) {
     return { type: 'path', value: publicPathFromStorage(match.path) };
   }
@@ -3631,22 +4344,60 @@ function sortValueForExpression(expression: string, match: RuntimeMatch): unknow
 function sortValueForCypherValue(value: CypherValue): unknown {
   switch (value.type) {
     case 'scalar':
-      return value.value;
+      return isCypherRelationshipArray(value.value)
+        ? makeRuntimeIdentityTuple(value.value.map(relationshipIdentity))
+        : value.value;
     case 'node':
       return value.value.id;
     case 'relationship':
-      return relationshipIdentity(value.value);
+      return makeRuntimeIdentityTuple(relationshipIdentity(value.value));
     case 'path':
-      return [
-        value.value.length,
-        ...value.value.nodes.map((node) => node.id),
-        ...value.value.relationships.map(relationshipIdentity),
-      ];
+      return makeRuntimeIdentityTuple(pathIdentity(value.value));
   }
 }
 
-function isCountableCypherValue(value: CypherValue): boolean {
-  return value.type !== 'scalar' || value.value !== null;
+type RuntimeIdentityTuple = {
+  readonly kind: 'cypher-identity-tuple';
+  readonly values: readonly unknown[];
+};
+
+function makeRuntimeIdentityTuple(values: readonly unknown[]): RuntimeIdentityTuple {
+  return { kind: 'cypher-identity-tuple', values };
+}
+
+function isRuntimeIdentityTuple(value: unknown): value is RuntimeIdentityTuple {
+  return (
+    isRuntimeRecord(value) &&
+    value.kind === 'cypher-identity-tuple' &&
+    Array.isArray(value.values)
+  );
+}
+
+function isCypherRelationshipArray(value: unknown): value is readonly CypherRelationship[] {
+  return Array.isArray(value) && value.every((item) => {
+    if (!isRuntimeRecord(item)) {
+      return false;
+    }
+    return (
+      typeof item.source === 'string' &&
+      typeof item.target === 'string' &&
+      typeof item.kind === 'string' &&
+      (item.line === null || typeof item.line === 'number') &&
+      (item.column === null || typeof item.column === 'number')
+    );
+  });
+}
+
+function pathIdentity(path: CypherPath): readonly unknown[] {
+  const identity: unknown[] = [];
+  path.nodes.forEach((node, nodeIndex) => {
+    identity.push(node.id);
+    const relationship = path.relationships[nodeIndex];
+    if (relationship !== undefined) {
+      identity.push(...relationshipIdentity(relationship));
+    }
+  });
+  return identity;
 }
 
 function nodePropertyValue(node: StorageNodeRow, property: string): CypherScalar {
@@ -3800,37 +4551,8 @@ function toStorageEdgeRow(row: Record<string, unknown>): StorageEdgeRow {
   };
 }
 
-function groupEdgesByNodeId(
-  edges: readonly StorageEdgeRow[],
-  key: 'source' | 'target',
-): ReadonlyMap<string, readonly StorageEdgeRow[]> {
-  const grouped = new Map<string, StorageEdgeRow[]>();
-  for (const edge of edges) {
-    const groupKey = edge[key];
-    const group = grouped.get(groupKey);
-    if (group === undefined) {
-      grouped.set(groupKey, [edge]);
-    } else {
-      group.push(edge);
-    }
-  }
-  return grouped;
-}
-
-function isActiveStorageEdge(edge: StorageEdgeRow): boolean {
-  if (edge.metadata === null) {
-    return true;
-  }
-  const metadata = parseJson(edge.metadata);
-  if (!isRuntimeRecord(metadata)) {
-    return true;
-  }
-  const lsp = metadata.lsp;
-  return !(isRuntimeRecord(lsp) && lsp.active === false);
-}
-
-function booleanFromStorage(value: number | null): boolean {
-  return value === 1;
+function booleanFromStorage(value: number | null): boolean | null {
+  return value === null ? null : value === 1;
 }
 
 function stringFromStorage(value: unknown): string {
@@ -3904,7 +4626,28 @@ function compareRuntimeScalars(left: unknown, right: unknown): number {
   if (typeof left === 'boolean' && typeof right === 'boolean') {
     return left ? 1 : -1;
   }
-  return canonicalSortString(left).localeCompare(canonicalSortString(right));
+  return compareUnicodeCodePoints(canonicalSortString(left), canonicalSortString(right));
+}
+
+function compareUnicodeCodePoints(left: string, right: string): number {
+  const leftCodePoints = [...left].map((value) => value.codePointAt(0) ?? 0);
+  const rightCodePoints = [...right].map((value) => value.codePointAt(0) ?? 0);
+  const length = Math.max(leftCodePoints.length, rightCodePoints.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftCodePoint = leftCodePoints[index];
+    const rightCodePoint = rightCodePoints[index];
+    if (leftCodePoint === rightCodePoint) {
+      continue;
+    }
+    if (leftCodePoint === undefined) {
+      return -1;
+    }
+    if (rightCodePoint === undefined) {
+      return 1;
+    }
+    return leftCodePoint < rightCodePoint ? -1 : 1;
+  }
+  return 0;
 }
 
 function compareNullableSortValues(left: unknown, right: unknown, direction: 'ASC' | 'DESC'): number {
@@ -3920,19 +4663,43 @@ function compareNullableSortValues(left: unknown, right: unknown, direction: 'AS
     return leftIsNull ? 1 : -1;
   }
 
+  if (isRuntimeIdentityTuple(left) && isRuntimeIdentityTuple(right)) {
+    const comparison = compareIdentityTupleValues(left.values, right.values);
+    return direction === 'DESC' ? -comparison : comparison;
+  }
+
   const comparison = compareRuntimeScalars(left, right);
   return direction === 'DESC' ? -comparison : comparison;
 }
 
 function compareSortLists(left: readonly unknown[], right: readonly unknown[]): number {
+  return compareIdentityTupleValues(left, right);
+}
+
+function compareIdentityTupleValues(left: readonly unknown[], right: readonly unknown[]): number {
   const length = Math.max(left.length, right.length);
   for (let index = 0; index < length; index += 1) {
-    const comparison = compareNullableSortValues(left[index], right[index], 'ASC');
+    const comparison = compareIdentityTupleComponent(left[index], right[index]);
     if (comparison !== 0) {
       return comparison;
     }
   }
   return 0;
+}
+
+function compareIdentityTupleComponent(left: unknown, right: unknown): number {
+  const leftIsNull = left === null || left === undefined;
+  const rightIsNull = right === null || right === undefined;
+  if (leftIsNull || rightIsNull) {
+    if (leftIsNull && rightIsNull) {
+      return 0;
+    }
+    return leftIsNull ? 1 : -1;
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return compareIdentityTupleValues(left, right);
+  }
+  return compareRuntimeScalars(left, right);
 }
 
 function canonicalSortString(value: unknown): string {
@@ -3946,17 +4713,21 @@ function canonicalSortString(value: unknown): string {
 }
 
 function matchIdentity(nodes: readonly StorageNodeRow[], relationships: readonly StorageEdgeRow[]): readonly unknown[] {
-  return [
-    ...nodes.map((node) => node.id),
-    ...relationships.flatMap((relationship) => [
-      relationship.source,
-      relationship.target,
-      relationship.kind,
-      relationship.line,
-      relationship.col,
-      relationship.id,
-    ]),
-  ];
+  const identity: unknown[] = [];
+  nodes.forEach((node, nodeIndex) => {
+    identity.push(node.id);
+    const relationship = relationships[nodeIndex];
+    if (relationship !== undefined) {
+      identity.push(
+        relationship.source,
+        relationship.target,
+        relationship.kind,
+        relationship.line,
+        relationship.col,
+      );
+    }
+  });
+  return identity;
 }
 
 function relationshipIdentity(relationship: CypherRelationship): readonly unknown[] {
@@ -3966,7 +4737,6 @@ function relationshipIdentity(relationship: CypherRelationship): readonly unknow
     relationship.kind,
     relationship.line,
     relationship.column,
-    relationship.provenance,
   ];
 }
 

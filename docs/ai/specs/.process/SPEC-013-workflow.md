@@ -36,8 +36,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Tasks | `/speckit-tasks` | ✅ Complete | 79 dependency-ordered TDD tasks; 32/32 FRs and 10/10 SCs mapped; G5 passed. |
 | Analyze | `/speckit-analyze` | ✅ Complete | 0 findings at every severity; G6 passed. |
 | Confidence Gate | G6.5 | ✅ Complete | Advisory NO_DATA soft-skip recorded; implementation proceeds. |
-| Implement | `/speckit-implement` | 🔄 In Progress | Execute approved tasks with test-first evidence. |
-| Post | Canonical post gates | ⏳ Pending | Verify, review, publish, remediate, and retrospect. |
+| Implement | `/speckit-implement` | ✅ Complete | T001-T079 complete with final review remediation and regression coverage. |
+| Post | Canonical post gates | 🔄 In Progress | Local verification/review gates complete; canonical PR packet generation is next. |
 
 **Status legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -61,16 +61,16 @@ or explicitly skip each before final handoff:
 
 | Canonical step | Status |
 |---|---|
-| Post: Doctor Extension Check | ⏳ Pending |
-| Post: Verify Implementation | ⏳ Pending |
-| Post: Verify Tasks Phantom Check | ⏳ Pending |
-| Post: Code Review | ⏳ Pending |
-| Post: Integration Suite | ⏳ Pending |
-| Post: Reviewability Diff Gate | ⏳ Pending |
-| Post: Self-Review | ⏳ Pending |
-| Post: UAT Runbook Generation | ⏳ Pending |
-| Post: Final Reviewability Backstop | ⏳ Pending |
-| Post: PR Packet/Body Generation | ⏳ Pending |
+| Post: Doctor Extension Check | ✅ Skipped — doctor extension not installed |
+| Post: Verify Implementation | ✅ Complete — 32/32 FRs and 10/10 SCs covered |
+| Post: Verify Tasks Phantom Check | ✅ Complete — 79 VERIFIED, 0 flagged |
+| Post: Code Review | ✅ Complete — 18 findings remediated; final independent review `NO FINDINGS` |
+| Post: Integration Suite | ✅ Complete — build/typecheck and 4,839 tests passed |
+| Post: Reviewability Diff Gate | ✅ Complete — warning accepted; 4,765-line private runtime remains explicit |
+| Post: Self-Review | ✅ Complete — no edge-case, traceability, or tidiness gaps |
+| Post: UAT Runbook Generation | ✅ Skipped — `generate-uat-skeleton` deferred and no committed skeleton exists |
+| Post: Final Reviewability Backstop | ✅ Complete — warn/proceed from current committed reviewability route |
+| Post: PR Packet/Body Generation | 🔄 In Progress |
 | Post: PR Body Generation | ⏳ Pending |
 | Post: PR Creation | ⏳ Pending |
 | Post: Review Remediation | ⏳ Pending |
@@ -1018,7 +1018,7 @@ For each task:
 **G7 disposition:** Passed for all local implementation and acceptance checks.
 The mandatory external retrieval A/B remains `BLOCKED_BY_AUTHORIZATION` with
 zero external runs, sends, or cost; this is a declared pre-ship gap, not a
-fabricated pass. The private `src/query/cypher/index.ts` remains 3,995 lines and
+fabricated pass. The private `src/query/cypher/index.ts` is 4,765 lines and
 must stay visible through the post-implementation reviewability gates.
 
 ---
@@ -1030,7 +1030,7 @@ must stay visible through the post-implementation reviewability gates.
 - [x] Focused tests pass for lexer, parser, planner, SQL emission, runtime,
   library, CLI, MCP, serializers, and diagnostics.
 - [x] `npm run build` passes on the pinned runtime.
-- [x] `npm test` passes: 266 files passed, 15 skipped; 4,810 tests passed,
+- [x] `npm test` passes: 266 files passed, 15 skipped; 4,839 tests passed,
   181 skipped.
 - [x] No new runtime dependency or unexpected schema migration was added.
 - [x] Dedicated read-only connection and mutating-syntax rejection are proven.
@@ -1042,13 +1042,65 @@ must stay visible through the post-implementation reviewability gates.
   empty success states.
 - [x] `codegraph_explore` remains primary in default MCP guidance.
 - [ ] Retrieval A/B and retrieval-guardian gates pass.
-- [ ] Per-PR reviewability gates pass.
+- [x] Per-PR reviewability gates completed with an explicit warn/proceed
+  disposition for the oversized private runtime and one-navigable-PR route.
 - [x] Multiple PRs were not required; the recorded one-navigable-PR route makes
   `gh stack view --json` inapplicable.
 - [x] User-facing `CHANGELOG.md` entry is under `## [Unreleased]`.
 - [x] PR description includes scope, non-goals, review order, budget, traceability,
   evidence, known gaps, and rollback/flag notes.
 - [ ] Final `git diff --check` passes and the worktree is clean after commits.
+
+---
+
+### Post-Implementation Evidence
+
+- **Doctor:** skipped because neither the doctor nor speckit-utils extension is
+  installed in `.specify/extensions.yml`.
+- **Verify implementation:** passed with 32/32 functional requirements and
+  10/10 success criteria covered.
+- **Verify tasks:** the final fresh `--scope all` report records 79 VERIFIED,
+  0 PARTIAL, 0 WEAK, 0 NOT_FOUND, 0 SKIPPED, and no flagged items.
+- **Code review:** the independent review loop identified and remediated 18
+  correctness/safety findings. The final broad independent review of the exact
+  diff returned `NO FINDINGS`.
+- **Integration:** under Node 24.11.1, `npm run build`, `npm run typecheck`, and
+  `npm test` passed. The full suite recorded 266 files passed, 15 skipped;
+  4,839 tests passed, 181 skipped. The final six-file SPEC-013 bundle passed
+  183/183.
+- **Reviewability:** warn/proceed. The current change retains the approved two
+  internal slices and one navigable PR, but `src/query/cypher/index.ts` is
+  4,765 lines and requires deliberate parser/planner/runtime review.
+- **UAT skeleton:** skipped fail-open because `generate-uat-skeleton` is
+  deferred and no committed source-derived skeleton exists.
+- **External retrieval A/B:** remains `BLOCKED_BY_AUTHORIZATION`; external
+  runs=0, sends=0, cost=0.
+
+### Self-Review (auto-generated)
+
+1. **Tests executed?** PASS. Build, typecheck, the 183-test SPEC bundle, and the
+   full 4,839-test repository suite actually ran under Node 24.11.1 and exited
+   zero on 2026-07-30. Project lint and separate integration commands are N/A;
+   the repository's full verification command is build + typecheck + unit
+   suite.
+2. **Edge cases?** PASS. Representative non-happy-path coverage includes
+   read-only/timeout worker behavior at
+   `__tests__/cypher-runtime.test.ts:547` and `:608`; nullable booleans at
+   `:1030`; bounded fixed SQL at `:1248`; default public ordering at `:1408`;
+   33rd-row and expansion-limit guards at `:1687` and `:1795`; aggregate
+   saturation at `:1884`; multiple-range and malformed-WHERE rejection at
+   `:2502` and `:2522`; cap/payload/timeout behavior at `:2536`, `:2570`, and
+   `:2827`; and stdin provenance/encoding/privacy at
+   `__tests__/cli-query-command.test.ts:466`, `:480`, `:489`, and `:507`.
+   No acceptance criterion has only a happy-path test.
+3. **Requirements matched?** PASS. FR-001 through FR-032 map to completed
+   T001-T079 work; SC-001 through SC-010 are covered; the final fresh phantom
+   check found 79/79 task implementations and no orphans.
+4. **Follow-up and tidiness?** PASS with one declared external gap. No
+   TODO/FIXME/HACK/DEFERRED/OUT-OF-SCOPE markers were found in changed
+   production/tests or feature commit subjects; `git diff --check` passed.
+   Retrieval A/B is explicitly `BLOCKED_BY_AUTHORIZATION` in workflow, matrix,
+   and PR evidence rather than silently deferred.
 
 ---
 

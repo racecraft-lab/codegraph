@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Post: Doctor Extension Check",
-  "updated_at": "2026-07-30T14:34:55Z",
+  "active_step": "Post: PR Packet/Body Generation",
+  "updated_at": "2026-07-30T17:24:00Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -871,6 +871,78 @@
       }
     }
   },
+  "post_implementation": {
+    "status": "in_progress",
+    "doctor": {
+      "status": "skipped",
+      "reason": "doctor and speckit-utils extensions are not installed"
+    },
+    "verify_implementation": {
+      "status": "passed",
+      "functional_requirements": "32/32",
+      "success_criteria": "10/10"
+    },
+    "verify_tasks": {
+      "status": "passed",
+      "report": "specs/013-cypher-query-access/verify-tasks-report.md",
+      "verified": 79,
+      "partial": 0,
+      "weak": 0,
+      "not_found": 0,
+      "skipped": 0,
+      "flagged": 0
+    },
+    "code_review": {
+      "status": "passed",
+      "remediated_findings": 18,
+      "final_independent_verdict": "NO FINDINGS",
+      "focused_spec_tests": "6 files, 183/183 passed"
+    },
+    "integration_suite": {
+      "status": "passed",
+      "runtime": "Node 24.11.1",
+      "build": "passed",
+      "typecheck": "passed",
+      "test_files": "266 passed, 15 skipped",
+      "tests": "4839 passed, 181 skipped",
+      "duration": "79.98s"
+    },
+    "reviewability_diff_gate": {
+      "status": "warn",
+      "disposition": "proceed",
+      "route": "one-navigable-PR with two internal slice checkpoints",
+      "private_runtime_lines": 4765,
+      "correctness_blocks": 0,
+      "warning": "The private Cypher parser/planner/runtime remains materially above the accepted planning estimate and requires deliberate review."
+    },
+    "self_review": {
+      "status": "passed",
+      "tests_executed": "build, typecheck, 183 focused SPEC tests, and 4839 full-suite tests actually ran and passed",
+      "edge_case_gaps": 0,
+      "requirement_orphans": 0,
+      "task_orphans": 0,
+      "tidiness_findings": 0,
+      "declared_external_gap": "Retrieval A/B BLOCKED_BY_AUTHORIZATION; external runs=0 sends=0 cost=0"
+    },
+    "uat_runbook_generation": {
+      "status": "skipped",
+      "reason": "generate-uat-skeleton is deferred and no committed source-derived skeleton exists"
+    },
+    "final_reviewability_backstop": {
+      "status": "warn",
+      "disposition": "proceed",
+      "source": "current committed reviewability evidence after this checkpoint",
+      "autopilot_continuation_required": false,
+      "reslicing_required": false
+    },
+    "pr_packet": {
+      "status": "in_progress",
+      "packet_id": "spec-013-cypher-query-access",
+      "packet_path": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access.json",
+      "body_file": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access/body.md",
+      "validation_result_path": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access/validation.json"
+    }
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -990,43 +1062,43 @@
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Code Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Self-Review",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: Final Reviewability Backstop",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Post: PR Packet/Body Generation",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: PR Body Generation",

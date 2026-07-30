@@ -215,6 +215,13 @@ function oversizedCypherInputBytes(): Buffer {
   return Buffer.from(oversizedCypherQueryText(), 'utf8');
 }
 
+function oversizedMalformedCypherStdinBytes(): Buffer {
+  return Buffer.concat([
+    Buffer.from(`stdin-byte-ceiling-secret-${'x'.repeat(30_001)}`, 'utf8'),
+    malformedCliStdinBytes(),
+  ]);
+}
+
 function oversizedCypherQueryText(secretPrefix = 'oversized'): string {
   return `MATCH (n:function) WHERE n.name = '${secretPrefix}-${'oversized'.repeat(1_260)}' RETURN n.name LIMIT 1`;
 }
@@ -466,6 +473,19 @@ describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
     expect(JSON.stringify(payload)).toContain('helper');
   });
 
+  it.each([
+    ['unsupported OpenCypher', 'OPTIONAL MATCH (n:function) RETURN n LIMIT 1', 'CYPHER_UNSUPPORTED_OPENCYPHER'],
+    ['mutating/direct SQL', 'CREATE (n:function)', 'CYPHER_DIRECT_SQL_UNSUPPORTED'],
+    ['malformed query', 'not valid Cypher', 'CYPHER_SYNTAX'],
+  ])('preserves stdin provenance and routes non-MATCH %s text through Cypher', (_name, stdinText, expectedCode) => {
+    const result = runCliQueryStdin(tempDir, Buffer.from(stdinText, 'utf8'), ['--json']);
+
+    const diagnostic = expectCypherCliDiagnostic(result, expectedCode, `${_name} stdin`);
+    expect(diagnostic.status).toBe('diagnostic');
+    expect(Array.isArray(parseJsonPayload(result, `${_name} stdin`))).toBe(false);
+    expectNoTrailingNewline(result, `${_name} stdin`);
+  });
+
   it('rejects malformed stdin bytes before parsing or execution with a failure exit', () => {
     const result = runCliQueryStdin(tempDir, malformedCliStdinBytes(), ['--json']);
 
@@ -526,6 +546,22 @@ describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
     expect(diagnostic.excerpt).toBe('');
     expect(String(diagnostic.message)).toContain('10000');
     expect(String(diagnostic.message)).not.toContain('xxxxxxxx');
+  });
+
+  it('enforces the incremental stdin byte ceiling before UTF-8 decoding without leaking input', () => {
+    const result = runCliQueryStdin(tempDir, oversizedMalformedCypherStdinBytes(), ['--json']);
+
+    const diagnostic = expectCypherCliDiagnostic(
+      result,
+      'CYPHER_INPUT_TOO_LONG',
+      'oversized malformed stdin byte stream',
+    );
+    expect(diagnostic.excerpt).toBe('');
+    expect(String(diagnostic.message)).toContain('10000');
+    expect(`${result.stdout.toString('utf8')} ${result.stderr.toString('utf8')}`).not.toContain(
+      'stdin-byte-ceiling-secret',
+    );
+    expectNoTrailingNewline(result, 'oversized malformed stdin byte stream');
   });
 
   it.each([

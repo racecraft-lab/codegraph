@@ -357,6 +357,11 @@ function validateEmbeddingsOption(value: string | undefined): EmbeddingProviderS
 }
 
 const CYPHER_CLI_INPUT_MAX_CODE_UNITS = 10_000;
+// A valid UTF-8 encoding needs at most three bytes per UTF-16 code unit
+// (supplementary characters use four bytes for a two-unit surrogate pair).
+// Bound retained stdin before decoding so an untrusted stream cannot grow the
+// chunk list or final concatenation without limit.
+const CYPHER_CLI_INPUT_MAX_BYTES = CYPHER_CLI_INPUT_MAX_CODE_UNITS * 3;
 const CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS: readonly {
   readonly long: string;
   readonly short?: string;
@@ -368,18 +373,22 @@ const CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS: readonly {
 ];
 
 type CypherCliQueryInputResult =
-  | { readonly status: 'success'; readonly query: string }
+  | { readonly status: 'success'; readonly query: string; readonly source: 'positional' | 'stdin' }
   | CypherDiagnosticResult;
 
 async function resolveCliQueryInput(search: string): Promise<CypherCliQueryInputResult> {
   if (search !== '-') {
-    return validateCypherCliInputLength(search);
+    return validateCypherCliInputLength(search, 'positional');
   }
 
   const stdin = await readStdinBuffer();
+  if (stdin.status === 'too-large') {
+    return cypherInputTooLongDiagnostic(CYPHER_CLI_INPUT_MAX_CODE_UNITS);
+  }
+
   let query: string;
   try {
-    query = new TextDecoder('utf-8', { fatal: true }).decode(stdin);
+    query = new TextDecoder('utf-8', { fatal: true }).decode(stdin.bytes);
   } catch {
     return cypherDiagnosticResult(
       'CYPHER_INVALID_STDIN_ENCODING',
@@ -388,12 +397,15 @@ async function resolveCliQueryInput(search: string): Promise<CypherCliQueryInput
       'cli-input',
     );
   }
-  return validateCypherCliInputLength(query);
+  return validateCypherCliInputLength(query, 'stdin');
 }
 
-function validateCypherCliInputLength(query: string): CypherCliQueryInputResult {
+function validateCypherCliInputLength(
+  query: string,
+  source: 'positional' | 'stdin',
+): CypherCliQueryInputResult {
   if (query.length <= CYPHER_CLI_INPUT_MAX_CODE_UNITS) {
-    return { status: 'success', query };
+    return { status: 'success', query, source };
   }
   return cypherInputTooLongDiagnostic(CYPHER_CLI_INPUT_MAX_CODE_UNITS);
 }
@@ -549,12 +561,35 @@ function unsupportedCypherCliFlagDiagnostic(argv: readonly string[] = process.ar
   return undefined;
 }
 
-async function readStdinBuffer(): Promise<Buffer> {
+type CypherCliStdinResult =
+  | { readonly status: 'success'; readonly bytes: Buffer }
+  | { readonly status: 'too-large' };
+
+async function readStdinBuffer(): Promise<CypherCliStdinResult> {
   const chunks: Buffer[] = [];
+  let retainedBytes = 0;
+  let tooLarge = false;
+
   for await (const chunk of process.stdin) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    if (tooLarge) {
+      continue;
+    }
+
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (bytes.length > CYPHER_CLI_INPUT_MAX_BYTES - retainedBytes) {
+      tooLarge = true;
+      chunks.length = 0;
+      retainedBytes = 0;
+      continue;
+    }
+
+    chunks.push(bytes);
+    retainedBytes += bytes.length;
   }
-  return Buffer.concat(chunks);
+
+  return tooLarge
+    ? { status: 'too-large' }
+    : { status: 'success', bytes: Buffer.concat(chunks, retainedBytes) };
 }
 
 async function writeCypherCliResult(result: CypherQueryResult, json: boolean): Promise<void> {
@@ -1772,7 +1807,7 @@ program
       }
       const searchText = queryInput.query;
 
-      if (startsWithCypherMatch(searchText)) {
+      if (queryInput.source === 'stdin' || startsWithCypherMatch(searchText)) {
         const unsupportedFlag = unsupportedCypherCliFlagDiagnostic();
         if (unsupportedFlag !== undefined) {
           await writeCypherCliResult(unsupportedFlag, options.json === true);

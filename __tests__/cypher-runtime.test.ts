@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { CypherNode as ExportedCypherNode } from '../src';
 
 type SqliteStatement = {
   run: (...params: unknown[]) => unknown;
@@ -200,10 +201,10 @@ function insertNode(db: SqliteDatabase, input: NodeInput, updatedAt: number): st
     input.docstring ?? null,
     input.signature ?? null,
     input.visibility ?? null,
-    boolToStorage(input.isExported ?? false),
-    boolToStorage(input.isAsync ?? false),
-    boolToStorage(input.isStatic ?? false),
-    boolToStorage(input.isAbstract ?? false),
+    boolToStorage(input.isExported === undefined ? false : input.isExported),
+    boolToStorage(input.isAsync === undefined ? false : input.isAsync),
+    boolToStorage(input.isStatic === undefined ? false : input.isStatic),
+    boolToStorage(input.isAbstract === undefined ? false : input.isAbstract),
     input.decorators ?? null,
     input.typeParameters ?? null,
     input.returnType ?? null,
@@ -709,6 +710,10 @@ type PublicNode = Record<string, unknown> & {
   readonly id: string;
   readonly kind: string;
   readonly name: string;
+  readonly isExported?: boolean | null;
+  readonly isAsync?: boolean | null;
+  readonly isStatic?: boolean | null;
+  readonly isAbstract?: boolean | null;
 };
 
 type PublicRelationship = Record<string, unknown> & {
@@ -1022,6 +1027,58 @@ function addVariablePathStartNoise(fixture: CypherRuntimeFixture, prefix: string
 }
 
 describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API and graph mapping', () => {
+  it('preserves nullable storage booleans in scalar and public node results', async () => {
+    expectTypeOf<ExportedCypherNode['isExported']>().toEqualTypeOf<boolean | null>();
+    expectTypeOf<ExportedCypherNode['isAsync']>().toEqualTypeOf<boolean | null>();
+    expectTypeOf<ExportedCypherNode['isStatic']>().toEqualTypeOf<boolean | null>();
+    expectTypeOf<ExportedCypherNode['isAbstract']>().toEqualTypeOf<boolean | null>();
+
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const nullableId = insertNode(fixture.db, {
+      id: 'fn:nullableFlags',
+      name: 'nullableFlags',
+      isExported: null,
+      isAsync: null,
+      isStatic: null,
+      isAbstract: null,
+    }, 1700000000000);
+    insertEdge(
+      fixture.db,
+      fixture.nodes.entry,
+      nullableId,
+      'calls',
+      null,
+      200,
+      0,
+      'tree-sitter',
+    );
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry' AND target.name = 'nullableFlags'",
+        'RETURN target, target.isExported AS isExported, target.isAsync AS isAsync,',
+        'target.isStatic AS isStatic, target.isAbstract AS isAbstract',
+      ].join(' '),
+    ));
+
+    expect(result.rows).toHaveLength(1);
+    expect(nodeValue(result.rows[0], 'target')).toMatchObject({
+      isExported: null,
+      isAsync: null,
+      isStatic: null,
+      isAbstract: null,
+    });
+    expect([
+      scalarValue(result.rows[0], 'isExported'),
+      scalarValue(result.rows[0], 'isAsync'),
+      scalarValue(result.rows[0], 'isStatic'),
+      scalarValue(result.rows[0], 'isAbstract'),
+    ]).toEqual([null, null, null, null]);
+  });
+
   it('exports queryCypher and maps active fixed traversals to public nodes and relationships', async () => {
     const runtime = await loadCypherRuntimeContract();
     const fixture = createCypherRuntimeFixture();
@@ -1104,6 +1161,117 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API an
       relationship.column,
     ].join('|'));
     expect(new Set(relationshipIdentities).size).toBe(pathResult.relationships.length);
+  });
+
+  it('executes accepted connected chains with fixed relationships before and after one bounded variable segment', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const fixedPrefix = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH p = (entry:function)-[:calls]->(middle:function)-[:calls*1..2]->(finish:function)',
+        "WHERE entry.name = 'entry' AND middle.name = 'helper' AND finish.name = 'malformedOpaque'",
+        'RETURN p, entry.name AS entryName, middle.name AS middleName, finish.name AS finishName',
+      ].join(' '),
+    ));
+    expect(fixedPrefix.rows).toHaveLength(1);
+    expect(pathValue(fixedPrefix.rows[0], 'p').nodes.map((node) => node.id)).toEqual([
+      fixture.nodes.entry,
+      fixture.nodes.helper,
+      fixture.nodes.malformedOpaque,
+    ]);
+
+    const fixedSuffix = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH p = (entry:function)-[:calls*1..1]->(middle:function)-[:calls]->(finish:function)',
+        "WHERE entry.name = 'entry' AND middle.name = 'helper' AND finish.name = 'malformedOpaque'",
+        'RETURN p, entry.name AS entryName, middle.name AS middleName, finish.name AS finishName',
+      ].join(' '),
+    ));
+    expect(fixedSuffix.rows).toHaveLength(1);
+    expect(pathValue(fixedSuffix.rows[0], 'p').nodes.map((node) => node.id)).toEqual([
+      fixture.nodes.entry,
+      fixture.nodes.helper,
+      fixture.nodes.malformedOpaque,
+    ]);
+  });
+
+  it('returns ranged relationship variables as ordered scalar arrays for variable-only and mixed chains', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const variableOnly = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (start:function)-[edge:calls*1..2]->(finish:function)',
+        "WHERE start.name = 'entry' AND finish.name = 'malformedOpaque'",
+        'RETURN edge',
+      ].join(' '),
+    ));
+    const variableRelationships = scalarValue(variableOnly.rows[0], 'edge');
+    expect(Array.isArray(variableRelationships)).toBe(true);
+    expect(variableRelationships).toEqual([
+      expect.objectContaining({
+        source: fixture.nodes.entry,
+        target: fixture.nodes.helper,
+        kind: 'calls',
+      }),
+      expect.objectContaining({
+        source: fixture.nodes.helper,
+        target: fixture.nodes.malformedOpaque,
+        kind: 'calls',
+      }),
+    ]);
+    expect(variableRelationships).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: expect.anything() }),
+    ]));
+
+    const mixed = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(middle:function)-[edge:calls*1..1]->(finish:function)',
+        "WHERE entry.name = 'entry' AND middle.name = 'helper' AND finish.name = 'malformedOpaque'",
+        'RETURN edge',
+      ].join(' '),
+    ));
+    expect(scalarValue(mixed.rows[0], 'edge')).toEqual([
+      expect.objectContaining({
+        source: fixture.nodes.helper,
+        target: fixture.nodes.malformedOpaque,
+        kind: 'calls',
+      }),
+    ]);
+  });
+
+  it('executes representative fixed ordered queries as bounded SQL without whole-graph snapshots', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const preparedSql: string[] = [];
+    const inspectedRows: number[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry'",
+        'RETURN target.name AS name ORDER BY target.name LIMIT 2',
+      ].join(' '),
+      {
+        onSqlPrepare: (sql) => preparedSql.push(sql),
+        onRowsInspected: (count) => inspectedRows.push(count),
+      },
+    ));
+
+    expect(result.rows.map((row) => scalarValue(row, 'name'))).toEqual([
+      'helper',
+      'heuristicTarget',
+    ]);
+    expect(Math.max(...inspectedRows)).toBeLessThanOrEqual(3);
+    expect(preparedSql.some((sql) => /FROM nodes\s+ORDER BY id/.test(sql))).toBe(false);
+    expect(preparedSql.some((sql) => /FROM edges\s+ORDER BY source, target, kind, line, col, id/.test(sql))).toBe(false);
+    expect(preparedSql.some((sql) => /\bLIMIT \?/.test(sql))).toBe(true);
   });
 
   it('bounds broad variable-path materialization before applying the public LIMIT', async () => {
@@ -1236,9 +1404,784 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API an
     ));
     expect(nullsBefore.rows.map((row) => scalarValue(row, 'name'))).toEqual(['heuristicTarget', 'lspTarget', 'helper']);
   });
+
+  it('applies public node, relationship, and path identity ordering before a default LIMIT', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:default-order-hub',
+      name: 'defaultOrderHub',
+    }, updatedAt);
+    const canonicalLastId = insertNode(fixture.db, {
+      id: 'fn:zz-default-order',
+      name: 'storedFirstCanonicalLast',
+    }, updatedAt);
+    const canonicalMiddleId = insertNode(fixture.db, {
+      id: 'fn:mm-default-order',
+      name: 'storedSecondCanonicalMiddle',
+    }, updatedAt);
+    const canonicalFirstId = insertNode(fixture.db, {
+      id: 'fn:aa-default-order',
+      name: 'storedThirdCanonicalFirst',
+    }, updatedAt);
+    insertEdge(fixture.db, hubId, canonicalLastId, 'calls', null, 401, 0, 'tree-sitter');
+    insertEdge(fixture.db, hubId, canonicalMiddleId, 'calls', null, 402, 0, 'tree-sitter');
+    insertEdge(fixture.db, hubId, canonicalFirstId, 'calls', null, 403, 0, 'tree-sitter');
+
+    const nodeResult = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[:calls]->(target:function)',
+        "WHERE hub.name = 'defaultOrderHub'",
+        'RETURN target LIMIT 1',
+      ].join(' '),
+    ));
+    expect(nodeValue(nodeResult.rows[0], 'target').id).toBe(canonicalFirstId);
+
+    const relationshipResult = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[edge:calls]->(target:function)',
+        "WHERE hub.name = 'defaultOrderHub'",
+        'RETURN edge LIMIT 1',
+      ].join(' '),
+    ));
+    expect(relationshipValue(relationshipResult.rows[0], 'edge').target).toBe(canonicalFirstId);
+
+    const pathResult = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH p = (hub:function)-[:calls]->(target:function)',
+        "WHERE hub.name = 'defaultOrderHub'",
+        'RETURN p LIMIT 1',
+      ].join(' '),
+    ));
+    expect(pathValue(pathResult.rows[0], 'p').nodes.map((node) => node.id)).toEqual([
+      hubId,
+      canonicalFirstId,
+    ]);
+  });
+
+  it('applies public alternating identity before limiting single ranged paths', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:ranged-default-order-hub',
+      name: 'rangedDefaultOrderHub',
+    }, updatedAt);
+    const targetId = insertNode(fixture.db, {
+      id: 'fn:ranged-default-order-target',
+      name: 'rangedDefaultOrderTarget',
+    }, updatedAt);
+    insertEdge(fixture.db, hubId, targetId, 'calls', null, 403, 0, 'tree-sitter');
+    insertEdge(fixture.db, hubId, targetId, 'calls', null, 402, 0, 'tree-sitter');
+    insertEdge(fixture.db, hubId, targetId, 'calls', null, 401, 0, 'tree-sitter');
+    const materializedRows: number[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH p = (hub:function)-[:calls*1..2]->(target:function)',
+        "WHERE hub.name = 'rangedDefaultOrderHub'",
+        'RETURN p LIMIT 1',
+      ].join(' '),
+      { onRowsMaterialized: (count) => materializedRows.push(count) },
+    ));
+
+    const path = pathValue(result.rows[0], 'p');
+    expect(path.nodes.map((node) => node.id)).toEqual([hubId, targetId]);
+    expect(path.relationships.map((relationship) => relationship.line)).toEqual([401]);
+    expect(Math.max(...materializedRows)).toBeLessThanOrEqual(2);
+  });
+
+  it('orders ranged path extensions before strict public-identity prefixes', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:ranged-prefix-order-hub',
+      name: 'rangedPrefixOrderHub',
+    }, updatedAt);
+    const middleId = insertNode(fixture.db, {
+      id: 'fn:ranged-prefix-order-middle',
+      name: 'rangedPrefixOrderMiddle',
+    }, updatedAt);
+    const endId = insertNode(fixture.db, {
+      id: 'fn:ranged-prefix-order-end',
+      name: 'rangedPrefixOrderEnd',
+    }, updatedAt);
+    const tailId = insertNode(fixture.db, {
+      id: 'fn:ranged-prefix-order-tail',
+      name: 'rangedPrefixOrderTail',
+    }, updatedAt);
+    insertEdge(fixture.db, hubId, middleId, 'calls', null, 511, 0, 'tree-sitter');
+    insertEdge(fixture.db, middleId, endId, 'calls', null, 512, 0, 'tree-sitter');
+    insertEdge(fixture.db, endId, tailId, 'calls', null, 513, 0, 'tree-sitter');
+    const materializedRows: number[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH p = (hub:function)-[:calls*1..3]->(target:function)',
+        "WHERE hub.name = 'rangedPrefixOrderHub'",
+        'RETURN p LIMIT 1',
+      ].join(' '),
+      { onRowsMaterialized: (count) => materializedRows.push(count) },
+    ));
+
+    const path = pathValue(result.rows[0], 'p');
+    expect(path.nodes.map((node) => node.id)).toEqual([hubId, middleId, endId, tailId]);
+    expect(path.relationships.map((relationship) => relationship.line)).toEqual([511, 512, 513]);
+    expect(Math.max(...materializedRows)).toBeLessThanOrEqual(2);
+  });
+
+  it('orders single-ranged rows by projected values before path identity and LIMIT', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:ranged-projection-order-hub',
+      name: 'rangedProjectionOrderHub',
+    }, updatedAt);
+    const pathFirstId = insertNode(fixture.db, {
+      id: 'fn:aa-ranged-projection-order',
+      name: 'zProjectedLast',
+    }, updatedAt);
+    const pathMiddleId = insertNode(fixture.db, {
+      id: 'fn:mm-ranged-projection-order',
+      name: 'mProjectedMiddle',
+    }, updatedAt);
+    const projectedFirstId = insertNode(fixture.db, {
+      id: 'fn:zz-ranged-projection-order',
+      name: 'aProjectedFirst',
+    }, updatedAt);
+    insertEdge(fixture.db, hubId, pathFirstId, 'calls', null, 521, 0, 'tree-sitter');
+    insertEdge(fixture.db, hubId, pathMiddleId, 'calls', null, 522, 0, 'tree-sitter');
+    insertEdge(fixture.db, hubId, projectedFirstId, 'calls', null, 523, 0, 'tree-sitter');
+    const materializedRows: number[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[:calls*1..1]->(target:function)',
+        "WHERE hub.name = 'rangedProjectionOrderHub'",
+        'RETURN target.name AS name LIMIT 1',
+      ].join(' '),
+      { onRowsMaterialized: (count) => materializedRows.push(count) },
+    ));
+
+    expect(result.rows.map((row) => scalarValue(row, 'name'))).toEqual(['aProjectedFirst']);
+    expect(Math.max(...materializedRows)).toBeLessThanOrEqual(2);
+  });
+
+  it('orders ranged relationship-variable projections by public relationship identity', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:ranged-relationship-order-hub',
+      name: 'rangedRelationshipOrderHub',
+    }, updatedAt);
+    const canonicalLastId = insertNode(fixture.db, {
+      id: 'fn:zz-ranged-relationship-order',
+      name: 'rangedRelationshipStoredFirst',
+    }, updatedAt);
+    const canonicalMiddleId = insertNode(fixture.db, {
+      id: 'fn:mm-ranged-relationship-order',
+      name: 'rangedRelationshipStoredSecond',
+    }, updatedAt);
+    const canonicalFirstId = insertNode(fixture.db, {
+      id: 'fn:aa-ranged-relationship-order',
+      name: 'rangedRelationshipStoredThird',
+    }, updatedAt);
+    insertEdge(fixture.db, hubId, canonicalLastId, 'calls', '{"tag":"a"}', 541, 10, 'a');
+    insertEdge(fixture.db, hubId, canonicalMiddleId, 'calls', '{"tag":"m"}', 542, 20, 'm');
+    insertEdge(fixture.db, hubId, canonicalFirstId, 'calls', '{"tag":"z"}', 543, 30, 'z');
+    const materializedRows: number[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[edge:calls*1..1]->(target:function)',
+        "WHERE hub.name = 'rangedRelationshipOrderHub'",
+        'RETURN edge LIMIT 1',
+      ].join(' '),
+      { onRowsMaterialized: (count) => materializedRows.push(count) },
+    ));
+
+    const relationships = scalarValue(result.rows[0], 'edge');
+    expect(Array.isArray(relationships)).toBe(true);
+    expect(relationships).toEqual([
+      expect.objectContaining({
+        target: canonicalFirstId,
+        column: 30,
+        provenance: 'z',
+        metadata: { tag: 'z' },
+      }),
+    ]);
+    expect(relationships).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: expect.anything() }),
+    ]));
+    expect(Math.max(...materializedRows)).toBeLessThanOrEqual(2);
+  });
+
+  it('orders mixed fixed-ranged-fixed paths by full public identity before LIMIT', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:mixed-order-hub',
+      name: 'mixedOrderHub',
+    }, updatedAt);
+    const middleId = insertNode(fixture.db, {
+      id: 'fn:mixed-order-middle',
+      name: 'mixedOrderMiddle',
+    }, updatedAt);
+    const canonicalLastId = insertNode(fixture.db, {
+      id: 'fn:zz-mixed-order',
+      name: 'mixedOrderStoredFirst',
+    }, updatedAt);
+    const canonicalMiddleId = insertNode(fixture.db, {
+      id: 'fn:mm-mixed-order',
+      name: 'mixedOrderStoredSecond',
+    }, updatedAt);
+    const canonicalFirstId = insertNode(fixture.db, {
+      id: 'fn:aa-mixed-order',
+      name: 'mixedOrderStoredThird',
+    }, updatedAt);
+    const tailId = insertNode(fixture.db, {
+      id: 'fn:mixed-order-tail',
+      name: 'mixedOrderTail',
+    }, updatedAt);
+    insertEdge(fixture.db, hubId, middleId, 'imports', null, 531, 0, 'tree-sitter');
+    insertEdge(fixture.db, middleId, canonicalLastId, 'calls', null, 532, 0, 'tree-sitter');
+    insertEdge(fixture.db, middleId, canonicalMiddleId, 'calls', null, 533, 0, 'tree-sitter');
+    insertEdge(fixture.db, middleId, canonicalFirstId, 'calls', null, 534, 0, 'tree-sitter');
+    insertEdge(fixture.db, canonicalLastId, tailId, 'imports', null, 535, 0, 'tree-sitter');
+    insertEdge(fixture.db, canonicalMiddleId, tailId, 'imports', null, 536, 0, 'tree-sitter');
+    insertEdge(fixture.db, canonicalFirstId, tailId, 'imports', null, 537, 0, 'tree-sitter');
+    const materializedRows: number[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH p = (hub:function)-[:imports]->(middle:function)',
+        '-[:calls*1..1]->(candidate:function)-[:imports]->(tail:function)',
+        "WHERE hub.name = 'mixedOrderHub'",
+        'RETURN p LIMIT 1',
+      ].join(' '),
+      { onRowsMaterialized: (count) => materializedRows.push(count) },
+    ));
+
+    expect(pathValue(result.rows[0], 'p').nodes.map((node) => node.id)).toEqual([
+      hubId,
+      middleId,
+      canonicalFirstId,
+      tailId,
+    ]);
+    expect(Math.max(...materializedRows)).toBeLessThanOrEqual(2);
+  });
+
+  it('keeps the 33rd projected row in pure and mixed recursive frontiers', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const pureHubId = insertNode(fixture.db, {
+      id: 'fn:pure-frontier-order-hub',
+      name: 'pureFrontierOrderHub',
+    }, updatedAt);
+    const mixedHubId = insertNode(fixture.db, {
+      id: 'fn:mixed-frontier-order-hub',
+      name: 'mixedFrontierOrderHub',
+    }, updatedAt);
+    const mixedMiddleId = insertNode(fixture.db, {
+      id: 'fn:mixed-frontier-order-middle',
+      name: 'mixedFrontierOrderMiddle',
+    }, updatedAt);
+    const mixedTailId = insertNode(fixture.db, {
+      id: 'fn:mixed-frontier-order-tail',
+      name: 'mixedFrontierOrderTail',
+    }, updatedAt);
+    insertEdge(fixture.db, mixedHubId, mixedMiddleId, 'imports', null, 551, 0, 'tree-sitter');
+
+    fixture.db.exec('BEGIN');
+    try {
+      for (let index = 1; index <= 33; index += 1) {
+        const ordinal = String(index).padStart(2, '0');
+        const name = index === 33 ? 'aProjectedFirst' : `zProjected${ordinal}`;
+        const pureTargetId = insertNode(fixture.db, {
+          id: `fn:pure-frontier-order-target-${ordinal}`,
+          name,
+        }, updatedAt);
+        insertEdge(
+          fixture.db,
+          pureHubId,
+          pureTargetId,
+          'calls',
+          null,
+          560 + index,
+          0,
+          'tree-sitter',
+        );
+
+        const mixedTargetId = insertNode(fixture.db, {
+          id: `fn:mixed-frontier-order-target-${ordinal}`,
+          name,
+        }, updatedAt);
+        insertEdge(
+          fixture.db,
+          mixedMiddleId,
+          mixedTargetId,
+          'calls',
+          null,
+          600 + index,
+          0,
+          'tree-sitter',
+        );
+        if (index === 33) {
+          insertEdge(
+            fixture.db,
+            mixedTargetId,
+            mixedTailId,
+            'imports',
+            null,
+            640,
+            0,
+            'tree-sitter',
+          );
+        }
+      }
+      fixture.db.exec('COMMIT');
+    } catch (error) {
+      fixture.db.exec('ROLLBACK');
+      throw error;
+    }
+
+    const pure = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        "MATCH (hub:function {name: 'pureFrontierOrderHub'})-[:calls*1..1]->(target:function)",
+        'RETURN target.name AS name LIMIT 1',
+      ].join(' '),
+    ));
+    expect(pure.rows.map((row) => scalarValue(row, 'name'))).toEqual(['aProjectedFirst']);
+
+    const mixed = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        "MATCH (hub:function {name: 'mixedFrontierOrderHub'})",
+        '-[:imports]->(middle:function)-[:calls*1..1]->(target:function)',
+        'RETURN target.name AS name LIMIT 1',
+      ].join(' '),
+    ));
+    expect(mixed.rows.map((row) => scalarValue(row, 'name'))).toEqual(['aProjectedFirst']);
+
+    const mixedWithFixedSuffix = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        "MATCH (hub:function {name: 'mixedFrontierOrderHub'})",
+        '-[:imports]->(middle:function)-[:calls*1..1]->(candidate:function)',
+        '-[:imports]->(tail:function)',
+        'RETURN tail.name AS name LIMIT 1',
+      ].join(' '),
+    ));
+    expect(mixedWithFixedSuffix.rows.map((row) => scalarValue(row, 'name'))).toEqual([
+      'mixedFrontierOrderTail',
+    ]);
+  });
+
+  it('fails closed at the fixed nonaggregate ranged expansion budget for pure and mixed plans', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:nonaggregate-budget-hub',
+      name: 'nonaggregateBudgetHub',
+    }, updatedAt);
+    const prefixId = insertNode(fixture.db, {
+      id: 'fn:nonaggregate-budget-prefix',
+      name: 'nonaggregateBudgetPrefix',
+    }, updatedAt);
+    insertEdge(fixture.db, prefixId, hubId, 'imports', null, 645, 0, 'tree-sitter');
+
+    const insertCandidate = (index: number): void => {
+      const ordinal = String(index).padStart(5, '0');
+      const targetId = insertNode(fixture.db, {
+        id: `fn:nonaggregate-budget-target-${ordinal}`,
+        name: `nonaggregateBudgetTarget${ordinal}`,
+      }, updatedAt);
+      insertEdge(
+        fixture.db,
+        hubId,
+        targetId,
+        'calls',
+        null,
+        700 + index,
+        0,
+        'tree-sitter',
+      );
+    };
+
+    fixture.db.exec('BEGIN');
+    try {
+      for (let index = 1; index < 16000; index += 1) {
+        insertCandidate(index);
+      }
+      fixture.db.exec('COMMIT');
+    } catch (error) {
+      fixture.db.exec('ROLLBACK');
+      throw error;
+    }
+
+    const pureQuery = [
+      "MATCH (hub:function {name: 'nonaggregateBudgetHub'})",
+      '-[:calls*1..1]->(target:function)',
+      'RETURN target.name AS name LIMIT 1',
+    ].join(' ');
+    const mixedQuery = [
+      "MATCH (prefix:function {name: 'nonaggregateBudgetPrefix'})",
+      '-[:imports]->(hub:function)-[:calls*1..1]->(target:function)',
+      'RETURN target.name AS name LIMIT 1',
+    ].join(' ');
+    const belowMaterialized: number[] = [];
+    const belowPure = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      pureQuery,
+      { onRowsMaterialized: (count) => belowMaterialized.push(count) },
+    ));
+    const belowMixed = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      mixedQuery,
+      { onRowsMaterialized: (count) => belowMaterialized.push(count) },
+    ));
+    expect(belowPure.rows).toHaveLength(1);
+    expect(belowMixed.rows).toHaveLength(1);
+    expect(Math.max(...belowMaterialized)).toBeLessThanOrEqual(2);
+
+    insertCandidate(16000);
+    const atGuardPure = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      pureQuery,
+    ));
+    const atGuardMixed = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      mixedQuery,
+    ));
+    expect(atGuardPure.rows).toHaveLength(1);
+    expect(atGuardMixed.rows).toHaveLength(1);
+
+    insertCandidate(16001);
+    const aboveGuardPure = await runtime.queryCypher(fixture.projectRoot, pureQuery);
+    const aboveGuardMixed = await runtime.queryCypher(fixture.projectRoot, mixedQuery);
+    expectDiagnostic(aboveGuardPure, 'CYPHER_PATH_EXPANSION_LIMIT');
+    expectDiagnostic(aboveGuardMixed, 'CYPHER_PATH_EXPANSION_LIMIT');
+    expect(aboveGuardPure).not.toHaveProperty('rows');
+    expect(aboveGuardMixed).not.toHaveProperty('rows');
+  }, 30000);
+
+  it('does not prune ranged aggregate matches before grouping and ordering', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:aggregate-frontier-hub',
+      name: 'aggregateFrontierHub',
+    }, updatedAt);
+    const prefixId = insertNode(fixture.db, {
+      id: 'fn:aggregate-frontier-prefix',
+      name: 'aggregateFrontierPrefix',
+    }, updatedAt);
+    insertEdge(fixture.db, prefixId, hubId, 'imports', null, 649, 0, 'tree-sitter');
+    const layerA = Array.from({ length: 30 }, (_, nodeIndex) => insertNode(fixture.db, {
+      id: `fn:aggregate-frontier-a-${nodeIndex}`,
+      name: `aggregateFrontierA${nodeIndex}`,
+    }, updatedAt));
+    const layerB = Array.from({ length: 39 }, (_, nodeIndex) => insertNode(fixture.db, {
+      id: `fn:aggregate-frontier-b-${nodeIndex}`,
+      name: `aggregateFrontierB${nodeIndex}`,
+    }, updatedAt));
+    const layerC = Array.from({ length: 40 }, (_, nodeIndex) => insertNode(fixture.db, {
+      id: `fn:aggregate-frontier-c-${nodeIndex}`,
+      name: `aggregateFrontierC${nodeIndex}`,
+    }, updatedAt));
+
+    fixture.db.exec('BEGIN');
+    try {
+      for (const target of layerA) {
+        insertEdge(fixture.db, hubId, target, 'calls', null, 650, 0, 'tree-sitter');
+      }
+      for (const source of layerA) {
+        for (const target of layerB) {
+          insertEdge(fixture.db, source, target, 'calls', null, 651, 0, 'tree-sitter');
+        }
+      }
+      for (let sourceIndex = 0; sourceIndex < layerB.length; sourceIndex += 1) {
+        for (let targetIndex = 0; targetIndex < layerC.length; targetIndex += 1) {
+          if (sourceIndex === 0 && targetIndex === 0) {
+            continue;
+          }
+          insertEdge(
+            fixture.db,
+            layerB[sourceIndex]!,
+            layerC[targetIndex]!,
+            'calls',
+            null,
+            652,
+            0,
+            'tree-sitter',
+          );
+        }
+      }
+      fixture.db.exec('COMMIT');
+    } catch (error) {
+      fixture.db.exec('ROLLBACK');
+      throw error;
+    }
+
+    const aggregateQuery = [
+      "MATCH (start:function {name: 'aggregateFrontierHub'})-[:calls*1..3]->(finish:function)",
+      'RETURN start.name AS startName, count(finish.name) AS reachable',
+      'ORDER BY reachable DESC LIMIT 1',
+    ].join(' ');
+    const belowGuard = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      aggregateQuery,
+    ));
+
+    expect(belowGuard.rows.map((row) => [
+      scalarValue(row, 'startName'),
+      scalarValue(row, 'reachable'),
+    ])).toEqual([['aggregateFrontierHub', 47970]]);
+
+    insertEdge(
+      fixture.db,
+      layerB[0]!,
+      layerC[0]!,
+      'calls',
+      null,
+      654,
+      0,
+      'tree-sitter',
+    );
+    const atGuard = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      aggregateQuery,
+    ));
+    expect(atGuard.rows.map((row) => [
+      scalarValue(row, 'startName'),
+      scalarValue(row, 'reachable'),
+    ])).toEqual([['aggregateFrontierHub', 48000]]);
+
+    insertEdge(
+      fixture.db,
+      layerB[0]!,
+      layerC[0]!,
+      'calls',
+      null,
+      655,
+      0,
+      'tree-sitter',
+    );
+    const aboveGuard = await runtime.queryCypher(
+      fixture.projectRoot,
+      aggregateQuery,
+    );
+    const diagnostic = expectDiagnostic(aboveGuard, 'CYPHER_PATH_EXPANSION_LIMIT');
+    expect(diagnostic.expected).toContain('narrower MATCH pattern or bounded path range');
+    expect(diagnostic.anchor).toBe('runtime');
+    expect(diagnostic.message).toContain('Narrow the MATCH pattern or path range');
+    expect(aboveGuard).not.toHaveProperty('rows');
+    expect(JSON.stringify(aboveGuard)).not.toContain('SELECT');
+    expect(JSON.stringify(aboveGuard)).not.toContain('aggregateFrontierHub');
+
+    const zeroGroupAboveGuard = await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        "MATCH (start:function {name: 'aggregateFrontierHub'})",
+        "-[:calls*1..3]->(finish:function {name: 'aggregateFrontierMissing'})",
+        'RETURN finish.name AS finishName, count(*) AS reachable',
+        'ORDER BY reachable DESC LIMIT 1',
+      ].join(' '),
+    );
+    const zeroGroupDiagnostic = expectDiagnostic(
+      zeroGroupAboveGuard,
+      'CYPHER_PATH_EXPANSION_LIMIT',
+    );
+    expect(zeroGroupDiagnostic.expected).toContain(
+      'narrower MATCH pattern or bounded path range',
+    );
+    expect(zeroGroupAboveGuard).not.toHaveProperty('rows');
+
+    const mixedZeroGroupAboveGuard = await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        "MATCH (prefix:function {name: 'aggregateFrontierPrefix'})",
+        '-[:imports]->(start:function)',
+        "-[:calls*1..3]->(finish:function {name: 'aggregateFrontierMissing'})",
+        'RETURN finish.name AS finishName, count(*) AS reachable',
+        'ORDER BY reachable DESC LIMIT 1',
+      ].join(' '),
+    );
+    expectDiagnostic(
+      mixedZeroGroupAboveGuard,
+      'CYPHER_PATH_EXPANSION_LIMIT',
+    );
+    expect(mixedZeroGroupAboveGuard).not.toHaveProperty('rows');
+  }, 20000);
+
+  it('compares relationship, ranged-list, and path identity tuples with nulls last', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const updatedAt = 1700000000000;
+    const hubId = insertNode(fixture.db, {
+      id: 'fn:null-identity-order-hub',
+      name: 'nullIdentityOrderHub',
+    }, updatedAt);
+    const targetId = insertNode(fixture.db, {
+      id: 'fn:null-identity-order-target',
+      name: 'nullIdentityOrderTarget',
+    }, updatedAt);
+    insertEdge(fixture.db, hubId, targetId, 'calls', null, null, null, 'lsp');
+    insertEdge(fixture.db, hubId, targetId, 'calls', null, 701, 7, 'tree-sitter');
+
+    const fixed = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[edge:calls]->(target:function)',
+        "WHERE hub.name = 'nullIdentityOrderHub'",
+        'RETURN edge LIMIT 1',
+      ].join(' '),
+    ));
+    expect(relationshipValue(fixed.rows[0], 'edge')).toMatchObject({ line: 701, column: 7 });
+
+    const ranged = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[edge:calls*1..1]->(target:function)',
+        "WHERE hub.name = 'nullIdentityOrderHub'",
+        'RETURN edge LIMIT 1',
+      ].join(' '),
+    ));
+    expect(scalarValue(ranged.rows[0], 'edge')).toEqual([
+      expect.objectContaining({ line: 701, column: 7 }),
+    ]);
+
+    const path = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH p = (hub:function)-[:calls*1..1]->(target:function)',
+        "WHERE hub.name = 'nullIdentityOrderHub'",
+        'RETURN p LIMIT 1',
+      ].join(' '),
+    ));
+    expect(pathValue(path.rows[0], 'p').relationships).toEqual([
+      expect.objectContaining({ line: 701, column: 7 }),
+    ]);
+  });
+
+  it('uses Unicode code-point ordinal order instead of host locale collation', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    for (const [index, name] of ['Z', 'a', 'z', 'ä', '😀'].entries()) {
+      const id = insertNode(fixture.db, {
+        id: `fn:unicode-order-${index}`,
+        name,
+        startLine: 300 + index,
+      }, 1700000000000);
+      insertEdge(
+        fixture.db,
+        fixture.nodes.highDegreeHub,
+        id,
+        'calls',
+        null,
+        300 + index,
+        0,
+        'tree-sitter',
+      );
+    }
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[:calls]->(target:function)',
+        "WHERE hub.name = 'hub' AND target.startLine >= 300",
+        'RETURN target.name AS name ORDER BY target.name',
+      ].join(' '),
+    ));
+
+    expect(result.rows.map((row) => scalarValue(row, 'name'))).toEqual([
+      'Z',
+      'a',
+      'z',
+      'ä',
+      '😀',
+    ]);
+  });
 });
 
 describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — Slice 2 count, grouping, and string predicates', () => {
+  it('preserves typed node and fixed relationship projections alongside SQL aggregates', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const groupedNode = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (caller:function)-[:calls]->(callee:function)',
+        "WHERE caller.name = 'entry'",
+        'RETURN caller, count(*) AS calls',
+      ].join(' '),
+    ));
+    expect(groupedNode.rows).toHaveLength(1);
+    expect(nodeValue(groupedNode.rows[0], 'caller')).toMatchObject({
+      id: fixture.nodes.entry,
+      name: 'entry',
+      isExported: true,
+    });
+    expect(scalarValue(groupedNode.rows[0], 'calls')).toBe(3);
+
+    const groupedRelationship = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (caller:function)-[edge:calls]->(callee:function)',
+        "WHERE caller.name = 'entry'",
+        'RETURN edge, count(*) AS calls',
+        'ORDER BY edge.target',
+        'LIMIT 1',
+      ].join(' '),
+    ));
+    expect(groupedRelationship.rows).toHaveLength(1);
+    expect(relationshipValue(groupedRelationship.rows[0], 'edge')).toMatchObject({
+      source: fixture.nodes.entry,
+      target: fixture.nodes.helper,
+      kind: 'calls',
+      metadata: { resolvedBy: 'static' },
+    });
+    expect(scalarValue(groupedRelationship.rows[0], 'calls')).toBe(1);
+  });
+
+  it('rejects ranged relationship-list property predicates before preparing SQL', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const preparedSql: string[] = [];
+
+    const diagnostic = expectDiagnostic(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH (start:function)-[edge:calls*1..2]->(finish:function)',
+        "WHERE edge.kind = 'calls'",
+        'RETURN edge',
+      ].join(' '),
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    ), 'CYPHER_UNSUPPORTED');
+
+    expect(diagnostic.anchor).toBe('whereClause');
+    expect(diagnostic.expected).toBe('bare ranged relationship variable');
+    expect(preparedSql).toEqual([]);
+  });
+
   it('counts active matches with count(*) and count(expr) without counting null expressions', async () => {
     const runtime = await loadCypherRuntimeContract();
     const fixture = createCypherRuntimeFixture();
@@ -1257,6 +2200,29 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — Slice 2 count
     expect(scalarValue(result.rows[0], 'totalCalls')).toBe(3);
     expect(scalarValue(result.rows[0], 'documentedTargets')).toBe(1);
     expect(result.truncated).toBe(false);
+  });
+
+  it('hydrates grouped fixed-path projections as typed path values alongside aggregates', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        "MATCH p = (caller:function)-[:calls]->(callee:function) WHERE caller.name = 'entry'",
+        'RETURN caller.name AS caller, count(callee) AS callees, p',
+        'ORDER BY caller ASC',
+        'LIMIT 1',
+      ].join(' '),
+    ));
+
+    expect(result.rows).toHaveLength(1);
+    expect(scalarValue(result.rows[0], 'caller')).toBe('entry');
+    expect(scalarValue(result.rows[0], 'callees')).toBe(1);
+    const path = pathValue(result.rows[0], 'p');
+    expect(path.length).toBe(1);
+    expect(path.nodes).toHaveLength(2);
+    expect(path.relationships).toHaveLength(1);
   });
 
   it('groups implicitly by every non-aggregate projection and orders by aggregate aliases', async () => {
@@ -1533,6 +2499,40 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — Slice 2 count
 });
 
 describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnostics, and execution safety', () => {
+  it('rejects multiple ranged relationship segments before preparing SQL', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const preparedSql: string[] = [];
+
+    const diagnostic = expectDiagnostic(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH (a:function)-[:calls*1..2]->(b:function)',
+        '-[:calls*1..2]->(c:function)',
+        'RETURN c',
+      ].join(' '),
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    ), 'CYPHER_UNSUPPORTED');
+
+    expect(diagnostic.anchor).toBe('relationshipPattern');
+    expect(diagnostic.expected).toBe('at most one ranged relationship segment');
+    expect(preparedSql).toEqual([]);
+  });
+
+  it('returns canonical located diagnostics instead of rejecting malformed WHERE promises', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const query = 'MATCH (n:function) WHERE n.name = RETURN n.name';
+
+    const diagnostic = expectDiagnostic(
+      await runtime.queryCypher(fixture.projectRoot, query),
+      'CYPHER_SYNTAX',
+    );
+    expect(diagnostic.offset).toBe(query.indexOf('RETURN'));
+    expect(diagnostic.anchor).toBe('whereClause');
+    expect(diagnostic.excerpt).toContain('RETURN n.name');
+  });
+
   it('applies LIMIT, default cap, hard cap, truncation, effectiveCap, and effectiveCap plus one inspection', async () => {
     const runtime = await loadCypherRuntimeContract();
     const fixture = createCypherRuntimeFixture();

@@ -62,6 +62,7 @@ type CypherPlanSuccess = {
   readonly status: 'success';
   readonly sql: string;
   readonly boundParameters: readonly unknown[];
+  readonly pathExpansionGuard?: number;
 };
 
 type CypherPlanResult = CypherPlanSuccess | CypherDiagnostic;
@@ -188,6 +189,19 @@ describe('SPEC-013 Cypher parser — Slice 1 grammar acceptance', () => {
     );
   });
 
+  it('rejects a second ranged relationship segment deterministically before planning', async () => {
+    const query = [
+      'MATCH (a:function)-[:calls*1..2]->(b:function)',
+      '-[:calls*1..2]->(c:function)',
+      'RETURN c',
+    ].join(' ');
+    const diagnostic = expectDiagnostic(await plan(query), 'CYPHER_UNSUPPORTED');
+
+    expect(diagnostic.offset).toBe(query.lastIndexOf('*'));
+    expect(diagnostic.anchor).toBe('relationshipPattern');
+    expect(diagnostic.expected).toBe('at most one ranged relationship segment');
+  });
+
   it('requires every node and relationship declaration name to be unique in the connected chain', async () => {
     expectDiagnostic(
       await parse('MATCH (n:function)-[:calls]->(n:function) RETURN n'),
@@ -239,13 +253,141 @@ describe('SPEC-013 Cypher planner — Slice 1 SQL emission', () => {
     expect(planned.sql).toContain("instr(cg_path_0.visited_edge_ids, ',' || e0.id || ',') = 0");
     expect(planned.sql).toContain('cg_path_0.depth < ?');
     expect(planned.sql).toContain("WHERE cg_path_0.depth BETWEEN ? AND ? AND n1.kind = 'function'");
+    expect(planned.sql).toContain(
+      'frontier_order_0, frontier_order_1, frontier_order_2) AS (',
+    );
+    expect(planned.sql).toContain('ORDER BY 7 ASC, 8 ASC NULLS LAST, 9 ASC');
+    expect(planned.sql).toContain('ORDER BY cg_path_0.public_identity ASC');
+    expect(planned.sql).toContain('ORDER BY cg_bounded_paths.public_identity ASC');
+    expect(planned.sql).toContain("|| '~'");
+    expect(planned.sql).toContain(
+      'substr(cg_path_0.public_identity, 1, length(cg_path_0.public_identity) - 1)',
+    );
+    expect(planned.sql).not.toMatch(/ORDER BY cg_(?:path_0|bounded_paths)\.depth\b/);
     expect(planned.sql).toContain('LIMIT ?');
-    expect(planned.boundParameters.slice(0, 5)).toEqual([3, 4848, 1, 3, 101]);
+    expect(planned.pathExpansionGuard).toBe(48000);
+    expect(planned.boundParameters.slice(0, 5)).toEqual([3, 48001, 1, 3, 101]);
     expect(planned.boundParameters.slice(-1)).toEqual([101]);
+  });
+
+  it('orders pure and mixed ranged SQL caps by public projections and match identity', async () => {
+    const projected = expectPlanSuccess(await plan(
+      'MATCH (source:function)-[edge:calls*1..2]->(target:function) RETURN target.name AS name LIMIT 1',
+    ));
+    expect(projected.sql).toContain(
+      'ORDER BY n1.name ASC NULLS LAST, cg_path_0.public_identity ASC',
+    );
+    expect(projected.sql).toContain(
+      'ORDER BY n1.name ASC NULLS LAST, cg_bounded_paths.public_identity ASC',
+    );
+    expect(projected.sql).toContain(
+      'frontier_order_0, frontier_order_1) AS (',
+    );
+    expect(projected.sql).toContain('ORDER BY 7 ASC NULLS LAST, 8 ASC');
+    expect(projected.pathExpansionGuard).toBe(32000);
+    expect(projected.boundParameters).toEqual([2, 32001, 1, 2, 2, 2]);
+    expect(projected.sql).toContain('cg_result_rows AS (');
+    expect(projected.sql).toContain('1 AS "__cg_path_frontier_sentinel"');
+
+    const relationshipList = expectPlanSuccess(await plan(
+      'MATCH (source:function)-[edge:calls*1..2]->(target:function) RETURN edge LIMIT 1',
+    ));
+    expect(relationshipList.sql).toContain(
+      'ORDER BY cg_path_0.relationship_identity ASC, cg_path_0.public_identity ASC',
+    );
+    expect(relationshipList.sql).toContain(
+      'ORDER BY cg_bounded_paths.relationship_identity ASC, cg_bounded_paths.public_identity ASC',
+    );
+
+    const mixedProjected = expectPlanSuccess(await plan([
+      'MATCH (source:function)-[:imports]->(middle:function)',
+      '-[:calls*1..2]->(target:function)',
+      'RETURN target.name AS name LIMIT 1',
+    ].join(' ')));
+    expect(mixedProjected.sql).toContain(
+      'frontier_order_0, frontier_order_1) AS (',
+    );
+    expect(mixedProjected.sql).toContain('ORDER BY 11 ASC NULLS LAST, 12 ASC');
+    expect(mixedProjected.sql).toContain(
+      'ORDER BY n2.name ASC NULLS LAST, cg_path_0.public_identity ASC',
+    );
+
+    const mixed = expectPlanSuccess(await plan([
+      'MATCH p = (source:function)-[:imports]->(middle:function)',
+      '-[:calls*1..2]->(candidate:function)-[:imports]->(target:function)',
+      'RETURN p LIMIT 1',
+    ].join(' ')));
+    expect(mixed.sql).toContain(
+      'visited_edge_ids, public_identity, relationship_identity) AS (',
+    );
+    expect(mixed.sql).toContain('ORDER BY 9 ASC');
+    expect(mixed.sql).toContain(
+      'substr(cg_path_0.public_identity, 1, length(cg_path_0.public_identity) - 1)',
+    );
+    expect(mixed.sql).not.toMatch(/ORDER BY cg_path_0\.(?:visited_edge_ids|variable_edge_ids)\b/);
+  });
+
+  it('uses a private guard-plus-one sentinel for ranged aggregate frontiers', async () => {
+    const planned = expectPlanSuccess(await plan([
+      "MATCH (start:function {name: 'aggregateFrontierHub'})",
+      '-[:calls*1..3]->(finish:function)',
+      'RETURN start.name AS startName, count(finish.name) AS reachable',
+      'ORDER BY reachable DESC LIMIT 1',
+    ].join(' ')));
+
+    expect(planned.pathExpansionGuard).toBe(48000);
+    expect(planned.sql).toContain(
+      'cg_path_frontier AS (SELECT count(*) AS "__cg_path_frontier_count" FROM cg_path_0)',
+    );
+    expect(planned.sql).toContain(
+      'SELECT NULL AS "startName", NULL AS "reachable", cg_path_frontier."__cg_path_frontier_count" AS "__cg_path_frontier_count", 1 AS "__cg_path_frontier_sentinel"',
+    );
+    expect(planned.sql).toContain('UNION ALL');
+    expect(planned.sql).toContain(
+      'ORDER BY "__cg_path_frontier_sentinel" DESC, "__cg_aggregate_result_order" ASC',
+    );
+    expect(planned.boundParameters).toEqual([
+      'aggregateFrontierHub',
+      3,
+      48001,
+      1,
+      3,
+      48000,
+      2,
+    ]);
   });
 });
 
 describe('SPEC-013 Cypher planner — Slice 1 WHERE emission', () => {
+  it('rejects property access on ranged relationship lists before SQL emission', async () => {
+    const query = [
+      'MATCH (start:function)-[edge:calls*1..2]->(finish:function)',
+      "WHERE edge.kind = 'calls'",
+      'RETURN edge',
+    ].join(' ');
+    const diagnostic = expectDiagnostic(await plan(query), 'CYPHER_UNSUPPORTED');
+
+    expect(diagnostic.offset).toBe(query.indexOf('edge.kind'));
+    expect(diagnostic.anchor).toBe('whereClause');
+    expect(diagnostic.expected).toBe('bare ranged relationship variable');
+    expect(diagnostic.message).toContain('list');
+  });
+
+  it('returns located canonical diagnostics for structurally incomplete WHERE expressions', async () => {
+    const queries = [
+      'MATCH (n:function) WHERE n.name = RETURN n.name',
+      "MATCH (n:function) WHERE (n.name = 'entry' RETURN n.name",
+      'MATCH (n:function) WHERE n.name STARTS RETURN n.name',
+    ];
+
+    for (const query of queries) {
+      const diagnostic = expectDiagnostic(await plan(query), 'CYPHER_SYNTAX');
+      expect(diagnostic.offset).toBe(query.indexOf('RETURN'));
+      expect(diagnostic.anchor).toBe('whereClause');
+      expect(diagnostic.excerpt).toContain('RETURN n.name');
+    }
+  });
+
   it('emits parenthesized boolean predicates with comparisons and bound literals', async () => {
     const planned = expectPlanSuccess(await plan(
       "MATCH (n:function)-[:calls]->(m:method) WHERE NOT (n.name = 'skip' OR m.startLine <= 10) AND m.endLine >= 20 RETURN m.name",
@@ -299,7 +441,11 @@ describe('SPEC-013 Cypher planner — Slice 1 projection, ordering, and caps', (
 
     expect(planned.sql).toContain("'source', e0.source");
     expect(planned.sql).toContain('AS "contains"');
-    expect(planned.sql).toContain('ORDER BY file.name ASC NULLS LAST, fn ASC NULLS LAST, contains ASC NULLS LAST');
+    expect(planned.sql).toContain(
+      'ORDER BY n0.name ASC NULLS LAST, n1.id ASC, e0.source ASC, e0.target ASC, e0.kind ASC, e0.line ASC NULLS LAST, e0.col ASC NULLS LAST',
+    );
+    expect(planned.sql).toContain("'id', n1.id");
+    expect(planned.sql).toContain("'source', e0.source");
     expect(planned.sql).toContain('n0.id ASC, e0.source ASC, e0.target ASC, e0.kind ASC, e0.line ASC NULLS LAST, e0.col ASC NULLS LAST, n1.id ASC');
     expect(planned.boundParameters.slice(-1)).toEqual([101]);
     expect(planned.sql).toContain('/* effectiveCap=100 truncationProbe=effectiveCap+1 no totalRows */');
