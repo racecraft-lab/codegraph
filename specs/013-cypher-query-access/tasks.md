@@ -174,21 +174,21 @@
 
 ### GREEN: Implementation
 
-- [ ] T062 [US3] Complete defense-in-depth read-only SQL validation and rejected-input handling in `src/query/cypher/index.ts` and `src/query/cypher/runtime.ts`, including one parameterized SELECT-only statement, CTE SELECT-only validation, no statement lists, no PRAGMA/ATTACH/DETACH/transaction/DDL/DML, and no prepare/execution for rejected syntax. Satisfies FR-024, SC-005.
-- [ ] T063 [US3] Complete malformed stdin, oversized input, rejected flag, timeout, diagnostic, and failure-exit behavior in `src/bin/codegraph.ts` without adding `--file` support or exposing raw query/literal/SQL/parameter data. Satisfies FR-002, FR-022, FR-023, FR-025.
-- [ ] T064 [US3] Complete final MCP result shaping in `src/mcp/tools.ts`, including success, empty, not-indexed, diagnostic, timeout, payload-too-large, path/access refusal, and malfunction boundaries. Satisfies FR-028.
-- [ ] T065 [US3] Complete retrieval guidance in `src/mcp/server-instructions.ts` and ensure `codegraph_query` is default-listed but not positioned as the primary retrieval tool. Satisfies FR-028, FR-030.
-- [ ] T066 [US3] Run final focused guardrail tests and record commands/statuses in `specs/013-cypher-query-access/evidence-matrix.md`: `npx vitest run __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/mcp-server-instructions.test.ts __tests__/cypher-recipes.test.ts`.
+- [X] T062 [US3] Complete defense-in-depth read-only SQL validation and rejected-input handling in `src/query/cypher/index.ts` and `src/query/cypher/runtime.ts`, including one parameterized SELECT-only statement, CTE SELECT-only validation, no statement lists, no PRAGMA/ATTACH/DETACH/transaction/DDL/DML, and no prepare/execution for rejected syntax. Satisfies FR-024, SC-005.
+- [X] T063 [US3] Complete malformed stdin, oversized input, rejected flag, timeout, diagnostic, and failure-exit behavior in `src/bin/codegraph.ts` without adding `--file` support or exposing raw query/literal/SQL/parameter data. Satisfies FR-002, FR-022, FR-023, FR-025.
+- [X] T064 [US3] Complete final MCP result shaping in `src/mcp/tools.ts`, including success, empty, not-indexed, diagnostic, timeout, payload-too-large, path/access refusal, and malfunction boundaries. Satisfies FR-028.
+- [X] T065 [US3] Complete retrieval guidance in `src/mcp/server-instructions.ts` and ensure `codegraph_query` is default-listed but not positioned as the primary retrieval tool. Satisfies FR-028, FR-030.
+- [X] T066 [US3] Run final focused guardrail tests and record commands/statuses in `specs/013-cypher-query-access/evidence-matrix.md`: `npx vitest run __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/mcp-server-instructions.test.ts __tests__/cypher-recipes.test.ts`.
 
 ### REFACTOR
 
-- [ ] T067 [US3] Refactor `src/query/cypher/index.ts`, `src/query/cypher/runtime.ts`, `src/query/cypher/serializer.ts`, `src/bin/codegraph.ts`, `src/mcp/tools.ts`, and `src/mcp/server-instructions.ts` after final focused tests to remove duplication and keep expected failures stable, success-shaped, and bounded.
+- [X] T067 [US3] Refactor `src/query/cypher/index.ts`, `src/query/cypher/runtime.ts`, `src/query/cypher/serializer.ts`, `src/bin/codegraph.ts`, `src/mcp/tools.ts`, and `src/mcp/server-instructions.ts` after final focused tests to remove duplication and keep expected failures stable, success-shaped, and bounded.
 
 ### VERIFY
 
-- [ ] T068 [US3] Run retrieval-guardian review for changes under `src/mcp/tools.ts` and `src/mcp/server-instructions.ts`; record disposition and findings in `specs/013-cypher-query-access/evidence-matrix.md`.
-- [ ] T069 [US3] Run retrieval A/B validation only after explicit runtime authorization records provider, model/tool endpoints, repository context to be sent, retention/training setting, cost/time limit, and approval timestamp; if authorization is absent, record the retrieval A/B gate as blocked in `specs/013-cypher-query-access/evidence-matrix.md` and do not send repository context off-box.
-- [ ] T070 [US3] Verify final safe-operation evidence in `specs/013-cypher-query-access/evidence-matrix.md`: byte parity hashes, read-only snapshot comparisons, timeout cleanup/replacement, malformed stdin diagnostic, payload ceiling diagnostic, MCP default-listing, and retrieval steering test output.
+- [X] T068 [US3] Run retrieval-guardian review for changes under `src/mcp/tools.ts` and `src/mcp/server-instructions.ts`; record disposition and findings in `specs/013-cypher-query-access/evidence-matrix.md`.
+- [X] T069 [US3] Run retrieval A/B validation only after explicit runtime authorization records provider, model/tool endpoints, repository context to be sent, retention/training setting, cost/time limit, and approval timestamp; if authorization is absent, record the retrieval A/B gate as blocked in `specs/013-cypher-query-access/evidence-matrix.md` and do not send repository context off-box.
+- [X] T070 [US3] Verify final safe-operation evidence in `specs/013-cypher-query-access/evidence-matrix.md`: byte parity hashes, read-only snapshot comparisons, timeout cleanup/replacement, malformed stdin diagnostic, payload ceiling diagnostic, MCP default-listing, and retrieval steering test output.
 
 **Checkpoint**: US3 safe-operation closure is complete or explicitly blocked only by external/off-box evaluation authorization.
 

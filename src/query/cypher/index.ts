@@ -2,6 +2,7 @@ import {
   executeCypherSqlForTests,
   getCypherRuntimeStateForTests as getCypherRuntimeBoundaryStateForTests,
 } from './runtime';
+import type { CypherPerformancePlanEvidence, CypherRuntimeQueryPlanProbe } from './runtime';
 import { serializeCypherResult } from './serializer';
 
 type TokenKind = 'identifier' | 'integer' | 'string' | 'punctuation' | 'eof';
@@ -99,6 +100,7 @@ export type CypherRuntimeTestOptions = {
   readonly forceTimeout?: boolean;
   readonly payloadLimitBytes?: number;
   readonly onSqlPrepare?: (sql: string) => void;
+  readonly onQueryPlan?: (evidence: CypherPerformancePlanEvidence) => void;
   readonly onRowsInspected?: (count: number) => void;
   readonly onRowsMaterialized?: (count: number) => void;
 };
@@ -295,6 +297,17 @@ const SQL_ENTRYPOINT_KEYWORDS = new Set([
   'ROLLBACK',
 ]);
 
+const UNSUPPORTED_OPENCYPHER_CLAUSE_KEYWORDS = new Set([
+  'CALL',
+  'LOAD',
+  'OPTIONAL',
+  'UNION',
+  'UNWIND',
+  'USING',
+  'WITH',
+  'YIELD',
+]);
+
 const WRITE_CLAUSE_KEYWORDS = new Set([
   'CREATE',
   'DELETE',
@@ -385,6 +398,15 @@ class Lexer {
     if (isAsciiDigit(current)) {
       this.scanInteger();
       return;
+    }
+
+    if (current === '$') {
+      this.failAtCurrent(
+        'CYPHER_EXTERNAL_PARAMETER_UNSUPPORTED',
+        'literal value',
+        'parameter',
+        'External Cypher parameters are not supported; use literal values in the bounded query text.',
+      );
     }
 
     if ('()[]{}:,.=*+-<>'.includes(current)) {
@@ -720,12 +742,7 @@ class Parser {
 
   private parseQuery(): CypherParseSuccess {
     if (this.isAtKeyword('OPTIONAL')) {
-      this.failCurrent(
-        'CYPHER_UNSUPPORTED_CLAUSE',
-        'MATCH',
-        'matchClause',
-        'OPTIONAL MATCH is not supported.',
-      );
+      this.failUnsupportedOpenCypherClause('MATCH', 'matchClause');
     }
 
     if (!this.isAtKeyword('MATCH')) {
@@ -753,6 +770,10 @@ class Parser {
         'matchClause',
         'Multiple MATCH clauses are not supported.',
       );
+    }
+
+    if (this.isAtUnsupportedOpenCypherClause()) {
+      this.failUnsupportedOpenCypherClause('RETURN clause', 'query');
     }
 
     if (this.isAtWriteClause()) {
@@ -838,6 +859,10 @@ class Parser {
         'matchClause',
         'Multiple MATCH clauses are not supported.',
       );
+    }
+
+    if (this.isAtUnsupportedOpenCypherClause()) {
+      this.failUnsupportedOpenCypherClause('RETURN clause', 'matchClause');
     }
 
     if (this.isAtWriteClause()) {
@@ -1419,6 +1444,15 @@ class Parser {
           'Multiple MATCH clauses are not supported.',
         );
       }
+      if (UNSUPPORTED_OPENCYPHER_CLAUSE_KEYWORDS.has(keyword)) {
+        this.failToken(
+          current,
+          'CYPHER_UNSUPPORTED_OPENCYPHER',
+          'supported Cypher subset',
+          'query',
+          `${current.value.toUpperCase()} is not supported in the CodeGraph Cypher subset.`,
+        );
+      }
       this.failToken(current, 'CYPHER_SYNTAX', 'end of query', 'query', 'Unexpected trailing input.');
     }
   }
@@ -1431,6 +1465,22 @@ class Parser {
   private isAtWriteClause(): boolean {
     const current = this.current();
     return current.kind === 'identifier' && WRITE_CLAUSE_KEYWORDS.has(current.value.toUpperCase());
+  }
+
+  private isAtUnsupportedOpenCypherClause(): boolean {
+    const current = this.current();
+    return current.kind === 'identifier' && UNSUPPORTED_OPENCYPHER_CLAUSE_KEYWORDS.has(current.value.toUpperCase());
+  }
+
+  private failUnsupportedOpenCypherClause(expected: string, anchor: string): never {
+    const current = this.current();
+    this.failToken(
+      current,
+      'CYPHER_UNSUPPORTED_OPENCYPHER',
+      expected,
+      anchor,
+      `${current.value.toUpperCase()} is not supported in the CodeGraph Cypher subset.`,
+    );
   }
 
   private isAtIdentifier(): boolean {
@@ -2385,7 +2435,7 @@ function assertGeneratedSqlIsReadOnly(sql: string): void {
   if (trimmedSql.includes(';')) {
     throw new Error('SPEC-013 generated SQL must contain exactly one statement.');
   }
-  if (/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|ATTACH|DETACH|BEGIN|COMMIT|ROLLBACK)\b/i.test(trimmedSql)) {
+  if (/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|ATTACH|DETACH|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/i.test(trimmedSql)) {
     throw new Error('SPEC-013 generated SQL must be read-only.');
   }
 }
@@ -2524,15 +2574,12 @@ async function queryCypherInternal(
       : timeoutProbe;
   }
 
-  if (shouldUseVariableSqlPlan) {
-    if (hasAggregateReturns(parsed)) {
-      return queryAggregateCypherWithSqlPlan(projectRoot, parsed, plan, options);
-    }
-    return queryVariableCypherWithSqlPlan(projectRoot, parsed, variableRelationshipIndex, plan, options);
+  if ((shouldUseVariableSqlPlan && hasAggregateReturns(parsed)) || shouldUseNodeOnlyAggregateSqlPlan) {
+    return queryAggregateCypherWithSqlPlan(projectRoot, query, parsed, plan, options);
   }
 
-  if (shouldUseNodeOnlyAggregateSqlPlan) {
-    return queryAggregateCypherWithSqlPlan(projectRoot, parsed, plan, options);
+  if (shouldUseVariableSqlPlan) {
+    return queryVariableCypherWithSqlPlan(projectRoot, parsed, variableRelationshipIndex, plan, options);
   }
 
   const graphResult = await loadRuntimeGraph(projectRoot, options);
@@ -2679,15 +2726,24 @@ async function queryVariableCypherWithSqlPlan(
 
 async function queryAggregateCypherWithSqlPlan(
   projectRoot: string,
+  query: string,
   parsed: CypherParseSuccess,
   plan: CypherPlanSuccess,
   options: CypherRuntimeTestOptions,
 ): Promise<CypherQueryResult> {
   const capPlan = createCapPlan(parsed.limit);
+  const queryPlanProbe = options.onQueryPlan === undefined
+    ? undefined
+    : createPerformanceQueryPlanProbe(query, plan.sql, capPlan);
   const sqlRowsResult = await executeCypherSqlForTests(
     projectRoot,
-    { sql: plan.sql, boundParameters: plan.boundParameters, effectiveCap: capPlan.probeLimit },
-    { onSqlPrepare: options.onSqlPrepare },
+    {
+      sql: plan.sql,
+      boundParameters: plan.boundParameters,
+      effectiveCap: capPlan.probeLimit,
+      queryPlanProbe,
+    },
+    { onSqlPrepare: options.onSqlPrepare, onQueryPlan: options.onQueryPlan },
   );
   if (sqlRowsResult.status !== 'success') {
     return sqlRowsResult;
@@ -2703,6 +2759,21 @@ async function queryAggregateCypherWithSqlPlan(
     effectiveCap: capPlan.effectiveCap,
     truncated: sqlRowsResult.rows.length > capPlan.effectiveCap,
   }, options);
+}
+
+function createPerformanceQueryPlanProbe(
+  query: string,
+  sql: string,
+  capPlan: ReturnType<typeof createCapPlan>,
+): CypherRuntimeQueryPlanProbe | undefined {
+  if (!/^WITH RECURSIVE\b/i.test(sql)) {
+    return undefined;
+  }
+  return {
+    probeId: 'PERF-VARIABLE-PATH-PLAN',
+    query,
+    boundedBy: `LIMIT ${capPlan.effectiveCap}; effectiveCap + 1 truncation probe; timeout 5000ms`,
+  };
 }
 
 function projectSqlAggregateRow(parsed: CypherParseSuccess, sqlRow: Record<string, unknown>): CypherRow {

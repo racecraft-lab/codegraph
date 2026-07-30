@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: T062 complete defense-in-depth read-only validation",
-  "updated_at": "2026-07-30T12:29:56Z",
+  "active_step": "Phase 7: T071 update Unreleased changelog",
+  "updated_at": "2026-07-30T13:32:12Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -630,7 +630,16 @@
       "T058",
       "T059",
       "T060",
-      "T061"
+      "T061",
+      "T062",
+      "T063",
+      "T064",
+      "T065",
+      "T066",
+      "T067",
+      "T068",
+      "T069",
+      "T070"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -765,10 +774,12 @@
         "reviewability_signal": "T056 removed four net lines, but src/query/cypher/index.ts is 3924 lines after the T057 remediation and remains materially above the planning estimate; carry this warning into post reviewability gates."
       },
       "final_us3": {
-        "status": "in_progress",
+        "status": "completed",
+        "completion_disposition": "local closure complete; retrieval A/B externally blocked by missing authorization",
         "tasks": "T058-T070",
-        "completed": 4,
+        "completed": 13,
         "total": 13,
+        "red_checkpoint_commit": "3bd29e92",
         "red_evidence": {
           "command": "npx vitest run __tests__/cypher-runtime.test.ts __tests__/cypher-recipes.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/mcp-server-instructions.test.ts",
           "test_files": "4 failed, 1 passed, 5 total",
@@ -782,10 +793,58 @@
             "recipe documentation needs final PERF probe slots"
           ],
           "unexpected_failures": 0
-        }
+        },
+        "green_evidence": {
+          "final_focused_guardrails": "5 files, 130/130 tests passed",
+          "runtime": "37/37 passed including read-only validation and real EXPLAIN QUERY PLAN evidence",
+          "cli": "30/30 passed",
+          "mcp": "37/37 passed",
+          "instructions": "20/20 passed",
+          "recipes": "6/6 passed",
+          "parser": "24/24 passed",
+          "typecheck": "passed",
+          "build": "passed",
+          "diff_check": "passed"
+        },
+        "retrieval_guardian": {
+          "status": "review_completed",
+          "passes": [
+            "explore primacy",
+            "default listing",
+            "expected-state versus refusal shaping",
+            "privacy and dormancy",
+            "no Read/Grep steering"
+          ],
+          "blocking_finding": "Mandatory retrieval A/B evidence is absent and routed to T069.",
+          "advisory": "Pre-existing non-SPEC Read fallback wording was not introduced by SPEC-013."
+        },
+        "retrieval_ab": {
+          "status": "BLOCKED_BY_AUTHORIZATION",
+          "missing_authorization": [
+            "provider",
+            "model/tool endpoints",
+            "repository context to send",
+            "retention/training setting",
+            "cost/time limit",
+            "approval timestamp"
+          ],
+          "external_runs": 0,
+          "external_sends": 0,
+          "cost": 0
+        },
+        "final_safe_operation": {
+          "parity": "All nine CLI/MCP states byte-identical.",
+          "timeout_sha256": "c6bcb2eeae3bb90bb94c686694a3c0fffd6af95f579f431b6d2dd2ee2aae98e6",
+          "read_only_snapshot": "unchanged; mutation rejected",
+          "timeout_cleanup": "one worker terminated; zero active workers; follow-up succeeded",
+          "malformed_stdin": "CYPHER_INVALID_STDIN_ENCODING",
+          "payload_ceiling": "CYPHER_OUTPUT_TOO_LARGE",
+          "default_listing_and_steering": "verified"
+        },
+        "reviewability_signal": "T067 removed three net lines, but src/query/cypher/index.ts is 3995 lines and remains materially above the planning estimate; carry this warning into post reviewability gates."
       },
       "polish_and_delivery": {
-        "status": "pending",
+        "status": "in_progress",
         "tasks": "T071-T079"
       }
     }
@@ -901,11 +960,11 @@
     },
     {
       "step": "Phase 7: Implement final US3 safety and retrieval closure (T058-T070)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement polish and delivery evidence (T071-T079)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Post: Doctor Extension Check",

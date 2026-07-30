@@ -1883,8 +1883,13 @@ export class ToolHandler {
         if (pathError) {
           throw new PathRefusalError(pathError);
         }
+        return findNearestCodeGraphRoot(projectPath) ?? projectPath;
       }
-      return findNearestCodeGraphRoot(projectPath) ?? projectPath;
+      const resolvedRoot = findNearestCodeGraphRoot(projectPath);
+      if (resolvedRoot !== null) {
+        return resolvedRoot;
+      }
+      throw new PathRefusalError(`Path does not exist or is not accessible: ${resolvePath(projectPath)}`);
     }
     return this.cg?.getProjectRoot() ?? this.defaultProjectHint ?? process.cwd();
   }

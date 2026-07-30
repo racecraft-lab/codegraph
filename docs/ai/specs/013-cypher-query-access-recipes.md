@@ -293,3 +293,105 @@ literal query in the recipe. CLI row limits for Cypher stay inside the query tex
 - Artifact: Pending T073 evidence-matrix artifact path.
 - Reviewer: Pending T073 review owner.
 - Date: Pending T073/T075 validation date.
+
+## PERF-VARIABLE-PATH-PLAN - Variable Path Plan and Bounded Recursion
+- Input: `MATCH p = (start:function)-[:calls*1..2]->(finish:function) RETURN p LIMIT 5`
+- Surfaces: package, docs, live UAT
+- Package API command: `await queryCypher(projectRoot, "MATCH p = (start:function)-[:calls*1..2]->(finish:function) RETURN p LIMIT 5")`
+- CLI --json command: `node dist/bin/codegraph.js query "MATCH p = (start:function)-[:calls*1..2]->(finish:function) RETURN p LIMIT 5" --json --path {projectRoot}`
+- MCP text command: `codegraph_query({ "projectPath": "{projectRoot}", "query": "MATCH p = (start:function)-[:calls*1..2]->(finish:function) RETURN p LIMIT 5" })`
+- Expected state: success
+- Plan transcript: Pending T061 live self-index `EXPLAIN QUERY PLAN` capture; transcript must show bounded recursive path planning for the input query.
+- Edge index evidence: Pending T061 plan capture; expected evidence must include `idx_edges_source_kind`.
+- Temporary work evidence: Pending T061 plan capture; no `ORDER BY` or `GROUP BY` temporary work is required for this probe.
+- Bounded-by note: relationship depth, effectiveCap + 1, and five-second timeout
+- Representative output: Pending T061 live self-index run; expected successful rows contain typed bounded paths with no relationship depth above two.
+- Expected-empty reason: Empty rows are valid when no active one-to-two-hop `calls` path connects indexed function nodes.
+- Artifact: Pending T061 plan transcript artifact path.
+- Reviewer: Pending T061 reviewer.
+- Date: Pending T061 validation date.
+
+## PERF-STABLE-ORDERING - Stable Default and Explicit Ordering
+- Input: `MATCH (hub:function)-[:calls]->(target:function) RETURN target.name LIMIT 5`
+- Surfaces: package, docs, live UAT
+- Package API command: `await queryCypher(projectRoot, "MATCH (hub:function)-[:calls]->(target:function) RETURN target.name LIMIT 5")`
+- CLI --json command: `node dist/bin/codegraph.js query "MATCH (hub:function)-[:calls]->(target:function) RETURN target.name LIMIT 5" --json --path {projectRoot}`
+- MCP text command: `codegraph_query({ "projectPath": "{projectRoot}", "query": "MATCH (hub:function)-[:calls]->(target:function) RETURN target.name LIMIT 5" })`
+- Expected state: success
+- Plan transcript: Pending T061 live self-index `EXPLAIN QUERY PLAN` capture; transcript must identify the edge lookup plan and the ordering work used to make output deterministic.
+- Edge index evidence: Pending T061 plan capture; expected evidence must include `idx_edges_source_kind`.
+- Temporary work evidence: Pending T061 plan capture; expected temp-work field: `ORDER BY`.
+- Bounded-by note: effectiveCap + 1 or explicit LIMIT
+- Representative output: Pending T061 live self-index run; expected rows list `target.name` values in stable canonical order.
+- Expected-empty reason: Empty rows are valid when the selected index has no active `calls` edges from function nodes.
+- Artifact: Pending T061 plan transcript artifact path.
+- Reviewer: Pending T061 reviewer.
+- Date: Pending T061 validation date.
+
+## PERF-COUNT-GROUPING - Count and Implicit Grouping Work
+- Input: `MATCH (caller:function)-[:calls]->(target:function) RETURN caller.name AS callerName, count(*) AS calls ORDER BY calls DESC LIMIT 5`
+- Surfaces: package, docs, live UAT
+- Package API command: `await queryCypher(projectRoot, "MATCH (caller:function)-[:calls]->(target:function) RETURN caller.name AS callerName, count(*) AS calls ORDER BY calls DESC LIMIT 5")`
+- CLI --json command: `node dist/bin/codegraph.js query "MATCH (caller:function)-[:calls]->(target:function) RETURN caller.name AS callerName, count(*) AS calls ORDER BY calls DESC LIMIT 5" --json --path {projectRoot}`
+- MCP text command: `codegraph_query({ "projectPath": "{projectRoot}", "query": "MATCH (caller:function)-[:calls]->(target:function) RETURN caller.name AS callerName, count(*) AS calls ORDER BY calls DESC LIMIT 5" })`
+- Expected state: success
+- Plan transcript: Pending T061 live self-index `EXPLAIN QUERY PLAN` capture; transcript must show aggregate grouping and ordered result planning.
+- Edge index evidence: Pending T061 plan capture; expected evidence must include `idx_edges_source_kind`.
+- Temporary work evidence: Pending T061 plan capture; expected temp-work fields: `GROUP BY`, `ORDER BY`.
+- Bounded-by note: group cardinality, effectiveCap + 1, and timeout
+- Representative output: Pending T061 live self-index run; expected rows contain `callerName` and aggregate `calls`, ordered by descending count.
+- Expected-empty reason: Empty rows are valid when the selected index has no active function-to-function `calls` relationships.
+- Artifact: Pending T061 plan transcript artifact path.
+- Reviewer: Pending T061 reviewer.
+- Date: Pending T061 validation date.
+
+## PERF-ROW-CAP-TRUNCATION - Row-Cap Truncation Existence Probe
+- Input: `MATCH (n:function) RETURN n.name`
+- Surfaces: package, CLI, MCP, docs, live UAT
+- Package API command: `await queryCypher(projectRoot, "MATCH (n:function) RETURN n.name")`
+- CLI --json command: `node dist/bin/codegraph.js query "MATCH (n:function) RETURN n.name" --json --path {projectRoot}`
+- MCP text command: `codegraph_query({ "projectPath": "{projectRoot}", "query": "MATCH (n:function) RETURN n.name" })`
+- Expected state: success
+- Plan transcript: Pending T061 live self-index `EXPLAIN QUERY PLAN` capture; transcript must pair with runtime row-inspection evidence for the cap-plus-one probe.
+- Edge index evidence: Pending T061 plan capture; no edge index is required for this node-only probe.
+- Temporary work evidence: Pending T061 plan capture; no `ORDER BY` or `GROUP BY` temporary work is required for this probe.
+- Bounded-by note: default cap plus one inspected row
+- Representative output: Pending T061 live self-index run; expected result reports the default effective cap and sets `truncated` according to the extra inspected row.
+- Expected-empty reason: Empty rows are valid only when the selected index has no function nodes.
+- Artifact: Pending T061 cap evidence artifact path.
+- Reviewer: Pending T061 reviewer.
+- Date: Pending T061 validation date.
+
+## PERF-PAYLOAD-CEILING - Canonical Output-Size Rejection
+- Input: `MATCH (n:function) RETURN n`
+- Surfaces: package, CLI, MCP, docs
+- Package API command: `await queryCypher(projectRoot, "MATCH (n:function) RETURN n")`
+- CLI --json command: `node dist/bin/codegraph.js query "MATCH (n:function) RETURN n" --json --path {projectRoot}`
+- MCP text command: `codegraph_query({ "projectPath": "{projectRoot}", "query": "MATCH (n:function) RETURN n" })`
+- Expected state: diagnostic
+- Plan transcript: Pending T061 fixture or live self-index `EXPLAIN QUERY PLAN` capture; transcript must be paired with canonical JSON byte-size evidence.
+- Edge index evidence: Pending T061 plan capture; no edge index is required for this node payload probe.
+- Temporary work evidence: Pending T061 plan capture; no `ORDER BY` or `GROUP BY` temporary work is required for this probe.
+- Bounded-by note: fixed 1 MiB UTF-8 canonical JSON ceiling
+- Representative output: Pending T061 payload-ceiling run; expected diagnostic is `CYPHER_OUTPUT_TOO_LARGE` with no partial `rows`.
+- Expected-empty reason: Not applicable for the ceiling condition; this probe requires enough node payload to exceed the canonical JSON limit.
+- Artifact: Pending T061 payload evidence artifact path.
+- Reviewer: Pending T061 reviewer.
+- Date: Pending T061 validation date.
+
+## PERF-INCOMING-EDGE-INDEX - Incoming Edge Index Use
+- Input: `MATCH (caller:function)<-[:calls]-(target:function) RETURN caller.name, target.name LIMIT 5`
+- Surfaces: package, docs, live UAT
+- Package API command: `await queryCypher(projectRoot, "MATCH (caller:function)<-[:calls]-(target:function) RETURN caller.name, target.name LIMIT 5")`
+- CLI --json command: `node dist/bin/codegraph.js query "MATCH (caller:function)<-[:calls]-(target:function) RETURN caller.name, target.name LIMIT 5" --json --path {projectRoot}`
+- MCP text command: `codegraph_query({ "projectPath": "{projectRoot}", "query": "MATCH (caller:function)<-[:calls]-(target:function) RETURN caller.name, target.name LIMIT 5" })`
+- Expected state: success or empty
+- Plan transcript: Pending T061 live self-index `EXPLAIN QUERY PLAN` capture; transcript must show incoming edge lookup planning.
+- Edge index evidence: Pending T061 plan capture; expected evidence must include `idx_edges_target_kind`.
+- Temporary work evidence: Pending T061 plan capture; no `ORDER BY` or `GROUP BY` temporary work is required for this probe.
+- Bounded-by note: effectiveCap + 1 and timeout
+- Representative output: Pending T061 live self-index run; expected successful rows contain caller and target function names.
+- Expected-empty reason: Empty rows are valid when no active incoming `calls` edge matches indexed function nodes.
+- Artifact: Pending T061 plan transcript artifact path.
+- Reviewer: Pending T061 reviewer.
+- Date: Pending T061 validation date.

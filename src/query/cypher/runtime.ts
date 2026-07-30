@@ -42,11 +42,28 @@ export type CypherRuntimeSqlRequest = {
   readonly sql: string;
   readonly boundParameters?: readonly unknown[];
   readonly effectiveCap?: number;
+  readonly queryPlanProbe?: CypherRuntimeQueryPlanProbe;
 };
 
 export type CypherRuntimeTestOptions = {
   readonly forceTimeout?: boolean;
   readonly onSqlPrepare?: (sql: string) => void;
+  readonly onQueryPlan?: (evidence: CypherPerformancePlanEvidence) => void;
+};
+
+export type CypherPerformancePlanEvidence = {
+  readonly probeId: string;
+  readonly query: string;
+  readonly details: readonly string[];
+  readonly edgeIndexes: readonly string[];
+  readonly tempWork: readonly string[];
+  readonly boundedBy: string;
+};
+
+export type CypherRuntimeQueryPlanProbe = {
+  readonly probeId: string;
+  readonly query: string;
+  readonly boundedBy: string;
 };
 
 type RuntimeWorkerSuccessMessage = {
@@ -119,6 +136,9 @@ export async function executeCypherSqlForTests(
   }
 
   options.onSqlPrepare?.(request.sql);
+  if (request.queryPlanProbe !== undefined && options.onQueryPlan !== undefined) {
+    options.onQueryPlan(collectQueryPlanEvidence(dbPath, request));
+  }
 
   return executeSqlInWorker(dbPath, request, options);
 }
@@ -142,6 +162,56 @@ function openCypherReadOnlyDatabase(dbPath: string): SqliteDatabase {
     throw new Error(`CodeGraph database not found: ${dbPath}`);
   }
   return createDatabase(dbPath, { readOnly: true }).db;
+}
+
+type QueryPlanRow = {
+  readonly id?: unknown;
+  readonly parent?: unknown;
+  readonly detail?: unknown;
+};
+
+function collectQueryPlanEvidence(
+  dbPath: string,
+  request: CypherRuntimeSqlRequest,
+): CypherPerformancePlanEvidence {
+  const probe = request.queryPlanProbe;
+  if (probe === undefined) {
+    throw new Error('Cypher query plan probe is required.');
+  }
+
+  const db = openCypherReadOnlyDatabase(dbPath);
+  try {
+    const rows = db.prepare(`EXPLAIN QUERY PLAN ${request.sql}`).all(...(request.boundParameters ?? [])) as QueryPlanRow[];
+    const details = rows.map(formatQueryPlanRow).slice(0, 64);
+    const evidenceText = `${details.join('\n')}\n${request.sql}`;
+    const sqlLines = request.sql.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
+    const tempWork = [
+      ...details.filter((detail) => /\bTEMP\b|ORDER BY|GROUP BY/i.test(detail)),
+      ...sqlLines.filter((line) => /\b(ORDER BY|GROUP BY)\b/i.test(line)).map((line) => `SQL ${line}`),
+    ].slice(0, 32);
+
+    return {
+      probeId: probe.probeId,
+      query: probe.query,
+      details,
+      edgeIndexes: uniqueStrings([...evidenceText.matchAll(/\bidx_edges_(?:source|target)_kind\b/g)].map((match) => match[0])),
+      tempWork: uniqueStrings(tempWork),
+      boundedBy: probe.boundedBy,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function formatQueryPlanRow(row: QueryPlanRow): string {
+  const id = typeof row.id === 'number' || typeof row.id === 'bigint' ? String(row.id) : '?';
+  const parent = typeof row.parent === 'number' || typeof row.parent === 'bigint' ? String(row.parent) : '?';
+  const detail = typeof row.detail === 'string' ? row.detail : JSON.stringify(row);
+  return `QUERY PLAN ${id}:${parent} ${detail}`;
+}
+
+function uniqueStrings(values: readonly string[]): readonly string[] {
+  return [...new Set(values)];
 }
 
 function executeSqlInWorker(
@@ -273,7 +343,7 @@ function validateReadOnlySql(sql: string): CypherRuntimeDiagnosticResult | undef
       'runtime',
     );
   }
-  if (/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|ATTACH|DETACH|BEGIN|COMMIT|ROLLBACK)\b/i.test(trimmedSql)) {
+  if (/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|ATTACH|DETACH|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/i.test(trimmedSql)) {
     return diagnosticResult(
       'CYPHER_UNSUPPORTED_CLAUSE',
       'Cypher runtime rejects mutating SQL before prepare.',

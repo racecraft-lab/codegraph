@@ -53,9 +53,10 @@ calls; a grep/read exploration is dozens.
 
 ## codegraph_query — deliberate Cypher only
 
-Use \`codegraph_query\` only when the user deliberately asks for Cypher or a
-structured graph-language request over the indexed graph, or supplies
-\`MATCH ... RETURN\` text to run. It returns canonical JSON for precise
+Reserved use: \`codegraph_query\` is for deliberate structured graph-language requests only.
+Use it only when the user asks for Cypher over the indexed graph, asks for a
+structured graph-language query, or supplies \`MATCH ... RETURN\` text to run.
+It returns canonical JSON for precise
 graph-shaped rows from the supported Cypher subset; keep broad discovery and
 flow questions on \`codegraph_explore\`. Pass \`projectPath\` when querying
 another indexed project or when the server has no default root index. Expected
@@ -168,9 +169,10 @@ instead of hiding the tool.
 
 ## codegraph_query — deliberate Cypher only
 
-Use \`codegraph_query\` only when the user deliberately asks for Cypher or a
-structured graph-language request over the indexed graph, or supplies
-\`MATCH ... RETURN\` text to run. It returns canonical JSON for precise
+Reserved use: \`codegraph_query\` is for deliberate structured graph-language requests only.
+Use it only when the user asks for Cypher over the indexed graph, asks for a
+structured graph-language query, or supplies \`MATCH ... RETURN\` text to run.
+It returns canonical JSON for precise
 graph-shaped rows from the supported Cypher subset; keep broad discovery and
 flow questions on \`codegraph_explore\`. Pass \`projectPath\` for the indexed
 project to query. Expected states such as syntax diagnostics, unsupported
