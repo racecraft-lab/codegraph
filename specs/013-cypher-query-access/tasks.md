@@ -97,24 +97,24 @@
 
 ### RED: Tests First
 
-- [ ] T032 [US3] Add failing cross-surface byte-parity tests in `__tests__/cli-query-command.test.ts` and `__tests__/mcp-cypher-query.test.ts` for valid result, empty success, capped/truncated result, syntax diagnostic, unsupported write diagnostic, oversized input diagnostic, malformed stdin diagnostic, output-too-large diagnostic, timeout state, and not-indexed diagnostic. Covers FR-002, FR-020, FR-022, FR-023, FR-026, FR-028, SC-001, SC-006, SC-007, SC-008.
-- [ ] T033 [P] [US3] Add failing security and privacy diagnostics tests in `__tests__/cypher-runtime.test.ts` for no raw full query text, no unbounded string literal values, no emitted SQL, no bound parameters, no oversized input echo, escaped excerpts at no more than 160 UTF-16 code units, Unicode astral code points, combining characters, CRLF/LF, and multiline source spans. Covers FR-023, FR-024, SC-005.
-- [ ] T034 [P] [US3] Add failing MCP steering tests in `__tests__/mcp-server-instructions.test.ts` proving `codegraph_explore` remains primary and `codegraph_query` is reserved for deliberate structured graph-language requests. Covers FR-028, FR-030, SC-009.
+- [X] T032 [US3] Add failing cross-surface byte-parity tests in `__tests__/cli-query-command.test.ts` and `__tests__/mcp-cypher-query.test.ts` for valid result, empty success, capped/truncated result, syntax diagnostic, unsupported write diagnostic, oversized input diagnostic, malformed stdin diagnostic, output-too-large diagnostic, timeout state, and not-indexed diagnostic. Covers FR-002, FR-020, FR-022, FR-023, FR-026, FR-028, SC-001, SC-006, SC-007, SC-008.
+- [X] T033 [P] [US3] Add failing security and privacy diagnostics tests in `__tests__/cypher-runtime.test.ts` for no raw full query text, no unbounded string literal values, no emitted SQL, no bound parameters, no oversized input echo, escaped excerpts at no more than 160 UTF-16 code units, Unicode astral code points, combining characters, CRLF/LF, and multiline source spans. Covers FR-023, FR-024, SC-005.
+- [X] T034 [P] [US3] Add failing MCP steering tests in `__tests__/mcp-server-instructions.test.ts` proving `codegraph_explore` remains primary and `codegraph_query` is reserved for deliberate structured graph-language requests. Covers FR-028, FR-030, SC-009.
 
 ### GREEN: Implementation
 
-- [ ] T035 [US3] Complete shared canonical serializer usage in `src/bin/codegraph.ts` and `src/mcp/tools.ts` so CLI `--json` and MCP text write byte-identical payloads with no framing for success, capped, diagnostic, output-too-large, timeout, and not-indexed states. Satisfies FR-020, FR-026, FR-028, SC-006.
-- [ ] T036 [US3] Complete stable diagnostic construction in `src/query/cypher/index.ts`, `src/query/cypher/runtime.ts`, `src/bin/codegraph.ts`, and `src/mcp/tools.ts`, including offsets, anchors, bounded excerpts, malformed stdin, oversized input, no unsafe logging, CLI exit mapping, and MCP success-shaped expected states. Satisfies FR-002, FR-022, FR-023, FR-024, FR-028, SC-005.
-- [ ] T037 [US3] Update `src/mcp/server-instructions.ts` so default retrieval guidance keeps `codegraph_explore` primary and describes `codegraph_query` only for deliberate structured graph-language requests. Satisfies FR-028, FR-030.
-- [ ] T038 [US3] Run focused Slice 1 safety tests and record results in `specs/013-cypher-query-access/evidence-matrix.md`: `npx vitest run __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/mcp-server-instructions.test.ts`.
+- [X] T035 [US3] Complete shared canonical serializer usage in `src/bin/codegraph.ts` and `src/mcp/tools.ts` so CLI `--json` and MCP text write byte-identical payloads with no framing for success, capped, diagnostic, output-too-large, timeout, and not-indexed states. Satisfies FR-020, FR-026, FR-028, SC-006.
+- [X] T036 [US3] Complete stable diagnostic construction in `src/query/cypher/index.ts`, `src/query/cypher/runtime.ts`, `src/bin/codegraph.ts`, and `src/mcp/tools.ts`, including offsets, anchors, bounded excerpts, malformed stdin, oversized input, no unsafe logging, CLI exit mapping, and MCP success-shaped expected states. Satisfies FR-002, FR-022, FR-023, FR-024, FR-028, SC-005.
+- [X] T037 [US3] Update `src/mcp/server-instructions.ts` so default retrieval guidance keeps `codegraph_explore` primary and describes `codegraph_query` only for deliberate structured graph-language requests. Satisfies FR-028, FR-030.
+- [X] T038 [US3] Run focused Slice 1 safety tests and record results in `specs/013-cypher-query-access/evidence-matrix.md`: `npx vitest run __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts __tests__/mcp-server-instructions.test.ts`.
 
 ### REFACTOR
 
-- [ ] T039 [US3] Refactor `src/query/cypher/serializer.ts`, `src/bin/codegraph.ts`, and `src/mcp/tools.ts` to remove duplicate result mapping while preserving byte-identical machine output and expected-state MCP trust boundaries.
+- [X] T039 [US3] Refactor `src/query/cypher/serializer.ts`, `src/bin/codegraph.ts`, and `src/mcp/tools.ts` to remove duplicate result mapping while preserving byte-identical machine output and expected-state MCP trust boundaries.
 
 ### VERIFY
 
-- [ ] T040 [US3] Verify Slice 1 safe-operation evidence in `specs/013-cypher-query-access/evidence-matrix.md` with CLI/MCP parity hashes, read-only snapshot comparisons, malformed stdin diagnostic, timeout cleanup/replacement result, and MCP instruction test output.
+- [X] T040 [US3] Verify Slice 1 safe-operation evidence in `specs/013-cypher-query-access/evidence-matrix.md` with CLI/MCP parity hashes, read-only snapshot comparisons, malformed stdin diagnostic, timeout cleanup/replacement result, and MCP instruction test output.
 
 **Checkpoint**: Slice 1 remains independently demonstrable and safe after cross-surface closure.
 

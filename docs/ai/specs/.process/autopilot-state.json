@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: T032 Slice 1 cross-surface byte-parity RED contracts",
-  "updated_at": "2026-07-30T08:34:54Z",
+  "active_step": "Phase 7: T041 Slice 2 count and implicit-grouping RED contracts",
+  "updated_at": "2026-07-30T09:43:46Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -600,7 +600,16 @@
       "T028",
       "T029",
       "T030",
-      "T031"
+      "T031",
+      "T032",
+      "T033",
+      "T034",
+      "T035",
+      "T036",
+      "T037",
+      "T038",
+      "T039",
+      "T040"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -635,6 +644,7 @@
         "tasks": "T013-T031",
         "completed": 19,
         "total": 19,
+        "checkpoint_commit": "0facec5d",
         "red_evidence": {
           "command": "npx vitest run __tests__/cypher-parser.test.ts __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts",
           "test_files": "4 failed / 4 total",
@@ -669,11 +679,23 @@
         }
       },
       "slice_1_us3": {
-        "status": "in_progress",
-        "tasks": "T032-T040"
+        "status": "completed",
+        "tasks": "T032-T040",
+        "completed": 9,
+        "total": 9,
+        "verification": {
+          "focused_safety": "4 files, 81/81 tests passed",
+          "parity": "CLI and MCP canonical bytes matched for valid, empty, capped, syntax, unsupported write, oversized input, output-too-large, timeout, and not-indexed states.",
+          "read_only": "Real SQLite before/after snapshot unchanged and mutation through the read-only connection rejected.",
+          "timeout_cleanup": "Forced timeout terminated one worker, left zero active workers, and a follow-up query succeeded.",
+          "instructions": "17/17 tests passed; codegraph_explore remains primary and codegraph_query is reserved for deliberate Cypher requests.",
+          "diff_check": "passed",
+          "external_retrieval_evaluation": "not run; requires explicit operator authorization at T069"
+        },
+        "reviewability_signal": "T039 removed 27 net lines across shared transport mapping, but the private query module remains materially larger than the planning estimate; carry the size warning into the reviewability gate."
       },
       "slice_2_us2": {
-        "status": "pending",
+        "status": "in_progress",
         "tasks": "T041-T057"
       },
       "final_us3": {
@@ -789,11 +811,11 @@
     },
     {
       "step": "Phase 7: Implement Slice 1 US3 safe-surface closure (T032-T040)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement Slice 2 US2 practical recipes (T041-T057)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement final US3 safety and retrieval closure (T058-T070)",

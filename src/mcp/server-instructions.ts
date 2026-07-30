@@ -13,7 +13,8 @@
  *
  * Keep it tight. The agent reads this every session — long instructions
  * burn tokens. The DEFAULT MCP surface is `codegraph_explore` (the retrieval
- * PRIMARY), `codegraph_detect_changes` (SPEC-012 local diff impact),
+ * PRIMARY), `codegraph_query` (SPEC-013 deliberate Cypher requests),
+ * `codegraph_detect_changes` (SPEC-012 local diff impact),
  * `codegraph_rename` (the SPEC-010 write tool, documented in its own short
  * section), plus `codegraph_get_cfg` (bounded SPEC-014 CFG reads) — see
  * DEFAULT_MCP_TOOLS in tools.ts. The other
@@ -49,6 +50,18 @@ so running your own grep + read loop, or delegating the lookup to a separate
 file-reading sub-task/agent, repeats work codegraph already did and costs more
 for the same answer. A direct codegraph answer is typically one to a few
 calls; a grep/read exploration is dozens.
+
+## codegraph_query — deliberate Cypher only
+
+Use \`codegraph_query\` only when the user deliberately asks for Cypher or a
+structured graph-language request over the indexed graph, or supplies
+\`MATCH ... RETURN\` text to run. It returns canonical JSON for precise
+graph-shaped rows from the supported Cypher subset; keep broad discovery and
+flow questions on \`codegraph_explore\`. Pass \`projectPath\` when querying
+another indexed project or when the server has no default root index. Expected
+states such as syntax diagnostics, unsupported Cypher, capped/truncated
+results, output-too-large, timeout, and not-indexed return normal JSON payloads;
+path/access refusals and real malfunctions are tool errors.
 
 ## codegraph_rename — the write tool (dry-run by default)
 
@@ -152,6 +165,18 @@ pass \`apply: true\`.
 \`projectPath\` to get a normal JSON or markdown impact report for local git
 diffs. If that project has no index, the tool returns an unavailable report
 instead of hiding the tool.
+
+## codegraph_query — deliberate Cypher only
+
+Use \`codegraph_query\` only when the user deliberately asks for Cypher or a
+structured graph-language request over the indexed graph, or supplies
+\`MATCH ... RETURN\` text to run. It returns canonical JSON for precise
+graph-shaped rows from the supported Cypher subset; keep broad discovery and
+flow questions on \`codegraph_explore\`. Pass \`projectPath\` for the indexed
+project to query. Expected states such as syntax diagnostics, unsupported
+Cypher, capped/truncated results, output-too-large, timeout, and not-indexed
+return normal JSON payloads; path/access refusals and real malfunctions are
+tool errors.
 
 ## codegraph_get_cfg — bounded CFG read
 

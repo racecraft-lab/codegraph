@@ -848,6 +848,29 @@ function expectTimeout(result: CypherQueryResult): CypherTimeoutResult {
   return timeout;
 }
 
+function diagnosticJson(diagnostic: CypherDiagnosticResult): string {
+  return JSON.stringify(diagnostic);
+}
+
+function expectNoDiagnosticLeak(
+  diagnostic: CypherDiagnosticResult,
+  options: {
+    readonly fullQuery: string;
+    readonly forbiddenFragments?: readonly string[];
+  },
+): void {
+  const serialized = diagnosticJson(diagnostic);
+  expect(serialized).not.toContain(options.fullQuery);
+  expect(diagnostic).not.toHaveProperty('sql');
+  expect(diagnostic).not.toHaveProperty('boundParameters');
+  expect(diagnostic).not.toHaveProperty('parameters');
+  expect(serialized).not.toMatch(/\b(SELECT|WITH RECURSIVE)\b/i);
+  expect(serialized).not.toMatch(/\b[ne][0-9]\./);
+  for (const fragment of options.forbiddenFragments ?? []) {
+    expect(serialized).not.toContain(fragment);
+  }
+}
+
 function rowValue(row: CypherRow, column: string): CypherValue {
   expect(row).toHaveProperty(column);
   return row[column];
@@ -1233,6 +1256,90 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnos
     const diagnostic = expectDiagnostic(result, 'CYPHER_OUTPUT_TOO_LARGE');
     expect(diagnostic.message).toContain('narrow');
     expect(result).not.toHaveProperty('rows');
+  });
+
+  it('redacts full query text, string literals, emitted SQL, and bound parameters from semantic diagnostics', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const secretLiteral = `top-secret-${'value'.repeat(80)}`;
+    const query = [
+      'MATCH (entry:function)-[:calls]->(target:function)',
+      `WHERE entry.decorators = '${secretLiteral}'`,
+      'RETURN target.name',
+    ].join(' ');
+    const preparedSql: string[] = [];
+
+    const diagnostic = expectDiagnostic(
+      await runtime.queryCypherForTests(fixture.projectRoot, query, {
+        onSqlPrepare: (sql) => preparedSql.push(sql),
+      }),
+      'CYPHER_UNSUPPORTED_OPAQUE_FILTER',
+    );
+
+    expect(preparedSql).toEqual([]);
+    expectNoDiagnosticLeak(diagnostic, {
+      fullQuery: query,
+      forbiddenFragments: [secretLiteral, 'top-secret', 'valuevaluevalue'],
+    });
+  });
+
+  it('returns oversized-input diagnostics without echoing oversized query text or string literal content', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const oversizedSecret = `oversized-secret-${'sensitive'.repeat(1_400)}`;
+    const query = `MATCH (entry:function)-[:calls]->(target:function) WHERE entry.name = '${oversizedSecret}' RETURN target.name`;
+
+    const diagnostic = expectDiagnostic(
+      await runtime.queryCypher(fixture.projectRoot, query),
+      'CYPHER_INPUT_TOO_LONG',
+    );
+
+    expect(diagnostic.excerpt).toBe('');
+    expectNoDiagnosticLeak(diagnostic, {
+      fullQuery: query,
+      forbiddenFragments: [oversizedSecret, 'oversized-secret', 'sensitivesensitive'],
+    });
+  });
+
+  it('caps escaped excerpts at 160 UTF-16 code units after escaping control characters', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const query = `MATCH (entry:function)-[:calls]->(target:function) RETURN ${'\t'.repeat(120)}@`;
+
+    const diagnostic = expectDiagnostic(
+      await runtime.queryCypher(fixture.projectRoot, query),
+      'CYPHER_SYNTAX',
+    );
+
+    expect(diagnostic.excerpt).not.toContain('\t');
+    expect(diagnostic.excerpt).toContain('\\t');
+    expect(diagnostic.excerpt.length).toBeLessThanOrEqual(160);
+  });
+
+  it('keeps Unicode and multiline diagnostics line-local across astral, combining, CRLF, and LF spans', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const unicodeLiteral = `astral-\u{1f4a9}-combining-e\u0301-secret`;
+    const query = [
+      'MATCH (entry:function)-[:calls]->(target:function)\r\n',
+      `WHERE entry.name = '${unicodeLiteral}'\n`,
+      'RETURN target.unknownProperty',
+    ].join('');
+
+    const diagnostic = expectDiagnostic(
+      await runtime.queryCypher(fixture.projectRoot, query),
+      'CYPHER_UNKNOWN_PROPERTY',
+    );
+
+    expect(diagnostic.line).toBe(3);
+    expect(diagnostic.column).toBe('RETURN target.'.length);
+    expect(diagnostic.excerpt).toBe('RETURN target.unknownProperty');
+    expect(diagnostic.excerpt).not.toContain('\r');
+    expect(diagnostic.excerpt).not.toContain('\n');
+    expectNoDiagnosticLeak(diagnostic, {
+      fullQuery: query,
+      forbiddenFragments: [unicodeLiteral, 'astral-', 'combining'],
+    });
   });
 
   it('rejects mutating and direct-SQL input before SQLite prepare and leaves the database unchanged', async () => {

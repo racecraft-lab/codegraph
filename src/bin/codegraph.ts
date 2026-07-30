@@ -78,6 +78,12 @@ import {
   type CfgProjectStatus,
   type CfgReadResult,
 } from '../analysis/cfg';
+import {
+  cypherDiagnosticResult,
+  cypherInputTooLongDiagnostic,
+  normalizeCypherTransportResult,
+  serializeCypherTransportResult,
+} from '../query/cypher/serializer';
 import { loadAnalysisConfig, PROJECT_CONFIG_FILENAME } from '../project-config';
 import { createUnavailableReport, detectChanges, type DiffMode, type ReportFormat } from '../analysis/detect-changes';
 import {
@@ -375,7 +381,7 @@ async function resolveCliQueryInput(search: string): Promise<CypherCliQueryInput
   try {
     query = new TextDecoder('utf-8', { fatal: true }).decode(stdin);
   } catch {
-    return makeCypherCliDiagnostic(
+    return cypherDiagnosticResult(
       'CYPHER_INVALID_STDIN_ENCODING',
       'Cypher stdin must be valid UTF-8.',
       'valid UTF-8 stdin',
@@ -389,12 +395,15 @@ function validateCypherCliInputLength(query: string): CypherCliQueryInputResult 
   if (query.length <= CYPHER_CLI_INPUT_MAX_CODE_UNITS) {
     return { status: 'success', query };
   }
-  return makeCypherCliDiagnostic(
-    'CYPHER_INPUT_TOO_LONG',
-    `Cypher input exceeds the ${CYPHER_CLI_INPUT_MAX_CODE_UNITS} UTF-16 code unit ceiling.`,
-    `query text <= ${CYPHER_CLI_INPUT_MAX_CODE_UNITS} UTF-16 code units`,
-    'cli-input',
-  );
+  return cypherInputTooLongDiagnostic(CYPHER_CLI_INPUT_MAX_CODE_UNITS);
+}
+
+function shouldForceCypherTimeoutForTest(query: string): boolean {
+  return process.env.NODE_ENV === 'test' && query.includes('codegraph-test-force-timeout');
+}
+
+function stripCypherForceTimeoutMarker(query: string): string {
+  return query.replace(/\/\*\s*codegraph-test-force-timeout\s*\*\//g, '').trim();
 }
 
 function startsWithCypherMatch(query: string): boolean {
@@ -411,7 +420,7 @@ function unsupportedCypherCliFlagDiagnostic(argv: readonly string[] = process.ar
       );
     });
     if (matched !== undefined) {
-      return makeCypherCliDiagnostic(
+      return cypherDiagnosticResult(
         'CYPHER_UNSUPPORTED',
         `Cypher query mode does not support search-only CLI flag ${matched}. Put row limits inside the Cypher query text.`,
         'Cypher-supported query flags',
@@ -431,24 +440,23 @@ async function readStdinBuffer(): Promise<Buffer> {
 }
 
 async function writeCypherCliResult(result: CypherQueryResult, json: boolean): Promise<void> {
+  const normalized = normalizeCypherTransportResult(result);
   if (json) {
-    const { serializeCypherResult } = await import('../query/cypher/serializer');
-    const serialized = serializeCypherResult(result);
-    process.stdout.write(typeof serialized === 'string' ? serialized : JSON.stringify(serialized));
+    process.stdout.write(serializeCypherTransportResult(normalized));
     return;
   }
 
-  if (result.status === 'success') {
-    await writeCypherHumanSuccess(result);
+  if (normalized.status === 'success') {
+    await writeCypherHumanSuccess(normalized);
     return;
   }
 
-  if (result.status === 'timeout') {
-    error(`${result.code}: ${result.guidance}`);
+  if (normalized.status === 'timeout') {
+    error(`${normalized.code}: ${normalized.guidance}`);
     return;
   }
 
-  error(`${result.code}: ${result.message}`);
+  error(`${normalized.code}: ${normalized.message}`);
 }
 
 async function writeCypherHumanSuccess(result: CypherSuccessResult): Promise<void> {
@@ -467,27 +475,6 @@ async function writeCypherHumanSuccess(result: CypherSuccessResult): Promise<voi
   if (result.truncated) {
     warn(`Cypher result truncated at ${result.effectiveCap} rows. Add or narrow LIMIT in the query text.`);
   }
-}
-
-function makeCypherCliDiagnostic(
-  code: string,
-  message: string,
-  expected: string,
-  anchor: string,
-): CypherDiagnosticResult {
-  return {
-    status: 'diagnostic',
-    code,
-    message,
-    offset: 0,
-    line: 1,
-    column: 0,
-    expected,
-    anchor,
-    excerpt: '',
-    truncatedBefore: false,
-    truncatedAfter: false,
-  };
 }
 
 function parseCfgPagingOption(value: string | undefined, flag: '--limit' | '--offset'): number | undefined {
@@ -1639,11 +1626,6 @@ program
     const projectPath = resolveProjectPath(options.path);
 
     try {
-      if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
-        process.exit(1);
-      }
-
       const queryInput = await resolveCliQueryInput(search);
       if (queryInput.status === 'diagnostic') {
         await writeCypherCliResult(queryInput, options.json === true);
@@ -1658,13 +1640,22 @@ program
           process.exit(1);
         }
 
+        const forceTimeout = shouldForceCypherTimeoutForTest(searchText);
+        const executableQuery = forceTimeout ? stripCypherForceTimeoutMarker(searchText) : searchText;
         const { queryCypher } = await loadCodeGraph();
-        const result = await queryCypher(projectPath, searchText);
+        const result = forceTimeout
+          ? await import('../query/cypher').then((mod) => mod.queryCypherForTests(projectPath, executableQuery, { forceTimeout: true }))
+          : await queryCypher(projectPath, executableQuery);
         await writeCypherCliResult(result, options.json === true);
         if (result.status !== 'success') {
           process.exit(1);
         }
         return;
+      }
+
+      if (!isInitialized(projectPath)) {
+        error(`CodeGraph not initialized in ${projectPath}`);
+        process.exit(1);
       }
 
       const { default: CodeGraph } = await loadCodeGraph();

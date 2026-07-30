@@ -183,6 +183,7 @@ type VariableBindingKind = 'node' | 'relationship' | 'path';
 type PropertyScope = 'node' | 'relationship';
 type ExpressionAccess = 'bare' | 'property';
 
+const MAX_QUERY_INPUT_LENGTH = 10_000;
 const MAX_EXCERPT_LENGTH = 160;
 const MAX_VARIABLE_RELATIONSHIP_DEPTH = 8;
 const DEFAULT_RESULT_CAP = 100;
@@ -1485,6 +1486,19 @@ function makeDiagnostic(
   };
 }
 
+function makeInputTooLongDiagnostic(): CypherDiagnostic {
+  return makeDiagnostic(
+    '',
+    0,
+    1,
+    0,
+    'CYPHER_INPUT_TOO_LONG',
+    `query text <= ${MAX_QUERY_INPUT_LENGTH} UTF-16 code units`,
+    'cli-input',
+    `Cypher input exceeds the ${MAX_QUERY_INPUT_LENGTH} UTF-16 code unit ceiling.`,
+  );
+}
+
 function buildExcerpt(input: string, offset: number): {
   readonly text: string;
   readonly truncatedBefore: boolean;
@@ -1494,32 +1508,69 @@ function buildExcerpt(input: string, offset: number): {
   const nextLineFeed = input.indexOf('\n', offset);
   const lineEnd = nextLineFeed === -1 ? input.length : nextLineFeed;
   const lineText = input.slice(lineStart, lineEnd).replace(/\r$/, '');
+  const relativeOffset = Math.max(offset - lineStart, 0);
+  const escapedLine = escapeExcerptLine(lineText);
+  const escapedRelativeOffset = escapeExcerptLine(lineText.slice(0, relativeOffset)).length;
 
-  if (lineText.length <= MAX_EXCERPT_LENGTH) {
+  if (escapedLine.length <= MAX_EXCERPT_LENGTH) {
     return {
-      text: escapeExcerpt(lineText),
+      text: escapedLine,
       truncatedBefore: false,
       truncatedAfter: false,
     };
   }
 
-  const relativeOffset = Math.max(offset - lineStart, 0);
   const halfWindow = Math.floor(MAX_EXCERPT_LENGTH / 2);
-  const start = Math.max(0, Math.min(relativeOffset - halfWindow, lineText.length - MAX_EXCERPT_LENGTH));
-  const end = Math.min(lineText.length, start + MAX_EXCERPT_LENGTH);
+  const start = Math.max(0, Math.min(escapedRelativeOffset - halfWindow, escapedLine.length - MAX_EXCERPT_LENGTH));
+  const end = Math.min(escapedLine.length, start + MAX_EXCERPT_LENGTH);
   return {
-    text: escapeExcerpt(lineText.slice(start, end)),
+    text: escapedLine.slice(start, end),
     truncatedBefore: start > 0,
-    truncatedAfter: end < lineText.length,
+    truncatedAfter: end < escapedLine.length,
   };
 }
 
-function escapeExcerpt(value: string): string {
-  return value
-    .replace(/\0/g, '\\0')
-    .replace(/\t/g, '\\t')
-    .replace(/\r/g, '\\r')
-    .replace(/\n/g, '\\n');
+function escapeExcerptLine(value: string): string {
+  let escaped = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const current = value.charAt(index);
+    if (current === "'" || current === '"') {
+      escaped += `${current}<redacted>${current}`;
+      index = consumeQuotedExcerpt(value, index, current) - 1;
+      continue;
+    }
+    escaped += escapeExcerptChar(current);
+  }
+  return escaped;
+}
+
+function consumeQuotedExcerpt(value: string, start: number, quote: string): number {
+  for (let index = start + 1; index < value.length; index += 1) {
+    const current = value.charAt(index);
+    if (current === '\\') {
+      index += 1;
+      continue;
+    }
+    if (current === quote) {
+      return index + 1;
+    }
+  }
+  return value.length;
+}
+
+function escapeExcerptChar(value: string): string {
+  switch (value) {
+    case '\0':
+      return '\\0';
+    case '\t':
+      return '\\t';
+    case '\r':
+      return '\\r';
+    case '\n':
+      return '\\n';
+    default:
+      return value;
+  }
 }
 
 function lex(input: string): LexSuccess | CypherDiagnostic {
@@ -2293,6 +2344,10 @@ async function queryCypherInternal(
   query: string,
   options: CypherRuntimeTestOptions,
 ): Promise<CypherQueryResult> {
+  if (query.length > MAX_QUERY_INPUT_LENGTH) {
+    return makeInputTooLongDiagnostic();
+  }
+
   const parsed = parseCypher(query);
   if (parsed.status === 'diagnostic') {
     return parsed;

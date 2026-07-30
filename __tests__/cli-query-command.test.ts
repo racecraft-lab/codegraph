@@ -15,6 +15,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { DatabaseSync } from 'node:sqlite';
 import { CodeGraph } from '../src';
 
 const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
@@ -115,6 +116,32 @@ type CypherCliJson = Record<string, unknown> & {
 const CYPHER_CLI_MATCH_QUERY =
   "MATCH (caller:function)-[:calls]->(callee:function) WHERE caller.name = 'entry' RETURN caller.name AS caller, callee.name AS callee ORDER BY callee.name LIMIT 1";
 
+const CYPHER_T032_VALID_QUERY = CYPHER_CLI_MATCH_QUERY;
+const CYPHER_T032_EMPTY_QUERY =
+  "MATCH (caller:function)-[:calls]->(callee:function) WHERE caller.name = 'doesNotExist' RETURN caller.name LIMIT 5";
+const CYPHER_T032_CAPPED_QUERY = 'MATCH (caller:function)-[:calls]->(callee:function) RETURN caller.name AS caller LIMIT 1';
+const CYPHER_T032_SYNTAX_QUERY = 'MATCH (caller:function)-[:calls]-> RETURN caller.name LIMIT 1';
+const CYPHER_T032_UNSUPPORTED_WRITE_QUERY =
+  'MATCH (caller:function)-[:calls]->(callee:function) DELETE callee RETURN caller.name LIMIT 1';
+const CYPHER_T032_TIMEOUT_QUERY =
+  'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p /* codegraph-test-force-timeout */';
+const CYPHER_T032_OUTPUT_TOO_LARGE_QUERY = 'MATCH (a:function)-[:calls]->(b:function) RETURN a, b LIMIT 1000';
+
+type T032CliExpectedState = 'success' | 'diagnostic' | 'timeout';
+
+type T032CliScenario = {
+  readonly name: string;
+  readonly expectedStatus: T032CliExpectedState;
+  readonly expectedExitCode: number;
+  readonly expectedCode?: string;
+  readonly expectedRows?: number;
+  readonly expectedTruncated?: boolean;
+  readonly query?: string;
+  readonly stdin?: () => Buffer;
+  readonly prepare?: (projectPath: string) => void;
+  readonly useUnindexedProject?: boolean;
+};
+
 function createCypherCliProject(): string {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-cypher-cli-'));
   fs.mkdirSync(path.join(tempDir, 'src'));
@@ -138,6 +165,49 @@ function createCypherCliProject(): string {
   const cg = CodeGraph.initSync(tempDir);
   cg.close();
   return tempDir;
+}
+
+function oversizedCypherInputBytes(): Buffer {
+  return Buffer.from(
+    `MATCH (n:function) WHERE n.name = '${'oversized'.repeat(1_260)}' RETURN n.name LIMIT 1`,
+    'utf8',
+  );
+}
+
+function addOversizedCypherPayloadRows(projectPath: string): void {
+  const db = new DatabaseSync(path.join(projectPath, '.codegraph', 'codegraph.db'));
+  const insertNode = db.prepare(`
+    INSERT OR REPLACE INTO nodes (
+      id, kind, name, qualified_name, file_path, language,
+      start_line, end_line, start_column, end_column,
+      docstring, signature, visibility,
+      is_exported, is_async, is_static, is_abstract,
+      decorators, type_parameters, return_type, updated_at
+    )
+    VALUES (?, 'function', ?, ?, 'src/oversized.ts', 'typescript', 1, 1, 0, 1, ?, null, null, 0, 0, 0, 0, null, null, null, 1700000000000)
+  `);
+  const insertEdge = db.prepare(`
+    INSERT INTO edges (source, target, kind, metadata, line, col, provenance)
+    VALUES (?, ?, 'calls', null, ?, 0, 'tree-sitter')
+  `);
+  db.exec('BEGIN');
+  try {
+    const wideDocstring = 'payload'.repeat(600);
+    for (let index = 0; index < 420; index += 1) {
+      const ordinal = String(index).padStart(4, '0');
+      const sourceId = `function:t032:oversized:source:${ordinal}`;
+      const targetId = `function:t032:oversized:target:${ordinal}`;
+      insertNode.run(sourceId, `oversizedSource${ordinal}`, `oversizedSource${ordinal}`, `${wideDocstring}:source:${ordinal}`);
+      insertNode.run(targetId, `oversizedTarget${ordinal}`, `oversizedTarget${ordinal}`, `${wideDocstring}:target:${ordinal}`);
+      insertEdge.run(sourceId, targetId, 10_000 + index);
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  } finally {
+    db.close();
+  }
 }
 
 async function indexCypherCliProject(tempDir: string): Promise<void> {
@@ -234,6 +304,26 @@ function expectCypherCliDiagnostic(result: CliProcessResult, code: string, conte
   expect(typeof payload.excerpt).toBe('string');
   expect(typeof payload.truncatedBefore).toBe('boolean');
   expect(typeof payload.truncatedAfter).toBe('boolean');
+  return payload;
+}
+
+function expectT032CliJsonState(result: CliProcessResult, scenario: T032CliScenario): CypherCliJson {
+  expectNoTrailingNewline(result, scenario.name);
+  expect(result.exitCode, `${scenario.name} exit code`).toBe(scenario.expectedExitCode);
+  const payload = expectCypherResultObject(result, scenario.name);
+  expect(payload.status, `${scenario.name} status`).toBe(scenario.expectedStatus);
+  if (scenario.expectedCode !== undefined) {
+    expect(payload.code, `${scenario.name} diagnostic code`).toBe(scenario.expectedCode);
+  }
+  if (scenario.expectedRows !== undefined) {
+    expect(payload.rows, `${scenario.name} rows`).toHaveLength(scenario.expectedRows);
+  }
+  if (scenario.expectedTruncated !== undefined) {
+    expect(payload.truncated, `${scenario.name} truncated`).toBe(scenario.expectedTruncated);
+  }
+  if (scenario.expectedStatus === 'timeout') {
+    expect(payload).not.toHaveProperty('rows');
+  }
   return payload;
 }
 
@@ -391,6 +481,100 @@ describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
     expect(String(diagnostic.expected).length).toBeGreaterThan(0);
     expect(String(diagnostic.anchor).length).toBeGreaterThan(0);
     expect(result.stdout.toString('utf8')).not.toContain('\n');
+  });
+
+  it.each<T032CliScenario>([
+    {
+      name: 'valid result',
+      query: CYPHER_T032_VALID_QUERY,
+      expectedStatus: 'success',
+      expectedExitCode: 0,
+      expectedRows: 1,
+      expectedTruncated: false,
+    },
+    {
+      name: 'empty success',
+      query: CYPHER_T032_EMPTY_QUERY,
+      expectedStatus: 'success',
+      expectedExitCode: 0,
+      expectedRows: 0,
+      expectedTruncated: false,
+    },
+    {
+      name: 'capped/truncated result',
+      query: CYPHER_T032_CAPPED_QUERY,
+      expectedStatus: 'success',
+      expectedExitCode: 0,
+      expectedRows: 1,
+      expectedTruncated: true,
+    },
+    {
+      name: 'syntax diagnostic',
+      query: CYPHER_T032_SYNTAX_QUERY,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_SYNTAX',
+      expectedExitCode: 1,
+    },
+    {
+      name: 'unsupported write diagnostic',
+      query: CYPHER_T032_UNSUPPORTED_WRITE_QUERY,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_UNSUPPORTED',
+      expectedExitCode: 1,
+    },
+    {
+      name: 'oversized input diagnostic',
+      stdin: oversizedCypherInputBytes,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_INPUT_TOO_LONG',
+      expectedExitCode: 1,
+    },
+    {
+      name: 'malformed stdin diagnostic',
+      stdin: malformedCliStdinBytes,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_INVALID_STDIN_ENCODING',
+      expectedExitCode: 1,
+    },
+    {
+      name: 'output-too-large diagnostic',
+      query: CYPHER_T032_OUTPUT_TOO_LARGE_QUERY,
+      prepare: addOversizedCypherPayloadRows,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_OUTPUT_TOO_LARGE',
+      expectedExitCode: 1,
+    },
+    {
+      name: 'timeout state',
+      query: CYPHER_T032_TIMEOUT_QUERY,
+      expectedStatus: 'timeout',
+      expectedCode: 'CYPHER_TIMEOUT',
+      expectedExitCode: 1,
+    },
+    {
+      name: 'not-indexed diagnostic',
+      query: CYPHER_T032_VALID_QUERY,
+      useUnindexedProject: true,
+      expectedStatus: 'diagnostic',
+      expectedCode: 'CYPHER_NOT_INDEXED',
+      expectedExitCode: 1,
+    },
+  ])('emits canonical CLI --json bytes for T032 $name', (scenario) => {
+    const projectPath = scenario.useUnindexedProject === true
+      ? fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-cypher-cli-not-indexed-'))
+      : tempDir;
+    try {
+      scenario.prepare?.(projectPath);
+      const result = scenario.stdin === undefined
+        ? runCliQueryMatch(projectPath, scenario.query ?? '', ['--json'])
+        : runCliQueryStdin(projectPath, scenario.stdin(), ['--json']);
+
+      expectT032CliJsonState(result, scenario);
+    } finally {
+      if (projectPath !== tempDir) {
+        fs.rmSync(projectPath, { recursive: true, force: true });
+      }
+    }
   });
 });
 

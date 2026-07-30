@@ -5,6 +5,8 @@
  */
 
 import type CodeGraph from '../index';
+import type { CypherDiagnosticResult, CypherQueryResult } from '../query/cypher';
+import { cypherInputTooLongDiagnostic, serializeCypherTransportResult } from '../query/cypher/serializer';
 import { QueryPoolUnavailableError, type QueryPool } from './query-pool';
 import { findNearestCodeGraphRoot } from '../directory';
 // Lazy-load the heavy CodeGraph chain off the MCP startup path — see the same
@@ -1440,6 +1442,20 @@ export class ToolHandler {
     return value;
   }
 
+  private validateCypherQueryInput(value: unknown): string | CypherDiagnosticResult | ToolResult {
+    if (typeof value !== 'string' || value.length === 0) {
+      return this.errorResult('query must be a non-empty string');
+    }
+    if (value.length > MAX_INPUT_LENGTH) {
+      return cypherInputTooLongDiagnostic(MAX_INPUT_LENGTH);
+    }
+    return value;
+  }
+
+  private isCypherDiagnosticResult(result: string | CypherDiagnosticResult | ToolResult): result is CypherDiagnosticResult {
+    return typeof result === 'object' && result !== null && 'status' in result && result.status === 'diagnostic';
+  }
+
   /**
    * Validate an optional path-like string input. Returns the value if
    * valid (or undefined), or a ToolResult with the error.
@@ -1836,8 +1852,13 @@ export class ToolHandler {
    * for path/access refusals and real malfunctions in the outer dispatcher.
    */
   private async handleCypherQuery(args: Record<string, unknown>): Promise<ToolResult> {
-    const query = this.validateString(args.query, 'query');
-    if (typeof query !== 'string') return query;
+    const queryInput = this.validateCypherQueryInput(args.query);
+    if (typeof queryInput !== 'string') {
+      return this.isCypherDiagnosticResult(queryInput)
+        ? this.serializeCypherToolResult(queryInput)
+        : queryInput;
+    }
+    const query = queryInput;
 
     const projectRoot = this.resolveCypherProjectRoot(args.projectPath as string | undefined);
     const forceTimeout = this.shouldForceCypherTimeoutForTest(query);
@@ -1848,11 +1869,11 @@ export class ToolHandler {
     const result = forceTimeout
       ? await queryCypherForTests(projectRoot, executableQuery, { forceTimeout: true })
       : await queryCypher(projectRoot, executableQuery);
-    const normalized = this.normalizeMcpCypherResult(result);
+    return this.serializeCypherToolResult(result);
+  }
 
-    const { serializeCypherResult } = await import('../query/cypher/serializer');
-    const serialized = serializeCypherResult(normalized);
-    return this.textResult(typeof serialized === 'string' ? serialized : JSON.stringify(serialized));
+  private async serializeCypherToolResult(result: CypherQueryResult): Promise<ToolResult> {
+    return this.textResult(serializeCypherTransportResult(result));
   }
 
   private resolveCypherProjectRoot(projectPath?: string): string {
@@ -1870,15 +1891,6 @@ export class ToolHandler {
 
   private shouldForceCypherTimeoutForTest(query: string): boolean {
     return process.env.NODE_ENV === 'test' && query.includes('codegraph-test-force-timeout');
-  }
-
-  private normalizeMcpCypherResult(
-    result: Awaited<ReturnType<typeof import('../query/cypher')['queryCypher']>>,
-  ): unknown {
-    if (result.status === 'diagnostic' && result.code === 'CYPHER_UNSUPPORTED_CLAUSE') {
-      return { ...result, code: 'CYPHER_UNSUPPORTED' };
-    }
-    return result;
   }
 
   /**

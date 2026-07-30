@@ -1010,8 +1010,8 @@ For each task:
 | Setup and evidence routing | T001-T007 | 7/7 | Complete: matrix, G5 route, one-PR disposition, scope, and reviewability evidence verified. |
 | Foundational test harness | T008-T012 | 5/5 | Complete: real SQLite, CLI, MCP, recipe, and evidence helpers; 4 files/6 tests passed. |
 | 1 — bounded connected-path querying | T013-T031 | 19/19 | Complete. T031 remediated the live variable-path OOM and subsequent false-empty frontier starvation; package API, positional CLI, and MCP now return the same non-empty 9,658-byte canonical payload, and all focused suites/build/typecheck pass. The private query module still exceeds the planning estimate, so the size signal remains for the reviewability gate. |
-| 1 — safe-surface closure | T032-T040 | 0/9 | US3 parity, diagnostics, and retrieval steering for Slice 1. |
-| 2 — language and recipe closure | T041-T057 | 0/17 | US2 RED → GREEN → REFACTOR → VERIFY. |
+| 1 — safe-surface closure | T032-T040 | 9/9 | Complete: 81/81 focused safety tests pass; all nine CLI/MCP states are byte-identical; read-only snapshots, timeout worker cleanup, malformed stdin, and retrieval steering are verified. |
+| 2 — language and recipe closure | T041-T057 | 0/17 | In progress: US2 RED → GREEN → REFACTOR → VERIFY, beginning with T041. |
 | Final safety and retrieval closure | T058-T070 | 0/13 | US3 guardrails, parity, retrieval gates, and evidence. |
 | Polish and delivery evidence | T071-T079 | 0/9 | Changelog, UAT, parity, PR packet, and hygiene. |
 

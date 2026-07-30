@@ -32,6 +32,52 @@ export function serializeCypherResult(
   return bytes;
 }
 
+export function serializeCypherTransportResult(result: unknown): string {
+  const serialized = serializeCypherResult(normalizeCypherTransportResult(result));
+  return typeof serialized === 'string' ? serialized : JSON.stringify(stabilizeValue(serialized));
+}
+
+export function normalizeCypherTransportResult<T>(result: T): T {
+  if (
+    isPlainObject(result) &&
+    result.status === 'diagnostic' &&
+    result.code === 'CYPHER_UNSUPPORTED_CLAUSE'
+  ) {
+    return { ...result, code: 'CYPHER_UNSUPPORTED' } as T;
+  }
+  return result;
+}
+
+export function cypherDiagnosticResult(
+  code: string,
+  message: string,
+  expected: string,
+  anchor: string,
+): CypherSerializerDiagnosticResult {
+  return {
+    status: 'diagnostic',
+    code,
+    message,
+    offset: 0,
+    line: 1,
+    column: 0,
+    expected,
+    anchor,
+    excerpt: '',
+    truncatedBefore: false,
+    truncatedAfter: false,
+  };
+}
+
+export function cypherInputTooLongDiagnostic(maxCodeUnits = 10_000): CypherSerializerDiagnosticResult {
+  return cypherDiagnosticResult(
+    'CYPHER_INPUT_TOO_LONG',
+    `Cypher input exceeds the ${maxCodeUnits} UTF-16 code unit ceiling.`,
+    `query text <= ${maxCodeUnits} UTF-16 code units`,
+    'cli-input',
+  );
+}
+
 export function cypherRowsToTable(
   rows: readonly Record<string, unknown>[],
   columns: readonly string[],
@@ -106,19 +152,12 @@ function isTypedCypherValue(value: unknown): value is CypherTypedValue {
 }
 
 function outputTooLargeDiagnostic(): CypherSerializerDiagnosticResult {
-  return {
-    status: 'diagnostic',
-    code: 'CYPHER_OUTPUT_TOO_LARGE',
-    message: 'Cypher result exceeds the fixed 1 MiB machine-output payload ceiling; narrow RETURN, MATCH, or LIMIT.',
-    offset: 0,
-    line: 1,
-    column: 0,
-    expected: 'serialized payload <= 1048576 bytes',
-    anchor: 'serializer',
-    excerpt: '',
-    truncatedBefore: false,
-    truncatedAfter: false,
-  };
+  return cypherDiagnosticResult(
+    'CYPHER_OUTPUT_TOO_LARGE',
+    'Cypher result exceeds the fixed 1 MiB machine-output payload ceiling; narrow RETURN, MATCH, or LIMIT.',
+    'serialized payload <= 1048576 bytes',
+    'serializer',
+  );
 }
 
 export function serializeCypherResultForTests(

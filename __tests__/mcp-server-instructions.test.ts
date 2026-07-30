@@ -59,6 +59,15 @@ function cfgToolSection(text: string): string {
   return nextHeading === -1 ? text.slice(headingStart) : text.slice(headingStart, nextHeading);
 }
 
+function cypherQuerySection(text: string): string {
+  const mention = text.indexOf('codegraph_query');
+  expect(mention, 'SERVER_INSTRUCTIONS must mention codegraph_query').toBeGreaterThanOrEqual(0);
+  const headingStart = text.lastIndexOf('\n## ', mention);
+  expect(headingStart, 'codegraph_query must be introduced under its own ## heading').toBeGreaterThanOrEqual(0);
+  const nextHeading = text.indexOf('\n## ', headingStart + 1);
+  return nextHeading === -1 ? text.slice(headingStart) : text.slice(headingStart, nextHeading);
+}
+
 describe('SERVER_INSTRUCTIONS — codegraph_rename write-tool guidance (T047)', () => {
   it('mentions codegraph_rename, dry-run-by-default, and explicit apply', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/codegraph_rename/);
@@ -116,6 +125,69 @@ describe('SERVER_INSTRUCTIONS — codegraph_rename write-tool guidance (T047)', 
   });
 });
 
+describe('SERVER_INSTRUCTIONS — codegraph_query deliberate Cypher steering (SPEC-013 T034)', () => {
+  it('keeps codegraph_explore primary while default-serving codegraph_query', () => {
+    delete process.env[ENV];
+    const names = getStaticTools().map((tool) => tool.name);
+
+    expect(names).toEqual([
+      'codegraph_query',
+      'codegraph_detect_changes',
+      'codegraph_explore',
+      'codegraph_rename',
+      'codegraph_get_cfg',
+    ]);
+    expect(names).toContain('codegraph_explore');
+    expect(names).toContain('codegraph_query');
+    expect(SERVER_INSTRUCTIONS).toContain('## The primary tool: codegraph_explore');
+    expect(SERVER_INSTRUCTIONS).toContain('The primary tool is `codegraph_explore`');
+  });
+
+  it('adds a scoped codegraph_query section to both instruction variants', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cypherQuerySection(text);
+      expect(section).toMatch(/^## codegraph_query/m);
+      expect(section).toMatch(/\bCypher\b/);
+      expect(section).toMatch(/structured graph-language/i);
+      expect(section).toMatch(/deliberate/i);
+      expect(section).toMatch(/projectPath/);
+    }
+  });
+
+  it('reserves codegraph_query for deliberate structured graph-language requests, not general retrieval', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cypherQuerySection(text);
+      expect(section).toMatch(/only/i);
+      expect(section).toMatch(/when .*asks.*Cypher|when .*asks.*structured graph-language/i);
+      expect(section).not.toMatch(/primary/i);
+      expect(section).not.toMatch(/general retrieval/i);
+      expect(section).not.toMatch(/prefer.*Cypher/i);
+      expect(section).not.toMatch(/instead of.*codegraph_explore/i);
+    }
+  });
+
+  it('does not steer agents from codegraph_query guidance to Read or Grep', () => {
+    for (const text of [SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_NO_ROOT_INDEX]) {
+      const section = cypherQuerySection(text);
+      expect(section).not.toMatch(/\bRead\b/);
+      expect(section).not.toMatch(/\bGrep\b/);
+    }
+  });
+
+  it('keeps broad retrieval examples routed to codegraph_explore instead of codegraph_query', () => {
+    const howToQueryHeading = SERVER_INSTRUCTIONS.indexOf('## How to query');
+    const antiPatternsHeading = SERVER_INSTRUCTIONS.indexOf('## Anti-patterns');
+    expect(howToQueryHeading).toBeGreaterThanOrEqual(0);
+    expect(antiPatternsHeading).toBeGreaterThan(howToQueryHeading);
+    const howToQuery = SERVER_INSTRUCTIONS.slice(howToQueryHeading, antiPatternsHeading);
+
+    expect(howToQuery).toMatch(/Almost any question[\s\S]*codegraph_explore/);
+    expect(howToQuery).toMatch(/flow[\s\S]*codegraph_explore/);
+    expect(howToQuery).toMatch(/Reading or editing[\s\S]*codegraph_explore/);
+    expect(howToQuery).not.toContain('codegraph_query');
+  });
+});
+
 describe('SERVER_INSTRUCTIONS — codegraph_get_cfg bounded CFG guidance (T030)', () => {
   const original = process.env[ENV];
   afterEach(() => {
@@ -123,27 +195,28 @@ describe('SERVER_INSTRUCTIONS — codegraph_get_cfg bounded CFG guidance (T030)'
     else process.env[ENV] = original;
   });
 
-  it('serves codegraph_get_cfg by default while preserving codegraph_explore primacy', () => {
+  it('serves codegraph_query and codegraph_get_cfg by default while preserving codegraph_explore availability', () => {
     delete process.env[ENV];
     const names = getStaticTools().map((tool) => tool.name);
 
     expect(names).toEqual([
+      'codegraph_query',
       'codegraph_detect_changes',
       'codegraph_explore',
       'codegraph_rename',
       'codegraph_get_cfg',
     ]);
-    expect(names.indexOf('codegraph_explore')).toBeLessThan(names.indexOf('codegraph_get_cfg'));
+    expect(names).toContain('codegraph_explore');
   });
 
-  it('keeps codegraph_get_cfg on the default live tiny-project tools/list surface', () => {
+  it('keeps codegraph_query and codegraph_get_cfg on the default live tiny-project tools/list surface', () => {
     delete process.env[ENV];
     const tinyProject = { getStats: () => ({ fileCount: 1 }) } as ConstructorParameters<typeof ToolHandler>[0];
     const names = new ToolHandler(tinyProject).getTools().map((tool) => tool.name);
 
     expect(names).toContain('codegraph_explore');
+    expect(names).toContain('codegraph_query');
     expect(names).toContain('codegraph_get_cfg');
-    expect(names.indexOf('codegraph_explore')).toBeLessThan(names.indexOf('codegraph_get_cfg'));
   });
 
   it('adds a scoped codegraph_get_cfg section to both instruction variants', () => {
