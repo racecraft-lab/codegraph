@@ -42,6 +42,7 @@ try {
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs';
+import { TextDecoder } from 'util';
 import { getCodeGraphDir, isInitialized, unsafeIndexRootReason, findNearestCodeGraphRoot, planFrontload, hasStructuralKeyword, extractCodeTokens } from '../directory';
 import { extractProseCandidates } from '../search/identifier-segments';
 import { detectWorktreeIndexMismatch, worktreeMismatchWarning } from '../sync/worktree';
@@ -49,6 +50,7 @@ import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
 import { ensureCodegraphIgnored } from '../utils';
 import type { EmbeddingStatus, LocalEmbeddingSkipReason } from '../index';
+import type { CypherDiagnosticResult, CypherQueryResult, CypherSuccessResult } from '../index';
 import type { SearchMode } from '../types';
 import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine, withJsonTiming, resolveAutoMode } from '../search/hybrid';
 import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
@@ -346,6 +348,146 @@ function validateEmbeddingsOption(value: string | undefined): EmbeddingProviderS
     process.exit(1);
   }
   return value as EmbeddingProviderSelection;
+}
+
+const CYPHER_CLI_INPUT_MAX_CODE_UNITS = 10_000;
+const CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS: readonly {
+  readonly long: string;
+  readonly short?: string;
+}[] = [
+  { long: '--kind', short: '-k' },
+  { long: '--mode', short: '-m' },
+  { long: '--limit', short: '-l' },
+  { long: '--file' },
+];
+
+type CypherCliQueryInputResult =
+  | { readonly status: 'success'; readonly query: string }
+  | CypherDiagnosticResult;
+
+async function resolveCliQueryInput(search: string): Promise<CypherCliQueryInputResult> {
+  if (search !== '-') {
+    return validateCypherCliInputLength(search);
+  }
+
+  const stdin = await readStdinBuffer();
+  let query: string;
+  try {
+    query = new TextDecoder('utf-8', { fatal: true }).decode(stdin);
+  } catch {
+    return makeCypherCliDiagnostic(
+      'CYPHER_INVALID_STDIN_ENCODING',
+      'Cypher stdin must be valid UTF-8.',
+      'valid UTF-8 stdin',
+      'cli-input',
+    );
+  }
+  return validateCypherCliInputLength(query);
+}
+
+function validateCypherCliInputLength(query: string): CypherCliQueryInputResult {
+  if (query.length <= CYPHER_CLI_INPUT_MAX_CODE_UNITS) {
+    return { status: 'success', query };
+  }
+  return makeCypherCliDiagnostic(
+    'CYPHER_INPUT_TOO_LONG',
+    `Cypher input exceeds the ${CYPHER_CLI_INPUT_MAX_CODE_UNITS} UTF-16 code unit ceiling.`,
+    `query text <= ${CYPHER_CLI_INPUT_MAX_CODE_UNITS} UTF-16 code units`,
+    'cli-input',
+  );
+}
+
+function startsWithCypherMatch(query: string): boolean {
+  return /^\s*MATCH\b/i.test(query);
+}
+
+function unsupportedCypherCliFlagDiagnostic(argv: readonly string[] = process.argv): CypherDiagnosticResult | undefined {
+  for (const flag of CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS) {
+    const matched = argv.find((arg) => {
+      return (
+        arg === flag.long ||
+        arg.startsWith(`${flag.long}=`) ||
+        (flag.short !== undefined && (arg === flag.short || arg.startsWith(`${flag.short}=`)))
+      );
+    });
+    if (matched !== undefined) {
+      return makeCypherCliDiagnostic(
+        'CYPHER_UNSUPPORTED',
+        `Cypher query mode does not support search-only CLI flag ${matched}. Put row limits inside the Cypher query text.`,
+        'Cypher-supported query flags',
+        'cli-options',
+      );
+    }
+  }
+  return undefined;
+}
+
+async function readStdinBuffer(): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function writeCypherCliResult(result: CypherQueryResult, json: boolean): Promise<void> {
+  if (json) {
+    const { serializeCypherResult } = await import('../query/cypher/serializer');
+    const serialized = serializeCypherResult(result);
+    process.stdout.write(typeof serialized === 'string' ? serialized : JSON.stringify(serialized));
+    return;
+  }
+
+  if (result.status === 'success') {
+    await writeCypherHumanSuccess(result);
+    return;
+  }
+
+  if (result.status === 'timeout') {
+    error(`${result.code}: ${result.guidance}`);
+    return;
+  }
+
+  error(`${result.code}: ${result.message}`);
+}
+
+async function writeCypherHumanSuccess(result: CypherSuccessResult): Promise<void> {
+  const columns = result.columns.map((column) => column.name);
+  const { cypherRowsToTable } = await import('../query/cypher/serializer');
+  const tableRows = cypherRowsToTable(result.rows, columns);
+  if (columns.length === 0 || tableRows.length === 0) {
+    info('Cypher returned no rows.');
+    return;
+  }
+
+  console.log(columns.join('\t'));
+  for (const row of tableRows) {
+    console.log(columns.map((column) => row[column] ?? '').join('\t'));
+  }
+  if (result.truncated) {
+    warn(`Cypher result truncated at ${result.effectiveCap} rows. Add or narrow LIMIT in the query text.`);
+  }
+}
+
+function makeCypherCliDiagnostic(
+  code: string,
+  message: string,
+  expected: string,
+  anchor: string,
+): CypherDiagnosticResult {
+  return {
+    status: 'diagnostic',
+    code,
+    message,
+    offset: 0,
+    line: 1,
+    column: 0,
+    expected,
+    anchor,
+    excerpt: '',
+    truncatedBefore: false,
+    truncatedAfter: false,
+  };
 }
 
 function parseCfgPagingOption(value: string | undefined, flag: '--limit' | '--offset'): number | undefined {
@@ -1491,14 +1633,38 @@ program
   .option('-l, --limit <number>', 'Maximum results', '10')
   .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
   .option('-m, --mode <mode>', 'Search mode: keyword | semantic | hybrid | auto (default: auto)')
+  .option('--file <file>', 'Search file filter (unsupported in Cypher query mode)')
   .option('-j, --json', 'Output as JSON')
-  .action(async (search: string, options: { path?: string; limit?: string; kind?: string; mode?: string; json?: boolean }) => {
+  .action(async (search: string, options: { path?: string; limit?: string; kind?: string; mode?: string; file?: string; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
       if (!isInitialized(projectPath)) {
         error(`CodeGraph not initialized in ${projectPath}`);
         process.exit(1);
+      }
+
+      const queryInput = await resolveCliQueryInput(search);
+      if (queryInput.status === 'diagnostic') {
+        await writeCypherCliResult(queryInput, options.json === true);
+        process.exit(1);
+      }
+      const searchText = queryInput.query;
+
+      if (startsWithCypherMatch(searchText)) {
+        const unsupportedFlag = unsupportedCypherCliFlagDiagnostic();
+        if (unsupportedFlag !== undefined) {
+          await writeCypherCliResult(unsupportedFlag, options.json === true);
+          process.exit(1);
+        }
+
+        const { queryCypher } = await loadCodeGraph();
+        const result = await queryCypher(projectPath, searchText);
+        await writeCypherCliResult(result, options.json === true);
+        if (result.status !== 'success') {
+          process.exit(1);
+        }
+        return;
       }
 
       const { default: CodeGraph } = await loadCodeGraph();
@@ -1524,10 +1690,10 @@ program
       // `{ vector: null, model: null }` with no provider), so this degrades cleanly to
       // keyword when no embedding endpoint is configured.
       if (mode !== 'keyword') {
-        await cg.acquireQueryVectorForSearch(search);
+        await cg.acquireQueryVectorForSearch(searchText);
       }
 
-      const detailed = cg.searchNodesDetailed(search, {
+      const detailed = cg.searchNodesDetailed(searchText, {
         limit,
         kinds: options.kind ? [options.kind as any] : undefined,
         mode,
@@ -1551,7 +1717,7 @@ program
         console.log(JSON.stringify(withJsonTiming(results, detailed.timing), null, 2));
       } else {
         if (results.length === 0) {
-          info(`No results found for "${search}"`);
+          info(`No results found for "${searchText}"`);
           // FR-015 / review item 1: a degraded-AND-empty search still shows the hint —
           // the early return here used to drop it (the footer only rendered on the
           // non-empty branch). Printed WITHOUT chalk so the pinned contract string stays
@@ -1561,7 +1727,7 @@ program
             console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
           }
         } else {
-          console.log(chalk.bold(`\nSearch Results for "${search}":\n`));
+          console.log(chalk.bold(`\nSearch Results for "${searchText}":\n`));
 
           // Results arrive already ranked by relevance, so the order conveys
           // it. We don't print the raw score: it's an unbounded BM25/FTS value

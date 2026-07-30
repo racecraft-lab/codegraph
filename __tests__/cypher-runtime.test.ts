@@ -467,6 +467,240 @@ describe.skipIf(!nodeSqliteAvailable)('cypher runtime fixture helpers', () => {
   });
 });
 
+type CypherRuntimeBoundarySuccess = {
+  readonly status: 'success';
+  readonly columns: readonly string[];
+  readonly rows: readonly Record<string, unknown>[];
+  readonly effectiveCap: number;
+  readonly truncated: boolean;
+};
+
+type CypherRuntimeBoundaryDiagnostic = {
+  readonly status: 'diagnostic';
+  readonly code: string;
+};
+
+type CypherRuntimeBoundaryTimeout = {
+  readonly status: 'timeout';
+  readonly code: 'CYPHER_TIMEOUT';
+  readonly deadlineMs: 5000;
+  readonly guidance: string;
+};
+
+type CypherRuntimeBoundaryResult =
+  | CypherRuntimeBoundarySuccess
+  | CypherRuntimeBoundaryDiagnostic
+  | CypherRuntimeBoundaryTimeout;
+
+type CypherRuntimeBoundaryContract = {
+  readonly executeCypherSqlForTests: (
+    projectRoot: string,
+    request: {
+      readonly sql: string;
+      readonly boundParameters?: readonly unknown[];
+      readonly effectiveCap?: number;
+    },
+    options?: {
+      readonly forceTimeout?: boolean;
+      readonly onSqlPrepare?: (sql: string) => void;
+    },
+  ) => Promise<CypherRuntimeBoundaryResult>;
+  readonly getCypherRuntimeStateForTests: () => {
+    readonly activeWorkers: number;
+    readonly terminatedWorkers: number;
+  };
+  readonly openCypherReadOnlyDatabaseForTests: (dbPath: string) => SqliteDatabase;
+};
+
+async function loadCypherRuntimeBoundaryContract(): Promise<CypherRuntimeBoundaryContract> {
+  const runtimeMod = await import('../src/query/cypher/runtime') as Partial<CypherRuntimeBoundaryContract>;
+  expect(typeof runtimeMod.executeCypherSqlForTests, 'executeCypherSqlForTests export').toBe('function');
+  expect(typeof runtimeMod.getCypherRuntimeStateForTests, 'getCypherRuntimeStateForTests export').toBe('function');
+  expect(typeof runtimeMod.openCypherReadOnlyDatabaseForTests, 'openCypherReadOnlyDatabaseForTests export').toBe('function');
+  return runtimeMod as CypherRuntimeBoundaryContract;
+}
+
+function expectBoundarySuccess(result: CypherRuntimeBoundaryResult): CypherRuntimeBoundarySuccess {
+  expect(result.status).toBe('success');
+  return result as CypherRuntimeBoundarySuccess;
+}
+
+function expectBoundaryDiagnostic(result: CypherRuntimeBoundaryResult, code: string): CypherRuntimeBoundaryDiagnostic {
+  expect(result.status).toBe('diagnostic');
+  const diagnostic = result as CypherRuntimeBoundaryDiagnostic;
+  expect(diagnostic.code).toBe(code);
+  return diagnostic;
+}
+
+function expectBoundaryTimeout(result: CypherRuntimeBoundaryResult): CypherRuntimeBoundaryTimeout {
+  expect(result.status).toBe('timeout');
+  const timeout = result as CypherRuntimeBoundaryTimeout;
+  expect(timeout.code).toBe('CYPHER_TIMEOUT');
+  expect(timeout.deadlineMs).toBe(5000);
+  expect(timeout.guidance).toContain('narrow');
+  expect(result).not.toHaveProperty('rows');
+  return timeout;
+}
+
+describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — T024 internal read-only worker boundary', () => {
+  it('opens a dedicated SQLite read-only connection that cannot mutate graph storage', async () => {
+    const runtime = await loadCypherRuntimeBoundaryContract();
+    const fixture = createCypherRuntimeFixture();
+    const before = fixture.snapshot();
+    const readOnlyDb = runtime.openCypherReadOnlyDatabaseForTests(fixture.dbPath);
+
+    try {
+      expect(() => {
+        readOnlyDb.prepare(`
+          INSERT INTO nodes (
+            id, kind, name, qualified_name, file_path, language,
+            start_line, end_line, start_column, end_column, updated_at
+          )
+          VALUES ('forbidden', 'function', 'forbidden', 'forbidden', 'x.ts', 'typescript', 1, 1, 0, 1, 0)
+        `).run();
+      }).toThrow();
+    } finally {
+      readOnlyDb.close();
+    }
+
+    expect(fixture.snapshot()).toEqual(before);
+  });
+
+  it('executes validated SELECT SQL off-thread and rejects write SQL before prepare or repository initialization', async () => {
+    const runtime = await loadCypherRuntimeBoundaryContract();
+    const fixture = createCypherRuntimeFixture();
+    const before = fixture.snapshot();
+    const preparedSql: string[] = [];
+
+    const result = expectBoundarySuccess(await runtime.executeCypherSqlForTests(
+      fixture.projectRoot,
+      { sql: 'SELECT count(*) AS count FROM nodes', effectiveCap: 1 },
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    ));
+
+    expect(result.columns).toEqual(['count']);
+    expect(result.rows).toEqual([{ count: 23 }]);
+    expect(result.truncated).toBe(false);
+    expect(preparedSql).toEqual(['SELECT count(*) AS count FROM nodes']);
+    expect(fixture.snapshot()).toEqual(before);
+
+    expectBoundaryDiagnostic(await runtime.executeCypherSqlForTests(
+      fixture.projectRoot,
+      { sql: "INSERT INTO nodes (id) VALUES ('forbidden')" },
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    ), 'CYPHER_UNSUPPORTED_CLAUSE');
+    expect(preparedSql).toEqual(['SELECT count(*) AS count FROM nodes']);
+    expect(fixture.snapshot()).toEqual(before);
+
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-cypher-runtime-boundary-missing-'));
+    try {
+      expectBoundaryDiagnostic(await runtime.executeCypherSqlForTests(
+        projectRoot,
+        { sql: 'SELECT 1 AS ok' },
+      ), 'CYPHER_NOT_INDEXED');
+      expect(fs.existsSync(path.join(projectRoot, '.codegraph'))).toBe(false);
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a shared timeout state, terminates the worker, and accepts a follow-up query without partial rows', async () => {
+    const runtime = await loadCypherRuntimeBoundaryContract();
+    const fixture = createCypherRuntimeFixture();
+    const beforeState = runtime.getCypherRuntimeStateForTests();
+
+    expectBoundaryTimeout(await runtime.executeCypherSqlForTests(
+      fixture.projectRoot,
+      { sql: 'SELECT 1 AS ok' },
+      { forceTimeout: true },
+    ));
+
+    const afterTimeout = runtime.getCypherRuntimeStateForTests();
+    expect(afterTimeout.activeWorkers).toBe(0);
+    expect(afterTimeout.terminatedWorkers).toBe(beforeState.terminatedWorkers + 1);
+
+    const followup = expectBoundarySuccess(await runtime.executeCypherSqlForTests(
+      fixture.projectRoot,
+      { sql: 'SELECT 1 AS ok', effectiveCap: 1 },
+    ));
+    expect(followup.rows).toEqual([{ ok: 1 }]);
+    expect(runtime.getCypherRuntimeStateForTests().activeWorkers).toBe(0);
+  }, 7000);
+});
+
+type CypherSerializerContract = {
+  readonly serializeCypherResultForTests: (
+    result: unknown,
+    options?: { readonly payloadLimitBytes?: number },
+  ) => string | CypherRuntimeBoundaryDiagnostic;
+  readonly cypherRowsToTableForTests: (
+    rows: readonly Record<string, unknown>[],
+    columns: readonly string[],
+  ) => readonly Record<string, string>[];
+};
+
+async function loadCypherSerializerContract(): Promise<CypherSerializerContract> {
+  const serializerMod = await import('../src/query/cypher/serializer') as Partial<CypherSerializerContract>;
+  expect(typeof serializerMod.serializeCypherResultForTests, 'serializeCypherResultForTests export').toBe('function');
+  expect(typeof serializerMod.cypherRowsToTableForTests, 'cypherRowsToTableForTests export').toBe('function');
+  return serializerMod as CypherSerializerContract;
+}
+
+describe('SPEC-013 Cypher serializer — T025 shared result serialization', () => {
+  it('serializes minified canonical bytes with stable object keys, preserved arrays, and no trailing newline', async () => {
+    const serializer = await loadCypherSerializerContract();
+    const bytes = serializer.serializeCypherResultForTests({
+      status: 'success',
+      rows: [{
+        z: { beta: 2, alpha: 1 },
+        a: [{ b: 2, a: 1 }, 'x'],
+      }],
+      columns: [{ name: 'z' }, { name: 'a' }],
+      truncated: false,
+      effectiveCap: 100,
+    });
+
+    expect(typeof bytes).toBe('string');
+    expect(bytes).toBe('{"columns":[{"name":"z"},{"name":"a"}],"effectiveCap":100,"rows":[{"a":[{"a":1,"b":2},"x"],"z":{"alpha":1,"beta":2}}],"status":"success","truncated":false}');
+    expect(bytes).not.toContain('\n');
+    expect(Buffer.byteLength(bytes as string, 'utf8')).toBe((bytes as string).length);
+  });
+
+  it('returns CYPHER_OUTPUT_TOO_LARGE without partial rows when the canonical payload exceeds the ceiling', async () => {
+    const serializer = await loadCypherSerializerContract();
+    const result = serializer.serializeCypherResultForTests({
+      status: 'success',
+      columns: [{ name: 'value' }],
+      rows: [{ value: '0123456789'.repeat(20) }],
+      effectiveCap: 100,
+      truncated: false,
+    }, { payloadLimitBytes: 80 });
+
+    expectBoundaryDiagnostic(result as CypherRuntimeBoundaryResult, 'CYPHER_OUTPUT_TOO_LARGE');
+    expect(JSON.stringify(result)).not.toContain('0123456789');
+    expect(result).not.toHaveProperty('rows');
+  });
+
+  it('adapts bounded result rows into deterministic human table rows', async () => {
+    const serializer = await loadCypherSerializerContract();
+    const tableRows = serializer.cypherRowsToTableForTests([
+      {
+        name: { type: 'scalar', value: 'entry' },
+        node: { type: 'node', value: { id: 'fn:entry', name: 'entry', kind: 'function' } },
+        path: { type: 'path', value: { length: 2 } },
+        nullable: { type: 'scalar', value: null },
+      },
+    ], ['name', 'node', 'path', 'nullable']);
+
+    expect(tableRows).toEqual([{
+      name: 'entry',
+      node: 'function fn:entry',
+      path: 'path length 2',
+      nullable: '',
+    }]);
+  });
+});
+
 type CypherColumn = {
   readonly name: string;
 };
@@ -536,6 +770,7 @@ type CypherRuntimeTestOptions = {
   readonly payloadLimitBytes?: number;
   readonly onSqlPrepare?: (sql: string) => void;
   readonly onRowsInspected?: (count: number) => void;
+  readonly onRowsMaterialized?: (count: number) => void;
 };
 
 type CypherRuntimeTestState = {
@@ -677,6 +912,62 @@ function addFanout(fixture: CypherRuntimeFixture, prefix: string, count: number)
   return { hubId, targetIds };
 }
 
+function addLayeredVariablePathDensity(fixture: CypherRuntimeFixture, prefix: string, layerSize: number): void {
+  const updatedAt = 1700000000000;
+  const layers = Array.from({ length: 4 }, (_, layerIndex) => {
+    return Array.from({ length: layerSize }, (_, nodeIndex) => {
+      const ordinal = String(nodeIndex + 1).padStart(2, '0');
+      return insertNode(fixture.db, {
+        id: `fn:${prefix}:l${layerIndex}:${ordinal}`,
+        name: `${prefix}L${layerIndex}${ordinal}`,
+        qualifiedName: `src/main.${prefix}L${layerIndex}${ordinal}`,
+        startLine: 500 + layerIndex * 100 + nodeIndex,
+      }, updatedAt);
+    });
+  });
+
+  for (let layerIndex = 0; layerIndex < layers.length - 1; layerIndex += 1) {
+    for (const source of layers[layerIndex] ?? []) {
+      for (const target of layers[layerIndex + 1] ?? []) {
+        insertEdge(fixture.db, source, target, 'calls', null, 600 + layerIndex, 0, 'tree-sitter');
+      }
+    }
+  }
+}
+
+function addVariablePathStartNoise(fixture: CypherRuntimeFixture, prefix: string, count: number): void {
+  const updatedAt = 1700000000000;
+  fixture.db.exec('BEGIN');
+  try {
+    for (let index = 0; index < count; index += 1) {
+      const ordinal = String(index + 1).padStart(4, '0');
+      const sourceId = insertNode(fixture.db, {
+        id: `fn:${prefix}:noise:${ordinal}`,
+        name: `${prefix}Noise${ordinal}`,
+        qualifiedName: `src/main.${prefix}Noise${ordinal}`,
+        startLine: 900 + index,
+      }, updatedAt);
+
+      if (index % 2 === 0) {
+        insertEdge(
+          fixture.db,
+          sourceId,
+          fixture.nodes.fileMain,
+          'imports',
+          null,
+          950 + index,
+          0,
+          'tree-sitter',
+        );
+      }
+    }
+    fixture.db.exec('COMMIT');
+  } catch (error) {
+    fixture.db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API and graph mapping', () => {
   it('exports queryCypher and maps active fixed traversals to public nodes and relationships', async () => {
     const runtime = await loadCypherRuntimeContract();
@@ -760,6 +1051,44 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API an
       relationship.column,
     ].join('|'));
     expect(new Set(relationshipIdentities).size).toBe(pathResult.relationships.length);
+  });
+
+  it('bounds broad variable-path materialization before applying the public LIMIT', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    addVariablePathStartNoise(fixture, 'early', 128);
+    addLayeredVariablePathDensity(fixture, 'dense', 14);
+
+    const materializedRows: number[] = [];
+    const preparedSql: string[] = [];
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      'MATCH p = (a:function)-[:calls*1..1]->(b:function) RETURN p LIMIT 5',
+      {
+        onRowsMaterialized: (count) => materializedRows.push(count),
+        onSqlPrepare: (sql) => preparedSql.push(sql),
+      },
+    ));
+
+    expect(result.effectiveCap).toBe(5);
+    expect(result.rows).toHaveLength(5);
+    expect(result.truncated).toBe(true);
+    expect(materializedRows).toEqual([1, 2, 3, 4, 5, 6]);
+    for (const row of result.rows) {
+      const path = pathValue(row, 'p');
+      expect(path.length).toBe(1);
+    }
+    const recursiveSql = preparedSql.find((sql) => /^WITH RECURSIVE\b/i.test(sql));
+    expect(recursiveSql).toBeDefined();
+    expect(recursiveSql).toContain('SELECT 1, n0.id, e0.target');
+    expect(recursiveSql).toContain('JOIN edges e0 INDEXED BY idx_edges_source_kind ON e0.source = n0.id');
+    expect(recursiveSql).not.toContain('SELECT 0, n0.id, n0.id');
+    expect(recursiveSql).toContain('WHERE cg_path_0.depth BETWEEN ? AND ?');
+    expect(recursiveSql).toContain('__cg_visited_edge_ids');
+    expect(preparedSql.some((sql) => /FROM nodes WHERE id IN \(/.test(sql))).toBe(true);
+    expect(preparedSql.some((sql) => /FROM edges WHERE id IN \(/.test(sql))).toBe(true);
+    expect(preparedSql.some((sql) => /FROM nodes\s+ORDER BY id/.test(sql))).toBe(false);
+    expect(preparedSql.some((sql) => /FROM edges\s+ORDER BY source, target, kind, line, col, id/.test(sql))).toBe(false);
   });
 
   it('applies top-level property filters, null checks, boolean operators, and comparisons with Cypher null semantics', async () => {

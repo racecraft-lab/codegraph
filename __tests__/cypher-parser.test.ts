@@ -100,6 +100,15 @@ function expectPlanSuccess(result: CypherPlanResult): CypherPlanSuccess {
   return result as CypherPlanSuccess;
 }
 
+function expectReadOnlySqlStatement(sql: string): void {
+  const normalized = sql.trim();
+  expect(normalized).not.toContain(';');
+  expect(normalized).toMatch(/^(SELECT|WITH RECURSIVE)\b/i);
+  expect(normalized).not.toMatch(
+    /\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|ATTACH|DETACH|BEGIN|COMMIT|ROLLBACK)\b/i,
+  );
+}
+
 function expectDiagnostic(result: CypherParseResult | CypherPlanResult, code: string): CypherDiagnostic {
   expect(result.status).toBe('diagnostic');
   const diagnostic = result as CypherDiagnostic;
@@ -150,9 +159,17 @@ describe('SPEC-013 Cypher parser — Slice 1 grammar acceptance', () => {
     ]);
   });
 
-  it('rejects variable relationship declarations without a bounded upper limit or with upper bound greater than eight', async () => {
+  it('rejects variable relationship declarations without a bounded upper limit, with invalid lower bounds, or with upper bound greater than eight', async () => {
     expectDiagnostic(
       await parse('MATCH p = (a:function)-[:calls*]->(b:function) RETURN p'),
+      'CYPHER_UNBOUNDED_PATH',
+    );
+    expectDiagnostic(
+      await parse('MATCH p = (a:function)-[:calls*0..3]->(b:function) RETURN p'),
+      'CYPHER_UNBOUNDED_PATH',
+    );
+    expectDiagnostic(
+      await parse('MATCH p = (a:function)-[:calls*3..2]->(b:function) RETURN p'),
       'CYPHER_UNBOUNDED_PATH',
     );
     expectDiagnostic(
@@ -170,6 +187,112 @@ describe('SPEC-013 Cypher parser — Slice 1 grammar acceptance', () => {
       await parse('MATCH (a:function)-[edge:calls]->(b:function)-[edge:references]->(c:function) RETURN a'),
       'CYPHER_DUPLICATE_VARIABLE',
     );
+  });
+});
+
+describe('SPEC-013 Cypher planner — Slice 1 SQL emission', () => {
+  it('emits one parameterized read-only SELECT for fixed directed relationships with active-edge predicates', async () => {
+    const planned = expectPlanSuccess(await plan(
+      "MATCH (file:file)-[contains:contains]->(fn:function)<-[caller:calls]-(method:method) WHERE fn.name = 'handler' RETURN file.name, fn.name, caller.provenance",
+    ));
+
+    expectReadOnlySqlStatement(planned.sql);
+    expect(planned.sql).toMatch(/^SELECT\b/i);
+    expect(planned.sql).toContain('INDEXED BY idx_edges_source_kind');
+    expect(planned.sql).toContain('INDEXED BY idx_edges_target_kind');
+    expect(planned.sql).toContain('e0.source = n0.id');
+    expect(planned.sql).toContain('e0.target = n1.id');
+    expect(planned.sql).toContain('e1.target = n1.id');
+    expect(planned.sql).toContain('e1.source = n2.id');
+    expect(planned.sql).toContain("json_extract(e0.metadata, '$.lsp.active') IS NOT 0");
+    expect(planned.sql).toContain("json_extract(e1.metadata, '$.lsp.active') IS NOT 0");
+    expect(planned.sql).toContain('n1.name = ?');
+    expect(planned.sql).not.toContain('handler');
+    expect(planned.boundParameters.slice(0, 1)).toEqual(['handler']);
+    expect(planned.boundParameters.slice(-1)).toEqual([101]);
+  });
+
+  it('emits a bounded recursive relationship plan with relationship-simple visited-edge state', async () => {
+    const planned = expectPlanSuccess(await plan(
+      'MATCH p = (source:function)-[edge:calls*1..3]->(target:function) RETURN p, target.name',
+    ));
+
+    expectReadOnlySqlStatement(planned.sql);
+    expect(planned.sql).toMatch(/^WITH RECURSIVE\b/i);
+    expect(planned.sql).toContain('INDEXED BY idx_edges_source_kind');
+    expect(planned.sql).toContain('SELECT 1, n0.id, e0.target');
+    expect(planned.sql).toContain('JOIN edges e0 INDEXED BY idx_edges_source_kind ON e0.source = n0.id');
+    expect(planned.sql).not.toContain('SELECT 0, n0.id, n0.id');
+    expect(planned.sql).toContain('visited_edge_ids');
+    expect(planned.sql).toContain('__cg_start_node_id');
+    expect(planned.sql).toContain('__cg_visited_edge_ids');
+    expect(planned.sql).toContain("instr(cg_path_0.visited_edge_ids, ',' || e0.id || ',') = 0");
+    expect(planned.sql).toContain('cg_path_0.depth < ?');
+    expect(planned.sql).toContain("WHERE cg_path_0.depth BETWEEN ? AND ? AND n1.kind = 'function'");
+    expect(planned.sql).toContain('LIMIT ?');
+    expect(planned.boundParameters.slice(0, 5)).toEqual([3, 4848, 1, 3, 101]);
+    expect(planned.boundParameters.slice(-1)).toEqual([101]);
+  });
+});
+
+describe('SPEC-013 Cypher planner — Slice 1 WHERE emission', () => {
+  it('emits parenthesized boolean predicates with comparisons and bound literals', async () => {
+    const planned = expectPlanSuccess(await plan(
+      "MATCH (n:function)-[:calls]->(m:method) WHERE NOT (n.name = 'skip' OR m.startLine <= 10) AND m.endLine >= 20 RETURN m.name",
+    ));
+
+    expectReadOnlySqlStatement(planned.sql);
+    expect(planned.sql).toContain('WHERE');
+    expect(planned.sql).toContain('(NOT ((n0.name = ? OR n1.start_line <= ?)) AND n1.end_line >= ?)');
+    expect(planned.sql).not.toContain('skip');
+    expect(planned.boundParameters.slice(0, 3)).toEqual(['skip', 10, 20]);
+    expect(planned.boundParameters.slice(-1)).toEqual([101]);
+  });
+
+  it('emits null checks and inequality predicates without allowing opaque filters', async () => {
+    const planned = expectPlanSuccess(await plan(
+      "MATCH (n:function)-[:calls]->(m:function) WHERE n.docstring IS NULL OR m.name <> 'internal' RETURN m.name",
+    ));
+
+    expect(planned.sql).toContain('(n0.docstring IS NULL OR n1.name <> ?)');
+    expect(planned.boundParameters.slice(0, 1)).toEqual(['internal']);
+    expect(planned.boundParameters.slice(-1)).toEqual([101]);
+
+    expectDiagnostic(
+      await plan('MATCH (n:function)-[:calls]->(m:function) WHERE n.decorators IS NOT NULL RETURN m.name'),
+      'CYPHER_UNSUPPORTED_OPAQUE_FILTER',
+    );
+  });
+});
+
+describe('SPEC-013 Cypher planner — Slice 1 projection, ordering, and caps', () => {
+  it('plans scalar, node, relationship, and path projections with explicit ordering and bounded cap', async () => {
+    const planned = expectPlanSuccess(await plan(
+      'MATCH p = (source:function)-[edge:calls*1..3]->(target:function) RETURN p, source, target.name AS targetName ORDER BY targetName DESC, source.id ASC LIMIT 2500',
+    ));
+
+    expectReadOnlySqlStatement(planned.sql);
+    expect(planned.sql).toContain('cg_bounded_paths.visited_edge_ids AS "p"');
+    expect(planned.sql).toContain('json_object(');
+    expect(planned.sql).toContain('AS "source"');
+    expect(planned.sql).toContain('n1.name AS "targetName"');
+    expect(planned.sql).toContain('ORDER BY n1.name DESC NULLS FIRST, n0.id ASC NULLS LAST');
+    expect(planned.sql).toContain('LIMIT ?');
+    expect(planned.boundParameters.slice(-1)).toEqual([1001]);
+    expect(planned.sql).toContain('/* effectiveCap=1000 truncationProbe=effectiveCap+1 no totalRows */');
+  });
+
+  it('plans deterministic default ordering over projected values and matched-chain identity before default cap', async () => {
+    const planned = expectPlanSuccess(await plan(
+      'MATCH (file:file)-[contains:contains]->(fn:function) RETURN file.name, fn, contains',
+    ));
+
+    expect(planned.sql).toContain("'source', e0.source");
+    expect(planned.sql).toContain('AS "contains"');
+    expect(planned.sql).toContain('ORDER BY file.name ASC NULLS LAST, fn ASC NULLS LAST, contains ASC NULLS LAST');
+    expect(planned.sql).toContain('n0.id ASC, e0.source ASC, e0.target ASC, e0.kind ASC, e0.line ASC NULLS LAST, e0.col ASC NULLS LAST, n1.id ASC');
+    expect(planned.boundParameters.slice(-1)).toEqual([101]);
+    expect(planned.sql).toContain('/* effectiveCap=100 truncationProbe=effectiveCap+1 no totalRows */');
   });
 });
 
@@ -229,7 +352,8 @@ describe('SPEC-013 Cypher parser — Slice 1 rejection semantics', () => {
     const planned = expectPlanSuccess(await plan(
       "MATCH (n:function)-[:calls]->(m:function) WHERE n.name = 'can\\'t\\\\stop' RETURN n.name",
     ));
-    expect(planned.boundParameters).toEqual(["can't\\stop"]);
+    expect(planned.boundParameters.slice(0, 1)).toEqual(["can't\\stop"]);
+    expect(planned.boundParameters.slice(-1)).toEqual([101]);
     expect(planned.sql).not.toContain("can't\\stop");
     expect(planned.sql).not.toContain('can\\');
 

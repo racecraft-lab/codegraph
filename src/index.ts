@@ -164,6 +164,24 @@ export {
   type SearchNodesDetailed,
 } from './search/hybrid';
 export {
+  queryCypher,
+  type CypherColumn,
+  type CypherDiagnosticResult,
+  type CypherNode,
+  type CypherNodeValue,
+  type CypherPath,
+  type CypherPathValue,
+  type CypherQueryResult,
+  type CypherRelationship,
+  type CypherRelationshipValue,
+  type CypherRow,
+  type CypherScalar,
+  type CypherScalarValue,
+  type CypherSuccessResult,
+  type CypherTimeoutResult,
+  type CypherValue,
+} from './query/cypher';
+export {
   isCfgReadResult,
   type CfgBlock,
   type CfgEdge,

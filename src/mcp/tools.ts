@@ -651,6 +651,22 @@ export const tools: ToolDefinition[] = [
     annotations: READ_ONLY_ANNOTATIONS,
   },
   {
+    name: 'codegraph_query',
+    description: 'Run a bounded structured Cypher graph query against a CodeGraph index. Returns the canonical Cypher result union JSON for success, empty rows, diagnostics, and timeouts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Cypher query text.',
+        },
+        projectPath: projectPathProperty,
+      },
+      required: ['query'],
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
     name: 'codegraph_callers',
     description: 'List functions that call <symbol>. For the full flow, use codegraph_explore.',
     inputSchema: {
@@ -1033,7 +1049,7 @@ export function getStaticTools(): ToolDefinition[] {
  * status) remain fully functional — handlers stay, the library API and CLI are
  * untouched, and `CODEGRAPH_MCP_TOOLS=explore,node,...` re-enables any of them.
  */
-const DEFAULT_MCP_TOOLS = new Set(['explore', 'detect_changes', 'rename', 'get_cfg']);
+const DEFAULT_MCP_TOOLS = new Set(['explore', 'query', 'detect_changes', 'rename', 'get_cfg']);
 
 /**
  * Tool handler that executes tools against a CodeGraph instance
@@ -1246,6 +1262,7 @@ export class ToolHandler {
       const TINY_REPO_FILE_THRESHOLD = 500;
       const TINY_REPO_CORE_TOOLS = new Set([
         'codegraph_explore',
+        'codegraph_query',
         'codegraph_search',
         'codegraph_node',
         'codegraph_detect_changes',
@@ -1676,6 +1693,16 @@ export class ToolHandler {
         return result;
       }
 
+      // codegraph_query returns canonical Cypher result-union JSON bytes. It
+      // has its own read-only worker boundary and expected diagnostics/timeouts
+      // are success-shaped, so skip generic banner wrapping that would corrupt
+      // the machine JSON payload.
+      if (toolName === 'codegraph_query') {
+        const result = await this.handleCypherQuery(args);
+        if (signal?.aborted) throw new Error('Request aborted');
+        return result;
+      }
+
       // Read tools: off-load the CPU-heavy dispatch to the worker pool when one
       // is attached and healthy (daemon mode), so the daemon's single event
       // loop stays free for the MCP
@@ -1765,6 +1792,7 @@ export class ToolHandler {
   private async dispatchTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
     switch (toolName) {
       case 'codegraph_search': return await this.handleSearch(args);
+      case 'codegraph_query': return await this.handleCypherQuery(args);
       case 'codegraph_callers': return await this.handleCallers(args);
       case 'codegraph_callees': return await this.handleCallees(args);
       case 'codegraph_impact': return await this.handleImpact(args);
@@ -1799,6 +1827,58 @@ export class ToolHandler {
       return this.errorResult(`${name} must be an integer`);
     }
     return raw;
+  }
+
+  /**
+   * Handle codegraph_query (SPEC-013). Expected query states — success, empty
+   * rows, parser/unsupported diagnostics, not-indexed, and timeout — are
+   * returned as canonical success-shaped Cypher JSON. `isError` stays reserved
+   * for path/access refusals and real malfunctions in the outer dispatcher.
+   */
+  private async handleCypherQuery(args: Record<string, unknown>): Promise<ToolResult> {
+    const query = this.validateString(args.query, 'query');
+    if (typeof query !== 'string') return query;
+
+    const projectRoot = this.resolveCypherProjectRoot(args.projectPath as string | undefined);
+    const forceTimeout = this.shouldForceCypherTimeoutForTest(query);
+    const executableQuery = forceTimeout
+      ? query.replace(/\/\*\s*codegraph-test-force-timeout\s*\*\//g, '').trim()
+      : query;
+    const { queryCypher, queryCypherForTests } = await import('../query/cypher');
+    const result = forceTimeout
+      ? await queryCypherForTests(projectRoot, executableQuery, { forceTimeout: true })
+      : await queryCypher(projectRoot, executableQuery);
+    const normalized = this.normalizeMcpCypherResult(result);
+
+    const { serializeCypherResult } = await import('../query/cypher/serializer');
+    const serialized = serializeCypherResult(normalized);
+    return this.textResult(typeof serialized === 'string' ? serialized : JSON.stringify(serialized));
+  }
+
+  private resolveCypherProjectRoot(projectPath?: string): string {
+    if (projectPath !== undefined) {
+      if (existsSync(projectPath)) {
+        const pathError = validateProjectPath(projectPath);
+        if (pathError) {
+          throw new PathRefusalError(pathError);
+        }
+      }
+      return findNearestCodeGraphRoot(projectPath) ?? projectPath;
+    }
+    return this.cg?.getProjectRoot() ?? this.defaultProjectHint ?? process.cwd();
+  }
+
+  private shouldForceCypherTimeoutForTest(query: string): boolean {
+    return process.env.NODE_ENV === 'test' && query.includes('codegraph-test-force-timeout');
+  }
+
+  private normalizeMcpCypherResult(
+    result: Awaited<ReturnType<typeof import('../query/cypher')['queryCypher']>>,
+  ): unknown {
+    if (result.status === 'diagnostic' && result.code === 'CYPHER_UNSUPPORTED_CLAUSE') {
+      return { ...result, code: 'CYPHER_UNSUPPORTED' };
+    }
+    return result;
   }
 
   /**

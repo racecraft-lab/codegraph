@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: T018 lexer, tokens, private AST, and parser",
-  "updated_at": "2026-07-30T06:22:23Z",
+  "active_step": "Phase 7: T032 Slice 1 cross-surface byte-parity RED contracts",
+  "updated_at": "2026-07-30T08:34:54Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -586,7 +586,21 @@
       "T014",
       "T015",
       "T016",
-      "T017"
+      "T017",
+      "T018",
+      "T019",
+      "T020",
+      "T021",
+      "T022",
+      "T023",
+      "T024",
+      "T025",
+      "T026",
+      "T027",
+      "T028",
+      "T029",
+      "T030",
+      "T031"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -617,9 +631,9 @@
         ]
       },
       "slice_1_us1": {
-        "status": "in_progress",
+        "status": "completed",
         "tasks": "T013-T031",
-        "completed": 5,
+        "completed": 19,
         "total": 19,
         "red_evidence": {
           "command": "npx vitest run __tests__/cypher-parser.test.ts __tests__/cypher-runtime.test.ts __tests__/cli-query-command.test.ts __tests__/mcp-cypher-query.test.ts",
@@ -632,10 +646,30 @@
             "codegraph_query MCP tool missing"
           ],
           "unexpected_failures": 0
+        },
+        "green_evidence": {
+          "parser": "15/15 passed",
+          "runtime_and_public_api": "17/17 passed",
+          "cli": "15/15 passed",
+          "mcp": "8/8 passed",
+          "typecheck": "passed",
+          "diff_check": "passed",
+          "tasks_completed": "T018-T030",
+          "reviewability_signal": "T030 safely removed 30 lines, but the private query module remains materially larger than the planning estimate; carry the size warning into the reviewability gate."
+        },
+        "acceptance_remediation": {
+          "task": "T031",
+          "status": "resolved",
+          "failed_command": "node dist/bin/codegraph.js query \"MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5\" --json",
+          "observed": "The initial live self-index path query exhausted the parent Node heap near 4 GiB; the first bounded-SQL attempt then returned a false empty because depth-zero anchors consumed the frontier.",
+          "resolution": "Variable paths execute the bounded recursive SQL plan, seed from matching active depth-one edges, apply end and WHERE filters before the output cap, and hydrate only returned path IDs.",
+          "regression": "128 earlier-sorting isolated starts plus dense valid paths returns 5 rows with truncation and proves no full graph snapshot SQL.",
+          "live_result": "Package API, positional CLI, and MCP each returned the same non-empty 9658-byte canonical payload with SHA-256 103fe5607eadf3eca8d2bc2ab774157c41a30ab72e6a9d52594e644055644a00; stdin CLI also returned 5 rows.",
+          "verification": "Parser 15/15, runtime 18/18, CLI 15/15, MCP 8/8, typecheck pass, build pass, diff-check pass."
         }
       },
       "slice_1_us3": {
-        "status": "pending",
+        "status": "in_progress",
         "tasks": "T032-T040"
       },
       "slice_2_us2": {
@@ -751,11 +785,11 @@
     },
     {
       "step": "Phase 7: Implement Slice 1 US1 bounded graph evidence (T013-T031)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement Slice 1 US3 safe-surface closure (T032-T040)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement Slice 2 US2 practical recipes (T041-T057)",
