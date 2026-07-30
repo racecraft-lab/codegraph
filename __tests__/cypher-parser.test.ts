@@ -37,7 +37,17 @@ type CypherParseSuccess = {
   readonly returns: readonly Array<{
     readonly expression: string;
     readonly alias?: string;
+    readonly aggregate?: {
+      readonly function: 'count';
+      readonly argument: '*' | string;
+    };
   }>;
+  readonly groupingKeys?: readonly string[];
+  readonly orderBy: readonly Array<{
+    readonly expression: string;
+    readonly direction: 'ASC' | 'DESC';
+  }>;
+  readonly limit?: number;
   readonly literals: readonly Array<{
     readonly raw: string;
     readonly decoded: string;
@@ -293,6 +303,158 @@ describe('SPEC-013 Cypher planner — Slice 1 projection, ordering, and caps', (
     expect(planned.sql).toContain('n0.id ASC, e0.source ASC, e0.target ASC, e0.kind ASC, e0.line ASC NULLS LAST, e0.col ASC NULLS LAST, n1.id ASC');
     expect(planned.boundParameters.slice(-1)).toEqual([101]);
     expect(planned.sql).toContain('/* effectiveCap=100 truncationProbe=effectiveCap+1 no totalRows */');
+  });
+});
+
+describe('SPEC-013 Cypher parser — Slice 2 count and implicit grouping', () => {
+  it('accepts count projections, aliases, and ORDER BY over aliases while exposing every non-aggregate grouping key', async () => {
+    const parsed = expectParseSuccess(await parse(
+      [
+        'MATCH (caller:function)-[:calls]->(target:function)',
+        'RETURN caller.filePath AS filePath, target.name, count(*) AS edgeCount, count(target.name) AS namedTargets',
+        'ORDER BY edgeCount DESC, filePath ASC',
+        'LIMIT 10',
+      ].join(' '),
+    ));
+
+    expect(parsed.returns).toEqual([
+      { expression: 'caller.filePath', alias: 'filePath' },
+      { expression: 'target.name' },
+      { expression: 'count(*)', alias: 'edgeCount', aggregate: { function: 'count', argument: '*' } },
+      { expression: 'count(target.name)', alias: 'namedTargets', aggregate: { function: 'count', argument: 'target.name' } },
+    ]);
+    expect(parsed.groupingKeys).toEqual(['caller.filePath', 'target.name']);
+    expect(parsed.orderBy).toEqual([
+      { expression: 'edgeCount', direction: 'DESC' },
+      { expression: 'filePath', direction: 'ASC' },
+    ]);
+    expect(parsed.limit).toBe(10);
+  });
+
+  it('rejects aggregation forms other than count star and count expression with a dedicated unsupported diagnostic', async () => {
+    expectDiagnostic(
+      await parse('MATCH (n:function)-[:calls]->(m:function) RETURN sum(m.startLine) AS totalLines'),
+      'CYPHER_UNSUPPORTED_AGGREGATION',
+    );
+    expectDiagnostic(
+      await parse('MATCH (n:function)-[:calls]->(m:function) RETURN count(*) AS calls, max(m.name) AS maxName'),
+      'CYPHER_UNSUPPORTED_AGGREGATION',
+    );
+  });
+
+  it('rejects DISTINCT in RETURN and aggregate arguments before planning', async () => {
+    expectDiagnostic(
+      await parse('MATCH (n:function)-[:calls]->(m:function) RETURN DISTINCT n.name'),
+      'CYPHER_UNSUPPORTED_CLAUSE',
+    );
+    expectDiagnostic(
+      await parse('MATCH (n:function)-[:calls]->(m:function) RETURN count(DISTINCT m.name) AS uniqueNames'),
+      'CYPHER_UNSUPPORTED_CLAUSE',
+    );
+  });
+});
+
+describe('SPEC-013 Cypher parser — Slice 2 backtick identifiers', () => {
+  it('accepts backtick-escaped identifiers and aliases while unescaping doubled backticks', async () => {
+    const parsed = expectParseSuccess(await parse(
+      [
+        'MATCH (`call er`:function)-[`edge``name`:calls]->(`target-node`:function)',
+        'RETURN `call er`.name AS `display name`, `edge``name`.provenance AS `edge provenance`, `target-node` AS `target node`',
+        'ORDER BY `display name` DESC',
+      ].join(' '),
+    ));
+
+    expect(parsed.match.nodes).toEqual([
+      { variable: 'call er', label: 'function' },
+      { variable: 'target-node', label: 'function' },
+    ]);
+    expect(parsed.match.relationships).toEqual([
+      { variable: 'edge`name', type: 'calls', direction: 'outgoing' },
+    ]);
+    expect(parsed.returns).toEqual([
+      { expression: 'call er.name', alias: 'display name' },
+      { expression: 'edge`name.provenance', alias: 'edge provenance' },
+      { expression: 'target-node', alias: 'target node' },
+    ]);
+    expect(parsed.orderBy).toEqual([{ expression: 'display name', direction: 'DESC' }]);
+  });
+
+  it('accepts backtick-escaped public labels, relationship types, and properties with exact spelling', async () => {
+    const parsed = expectParseSuccess(await parse(
+      [
+        'MATCH (`n`:`function`)-[:`calls`]->(`m`:`method`)',
+        'RETURN `n`.`qualifiedName` AS `qualified name`, `m`.`startLine` AS `start line`',
+      ].join(' '),
+    ));
+
+    expect(parsed.match.nodes.map((node) => node.label)).toEqual(['function', 'method']);
+    expect(parsed.match.relationships.map((relationship) => relationship.type)).toEqual(['calls']);
+    expect(parsed.returns).toEqual([
+      { expression: 'n.qualifiedName', alias: 'qualified name' },
+      { expression: 'm.startLine', alias: 'start line' },
+    ]);
+  });
+
+  it('rejects control characters inside backtick identifiers before semantic validation', async () => {
+    const nul = String.fromCharCode(0);
+    const del = String.fromCharCode(0x7f);
+
+    expectDiagnostic(
+      await parse('MATCH (`bad' + nul + 'name`:function)-[:calls]->(target:function) RETURN target.name'),
+      'CYPHER_UNSUPPORTED',
+    );
+    expectDiagnostic(
+      await parse('MATCH (`bad' + del + 'name`:function)-[:calls]->(target:function) RETURN target.name'),
+      'CYPHER_UNSUPPORTED',
+    );
+  });
+
+  it('rejects Unicode escape forms inside backtick identifiers instead of decoding them', async () => {
+    expectDiagnostic(
+      await parse('MATCH (`bad\\u006e`:function)-[:calls]->(target:function) RETURN target.name'),
+      'CYPHER_UNSUPPORTED',
+    );
+    expectDiagnostic(
+      await parse('MATCH (`bad\\U0000006e`:function)-[:calls]->(target:function) RETURN target.name'),
+      'CYPHER_UNSUPPORTED',
+    );
+  });
+
+  it('keeps public names exact and case-sensitive after backtick unescaping', async () => {
+    expectDiagnostic(
+      await parse('MATCH (n:`Function`)-[:`calls`]->(m:function) RETURN n'),
+      'CYPHER_UNKNOWN_LABEL',
+    );
+    expectDiagnostic(
+      await parse('MATCH (n:function)-[:`CALLS`]->(m:function) RETURN n'),
+      'CYPHER_UNKNOWN_RELATIONSHIP_TYPE',
+    );
+    expectDiagnostic(
+      await parse('MATCH (n:function)-[:calls]->(m:function) RETURN n.`Name`'),
+      'CYPHER_UNKNOWN_PROPERTY',
+    );
+  });
+
+  it('does not normalize Unicode identifiers or aliases before comparing names', async () => {
+    const decomposed = 'e\u0301';
+    const precomposed = '\u00e9';
+    const exact = expectParseSuccess(await parse(
+      'MATCH (`' + decomposed + '`:function)-[:calls]->(target:function) RETURN `' + decomposed + '`.name AS `' + decomposed + 'Alias`',
+    ));
+
+    expect(exact.match.nodes[0]?.variable).toBe(decomposed);
+    expect(exact.returns).toEqual([{ expression: decomposed + '.name', alias: decomposed + 'Alias' }]);
+    expectDiagnostic(
+      await parse('MATCH (`' + decomposed + '`:function)-[:calls]->(target:function) RETURN `' + precomposed + '`.name'),
+      'CYPHER_UNKNOWN_VARIABLE',
+    );
+    expectDiagnostic(
+      await parse(
+        'MATCH (`' + decomposed + '`:function)-[:calls]->(target:function) ' +
+          'RETURN `' + decomposed + '`.name AS `' + decomposed + 'Alias` ORDER BY `' + precomposed + 'Alias`',
+      ),
+      'CYPHER_UNKNOWN_VARIABLE',
+    );
   });
 });
 

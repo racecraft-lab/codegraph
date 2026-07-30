@@ -101,6 +101,33 @@ function runCliQueryStdin(
   return runCliQueryProcess({ projectPath, stdin, extraArgs, binPath });
 }
 
+function runCliSearchText(
+  projectPath: string,
+  searchText: string,
+  extraArgs: readonly string[] = [],
+  binPath = BIN,
+): CliProcessResult {
+  const args = searchText.startsWith('-')
+    ? [binPath, 'search', ...extraArgs, '--path', projectPath, '--', searchText]
+    : [binPath, 'search', searchText, ...extraArgs, '--path', projectPath];
+  const result = spawnSync(process.execPath, args, {
+    env: cliTestEnv(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return {
+    args,
+    stdout: asBuffer(result.stdout),
+    stderr: asBuffer(result.stderr),
+    exitCode: result.status,
+    signal: result.signal,
+  };
+}
+
 function query(cwd: string, extraArgs: string[]): string {
   return execFileSync(process.execPath, [BIN, 'query', 'parseToken', ...extraArgs, '-p', cwd], {
     encoding: 'utf-8',
@@ -158,6 +185,23 @@ function createCypherCliProject(): string {
       '',
       'export function parseToken(token: string): string {',
       '  return helper(token);',
+      '}',
+      '',
+      'export function MATCH(): string {',
+      "  return 'literal MATCH symbol';",
+      '}',
+      '',
+      'export function dashSearchToken(): string {',
+      "  return 'literal dash search symbol';",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(
+    path.join(tempDir, 'src/-dashSearchToken.ts'),
+    [
+      'export function dashSearchTokenFromDashFile(): string {',
+      "  return 'literal dash-prefixed file path search symbol';",
       '}',
       '',
     ].join('\n'),
@@ -327,6 +371,18 @@ function expectT032CliJsonState(result: CliProcessResult, scenario: T032CliScena
   return payload;
 }
 
+function expectLegacySearchJsonArray(result: CliProcessResult, context: string): readonly Record<string, unknown>[] {
+  expect(result.exitCode, `${context} exit code`).toBe(0);
+  const payload = parseJsonPayload(result, context);
+  if (!Array.isArray(payload)) {
+    throw new Error(
+      `SPEC-013 search alias contract missing: ${context} expected legacy search JSON array, ` +
+        `but received "${previewBuffer(result.stdout)}"`,
+    );
+  }
+  return payload as readonly Record<string, unknown>[];
+}
+
 describe('codegraph query — score rendering (#1045)', () => {
   let tempDir: string;
 
@@ -468,6 +524,52 @@ describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
     expect(Array.isArray(payload)).toBe(true);
     expect(JSON.stringify(payload)).toContain('parseToken');
     expect(JSON.stringify(payload)).toContain('score');
+  });
+
+  it('supports explicit codegraph search as the unchanged legacy search alias', () => {
+    const legacyQuery = runCliQueryMatch(tempDir, 'parseToken', ['--json']);
+    const explicitSearch = runCliSearchText(tempDir, 'parseToken', ['--json']);
+
+    expectLegacySearchJsonArray(explicitSearch, 'explicit codegraph search parseToken');
+    expect(explicitSearch.stdout.toString('utf8')).toBe(legacyQuery.stdout.toString('utf8'));
+  });
+
+  it('keeps literal MATCH-prefixed terms on the explicit search alias instead of routing to Cypher', () => {
+    const result = runCliSearchText(tempDir, 'MATCH', ['--json']);
+
+    const payload = expectLegacySearchJsonArray(result, 'literal MATCH search alias');
+    expect(JSON.stringify(payload)).toContain('MATCH');
+    expect(result.stdout.toString('utf8')).not.toContain('"status"');
+    expect(result.stderr.toString('utf8')).not.toContain('CYPHER_');
+  });
+
+  it('keeps dash-prefixed literal terms on the explicit search alias instead of parsing them as options or stdin', () => {
+    const result = runCliSearchText(tempDir, '-dashSearchToken', ['--json']);
+
+    const payload = expectLegacySearchJsonArray(result, 'literal dash-prefixed search alias');
+    expect(JSON.stringify(payload)).toContain('dashSearchToken');
+    expect(result.stderr.toString('utf8')).not.toContain('unknown option');
+    expect(result.stderr.toString('utf8')).not.toContain('stdin');
+  });
+
+  it('renders final human Cypher tables for scalar, aggregate, and path values', () => {
+    const queryText = [
+      "MATCH p = (caller:function)-[:calls]->(callee:function) WHERE caller.name = 'entry'",
+      'RETURN caller.name AS caller, count(callee) AS callees, p',
+      'ORDER BY caller ASC',
+      'LIMIT 1',
+    ].join(' ');
+    const result = runCliQueryMatch(tempDir, queryText);
+    const output = result.stdout.toString('utf8');
+
+    expect(result.exitCode, `human table exit stderr="${previewBuffer(result.stderr)}"`).toBe(0);
+    expect(output).toContain('caller\tcallees\tp');
+    expect(output).toContain('entry');
+    expect(output).toContain('\t1\t');
+    expect(output).toContain('path length 1');
+    expect(output).not.toContain('[object Object]');
+    expect(output).not.toContain('"status"');
+    expect(result.stderr.toString('utf8')).not.toContain('CYPHER_');
   });
 
   it('maps Cypher diagnostics to failure exits with canonical JSON payloads', () => {

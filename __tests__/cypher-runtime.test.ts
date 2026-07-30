@@ -848,6 +848,26 @@ function expectTimeout(result: CypherQueryResult): CypherTimeoutResult {
   return timeout;
 }
 
+async function queryResultOrUnhandledDiagnostic(result: Promise<CypherQueryResult>): Promise<CypherQueryResult> {
+  try {
+    return await result;
+  } catch (error) {
+    return {
+      status: 'diagnostic',
+      code: 'CYPHER_UNHANDLED_EXCEPTION',
+      message: error instanceof Error ? error.message : String(error),
+      offset: 0,
+      line: 1,
+      column: 0,
+      expected: 'runtime result',
+      anchor: 'queryCypher',
+      excerpt: '',
+      truncatedBefore: false,
+      truncatedAfter: false,
+    };
+  }
+}
+
 function diagnosticJson(diagnostic: CypherDiagnosticResult): string {
   return JSON.stringify(diagnostic);
 }
@@ -1205,6 +1225,249 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API an
       "MATCH (entry:function)-[:calls]->(target:function) WHERE entry.name = 'entry' RETURN target.signature AS signature, target.name AS name ORDER BY target.signature DESC, target.name ASC",
     ));
     expect(nullsBefore.rows.map((row) => scalarValue(row, 'name'))).toEqual(['heuristicTarget', 'lspTarget', 'helper']);
+  });
+});
+
+describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — Slice 2 count, grouping, and string predicates', () => {
+  it('counts active matches with count(*) and count(expr) without counting null expressions', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry'",
+        'RETURN count(*) AS totalCalls, count(target.signature) AS documentedTargets',
+      ].join(' '),
+    ));
+
+    expect(result.columns.map((column) => column.name)).toEqual(['totalCalls', 'documentedTargets']);
+    expect(result.rows).toHaveLength(1);
+    expect(scalarValue(result.rows[0], 'totalCalls')).toBe(3);
+    expect(scalarValue(result.rows[0], 'documentedTargets')).toBe(1);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('groups implicitly by every non-aggregate projection and orders by aggregate aliases', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const result = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (caller:function)-[:calls]->(target:function)',
+        'RETURN caller.name AS callerName, caller.filePath AS filePath, count(*) AS calls, count(target.signature) AS documentedTargets',
+        'ORDER BY calls DESC, callerName ASC',
+        'LIMIT 4',
+      ].join(' '),
+    ));
+
+    expect(result.effectiveCap).toBe(4);
+    expect(result.truncated).toBe(true);
+    expect(result.rows.map((row) => ({
+      callerName: scalarValue(row, 'callerName'),
+      filePath: scalarValue(row, 'filePath'),
+      calls: scalarValue(row, 'calls'),
+      documentedTargets: scalarValue(row, 'documentedTargets'),
+    }))).toEqual([
+      { callerName: 'hub', filePath: 'src/main.ts', calls: 12, documentedTargets: 0 },
+      { callerName: 'entry', filePath: 'src/main.ts', calls: 3, documentedTargets: 1 },
+      { callerName: 'cycleA', filePath: 'src/main.ts', calls: 1, documentedTargets: 0 },
+      { callerName: 'cycleB', filePath: 'src/main.ts', calls: 1, documentedTargets: 0 },
+    ]);
+  });
+
+  it('applies STARTS WITH, ENDS WITH, and CONTAINS while preserving Cypher null predicate semantics', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const matchedByStringOperators = expectSuccess(await queryResultOrUnhandledDiagnostic(runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry'",
+        "AND (target.name STARTS WITH 'h' OR target.name ENDS WITH 'Target' OR target.name CONTAINS 'spT')",
+        'RETURN target.name AS name',
+        'ORDER BY name ASC',
+      ].join(' '),
+    )));
+    expect(matchedByStringOperators.rows.map((row) => scalarValue(row, 'name'))).toEqual([
+      'helper',
+      'heuristicTarget',
+      'lspTarget',
+    ]);
+
+    const nullStringPredicate = expectSuccess(await queryResultOrUnhandledDiagnostic(runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry'",
+        "AND NOT (target.signature STARTS WITH 'function')",
+        'RETURN target.name AS name',
+        'ORDER BY name ASC',
+      ].join(' '),
+    )));
+    expect(nullStringPredicate.rows).toEqual([]);
+  });
+
+  it('orders grouped nullable keys with explicit ASC and DESC null placement', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+
+    const ascending = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry'",
+        'RETURN target.signature AS signature, count(*) AS calls',
+        'ORDER BY signature ASC',
+      ].join(' '),
+    ));
+    expect(ascending.rows.map((row) => ({
+      signature: scalarValue(row, 'signature'),
+      calls: scalarValue(row, 'calls'),
+    }))).toEqual([
+      { signature: 'function helper(): number', calls: 1 },
+      { signature: null, calls: 2 },
+    ]);
+
+    const descending = expectSuccess(await runtime.queryCypher(
+      fixture.projectRoot,
+      [
+        'MATCH (entry:function)-[:calls]->(target:function)',
+        "WHERE entry.name = 'entry'",
+        'RETURN target.signature AS signature, count(*) AS calls',
+        'ORDER BY signature DESC',
+      ].join(' '),
+    ));
+    expect(descending.rows.map((row) => ({
+      signature: scalarValue(row, 'signature'),
+      calls: scalarValue(row, 'calls'),
+    }))).toEqual([
+      { signature: null, calls: 2 },
+      { signature: 'function helper(): number', calls: 1 },
+    ]);
+  });
+
+  it('serializes aggregate rows deterministically across repeated runtime executions', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    const query = [
+      'MATCH (caller:function)-[:calls]->(target:function)',
+      'RETURN caller.name AS callerName, count(*) AS calls',
+      'ORDER BY calls DESC, callerName ASC',
+      'LIMIT 5',
+    ].join(' ');
+
+    const runs = await Promise.all([
+      runtime.queryCypher(fixture.projectRoot, query),
+      runtime.queryCypher(fixture.projectRoot, query),
+      runtime.queryCypher(fixture.projectRoot, query),
+    ]);
+    const successes = runs.map((run) => expectSuccess(run));
+
+    expect(successes.map((result) => JSON.stringify(result))).toEqual([
+      JSON.stringify(successes[0]),
+      JSON.stringify(successes[0]),
+      JSON.stringify(successes[0]),
+    ]);
+    expect(successes[0].rows.map((row) => [
+      scalarValue(row, 'callerName'),
+      scalarValue(row, 'calls'),
+    ])).toEqual([
+      ['hub', 12],
+      ['entry', 3],
+      ['cycleA', 1],
+      ['cycleB', 1],
+      ['cycleC', 1],
+    ]);
+  });
+
+  it('inspects only effectiveCap plus one grouped rows before marking aggregate results truncated', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    addFanout(fixture, 'groupCap', 12);
+    const inspectedRows: number[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[:calls]->(target:function)',
+        "WHERE hub.name = 'groupCapHub'",
+        'RETURN target.name AS targetName, count(*) AS calls',
+        'ORDER BY targetName ASC',
+        'LIMIT 5',
+      ].join(' '),
+      { onRowsInspected: (count) => inspectedRows.push(count) },
+    ));
+
+    expect(result.effectiveCap).toBe(5);
+    expect(result.rows).toHaveLength(5);
+    expect(result.truncated).toBe(true);
+    expect(result.rows.map((row) => scalarValue(row, 'calls'))).toEqual([1, 1, 1, 1, 1]);
+    expect(Math.max(...inspectedRows)).toBeLessThanOrEqual(6);
+  });
+
+  it('returns output-too-large diagnostics for aggregate payloads without partial grouped rows', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    addFanout(fixture, 'payloadAggregate', 20);
+
+    const result = await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH (hub:function)-[:calls]->(target:function)',
+        "WHERE hub.name = 'payloadAggregateHub'",
+        'RETURN target.name AS targetName, count(*) AS calls',
+        'ORDER BY targetName ASC',
+      ].join(' '),
+      { payloadLimitBytes: 220 },
+    );
+
+    const diagnostic = expectDiagnostic(result, 'CYPHER_OUTPUT_TOO_LARGE');
+    expect(diagnostic.message).toContain('narrow');
+    expect(result).not.toHaveProperty('rows');
+    expect(JSON.stringify(result)).not.toContain('payloadAggregateTarget');
+  });
+
+  it('plans dense variable-path aggregate queries with indexed bounded recursion and stable grouped results', async () => {
+    const runtime = await loadCypherRuntimeContract();
+    const fixture = createCypherRuntimeFixture();
+    addLayeredVariablePathDensity(fixture, 'planDense', 10);
+    const preparedSql: string[] = [];
+
+    const result = expectSuccess(await runtime.queryCypherForTests(
+      fixture.projectRoot,
+      [
+        'MATCH p = (start:function)-[:calls*1..2]->(finish:function)',
+        "WHERE start.name STARTS WITH 'planDenseL0'",
+        'RETURN start.name AS startName, count(finish.name) AS reachable',
+        'ORDER BY reachable DESC, startName ASC',
+        'LIMIT 5',
+      ].join(' '),
+      { onSqlPrepare: (sql) => preparedSql.push(sql) },
+    ));
+
+    expect(result.effectiveCap).toBe(5);
+    expect(result.truncated).toBe(true);
+    expect(result.rows.map((row) => [
+      scalarValue(row, 'startName'),
+      scalarValue(row, 'reachable'),
+    ])).toEqual([
+      ['planDenseL001', 110],
+      ['planDenseL002', 110],
+      ['planDenseL003', 110],
+      ['planDenseL004', 110],
+      ['planDenseL005', 110],
+    ]);
+
+    const recursiveSql = preparedSql.find((sql) => /^WITH RECURSIVE\b/i.test(sql));
+    expect(recursiveSql).toBeDefined();
+    expect(recursiveSql).toContain('JOIN edges e0 INDEXED BY idx_edges_source_kind ON e0.source = n0.id');
+    expect(recursiveSql).toContain('GROUP BY');
+    expect(recursiveSql).toContain('ORDER BY');
+    expect(recursiveSql).not.toContain('FROM nodes ORDER BY id');
   });
 });
 

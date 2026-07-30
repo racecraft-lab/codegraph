@@ -32,6 +32,11 @@ type T032ParityState = {
   readonly useUnindexedProject?: boolean;
 };
 
+type ManualMcpCypherProject = {
+  readonly projectRoot: string;
+  readonly close: () => void;
+};
+
 type McpToolHarness = Pick<ToolHandler, 'execute' | 'getTools'>;
 
 type McpCypherQueryInput = {
@@ -230,6 +235,84 @@ function addOversizedCypherPayloadRows(projectPath: string): void {
   }
 }
 
+function schemaSql(): string {
+  return fs.readFileSync(path.join(process.cwd(), 'src', 'db', 'schema.sql'), 'utf8');
+}
+
+function insertManualMcpCypherNode(
+  db: DatabaseSync,
+  input: {
+    readonly id: string;
+    readonly name: string;
+    readonly qualifiedName?: string;
+    readonly signature?: string | null;
+  },
+): void {
+  db.prepare(`
+    INSERT INTO nodes (
+      id, kind, name, qualified_name, file_path, language,
+      start_line, end_line, start_column, end_column,
+      docstring, signature, visibility,
+      is_exported, is_async, is_static, is_abstract,
+      decorators, type_parameters, return_type, updated_at
+    )
+    VALUES (?, 'function', ?, ?, 'src/manual.ts', 'typescript', 1, 1, 0, 1, null, ?, null, 0, 0, 0, 0, '[]', '[]', null, 1700000000000)
+  `).run(
+    input.id,
+    input.name,
+    input.qualifiedName ?? `src/manual.${input.name}`,
+    input.signature ?? null,
+  );
+}
+
+function insertManualMcpCypherCall(db: DatabaseSync, source: string, target: string, line: number): void {
+  db.prepare(`
+    INSERT INTO edges (source, target, kind, metadata, line, col, provenance)
+    VALUES (?, ?, 'calls', null, ?, 0, 'tree-sitter')
+  `).run(source, target, line);
+}
+
+function createManualMcpCypherProject(): ManualMcpCypherProject {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-mcp-cypher-us2-'));
+  const codegraphDir = path.join(projectRoot, '.codegraph');
+  fs.mkdirSync(codegraphDir, { recursive: true });
+  const db = new DatabaseSync(path.join(codegraphDir, 'codegraph.db'));
+  db.exec(schemaSql());
+  db.prepare(`
+    INSERT INTO files (path, content_hash, language, size, modified_at, indexed_at, node_count, errors)
+    VALUES ('src/manual.ts', 'hash-manual', 'typescript', 300, 1700000000000, 1700000000100, 5, '[]')
+  `).run();
+
+  insertManualMcpCypherNode(db, {
+    id: 'fn:entry',
+    name: 'entry',
+    signature: 'function entry(): void',
+  });
+  insertManualMcpCypherNode(db, {
+    id: 'fn:parseToken',
+    name: 'parseToken',
+    signature: 'function parseToken(token: string): string',
+  });
+  insertManualMcpCypherNode(db, {
+    id: 'fn:helper',
+    name: 'helper',
+    signature: 'function helper(value: string): string',
+  });
+  insertManualMcpCypherNode(db, { id: 'fn:heuristicTarget', name: 'heuristicTarget' });
+  insertManualMcpCypherNode(db, { id: 'fn:lspTarget', name: 'lspTarget' });
+
+  insertManualMcpCypherCall(db, 'fn:entry', 'fn:helper', 10);
+  insertManualMcpCypherCall(db, 'fn:entry', 'fn:heuristicTarget', 11);
+  insertManualMcpCypherCall(db, 'fn:entry', 'fn:lspTarget', 12);
+  insertManualMcpCypherCall(db, 'fn:parseToken', 'fn:helper', 20);
+  db.close();
+
+  return {
+    projectRoot,
+    close: () => fs.rmSync(projectRoot, { recursive: true, force: true }),
+  };
+}
+
 async function indexMcpCypherFixture(fixture: McpCypherFixture): Promise<void> {
   await fixture.cg.indexAll();
 }
@@ -332,6 +415,12 @@ function expectT032McpPayload(result: ToolResult, scenario: T032ParityState): {
     expect(payload).not.toHaveProperty('rows');
   }
   return { payload, bytes: success.rawTextBytes };
+}
+
+function scalarMcpRowValue(row: Record<string, unknown>, column: string): unknown {
+  const value = row[column];
+  expect(value).toMatchObject({ type: 'scalar' });
+  return (value as { readonly value: unknown }).value;
 }
 
 describe('SPEC-013 MCP Cypher helper contracts', () => {
@@ -476,6 +565,213 @@ describe('SPEC-013 MCP codegraph_query contracts', () => {
     });
 
     expectMcpCypherTimeout(result, 'timeout query');
+  });
+
+  it('returns count and implicit grouping rows as success-shaped MCP JSON', async () => {
+    const project = createManualMcpCypherProject();
+    try {
+      const result = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: project.projectRoot,
+        query: [
+          'MATCH (caller:function)-[:calls]->(target:function)',
+          'RETURN caller.name AS callerName, count(*) AS calls, count(target.signature) AS documentedTargets',
+          'ORDER BY calls DESC, callerName ASC',
+          'LIMIT 5',
+        ].join(' '),
+      });
+
+      const payload = expectMcpCypherSuccess(result, 'MCP count and grouping query');
+      expect(payload.columns).toEqual([{ name: 'callerName' }, { name: 'calls' }, { name: 'documentedTargets' }]);
+      expect((payload.rows as Array<Record<string, unknown>>).map((row) => ({
+        callerName: scalarMcpRowValue(row, 'callerName'),
+        calls: scalarMcpRowValue(row, 'calls'),
+        documentedTargets: scalarMcpRowValue(row, 'documentedTargets'),
+      }))).toEqual([
+        { callerName: 'entry', calls: 3, documentedTargets: 1 },
+        { callerName: 'parseToken', calls: 1, documentedTargets: 1 },
+      ]);
+      expect(payload.truncated).toBe(false);
+    } finally {
+      project.close();
+    }
+  });
+
+  it('applies MCP string predicates with Cypher null semantics', async () => {
+    const project = createManualMcpCypherProject();
+    try {
+      const result = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: project.projectRoot,
+        query: [
+          'MATCH (caller:function)-[:calls]->(target:function)',
+          "WHERE caller.name STARTS WITH 'par' OR target.name ENDS WITH 'Target' OR target.name CONTAINS 'lsp'",
+          'RETURN caller.name AS callerName, target.name AS targetName',
+          'ORDER BY callerName ASC, targetName ASC',
+          'LIMIT 5',
+        ].join(' '),
+      });
+
+      const payload = expectMcpCypherSuccess(result, 'MCP string predicate query');
+      expect(payload.columns).toEqual([{ name: 'callerName' }, { name: 'targetName' }]);
+      expect((payload.rows as Array<Record<string, unknown>>).map((row) => ({
+        callerName: scalarMcpRowValue(row, 'callerName'),
+        targetName: scalarMcpRowValue(row, 'targetName'),
+      }))).toEqual([
+        { callerName: 'entry', targetName: 'heuristicTarget' },
+        { callerName: 'entry', targetName: 'lspTarget' },
+        { callerName: 'parseToken', targetName: 'helper' },
+      ]);
+    } finally {
+      project.close();
+    }
+  });
+
+  it('accepts backtick identifiers and aliases through MCP without changing canonical output keys', async () => {
+    const project = createManualMcpCypherProject();
+    try {
+      const result = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: project.projectRoot,
+        query: [
+          'MATCH (`call``er`:`function`)-[:`calls`]->(`target-node`:`function`)',
+          "WHERE `call``er`.name = 'entry'",
+          'RETURN `call``er`.name AS `caller``name`, `target-node`.`name` AS `target-name`',
+          'ORDER BY `target-name` ASC',
+          'LIMIT 2',
+        ].join(' '),
+      });
+
+      const payload = expectMcpCypherSuccess(result, 'MCP backtick identifier query');
+      expect(payload.columns).toEqual([{ name: 'caller`name' }, { name: 'target-name' }]);
+      expect((payload.rows as Array<Record<string, unknown>>).map((row) => ({
+        caller: scalarMcpRowValue(row, 'caller`name'),
+        target: scalarMcpRowValue(row, 'target-name'),
+      }))).toEqual([
+        { caller: 'entry', target: 'helper' },
+        { caller: 'entry', target: 'heuristicTarget' },
+      ]);
+    } finally {
+      project.close();
+    }
+  });
+
+  it('rejects unsupported backtick escape forms through MCP as success-shaped diagnostics', async () => {
+    const project = createManualMcpCypherProject();
+    try {
+      const diagnostic = expectMcpCypherDiagnostic(
+        await invokeMcpCodegraphQuery(fixture.handler, {
+          projectPath: project.projectRoot,
+          query: 'MATCH (`bad\\u006e`:function)-[:calls]->(target:function) RETURN target.name LIMIT 1',
+        }),
+        'CYPHER_UNSUPPORTED',
+        'MCP unsupported backtick escape diagnostic',
+      );
+      expect(JSON.stringify(diagnostic)).not.toContain('helper');
+    } finally {
+      project.close();
+    }
+  });
+
+  it('emits canonical aggregate JSON bytes for recipe-compatible MCP output', async () => {
+    const project = createManualMcpCypherProject();
+    try {
+      const result = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: project.projectRoot,
+        query: [
+          'MATCH (caller:function)-[:calls]->(target:function)',
+          'RETURN caller.name AS callerName, count(*) AS calls',
+          'ORDER BY calls DESC, callerName ASC',
+          'LIMIT 2',
+        ].join(' '),
+      });
+
+      const success = expectMcpSuccessShape(result);
+      expect(success.text).toBe(
+        '{"columns":[{"name":"callerName"},{"name":"calls"}],"effectiveCap":2,"rows":[{"callerName":{"type":"scalar","value":"entry"},"calls":{"type":"scalar","value":3}},{"callerName":{"type":"scalar","value":"parseToken"},"calls":{"type":"scalar","value":1}}],"status":"success","truncated":false}',
+      );
+    } finally {
+      project.close();
+    }
+  });
+
+  it('returns documented expected-empty recipe output as canonical success JSON', async () => {
+    const project = createManualMcpCypherProject();
+    try {
+      const result = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: project.projectRoot,
+        query: [
+          'MATCH (caller:function)-[:calls]->(target:function)',
+          "WHERE caller.name STARTS WITH 'recipeNoMatch'",
+          'RETURN caller.name AS callerName, target.name AS targetName',
+          'ORDER BY callerName ASC, targetName ASC',
+          'LIMIT 5',
+        ].join(' '),
+      });
+
+      const payload = expectMcpCypherSuccess(result, 'MCP expected-empty recipe query');
+      expect(payload.columns).toEqual([{ name: 'callerName' }, { name: 'targetName' }]);
+      expect(payload.rows).toEqual([]);
+      expect(payload.truncated).toBe(false);
+    } finally {
+      project.close();
+    }
+  });
+
+  it('provides timeout guidance that points agents toward bounded recipe rewrites', async () => {
+    const result = await invokeMcpCodegraphQuery(fixture.handler, {
+      projectPath: fixture.projectRoot,
+      query: 'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p /* codegraph-test-force-timeout */',
+    });
+
+    const timeout = expectMcpCypherTimeout(result, 'MCP timeout guidance query');
+    expect(String(timeout.guidance)).toContain('relationship depth');
+    expect(String(timeout.guidance)).toContain('LIMIT');
+    expect(String(timeout.guidance)).not.toContain('codegraph-test-force-timeout');
+  });
+
+  it.each([
+    {
+      name: 'aggregate grouping',
+      query: [
+        'MATCH (caller:function)-[:calls]->(target:function)',
+        'RETURN caller.name AS callerName, count(*) AS calls',
+        'ORDER BY calls DESC, callerName ASC',
+        'LIMIT 2',
+      ].join(' '),
+    },
+    {
+      name: 'string predicate expected empty recipe',
+      query: [
+        'MATCH (caller:function)-[:calls]->(target:function)',
+        "WHERE caller.name STARTS WITH 'recipeNoMatch'",
+        'RETURN caller.name AS callerName, target.name AS targetName',
+        'ORDER BY callerName ASC, targetName ASC',
+        'LIMIT 5',
+      ].join(' '),
+    },
+    {
+      name: 'backtick identifiers',
+      query: [
+        'MATCH (`call``er`:`function`)-[:`calls`]->(`target-node`:`function`)',
+        "WHERE `call``er`.name = 'entry'",
+        'RETURN `call``er`.name AS `caller``name`, `target-node`.`name` AS `target-name`',
+        'ORDER BY `target-name` ASC',
+        'LIMIT 1',
+      ].join(' '),
+    },
+  ])('matches CLI --json bytes for T045 $name', async (scenario) => {
+    const project = createManualMcpCypherProject();
+    try {
+      const mcpResult = await invokeMcpCodegraphQuery(fixture.handler, {
+        projectPath: project.projectRoot,
+        query: scenario.query,
+      });
+      expectMcpCypherSuccess(mcpResult, `T045 ${scenario.name} MCP success before CLI parity`);
+      const success = expectMcpSuccessShape(mcpResult);
+      const cliBytes = runCliCypherJsonBytes(project.projectRoot, scenario.query);
+
+      expect(cliBytes).toEqual(success.rawTextBytes);
+    } finally {
+      project.close();
+    }
   });
 
   it.each<T032ParityState>([

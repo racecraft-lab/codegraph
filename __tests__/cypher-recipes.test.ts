@@ -25,16 +25,33 @@ type LiveSelfIndexRecipeSlot = RecipeDefinition & {
     readonly cliJson: string;
     readonly mcpText: string;
   };
-  readonly parityHash: 'TBD';
-  readonly artifact: 'TBD';
+  readonly parityHash: string;
+  readonly artifact: string;
+  readonly reviewer: string;
+  readonly date: string;
+  readonly representativeOutput: string;
+  readonly expectedEmptyReason: string;
 };
 
 type GuardProbeDefinition = {
   readonly id: string;
   readonly title: string;
   readonly input: string;
+  readonly slice: RecipeSlice;
+  readonly surfaces: readonly RecipeSurface[];
   readonly expectedState: ExpectedState;
   readonly expectedCode?: string;
+  readonly commandSlots: {
+    readonly packageApi: string;
+    readonly cliJson: string;
+    readonly mcpText: string;
+  };
+  readonly parityHash: string;
+  readonly artifact: string;
+  readonly reviewer: string;
+  readonly date: string;
+  readonly representativeOutput: string;
+  readonly expectedEmptyReason: string;
 };
 
 type ParityHashCapture = {
@@ -51,6 +68,14 @@ type EvidenceArtifactRecord = {
 };
 
 const TBD = 'TBD' as const;
+const RECIPE_DOC_PATH = path.join(
+  __dirname,
+  '..',
+  'docs',
+  'ai',
+  'specs',
+  '013-cypher-query-access-recipes.md',
+);
 
 const REQUIRED_RECIPE_CATEGORIES = [
   'callers of a function',
@@ -77,6 +102,158 @@ const LIVE_SELF_INDEX_RECIPE_QUERIES: readonly string[] = [
   'MATCH (source:function)-[:calls]->(target:function) WHERE source.filePath = target.filePath RETURN source.name, target.name LIMIT 10',
   'MATCH (source:function)-[:calls]->(target:function) WHERE source.startLine >= 1 RETURN source.filePath, source.startLine, target.name LIMIT 10',
 ];
+
+const REQUIRED_GUARD_PROBES: readonly GuardProbeDefinition[] = [
+  guardProbe({
+    id: 'GUARD-ROW-CAP',
+    title: 'Default row cap and truncation flag',
+    input: 'MATCH (n:function) RETURN n.name',
+    slice: 'Cross-slice',
+    surfaces: ['package', 'CLI', 'MCP', 'docs', 'live UAT'],
+    expectedState: 'success',
+    commandSlots: placeholderCommandSlots(),
+    parityHash: TBD,
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  guardProbe({
+    id: 'GUARD-PATH-CAP',
+    title: 'Bounded variable path traversal',
+    input: 'MATCH p = (a:function)-[:calls*1..3]->(b:function) RETURN p LIMIT 5',
+    slice: 'Slice 1',
+    surfaces: ['package', 'CLI', 'MCP', 'docs', 'live UAT'],
+    expectedState: 'success',
+    commandSlots: placeholderCommandSlots(),
+    parityHash: TBD,
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  guardProbe({
+    id: 'GUARD-TIMEOUT',
+    title: 'Five-second timeout guidance',
+    input: 'MATCH p = (a:function)-[:calls*1..10]->(b:function) RETURN p',
+    slice: 'Cross-slice',
+    surfaces: ['package', 'CLI', 'MCP', 'docs'],
+    expectedState: 'timeout',
+    expectedCode: 'CYPHER_QUERY_TIMEOUT',
+    commandSlots: placeholderCommandSlots(),
+    parityHash: TBD,
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  guardProbe({
+    id: 'GUARD-READ-ONLY',
+    title: 'Unsupported write clause rejection',
+    input: 'MATCH (n) DELETE n RETURN n',
+    slice: 'Cross-slice',
+    surfaces: ['package', 'CLI', 'MCP', 'docs'],
+    expectedState: 'diagnostic',
+    expectedCode: 'CYPHER_UNSUPPORTED_CLAUSE',
+    commandSlots: placeholderCommandSlots(),
+    parityHash: TBD,
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  guardProbe({
+    id: 'GUARD-MALFORMED-STDIN',
+    title: 'Malformed UTF-8 stdin rejection',
+    input: 'printf malformed UTF-8 bytes to codegraph query - --json',
+    slice: 'Cross-slice',
+    surfaces: ['CLI', 'docs'],
+    expectedState: 'diagnostic',
+    expectedCode: 'CYPHER_INVALID_STDIN_ENCODING',
+    commandSlots: placeholderCommandSlots(),
+    parityHash: TBD,
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  guardProbe({
+    id: 'GUARD-PAYLOAD-CEILING',
+    title: 'Canonical payload ceiling diagnostic',
+    input: 'MATCH (n:function) RETURN n',
+    slice: 'Cross-slice',
+    surfaces: ['package', 'CLI', 'MCP', 'docs'],
+    expectedState: 'diagnostic',
+    expectedCode: 'CYPHER_OUTPUT_TOO_LARGE',
+    commandSlots: placeholderCommandSlots(),
+    parityHash: TBD,
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+  guardProbe({
+    id: 'GUARD-CLI-MCP-PARITY',
+    title: 'Byte-identical CLI and MCP JSON',
+    input: 'MATCH (n:function) RETURN n.name ORDER BY n.name LIMIT 5',
+    slice: 'Cross-slice',
+    surfaces: ['CLI', 'MCP', 'docs', 'live UAT'],
+    expectedState: 'success',
+    commandSlots: placeholderCommandSlots(),
+    parityHash: TBD,
+    artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
+  }),
+];
+
+const REQUIRED_RECIPE_DOC_FIELDS = [
+  'Category',
+  'Query',
+  'Surfaces',
+  'Package API command',
+  'CLI --json command',
+  'MCP text command',
+  'Expected state',
+  'Representative output',
+  'Expected-empty reason',
+  'Parity hash',
+  'Artifact',
+  'Reviewer',
+  'Date',
+] as const;
+
+const REQUIRED_GUARD_DOC_FIELDS = [
+  'Input',
+  'Surfaces',
+  'Package API command',
+  'CLI --json command',
+  'MCP text command',
+  'Expected state',
+  'Expected code',
+  'Representative output',
+  'Expected-empty reason',
+  'Parity hash',
+  'Artifact',
+  'Reviewer',
+  'Date',
+] as const;
+
+function placeholderCommandSlots(): LiveSelfIndexRecipeSlot['commandSlots'] {
+  return {
+    packageApi: TBD,
+    cliJson: TBD,
+    mcpText: TBD,
+  };
+}
 
 function fixtureRecipe(recipe: RecipeDefinition): RecipeDefinition {
   if (!recipe.id.trim()) {
@@ -110,12 +287,14 @@ function liveSelfIndexRecipeSlots(): readonly LiveSelfIndexRecipeSlot[] {
       expectedState: 'success or empty',
     }),
     commandSlots: {
-      packageApi: TBD,
-      cliJson: TBD,
-      mcpText: TBD,
+      ...placeholderCommandSlots(),
     },
     parityHash: TBD,
     artifact: TBD,
+    reviewer: TBD,
+    date: TBD,
+    representativeOutput: TBD,
+    expectedEmptyReason: TBD,
   }));
 }
 
@@ -127,6 +306,46 @@ function guardProbe(probe: GuardProbeDefinition): GuardProbeDefinition {
     throw new Error(`Guard probe ${probe.id} input is required`);
   }
   return { ...probe };
+}
+
+function requireRecipeDoc(): string {
+  return fs.readFileSync(RECIPE_DOC_PATH, 'utf8');
+}
+
+function unresolvedRecipeEvidenceCount(slots: readonly LiveSelfIndexRecipeSlot[]): number {
+  return slots.reduce((count, slot) => count + unresolvedEvidenceValues([
+    slot.commandSlots.packageApi,
+    slot.commandSlots.cliJson,
+    slot.commandSlots.mcpText,
+    slot.parityHash,
+    slot.artifact,
+    slot.reviewer,
+    slot.date,
+    slot.representativeOutput,
+    slot.expectedEmptyReason,
+  ]), 0);
+}
+
+function unresolvedGuardEvidenceCount(probes: readonly GuardProbeDefinition[]): number {
+  return probes.reduce((count, probe) => count + unresolvedEvidenceValues([
+    probe.commandSlots.packageApi,
+    probe.commandSlots.cliJson,
+    probe.commandSlots.mcpText,
+    probe.parityHash,
+    probe.artifact,
+    probe.reviewer,
+    probe.date,
+    probe.representativeOutput,
+    probe.expectedEmptyReason,
+  ]), 0);
+}
+
+function unresolvedEvidenceValues(values: readonly string[]): number {
+  return values.filter((value) => value === TBD || value.trim() === '').length;
+}
+
+function unresolvedDocumentationPlaceholderCount(markdown: string): number {
+  return markdown.match(/\bTBD\b/g)?.length ?? 0;
 }
 
 function sha256Hex(bytes: Buffer): string {
@@ -195,13 +414,25 @@ describe('SPEC-013 recipe helper contracts', () => {
     expect(liveSlots.map((slot) => slot.category)).toEqual([...REQUIRED_RECIPE_CATEGORIES]);
     expect(liveSlots.every((slot) => slot.commandSlots.cliJson === 'TBD')).toBe(true);
     expect(liveSlots.every((slot) => slot.parityHash === 'TBD')).toBe(true);
+    expect(liveSlots.every((slot) => slot.reviewer === 'TBD' && slot.date === 'TBD')).toBe(true);
+    expect(liveSlots.every((slot) => slot.representativeOutput === 'TBD')).toBe(true);
+    expect(liveSlots.every((slot) => slot.expectedEmptyReason === 'TBD')).toBe(true);
 
     const mutationGuard = guardProbe({
       id: 'GUARD-MUTATION-REJECT',
       title: 'Unsupported write clause',
       input: 'MATCH (n) DELETE n RETURN n',
+      slice: 'Cross-slice',
+      surfaces: ['package', 'CLI', 'MCP'],
       expectedState: 'diagnostic',
       expectedCode: 'CYPHER_UNSUPPORTED_CLAUSE',
+      commandSlots: placeholderCommandSlots(),
+      parityHash: TBD,
+      artifact: TBD,
+      reviewer: TBD,
+      date: TBD,
+      representativeOutput: TBD,
+      expectedEmptyReason: TBD,
     });
     expect(mutationGuard.expectedCode).toBe('CYPHER_UNSUPPORTED_CLAUSE');
 
@@ -214,5 +445,59 @@ describe('SPEC-013 recipe helper contracts', () => {
     expect(artifact.rowId).toBe('RECIPE-001');
     expect(artifact.matrixArtifact).toBe(path.join('recipe-001', 'cli-mcp-parity.json'));
     expect(fs.existsSync(path.dirname(artifact.artifactPath))).toBe(true);
+  });
+
+  it('documents all ten live self-index recipe placeholders with required evidence fields', () => {
+    const markdown = requireRecipeDoc();
+    const liveSlots = liveSelfIndexRecipeSlots();
+
+    expect(liveSlots).toHaveLength(10);
+    for (const slot of liveSlots) {
+      expect(markdown).toContain(`## ${slot.id}`);
+      expect(markdown).toContain(slot.category);
+      expect(markdown).toContain(slot.query);
+      for (const field of REQUIRED_RECIPE_DOC_FIELDS) {
+        expect(markdown).toContain(`- ${field}:`);
+      }
+    }
+  });
+
+  it('documents guard probe placeholders for row cap, path cap, timeout, read-only, malformed input, payload ceiling, and parity', () => {
+    const markdown = requireRecipeDoc();
+
+    expect(REQUIRED_GUARD_PROBES.map((probe) => probe.id)).toEqual([
+      'GUARD-ROW-CAP',
+      'GUARD-PATH-CAP',
+      'GUARD-TIMEOUT',
+      'GUARD-READ-ONLY',
+      'GUARD-MALFORMED-STDIN',
+      'GUARD-PAYLOAD-CEILING',
+      'GUARD-CLI-MCP-PARITY',
+    ]);
+
+    for (const probe of REQUIRED_GUARD_PROBES) {
+      expect(markdown).toContain(`## ${probe.id}`);
+      expect(markdown).toContain(probe.input);
+      if (probe.expectedCode) {
+        expect(markdown).toContain(probe.expectedCode);
+      }
+      for (const field of REQUIRED_GUARD_DOC_FIELDS) {
+        expect(markdown).toContain(`- ${field}:`);
+      }
+    }
+  });
+
+  it('fails until live recipe and guard evidence placeholders are replaced with reviewed outputs', () => {
+    const unresolved = {
+      liveRecipeFields: unresolvedRecipeEvidenceCount(liveSelfIndexRecipeSlots()),
+      guardProbeFields: unresolvedGuardEvidenceCount(REQUIRED_GUARD_PROBES),
+      documentationPlaceholders: unresolvedDocumentationPlaceholderCount(requireRecipeDoc()),
+    };
+
+    expect(unresolved).toEqual({
+      liveRecipeFields: 0,
+      guardProbeFields: 0,
+      documentationPlaceholders: 0,
+    });
   });
 });
