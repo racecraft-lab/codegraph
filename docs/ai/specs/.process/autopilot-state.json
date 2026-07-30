@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 3: Plan",
-  "updated_at": "2026-07-30T03:26:47Z",
+  "active_step": "Phase 4: Checklist - API Contracts",
+  "updated_at": "2026-07-30T03:43:48Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -282,6 +282,61 @@
       "after_clarify_git": "satisfied by per-phase autopilot checkpoint"
     }
   },
+  "phase_3": {
+    "status": "completed",
+    "executor": "phase-executor",
+    "files": [
+      "specs/013-cypher-query-access/plan.md",
+      "specs/013-cypher-query-access/research.md",
+      "specs/013-cypher-query-access/data-model.md",
+      "specs/013-cypher-query-access/quickstart.md",
+      "specs/013-cypher-query-access/contracts/grammar.md",
+      "specs/013-cypher-query-access/contracts/public-api.md",
+      "specs/013-cypher-query-access/contracts/cli-mcp-parity.md"
+    ],
+    "architecture": [
+      "Dependency-free lexer, recursive-descent parser, private AST, planner, and parameterized SELECT/SELECT-only CTE emitter.",
+      "Dedicated mutation-free read-only SQLite open path.",
+      "Off-thread fixed five-second deadline with worker termination and replacement.",
+      "Shared queryCypher result union and exact canonical CLI/MCP JSON bytes.",
+      "Dual-routed query command with explicit legacy search alias.",
+      "Two independently demonstrable vertical implementation slices."
+    ],
+    "reviewability": {
+      "helper_status": "pass",
+      "helper_projected_loc": 280,
+      "production_entries": 7,
+      "total_entries": 8,
+      "manual_total_loc": 675,
+      "slice_1": {
+        "manual_loc": 390,
+        "production_files": 6,
+        "helper_formula_loc": 240
+      },
+      "slice_2": {
+        "manual_loc": 285,
+        "production_files": 5,
+        "non_production_files": 1,
+        "helper_formula_loc": 200
+      },
+      "result": "warning accepted with required two-slice mitigation; no block threshold"
+    },
+    "constitution": {
+      "pre_design": "pass",
+      "post_design": "pass"
+    },
+    "unresolved_markers": 0,
+    "gate": {
+      "id": "G3",
+      "status": "passed",
+      "reason": "plan.md exists with 0 unresolved markers"
+    },
+    "hooks": {
+      "before_plan": "satisfied by Phase 2 checkpoint commit",
+      "after_plan_agent_context": "disabled; skipped",
+      "after_plan_git": "satisfied by per-phase autopilot checkpoint"
+    }
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -321,11 +376,11 @@
     },
     {
       "step": "Phase 3: Plan",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - API Contracts",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 4: Checklist - API Contracts Consensus",

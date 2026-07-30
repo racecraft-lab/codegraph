@@ -31,8 +31,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 |---|---|---|---|
 | Specify | `/speckit-specify` | ✅ Complete | 32 requirements, 3 user stories, 9 acceptance scenarios; G1 passed. |
 | Clarify | `/speckit-clarify` | ✅ Complete | Three sessions completed; all decisions encoded; G2 passed. |
-| Plan | `/speckit-plan` | 🔄 In Progress | Design the dependency-free parser/planner/runtime and two vertical slices. |
-| Checklist | `/speckit-checklist` | ⏳ Pending | Run four focused requirements-quality domains. |
+| Plan | `/speckit-plan` | ✅ Complete | Architecture packet complete; reviewability helper and G3 passed. |
+| Checklist | `/speckit-checklist` | 🔄 In Progress | Run four focused requirements-quality domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Produce story-organized TDD tasks and explicit slice boundaries. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check every decision, requirement, and task. |
 | Confidence Gate | G6.5 | ⏳ Pending | Record advisory implementation readiness after analysis. |
@@ -621,11 +621,11 @@ gh-stack if more than one pr is required".
 
 | Artifact | Status | Required content |
 |---|---|---|
-| `plan.md` | Pending | Context, pre/post constitution pass, architecture, exact limits, file tables, slice/PR strategy |
-| `research.md` | Pending | openCypher subset semantics, SQLite recursive CTE/read-only/deadline decisions, serializer and worker decisions |
-| `data-model.md` | Pending | virtual nodes/edges/paths, AST, compiled statement, result, truncation, timeout, diagnostic states |
-| `contracts/` | Pending | grammar/public API, canonical result/error schema, CLI/MCP parity contract |
-| `quickstart.md` | Pending | focused/full tests, recipe commands, self-index UAT, guardrail probes |
+| `plan.md` | Complete | Context, pre/post constitution pass, architecture, exact limits, file tables, slice/PR strategy |
+| `research.md` | Complete | openCypher subset semantics, SQLite recursive CTE/read-only/deadline decisions, serializer and worker decisions |
+| `data-model.md` | Complete | virtual nodes/edges/paths, AST, compiled statement, result, truncation, timeout, diagnostic states |
+| `contracts/` | Complete | grammar/public API, canonical result/error schema, CLI/MCP parity contract |
+| `quickstart.md` | Complete | focused/full tests, recipe commands, self-index UAT, guardrail probes |
 
 ### Plan Reviewability Gate
 
@@ -633,6 +633,22 @@ Run the installed read-only `estimate-reviewable-loc` helper against the
 completed plan and each explicit slice. Record the structured result here and
 in the plan. The roadmap and scaffold estimates are advisory; the plan's
 declared file tables are the authoritative pre-implementation sizing signal.
+
+Corrected absolute-worktree helper result:
+
+- status: `pass`
+- projected advisory LOC: 280
+- production entries: 7
+- total declared implementation entries: 8
+
+Manual reviewable estimates remain 675 overall, 390 for Slice 1, and 285 for
+Slice 2. Slice 1 has 6 production files. Slice 2 has 5 production files plus
+the non-production `CHANGELOG.md` entry. The full feature remains warning-level
+and is mitigated by the two independently demonstrable vertical slices; no
+block threshold is reached.
+
+Pre-design and post-design constitution checks both passed. **G3:** PASS —
+`plan.md` exists with zero unresolved markers.
 
 ---
 
