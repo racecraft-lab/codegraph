@@ -30,8 +30,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Phase | Command | Status | Notes |
 |---|---|---|---|
 | Specify | `/speckit-specify` | ✅ Complete | 32 requirements, 3 user stories, 9 acceptance scenarios; G1 passed. |
-| Clarify | `/speckit-clarify` | 🔄 In Progress | Audit grammar, guardrails, and cross-surface parity. |
-| Plan | `/speckit-plan` | ⏳ Pending | Design the dependency-free parser/planner/runtime and two vertical slices. |
+| Clarify | `/speckit-clarify` | ✅ Complete | Three sessions completed; all decisions encoded; G2 passed. |
+| Plan | `/speckit-plan` | 🔄 In Progress | Design the dependency-free parser/planner/runtime and two vertical slices. |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run four focused requirements-quality domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Produce story-organized TDD tasks and explicit slice boundaries. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check every decision, requirement, and task. |
@@ -495,9 +495,29 @@ the conditional gh-stack route. Ask at most five questions.
 
 | Session | Focus area | Questions | Key outcomes |
 |---|---|---|---|
-| 1 | Grammar and graph semantics | Pending | Pending |
-| 2 | Guardrails, errors, and safety | Pending | Pending |
-| 3 | Surfaces, parity, and delivery | Pending | Pending |
+| 1 | Grammar and graph semantics | 5 answered; 2 consensus-routed | Exact stable public property catalog excludes `updatedAt`; duplicate declarations rejected; Cypher 3VL fixed; doubled-backtick escape with Unicode escapes unsupported; deterministic CodeGraph implicit order fully specified. |
+| 2 | Guardrails, errors, and safety | 5 answered; 3 consensus-routed | SELECT/CTE-only emission and a mutation-free read-only open path are explicit; pre-executor rejection and real SQLite no-write proof required; timeout workers are terminated; truncation uses `effectiveCap + 1`; diagnostic excerpts are capped at 160 UTF-16 units with no oversized-input echo. |
+| 3 | Surfaces, parity, and delivery | 5 answered; 3 consensus-routed | Existing `query` search remains through MATCH/stdin dual routing plus explicit `search` alias; public result union and success-shaped MCP states fixed; canonical JSON has no newline; evidence matrix and conditional gh-stack proof required; off-box A/B remains blocked pending explicit runtime authorization. |
+
+Session 1 consensus used `codebase-analyst`, `spec-context-analyst`, and
+`domain-researcher`. All three accepted the stable-catalog and deterministic
+ordering direction with high confidence. The domain review confirmed that
+implicit ordering is an intentional CodeGraph extension because Cypher itself
+does not guarantee order without `ORDER BY`.
+
+Session 2 consensus used dedicated `codebase-analyst` and
+`spec-context-analyst` results plus the Clarify executor's cited official
+Node/SQLite documentation as the domain perspective. A dedicated
+`domain-researcher` dispatch was retried but unavailable because the host's
+child-thread limit was exhausted; all available perspectives nevertheless
+agreed at high confidence.
+
+Session 3 consensus used all three analyst perspectives and reached 3/3
+agreement. No off-box evaluation was run or authorized. The specification
+records a mandatory future runtime authorization gate; without that explicit
+approval, retrieval A/B remains blocked rather than silently waived.
+
+**G2:** PASS — zero `[NEEDS CLARIFICATION]` markers remain.
 
 ---
 

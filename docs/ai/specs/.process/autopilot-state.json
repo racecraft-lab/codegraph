@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 2: Clarify - Grammar and Graph Semantics",
-  "updated_at": "2026-07-30T02:42:00Z",
+  "active_step": "Phase 3: Plan",
+  "updated_at": "2026-07-30T03:26:47Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -146,10 +146,140 @@
       "status": "passed",
       "reason": "spec.md exists with 0 markers"
     },
+    "checkpoint_commit": "74d55d27ffe42099ca8dd693db759afcd8aa064b",
     "hooks": {
       "before_specify": "git feature hook already satisfied by prepared branch; duplicate skipped",
       "after_specify_agent_context": "disabled; skipped",
       "after_specify_git": "satisfied by per-phase autopilot checkpoint"
+    }
+  },
+  "phase_2": {
+    "status": "completed",
+    "sessions": {
+      "grammar_and_graph_semantics": {
+        "executor": "clarify-executor",
+        "status": "completed",
+        "question_count": 5,
+        "recommended_answers": {
+          "Q1": "Expose the stable public Node/Edge property catalog while excluding volatile updatedAt.",
+          "Q2": "Use canonical projected-value ordering with a matched-path identity tie-breaker when ORDER BY is absent.",
+          "Q3": "Use Cypher-style three-valued logic; WHERE retains only true.",
+          "Q4": "Support doubled-backtick escaping only; Unicode escape normalization is unsupported in v1.",
+          "Q5": "Reject duplicate variable declarations in v1 while still allowing node recurrence inside variable-length path results."
+        },
+        "unresolved_for_consensus": [
+          "Q1 public property catalog",
+          "Q2 implicit stable row order"
+        ],
+        "consensus": {
+          "status": "completed",
+          "analysts": [
+            "codebase-analyst",
+            "spec-context-analyst",
+            "domain-researcher"
+          ],
+          "confidence": "high",
+          "decisions": [
+            "Expose the exact stable Node/Edge catalog and exclude volatile updatedAt.",
+            "Use a documented CodeGraph implicit total order before LIMIT and caps.",
+            "Use Cypher three-valued logic with WHERE retaining only true.",
+            "Support doubled-backtick escaping and reject Unicode escape normalization in v1.",
+            "Reject duplicate variable declarations in the one-chain subset."
+          ],
+          "artifact": "specs/013-cypher-query-access/spec.md"
+        },
+        "errors": []
+      },
+      "guardrails_errors_and_read_only_safety": {
+        "executor": "clarify-executor",
+        "status": "completed",
+        "question_count": 5,
+        "recommended_answers": {
+          "Q1": "Make SELECT/CTE-only SQL emission and a dedicated read-only SQLite connection an explicit requirement.",
+          "Q2": "Prove unsupported or mutating syntax is rejected before emitter/executor invocation and leaves real SQLite unchanged.",
+          "Q3": "Enforce the five-second deadline in an off-thread cancellable unit; clean or replace timed-out workers before reuse.",
+          "Q4": "Bound diagnostic excerpts to 160 UTF-16 code units with escaped controls and truncation-side metadata; oversized-input errors echo no query excerpt.",
+          "Q5": "Detect truncation with effectiveCap + 1 or equivalent bounded existence check; return no totalRows."
+        },
+        "unresolved_for_consensus": [
+          "Q1 explicit SQL and read-only connection FR",
+          "Q2 pre-execution rejection proof",
+          "Q4 exact bounded diagnostic excerpt contract"
+        ],
+        "consensus": {
+          "status": "completed_with_capacity_fallback",
+          "analysts": [
+            "codebase-analyst",
+            "spec-context-analyst"
+          ],
+          "domain_perspective": "clarify-executor official Node and SQLite documentation evidence",
+          "domain_researcher_dispatch": "retried but unavailable because the host child-thread limit was exhausted",
+          "confidence": "high",
+          "decisions": [
+            "Whitelist one parameterized SELECT or SELECT-only CTE statement and use a dedicated mutation-free read-only SQLite open path.",
+            "Reject mutating and unsupported input before SQL preparation or execution and prove no mutation on real SQLite.",
+            "Terminate and clean or replace timed-out workers before reuse; do not allow timed-out work to continue.",
+            "Bound serialized diagnostic excerpts to 160 UTF-16 code units with truncation-side flags and no oversized-input echo.",
+            "Use effectiveCap + 1 or equivalent bounded existence detection and expose no totalRows."
+          ],
+          "artifact": "specs/013-cypher-query-access/spec.md"
+        },
+        "errors": []
+      },
+      "public_surfaces_parity_and_delivery": {
+        "executor": "clarify-executor",
+        "status": "completed",
+        "question_count": 5,
+        "recommended_answers": {
+          "Q1": "Dual-route existing codegraph query: MATCH-leading or stdin '-' uses Cypher, all other input preserves symbol search, and add codegraph search as an explicit search alias.",
+          "Q2": "Export top-level queryCypher(projectRoot, query) and stable success/diagnostic/timeout result types while keeping parser and planner internals private.",
+          "Q3": "Canonical serializer emits minified stable-key JSON with no trailing newline; CLI --json and MCP text use those exact bytes.",
+          "Q4": "Return diagnostic, timeout, empty, and not-indexed MCP states as success-shaped canonical JSON; reserve isError for refusals and malfunctions.",
+          "Q5": "Use one evidence matrix for recipes, parity, retrieval guardian/A-B, slice route, and conditional gh-stack proof; require explicit operator authorization before any off-box evaluation."
+        },
+        "unresolved_for_consensus": [
+          "Q1 coexistence with existing codegraph query symbol search",
+          "Q3 exact CLI/MCP JSON byte boundary",
+          "Q5 evidence packet and off-box evaluation authorization"
+        ],
+        "consensus": {
+          "status": "completed",
+          "analysts": [
+            "codebase-analyst",
+            "spec-context-analyst",
+            "domain-researcher"
+          ],
+          "agreement": "3/3",
+          "confidence": "high",
+          "decisions": [
+            "Dual-route query on the first MATCH token or stdin '-', preserve legacy search otherwise, and add an explicit search alias.",
+            "Export a top-level queryCypher(projectRoot, query) discriminated result union while keeping parser/planner internals private.",
+            "Use exact UTF-8 minified stable-key JSON bytes with no trailing newline for CLI --json and MCP text.",
+            "Use success-shaped MCP JSON for expected query states and reserve isError for refusals or malfunctions.",
+            "Publish one evidence matrix and require conditional gh-stack proof only for a multi-PR route.",
+            "Block any external retrieval A/B until separately recorded runtime authorization names the provider, endpoints, data, retention/training, cost/time limit, and timestamp."
+          ],
+          "security_review": {
+            "status": "deferred_to_runtime_authorization_gate",
+            "external_evaluation_executed": false,
+            "authorization_inferred": false,
+            "requirement": "No repository context may be sent off-box without explicit operator authorization at the actual A/B gate."
+          },
+          "artifact": "specs/013-cypher-query-access/spec.md"
+        },
+        "errors": [
+          "Context7 transport closed for gh-stack docs; installed gh-stack skill and official GitHub documentation were used."
+        ]
+      }
+    },
+    "gate": {
+      "id": "G2",
+      "status": "passed",
+      "reason": "0 [NEEDS CLARIFICATION] markers"
+    },
+    "hooks": {
+      "before_clarify": "satisfied by Phase 1 checkpoint commit",
+      "after_clarify_git": "satisfied by per-phase autopilot checkpoint"
     }
   },
   "plan": [
@@ -167,31 +297,31 @@
     },
     {
       "step": "Phase 2: Clarify - Grammar and Graph Semantics",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Grammar and Graph Semantics Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Guardrails, Errors, and Read-only Safety",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Guardrails, Errors, and Read-only Safety Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Public Surfaces, Parity, and Delivery",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 2: Clarify - Public Surfaces, Parity, and Delivery Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 3: Plan",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 4: Checklist - API Contracts",

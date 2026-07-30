@@ -67,6 +67,7 @@ As an operator or agent integrator, I get the same canonical bounded result thro
 - A result exceeds the default or hard row cap.
 - A query reaches the fixed five-second deadline.
 - CLI stdin contains malformed or oversized UTF-8 input.
+- A legacy symbol-search term begins with `MATCH` or is exactly `-` and therefore must use the explicit `codegraph search` alias.
 - JSON-valued public fields are returned whole but are used in predicates.
 
 ## Requirements *(mandatory)*
@@ -87,37 +88,37 @@ The supported subset is one read-only query with:
 
 ### Functional Requirements
 
-- **FR-001**: The feature MUST expose the same documented Cypher subset through `queryCypher`, `codegraph query`, and `codegraph_query`.
+- **FR-001**: The feature MUST expose the same documented Cypher subset through `queryCypher`, `codegraph query`, and `codegraph_query`. The existing `codegraph query <text>` command MUST preserve legacy symbol-search behavior unless the first non-whitespace lexical token is case-insensitive `MATCH` or the operand is `-`; those two forms route to Cypher. The CLI MUST add `codegraph search <text>` as an explicit alias for unchanged legacy search behavior and as the escape hatch for literal searches beginning with `MATCH` or `-`.
 - **FR-002**: The feature MUST reject query text longer than 10,000 characters before parsing and MUST apply this ceiling consistently across package, CLI positional input, CLI stdin, and MCP input.
-- **FR-003**: Node labels MUST map to public node kinds, relationship types MUST map to public edge kinds, and properties MUST use canonical case-sensitive camelCase public fields.
+- **FR-003**: The v1 virtual schema MUST expose every current `NODE_KINDS` value as a node label and every current `EDGE_KINDS` value as a relationship type. Queryable node properties MUST be limited to `id`, `kind`, `name`, `qualifiedName`, `filePath`, `language`, `startLine`, `endLine`, `startColumn`, `endColumn`, `docstring`, `signature`, `visibility`, `isExported`, `isAsync`, `isStatic`, `isAbstract`, `decorators`, `typeParameters`, and `returnType`; volatile `updatedAt` MUST NOT be exposed. Queryable relationship properties MUST be limited to `source`, `target`, `kind`, `metadata`, `line`, `column`, and `provenance`. These canonical case-sensitive camelCase names, including public `column` rather than storage `col`, define the complete v1 property catalog.
 - **FR-004**: The feature MUST reject unknown or incorrectly cased labels, relationship types, properties, variables, and aliases with precise diagnostics.
 - **FR-005**: Traversal MUST include active static, LSP, and heuristic relationships and MUST exclude inactive LSP-suppressed audit rows.
-- **FR-006**: The grammar MUST accept exactly one connected node/relationship chain per query and MUST reject disconnected, comma-separated, or multi-`MATCH` patterns.
+- **FR-006**: The grammar MUST accept exactly one connected node/relationship chain per query and MUST reject disconnected, comma-separated, or multi-`MATCH` patterns. Each declared node or relationship variable name MUST be unique within that chain; node recurrence inside a variable-length path result does not relax this declaration rule.
 - **FR-007**: Every relationship pattern MUST state an incoming or outgoing direction; undirected relationship syntax MUST be rejected.
 - **FR-008**: Variable relationship patterns MUST require an explicit upper bound no greater than eight edges.
 - **FR-009**: Variable path matching MUST be relationship-simple, meaning a returned path cannot repeat the same relationship, while nodes may recur.
 - **FR-010**: Path binding MUST return ordered typed path evidence that preserves the matched node and relationship sequence.
-- **FR-011**: `WHERE` MUST implement three-valued null semantics with `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, parentheses, and comparison operators `=`, `<>`, `<`, `<=`, `>`, and `>=`.
+- **FR-011**: `WHERE` MUST implement Cypher three-valued null semantics with `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, parentheses, and comparison operators `=`, `<>`, `<`, `<=`, `>`, and `>=`. Missing optional properties evaluate to null; comparisons or string predicates involving null evaluate to null; `WHERE` retains only rows whose final predicate is true; and null equality MUST use `IS NULL` or `IS NOT NULL`.
 - **FR-012**: `WHERE` MUST support `STARTS WITH`, `ENDS WITH`, and `CONTAINS` for supported string values.
-- **FR-013**: JSON-valued public fields such as metadata and decorators MAY be returned whole but MUST NOT support nested predicate access.
+- **FR-013**: JSON-valued or array-valued public fields such as `metadata`, `decorators`, and `typeParameters` MAY be returned whole as opaque values but MUST NOT be used by `WHERE` in v1. Nested access, indexing, comparison, string predicates, and null predicates over those fields MUST be rejected as unsupported subset syntax.
 - **FR-014**: Keywords MUST be case-insensitive, while variables, aliases, labels, relationship types, and properties MUST remain case-sensitive.
-- **FR-015**: Backtick-escaped identifiers and aliases MUST be accepted wherever the documented subset accepts an identifier.
+- **FR-015**: Backtick-escaped identifiers and aliases MUST be accepted wherever the documented subset accepts an identifier. A literal backtick inside one MUST use two consecutive backticks. Control characters and Unicode escape forms such as `\uXXXX` MUST be rejected with an unsupported-subset diagnostic; after doubled-backtick unescaping, names MUST be compared exactly and case-sensitively without Unicode normalization.
 - **FR-016**: Query literals MUST be accepted in query text and bound safely by the engine; caller-supplied external parameter objects MUST NOT be added in this version.
 - **FR-017**: `RETURN` MUST support aliases, native scalar values, typed nodes, typed relationships, typed paths, `count(*)`, and `count(expr)`.
 - **FR-018**: Aggregation MUST group implicitly by every returned non-aggregate item and MUST reject aggregation forms other than `count(*)` and `count(expr)`.
-- **FR-019**: `ORDER BY` and `LIMIT` MUST be supported, and missing `ORDER BY` MUST still produce a documented stable internal order before row caps are applied.
-- **FR-020**: Results MUST default to at most 100 rows, clamp any explicit limit to a hard cap of 1,000 rows, and expose `truncated: true` plus the effective cap when rows are capped.
-- **FR-021**: The feature MUST enforce one fixed five-second execution deadline across all surfaces and MUST return no partial rows after a timeout.
-- **FR-022**: Timeout handling MUST make the CLI exit with failure and MUST make MCP return a success-shaped typed timeout state with guidance to narrow the query.
-- **FR-023**: Syntax, unsupported-subset, and unknown-name diagnostics MUST include a stable code, UTF-16 offset, line, column, bounded escaped excerpt, expected construct, and grammar-reference anchor.
-- **FR-024**: Mutating clauses, direct SQL input, external parameter syntax, unsupported openCypher forms, and unsupported aggregations MUST be rejected before execution.
-- **FR-025**: The CLI MUST accept one quoted positional query or `-` for bounded UTF-8 stdin and MUST NOT add a `--file` input contract.
-- **FR-026**: CLI `--json` and MCP text output MUST use one canonical serializer and MUST be byte-identical for the same result state.
-- **FR-027**: The default CLI table output MUST render the same bounded row set as canonical JSON without changing query semantics.
-- **FR-028**: The MCP tool MUST be default-listed with instructions that keep `codegraph_explore` primary and reserve `codegraph_query` for deliberate structured graph-language requests.
-- **FR-029**: At least ten documented recipes MUST run against CodeGraph's live self-index and MUST include representative review plus row, path, timeout, syntax, and read-only guard probes.
-- **FR-030**: Retrieval-affecting MCP steering changes MUST receive retrieval-guardian review and retrieval A/B validation before merge.
-- **FR-031**: The public package API MUST expose `queryCypher` and stable result/error types while keeping parser, planner, SQL-emitter, and AST internals unsupported as public APIs.
+- **FR-019**: `ORDER BY` and `LIMIT` MUST be supported. Explicit ascending order MUST place null after non-null and descending order MUST place null before non-null. When `ORDER BY` is absent, CodeGraph MUST apply a documented deterministic extension before `LIMIT` and row caps: compare projected values in `RETURN` order; compare nodes by public `id`; relationships by `(source, target, kind, line, column)`; paths by their alternating node and relationship identity sequence; and scalars by type rank `boolean < number < string < opaque JSON/array < null`, with false before true, numbers ascending, strings by Unicode code point, and opaque values by canonical JSON bytes. Rows with equal projected keys MUST use the full matched-chain identity in pattern order as the final tie-breaker.
+- **FR-020**: Results MUST default to at most 100 rows and clamp any explicit limit to a hard cap of 1,000 rows. Execution MUST inspect at most `effectiveCap + 1` rows, or use an equivalent bounded existence check, return only `effectiveCap` rows, set `truncated: true` only when an additional row exists, include `effectiveCap`, and MUST NOT compute or expose an unbounded `totalRows`.
+- **FR-021**: The feature MUST enforce one fixed, non-configurable five-second execution deadline across all surfaces. Synchronous SQLite work MUST run off the main thread behind a cancellable boundary; a timed-out worker MUST be terminated and cleaned or replaced before reuse, the caller MUST receive no partial rows, and timed-out work MUST NOT continue in the background after the response.
+- **FR-022**: Timeout handling MUST make the CLI exit with failure and MUST make MCP return a success-shaped typed timeout state with guidance to narrow the query. Every surface MUST map the same timeout state from the shared execution boundary.
+- **FR-023**: Syntax, unsupported-subset, and unknown-name diagnostics MUST include a stable code, UTF-16 offset, line, column, expected construct, grammar-reference anchor, and an escaped excerpt whose serialized value is at most 160 UTF-16 code units. Diagnostics MUST include `truncatedBefore` and `truncatedAfter`, MUST escape control characters and line breaks, and MUST preserve valid UTF-16 boundaries. Oversized-input diagnostics MUST report only the observed length and 10,000-character maximum and MUST NOT echo query text.
+- **FR-024**: The planner/emitter MUST produce exactly one parameterized SQLite statement whose top level is `SELECT`, `WITH`, or `WITH RECURSIVE`; every CTE body and the final statement MUST be `SELECT`-only. Statement lists, `PRAGMA`, `ATTACH`, `DETACH`, transaction control, DDL, DML, mutating clauses, direct SQL input, external parameter syntax, unsupported openCypher forms, and unsupported aggregations MUST be rejected before SQLite prepare or execution. Execution MUST use a dedicated SQLite read-only connection that performs no initialization, migration, schema healing, journal/WAL change, indexing, sync, or watcher work.
+- **FR-025**: The CLI MUST accept Cypher as one quoted positional query beginning with `MATCH` or `-` for bounded UTF-8 stdin and MUST NOT add a `--file` input contract. Cypher mode MUST allow shared `--path` and `--json` options, reject search-only `--kind`, `--mode`, and `--limit` before execution, require Cypher `LIMIT` inside query text, and report the resolved search-or-Cypher mode in help and usage diagnostics.
+- **FR-026**: CLI `--json` and MCP text output MUST use one canonical serializer and MUST be byte-identical for the same result state. The canonical payload MUST be UTF-8 minified JSON with deterministic recursive object-key order, preserved array order, and no trailing newline or other framing bytes; both machine surfaces MUST write those exact payload bytes.
+- **FR-027**: The default CLI table output MUST consume and render the same bounded rows and metadata as canonical JSON without changing query semantics. Human-readable terminal framing is outside the byte-identical machine JSON contract.
+- **FR-028**: The MCP tool MUST be default-listed with instructions that keep `codegraph_explore` primary and reserve `codegraph_query` for deliberate structured graph-language requests. Success, empty, not-indexed, diagnostic, and timeout states MUST return success-shaped canonical JSON without `isError`; typed fields carry narrowing guidance, while `isError` remains reserved for path/access refusals and genuine malfunctions.
+- **FR-029**: At least ten documented recipes MUST run against CodeGraph's live self-index. Verification MUST publish one evidence matrix whose recipe and guard-probe rows record an identifier, query/input, slice, surfaces exercised, command, expected state, observed status/row count/truncation, representative output or expected-empty reason, parity hash when applicable, artifact path or transcript, reviewer, and date.
+- **FR-030**: Retrieval-affecting MCP steering changes MUST receive retrieval-guardian review and retrieval A/B validation before merge. Any external or off-box evaluation MUST remain blocked until the operator explicitly authorizes the provider, model/tool endpoints, repository context to be sent, retention/training setting, cost/time limit, and approval timestamp at that runtime gate; bootstrap, scaffold, and local dogfood approvals MUST NOT be treated as authorization.
+- **FR-031**: The public package API MUST export `queryCypher(projectRoot, query)` and stable public types for a discriminated `success`, `diagnostic`, or `timeout` result. Typed values MUST reuse the public node and relationship contracts, empty rows remain a success result, not-indexed behavior uses a stable diagnostic code, and parser, planner, SQL-emitter, and AST internals MUST remain unsupported private APIs.
 - **FR-032**: Delivery MUST preserve two independently demonstrable vertical rule slices: Slice 1 for bounded connected-path querying end-to-end, and Slice 2 for count/grouping, string predicates, backticks, and recipe closure.
 
 ### Reviewability Budget *(mandatory)*
@@ -137,6 +138,9 @@ The supported subset is one read-only query with:
 - Deferred work MUST name the follow-up spec or issue.
 - Review order MUST show the accepted vertical slice order and identify whether the work is a single PR or a gh-stack chain.
 - Verification evidence MUST include focused tests, full relevant suite results, cross-surface parity, live self-index recipe results, retrieval-guardian disposition, and retrieval A/B disposition when MCP steering changes are included.
+- The evidence matrix MUST map every requirement and success criterion to its verification command, input/dataset, result, artifact or transcript, reviewer, and date.
+- If delivery uses more than one PR, the packet MUST include `gh stack view --json` proof of one linear bottom-to-top chain after stack creation and synchronization. For a single PR, gh-stack proof is not applicable and MUST NOT be manufactured.
+- Off-box evaluation authorization MUST be recorded separately at the runtime gate; absence of authorization leaves the required retrieval A/B gate blocked and never permits repository context to be sent.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -145,8 +149,8 @@ The supported subset is one read-only query with:
 - **Virtual Relationship**: A public CodeGraph edge value whose type comes from its edge kind and whose properties are stable public fields including provenance when present.
 - **Path Value**: An ordered sequence of matched virtual nodes and relationships returned when a query binds or projects a path.
 - **Result Row**: One canonical output row containing typed graph values or native scalar values.
-- **Result State**: The complete bounded response, including rows, effective cap, truncation flag, and non-row states such as timeout or diagnostic failure.
-- **Diagnostic**: A structured safe failure record containing a stable code, source location, bounded excerpt, expected construct, and grammar-reference anchor.
+- **Result State**: The complete bounded response, including rows, `effectiveCap`, a truncation flag based on bounded extra-row detection, and non-row states such as timeout or diagnostic failure; it does not include an unbounded total-row count.
+- **Diagnostic**: A structured safe failure record containing a stable code, UTF-16 source location, expected construct, grammar-reference anchor, an escaped excerpt of at most 160 UTF-16 code units, and leading/trailing truncation flags. Oversized-input diagnostics contain no query excerpt.
 - **Recipe**: A documented query for a practical CodeGraph task, validated against the live self-index or documented as intentionally empty for that index.
 
 ### Out of Scope
@@ -173,11 +177,11 @@ The supported subset is one read-only query with:
 - **SC-002**: Slice 1 can be demonstrated independently by one connected bounded-path query that returns typed path evidence through package API, CLI, and MCP.
 - **SC-003**: Slice 2 can be demonstrated independently by count/grouping, string predicate, backtick identifier, and recipe queries through package API, CLI, and MCP.
 - **SC-004**: At least 10 documented recipes run on the live CodeGraph self-index with recorded representative output or recorded expected-empty disposition.
-- **SC-005**: 100% of invalid syntax, unsupported syntax, unknown-name, read-only, oversized-input, row-cap, path-cap, and timeout probes return the documented result or diagnostic state.
-- **SC-006**: CLI `--json` and MCP text are byte-identical for the same valid result, capped result, timeout state, and diagnostic state.
+- **SC-005**: 100% of invalid syntax, unsupported syntax, unknown-name, read-only, oversized-input, row-cap, path-cap, and timeout probes return the documented result or diagnostic state. Boundary instrumentation proves rejected mutating or unsupported input never invokes SQL preparation/execution, and real SQLite probes prove successful reads and rejected inputs leave schema/data versions, graph row counts, and representative node/edge records unchanged.
+- **SC-006**: CLI `--json` and MCP text are byte-identical UTF-8 payloads, including the absence of a trailing newline, for the same valid result, capped result, timeout state, and diagnostic state.
 - **SC-007**: Capped queries return no more than 100 rows by default and no more than 1,000 rows after an explicit higher limit, with deterministic `truncated: true` metadata when additional rows exist.
 - **SC-008**: Timeout probes complete with no partial rows and the documented timeout behavior within the fixed five-second deadline envelope.
-- **SC-009**: Retrieval-guardian review and retrieval A/B validation record no unaddressed regression for default MCP steering before merge.
+- **SC-009**: Retrieval-guardian review and, after separately recorded operator authorization for any off-box context sharing, retrieval A/B validation record no unaddressed regression for default MCP steering before merge.
 
 ## Assumptions
 
