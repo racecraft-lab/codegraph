@@ -1008,8 +1008,8 @@ For each task:
 | Slice | Tasks | Completed | Notes |
 |---|---|---|---|
 | Setup and evidence routing | T001-T007 | 7/7 | Complete: matrix, G5 route, one-PR disposition, scope, and reviewability evidence verified. |
-| Foundational test harness | T008-T012 | 0/5 | In progress; RED support only, no production behavior. |
-| 1 — bounded connected-path querying | T013-T031 | 0/19 | US1 RED → GREEN → REFACTOR → VERIFY. |
+| Foundational test harness | T008-T012 | 5/5 | Complete: real SQLite, CLI, MCP, recipe, and evidence helpers; 4 files/6 tests passed. |
+| 1 — bounded connected-path querying | T013-T031 | 0/19 | In progress; US1 RED → GREEN → REFACTOR → VERIFY. |
 | 1 — safe-surface closure | T032-T040 | 0/9 | US3 parity, diagnostics, and retrieval steering for Slice 1. |
 | 2 — language and recipe closure | T041-T057 | 0/17 | US2 RED → GREEN → REFACTOR → VERIFY. |
 | Final safety and retrieval closure | T058-T070 | 0/13 | US3 guardrails, parity, retrieval gates, and evidence. |

@@ -38,11 +38,11 @@
 
 **Purpose**: Add reusable failing-test scaffolding only; no production behavior belongs in this phase.
 
-- [ ] T008 [P] Add shared real-SQLite graph fixture helpers in `__tests__/cypher-runtime.test.ts` for public nodes, active static/LSP/heuristic edges, inactive LSP-suppressed rows, cycles, malformed opaque JSON, high-degree traversal, schema/data snapshots, and representative node/edge record snapshots.
-- [ ] T009 [P] Add CLI process helpers in `__tests__/cli-query-command.test.ts` for positional `MATCH`, stdin `-`, malformed stdin, raw stdout byte capture, raw stderr capture, exit-code capture, and shared `--path` execution.
-- [ ] T010 [P] Add MCP invocation helpers in `__tests__/mcp-cypher-query.test.ts` for `codegraph_query`, default-list inspection, success-shaped response capture, raw text byte capture, and `isError` assertions.
-- [ ] T011 [P] Add recipe fixture and transcript helpers in `__tests__/cypher-recipes.test.ts` for fixture recipes, live self-index recipes, guard probes, parity hash capture, and artifact path recording.
-- [ ] T012 Add test evidence helper notes to `specs/013-cypher-query-access/evidence-matrix.md` for red/green/focused/full/live validation commands.
+- [X] T008 [P] Add shared real-SQLite graph fixture helpers in `__tests__/cypher-runtime.test.ts` for public nodes, active static/LSP/heuristic edges, inactive LSP-suppressed rows, cycles, malformed opaque JSON, high-degree traversal, schema/data snapshots, and representative node/edge record snapshots.
+- [X] T009 [P] Add CLI process helpers in `__tests__/cli-query-command.test.ts` for positional `MATCH`, stdin `-`, malformed stdin, raw stdout byte capture, raw stderr capture, exit-code capture, and shared `--path` execution.
+- [X] T010 [P] Add MCP invocation helpers in `__tests__/mcp-cypher-query.test.ts` for `codegraph_query`, default-list inspection, success-shaped response capture, raw text byte capture, and `isError` assertions.
+- [X] T011 [P] Add recipe fixture and transcript helpers in `__tests__/cypher-recipes.test.ts` for fixture recipes, live self-index recipes, guard probes, parity hash capture, and artifact path recording.
+- [X] T012 Add test evidence helper notes to `specs/013-cypher-query-access/evidence-matrix.md` for red/green/focused/full/live validation commands.
 
 **Checkpoint**: Test harness support exists before story-level red tests are written.
 

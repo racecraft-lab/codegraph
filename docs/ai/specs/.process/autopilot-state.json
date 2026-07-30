@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: Implement foundational test harness (T008-T012)",
-  "updated_at": "2026-07-30T05:24:49Z",
+  "active_step": "Phase 7: Implement Slice 1 US1 bounded graph evidence (T013-T031)",
+  "updated_at": "2026-07-30T05:54:04Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -576,7 +576,12 @@
       "T004",
       "T005",
       "T006",
-      "T007"
+      "T007",
+      "T008",
+      "T009",
+      "T010",
+      "T011",
+      "T012"
     ],
     "groups": {
       "setup_and_evidence_routing": {
@@ -593,14 +598,24 @@
         ]
       },
       "foundational_test_harness": {
-        "status": "in_progress",
+        "status": "completed",
         "tasks": "T008-T012",
-        "completed": 0,
-        "total": 5
+        "completed": 5,
+        "total": 5,
+        "verification": [
+          "Real SQLite graph fixture helper covers public, active, suppressed, cycle, malformed JSON, high-degree, and snapshot cases.",
+          "CLI helper captures positional/stdin/malformed bytes, raw output, exit status, and project path.",
+          "MCP helper captures listing, success-shaped payloads, raw text bytes, and isError boundaries.",
+          "Recipe helper covers fixture/live slots, guard probes, parity hashes, and evidence paths.",
+          "Combined focused harness passed: 4 files, 6 tests.",
+          "git diff --check passed."
+        ]
       },
       "slice_1_us1": {
-        "status": "pending",
-        "tasks": "T013-T031"
+        "status": "in_progress",
+        "tasks": "T013-T031",
+        "completed": 0,
+        "total": 19
       },
       "slice_1_us3": {
         "status": "pending",
@@ -715,11 +730,11 @@
     },
     {
       "step": "Phase 7: Implement foundational test harness (T008-T012)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement Slice 1 US1 bounded graph evidence (T013-T031)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement Slice 1 US3 safe-surface closure (T032-T040)",
