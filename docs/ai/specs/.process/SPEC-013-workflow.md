@@ -37,7 +37,7 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Analyze | `/speckit-analyze` | ✅ Complete | 0 findings at every severity; G6 passed. |
 | Confidence Gate | G6.5 | ✅ Complete | Advisory NO_DATA soft-skip recorded; implementation proceeds. |
 | Implement | `/speckit-implement` | ✅ Complete | T001-T079 complete with final review remediation and regression coverage. |
-| Post | Canonical post gates | 🔄 In Progress | Packet/body validation passed; draft PR creation is next. |
+| Post | Canonical post gates | ✅ Complete | Draft PR #190 is published, remediation monitoring is active, and the retrospective is complete. |
 
 **Status legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -72,9 +72,9 @@ or explicitly skip each before final handoff:
 | Post: Final Reviewability Backstop | ✅ Complete — warn/proceed from current committed reviewability route |
 | Post: PR Packet/Body Generation | ✅ Complete — emitted and read-only validation passed |
 | Post: PR Body Generation | ✅ Complete — packet-owned body generated |
-| Post: PR Creation | 🔄 In Progress |
-| Post: Review Remediation | ⏳ Pending |
-| Post: Retrospective | ⏳ Pending |
+| Post: PR Creation | ✅ Complete — draft PR #190 published from validated packet |
+| Post: Review Remediation | ✅ Complete — initial surface clean; five-minute heartbeat active |
+| Post: Retrospective | ✅ Complete — 100% tasks, 97.6% adherence, 0 critical findings |
 
 ---
 
@@ -1049,7 +1049,7 @@ must stay visible through the post-implementation reviewability gates.
 - [x] User-facing `CHANGELOG.md` entry is under `## [Unreleased]`.
 - [x] PR description includes scope, non-goals, review order, budget, traceability,
   evidence, known gaps, and rollback/flag notes.
-- [ ] Final `git diff --check` passes and the worktree is clean after commits.
+- [x] Final `git diff --check` passes and the worktree is clean after commits.
 
 ---
 
@@ -1080,6 +1080,15 @@ must stay visible through the post-implementation reviewability gates.
   `feat(SPEC-013): Add bounded read-only Cypher query access`. The durable
   `validation.json` artifact was written from a fresh read-only pass, and the
   PR title/scope workflow contract passed.
+- **PR creation:** draft PR
+  [#190](https://github.com/racecraft-lab/codegraph/pull/190) was created from
+  the packet-owned title/body on branch `013-cypher-query-access`.
+- **Review remediation:** the initial review surface had no comments or
+  reviews; CI was in progress. Heartbeat
+  `spec-013-pr-190-review-remediation` is active every five minutes.
+- **Retrospective:** `specs/013-cypher-query-access/retrospective.md` records
+  79/79 tasks complete, 97.6% adherence, 0 critical findings, no constitution
+  violations, and no proposed `spec.md` changes.
 - **External retrieval A/B:** remains `BLOCKED_BY_AUTHORIZATION`; external
   runs=0, sends=0, cost=0.
 
@@ -1115,15 +1124,27 @@ must stay visible through the post-implementation reviewability gates.
 
 ### What Worked Well
 
-- Pending implementation.
+- Strict RED/GREEN slices, canonical byte hashes, and live self-index recipes
+  made package/CLI/MCP parity observable rather than inferred.
+- Independent review plus fresh phantom-task verification closed 18 findings
+  and confirmed all 79 task implementations.
 
 ### Challenges Encountered
 
-- Pending implementation.
+- The private query runtime grew to 4,765 lines, materially above the planning
+  estimate, so the one-PR route requires deliberate staged review.
+- External retrieval A/B remains correctly blocked because the required
+  off-box authorization packet was not provided.
+- Installed helper root discovery initially selected the parent checkout;
+  an ignored worktree-local anchor bound mutation helpers to this worktree.
 
 ### Patterns to Reuse
 
-- Pending implementation.
+- Separate internal safety sentinels from public cap/truncation semantics.
+- Probe exact boundary values for recursive candidate budgets and fail closed
+  without partial rows.
+- Verify installed mutation helpers resolve the intended linked worktree
+  before apply mode.
 
 ---
 
