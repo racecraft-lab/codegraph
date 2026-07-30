@@ -1,24 +1,29 @@
 {
   "schema_version": "1.0",
-  "workflow_file": "docs/ai/specs/.process/SPEC-007-workflow.md",
-  "spec_id": "SPEC-007",
-  "feature_dir": "specs/007-in-browser-indexing",
-  "branch": "007-in-browser-indexing",
-  "worktree": null,
+  "workflow_file": "docs/ai/specs/.process/SPEC-013-workflow.md",
+  "spec_id": "SPEC-013",
+  "feature_dir": "specs/013-cypher-query-access",
+  "branch": "013-cypher-query-access",
+  "worktree": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/013-cypher-query-access",
   "worktree_binding": {
-    "status": "archived",
-    "task_root": null,
-    "execution_root": null,
-    "archive_execution_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/007-in-browser-indexing",
-    "branch": "codex/spec-007-archive-cleanup",
-    "head": "0f733908866f3ee08ce3381c41f6cbda60afde4d",
-    "upstream": "origin/main",
-    "upstream_head": "0f733908866f3ee08ce3381c41f6cbda60afde4d",
-    "constraint": "The feature worktree is historical; recover removed artifacts from the recorded merge commit when needed."
+    "status": "passed",
+    "task_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/013-cypher-query-access",
+    "execution_root": "/Users/fredrickgabelmann/Documents/Business_Documents/RSE_Documents/Projects/codegraph/.worktrees/013-cypher-query-access",
+    "branch": "013-cypher-query-access",
+    "head": "2526da9b619cbb9df0f44b7e415ba1c0aaea10f2",
+    "upstream": "origin/013-cypher-query-access",
+    "upstream_head": "2526da9b619cbb9df0f44b7e415ba1c0aaea10f2",
+    "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
-  "status": "completed_archived",
-  "active_step": "Archive complete",
-  "updated_at": "2026-07-29T22:47:57Z",
+  "status": "in_progress",
+  "active_step": "Phase 2: Clarify - Grammar and Graph Semantics",
+  "updated_at": "2026-07-30T02:42:00Z",
+  "state_reconciliation": {
+    "status": "reconstructed",
+    "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
+    "previous_spec_id": "SPEC-007",
+    "action": "Replaced stale cross-spec orchestration state with the workflow-derived SPEC-013 canonical plan."
+  },
   "settings": {
     "consensus_mode": "moderate",
     "gate_failure": "stop",
@@ -26,1201 +31,125 @@
     "confidence_gate_mode": "advisory",
     "confidence_threshold": 0.9,
     "token_discipline": "off",
-    "source": "defaults; no project-local settings file"
+    "source": "SpecKit Pro defaults; no project-local override file is present"
   },
   "archive_sweep": {
-    "status": "cleanup_applied",
+    "status": "no_candidates",
     "execution_path": "extension_contract",
-    "mode": "apply_cleanup",
+    "mode": "sweep",
     "invocation_available": true,
     "prerequisite_available": true,
-    "prerequisite_mode": "merge_provenance_confirmed_on_origin_main",
+    "prerequisite_mode": "codex_native_worktree_binding",
     "archive_extension_installed": true,
-    "eligible_previous_specs": [
-      "specs/007-in-browser-indexing"
+    "eligible_previous_specs": [],
+    "active_spec_directories": [
+      "specs/013-cypher-query-access"
     ],
-    "removed_specs": [
-      "specs/007-in-browser-indexing"
-    ],
-    "excluded_current_spec": null,
-    "active_spec_directories": [],
-    "cleanup_applied": true,
-    "cleanup_mode": "single_merged_spec",
-    "safeToApplyCleanup": true,
-    "base": "origin/main",
-    "base_commit": "0f733908866f3ee08ce3381c41f6cbda60afde4d",
-    "merged_prs": [
-      185,
-      188
-    ],
-    "report": ".specify/memory/archive-reports/2026-07-29-SPEC-007.md",
-    "applied_at": "2026-07-29T22:47:57Z",
-    "notes": "SPEC-007 was the only active candidate. Both implementation and follow-up remediation are merged; process artifacts remain under docs/ai/specs/.process/."
+    "excluded_current_spec": "specs/013-cypher-query-access",
+    "cleanup_applied": false,
+    "cleanup_mode": "sweep_no_candidates",
+    "safeToApplyCleanup": false,
+    "notes": "The direct archive extension contract found no previously merged active spec directories; the only active directory is the excluded current SPEC-013 target."
   },
-  "prerequisites": {
+  "phase_0": {
     "status": "passed",
-    "runner_integrity": "verified",
-    "runner_all_pass": true,
-    "runner_worktree_advisory": "The runner discovers the repository control checkout for linked worktrees. Supplying the absolute workflow path passed the runner check; direct Git checks are authoritative for the execution root and branch.",
-    "direct_worktree_guard": "passed",
-    "model": "gpt-5.6-sol",
-    "reasoning_effort": "max",
-    "python": "3.11.0",
-    "node": "24.11.1",
-    "npm": "11.6.2",
-    "specify": "0.11.8",
-    "codex_agents": {
-      "destination": "/Users/fredrickgabelmann/.codex/agents",
-      "model": "gpt-5.5",
-      "dry_run_status": "no_op",
-      "required_files_current": 10,
-      "restart_required": false
+    "runtime": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "xhigh",
+      "node": "24.11.1",
+      "npm": "11.6.2",
+      "python": "3.11.0"
     },
-    "constitution_baseline": {
+    "prerequisites": {
+      "runner_status": "pass",
+      "all_pass": true,
+      "direct_worktree_guard": "pass",
+      "runner_worktree_advisory": "The runner follows Git's linked-worktree common control checkout and reports main/is_worktree=false; direct git checks in the supplied workflow-bearing worktree are authoritative.",
+      "constitution": "pass",
+      "reviewability_setup": "warn accepted",
+      "phase_index_coverage": "pass"
+    },
+    "project_commands": {
+      "activate_runtime": "nvm use",
+      "build": "npm run build",
+      "typecheck": "npm run typecheck",
+      "unit_test": "npm test",
+      "full_verify": "npm run build && npm run typecheck && npm test",
+      "single_file_test": "npx vitest run <explicit-test-file>",
+      "lint": "N/A",
+      "integration": "N/A"
+    },
+    "baseline": {
       "build": "passed",
       "typecheck": "passed",
-      "test": "passed",
-      "test_files_passed": 260,
-      "tests_passed": 4663,
-      "tests_skipped": 181,
-      "lint": "not_defined",
-      "separate_integration_command": "not_defined",
-      "note": "The initial sandboxed build was invalid because generated dist writes were denied. The authoritative rerun with permission passed."
+      "tests": "passed",
+      "test_files": "262 passed, 15 skipped",
+      "tests_total": "4670 passed, 181 skipped",
+      "duration": "83.43s",
+      "unexpected_tracked_changes": false
     },
-    "reviewability_setup": {
-      "status": "pass",
-      "helper_mode": "setup",
-      "scaffold_estimated_loc": 1055,
-      "suggested_slices": 3,
-      "scaffold_status": "warn"
+    "presets": {
+      "spec_template": ".specify/presets/speckit-pro-reviewability/templates/spec-template.md",
+      "plan_template": ".specify/presets/speckit-pro-reviewability/templates/plan-template.md",
+      "tasks_template": ".specify/presets/codegraph-project-overrides/templates/tasks-template.md",
+      "status": "resolved and read"
     },
-    "spec_index": "current"
+    "agents": {
+      "installation_dry_run": "ok; no_op; 10 current TOMLs",
+      "project_implementation_agent": "implement-executor",
+      "phase_agents": [
+        "phase-executor",
+        "clarify-executor",
+        "checklist-executor",
+        "analyze-executor",
+        "implement-executor",
+        "uat-runbook-author"
+      ]
+    },
+    "extensions": [
+      "agent-context",
+      "archive",
+      "bug",
+      "cleanup",
+      "git",
+      "retrospective",
+      "review",
+      "verify",
+      "verify-tasks"
+    ],
+    "capabilities": {
+      "repository_context": "local worktree files plus available CodeGraph/GitNexus query tools",
+      "library_docs": "Context7 resolve/query tools",
+      "web_research": "web and Tavily tools with primary-source grounding",
+      "github": "GitHub connector and gh CLI",
+      "source_extraction": "local file tools and web extraction",
+      "confidence": "high"
+    }
   },
-  "project_commands": {
-    "BUILD": "npm run build",
-    "TYPECHECK": "npm run typecheck",
-    "LINT": "N/A",
-    "LINT_FIX": "N/A",
-    "UNIT_TEST": "npm test",
-    "INTEGRATION_TEST": "N/A",
-    "SINGLE_FILE_TEST": "npx vitest run <path>",
-    "SINGLE_FILE_INTEGRATION": "N/A",
-    "FULL_VERIFY": "npm run build && npm run typecheck && npm test",
-    "runtime_prefix": "/Users/fredrickgabelmann/.nvm/versions/node/v24.11.1/bin"
-  },
-  "project_implementation_agent": "implement-executor",
-  "preset_conventions": [
-    "speckit-pro-reviewability: declare reviewability budget and PR packet requirements in spec, plan, and tasks.",
-    "codegraph-project-overrides: bug fixes start with a failing test and installer changes update the installer-targets contract suite.",
-    "Tasks are grouped by independently testable user story and include explicit reviewability checkpoints.",
-    "SPEC-007 preserves the operator-ratified three-slice decomposition."
-  ],
-  "extensions": {
-    "archive": "enabled",
-    "verify": "enabled",
-    "verify_tasks": "enabled",
-    "review": "enabled",
-    "cleanup": "enabled",
-    "retrospective": "enabled"
-  },
-  "capability_path": {
-    "codebase_context": "healthy worktree-local CodeGraph index plus repository files and Git; native codegraph_explore is not exposed in this task, so use the indexed CLI and local repository fallback evidence",
-    "spec_context": "workflow, design concept, roadmap, constitution, project memory, and current feature artifacts",
-    "library_documentation": "Context7 for current library and API documentation",
-    "web_domain_research": "installed web research capability for current external standards and primary sources",
-    "source_extraction": "repository files and installed extraction capabilities",
-    "confidence": "medium-high; no evidence domain lacks an acceptable path"
-  },
-  "phase_results": {
-    "specify": {
-      "status": "completed",
-      "agent": "phase-executor",
-      "files": [
-        ".specify/feature.json",
-        "specs/007-in-browser-indexing/spec.md",
-        "specs/007-in-browser-indexing/checklists/requirements.md"
-      ],
-      "user_stories": 7,
-      "functional_requirements": 30,
-      "acceptance_scenarios": 23,
-      "requirements_checklist": "16/16",
-      "unresolved_markers": 0,
-      "unresolved_for_consensus": 0,
-      "gate": {
-        "id": "G1",
-        "status": "passed",
-        "reason": "spec.md exists with zero clarification markers"
-      }
+  "phase_1": {
+    "status": "completed",
+    "executor": "phase-executor",
+    "files": [
+      ".specify/feature.json",
+      "specs/013-cypher-query-access/spec.md",
+      "specs/013-cypher-query-access/checklists/requirements.md"
+    ],
+    "functional_requirements": 32,
+    "user_stories": 3,
+    "acceptance_scenarios": 9,
+    "success_criteria": 9,
+    "quality_checklist": "16 passed, 0 open",
+    "unresolved_clarifications": 0,
+    "gap_markers": 0,
+    "gate": {
+      "id": "G1",
+      "status": "passed",
+      "reason": "spec.md exists with 0 markers"
     },
-    "clarify": {
-      "status": "completed",
-      "sessions": {
-        "browser_capability_and_ux_contracts": {
-          "status": "completed",
-          "agent": "clarify-executor",
-          "questions_answered": 5,
-          "decisions_applied": [
-            "existing repository shell owns the explicit Open local folder entry and runtime labels",
-            "last-good index and cached accepted source remain browseable before explicit reconnect",
-            "each completed directory drop creates a distinct fingerprinted snapshot repository",
-            "lock contention shows a pre-storage busy interstitial with Retry and Switch repository",
-            "core local routes remain enabled, server-only routes explain unavailability, and delete requires name confirmation"
-          ],
-          "requirements_added": [
-            "FR-031",
-            "FR-032",
-            "FR-033",
-            "FR-034",
-            "FR-035",
-            "FR-036"
-          ],
-          "unresolved_for_consensus": 0,
-          "consensus_status": "completed_no_unresolved_items"
-        },
-        "storage_integrity_and_runtime_contracts": {
-          "status": "completed",
-          "agent": "clarify-executor",
-          "questions_answered": 5,
-          "decisions_applied": [
-            "browser repositories use opaque origin-scoped ids with handles and fingerprints as metadata",
-            "one complete repository generation publishes graph, source cache, manifest, status, and last-success pointer",
-            "browser graph storage follows the canonical Node schema and shared migration stream",
-            "manual refresh diffs relative paths and hashes, publishes atomically, and bounds recoverable file warnings",
-            "worker RPC uses versioned structured-clone-safe envelopes with exactly one terminal state"
-          ],
-          "requirements_added": [
-            "FR-037",
-            "FR-038",
-            "FR-039",
-            "FR-040",
-            "FR-041"
-          ],
-          "unresolved_for_consensus": 0,
-          "consensus_status": "completed_no_unresolved_items"
-        },
-        "embedding_security_and_delivery": {
-          "status": "completed",
-          "agent": "clarify-executor",
-          "questions_answered": 5,
-          "decisions_applied": [
-            "persist only secret-free embedding profiles, stored vectors, and resumable semantic metadata while credentials remain memory-only",
-            "semantic transport and provider failures use stable redacted codes with no insecure escape",
-            "no-consent audits allow only enumerated same-origin shipped assets",
-            "supported hosts permit required same-origin workers and WebAssembly without a COOP/COEP dependency",
-            "required local-indexing assets ship and verify fail-closed with no CDN fallback"
-          ],
-          "requirements_added": [
-            "FR-042",
-            "FR-043",
-            "FR-044",
-            "FR-045",
-            "FR-046"
-          ],
-          "unresolved_for_consensus": 1,
-          "consensus": {
-            "item": "Which semantic settings may persist while bearer keys stay memory-only?",
-            "categories": [
-              "security"
-            ],
-            "round": 1,
-            "outcome": "human-review-satisfied-by-prior-ratification",
-            "agreement": "3/3",
-            "confidence": "high",
-            "analysts": [
-              "codebase-analyst",
-              "spec-context-analyst",
-              "domain-researcher"
-            ],
-            "human_decision_source": "SPEC-007 design concept Q14 and Q15",
-            "resolution": "Persist only secret-free profile/vector/resume state and require bearer-key re-entry for post-reload endpoint traffic."
-          }
-        },
-        "performance_and_cross_runtime_parity": {
-          "status": "completed",
-          "agent": "clarify-executor",
-          "questions_answered": 5,
-          "decisions_applied": [
-            "cross-runtime parity compares accepted manifests, language maps, semantic projections, warning codes, lazy grammar manifests, and repeat counts",
-            "self-repo index evidence discloses hardware, software, graph scale, storage state, timing, and run count",
-            "local read p95 uses deterministic search/graph/impact suites with at least 20 user-observed samples after warmup",
-            "index responsiveness records heartbeat gaps, supported long-task evidence, and actionable controls",
-            "Chromium validates the full path while Firefox and WebKit validate precise independent capability degradation"
-          ],
-          "requirements_added": [
-            "FR-047",
-            "FR-048",
-            "FR-049"
-          ],
-          "success_criteria_refined": [
-            "SC-008",
-            "SC-009"
-          ],
-          "unresolved_for_consensus": 0,
-          "consensus_status": "completed_no_unresolved_items"
-        }
-      },
-      "functional_requirements_after_clarify": 49,
-      "clarification_sessions": 4,
-      "gate": {
-        "id": "G2",
-        "status": "passed",
-        "reason": "zero clarification and human-review-needed markers"
-      }
-    },
-    "plan": {
-      "status": "completed",
-      "agent": "phase-executor",
-      "files": [
-        "specs/007-in-browser-indexing/plan.md",
-        "specs/007-in-browser-indexing/research.md",
-        "specs/007-in-browser-indexing/data-model.md",
-        "specs/007-in-browser-indexing/quickstart.md",
-        "specs/007-in-browser-indexing/contracts/browser-capabilities.md",
-        "specs/007-in-browser-indexing/contracts/local-index-worker.md",
-        "specs/007-in-browser-indexing/contracts/local-repository-client.md"
-      ],
-      "artifacts": 7,
-      "research_decisions": 9,
-      "contracts": 3,
-      "constitutional_checks": {
-        "pre_research": "passed_with_principle_vi_warning",
-        "post_design": "passed_with_principle_vi_warning"
-      },
-      "unresolved_markers": 0,
-      "unresolved_for_consensus": 0,
-      "gate": {
-        "id": "G3",
-        "status": "passed",
-        "reason": "plan.md exists with zero unresolved markers"
-      },
-      "reviewability": {
-        "initial_estimator_status": "not_estimated",
-        "initial_reason": "declared file operations were not machine-readable",
-        "remediation": "added the exact Declared File Operations section",
-        "status": "pass",
-        "projected_loc": 600,
-        "production_files": 15,
-        "new_files": 8,
-        "modified_files": 8,
-        "total_declared_entries": 16,
-        "warn_threshold": 400,
-        "block_threshold": 800,
-        "scaffold_estimate": {
-          "estimated_loc": 1055,
-          "suggested_slices": 3,
-          "status": "warn"
-        },
-        "operator_ratified_split": "three vertical slices"
-      },
-      "after_analysis_remediation": {
-        "status": "pass",
-        "projected_loc": 720,
-        "production_files": 18,
-        "new_files": 8,
-        "modified_files": 11,
-        "total_declared_entries": 19,
-        "plan_estimated_loc": 1100
-      }
-    },
-    "checklist": {
-      "status": "completed",
-      "domains": {
-        "ux": {
-          "status": "completed",
-          "agent": "checklist-executor",
-          "file": "specs/007-in-browser-indexing/checklists/ux.md",
-          "items": 31,
-          "initial_gaps": 5,
-          "final_gaps": 0,
-          "remediation_loops": 1,
-          "requirements_added": [
-            "FR-050",
-            "FR-051",
-            "FR-052"
-          ],
-          "success_criteria_added": [
-            "SC-012"
-          ],
-          "consensus_status": "completed_no_unresolved_items",
-          "runner_marker_count": {
-            "type": "gaps",
-            "total": 0,
-            "spec": 0,
-            "plan": 0,
-            "checklists": 0
-          }
-        },
-        "security": {
-          "status": "completed",
-          "agent": "checklist-executor",
-          "file": "specs/007-in-browser-indexing/checklists/security.md",
-          "items": 31,
-          "initial_gaps": 2,
-          "final_gaps": 0,
-          "remediation_loops": 1,
-          "requirements_added": [
-            "FR-053",
-            "FR-054"
-          ],
-          "success_criteria_added": [
-            "SC-013",
-            "SC-014"
-          ],
-          "consensus_status": "completed_no_unresolved_items",
-          "runner_marker_count": {
-            "type": "gaps",
-            "total": 0,
-            "spec": 0,
-            "plan": 0,
-            "checklists": 0
-          }
-        },
-        "data_integrity": {
-          "status": "completed",
-          "agent": "checklist-executor",
-          "file": "specs/007-in-browser-indexing/checklists/data-integrity.md",
-          "items": 34,
-          "initial_gaps": 6,
-          "final_gaps": 0,
-          "remediation_loops": 1,
-          "requirements_added": [
-            "FR-055",
-            "FR-056",
-            "FR-057",
-            "FR-058"
-          ],
-          "success_criteria_added": [
-            "SC-015",
-            "SC-016",
-            "SC-017",
-            "SC-018"
-          ],
-          "consensus_status": "completed_no_unresolved_items",
-          "runner_marker_count": {
-            "type": "gaps",
-            "total": 0,
-            "spec": 0,
-            "plan": 0,
-            "checklists": 0
-          }
-        },
-        "performance": {
-          "status": "completed",
-          "agent": "checklist-executor",
-          "file": "specs/007-in-browser-indexing/checklists/performance.md",
-          "items": 33,
-          "initial_gaps": 5,
-          "final_gaps": 0,
-          "remediation_loops": 1,
-          "requirements_added": [
-            "FR-059",
-            "FR-060",
-            "FR-061",
-            "FR-062",
-            "FR-063"
-          ],
-          "success_criteria_added": [
-            "SC-019",
-            "SC-020",
-            "SC-021"
-          ],
-          "correction": "Parent validation found all rows unchecked after remediation; bounded follow-up marked 33/33 checked and annotated five resolved rows.",
-          "consensus_status": "completed_no_unresolved_items",
-          "runner_marker_count": {
-            "type": "gaps",
-            "total": 0,
-            "spec": 0,
-            "plan": 0,
-            "checklists": 0
-          }
-        }
-      },
-      "totals": {
-        "items": 129,
-        "checked": 129,
-        "unchecked": 0,
-        "initial_gaps": 18,
-        "final_gaps": 0
-      },
-      "gate": {
-        "id": "G4",
-        "status": "passed",
-        "reason": "0 [Gap] markers and all 129 domain checklist rows checked"
-      }
-    },
-    "tasks": {
-      "status": "completed",
-      "execution": {
-        "required_agent": "phase-executor",
-        "agent_attempts": 3,
-        "agent_outcome": "failed_pre_artifact_without_actionable_blocker",
-        "fallback": "parent_orchestrator_authored_and_validated_tasks"
-      },
-      "file": "specs/007-in-browser-indexing/tasks.md",
-      "total_tasks": 38,
-      "parallel_opportunities": 8,
-      "user_stories_covered": "7/7",
-      "functional_requirements_covered": "63/63",
-      "unmapped_functional_requirements": [],
-      "tdd_sections": {
-        "red": 38,
-        "green": 38,
-        "refactor": 38,
-        "evidence": 38
-      },
-      "unresolved_markers": 0,
-      "gate": {
-        "id": "G5",
-        "status": "passed",
-        "reason": "38 tasks found with zero markers; independent validation found 63/63 FRs and 7/7 stories"
-      },
-      "reviewability": {
-        "tasks_mode": "deferred",
-        "helper_id": "reviewability-gate",
-        "requested_mode": "tasks",
-        "deferral_reason": "installed read-only runner supports setup mode only",
-        "fallback_evidence": {
-          "setup": {
-            "estimated_loc": 1055,
-            "suggested_slices": 3,
-            "status": "warn"
-          },
-          "plan": {
-            "status": "pass",
-            "projected_loc": 720,
-            "production_files": 18
-          },
-          "operator_ratified_split": "three vertical slices"
-        },
-        "correctness_blocker": false
-      },
-      "atomicity": {
-        "route": "one-navigable-PR",
-        "releasable": true,
-        "signals": [
-          "change-shape:modify-heavy"
-        ],
-        "hints": [],
-        "warnings": []
-      }
-    },
-    "analyze": {
-      "status": "completed",
-      "agent": "analyze-executor",
-      "initial_findings": {
-        "critical": 0,
-        "high": 0,
-        "medium": 0,
-        "low": 0
-      },
-      "mandatory_consensus": {
-        "analysts": [
-          "codebase-analyst",
-          "spec-context-analyst",
-          "domain-researcher"
-        ],
-        "synthesizer": "parent_fallback_consensus_synthesizer_unavailable",
-        "findings": [
-          {
-            "id": "A-001",
-            "severity": "HIGH",
-            "status": "resolved",
-            "issue": "Browser-local cached source route omitted current LSP-backed ownership and could open /lsp.",
-            "resolution": "Plan, contract, and tasks now own SymbolDetailRoute, SourcePane, and lsp/client; local source uses LocalRepositoryClient.getSource and local LSP-only actions are disabled."
-          },
-          {
-            "id": "A-002",
-            "severity": "MEDIUM",
-            "status": "resolved",
-            "issue": "Quickstart overstated no-network behavior despite required same-origin shipped assets.",
-            "resolution": "Quickstart now prohibits repository-derived and external traffic while allowing enumerated same-origin assets."
-          },
-          {
-            "id": "A-003",
-            "severity": "LOW",
-            "status": "dismissed_after_verification",
-            "issue": "Roadmap relative workflow link was reported as missing.",
-            "resolution": "The link resolves to the existing docs/ai/specs/.process workflow; stale roadmap size/file estimates were synchronized."
-          }
-        ],
-        "agreement": "2/3 independently confirmed A-001; domain identified A-002; A-003 was verified and dismissed",
-        "unresolved_items": 0
-      },
-      "revalidation": {
-        "g5": "passed",
-        "g6": "passed",
-        "unmapped_functional_requirements": 0,
-        "finding_markers": 0,
-        "plan_estimator": {
-          "status": "pass",
-          "projected_loc": 720,
-          "production_files": 18,
-          "total_declared_entries": 19
-        }
-      },
-      "gate": {
-        "id": "G6",
-        "status": "passed",
-        "reason": "0 CRITICAL/HIGH findings remain after consensus remediation"
-      }
-    },
-    "confidence_gate": {
-      "status": "completed",
-      "mode": "advisory",
-      "threshold": 0.9,
-      "score": 0.94,
-      "criteria": {
-        "requirements_coverage": 0.96,
-        "codebase_domain_alignment": 0.94,
-        "task_executability": 0.94,
-        "verification_sufficiency": 0.95,
-        "implementation_readiness": 0.93
-      },
-      "result": "passed"
-    },
-    "implement": {
-      "status": "completed",
-      "task_decomposition": "38 task-level TDD units in 3 vertical slices",
-      "current_slice": "Slice 3 Degradation, Semantic Opt-In, and Shipping",
-      "current_task_range": "T025-T038",
-      "current_task": null,
-      "completed_tasks": [
-        "T001",
-        "T002",
-        "T003",
-        "T004",
-        "T005",
-        "T006",
-        "T007",
-        "T008",
-        "T009",
-        "T010",
-        "T011",
-        "T012",
-        "T013",
-        "T014",
-        "T015",
-        "T016",
-        "T017",
-        "T018",
-        "T019",
-        "T020",
-        "T021",
-        "T022",
-        "T023",
-        "T024",
-        "T025",
-        "T026",
-        "T027",
-        "T028",
-        "T029",
-        "T030",
-        "T031",
-        "T032",
-        "T033",
-        "T034",
-        "T035",
-        "T036",
-        "T037",
-        "T038"
-      ],
-      "executor_binding": {
-        "status": "parent_fallback_required",
-        "agent": "implement-executor",
-        "first_observed_task": "T001",
-        "failure": "Child inherited the outer Codex task writable sandbox and could not mutate the dedicated SPEC-007 worktree.",
-        "agent_result_consumed": true,
-        "fallback": "Parent orchestrator runs strict RED-GREEN-REFACTOR from the verified execution root and records task evidence.",
-        "durability_note": "All child binding failures and parent fallbacks remain explicit in workflow/state until Codex supports rebinding child writable roots."
-      },
-      "task_results": {
-        "T001": {
-          "status": "completed",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "red": "Focused packaged Playwright failed expected 3.53.0-build1 versus undefined.",
-          "green": "Exact SQLite-Wasm dependency, Vite WASM/worker asset flow, and minimal worker entry added.",
-          "verification": [
-            "focused packaged Playwright 1/1 passed",
-            "root package asset Vitest 3/3 passed",
-            "npm run build passed",
-            "web/dist and dist/web contain non-empty worker and SQLite WASM assets"
-          ]
-        },
-        "T002": {
-          "status": "completed_with_intentional_handoff_red",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "fixture_contract": "Three accepted paths, language map, nine-node/eight-edge semantic projection, six warning codes, and one lazy grammar load are fixed.",
-          "verification": [
-            "focused fixture-contract test 1/1 passed",
-            "focused browser-kernel integration assertion intentionally fails until T004 creates src/extraction/browser-kernel.ts"
-          ]
-        },
-        "T003": {
-          "status": "completed",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "red": "Canonical version was 11 and fresh/migrated databases lacked the shared browser source-generation tables.",
-          "green": "Migration v12 adds source_cache, index_generations, and index_publications through the canonical schema and version stream.",
-          "verification": [
-            "focused real-SQLite migration/invariant test 5/5 passed",
-            "shipped-schema byte-identity suite 6/6 passed",
-            "affected schema regressions 153/153 passed",
-            "root and web typechecks passed"
-          ]
-        },
-        "T004": {
-          "status": "completed",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "red": "The browser kernel module was absent; after the first green pass, a second focused assertion exposed omitted unresolved references and extraction errors.",
-          "green": "A Node-free injected source-to-graph kernel now performs deterministic admission, lazy delegate grammar selection, extraction, complete result aggregation, and per-file release.",
-          "verification": [
-            "focused browser-kernel and grammar-byte tests 6/6 passed",
-            "focused existing Svelte/Vue/Astro extraction tests 25/25 passed",
-            "root and web typechecks passed",
-            "repeated semantic projection is stable at 9 nodes and 8 edges"
-          ],
-          "retrieval_guardian": {
-            "agent_dispatches": 2,
-            "agent_outcome": "execution_channel_failed_to_return_after_bounded_waits",
-            "parent_fallback": "completed",
-            "blocking_findings": 0,
-            "node_edge_stability": "passed by canonical-versus-browser and repeated projection assertions",
-            "ab_evidence": "not_applicable_until_browser seam affects Node or agent retrieval behavior"
-          }
-        },
-        "T005": {
-          "status": "completed",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "red": "Focused web Vitest could not resolve the missing local-indexing source-provider module.",
-          "green": "Picked-folder and immutable snapshot providers now gate picker use on direct activation, mint opaque identities, normalize ancestry-derived paths, enforce ignores and traversal/read/transfer ceilings, hash accepted bytes, and cap warning details.",
-          "verification": [
-            "focused source-provider tests 5/5 passed",
-            "web typecheck passed",
-            "git diff --check passed"
-          ]
-        },
-        "T006": {
-          "status": "completed",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "red": "Focused web Vitest could not resolve the missing browser SQLite store module.",
-          "green": "The worker now installs SQLite-Wasm opfs-sahpool, initializes the canonical schema, stages graph/source generations in separate databases, atomically advances a registry publication pointer, preserves last-good reads, recovers stale staging, and pauses the VFS on close.",
-          "verification": [
-            "focused source/storage unit contracts 6/6 passed",
-            "real Chromium worker SQLite-Wasm OPFS SAH-pool publication/recovery test 1/1 passed",
-            "root production build passed",
-            "root and web typechecks passed",
-            "focused Node schema and migration regressions 59/59 passed",
-            "git diff --check passed"
-          ],
-          "documentation": "Context7 transport closed twice; current official SQLite-Wasm persistence documentation confirmed explicit SAH-pool installation, worker-only OPFS, absolute filenames, no COOP/COEP requirement, and deterministic close/pause guidance."
-        },
-        "T007": {
-          "status": "completed",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "red": "Focused cases failed because the worker lacked the versioned runtime/budgets; a second RED showed cancellation was incorrectly accepted after publication began.",
-          "green": "Protocol v1 now emits plain structured-clone-safe responses, enforces exact budgets, coalesces progress, lazily loads each grammar manifest once, cancels only before publication, ignores stale messages, emits one terminal state, redacts runtime failures, and closes grammar/store resources.",
-          "verification": [
-            "focused worker/source/storage tests 10/10 passed",
-            "web typecheck passed",
-            "git diff --check passed"
-          ]
-        },
-      "T008": {
-          "status": "completed",
-          "executor": "implement-executor_dispatched_then_parent_fallback",
-          "red": "Focused web Vitest could not resolve the missing shared repository client and local worker adapter.",
-          "green": "A single SPA-facing repository interface now bridges existing REST calls and protocol-v1 local worker transport with correlated requests, stale-message rejection, optional transfers, normalized errors, and fail-closed unsupported capabilities.",
-          "verification": [
-            "focused repository-client and worker regressions 13/13 passed",
-            "web typecheck passed",
-          "git diff --check passed"
-        ]
-      },
-      "T009": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Three focused shell cases failed on the absent direct Open local folder action, runtime labels, progress/cancel UI, live regions, focus return, and opaque-root-safe local header.",
-        "green": "The shell now starts picker access only from direct activation, hands the accepted source collection to LocalRepositoryClient, exposes accessible progress/cancel/terminal states, retains trust-boundary runtime labels, and restores focus.",
-        "verification": [
-          "focused local shell, app-shell, and local-client tests 8/8 passed",
-          "web typecheck passed",
-          "git diff --check passed"
-        ]
-      },
-      "T010": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Three focused local-route cases failed because search, symbol relationships, graph, impact, and source still reached daemon REST or LSP-only paths.",
-        "green": "The selected RepositoryClient now owns local overview/status, keyword search, symbol/source, relationships, graph, and impact reads; disconnected local repositories fail closed; cached source renders only as React text; server-only LSP and chat are visibly disabled.",
-        "verification": [
-          "focused local route and malicious-source cases 3/3 passed",
-          "six focused shell, client, route, and source files 98/98 passed",
-          "root and web typechecks passed",
-          "web lint passed with warnings only",
-          "zero fetch and zero WebSocket calls in local route proof",
-          "git diff --check passed"
-        ]
-      },
-      "T011": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Real Chromium timed out after 20 seconds because the production picked-folder worker did not yet connect source bytes to parser WASM, SQLite-Wasm publication, and local repository queries.",
-        "green": "The shipped worker now performs real Tree-sitter WASM extraction, atomic SQLite-Wasm graph/source publication, local query serving, operation-scoped pre-publication cancellation, and durable reload without picker or daemon fallback.",
-        "verification": [
-          "focused worker, client, shell, and local-route suites 22/22 passed",
-          "web typecheck passed",
-          "production web build emitted local worker, SQLite-Wasm, Tree-sitter runtime, and required grammar WASM assets",
-          "real Chromium cancellation, retry, 3-node/2-edge index, search, cached source, and reload journey passed 1/1 in 1.9 seconds",
-          "zero repository-derived API, LSP, WebSocket, external-origin, or CDN requests",
-          "dependency lock reconciled offline without npm 11 peer-metadata churn"
-        ]
-      },
-      "T012": {
-        "status": "completed_with_reviewability_warning",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The Slice 1 baseline contains 40 code/test files, 5,574 additions, and 70 deletions, materially above the scaffold's rough 1,055-LOC estimate.",
-        "green": "The oversized slice remains confined to the ratified schema/extraction/source/storage/worker/client/UI/package/test ownership and preserves one independent durable keyword journey; no Slice 2 lifecycle or Slice 3 semantic/degradation capability was pulled forward.",
-        "reviewability": {
-          "all": "40 files, +5574/-70",
-          "production": "24 files, +3743/-64",
-          "tests": "16 files, +1831/-6",
-          "status": "warning_retained_for_final_backstop",
-          "undeclared_capability_surfaces": 0
-        },
-        "verification": [
-          "root production build passed with copied web/worker/WASM assets",
-          "root and web typechecks passed",
-          "focused root migration, extraction, and shipped-schema tests 13/13 passed",
-          "all web Vitest 142/142 passed",
-          "web lint completed with 0 errors and 15 warnings",
-          "Chromium package, real SQLite-Wasm recovery, and full folder journey 3/3 passed",
-          "git diff --check passed"
-        ]
-      },
-      "T013": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Remote relationship requests dropped paging, local requests forwarded over-cap values, the real worker did not expose relationship/graph storage queries, and the first callee plan selected the broader edge identity index.",
-        "green": "Shared request normalization mirrors REST page/depth limits; published-generation relationship reads de-duplicate nodes and force target/source-kind indexes; bounded breadth graph expansion caps at 2,000 nodes and 10,000 inspected edges with honest truncation.",
-        "verification": [
-          "focused client, worker, and local-route tests 17/17 passed",
-          "web typecheck passed",
-          "real Chromium SQLite relationship paging, graph caps, and unpublished-generation isolation passed 1/1",
-          "EXPLAIN QUERY PLAN captured idx_edges_target_kind, idx_edges_source_kind, and MULTI-INDEX OR graph evidence",
-          "git diff --check passed"
-        ]
-      },
-      "T014": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Focused UI assertions failed because progress ignored reduced motion and local Re-analyze/Chat actions remained enabled without honest trust-boundary explanations.",
-        "green": "Local keyword search stays enabled; local refresh and chat are disabled with visible aria-describedby guidance; server actions remain unchanged; keyboard/focus, live-region, reduced-motion, wrapping, and runtime-label behavior are explicit.",
-        "verification": [
-          "focused local and app shell tests 8/8 passed",
-          "web typecheck passed",
-          "real Chromium full local journey and 320-CSS-pixel no-overflow probe passed 1/1",
-          "git diff --check passed"
-        ]
-      },
-      "T015": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The real SQLite-Wasm worker exposed no impact query-plan evidence or distinct storage impact request, and production routed impact through the undirected graph query.",
-        "green": "Published-generation impact follows bounded incoming non-containment dependencies, expands contained members at the same semantic depth, preserves GraphResult response parity, and exposes affected files through node file fields plus dependency-edge explanations.",
-        "verification": [
-          "focused shared repository-client tests 4/4 passed",
-          "web typecheck passed",
-          "real Chromium SQLite impact semantics, 2,000-node and 10,000-edge budgets, affected-file projection, query-plan capture, and unpublished-generation isolation passed 1/1",
-          "EXPLAIN QUERY PLAN captured idx_edges_target_kind for impact",
-          "git diff --check passed"
-        ]
-      },
-      "T016": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The deterministic full journey had no warmup-plus-20 action-to-render gate and failed its intended end-to-end query-plan assertion because no plan evidence was captured.",
-        "green": "The Chromium journey performs one warmup and 20 user-observed samples each for search, graph, and impact, enforces p95 at or below 150 ms, and attaches all samples plus real SQLite query plans as JSON evidence.",
-        "verification": [
-          "web typecheck passed",
-          "real Chromium cancellation, index, search, source, reload, performance, query-plan, privacy, and 320-CSS-pixel journey passed 1/1",
-          "20 measured samples per operation after one warmup",
-          "p95 search 114.3 ms, graph 101.3 ms, impact 103.2 ms",
-          "graph plan captured MULTI-INDEX OR and impact plan captured idx_edges_target_kind",
-          "spec007-local-read-latency.json attached by Playwright",
-          "git diff --check passed"
-        ]
-      },
-      "T017": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Three focused cases failed because the source-handle registry and client connection state did not exist, restore could not represent stale/prompt/denied/granted handles, and refresh was not reconnect-gated.",
-        "green": "Origin-scoped IndexedDB persists opaque saved-handle identity and the browser capability handle; restore never prompts, explicit activation owns permission requests and same-entry validation, cached reads stay available, and only a live granted handle enables refresh.",
-        "verification": [
-          "focused source, local-client, and local-shell suites 23/23 passed",
-          "granted, prompt, denied, stale, mismatch, host-path rejection, cached-read, and refresh-gate cases passed",
-          "web typecheck passed",
-          "real Chromium cached reload, privacy, latency, and responsive journey passed 1/1",
-          "git diff --check passed"
-        ]
-      },
-      "T018": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The manifest test had no deterministic diff implementation and the real SQLite-Wasm worker rejected storage-refresh; refresh requests carried no live source collection or exact result accounting.",
-        "green": "Refresh diffs path/content hashes, extracts only added/changed candidates, retains unchanged source/graph rows, removes deleted rows, caps skipped warnings, rebuilds the accepted manifest, and atomically publishes matching generation/count metadata.",
-        "verification": [
-          "focused worker and local-client suites 18/18 passed",
-          "web typecheck passed",
-          "real SQLite-Wasm added/changed/deleted/unchanged/skipped refresh fixture passed 1/1",
-          "generation 2 and exact files 3, nodes 6, edges 3, warnings 1 metadata matched persisted rows",
-          "initial-index, cached reload, privacy, latency, and responsive Chromium regression passed 1/1",
-          "git diff --check passed"
-        ]
-      },
-      "T019": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The first real recovery injection published generation 2 because storage had no independent transactional fault boundary after source staging.",
-        "green": "Transactional failure points after source staging, graph write, status update, publication pointer update, and failed-generation cleanup now preserve the prior published generation; quota and migration retain stable failure codes; next-open crash recovery marks and removes stale staging.",
-        "verification": [
-          "real SQLite-Wasm source-stage, graph-write, status-update, registry-publish, quota, migration, cleanup, and crash recovery matrix passed 1/1",
-          "generation 1 remained readable and eight later candidate generations were failed after reopen",
-          "focused cancellation, duplicate/stale operation, stale client response, source, and local-client regressions 18/18 passed",
-          "web typecheck passed",
-          "git diff --check passed"
-        ]
-      },
-      "T020": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The client terminated without a close handshake, busy repositories exposed no Retry/Switch recovery and left local reads enabled, and the production worker rejected acquire as invalid_worker_request.",
-        "green": "A named exclusive Web Lock is acquired per opaque repository id before SQLite/OPFS opens; contention emits repository_busy; busy UI disables local actions and provides Retry/Switch; close shuts DB/VFS before releasing ownership and acknowledging the client.",
-        "verification": [
-          "focused local-client and local-shell suites 12/12 passed",
-          "web production build passed",
-          "real Chromium multi-page lock suite 2/2 passed",
-          "second tab excluded until deterministic close and then acquired on retry",
-          "abrupt owning-worker termination released stale browser ownership for next-open recovery",
-          "T019 interrupted-generation recovery remains covered",
-          "git diff --check passed"
-        ]
-      },
-      "T021": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "No passive storage-status or explicit persistence APIs existed, and local UI lacked usage/quota, persistence, last-good recovery, and non-eviction guidance.",
-        "green": "Passive estimate and persisted inspection never calls persist; a direct-action button owns the advisory persistence request; supported, denied, unknown, and unsupported states are honest; quota guidance preserves the prior complete index and rejects automatic eviction.",
-        "verification": [
-          "focused local-client and local-shell suites 15/15 passed",
-          "web typecheck passed",
-          "real SQLite-Wasm storage and recovery suite 1/1 passed including quota rollback",
-          "git diff --check passed"
-        ]
-      },
-      "T022": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Client deletion ignored active-operation intent and no destructive confirmation UI enforced exact name, runtime/data classes, source-folder safety, or cancellation choice.",
-        "green": "Exact-name confirmation and explicit cancel-and-delete are required; worker deletes graph/source-cache/vector generation databases and registry rows, closes DB/VFS, releases ownership, and client removes saved-handle/local registration without source writes.",
-        "verification": [
-          "focused local-client and local-shell suites 17/17 passed",
-          "source handle write method remained unused",
-          "web typecheck and production build passed",
-          "real SQLite-Wasm suite 1/1 proved repository publication and all generation statuses absent after delete",
-          "git diff --check passed"
-        ]
-      },
-      "T023": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Controlled refresh exposed a live picker connection overwritten by stale restore; deletion exposed an unintended remote repository discovery request.",
-        "green": "The Chromium journey now cancels, indexes, browses, refreshes one controlled content-hash change with exact counts, reloads the refreshed generation, measures local reads, deletes with exact-name confirmation, preserves source bytes, and emits zero forbidden requests.",
-        "verification": [
-          "full Chromium lifecycle 1/1 passed in 14.1 seconds",
-          "refresh counts added 0 changed 1 deleted 0 unchanged 0 skipped 0 and four-symbol generation survived reload",
-          "20 samples each p95 search 110.8 ms graph 105.5 ms impact 104.4 ms",
-          "multi-tab lock and real SQLite-Wasm recovery suites 3/3 passed",
-          "web production build and typecheck passed",
-          "320 CSS pixel overflow check and zero forbidden request audit passed",
-          "git diff --check passed"
-        ]
-      },
-      "T024": {
-        "status": "completed_with_reviewability_warning",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Slice 2 measured 18 files and +4231/-161 overall, including ten production web files at +2343/-139; the first chained full-suite attempt leaked from Node 24 into unsupported Node 26 after the first command.",
-        "green": "The slice remains confined to the accepted repository-client, local-indexing, repository-shell, lifecycle-test, and durable-record surfaces with no fourth capability class; exporting Node 24.11.1 for the full shell restored a clean regression gate.",
-        "reviewability": {
-          "all": "18 files, +4231/-161",
-          "production": "10 web files, +2343/-139",
-          "status": "warning_retained_for_final_backstop",
-          "undeclared_capability_surfaces": 0
-        },
-        "verification": [
-          "root build and typecheck passed",
-          "root Vitest 262 files and 4670 tests passed with 181 expected skips",
-          "web lint completed with 0 errors and 15 warnings",
-          "web Vitest 25 files and 156 tests passed",
-          "Chromium packaged assets, locks, storage, and complete lifecycle journeys 5/5 passed",
-          "20-sample p95 search 115.0 ms graph 102.9 ms impact 100.6 ms",
-          "git diff --check passed"
-        ]
-      },
-      "T025": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The capability module was missing; then protocol v1 rejected capabilities as an invalid index request and the public client returned only the worker subset without main-thread picker/drop state.",
-        "green": "Independent live structural probes now derive stable full, snapshot-only, and unsupported reports; the booted worker reports actual OPFS, Web Lock, and WASM/CSP state, which the client merges with main-thread secure-context, picker, drop, quota, and persistence probes.",
-        "refactor": "All probes are injectable and passive, with no browser-name inference, picker/permission action, or persist call; failures normalize to stable states and ordered user guidance.",
-        "verification": [
-          "focused capability, client, and worker Vitest 29/29 passed",
-          "dedicated capability matrix and worker bootstrap cases 8/8 passed",
-          "touched-file ESLint passed",
-          "web typecheck and production build passed",
-          "packaged worker and same-origin WASM assets emitted",
-          "git diff --check passed"
-        ]
-      },
-      "T026": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Focused tests exposed the generic legacy snapshot kind, missing accepted-time and fingerprint metadata, an uncorrelated raw client request, no duplicate registry or explicit Replace contract, implicit refresh behavior, and no production-worker import dispatch.",
-        "green": "Each snapshot import now receives a distinct opaque id, accepted time, immutable bounded collection, file/byte counts, and manifest fingerprint metadata; duplicate fingerprints warn without merging, replacement requires explicit confirmation, refresh is unavailable, and the worker publishes/query-serves dropped or imported snapshots through the shared atomic index path.",
-        "refactor": "Picked folders and snapshots share accepted-source admission plus initial extraction/publication while source kinds keep handle, reconnect, refresh, and immutable snapshot semantics separate.",
-        "verification": [
-          "focused source, client, and shell Vitest 32/32 passed",
-          "web typecheck and production build passed",
-          "real Chromium SQLite-Wasm storage and snapshot import/query tests 2/2 passed",
-          "legacy snapshot source-kind assumptions eliminated",
-          "git diff --check passed"
-        ]
-      },
-      "T027": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The capability fallback had no accessible UI or engine-project coverage; after the initial green pass, the expanded sidebar controls obscured the Chromium navigation target at 320 CSS pixels.",
-        "green": "The repository switcher now exposes a compact expandable live capability report, folder-picker gating, directory-drop and keyboard file-input snapshot paths, and precise immutable/no-reconnect guidance. Chromium validates its full path while Firefox and WebKit independently validate their observed degradation without browser-name assumptions.",
-        "refactor": "Modern and legacy directory-drop adapters share one bounded snapshot admission path, engine projects share one capability assertion, and collapsed details preserve mobile navigation space.",
-        "verification": [
-          "focused capability, client, shell, and worker Vitest 40/40 passed",
-          "web typecheck passed",
-          "Chromium Firefox WebKit degradation Playwright 3/3 passed",
-          "full Chromium production-worker storage and snapshot flows 2/2 passed",
-          "touched-file ESLint completed with 0 errors and 2 existing fast-refresh warnings",
-          "git diff --check passed"
-        ]
-      },
-      "T028": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The embedding state module and focused security tests were absent, so the initial Vitest suite failed import resolution before any test could run.",
-        "green": "An explicit profile projection now persists only repository consent, canonical endpoint origin/path, model/dimensions, graph/vector generations, coverage, input hashes, and bounded resume state. Credentials live only in a page-lifetime Map and a new vault starts empty.",
-        "refactor": "One projection function validates both writes and reads, one serializer forms the durable allowlist, and safe diagnostics discard raw causes while removing URL userinfo, query, and fragment data.",
-        "verification": [
-          "focused embedding security Vitest 4/4 passed",
-          "embedding plus capability and storage-client regression Vitest 21/21 passed",
-          "web typecheck passed",
-          "scoped ESLint passed with zero findings",
-          "production web build passed",
-          "durable-state assertions exclude authorization URL secret source provider and raw-cause sentinels",
-          "git diff --check passed"
-        ]
-      },
-      "T029": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Six endpoint-policy cases and ten transport/provider classification cases failed because validation, policy errors, and safe failure mapping were absent while the four T028 persistence cases remained green.",
-        "green": "Only direct HTTPS URLs without userinfo, query, or fragment pass configuration. Network, HTTP, credential, model, dimension, partial-response, cancellation, and unavailable failures map to stable structured-clone-safe envelopes with retry guidance and optional redacted origin/path.",
-        "refactor": "One fail-closed endpoint validator feeds profile writes, one table-shaped failure mapper returns worker-compatible plain objects, and raw causes/provider bodies are accepted only as ignored inputs that never reach messages or diagnostics.",
-        "verification": [
-          "focused embedding policy and persistence Vitest 20/20 passed",
-          "embedding plus worker envelope regression Vitest 34/34 passed",
-          "web typecheck passed",
-          "scoped ESLint passed with zero findings",
-          "redaction assertions exclude endpoint credentials query fragment raw provider and raw cause sentinels",
-          "git diff --check passed"
-        ]
-      },
-      "T030": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Eight initial worker cases showed embed requests falling through the keyword index path, publishing an undefined generation, making no endpoint calls, and providing no cancellable or convergent semantic lifecycle.",
-        "green": "A distinct protocol-v1 embed operation now requires an existing published graph, composes and hashes deterministic browser inputs, batches direct HTTPS endpoint calls at 32 items and vector transactions at 500 rows, validates model/dimension/node/hash/order, writes generation-local little-endian vectors, and persists secret-free progress for cancel/resume.",
-        "refactor": "Pure resume and batch validators live in the embedding module, the worker reuses its operation registry/progress/terminal/cancel machinery, and the SQLite store reuses canonical node_vectors plus project_metadata inside the published generation database without schema changes.",
-        "verification": [
-          "focused worker and embedding Vitest 44/44 passed",
-          "valid 32-item resume prefix skipped committed work and completed the remaining 3 items",
-          "in-flight cancellation produced zero vector writes and no later endpoint call",
-          "real Chromium SQLite-Wasm storage and snapshot journeys 2/2 passed with 8-byte two-dimension vector and paused resume state evidence",
-          "web typecheck and production build passed",
-          "scoped ESLint passed with zero findings",
-          "git diff --check passed"
-        ]
-      },
-      "T031": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "After correcting a fixture-only local repository setup issue, the Chromium audit proved an unstamped embed request reached the configured endpoint and completed, violating the explicit-consent boundary.",
-        "green": "The worker now requires a valid explicit consent timestamp before endpoint validation or fetch. Local folder indexing, keyword search, and cached source browsing permit only enumerated same-origin shipped assets with zero page fetch/XHR/WebSocket/beacon attempts; a consent-stamped request can reach only the configured HTTPS endpoint with the page-session authorization header.",
-        "refactor": "One fail-closed audit records only phase, redacted origin/path, and resource type across browser request events plus instrumented page channels. It rejects any pre-consent API, LSP, WebSocket, external, or unenumerated asset request and never records headers, bodies, source text, or credentials.",
-        "verification": [
-          "Chromium network boundary Playwright 1/1 passed",
-          "pre-consent local index search and cached source produced zero forbidden requests and zero page network channel attempts",
-          "unstamped embed returned consent_required with zero endpoint calls",
-          "stamped embed made exactly one POST to the configured HTTPS endpoint and completed one vector",
-          "redacted audit localStorage URL and page text contained no session credential",
-          "focused worker and embedding Vitest 45/45 passed",
-          "web typecheck and scoped ESLint passed",
-          "git diff --check passed"
-        ]
-      },
-      "T032": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The production-worker Chromium lifecycle reached cancellation with the endpoint held in flight, then failed because no read-only storage-embedding-state request existed to prove paused resume metadata or vector absence.",
-        "green": "Cancellation prevents in-flight vector writes and later calls, same-generation resume converges three model/dimension/hash-aligned vectors, provider failure preserves keyword reads, generation replacement exposes no stale vectors, and an old-generation resume fails before transport.",
-        "refactor": "One built-worker locator and deterministic protocol, storage, and timing helpers produce a redacted endpoint log, 20-sample read evidence, a structured operation attachment, and a successful-run Playwright trace.",
-        "verification": [
-          "focused worker and embedding Vitest 45/45 passed",
-          "web typecheck passed",
-          "web lint completed with zero errors and 15 existing warnings",
-          "complete Chromium local-indexing-full suite 2/2 passed",
-          "active p95 search 40.0 ms graph 36.3 ms impact 38.4 ms",
-          "paused cancelled unavailable and stale search p95 remained 37.4 to 40.1 ms",
-          "cancel produced one endpoint call zero vectors and paused zero-item state",
-          "resume wrote three current-generation 12-byte vectors and stale generation wrote none",
-          "redacted endpoint call log contained exactly cancel resume and controlled failure calls",
-          "operation evidence JSON and Playwright trace attached",
-          "git diff --check passed"
-        ]
-      },
-      "T033": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The packaged suite failed import resolution because no shared asset manifest existed; after adding it, the request audit exposed the eager production worker chunk and required separating that intentional capability-probe worker from deferred database, WASM, and grammar requests.",
-        "green": "One fail-closed manifest now drives Vite entries, post-build validation, package copying, standalone verification, exact integrity checks, byte inventory, and browser request classification for ten required shipped assets.",
-        "refactor": "Vite, copy, package, corruption, and lazy-request evidence share exact asset ids and hashed-output patterns; initial routing permits the local capability worker but defers SQLite WASM, tree-sitter runtime, and grammars until local indexing and language demand.",
-        "verification": [
-          "root build passed with pre-copy and post-copy ten-asset verification",
-          "root and web typechecks passed",
-          "scoped web ESLint passed",
-          "packaged Chromium suite 3/3 passed",
-          "every required asset failed validation when deleted or replaced with corrupt bytes",
-          "initial route requested zero deferred database WASM parser or grammar assets",
-          "local TypeScript indexing requested same-origin SQLite WASM tree-sitter runtime and TypeScript grammar only",
-          "web/dist and dist/web byte inventories matched for all ten required assets",
-          "root npm pack dry-run contained 19 dist/web files and five WASM assets",
-          "git diff --check passed"
-        ]
-      },
-      "T034": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Focused component tests exposed missing reconnect, semantic opt-in, and reduced-motion treatment; the keyboard-only Chromium journey then exposed overwritten cancellation focus, focus aimed at a disabled post-semantic button, a lost deletion return target, and a computed 150 ms transition under reduced motion.",
-        "green": "Explicit reconnect and secret-safe semantic controls are keyboard reachable; cancellation and semantic completion focus terminal live status, deletion focuses the surviving overview heading, reduced-motion removes nonessential duration, and the full local lifecycle has no horizontal page overflow at 320 CSS pixels.",
-        "refactor": "Existing operation state drives shared status and alert semantics across the switcher and overview while one keyboard helper and one overflow helper cover the end-to-end acceptance journey.",
-        "verification": [
-          "focused shell client and worker Vitest 44/44 passed",
-          "web typecheck passed",
-          "scoped ESLint completed with zero errors and two existing fast-refresh warnings",
-          "complete Chromium local-indexing-full suite 3/3 passed",
-          "keyboard-only cancel semantic and delete focus checkpoints passed",
-          "computed reduced-motion progress transition duration was 0 seconds",
-          "320 CSS pixel lifecycle had no horizontal page overflow",
-          "20-sample p95 search 111.3 ms graph 102.5 ms impact 100.9 ms",
-          "semantic lifecycle read p95 remained 35.8 to 46.1 ms",
-          "Playwright accessibility trace attached",
-          "git diff --check passed"
-        ]
-      },
-      "T035": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The actual-repository suite first failed search p95 at 217.8 ms, then graph p95 at 187.3 ms, then phase evidence, and finally proved one 10.79 MB and 739-file source request exceeded the declared worker payload and batch budgets.",
-        "green": "Canonical prefix FTS search, one-time owned-database schema initialization, explicit staged publication phases, and sequential protocol-v1 source batches now keep the real self-repository deterministic, responsive, and within transfer budgets.",
-        "refactor": "One validated staged-source path serves picked folders, snapshots, and refresh while operation cleanup covers failure, cancellation, close, and delete; benchmark instrumentation records disclosed timing, query plans, responsiveness, resources, assets, and payloads.",
-        "verification": [
-          "focused client and worker Vitest 35/35 passed",
-          "web typecheck and scoped ESLint passed",
-          "complete Chromium lifecycle and storage suites 6/6 passed",
-          "two cold 737-file runs completed in 5.59 and 5.54 seconds",
-          "repeated graph output was deterministic at 23857 nodes and 23120 edges",
-          "20-sample p95 search 59.4 ms graph 77.3 ms impact 77.1 ms",
-          "maximum main-thread heartbeat gap was 76.5 ms",
-          "source batches stayed within 4 MiB and 64 files and all worker payloads within 8 MiB",
-          "query plans resource high-water and post-cleanup ten-asset inventory request order JSON and Playwright trace were captured",
-          "git diff --check passed"
-        ]
-      },
-      "T036": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The package contract asserted obsolete copier syntax, Playwright rebuilt web/dist without refreshing dist/web and exposed stale packaged worker bytes, and an asynchronous initial server-discovery request made the local privacy audit boundary nondeterministic.",
-        "green": "Portable package-copy assertions, authoritative copy-and-validate on every E2E server boot, a deterministic local-mode audit boundary, true-offline local reads, and an explicit trusted-host CSP now complete the cross-runtime and three-browser matrix.",
-        "refactor": "The existing four acceptance files keep independent parity, full-path, degradation, privacy, package, CSP, and lazy-asset assertions while one build startup path guarantees package freshness.",
-        "verification": [
-          "root cross-runtime extraction and package contracts 5/5 passed",
-          "complete Chromium Firefox WebKit matrix 12/12 passed",
-          "Chromium full lifecycle self-repository semantic accessibility privacy offline CSP package corruption and lazy assets passed",
-          "Firefox and WebKit independent degradation reports passed without browser-name parity promises",
-          "offline search graph and impact produced zero network requests",
-          "trusted-host same-origin CSP local index and search passed with zero violations and no COOP or COEP",
-          "root build copied and byte-verified all ten required assets in web/dist and dist/web",
-          "root and web typechecks passed",
-          "scoped ESLint and git diff --check passed"
-        ]
-      },
-      "T037": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "Executed quickstart review found an unshipped resolve progress phase, semantic-search wording beyond the delivered optional indexing UI, and missing trusted-host CSP offline scope and package/privacy verification guidance.",
-        "green": "The quickstart now matches the shipped phases and semantic flow, carries the exact tested same-origin CSP and no-COOP/COEP boundary, scopes offline reads precisely, and includes executable package/privacy commands; Unreleased has one capability-first user-facing entry.",
-        "refactor": "The packaged acceptance suite asserts the quickstart policy text directly so the executable CSP and documentation remain synchronized without exposing implementation paths in release notes.",
-        "verification": [
-          "documented Chromium full command passed 4/4",
-          "documented Chromium package and privacy command passed 5/5",
-          "documented Firefox and WebKit degradation command passed 2/2",
-          "packaged test verified exact documented CSP and no COOP or COEP requirement",
-          "scoped ESLint and git diff --check passed"
-        ]
-      },
-      "T038": {
-        "status": "completed",
-        "executor": "implement-executor_dispatched_then_parent_fallback",
-        "red": "The final web Vitest run failed 11 generic shell cases because passive capability discovery constructed Worker unconditionally where that capability was absent; pre-recording implementation diff accounting also confirmed a reviewability warning at 80 total files and 23014 inserted lines, excluding the durable T038 workflow and state record itself.",
-        "green": "Passive discovery now uses the canonical main-thread capability probe without constructing a missing worker, and explicit worker acquisition returns a typed capability_unavailable error; all acceptance and regression suites pass without a fourth capability class or non-goal violation.",
-        "refactor": "The guard reuses the canonical capability report and repository-client error taxonomy; the oversized but operator-ratified feature remains split into three independently demonstrated slices.",
-        "reviewability": {
-          "slice_3": {
-            "tracked_files": 25,
-            "tracked_insertions": 6697,
-            "tracked_deletions": 800,
-            "untracked_files": 9,
-            "untracked_lines": 2378
-          },
-          "complete_feature": {
-            "tracked_files": 71,
-            "tracked_insertions": 20636,
-            "tracked_deletions": 2099,
-            "untracked_files": 9,
-            "untracked_lines": 2378
-          },
-          "status": "warn_non_blocking",
-          "boundary": "All files remain directly traceable to the ratified extraction, storage, worker, client, UI, package, documentation, and acceptance-test ownership; no fourth capability class was introduced."
-        },
-        "verification": [
-          "root npm test passed 262 files and 4670 tests with 15 files and 181 tests skipped",
-          "root production build copied and byte-verified all ten required browser assets",
-          "root and web typechecks passed",
-          "web Vitest passed 27 files and 199 tests",
-          "web lint completed with zero errors and 15 existing warnings",
-          "Chromium Firefox WebKit lifecycle degradation privacy package CSP and performance matrix passed 12/12",
-          "Chromium lock and storage recovery passed 4/4",
-          "two 737-file runs completed in 6.57 and 5.48 seconds with deterministic 23865-node and 23128-edge output",
-          "20-sample p95 search 56.8 ms graph 71.8 ms impact 69.7 ms and maximum heartbeat gap 83.4 ms",
-          "git diff --check passed"
-        ]
-      }
-      }
+    "hooks": {
+      "before_specify": "git feature hook already satisfied by prepared branch; duplicate skipped",
+      "after_specify_agent_context": "disabled; skipped",
+      "after_specify_git": "satisfied by per-phase autopilot checkpoint"
     }
   },
   "plan": [
@@ -1237,312 +166,140 @@
       "status": "completed"
     },
     {
-      "step": "Phase 2: Clarify — Browser Capability and UX Contracts",
-      "status": "completed"
+      "step": "Phase 2: Clarify - Grammar and Graph Semantics",
+      "status": "in_progress"
     },
     {
-      "step": "Phase 2: Clarify — Consensus — Browser Capability and UX Contracts",
-      "status": "completed"
+      "step": "Phase 2: Clarify - Grammar and Graph Semantics Consensus",
+      "status": "pending"
     },
     {
-      "step": "Phase 2: Clarify — Storage, Integrity, and Runtime Contracts",
-      "status": "completed"
+      "step": "Phase 2: Clarify - Guardrails, Errors, and Read-only Safety",
+      "status": "pending"
     },
     {
-      "step": "Phase 2: Clarify — Consensus — Storage, Integrity, and Runtime Contracts",
-      "status": "completed"
+      "step": "Phase 2: Clarify - Guardrails, Errors, and Read-only Safety Consensus",
+      "status": "pending"
     },
     {
-      "step": "Phase 2: Clarify — Embedding, Security, and Delivery",
-      "status": "completed"
+      "step": "Phase 2: Clarify - Public Surfaces, Parity, and Delivery",
+      "status": "pending"
     },
     {
-      "step": "Phase 2: Clarify — Consensus — Embedding, Security, and Delivery",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify — Performance and Cross-Runtime Parity",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 2: Clarify — Consensus — Performance and Cross-Runtime Parity",
-      "status": "completed"
+      "step": "Phase 2: Clarify - Public Surfaces, Parity, and Delivery Consensus",
+      "status": "pending"
     },
     {
       "step": "Phase 3: Plan",
-      "status": "completed"
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — UX",
-      "status": "completed"
+      "step": "Phase 4: Checklist - API Contracts",
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — Consensus — UX",
-      "status": "completed"
+      "step": "Phase 4: Checklist - API Contracts Consensus",
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — Security",
-      "status": "completed"
+      "step": "Phase 4: Checklist - Security",
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — Consensus — Security",
-      "status": "completed"
+      "step": "Phase 4: Checklist - Security Consensus",
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — Data Integrity",
-      "status": "completed"
+      "step": "Phase 4: Checklist - Performance",
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — Consensus — Data Integrity",
-      "status": "completed"
+      "step": "Phase 4: Checklist - Performance Consensus",
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — Performance",
-      "status": "completed"
+      "step": "Phase 4: Checklist - Error Handling and Data Integrity",
+      "status": "pending"
     },
     {
-      "step": "Phase 4: Checklist — Consensus — Performance",
-      "status": "completed"
+      "step": "Phase 4: Checklist - Error Handling and Data Integrity Consensus",
+      "status": "pending"
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Phase 6: Analyze",
-      "status": "completed"
+      "status": "pending"
     },
     {
-      "step": "Phase 6: Analyze — Consensus",
-      "status": "completed"
+      "step": "Phase 6: Analyze - Consensus",
+      "status": "pending"
     },
     {
       "step": "Phase 6.5: Confidence Gate",
-      "status": "completed"
+      "status": "pending"
     },
     {
-      "step": "Phase 7: Implement — Slice 1 Browser Graph Bootstrap (T001–T012)",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement — Slice 2 Local Repository Shell and Lifecycle (T013–T024)",
-      "status": "completed"
-    },
-    {
-      "step": "Phase 7: Implement — Slice 3 Degradation, Semantic Opt-In, and Shipping (T025–T038)",
-      "status": "completed"
+      "step": "Phase 7: Implement - Pending task decomposition",
+      "status": "pending"
     },
     {
       "step": "Post: Doctor Extension Check",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Verify Implementation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Verify Tasks Phantom Check",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Code Review",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Integration Suite",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Reviewability Diff Gate",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Self-Review",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: UAT Runbook Generation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Final Reviewability Backstop",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: PR Packet/Body Generation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: PR Body Generation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: PR Creation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Review Remediation",
-      "status": "completed"
+      "status": "pending"
     },
     {
       "step": "Post: Retrospective",
-      "status": "completed"
-    },
-    {
-      "step": "Post: Archive Cleanup",
-      "status": "completed"
+      "status": "pending"
     }
-  ],
-  "post": {
-    "doctor_extension_check": "completed",
-    "verify_implementation": "completed",
-    "verify_tasks_phantom_check": "completed",
-    "code_review": "completed_after_remediation",
-    "integration_suite": "completed",
-    "reviewability_diff_gate": "completed_warn_non_blocking",
-    "self_review": "completed_no_gaps",
-    "uat_runbook_generation": "skipped_generate_uat_skeleton_deferred",
-    "final_reviewability_backstop": "completed_warn_proceed",
-    "pr_packet_body_generation": "completed_validated",
-    "pr_body_generation": "completed_validated",
-    "pr_creation": "completed_draft",
-    "review_remediation": "completed",
-    "retrospective": "completed",
-    "archive_cleanup": "completed"
-  },
-  "post_evidence": {
-    "live_base": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
-    "reviewability": {
-      "status": "warn_non_blocking",
-      "all": "82 files, +24193/-2101",
-      "production_and_config": "33 files, +10528/-234",
-      "tests": "25 files, +7737/-11",
-      "correctness_blocker": false,
-      "atomicity_route": "one-navigable-PR",
-      "review_order": "three operator-ratified vertical slices"
-    },
-    "self_review": {
-      "status": "completed_no_gaps",
-      "edge_case_gaps": 0,
-      "orphan_requirements": 0,
-      "silent_deferrals": 0,
-      "tidiness_findings": 0
-    },
-    "uat_runbook": {
-      "status": "skipped",
-      "reason": "generate-uat-skeleton deferred and no committed source-derived runbook exists"
-    },
-    "final_reviewability_backstop": {
-      "status": "warn",
-      "mode": "committed_fallback_evidence",
-      "proceed": true,
-      "implementation_checkpoint": "8e55cac1617c9f37f12f32a0305c2bc2e936dc66",
-      "base_commit": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
-      "diff": "83 files, +24406/-2099",
-      "correctness_blocker": false,
-      "atomicity_route": "one-navigable-PR",
-      "pr_marker_plan": null
-    },
-    "pr_packet_body": {
-      "status": "passed",
-      "helper": "pr-packet-output",
-      "packet_path": "specs/007-in-browser-indexing/.process/pr-packets/spec-007.json",
-      "body_file": "specs/007-in-browser-indexing/.process/pr-packets/spec-007/body.md",
-      "generated_title": "feat(SPEC-007): Add private in-browser indexing",
-      "target": {
-        "base_branch": "main",
-        "head_branch": "007-in-browser-indexing"
-      },
-      "read_only_validation": {
-        "status": "passed",
-        "pr_blocked": false,
-        "writes_state": false,
-        "packet_sha256": "5eff94f2bd7692b321a1cb7b684d56b41b8d2b5e070adeead109f93e1343b4a2",
-        "body_sha256": "9103307fd32a0e8f8d1aac4a0df68960cbec810699166f2c4ab4472c68bf206f"
-      },
-      "checkpoint_commit": "5e7b4c92d3ce62e934f64a5660b5dff57dfdb4b7",
-      "persisted_validation": {
-        "status": "passed",
-        "pr_blocked": false,
-        "validation_result_path": "specs/007-in-browser-indexing/.process/pr-packets/spec-007/validation.json",
-        "validation_source": "validate-pr-packet-read-only"
-      },
-      "pr_workflow_contract": {
-        "status": "passed",
-        "title": "feat(SPEC-007): Add private in-browser indexing",
-        "writes_state": false
-      },
-      "bootstrap_repair": "Authoritative SpecKit Pro source now prefers the nearest trusted marker, so this nested linked worktree is not captured by the dirty parent source checkout."
-    },
-    "pr_creation": {
-      "status": "completed_draft",
-      "number": 185,
-      "url": "https://github.com/racecraft-lab/codegraph/pull/185",
-      "title": "feat(SPEC-007): Add private in-browser indexing",
-      "base_ref": "main",
-      "base_oid": "91cf4b24cb2d64440733675e0db67040adc9c3d6",
-      "head_ref": "007-in-browser-indexing",
-      "creation_head_oid": "0e8d7e856b09116b443db14fd88558b89e997e3c",
-      "is_draft": true,
-      "mergeable": "MERGEABLE",
-      "initial_feedback": {
-        "reviews": 0,
-        "comments": 0,
-        "checks": "queued_or_in_progress"
-      }
-    },
-    "review_remediation": {
-      "status": "completed",
-      "reviewed_source_head": "f3a0795f54abcc1f2cb76cbb8790f430c8c545b0",
-      "mergeable": "MERGEABLE",
-      "human_reviews": 0,
-      "human_comments": 0,
-      "automated_review_source": "github-advanced-security",
-      "codeql": {
-        "reported_alerts": [71, 72, 73, 74, 75],
-        "fixed_alerts": [71, 73, 74, 75],
-        "dismissed_alerts": [72],
-        "open_alerts": 0,
-        "dismissal_contract": "FR-022, FR-024, FR-042, and FR-043 require an operator-configured provider-neutral HTTPS endpoint after explicit consent; validation rejects HTTP, credentials, queries, and fragments, while fetch omits ambient credentials and redirects."
-      },
-      "changes": [
-        "Vue script extraction uses a bounded structural scanner instead of HTML-tag filtering regex.",
-        "Self-repository benchmark validation and reads use the same open file descriptor.",
-        "Dedicated-worker ingress rejects unexpected origins.",
-        "Error and type review findings were remediated with regression tests."
-      ],
-      "verification": [
-        "focused worker and extraction Vitest passed 28/28",
-        "web typecheck passed",
-        "scoped ESLint passed with zero errors",
-        "full web Vitest passed 27 files and 212 tests",
-        "root build passed",
-        "focused Chromium full-path suite passed 4/4",
-        "737-file self-repository runs completed in 6.05 and 5.50 seconds",
-        "latest p95 search 61.5 ms graph 73.1 ms impact 70.7 ms",
-        "latest maximum main-thread heartbeat gap 75.6 ms",
-        "CodeQL, PR-impact, dependency review, installer coverage, and the Node/platform CI matrix passed"
-      ]
-    },
-    "retrospective": {
-      "status": "completed",
-      "path": "specs/007-in-browser-indexing/retrospective.md",
-      "completion_rate": 100,
-      "spec_adherence": 100,
-      "tasks_completed": 38,
-      "tasks_total": 38,
-      "functional_requirements_implemented": 63,
-      "nonfunctional_requirements_defined": 0,
-      "success_criteria_met": 21,
-      "critical_findings": 0,
-      "proposed_spec_changes": [],
-      "self_assessment": "7/7_pass"
-    }
-  },
-  "resume": {
-    "last_completed": "Post: Archive Cleanup",
-    "current": null,
-    "next": null,
-    "required_action": "None; SPEC-007 is merged and archived."
-  }
+  ]
 }

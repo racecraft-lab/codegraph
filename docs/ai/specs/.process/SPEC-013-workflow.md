@@ -29,13 +29,15 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 
 | Phase | Command | Status | Notes |
 |---|---|---|---|
-| Specify | `/speckit-specify` | ⏳ Pending | Define the public subset and observable contracts. |
-| Clarify | `/speckit-clarify` | ⏳ Pending | Audit grammar, guardrails, and cross-surface parity. |
+| Specify | `/speckit-specify` | ✅ Complete | 32 requirements, 3 user stories, 9 acceptance scenarios; G1 passed. |
+| Clarify | `/speckit-clarify` | 🔄 In Progress | Audit grammar, guardrails, and cross-surface parity. |
 | Plan | `/speckit-plan` | ⏳ Pending | Design the dependency-free parser/planner/runtime and two vertical slices. |
 | Checklist | `/speckit-checklist` | ⏳ Pending | Run four focused requirements-quality domains. |
 | Tasks | `/speckit-tasks` | ⏳ Pending | Produce story-organized TDD tasks and explicit slice boundaries. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check every decision, requirement, and task. |
+| Confidence Gate | G6.5 | ⏳ Pending | Record advisory implementation readiness after analysis. |
 | Implement | `/speckit-implement` | ⏳ Pending | Execute approved tasks with test-first evidence. |
+| Post | Canonical post gates | ⏳ Pending | Verify, review, publish, remediate, and retrospect. |
 
 **Status legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -49,6 +51,7 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | G4 | After Checklists | Every genuine gap is resolved in `spec.md` or `plan.md`; intentional exclusions are documented. |
 | G5 | After Tasks | Every functional requirement maps to dependency-ordered TDD work and each accepted slice is independently demonstrable. |
 | G6 | After Analyze | No critical issue remains; every warning has an explicit disposition. |
+| G6.5 | Confidence Gate | Record the advisory confidence score, evidence, uncertainty, and implementation disposition. |
 | G7 | After each implementation slice | Focused tests, build, full relevant suite, CLI/MCP parity, guardrails, and self-index UAT pass. |
 
 ### Canonical Post Gates
@@ -56,20 +59,22 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 Autopilot must keep these steps visible in durable workflow state and complete
 or explicitly skip each before final handoff:
 
-- Post: Doctor Extension Check
-- Post: Verify Implementation
-- Post: Verify Tasks Phantom Check
-- Post: Code Review
-- Post: Integration Suite
-- Post: Reviewability Diff Gate
-- Post: Self-Review
-- Post: UAT Runbook Generation
-- Post: Final Reviewability Backstop
-- Post: PR Packet/Body Generation
-- Post: PR Body Generation
-- Post: PR Creation
-- Post: Review Remediation
-- Post: Retrospective
+| Canonical step | Status |
+|---|---|
+| Post: Doctor Extension Check | ⏳ Pending |
+| Post: Verify Implementation | ⏳ Pending |
+| Post: Verify Tasks Phantom Check | ⏳ Pending |
+| Post: Code Review | ⏳ Pending |
+| Post: Integration Suite | ⏳ Pending |
+| Post: Reviewability Diff Gate | ⏳ Pending |
+| Post: Self-Review | ⏳ Pending |
+| Post: UAT Runbook Generation | ⏳ Pending |
+| Post: Final Reviewability Backstop | ⏳ Pending |
+| Post: PR Packet/Body Generation | ⏳ Pending |
+| Post: PR Body Generation | ⏳ Pending |
+| Post: PR Creation | ⏳ Pending |
+| Post: Review Remediation | ⏳ Pending |
+| Post: Retrospective | ⏳ Pending |
 
 ---
 
@@ -216,17 +221,36 @@ Apply `.specify/memory/constitution.md` throughout:
 All Node commands use the `.nvmrc` runtime. Source execution that touches
 `node:sqlite` requires Node 22.5 or newer; local verification uses Node 24.11.1.
 
+### Autopilot Phase 0 Evidence
+
+Autopilot revalidated the scaffold from the exact workflow-bearing worktree
+with `gpt-5.6-sol` at `xhigh` reasoning. The direct Git branch/root/upstream
+guard passed. The SpecKit runner also passed all prerequisite checks when given
+absolute worktree paths; its linked-worktree metadata still follows Git's common
+control checkout and reports `main`/`is_worktree=false`, so the direct Git guard
+remains authoritative for phase binding.
+
+The repository-pinned Node `24.11.1` baseline passed:
+
+- `npm run build`
+- `npm run typecheck`
+- `npm test` — 262 test files passed, 15 skipped; 4,670 tests passed,
+  181 skipped
+
+Only the durable autopilot state file was modified after the baseline. The
+installed phase-agent bundle dry-run was current with no mutation. The resolved
+spec, plan, and tasks templates were read in full, and the implementation role
+is `implement-executor`.
+
 ### Capability Path
 
 Capability path: roadmap/spec/project context -> repository files and the
-installed SpecKit runner; standards/API grounding -> official openCypher and
-Node 24 documentation after Context7's transport closed; stack readiness ->
-installed `gh-stack` CLI and skill. Confidence: high because the repository,
-runtime, extension, and primary documentation were verified in this session.
-
-CodeGraph's structural exploration MCP tool was not exposed in this task's live
-tool surface. That limitation was stated and repository inspection continued
-with local read-only search; do not initialize a second graph.
+installed SpecKit runner plus the live CodeGraph/GitNexus query surface;
+standards/API grounding -> Context7 when available and primary official
+documentation fallback; stack readiness -> installed `gh-stack` CLI and skill;
+delivery -> GitHub connector and `gh`. Confidence: high because the repository,
+runtime, extension, presets, agents, and capability surface were enumerated in
+this session.
 
 ### Scoped Instructions
 
@@ -398,13 +422,23 @@ caller-configurable limits/deadlines, --file input, and public parser/AST APIs.
 
 | Metric | Value |
 |---|---|
-| Functional requirements | Pending |
-| User stories | 3 proposed |
-| Acceptance scenarios | Pending |
+| Functional requirements | 32 |
+| User stories | 3 |
+| Acceptance scenarios | 9 |
+| Success criteria | 9 |
+| Quality checklist | 16 passed, 0 open |
+| G1 | PASS — 0 `[NEEDS CLARIFICATION]` markers |
 
 ### Files Generated
 
-- [ ] `specs/013-cypher-query-access/spec.md`
+- [x] `specs/013-cypher-query-access/spec.md`
+- [x] `specs/013-cypher-query-access/checklists/requirements.md`
+- [x] `.specify/feature.json`
+
+The mandatory `before_specify` Git feature hook was already satisfied by the
+prepared `013-cypher-query-access` worktree and was not repeated. The disabled
+agent-context hook was skipped. The enabled Git commit hook is satisfied by
+autopilot's per-phase checkpoint below.
 
 ### Required Traceability
 
@@ -819,6 +853,21 @@ Focus on:
 | ID | Severity | Issue | Resolution |
 |---|---|---|---|
 | Pending | Pending | Pending | Pending |
+
+---
+
+## Phase 6.5: Confidence Gate
+
+**When to run:** After Analyze and its consensus item complete. Record the
+advisory confidence score, supporting evidence, remaining uncertainty, and the
+implementation disposition before dispatching implementation.
+
+| Metric | Value |
+|---|---|
+| Mode | Advisory |
+| Threshold | 0.90 |
+| Score | Pending |
+| Disposition | Pending |
 
 ---
 
