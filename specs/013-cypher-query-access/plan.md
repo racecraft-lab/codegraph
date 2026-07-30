@@ -22,7 +22,7 @@ SPEC-013 adds one bounded, read-only Cypher query contract over CodeGraph's publ
 
 **Project Type**: Local-first library, CLI, and MCP server.
 
-**Performance Goals**: Default 100-row result cap, hard 1,000-row cap, `effectiveCap + 1` bounded truncation detection, variable path upper bound of 8 relationships, and one fixed five-second execution deadline.
+**Performance Goals**: Default 100-row result cap, hard 1,000-row cap, `effectiveCap + 1` bounded truncation detection, variable path upper bound of 8 relationships, bounded recursive expansion before final `LIMIT`, 1 MiB canonical JSON machine-output payload ceiling, representative query-plan proof on realistic graph density, and one fixed five-second execution deadline.
 
 **Constraints**: Dependency-free parser; no direct SQL input; no mutation; no external parameters; no network calls; no unexpected schema writes; deterministic output ordering and byte-identical CLI/MCP JSON.
 
@@ -129,8 +129,8 @@ __tests__/
 2. The lexer emits tokens with UTF-16 offset, line, and column tracking. Keywords are case-insensitive. Schema identifiers remain case-sensitive.
 3. The recursive-descent parser accepts exactly one connected `MATCH` chain, optional path binding, optional `WHERE`, required `RETURN`, optional `ORDER BY`, and optional `LIMIT`.
 4. The parser builds a private AST. No AST, parser, planner, lexer, or emitter type is exported.
-5. The semantic planner validates labels, relationship types, properties, variable uniqueness, aggregate grouping, JSON predicate exclusions, active-edge visibility, caps, and read-only grammar.
-6. The SQL emitter produces one parameterized SQLite statement whose top level is `SELECT`, `WITH`, or `WITH RECURSIVE`, with every CTE body and final statement being `SELECT`-only.
+5. The semantic planner validates labels, relationship types, properties, variable uniqueness, aggregate grouping, JSON predicate exclusions, active-edge visibility, caps, read-only grammar, and opaque storage JSON public-shape conversion.
+6. The SQL emitter produces one parameterized SQLite statement whose top level is `SELECT`, `WITH`, or `WITH RECURSIVE`, with every CTE body and final statement being `SELECT`-only. Variable-path plans keep depth, direction, visited relationship identity, and bounded frontier/output guards in or immediately around the recursive CTE so recursive growth is not delegated to a final top-level `LIMIT`.
 7. The runtime executes the statement through a dedicated read-only SQLite connection in a worker boundary and returns a shared result union.
 8. The serializer produces canonical UTF-8 minified stable-key JSON with no trailing newline for CLI `--json` and MCP text.
 
@@ -192,6 +192,12 @@ The emitter aliases the predicate per edge table reference.
 - `IS NULL` and `IS NOT NULL` are the only null equality tests.
 - Opaque JSON and array-valued fields may be returned but cannot appear in `WHERE`.
 
+### Opaque Stored JSON Conversion
+
+- Returned opaque storage JSON fields use explicit public-shape conversion: relationship `metadata` must parse to a JSON object, node `decorators` must parse to an array, and node `typeParameters` must parse to an array.
+- Malformed JSON, scalar JSON, or the wrong top-level public shape surfaces as null/absent for that public field and never as raw storage text.
+- Conversion failure must not crash query execution, must not change active-edge filtering, and must not make those fields predicateable in v1.
+
 ### Stable Ordering
 
 When `ORDER BY` is absent, apply CodeGraph's deterministic extension before caps:
@@ -213,6 +219,18 @@ Explicit ascending order places null after non-null. Explicit descending order p
 - Output includes only `effectiveCap` rows.
 - `truncated: true` appears only when one additional row exists.
 - No unbounded `totalRows` is computed or exposed.
+
+### Recursive Path Growth Guard
+
+- Variable path queries compile to bounded recursive plans only when every recursive step enforces depth <= 8 and relationship-simple visited-edge checks before emitting candidate rows.
+- Recursive plans must use the existing directional edge indexes (`idx_edges_source_kind` for outgoing steps and `idx_edges_target_kind` for incoming steps) where the relationship direction allows it.
+- Runtime and fixture probes must prove that row caps and user `LIMIT` do not serve as the only guard against recursive CTE growth.
+
+### Canonical Payload Bounding
+
+- The shared serializer measures the UTF-8 byte length of the deterministic minified canonical JSON payload before CLI `--json` and MCP text emission.
+- The machine-output payload ceiling is 1 MiB. If a success result would exceed that ceiling, the shared result becomes diagnostic `CYPHER_OUTPUT_TOO_LARGE` and includes guidance to narrow `RETURN`, `MATCH`, or `LIMIT`.
+- Payload-too-large diagnostics contain no partial rows and are covered by CLI/MCP byte-parity fixtures.
 
 ### Diagnostics
 
@@ -365,6 +383,8 @@ Implementation must maintain one matrix row per recipe, guard probe, and major r
 
 Retrieval-guardian review is mandatory for the default MCP steering change. Retrieval A/B validation is required before merge claims, but any external/off-box evaluation must remain blocked until the operator explicitly records provider, model/tool endpoints, repository context to be sent, retention/training setting, cost/time limit, and approval timestamp at runtime. Do not treat bootstrap or scaffold approval as off-box authorization.
 
+Representative performance rows must also record the `EXPLAIN QUERY PLAN` transcript or equivalent engine-plan artifact for variable-path, stable-ordering, count/grouping, cap+1, payload-ceiling, and timeout probes. Query-plan rows must identify whether directional edge traversal used `idx_edges_source_kind` or `idx_edges_target_kind`, whether SQLite reported temporary sort/group work, and whether any observed temp work is bounded by the documented cap, grouping cardinality, or timeout envelope.
+
 ## Validation Plan
 
 Focused validation:
@@ -376,6 +396,12 @@ npx vitest run __tests__/cli-query-command.test.ts
 npx vitest run __tests__/mcp-cypher-query.test.ts
 npx vitest run __tests__/cypher-recipes.test.ts
 ```
+
+Security fixtures must cover rejected mutating/direct-SQL syntax before SQLite prepare, parameter binding for every accepted string literal, rejected raw-control/Unicode/invalid string escapes, no raw query or literal-value persistence outside bounded diagnostics, read-only database invariants, timeout worker termination/replacement, and no external/off-box evaluation without runtime authorization.
+
+Performance fixtures must cover recursive variable paths before final `LIMIT`, stable ordering without `ORDER BY`, explicit `ORDER BY`, `count(*)`, `count(expr)` with implicit grouping, default and hard row caps, canonical payload-too-large diagnostics, repeated timeout cleanup, and realistic graph-density fixtures that exercise high out-degree and hub nodes. Representative plan checks must capture `EXPLAIN QUERY PLAN` or equivalent planner output and reviewer notes for index use and bounded temp sort/group work.
+
+Error-handling and data-integrity fixtures must cover lexer/parser/planner diagnostic taxonomy, unsupported-property diagnostics, Unicode astral code points, combining characters, CRLF/LF, multiline diagnostic spans, escaped excerpts, expected constructs, stable grammar anchors, malformed and wrong-shape stored JSON for `metadata`, `decorators`, and `typeParameters`, three-valued null truth-table probes, active-edge filtering, provenance, truncation-vs-timeout mapping, CLI exit behavior, MCP success-shaped mapping, deterministic repeated-run serialization, and no silent coercion or unsupported-syntax fallback.
 
 Full validation:
 
@@ -394,3 +420,4 @@ printf '%s' 'MATCH (n:function) RETURN n.name ORDER BY n.name LIMIT 5' | node di
 ```
 
 MCP validation must compare canonical JSON payload bytes from CLI `--json` and `codegraph_query` text for identical valid, capped, diagnostic, and timeout states.
+MCP validation must also include the payload-ceiling diagnostic and prove that the diagnostic bytes are identical to CLI `--json` for the same over-ceiling result state.

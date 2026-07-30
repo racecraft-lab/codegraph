@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 4: Checklist - API Contracts",
-  "updated_at": "2026-07-30T03:43:48Z",
+  "active_step": "Phase 5: Tasks",
+  "updated_at": "2026-07-30T04:20:19Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -337,6 +337,122 @@
       "after_plan_git": "satisfied by per-phase autopilot checkpoint"
     }
   },
+  "phase_4": {
+    "status": "completed",
+    "domains": {
+      "api_contracts": {
+        "status": "completed",
+        "executor": "checklist-executor",
+        "artifact": "specs/013-cypher-query-access/checklists/api-contracts.md",
+        "items": 24,
+        "initial_gaps": 1,
+        "resolved_gaps": 1,
+        "remaining_gaps": 0,
+        "remediation": [
+          "Defined malformed UTF-8 stdin as CYPHER_INVALID_STDIN_ENCODING before parser or executor entry.",
+          "Added the stable diagnostic to the CLI/MCP parity and data-model contracts."
+        ],
+        "consensus": {
+          "status": "not_required",
+          "reason": "No unresolved findings remained after evidence-grounded remediation.",
+          "confidence": "high"
+        },
+        "verification": {
+          "count_markers_gaps": 0,
+          "git_diff_check": "pass"
+        }
+      },
+      "security": {
+        "status": "completed",
+        "executor": "checklist-executor",
+        "artifact": "specs/013-cypher-query-access/checklists/security.md",
+        "items": 14,
+        "initial_gaps": 2,
+        "resolved_gaps": 2,
+        "remaining_gaps": 0,
+        "remediation": [
+          "Specified single-quoted string literal syntax, supported escapes, rejected forms, exact decoded comparisons, and mandatory parameter binding.",
+          "Prohibited persistence of raw query text, literal values outside bounded excerpts, emitted SQL, and bound parameters across diagnostics, logs, telemetry, and malfunction messages."
+        ],
+        "consensus": {
+          "status": "not_required",
+          "reason": "No unresolved findings remained after evidence-grounded remediation.",
+          "confidence": "high"
+        },
+        "verification": {
+          "initial_count_markers_gaps": 2,
+          "final_count_markers_gaps": 0,
+          "git_diff_check": "pass"
+        }
+      },
+      "performance": {
+        "status": "completed",
+        "executor": "checklist-executor",
+        "artifact": "specs/013-cypher-query-access/checklists/performance.md",
+        "items": 18,
+        "initial_gaps": 3,
+        "resolved_gaps": 3,
+        "remaining_gaps": 0,
+        "remediation": [
+          "Required depth, direction, visited-edge state, and bounded frontier/output guards inside recursive variable-path execution before final LIMIT or row caps.",
+          "Added a fixed 1 MiB canonical machine-output ceiling with CYPHER_OUTPUT_TOO_LARGE and no partial rows.",
+          "Required representative realistic-density query-plan evidence for traversal, ordering, grouping, caps, payload bounds, and deadlines."
+        ],
+        "consensus": {
+          "status": "not_required",
+          "reason": "No unresolved findings remained after evidence-grounded remediation.",
+          "confidence": "high"
+        },
+        "verification": {
+          "initial_count_markers_gaps": 3,
+          "final_count_markers_gaps": 0,
+          "checked_items": 18,
+          "open_items": 0,
+          "git_diff_check": "pass"
+        },
+        "errors": [
+          "Relative feature_dir marker count followed the linked-worktree control checkout; the documented absolute feature-dir fallback passed.",
+          "The first completed artifact left evaluated items unchecked; a correction pass marked all 18 verified items complete."
+        ]
+      },
+      "error_handling_and_data_integrity": {
+        "status": "completed",
+        "executor": "checklist-executor",
+        "artifact": "specs/013-cypher-query-access/checklists/error-handling.md",
+        "items": 22,
+        "initial_gaps": 2,
+        "resolved_gaps": 2,
+        "remaining_gaps": 0,
+        "remediation": [
+          "Required Unicode astral, combining-character, CRLF/LF, and multiline fixtures for UTF-16 diagnostic location and excerpt accuracy.",
+          "Defined malformed or wrong-shape opaque stored JSON conversion as null or absent without raw-storage leakage or type coercion."
+        ],
+        "consensus": {
+          "status": "not_required",
+          "reason": "No unresolved findings remained after evidence-grounded remediation.",
+          "confidence": "high"
+        },
+        "verification": {
+          "initial_count_markers_gaps": 2,
+          "final_count_markers_gaps": 0,
+          "checked_items": 22,
+          "open_items": 0,
+          "git_diff_check": "pass"
+        }
+      }
+    },
+    "totals": {
+      "items": 78,
+      "initial_gaps": 8,
+      "resolved_gaps": 8,
+      "remaining_gaps": 0
+    },
+    "gate": {
+      "id": "G4",
+      "status": "passed",
+      "reason": "0 [Gap] markers"
+    }
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -380,39 +496,39 @@
     },
     {
       "step": "Phase 4: Checklist - API Contracts",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - API Contracts Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Security",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Security Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Performance",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Performance Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Error Handling and Data Integrity",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 4: Checklist - Error Handling and Data Integrity Consensus",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 6: Analyze",

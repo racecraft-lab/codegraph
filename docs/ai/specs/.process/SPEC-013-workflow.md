@@ -32,8 +32,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Specify | `/speckit-specify` | ✅ Complete | 32 requirements, 3 user stories, 9 acceptance scenarios; G1 passed. |
 | Clarify | `/speckit-clarify` | ✅ Complete | Three sessions completed; all decisions encoded; G2 passed. |
 | Plan | `/speckit-plan` | ✅ Complete | Architecture packet complete; reviewability helper and G3 passed. |
-| Checklist | `/speckit-checklist` | 🔄 In Progress | Run four focused requirements-quality domains. |
-| Tasks | `/speckit-tasks` | ⏳ Pending | Produce story-organized TDD tasks and explicit slice boundaries. |
+| Checklist | `/speckit-checklist` | ✅ Complete | 78 checks; 8 gaps resolved; G4 passed with 0 remaining gaps. |
+| Tasks | `/speckit-tasks` | 🔄 In Progress | Produce story-organized TDD tasks and explicit slice boundaries. |
 | Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check every decision, requirement, and task. |
 | Confidence Gate | G6.5 | ⏳ Pending | Record advisory implementation readiness after analysis. |
 | Implement | `/speckit-implement` | ⏳ Pending | Execute approved tasks with test-first evidence. |
@@ -726,11 +726,11 @@ Focus on SPEC-013:
 
 | Checklist | Items | Gaps | Spec references |
 |---|---|---|---|
-| api-contracts | Pending | Pending | Pending |
-| security | Pending | Pending | Pending |
-| performance | Pending | Pending | Pending |
-| error-handling | Pending | Pending | Pending |
-| Total | Pending | Pending | Pending |
+| api-contracts | 24 | 0 (1 resolved) | FR-001 through FR-031; grammar, public API, CLI/MCP parity, and data model contracts |
+| security | 14 | 0 (2 resolved) | FR-002, FR-015, FR-016, FR-021 through FR-024, FR-028, FR-030 |
+| performance | 18 | 0 (3 resolved) | FR-008, FR-009, FR-018 through FR-022, FR-026, SC-007, SC-008 |
+| error-handling | 22 | 0 (2 resolved) | FR-003 through FR-005, FR-011 through FR-016, FR-019 through FR-028, SC-005 |
+| Total | 78 | 0 (8 resolved) | G4 passed: 0 `[Gap]` markers |
 
 For each genuine gap, update `spec.md` or `plan.md`, rerun the affected
 checklist, and document intentional exclusions instead of silently deferring

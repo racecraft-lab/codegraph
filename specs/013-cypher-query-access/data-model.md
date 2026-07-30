@@ -25,8 +25,8 @@ Represents one public CodeGraph node.
 | `isAsync` | boolean or null | Missing optional values surface as null. |
 | `isStatic` | boolean or null | Missing optional values surface as null. |
 | `isAbstract` | boolean or null | Missing optional values surface as null. |
-| `decorators` | array or null | Opaque return-only value; not predicateable. |
-| `typeParameters` | array or null | Opaque return-only value; not predicateable. |
+| `decorators` | array or null | Opaque return-only value; not predicateable. Malformed stored JSON or a non-array stored shape surfaces as null. |
+| `typeParameters` | array or null | Opaque return-only value; not predicateable. Malformed stored JSON or a non-array stored shape surfaces as null. |
 | `returnType` | string or null | Missing optional values surface as null. |
 
 `updatedAt` is intentionally excluded.
@@ -40,12 +40,14 @@ Represents one active public CodeGraph edge.
 | `source` | string | Source node id. |
 | `target` | string | Target node id. |
 | `kind` | string | One value from `EDGE_KINDS`; also the Cypher relationship type. |
-| `metadata` | object or null | Opaque return-only value; not predicateable. |
+| `metadata` | object or null | Opaque return-only value; not predicateable. Malformed stored JSON or a non-object stored shape surfaces as null. |
 | `line` | number or null | One-based occurrence line. |
 | `column` | number or null | Zero-based occurrence column; maps from storage `col`. |
 | `provenance` | string or null | `tree-sitter`, `scip`, `heuristic`, `lsp`, or null. |
 
 The internal SQL row id may be used only as private path state for relationship uniqueness. It is not part of the public relationship value.
+
+Opaque stored JSON conversion never exposes raw storage JSON text and never coerces malformed or wrong-shape storage values into a different public type.
 
 ### Path Value
 
@@ -60,6 +62,7 @@ Path validation:
 - A path cannot repeat the same internal relationship identity.
 - Nodes may recur.
 - Variable path upper bound must be explicit and no greater than 8.
+- Recursive expansion state must carry depth and visited relationship identities before rows reach final ordering or row caps.
 
 ## Query Model
 
@@ -83,6 +86,13 @@ Private lexer record:
 | `offset` | number | UTF-16 offset. |
 | `line` | number | One-based line. |
 | `column` | number | Zero-based column. |
+
+String token invariants:
+
+- V1 string literals are single-quoted only.
+- The lexer decodes only the supported escapes `\'`, `\\`, `\n`, `\r`, `\t`, `\b`, and `\f`.
+- Raw line terminators, NUL, other raw control characters, Unicode escape forms, invalid escapes, incomplete escapes, double-quoted strings, and literal concatenation produce syntax or unsupported-subset diagnostics before planning.
+- `raw` is retained only for source-span diagnostics; emitted SQL receives the decoded `value` only as a bound parameter.
 
 ### Private AST
 
@@ -117,6 +127,7 @@ Invariants:
 | `columns` | ResultColumn[] | Public result columns in return order. |
 | `effectiveCap` | number | 100 by default, <= 1,000 after clamp. |
 | `requiresWorker` | true | All runtime execution goes through the deadline boundary. |
+| `maxPayloadBytes` | number | Fixed 1 MiB UTF-8 canonical machine-output payload ceiling. |
 
 Emitter invariants:
 
@@ -126,6 +137,8 @@ Emitter invariants:
 - No direct SQL input.
 - No `PRAGMA`, `ATTACH`, `DETACH`, transaction control, DDL, or DML.
 - Every literal is represented by a bound parameter.
+- Variable path recursive terms enforce direction, depth <= 8, and relationship-simple visited-edge checks before final row caps or ordering are applied.
+- Opaque storage JSON conversion validates the expected public top-level shape before a returned value is serialized.
 
 ## Result Model
 
@@ -148,6 +161,8 @@ type CypherQueryResult =
 | `effectiveCap` | number | Applied cap. |
 | `truncated` | boolean | True only if one extra row exists. |
 
+Successful machine-readable canonical serialization must stay within `maxPayloadBytes`. If deterministic serialization would exceed that ceiling, the result is diagnostic `CYPHER_OUTPUT_TOO_LARGE` instead of success and contains no partial rows.
+
 ### Diagnostic Result
 
 | Field | Type | Notes |
@@ -167,6 +182,7 @@ type CypherQueryResult =
 Expected diagnostic codes:
 
 - `CYPHER_INPUT_TOO_LONG`
+- `CYPHER_INVALID_STDIN_ENCODING`
 - `CYPHER_SYNTAX`
 - `CYPHER_UNSUPPORTED`
 - `CYPHER_UNKNOWN_LABEL`
@@ -176,6 +192,7 @@ Expected diagnostic codes:
 - `CYPHER_DUPLICATE_VARIABLE`
 - `CYPHER_UNBOUNDED_PATH`
 - `CYPHER_PATH_TOO_DEEP`
+- `CYPHER_OUTPUT_TOO_LARGE`
 - `CYPHER_NOT_INDEXED`
 - `CYPHER_READ_ONLY_REFUSAL`
 - `CYPHER_INTERNAL_ERROR`

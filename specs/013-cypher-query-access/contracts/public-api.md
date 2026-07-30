@@ -74,7 +74,7 @@ type CypherValue =
   | { type: 'scalar'; value: null | boolean | number | string | Record<string, unknown> | unknown[] };
 ```
 
-`PublicNode` and `PublicRelationship` reuse CodeGraph public graph contracts, except fields excluded by SPEC-013 are not emitted. `CypherPath` contains ordered `nodes`, ordered `relationships`, and `length`.
+`PublicNode` and `PublicRelationship` reuse CodeGraph public graph contracts, except fields excluded by SPEC-013 are not emitted. Opaque storage JSON fields that are malformed or have the wrong public top-level shape surface as null/absent public values and never as raw storage strings. `CypherPath` contains ordered `nodes`, ordered `relationships`, and `length`.
 
 ## Limits
 
@@ -84,11 +84,12 @@ type CypherValue =
 | Default row cap | 100 |
 | Hard row cap | 1,000 |
 | Variable relationship upper bound | 8 |
+| Canonical machine-output payload ceiling | 1,048,576 UTF-8 bytes |
 | Execution deadline | 5,000 ms |
 
 ## Error Handling
 
-The public API returns diagnostic and timeout union values for expected query failures. It throws only for genuine host-level malfunctions that prevent the API from constructing a stable result.
+The public API returns diagnostic and timeout union values for expected query failures, including `CYPHER_OUTPUT_TOO_LARGE` when deterministic canonical serialization would exceed the fixed machine-output payload ceiling. It throws only for genuine host-level malfunctions that prevent the API from constructing a stable result.
 
 ## Read-Only Contract
 

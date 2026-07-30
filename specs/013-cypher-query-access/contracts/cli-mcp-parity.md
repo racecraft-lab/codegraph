@@ -19,6 +19,7 @@ Cypher mode accepts shared `--path` and `--json`. Search-only `--kind`, `--mode`
 |---|---|
 | quoted positional query beginning with `MATCH` | Cypher mode |
 | positional `-` | read bounded UTF-8 stdin as Cypher |
+| malformed UTF-8 on stdin | reject before parsing or execution with `CYPHER_INVALID_STDIN_ENCODING`, empty excerpt, no query text echo, and CLI failure exit |
 | quoted positional query not beginning with `MATCH` | legacy search |
 | `codegraph search <text>` | legacy search |
 | `--file` | unsupported |
@@ -46,6 +47,7 @@ CLI `--json` and MCP text use the same serializer:
 - Preserved array order.
 - No trailing newline.
 - No markdown fences or framing text.
+- Fixed 1 MiB UTF-8 payload ceiling for machine output.
 
 Byte parity requirement:
 
@@ -54,6 +56,18 @@ bytes(codegraph query --json) == bytes(codegraph_query text)
 ```
 
 The equality applies to success, empty, capped, diagnostic, and timeout states for the same input and index state.
+
+## Machine Output Bounding
+
+The shared serializer measures canonical UTF-8 payload bytes after deterministic minified JSON serialization and before CLI/MCP emission. If a success result would exceed the fixed 1 MiB payload ceiling, the shared result becomes diagnostic `CYPHER_OUTPUT_TOO_LARGE` with:
+
+- no partial rows;
+- no raw query text, emitted SQL, or bound parameters;
+- `effectiveCap` when available;
+- guidance to narrow `RETURN`, `MATCH`, or `LIMIT`;
+- byte-identical CLI `--json` and MCP text payloads.
+
+Human CLI table output may wrap or summarize the same diagnostic for humans, but it must not bypass the shared machine-output cap.
 
 ## Human CLI Table
 
@@ -84,5 +98,7 @@ Parity tests must capture raw bytes, not parsed JSON only. Fixtures must cover:
 - syntax diagnostic
 - unsupported write diagnostic
 - oversized input diagnostic
+- malformed UTF-8 stdin diagnostic
+- payload-too-large diagnostic
 - timeout state
 - not-indexed diagnostic

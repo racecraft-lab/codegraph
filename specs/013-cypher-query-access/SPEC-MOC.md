@@ -35,6 +35,10 @@ later spec; v1 ships only this minimal parent-linked marker).
 - [contracts/cli-mcp-parity.md](contracts/cli-mcp-parity.md)
 - [contracts/grammar.md](contracts/grammar.md)
 - [contracts/public-api.md](contracts/public-api.md)
+- [checklists/api-contracts.md](checklists/api-contracts.md)
+- [checklists/error-handling.md](checklists/error-handling.md)
+- [checklists/performance.md](checklists/performance.md)
 - [checklists/requirements.md](checklists/requirements.md)
+- [checklists/security.md](checklists/security.md)
 - [quickstart.md](quickstart.md)
 <!-- GENERATED:BACKLINKS:END -->

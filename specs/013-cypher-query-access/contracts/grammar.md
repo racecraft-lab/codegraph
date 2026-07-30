@@ -21,6 +21,7 @@ alias           ::= AS identifier
 orderByClause   ::= ORDER BY orderItem ("," orderItem)*
 orderItem       ::= expression (ASC | DESC)?
 limitClause     ::= LIMIT integer
+stringLiteral   ::= "'" stringCharacter* "'"
 ```
 
 The grammar accepts exactly one connected node-edge chain. It rejects multiple `MATCH` clauses, comma patterns, disconnected patterns, optional matches, undirected relationships, write clauses, external parameters, `DISTINCT`, non-count aggregation, nested JSON access, and `IN`.
@@ -34,6 +35,15 @@ The grammar accepts exactly one connected node-edge chain. It rejects multiple `
 - A literal backtick inside a backtick identifier is written as two consecutive backticks.
 - Control characters and Unicode escape forms inside backticks are unsupported.
 - Unescaped values compare exactly with no Unicode normalization.
+
+## String Literal Rules
+
+- V1 accepts single-quoted string literals only.
+- Literal single quotes and backslashes use `\'` and `\\`.
+- Supported escapes are `\'`, `\\`, `\n`, `\r`, `\t`, `\b`, and `\f`.
+- Raw line terminators, NUL, other raw control characters, Unicode escape forms such as `\uXXXX`, invalid escapes, incomplete escapes, double-quoted strings, and literal concatenation are unsupported.
+- Decoded string values compare exactly with no Unicode normalization.
+- String literal values are always emitted as bound SQLite parameters and never concatenated into SQL text.
 
 ## Labels and Relationship Types
 
@@ -94,6 +104,8 @@ Three-valued logic:
 - Returned paths cannot repeat the same relationship.
 - Returned paths may revisit nodes.
 - Path values preserve ordered nodes and relationships.
+- Recursive expansion state must carry depth, direction, and visited relationship identity before rows reach final ordering, `LIMIT`, or row-cap truncation.
+- Generated plans must not rely on a final top-level `LIMIT` as the only guard against variable-path candidate growth.
 
 ## Stable Ordering
 
@@ -101,6 +113,16 @@ When `ORDER BY` is absent, CodeGraph orders rows by projected values in `RETURN`
 
 Explicit ascending order places null after non-null. Explicit descending order places null before non-null.
 
+## Performance Plan Evidence
+
+Representative validation must include planner evidence for variable paths, stable ordering, count/grouping, and row-cap truncation on realistic graph density. Plan evidence must identify directional edge-index use and bounded temporary sort/group work where SQLite reports it.
+
 ## Diagnostics
 
-Diagnostics include stable code, UTF-16 offset, line, column, expected construct, grammar anchor, bounded escaped excerpt, and truncation flags. Oversized input diagnostics do not echo query text.
+Diagnostics include stable code, UTF-16 offset, line, column, expected construct, grammar anchor, bounded escaped excerpt, and truncation flags. Oversized input diagnostics do not echo query text. Logs, telemetry, malfunction messages, and expected error output do not persist raw full query text, string literal values outside the bounded escaped diagnostic excerpt, emitted SQL text, or bound parameters.
+
+Diagnostic validation must include Unicode astral code points, combining characters, CRLF/LF, and multiline inputs so UTF-16 offsets, line/column values, escaped excerpts, expected constructs, and grammar anchors are proven against non-ASCII source text.
+
+## Opaque JSON Conversion
+
+Returned opaque JSON fields must preserve only valid public JSON shapes. Malformed storage JSON or wrong top-level shapes for `metadata`, `decorators`, or `typeParameters` surface as null/absent public values, never as raw storage strings or coerced replacement values.
