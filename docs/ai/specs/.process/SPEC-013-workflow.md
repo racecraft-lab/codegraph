@@ -34,9 +34,9 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Plan | `/speckit-plan` | ✅ Complete | Architecture packet complete; reviewability helper and G3 passed. |
 | Checklist | `/speckit-checklist` | ✅ Complete | 78 checks; 8 gaps resolved; G4 passed with 0 remaining gaps. |
 | Tasks | `/speckit-tasks` | ✅ Complete | 79 dependency-ordered TDD tasks; 32/32 FRs and 10/10 SCs mapped; G5 passed. |
-| Analyze | `/speckit-analyze` | 🔄 In Progress | Cross-check every decision, requirement, and task. |
-| Confidence Gate | G6.5 | ⏳ Pending | Record advisory implementation readiness after analysis. |
-| Implement | `/speckit-implement` | ⏳ Pending | Execute approved tasks with test-first evidence. |
+| Analyze | `/speckit-analyze` | ✅ Complete | 0 findings at every severity; G6 passed. |
+| Confidence Gate | G6.5 | ✅ Complete | Advisory NO_DATA soft-skip recorded; implementation proceeds. |
+| Implement | `/speckit-implement` | 🔄 In Progress | Execute approved tasks with test-first evidence. |
 | Post | Canonical post gates | ⏳ Pending | Verify, review, publish, remediate, and retrospect. |
 
 **Status legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
@@ -923,7 +923,7 @@ Focus on:
 
 | ID | Severity | Issue | Resolution |
 |---|---|---|---|
-| Pending | Pending | Pending | Pending |
+| None | — | No cross-artifact finding detected | No remediation required; G6 passed |
 
 ---
 
@@ -937,8 +937,15 @@ implementation disposition before dispatching implementation.
 |---|---|
 | Mode | Advisory |
 | Threshold | 0.90 |
-| Score | Pending |
-| Disposition | Pending |
+| Score | No data |
+| Disposition | Soft-skip and proceed |
+
+The installed confidence helper returned exit 1 with
+`recommended_action: soft_skip` because no synthesizer confidence emit was
+present. Analyze had zero unresolved findings and therefore required no
+consensus synthesis. Advisory mode requires this warning to be logged and
+implementation to proceed. This may indicate a synthesizer-prompt regression
+worth reporting to the plugin author.
 
 ---
 
