@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 7: Implement setup and evidence routing (T001-T007)",
-  "updated_at": "2026-07-30T05:01:21Z",
+  "active_step": "Phase 7: Implement foundational test harness (T008-T012)",
+  "updated_at": "2026-07-30T05:24:49Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -567,6 +567,59 @@
     "reason": "No synthesizer confidence emit was present because Analyze had no unresolved findings and required no consensus synthesis.",
     "warning": "Confidence helper NO_DATA may indicate a synthesizer-prompt regression; advisory mode requires logging and proceeding."
   },
+  "phase_7": {
+    "status": "in_progress",
+    "completed_tasks": [
+      "T001",
+      "T002",
+      "T003",
+      "T004",
+      "T005",
+      "T006",
+      "T007"
+    ],
+    "groups": {
+      "setup_and_evidence_routing": {
+        "status": "completed",
+        "tasks": "T001-T007",
+        "completed": 7,
+        "total": 7,
+        "verification": [
+          "Evidence matrix schema and 72 deterministic rows verified.",
+          "Atomicity route independently confirmed as one-navigable-PR.",
+          "Declared scope matched 16/16 paths with no mismatches or expansion.",
+          "Reviewability disposition is proceed with no correctness or safety block.",
+          "git diff --check passed."
+        ]
+      },
+      "foundational_test_harness": {
+        "status": "in_progress",
+        "tasks": "T008-T012",
+        "completed": 0,
+        "total": 5
+      },
+      "slice_1_us1": {
+        "status": "pending",
+        "tasks": "T013-T031"
+      },
+      "slice_1_us3": {
+        "status": "pending",
+        "tasks": "T032-T040"
+      },
+      "slice_2_us2": {
+        "status": "pending",
+        "tasks": "T041-T057"
+      },
+      "final_us3": {
+        "status": "pending",
+        "tasks": "T058-T070"
+      },
+      "polish_and_delivery": {
+        "status": "pending",
+        "tasks": "T071-T079"
+      }
+    }
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -658,11 +711,11 @@
     },
     {
       "step": "Phase 7: Implement setup and evidence routing (T001-T007)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 7: Implement foundational test harness (T008-T012)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 7: Implement Slice 1 US1 bounded graph evidence (T013-T031)",
