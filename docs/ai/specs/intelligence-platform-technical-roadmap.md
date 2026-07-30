@@ -115,7 +115,7 @@ SPEC-025 (plugin spike) ─► SPEC-026 (plugin distribution)
 | SPEC-010 | Graph-Aware Rename | ✅ Complete | [SPEC-010-workflow.md](.process/SPEC-010-workflow.md) | Merged (#43, #44); archived in `.specify/memory/archive-reports/2026-07-13-SPEC-010.md` |
 | SPEC-011 | Execution Flows & Clusters | ✅ Complete | [SPEC-011-workflow.md](.process/SPEC-011-workflow.md) | Merged (#50); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-011.md` |
 | SPEC-012 | Change Impact Detection | ✅ Complete | [SPEC-012-workflow.md](.process/SPEC-012-workflow.md) | Merged (#55); archived in `.specify/memory/archive-reports/2026-07-15-SPEC-012.md` |
-| SPEC-013 | Cypher Query Access | ⏳ Pending | [SPEC-013-workflow.md](SPEC-013-workflow.md) | Specify (parallel-safe) |
+| SPEC-013 | Cypher Query Access | 🔄 In Progress | [SPEC-013-workflow.md](.process/SPEC-013-workflow.md) | Scaffolded on `013-cypher-query-access`; run autopilot from the dedicated worktree |
 | SPEC-014 | Control-Flow Graphs | ✅ Complete | [SPEC-014-workflow.md](.process/SPEC-014-workflow.md) | Merged (#169-#180), post-merge dogfood repaired in #182, and archived in `.specify/memory/archive-reports/2026-07-27-SPEC-014.md` |
 | SPEC-015 | Dataflow Substrate | ⏳ Pending | [SPEC-015-workflow.md](SPEC-015-workflow.md) | Ready (SPEC-014 shipped the persisted CFG substrate and read contracts) |
 | SPEC-016 | Program Dependence Graphs | ⏳ Pending | [SPEC-016-workflow.md](SPEC-016-workflow.md) | Blocked by SPEC-015 |
@@ -527,6 +527,9 @@ Budget result: within greenfield allowance (estimator suggested 2 slices — adv
 ### SPEC-013: Cypher Query Access
 
 **Priority:** P1 | **Depends On:** None | **Enables:** power-user/agent ad-hoc graph queries
+
+**Status:** In Progress — scaffolded on branch `013-cypher-query-access`; the
+populated workflow is ready for autopilot from its dedicated worktree.
 
 **Goal:** A read-only openCypher subset compiles to SQL over the existing store, giving agents expressive path queries without new dependencies.
 
