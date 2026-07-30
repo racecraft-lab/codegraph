@@ -68,6 +68,7 @@ specs/013-cypher-query-access/
 +-- research.md
 +-- data-model.md
 +-- quickstart.md
++-- evidence-matrix.md
 +-- checklists/
 |   +-- requirements.md
 +-- contracts/
@@ -310,6 +311,7 @@ remain authoritative for implementation reviewability.
 | NEW | `__tests__/cypher-runtime.test.ts` | real SQLite fixtures, active edges, read-only proof, caps, timeout |
 | MODIFIED | `__tests__/cli-query-command.test.ts` | `query` routing, stdin, JSON, rejected flags |
 | NEW | `__tests__/mcp-cypher-query.test.ts` | MCP success-shaped states, default listing, parity payload |
+| NEW | `specs/013-cypher-query-access/evidence-matrix.md` | cross-slice FR, SC, recipe, guard, parity, and review evidence |
 | PHASE | `contracts/grammar.md` | grammar and catalog contract |
 | PHASE | `contracts/public-api.md` | result union and value model |
 | PHASE | `contracts/cli-mcp-parity.md` | CLI/MCP byte contract |

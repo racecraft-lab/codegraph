@@ -16,8 +16,8 @@
     "constraint": "All phases, gates, commits, and PR operations run from this workflow-bearing worktree."
   },
   "status": "in_progress",
-  "active_step": "Phase 5: Tasks",
-  "updated_at": "2026-07-30T04:20:19Z",
+  "active_step": "Phase 6: Analyze",
+  "updated_at": "2026-07-30T04:52:50Z",
   "state_reconciliation": {
     "status": "reconstructed",
     "reason": "The adjacent state file belonged to completed archived SPEC-007 and did not match the supplied SPEC-013 workflow.",
@@ -453,6 +453,77 @@
       "reason": "0 [Gap] markers"
     }
   },
+  "phase_5": {
+    "status": "completed",
+    "executor": "phase-executor",
+    "artifact": "specs/013-cypher-query-access/tasks.md",
+    "task_count": 79,
+    "phase_count": 7,
+    "parallel_opportunities": 22,
+    "user_stories": 3,
+    "story_tasks": {
+      "US1": 19,
+      "US2": 17,
+      "US3": 22
+    },
+    "slice_tasks": {
+      "slice_1": 28,
+      "slice_2": 30,
+      "shared_and_delivery": 21
+    },
+    "coverage": {
+      "functional_requirements": "32/32",
+      "success_criteria": "10/10",
+      "checklists": "5/5",
+      "unresolved_markers": 0
+    },
+    "verify_tasks": {
+      "status": "passed",
+      "open_tasks": 79,
+      "checked_tasks": 0,
+      "malformed_checkboxes": 0,
+      "phantom_findings": 0,
+      "report": "not_written_no_completed_tasks"
+    },
+    "reviewability": {
+      "requested_helper": "reviewability-gate",
+      "requested_mode": "tasks",
+      "status": "deferred",
+      "reason": "The installed runner supports setup mode only; tasks mode was not invoked.",
+      "fallback_evidence": {
+        "setup_mode": "warn accepted; no blocker",
+        "plan_estimate": "pass; 280 projected advisory LOC; 7 production entries",
+        "operator_split": "two internal implementation slices accepted; no operator-ratified PR split",
+        "atomicity_route": "one-navigable-PR"
+      },
+      "fingerprint_status": "current",
+      "source_fingerprints": {
+        "spec.md": "39f9368aa3b549148f7a32c7b92ee905ebec8524f4062a17b5ab5604a51fb2ae",
+        "plan.md": "8aa11503c4273e30a1884d81c708e6930e48fa44c697f0bc10304ed8281d91a3",
+        "tasks.md": "bb92a4283115f4b0e2437ee319775e2368ba805cb5f211fd7c1129a5657f06e6"
+      },
+      "disposition": "proceed_without_marker_plan",
+      "correctness_blocks": []
+    },
+    "gate": {
+      "id": "G5",
+      "status": "passed",
+      "reason": "79 tasks found with 32/32 functional requirements mapped"
+    }
+  },
+  "atomicity_route": {
+    "route": "one-navigable-PR",
+    "releasable": true,
+    "signals": [
+      "change-shape:modify-heavy"
+    ],
+    "hints": [],
+    "warnings": []
+  },
+  "layer_plan": {
+    "status": "skipped",
+    "reason": "Atomicity route is one-navigable-PR; the layer planner is required only for split-PR."
+  },
   "plan": [
     {
       "step": "Archive Sweep: previously merged specs dry-run/apply eligibility",
@@ -528,11 +599,11 @@
     },
     {
       "step": "Phase 5: Tasks",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "step": "Phase 6: Analyze",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "step": "Phase 6: Analyze - Consensus",
@@ -543,7 +614,31 @@
       "status": "pending"
     },
     {
-      "step": "Phase 7: Implement - Pending task decomposition",
+      "step": "Phase 7: Implement setup and evidence routing (T001-T007)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement foundational test harness (T008-T012)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement Slice 1 US1 bounded graph evidence (T013-T031)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement Slice 1 US3 safe-surface closure (T032-T040)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement Slice 2 US2 practical recipes (T041-T057)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement final US3 safety and retrieval closure (T058-T070)",
+      "status": "pending"
+    },
+    {
+      "step": "Phase 7: Implement polish and delivery evidence (T071-T079)",
       "status": "pending"
     },
     {

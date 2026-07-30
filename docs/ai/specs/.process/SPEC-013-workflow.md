@@ -33,8 +33,8 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Clarify | `/speckit-clarify` | ✅ Complete | Three sessions completed; all decisions encoded; G2 passed. |
 | Plan | `/speckit-plan` | ✅ Complete | Architecture packet complete; reviewability helper and G3 passed. |
 | Checklist | `/speckit-checklist` | ✅ Complete | 78 checks; 8 gaps resolved; G4 passed with 0 remaining gaps. |
-| Tasks | `/speckit-tasks` | 🔄 In Progress | Produce story-organized TDD tasks and explicit slice boundaries. |
-| Analyze | `/speckit-analyze` | ⏳ Pending | Cross-check every decision, requirement, and task. |
+| Tasks | `/speckit-tasks` | ✅ Complete | 79 dependency-ordered TDD tasks; 32/32 FRs and 10/10 SCs mapped; G5 passed. |
+| Analyze | `/speckit-analyze` | 🔄 In Progress | Cross-check every decision, requirement, and task. |
 | Confidence Gate | G6.5 | ⏳ Pending | Record advisory implementation readiness after analysis. |
 | Implement | `/speckit-implement` | ⏳ Pending | Execute approved tasks with test-first evidence. |
 | Post | Canonical post gates | ⏳ Pending | Verify, review, publish, remediate, and retrospect. |
@@ -800,12 +800,37 @@ them.
 
 | Metric | Value |
 |---|---|
-| Total tasks | Pending |
-| Phases | Pending |
-| Parallel opportunities | Pending |
-| User stories covered | Pending |
-| Slice 1 tasks | Pending |
-| Slice 2 tasks | Pending |
+| Total tasks | 79 |
+| Phases | 7 |
+| Parallel opportunities | 22 |
+| User stories covered | 3 |
+| Slice 1 tasks | 28 |
+| Slice 2 tasks | 30 |
+
+---
+
+### Verify Tasks and Tasks-Phase Reviewability
+
+- `/speckit.verify-tasks`: passed; 79 open tasks, 0 checked tasks, 0 malformed
+  checkboxes, and 0 phantom findings. No report was written because no task is
+  complete yet.
+- `reviewability-gate` requested mode: `tasks`.
+- Installed-runner disposition: deferred; tasks mode is not supported and was
+  not invoked.
+- Fallback evidence: setup-mode `warn` with no blocker; plan estimator `pass`
+  at 280 projected advisory LOC and 7 production entries; two internal
+  vertical slices are operator-ratified; no PR split was operator-ratified.
+- Fingerprint status: current for `spec.md`, `plan.md`, and `tasks.md`.
+- Correctness blocks: none.
+- Disposition: proceed without a PR marker plan.
+
+The Tasks phase added the cross-slice
+`specs/013-cypher-query-access/evidence-matrix.md` evidence artifact to the
+plan's declared evidence scope. Re-running `estimate-reviewable-loc` remained
+`pass` at 280 projected advisory LOC and 7 production entries.
+
+**G5:** PASS — 79 tasks with 32/32 functional requirements, 10/10 success
+criteria, and all five checklists mapped.
 
 ---
 
@@ -818,10 +843,10 @@ gh-stack requirement do not preempt the classifier.
 
 | Field | Value | Meaning |
 |---|---|---|
-| **Route** | | One of `split-PR`, `one-navigable-PR`, `single-atomic-PR`, `branch-by-abstraction`, or `out-of-scope`. |
-| **Releasable** | | `true`, or `false` for a destructive-migration or concurrency-sensitive change. |
-| **Signals** | | Decisive detector findings behind the route and releasability reading. |
-| **Warnings** | | Release-safety warning, if any. |
+| **Route** | `one-navigable-PR` | One navigable PR with the two internal verification slices. |
+| **Releasable** | `true` | No destructive-migration or concurrency-sensitive unreleasability signal. |
+| **Signals** | `change-shape:modify-heavy` | Existing CLI/MCP surfaces are modified alongside additive query files. |
+| **Warnings** | None | No release-safety warning. |
 
 Run the classifier against:
 
@@ -840,6 +865,16 @@ gh stack view --json
 
 The angle-bracket names above are intentionally operational slots to be replaced
 with the exact branch names approved at G5; do not execute them literally.
+
+---
+
+## Layer Plan
+
+| Field | Value |
+|---|---|
+| Status | Skipped |
+| Reason | Atomicity route is `one-navigable-PR`; layer planning is required only for `split-PR`. |
+| PR topology | One PR from `013-cypher-query-access` with two internal implementation checkpoints. |
 
 ---
 
@@ -965,9 +1000,13 @@ For each task:
 
 | Slice | Tasks | Completed | Notes |
 |---|---|---|---|
-| 1 — bounded connected-path querying | Pending | Pending | Pending |
-| 2 — language and recipe closure | Pending | Pending | Pending |
-| Cross-cutting/post gates | Pending | Pending | Pending |
+| Setup and evidence routing | T001-T007 | 0/7 | Depends on G6/G6.5 completion before implementation dispatch. |
+| Foundational test harness | T008-T012 | 0/5 | RED support only; no production behavior. |
+| 1 — bounded connected-path querying | T013-T031 | 0/19 | US1 RED → GREEN → REFACTOR → VERIFY. |
+| 1 — safe-surface closure | T032-T040 | 0/9 | US3 parity, diagnostics, and retrieval steering for Slice 1. |
+| 2 — language and recipe closure | T041-T057 | 0/17 | US2 RED → GREEN → REFACTOR → VERIFY. |
+| Final safety and retrieval closure | T058-T070 | 0/13 | US3 guardrails, parity, retrieval gates, and evidence. |
+| Polish and delivery evidence | T071-T079 | 0/9 | Changelog, UAT, parity, PR packet, and hygiene. |
 
 ---
 
