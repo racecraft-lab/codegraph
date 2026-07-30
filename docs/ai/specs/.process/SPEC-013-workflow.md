@@ -37,7 +37,7 @@ later ambiguity is handled by `/speckit-clarify` and the normal consensus path.
 | Analyze | `/speckit-analyze` | ✅ Complete | 0 findings at every severity; G6 passed. |
 | Confidence Gate | G6.5 | ✅ Complete | Advisory NO_DATA soft-skip recorded; implementation proceeds. |
 | Implement | `/speckit-implement` | ✅ Complete | T001-T079 complete with final review remediation and regression coverage. |
-| Post | Canonical post gates | 🔄 In Progress | Local verification/review gates complete; canonical PR packet generation is next. |
+| Post | Canonical post gates | 🔄 In Progress | Packet/body validation passed; draft PR creation is next. |
 
 **Status legend:** ⏳ Pending | 🔄 In Progress | ✅ Complete | ⚠️ Blocked
 
@@ -70,9 +70,9 @@ or explicitly skip each before final handoff:
 | Post: Self-Review | ✅ Complete — no edge-case, traceability, or tidiness gaps |
 | Post: UAT Runbook Generation | ✅ Skipped — `generate-uat-skeleton` deferred and no committed skeleton exists |
 | Post: Final Reviewability Backstop | ✅ Complete — warn/proceed from current committed reviewability route |
-| Post: PR Packet/Body Generation | 🔄 In Progress |
-| Post: PR Body Generation | ⏳ Pending |
-| Post: PR Creation | ⏳ Pending |
+| Post: PR Packet/Body Generation | ✅ Complete — emitted and read-only validation passed |
+| Post: PR Body Generation | ✅ Complete — packet-owned body generated |
+| Post: PR Creation | 🔄 In Progress |
 | Post: Review Remediation | ⏳ Pending |
 | Post: Retrospective | ⏳ Pending |
 
@@ -1073,6 +1073,11 @@ must stay visible through the post-implementation reviewability gates.
   4,765 lines and requires deliberate parser/planner/runtime review.
 - **UAT skeleton:** skipped fail-open because `generate-uat-skeleton` is
   deferred and no committed source-derived skeleton exists.
+- **PR packet/body:** SpecKit Pro emitted
+  `specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access.json`
+  and its packet-owned `body.md`; read-only validation passed with
+  `pr_blocked=false` and title
+  `feat(SPEC-013): Add bounded read-only Cypher query access`.
 - **External retrieval A/B:** remains `BLOCKED_BY_AUTHORIZATION`; external
   runs=0, sends=0, cost=0.
 
