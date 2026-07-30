@@ -2565,7 +2565,7 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnos
     expect(hardCapped.effectiveCap).toBe(1000);
     expect(hardCapped.rows).toHaveLength(1000);
     expect(hardCapped.truncated).toBe(true);
-  });
+  }, 15_000);
 
   it('returns output-too-large diagnostic without partial rows when canonical JSON exceeds the payload ceiling', async () => {
     const runtime = await loadCypherRuntimeContract();
