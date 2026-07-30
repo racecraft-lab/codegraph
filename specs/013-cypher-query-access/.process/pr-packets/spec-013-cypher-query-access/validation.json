@@ -1,0 +1,41 @@
+{
+  "body_file": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access/body.md",
+  "error_class": "none",
+  "exit_code": 0,
+  "failures": [],
+  "mode": "single",
+  "packet_id": "spec-013-cypher-query-access",
+  "pr_blocked": false,
+  "remediation_evidence": [],
+  "rule_outcomes": [
+    {
+      "evidence": "no failures",
+      "rule": "packet.validation",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "1.0.0",
+  "source_fingerprints": {
+    "body": {
+      "algorithm": "sha256",
+      "path": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access/body.md",
+      "sha256": "62ae49ef239f77b4f543ed544c7a77ad184fe8b90f6618e7dc775489e8e60900",
+      "size_bytes": 3559
+    },
+    "packet": {
+      "algorithm": "sha256",
+      "path": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access.json",
+      "sha256": "c4a48b62c7b925f31000b961fc7ab03931fbbabbb25cfc935190ee5ae5fb8487",
+      "size_bytes": 6913
+    }
+  },
+  "status": "passed",
+  "stderr_line": "",
+  "target": {
+    "base_branch": "main",
+    "head_branch": "013-cypher-query-access"
+  },
+  "timestamp": "2026-07-30T17:24:13Z",
+  "title_value": "feat(SPEC-013): Add bounded read-only Cypher query access",
+  "validation_result_path": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access/validation.json"
+}

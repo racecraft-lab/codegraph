@@ -943,6 +943,8 @@
       "validation_result_path": "specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access/validation.json",
       "generated_title": "feat(SPEC-013): Add bounded read-only Cypher query access",
       "read_only_validation": "passed",
+      "durable_validation": "passed",
+      "workflow_contract": "passed",
       "pr_blocked": false
     }
   },

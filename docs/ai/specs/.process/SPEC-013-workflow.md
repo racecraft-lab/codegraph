@@ -1077,7 +1077,9 @@ must stay visible through the post-implementation reviewability gates.
   `specs/013-cypher-query-access/.process/pr-packets/spec-013-cypher-query-access.json`
   and its packet-owned `body.md`; read-only validation passed with
   `pr_blocked=false` and title
-  `feat(SPEC-013): Add bounded read-only Cypher query access`.
+  `feat(SPEC-013): Add bounded read-only Cypher query access`. The durable
+  `validation.json` artifact was written from a fresh read-only pass, and the
+  PR title/scope workflow contract passed.
 - **External retrieval A/B:** remains `BLOCKED_BY_AUTHORIZATION`; external
   runs=0, sends=0, cost=0.
 
