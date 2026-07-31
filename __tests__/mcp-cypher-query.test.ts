@@ -18,7 +18,7 @@ const CYPHER_T032_SYNTAX_QUERY = 'MATCH (caller:function)-[:calls]-> RETURN call
 const CYPHER_T032_UNSUPPORTED_WRITE_QUERY =
   'MATCH (caller:function)-[:calls]->(callee:function) DELETE callee RETURN caller.name LIMIT 1';
 const CYPHER_T032_TIMEOUT_QUERY =
-  'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p /* codegraph-test-force-timeout */';
+  'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p';
 const CYPHER_T032_OUTPUT_TOO_LARGE_QUERY = 'MATCH (a:function)-[:calls]->(b:function) RETURN a, b LIMIT 1000';
 
 function oversizedCypherQueryText(secretPrefix = 'oversized'): string {
@@ -178,6 +178,31 @@ function createIndexedMcpCypherFixture(): McpCypherFixture {
       fs.rmSync(projectRoot, { recursive: true, force: true });
     },
   };
+}
+
+/** Applies the expired deadline only to the parity scenario that expects a timeout. */
+async function withScenarioCypherDeadline<T>(scenario: T032ParityState, run: () => Promise<T>): Promise<T> {
+  return scenario.expectedStatus === 'timeout' ? withExpiredCypherDeadline(run) : run();
+}
+
+/**
+ * Expire the Cypher runtime deadline for the duration of one call. Shipped code
+ * no longer sniffs query text for a test marker — the enforced deadline is read
+ * from the environment, and `cliTestEnv()` forwards it to the CLI subprocess so
+ * both halves of a parity check run on the same setting.
+ */
+async function withExpiredCypherDeadline<T>(run: () => Promise<T> | T): Promise<T> {
+  const previous = process.env.CODEGRAPH_CYPHER_DEADLINE_MS;
+  process.env.CODEGRAPH_CYPHER_DEADLINE_MS = '0';
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CODEGRAPH_CYPHER_DEADLINE_MS;
+    } else {
+      process.env.CODEGRAPH_CYPHER_DEADLINE_MS = previous;
+    }
+  }
 }
 
 function cliTestEnv(): NodeJS.ProcessEnv {
@@ -563,10 +588,10 @@ describe('SPEC-013 MCP codegraph_query contracts', () => {
   });
 
   it('returns timeout state as success-shaped JSON without partial rows or isError', async () => {
-    const result = await invokeMcpCodegraphQuery(fixture.handler, {
+    const result = await withExpiredCypherDeadline(() => invokeMcpCodegraphQuery(fixture.handler, {
       projectPath: fixture.projectRoot,
-      query: 'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p /* codegraph-test-force-timeout */',
-    });
+      query: CYPHER_T032_TIMEOUT_QUERY,
+    }));
 
     expectMcpCypherTimeout(result, 'timeout query');
   });
@@ -720,15 +745,15 @@ describe('SPEC-013 MCP codegraph_query contracts', () => {
   });
 
   it('provides timeout guidance that points agents toward bounded recipe rewrites', async () => {
-    const result = await invokeMcpCodegraphQuery(fixture.handler, {
+    const result = await withExpiredCypherDeadline(() => invokeMcpCodegraphQuery(fixture.handler, {
       projectPath: fixture.projectRoot,
-      query: 'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p /* codegraph-test-force-timeout */',
-    });
+      query: CYPHER_T032_TIMEOUT_QUERY,
+    }));
 
     const timeout = expectMcpCypherTimeout(result, 'MCP timeout guidance query');
     expect(String(timeout.guidance)).toContain('relationship depth');
     expect(String(timeout.guidance)).toContain('LIMIT');
-    expect(String(timeout.guidance)).not.toContain('codegraph-test-force-timeout');
+    expect(String(timeout.guidance)).not.toContain('CODEGRAPH_CYPHER_DEADLINE_MS');
   });
 
   it.each([
@@ -844,14 +869,16 @@ describe('SPEC-013 MCP codegraph_query contracts', () => {
       : fixture.projectRoot;
     try {
       scenario.prepare?.(projectPath);
-      const mcpResult = await invokeMcpCodegraphQuery(fixture.handler, {
-        projectPath,
-        query: scenario.query,
-      });
-      const mcp = expectT032McpPayload(mcpResult, scenario);
-      const cliBytes = runCliCypherJsonBytes(projectPath, scenario.query);
+      await withScenarioCypherDeadline(scenario, async () => {
+        const mcpResult = await invokeMcpCodegraphQuery(fixture.handler, {
+          projectPath,
+          query: scenario.query,
+        });
+        const mcp = expectT032McpPayload(mcpResult, scenario);
+        const cliBytes = runCliCypherJsonBytes(projectPath, scenario.query);
 
-      expect(cliBytes).toEqual(mcp.bytes);
+        expect(cliBytes).toEqual(mcp.bytes);
+      });
     } finally {
       if (projectPath !== fixture.projectRoot) {
         fs.rmSync(projectPath, { recursive: true, force: true });
@@ -925,19 +952,21 @@ describe('SPEC-013 MCP codegraph_query contracts', () => {
       : fixture.projectRoot;
     try {
       scenario.prepare?.(projectPath);
-      const mcpResult = await invokeMcpCodegraphQuery(fixture.handler, {
-        projectPath,
-        query: scenario.query,
-      });
-      const mcp = expectT032McpPayload(mcpResult, scenario);
-      const cliBytes = runCliCypherJsonBytes(projectPath, scenario.query);
+      await withScenarioCypherDeadline(scenario, async () => {
+        const mcpResult = await invokeMcpCodegraphQuery(fixture.handler, {
+          projectPath,
+          query: scenario.query,
+        });
+        const mcp = expectT032McpPayload(mcpResult, scenario);
+        const cliBytes = runCliCypherJsonBytes(projectPath, scenario.query);
 
-      expect(cliBytes).toEqual(mcp.bytes);
-      if (scenario.name === 'oversized input diagnostic') {
-        const combined = mcp.bytes.toString('utf8');
-        expect(combined).not.toContain('final-oversized-secret');
-        expect(combined).not.toContain('oversizedoversized');
-      }
+        expect(cliBytes).toEqual(mcp.bytes);
+        if (scenario.name === 'oversized input diagnostic') {
+          const combined = mcp.bytes.toString('utf8');
+          expect(combined).not.toContain('final-oversized-secret');
+          expect(combined).not.toContain('oversizedoversized');
+        }
+      });
     } finally {
       if (projectPath !== fixture.projectRoot) {
         fs.rmSync(projectPath, { recursive: true, force: true });

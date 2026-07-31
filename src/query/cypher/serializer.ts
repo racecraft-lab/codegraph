@@ -1,3 +1,5 @@
+import { CYPHER_MAX_INPUT_CODE_UNITS } from './limits';
+
 export type CypherSerializerDiagnosticResult = {
   readonly status: 'diagnostic';
   readonly code: string;
@@ -69,7 +71,7 @@ export function cypherDiagnosticResult(
   };
 }
 
-export function cypherInputTooLongDiagnostic(maxCodeUnits = 10_000): CypherSerializerDiagnosticResult {
+export function cypherInputTooLongDiagnostic(maxCodeUnits: number = CYPHER_MAX_INPUT_CODE_UNITS): CypherSerializerDiagnosticResult {
   return cypherDiagnosticResult(
     'CYPHER_INPUT_TOO_LONG',
     `Cypher input exceeds the ${maxCodeUnits} UTF-16 code unit ceiling.`,
@@ -83,7 +85,10 @@ export function cypherRowsToTable(
   columns: readonly string[],
 ): readonly Record<string, string>[] {
   return rows.map((row) => {
-    const tableRow: Record<string, string> = {};
+    // Column names come from user RETURN aliases, so key the row on a
+    // null-prototype object — a plain `{}` would route `__proto__` through the
+    // Object.prototype setter and drop the column instead of storing it.
+    const tableRow: Record<string, string> = Object.create(null);
     for (const column of columns) {
       tableRow[column] = formatTableCell(row[column]);
     }
@@ -100,7 +105,10 @@ function stabilizeValue(value: unknown): unknown {
     return value;
   }
 
-  const stable: Record<string, unknown> = {};
+  // Null-prototype accumulator: rows are keyed on user RETURN aliases, and a
+  // plain `{}` would silently drop a `__proto__` column back through the
+  // Object.prototype setter while re-sorting.
+  const stable: Record<string, unknown> = Object.create(null);
   for (const key of Object.keys(value).sort()) {
     stable[key] = stabilizeValue(value[key]);
   }
@@ -115,12 +123,22 @@ function formatTableCell(value: unknown): string {
     return '';
   }
   if (typeof value === 'string') {
-    return value;
+    return escapeTableCellControlChars(value);
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);
   }
   return JSON.stringify(stabilizeValue(value));
+}
+
+/**
+ * The human renderer joins cells with tabs and prints one line per row, so a raw
+ * docstring or signature containing a tab or newline would split into what looks
+ * like extra columns and extra rows. Escape the same control characters the
+ * diagnostic excerpts already escape so one result row stays one output line.
+ */
+function escapeTableCellControlChars(value: string): string {
+  return value.replace(/\t/g, '\\t').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
 }
 
 function formatTypedValue(value: CypherTypedValue): string {

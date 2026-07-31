@@ -40,6 +40,25 @@ type CliQueryProcessOptions = {
   readonly binPath?: string;
 };
 
+/**
+ * Expire the Cypher runtime deadline for one subprocess run. Shipped code no
+ * longer sniffs query text for a test marker; the enforced deadline comes from
+ * the environment, and `cliTestEnv()` spreads `process.env` into the child.
+ */
+function withExpiredCypherDeadline<T>(run: () => T): T {
+  const previous = process.env.CODEGRAPH_CYPHER_DEADLINE_MS;
+  process.env.CODEGRAPH_CYPHER_DEADLINE_MS = '0';
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CODEGRAPH_CYPHER_DEADLINE_MS;
+    } else {
+      process.env.CODEGRAPH_CYPHER_DEADLINE_MS = previous;
+    }
+  }
+}
+
 function malformedCliStdinBytes(): Buffer {
   return Buffer.from([0xc3, 0x28]);
 }
@@ -151,7 +170,7 @@ const CYPHER_T032_SYNTAX_QUERY = 'MATCH (caller:function)-[:calls]-> RETURN call
 const CYPHER_T032_UNSUPPORTED_WRITE_QUERY =
   'MATCH (caller:function)-[:calls]->(callee:function) DELETE callee RETURN caller.name LIMIT 1';
 const CYPHER_T032_TIMEOUT_QUERY =
-  'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p /* codegraph-test-force-timeout */';
+  'MATCH p = (caller:function)-[:calls*1..8]->(callee:function) RETURN p';
 const CYPHER_T032_OUTPUT_TOO_LARGE_QUERY = 'MATCH (a:function)-[:calls]->(b:function) RETURN a, b LIMIT 1000';
 
 type T032CliExpectedState = 'success' | 'diagnostic' | 'timeout';
@@ -391,6 +410,26 @@ function expectLegacySearchJsonArray(result: CliProcessResult, context: string):
   return payload as readonly Record<string, unknown>[];
 }
 
+/** Per-result wall-clock fields; identical inputs still produce different numbers. */
+const LEGACY_SEARCH_TIMING_FIELDS = ['embedMs', 'fusionMs'] as const;
+
+function withoutSearchTimings(result: CliProcessResult): unknown {
+  const payload = JSON.parse(result.stdout.toString('utf8')) as unknown;
+  if (!Array.isArray(payload)) {
+    return payload;
+  }
+  return payload.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) {
+      return entry;
+    }
+    const stripped: Record<string, unknown> = { ...(entry as Record<string, unknown>) };
+    for (const field of LEGACY_SEARCH_TIMING_FIELDS) {
+      delete stripped[field];
+    }
+    return stripped;
+  });
+}
+
 describe('codegraph query — score rendering (#1045)', () => {
   let tempDir: string;
 
@@ -597,12 +636,32 @@ describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
     expect(JSON.stringify(payload)).toContain('score');
   });
 
+  it.each(['match', 'match(', 'matcher'])(
+    'keeps lowercase %s on keyword search instead of routing it into Cypher',
+    (searchText) => {
+      // Cypher mode is entered on an uppercase MATCH only. Matching the keyword
+      // case-insensitively would turn an ordinary search for a common English
+      // word into a parse diagnostic and a non-zero exit, breaking the
+      // never-error posture the legacy search path guarantees.
+      const result = runCliQueryMatch(tempDir, searchText, ['--json']);
+
+      expect(result.exitCode, `${searchText} exit code`).toBe(0);
+      expect(Array.isArray(parseJsonPayload(result, `lowercase ${searchText} query`))).toBe(true);
+      expect(result.stdout.toString('utf8')).not.toContain('"status"');
+      expect(result.stderr.toString('utf8')).not.toContain('CYPHER_');
+    },
+  );
+
   it('supports explicit codegraph search as the unchanged legacy search alias', () => {
     const legacyQuery = runCliQueryMatch(tempDir, 'parseToken', ['--json']);
     const explicitSearch = runCliSearchText(tempDir, 'parseToken', ['--json']);
 
     expectLegacySearchJsonArray(explicitSearch, 'explicit codegraph search parseToken');
-    expect(explicitSearch.stdout.toString('utf8')).toBe(legacyQuery.stdout.toString('utf8'));
+    // Compare parsed payloads with timings stripped: the legacy search envelope
+    // carries per-result wall-clock fields (`embedMs`, `fusionMs`) that differ
+    // between two subprocess runs whenever an embedding provider is configured,
+    // so a raw stdout comparison fails on timing rather than on aliasing.
+    expect(withoutSearchTimings(explicitSearch)).toEqual(withoutSearchTimings(legacyQuery));
   });
 
   it('keeps literal MATCH-prefixed terms on the explicit search alias instead of routing to Cypher', () => {
@@ -738,9 +797,12 @@ describe('SPEC-013 codegraph query Cypher CLI contracts', () => {
       : tempDir;
     try {
       scenario.prepare?.(projectPath);
-      const result = scenario.stdin === undefined
+      const runScenario = (): CliProcessResult => (scenario.stdin === undefined
         ? runCliQueryMatch(projectPath, scenario.query ?? '', ['--json'])
-        : runCliQueryStdin(projectPath, scenario.stdin(), ['--json']);
+        : runCliQueryStdin(projectPath, scenario.stdin(), ['--json']));
+      const result = scenario.expectedStatus === 'timeout'
+        ? withExpiredCypherDeadline(runScenario)
+        : runScenario();
 
       expectT032CliJsonState(result, scenario);
     } finally {

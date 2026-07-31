@@ -4,6 +4,25 @@ import * as os from 'os';
 import * as path from 'path';
 import type { CypherNode as ExportedCypherNode } from '../src';
 
+/**
+ * Force the runtime deadline to expire. The shipped code no longer sniffs query
+ * text for a test marker; the enforced deadline is read from the environment,
+ * so a test shortens it for the duration of one call instead.
+ */
+async function withExpiredCypherDeadline<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.CODEGRAPH_CYPHER_DEADLINE_MS;
+  process.env.CODEGRAPH_CYPHER_DEADLINE_MS = '0';
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CODEGRAPH_CYPHER_DEADLINE_MS;
+    } else {
+      process.env.CODEGRAPH_CYPHER_DEADLINE_MS = previous;
+    }
+  }
+}
+
 type SqliteStatement = {
   run: (...params: unknown[]) => unknown;
   get: (...params: unknown[]) => unknown;
@@ -502,7 +521,6 @@ type CypherRuntimeBoundaryContract = {
       readonly effectiveCap?: number;
     },
     options?: {
-      readonly forceTimeout?: boolean;
       readonly onSqlPrepare?: (sql: string) => void;
     },
   ) => Promise<CypherRuntimeBoundaryResult>;
@@ -610,11 +628,10 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — T024 internal
     const fixture = createCypherRuntimeFixture();
     const beforeState = runtime.getCypherRuntimeStateForTests();
 
-    expectBoundaryTimeout(await runtime.executeCypherSqlForTests(
+    expectBoundaryTimeout(await withExpiredCypherDeadline(() => runtime.executeCypherSqlForTests(
       fixture.projectRoot,
       { sql: 'SELECT 1 AS ok' },
-      { forceTimeout: true },
-    ));
+    )));
 
     const afterTimeout = runtime.getCypherRuntimeStateForTests();
     expect(afterTimeout.activeWorkers).toBe(0);
@@ -775,7 +792,6 @@ type CypherTimeoutResult = {
 type CypherQueryResult = CypherSuccessResult | CypherDiagnosticResult | CypherTimeoutResult;
 
 type CypherRuntimeTestOptions = {
-  readonly forceTimeout?: boolean;
   readonly payloadLimitBytes?: number;
   readonly onSqlPrepare?: (sql: string) => void;
   readonly onQueryPlan?: (evidence: CypherPerformancePlanEvidence) => void;
@@ -2793,11 +2809,10 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnos
     expect(runtime.getCypherRuntimeStateForTests()).toEqual(beforeState);
     expect(fixture.snapshot()).toEqual(beforeSnapshot);
 
-    expectTimeout(await runtime.queryCypherForTests(
+    expectTimeout(await withExpiredCypherDeadline(() => runtime.queryCypherForTests(
       fixture.projectRoot,
       "MATCH p = (hub:function)-[:calls*1..8]->(target:function) WHERE hub.name = 'hub' RETURN p",
-      { forceTimeout: true },
-    ));
+    )));
 
     const afterTimeoutState = runtime.getCypherRuntimeStateForTests();
     expect(afterTimeoutState.activeWorkers).toBe(0);
@@ -2833,11 +2848,10 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — caps, diagnos
     const fixture = createCypherRuntimeFixture();
     const beforeState = runtime.getCypherRuntimeStateForTests();
 
-    expectTimeout(await runtime.queryCypherForTests(
+    expectTimeout(await withExpiredCypherDeadline(() => runtime.queryCypherForTests(
       fixture.projectRoot,
       "MATCH p = (hub:function)-[:calls*1..8]->(target:function) WHERE hub.name = 'hub' RETURN p",
-      { forceTimeout: true },
-    ));
+    )));
 
     const afterState = runtime.getCypherRuntimeStateForTests();
     expect(afterState.activeWorkers).toBe(0);
@@ -2946,11 +2960,10 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — final perform
     expectDiagnostic(payloadTooLarge, 'CYPHER_OUTPUT_TOO_LARGE');
     expect(payloadTooLarge).not.toHaveProperty('rows');
 
-    expectTimeout(await runtime.queryCypherForTests(
+    expectTimeout(await withExpiredCypherDeadline(() => runtime.queryCypherForTests(
       fixture.projectRoot,
       "MATCH p = (hub:function)-[:calls*1..8]->(target:function) WHERE hub.name = 't061CapHub' RETURN p",
-      { forceTimeout: true },
-    ));
+    )));
     expect(runtime.getCypherRuntimeStateForTests().activeWorkers).toBe(0);
   }, 7000);
 });

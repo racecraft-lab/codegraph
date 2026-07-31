@@ -84,6 +84,7 @@ import {
   normalizeCypherTransportResult,
   serializeCypherTransportResult,
 } from '../query/cypher/serializer';
+import { CYPHER_MAX_INPUT_CODE_UNITS } from '../query/cypher/limits';
 import { loadAnalysisConfig, PROJECT_CONFIG_FILENAME } from '../project-config';
 import { createUnavailableReport, detectChanges, type DiffMode, type ReportFormat } from '../analysis/detect-changes';
 import {
@@ -356,12 +357,11 @@ function validateEmbeddingsOption(value: string | undefined): EmbeddingProviderS
   return value as EmbeddingProviderSelection;
 }
 
-const CYPHER_CLI_INPUT_MAX_CODE_UNITS = 10_000;
 // A valid UTF-8 encoding needs at most three bytes per UTF-16 code unit
 // (supplementary characters use four bytes for a two-unit surrogate pair).
 // Bound retained stdin before decoding so an untrusted stream cannot grow the
 // chunk list or final concatenation without limit.
-const CYPHER_CLI_INPUT_MAX_BYTES = CYPHER_CLI_INPUT_MAX_CODE_UNITS * 3;
+const CYPHER_CLI_INPUT_MAX_BYTES = CYPHER_MAX_INPUT_CODE_UNITS * 3;
 const CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS: readonly {
   readonly long: string;
   readonly short?: string;
@@ -383,7 +383,15 @@ async function resolveCliQueryInput(search: string): Promise<CypherCliQueryInput
 
   const stdin = await readStdinBuffer();
   if (stdin.status === 'too-large') {
-    return cypherInputTooLongDiagnostic(CYPHER_CLI_INPUT_MAX_CODE_UNITS);
+    return cypherInputTooLongDiagnostic(CYPHER_MAX_INPUT_CODE_UNITS);
+  }
+  if (stdin.status === 'no-stdin') {
+    return cypherDiagnosticResult(
+      'CYPHER_MISSING_STDIN',
+      'Cypher query text was requested from stdin, but stdin is a terminal. Pipe the query in or pass it as an argument.',
+      'piped stdin query text',
+      'cli-input',
+    );
   }
 
   let query: string;
@@ -404,22 +412,21 @@ function validateCypherCliInputLength(
   query: string,
   source: 'positional' | 'stdin',
 ): CypherCliQueryInputResult {
-  if (query.length <= CYPHER_CLI_INPUT_MAX_CODE_UNITS) {
+  if (query.length <= CYPHER_MAX_INPUT_CODE_UNITS) {
     return { status: 'success', query, source };
   }
-  return cypherInputTooLongDiagnostic(CYPHER_CLI_INPUT_MAX_CODE_UNITS);
+  return cypherInputTooLongDiagnostic(CYPHER_MAX_INPUT_CODE_UNITS);
 }
 
-function shouldForceCypherTimeoutForTest(query: string): boolean {
-  return process.env.NODE_ENV === 'test' && query.includes('codegraph-test-force-timeout');
-}
-
-function stripCypherForceTimeoutMarker(query: string): string {
-  return query.replace(/\/\*\s*codegraph-test-force-timeout\s*\*\//g, '').trim();
-}
-
+/**
+ * Cypher mode is opt-in by the uppercase `MATCH` keyword. Matching it case
+ * insensitively would capture an ordinary lowercase search for the English word
+ * "match" (or an identifier like `match(`), routing it into the Cypher parser
+ * and exiting 1 where keyword search previously returned results and exited 0 —
+ * the never-error posture required by Constitution VI.
+ */
 function startsWithCypherMatch(query: string): boolean {
-  return /^\s*MATCH\b/i.test(query);
+  return /^\s*MATCH\b/.test(query);
 }
 
 type LegacySearchCliOptions = {
@@ -563,9 +570,17 @@ function unsupportedCypherCliFlagDiagnostic(argv: readonly string[] = process.ar
 
 type CypherCliStdinResult =
   | { readonly status: 'success'; readonly bytes: Buffer }
-  | { readonly status: 'too-large' };
+  | { readonly status: 'too-large' }
+  | { readonly status: 'no-stdin' };
 
 async function readStdinBuffer(): Promise<CypherCliStdinResult> {
+  // `query -` means "read the query from stdin". On a terminal there is nothing
+  // to read and no EOF is coming, so awaiting the stream would hang forever with
+  // no prompt and no output. Refuse up front instead.
+  if (process.stdin.isTTY === true) {
+    return { status: 'no-stdin' };
+  }
+
   const chunks: Buffer[] = [];
   let retainedBytes = 0;
   let tooLarge = false;
@@ -1773,7 +1788,6 @@ program
   .option('-l, --limit <number>', 'Maximum results', '10')
   .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
   .option('-m, --mode <mode>', 'Search mode: keyword | semantic | hybrid | auto (default: auto)')
-  .option('--file <file>', 'Search file filter')
   .option('-j, --json', 'Output as JSON')
   .action(async (search: string, options: LegacySearchCliOptions) => {
     try {
@@ -1794,7 +1808,9 @@ program
   .option('-l, --limit <number>', 'Maximum results', '10')
   .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
   .option('-m, --mode <mode>', 'Search mode: keyword | semantic | hybrid | auto (default: auto)')
-  .option('--file <file>', 'Search file filter (unsupported in Cypher query mode)')
+  // Declared only so commander accepts the flag and Cypher mode can reject it by
+  // name; the keyword-search path has never filtered by file, so it is a no-op there.
+  .option('--file <file>', 'Accepted for compatibility; rejected in Cypher query mode and ignored otherwise')
   .option('-j, --json', 'Output as JSON')
   .action(async (search: string, options: { path?: string; limit?: string; kind?: string; mode?: string; file?: string; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
@@ -1814,12 +1830,8 @@ program
           process.exit(1);
         }
 
-        const forceTimeout = shouldForceCypherTimeoutForTest(searchText);
-        const executableQuery = forceTimeout ? stripCypherForceTimeoutMarker(searchText) : searchText;
         const { queryCypher } = await loadCodeGraph();
-        const result = forceTimeout
-          ? await import('../query/cypher').then((mod) => mod.queryCypherForTests(projectPath, executableQuery, { forceTimeout: true }))
-          : await queryCypher(projectPath, executableQuery);
+        const result = await queryCypher(projectPath, searchText);
         await writeCypherCliResult(result, options.json === true);
         if (result.status !== 'success') {
           process.exit(1);

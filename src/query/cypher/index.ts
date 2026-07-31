@@ -4,6 +4,7 @@ import {
 } from './runtime';
 import type { CypherPerformancePlanEvidence, CypherRuntimeQueryPlanProbe } from './runtime';
 import { serializeCypherResult } from './serializer';
+import { CYPHER_MAX_INPUT_CODE_UNITS, CYPHER_RUNTIME_DEADLINE_MS } from './limits';
 
 type TokenKind = 'identifier' | 'integer' | 'string' | 'punctuation' | 'eof';
 
@@ -97,7 +98,6 @@ export type CypherTimeoutResult = {
 export type CypherQueryResult = CypherSuccessResult | CypherDiagnosticResult | CypherTimeoutResult;
 
 export type CypherRuntimeTestOptions = {
-  readonly forceTimeout?: boolean;
   readonly payloadLimitBytes?: number;
   readonly onSqlPrepare?: (sql: string) => void;
   readonly onQueryPlan?: (evidence: CypherPerformancePlanEvidence) => void;
@@ -193,7 +193,6 @@ type VariableBindingKind = 'node' | 'relationship' | 'relationship-list' | 'path
 type PropertyScope = 'node' | 'relationship';
 type ExpressionAccess = 'bare' | 'property';
 
-const MAX_QUERY_INPUT_LENGTH = 10_000;
 const MAX_EXCERPT_LENGTH = 160;
 const MAX_VARIABLE_RELATIONSHIP_DEPTH = 8;
 const DEFAULT_RESULT_CAP = 100;
@@ -1665,9 +1664,9 @@ function makeInputTooLongDiagnostic(): CypherDiagnostic {
     1,
     0,
     'CYPHER_INPUT_TOO_LONG',
-    `query text <= ${MAX_QUERY_INPUT_LENGTH} UTF-16 code units`,
+    `query text <= ${CYPHER_MAX_INPUT_CODE_UNITS} UTF-16 code units`,
     'cli-input',
-    `Cypher input exceeds the ${MAX_QUERY_INPUT_LENGTH} UTF-16 code unit ceiling.`,
+    `Cypher input exceeds the ${CYPHER_MAX_INPUT_CODE_UNITS} UTF-16 code unit ceiling.`,
   );
 }
 
@@ -3010,23 +3009,36 @@ class WhereSqlEmitter {
 
   private emitStringPredicateExpression(leftSql: string, operator: RuntimeStringPredicateOperator): string {
     const right = this.emitValueOperandSql();
-    const left = (): string => leftSql;
-    const rightSql = (): string => {
-      this.context.parameters.push(...right.parameters);
-      return right.sql;
-    };
+    // The operand is named three to five times below. Binding it once and
+    // referring back by explicit parameter index keeps exactly one entry in the
+    // shared `parameters` array; the earlier form re-ran a push-on-read closure
+    // per interpolation, so the same literal was bound up to five times and
+    // correctness rested on an unwritten one-push-per-occurrence invariant
+    // between this string and an array consumed hundreds of lines away.
+    // `push` returns the new length, which is the 1-based index SQLite assigns
+    // to that slot, and a bare `?` still takes "highest index so far + 1", so
+    // numbered and positional placeholders stay consistent in one statement.
+    const rightSql = right.parameters.length === 1
+      ? `?${this.context.parameters.push(right.parameters[0])}`
+      : right.sql;
 
+    // ENDS WITH anchors from the right by absolute offset, NOT `substr(x, -length(y))`:
+    // SQLite reads a zero start offset as "whole string", so the negative form makes
+    // `x ENDS WITH ''` compare the entire left value against '' and return false, while
+    // STARTS WITH/CONTAINS and the empty-needle case in every other engine treat it as
+    // a match. The length guard keeps a longer needle from wrapping back into a
+    // negative (count-from-the-right) offset.
     const comparison =
       operator === 'STARTS WITH'
-        ? `substr(${left()}, 1, length(${rightSql()})) = ${rightSql()}`
+        ? `substr(${leftSql}, 1, length(${rightSql})) = ${rightSql}`
         : operator === 'ENDS WITH'
-          ? `substr(${left()}, -length(${rightSql()})) = ${rightSql()}`
-          : `instr(${left()}, ${rightSql()}) > 0`;
+          ? `(length(${leftSql}) >= length(${rightSql}) AND substr(${leftSql}, length(${leftSql}) - length(${rightSql}) + 1) = ${rightSql})`
+          : `instr(${leftSql}, ${rightSql}) > 0`;
 
     return [
       '(CASE',
-      `WHEN ${left()} IS NULL OR ${rightSql()} IS NULL THEN NULL`,
-      `WHEN typeof(${left()}) <> 'text' OR typeof(${rightSql()}) <> 'text' THEN NULL`,
+      `WHEN ${leftSql} IS NULL OR ${rightSql} IS NULL THEN NULL`,
+      `WHEN typeof(${leftSql}) <> 'text' OR typeof(${rightSql}) <> 'text' THEN NULL`,
       `ELSE ${comparison}`,
       'END)',
     ].join(' ');
@@ -3307,8 +3319,6 @@ type SortableRuntimeRow = {
   readonly sortValues?: ReadonlyMap<string, unknown>;
 };
 
-type RuntimeTruth = boolean | null;
-
 export async function queryCypher(projectRoot: string, query: string): Promise<CypherQueryResult> {
   return queryCypherInternal(projectRoot, query, {});
 }
@@ -3333,7 +3343,7 @@ async function queryCypherInternal(
   query: string,
   options: CypherRuntimeTestOptions,
 ): Promise<CypherQueryResult> {
-  if (query.length > MAX_QUERY_INPUT_LENGTH) {
+  if (query.length > CYPHER_MAX_INPUT_CODE_UNITS) {
     return makeInputTooLongDiagnostic();
   }
 
@@ -3343,17 +3353,6 @@ async function queryCypherInternal(
   }
 
   const plan = emitParameterizedSql(parsed);
-
-  if (options.forceTimeout === true) {
-    const timeoutProbe = await executeCypherSqlForTests(
-      projectRoot,
-      { sql: 'SELECT 1 AS ok' },
-      { forceTimeout: true, onSqlPrepare: options.onSqlPrepare },
-    );
-    return timeoutProbe.status === 'success'
-      ? makeDiagnostic(query, 0, 1, 0, 'CYPHER_RUNTIME_ERROR', 'timeout result', 'runtime', 'Cypher timeout probe completed unexpectedly.')
-      : timeoutProbe;
-  }
 
   if (hasAggregateReturns(parsed)) {
     return queryAggregateCypherWithSqlPlan(projectRoot, query, parsed, plan, options);
@@ -3432,9 +3431,6 @@ async function queryMatchedCypherWithSqlPlan(
       return makeDiagnostic('', 0, 1, 0, 'CYPHER_RUNTIME_ERROR', 'bounded path rows', 'runtime', 'Cypher runtime could not reconstruct bounded path rows.');
     }
     const match = createRuntimeMatch(parsed, path.nodes, path.relationships);
-    if (evaluateWhereClause(parsed.where, match) !== true) {
-      continue;
-    }
     projectedRows.push({
       match,
       row: projectRuntimeRow(parsed.returns, match),
@@ -3450,7 +3446,7 @@ async function queryMatchedCypherWithSqlPlan(
     columns: parsed.returns.map((item) => ({ name: item.alias ?? item.expression })),
     rows: probedRows.slice(0, capPlan.effectiveCap).map((item) => item.row),
     effectiveCap: capPlan.effectiveCap,
-    truncated: sqlRows.length > capPlan.effectiveCap || orderedRows.length > capPlan.effectiveCap,
+    truncated: orderedRows.length > capPlan.effectiveCap,
   }, options);
 }
 
@@ -3539,12 +3535,22 @@ function createPerformanceQueryPlanProbe(
   return {
     probeId: 'PERF-VARIABLE-PATH-PLAN',
     query,
-    boundedBy: `LIMIT ${capPlan.effectiveCap}; effectiveCap + 1 truncation probe; timeout 5000ms`,
+    boundedBy: `LIMIT ${capPlan.effectiveCap}; effectiveCap + 1 truncation probe; timeout ${CYPHER_RUNTIME_DEADLINE_MS}ms`,
   };
 }
 
+/**
+ * RETURN aliases are arbitrary user identifiers, so a row keyed on a plain `{}`
+ * loses `AS __proto__` to the `Object.prototype` setter instead of storing it as
+ * an own property — the column would silently vanish from `Object.keys`, JSON
+ * output, and the CLI table. A null-prototype row keeps every alias addressable.
+ */
+function createCypherRow(): CypherRow {
+  return Object.create(null) as CypherRow;
+}
+
 function projectSqlAggregateRow(parsed: CypherParseSuccess, sqlRow: Record<string, unknown>): CypherRow {
-  const row: CypherRow = {};
+  const row = createCypherRow();
   for (const item of parsed.returns) {
     const columnName = item.alias ?? item.expression;
     row[columnName] = { type: 'scalar', value: sqlProjectionScalarValue(sqlRow[columnName]) };
@@ -4006,259 +4012,8 @@ function pathRelationshipForPatternIndex(
   return pathRelationships[patternIndex + variableDepth - 1];
 }
 
-function evaluateWhereClause(where: AstWhereClause | undefined, match: RuntimeMatch): RuntimeTruth {
-  if (where === undefined) {
-    return true;
-  }
-  return new RuntimeWhereEvaluator(where.tokens, match).evaluate();
-}
-
-class RuntimeWhereEvaluator {
-  private index = 0;
-
-  constructor(
-    private readonly tokens: readonly Token[],
-    private readonly match: RuntimeMatch,
-  ) {}
-
-  evaluate(): RuntimeTruth {
-    const value = this.evaluateOrExpression();
-    if (!this.isAtEnd()) {
-      return false;
-    }
-    return value;
-  }
-
-  private evaluateOrExpression(): RuntimeTruth {
-    let value = this.evaluateAndExpression();
-    while (this.matchKeyword('OR')) {
-      value = truthyOr(value, this.evaluateAndExpression());
-    }
-    return value;
-  }
-
-  private evaluateAndExpression(): RuntimeTruth {
-    let value = this.evaluateNotExpression();
-    while (this.matchKeyword('AND')) {
-      value = truthyAnd(value, this.evaluateNotExpression());
-    }
-    return value;
-  }
-
-  private evaluateNotExpression(): RuntimeTruth {
-    if (this.matchKeyword('NOT')) {
-      return truthyNot(this.evaluateNotExpression());
-    }
-    return this.evaluatePrimaryExpression();
-  }
-
-  private evaluatePrimaryExpression(): RuntimeTruth {
-    if (this.matchPunctuation('(')) {
-      const expression = this.evaluateOrExpression();
-      if (!this.matchPunctuation(')')) {
-        return false;
-      }
-      return expression;
-    }
-    return this.evaluatePredicateExpression();
-  }
-
-  private evaluatePredicateExpression(): RuntimeTruth {
-    const left = this.evaluatePropertyOperand();
-
-    if (this.matchKeyword('IS')) {
-      const isNot = this.matchKeyword('NOT');
-      if (!this.matchKeyword('NULL')) {
-        return false;
-      }
-      const isNull = left === null;
-      return isNot ? !isNull : isNull;
-    }
-
-    const stringPredicate = this.matchStringPredicateOperator();
-    if (stringPredicate !== undefined) {
-      return evaluateRuntimeStringPredicate(left, this.evaluateValueOperand(), stringPredicate);
-    }
-
-    const operator = this.consumeComparisonOperator();
-    const right = this.evaluateValueOperand();
-    if (left === null || right === null) {
-      return null;
-    }
-
-    const comparison = compareRuntimeScalars(left, right);
-    switch (operator) {
-      case '=':
-        return comparison === 0;
-      case '<>':
-        return comparison !== 0;
-      case '<':
-        return comparison < 0;
-      case '<=':
-        return comparison <= 0;
-      case '>':
-        return comparison > 0;
-      case '>=':
-        return comparison >= 0;
-    }
-  }
-
-  private evaluatePropertyOperand(): CypherScalar {
-    const property = propertyAccessFromTokens(this.tokens, this.index);
-    if (property === undefined) {
-      this.index = this.tokens.length;
-      return null;
-    }
-    this.index += 3;
-    const node = this.match.nodes.get(property.variable);
-    if (node !== undefined) {
-      return nodePropertyValue(node, property.property);
-    }
-    const relationship = this.match.relationships.get(property.variable);
-    if (relationship !== undefined) {
-      return relationshipPropertyValue(relationship, property.property);
-    }
-    return null;
-  }
-
-  private evaluateValueOperand(): CypherScalar {
-    const token = this.current();
-    if (token?.kind === 'string') {
-      this.advance();
-      return token.value;
-    }
-    if (token?.kind === 'integer') {
-      this.advance();
-      return Number(token.value);
-    }
-    if (isKeywordToken(token, 'TRUE')) {
-      this.advance();
-      return true;
-    }
-    if (isKeywordToken(token, 'FALSE')) {
-      this.advance();
-      return false;
-    }
-    if (isKeywordToken(token, 'NULL')) {
-      this.advance();
-      return null;
-    }
-    if (isPropertyAccessAt(this.tokens, this.index)) {
-      return this.evaluatePropertyOperand();
-    }
-    this.index = this.tokens.length;
-    return null;
-  }
-
-  private consumeComparisonOperator(): '=' | '<>' | '<' | '<=' | '>' | '>=' {
-    const token = this.current();
-    if (token?.kind !== 'punctuation') {
-      this.index = this.tokens.length;
-      return '=';
-    }
-
-    if (token.value === '<' && this.peekPunctuation('=')) {
-      this.advance();
-      this.advance();
-      return '<=';
-    }
-    if (token.value === '>' && this.peekPunctuation('=')) {
-      this.advance();
-      this.advance();
-      return '>=';
-    }
-    if (token.value === '<' && this.peekPunctuation('>')) {
-      this.advance();
-      this.advance();
-      return '<>';
-    }
-    if (token.value === '=' || token.value === '<' || token.value === '>') {
-      this.advance();
-      return token.value;
-    }
-
-    this.index = this.tokens.length;
-    return '=';
-  }
-
-  private matchStringPredicateOperator(): RuntimeStringPredicateOperator | undefined {
-    if (this.matchKeyword('STARTS')) {
-      if (!this.matchKeyword('WITH')) {
-        return undefined;
-      }
-      return 'STARTS WITH';
-    }
-    if (this.matchKeyword('ENDS')) {
-      if (!this.matchKeyword('WITH')) {
-        return undefined;
-      }
-      return 'ENDS WITH';
-    }
-    if (this.matchKeyword('CONTAINS')) {
-      return 'CONTAINS';
-    }
-    return undefined;
-  }
-
-  private matchKeyword(keyword: string): boolean {
-    if (!isKeywordToken(this.current(), keyword)) {
-      return false;
-    }
-    this.advance();
-    return true;
-  }
-
-  private matchPunctuation(punctuation: string): boolean {
-    const token = this.current();
-    if (token?.kind !== 'punctuation' || token.value !== punctuation) {
-      return false;
-    }
-    this.advance();
-    return true;
-  }
-
-  private isAtEnd(): boolean {
-    return this.index >= this.tokens.length;
-  }
-
-  private current(): Token | undefined {
-    return this.tokens[this.index];
-  }
-
-  private peekPunctuation(punctuation: string): boolean {
-    const token = this.tokens[this.index + 1];
-    return token?.kind === 'punctuation' && token.value === punctuation;
-  }
-
-  private advance(): void {
-    this.index += 1;
-  }
-}
-
-function evaluateRuntimeStringPredicate(
-  left: CypherScalar,
-  right: CypherScalar,
-  operator: RuntimeStringPredicateOperator,
-): RuntimeTruth {
-  if (left === null || right === null) {
-    return null;
-  }
-  if (typeof left !== 'string' || typeof right !== 'string') {
-    return null;
-  }
-
-  switch (operator) {
-    case 'STARTS WITH':
-      return left.startsWith(right);
-    case 'ENDS WITH':
-      return left.endsWith(right);
-    case 'CONTAINS':
-      return left.includes(right);
-  }
-}
-
 function projectRuntimeRow(returns: readonly AstReturnItem[], match: RuntimeMatch): CypherRow {
-  const row: CypherRow = {};
+  const row = createCypherRow();
   for (const item of returns) {
     row[item.alias ?? item.expression] = cypherValueForExpression(item.expression, match);
   }
@@ -4374,7 +4129,10 @@ function isRuntimeIdentityTuple(value: unknown): value is RuntimeIdentityTuple {
 }
 
 function isCypherRelationshipArray(value: unknown): value is readonly CypherRelationship[] {
-  return Array.isArray(value) && value.every((item) => {
+  // `[].every(...)` is vacuously true, so an empty scalar array would otherwise
+  // be sorted as a relationship-identity tuple instead of as a scalar — reachable
+  // whenever a ranged relationship variable binds zero edges.
+  return Array.isArray(value) && value.length > 0 && value.every((item) => {
     if (!isRuntimeRecord(item)) {
       return false;
     }
@@ -4590,30 +4348,6 @@ function parseJson(value: string | null): unknown {
   } catch {
     return undefined;
   }
-}
-
-function truthyAnd(left: RuntimeTruth, right: RuntimeTruth): RuntimeTruth {
-  if (left === false || right === false) {
-    return false;
-  }
-  if (left === null || right === null) {
-    return null;
-  }
-  return true;
-}
-
-function truthyOr(left: RuntimeTruth, right: RuntimeTruth): RuntimeTruth {
-  if (left === true || right === true) {
-    return true;
-  }
-  if (left === null || right === null) {
-    return null;
-  }
-  return false;
-}
-
-function truthyNot(value: RuntimeTruth): RuntimeTruth {
-  return value === null ? null : !value;
 }
 
 function compareRuntimeScalars(left: unknown, right: unknown): number {

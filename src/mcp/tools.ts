@@ -7,6 +7,7 @@
 import type CodeGraph from '../index';
 import type { CypherDiagnosticResult, CypherQueryResult } from '../query/cypher';
 import { cypherInputTooLongDiagnostic, serializeCypherTransportResult } from '../query/cypher/serializer';
+import { CYPHER_MAX_INPUT_CODE_UNITS } from '../query/cypher/limits';
 import { QueryPoolUnavailableError, type QueryPool } from './query-pool';
 import { findNearestCodeGraphRoot } from '../directory';
 // Lazy-load the heavy CodeGraph chain off the MCP startup path — see the same
@@ -1446,8 +1447,8 @@ export class ToolHandler {
     if (typeof value !== 'string' || value.length === 0) {
       return this.errorResult('query must be a non-empty string');
     }
-    if (value.length > MAX_INPUT_LENGTH) {
-      return cypherInputTooLongDiagnostic(MAX_INPUT_LENGTH);
+    if (value.length > CYPHER_MAX_INPUT_CODE_UNITS) {
+      return cypherInputTooLongDiagnostic(CYPHER_MAX_INPUT_CODE_UNITS);
     }
     return value;
   }
@@ -1861,14 +1862,8 @@ export class ToolHandler {
     const query = queryInput;
 
     const projectRoot = this.resolveCypherProjectRoot(args.projectPath as string | undefined);
-    const forceTimeout = this.shouldForceCypherTimeoutForTest(query);
-    const executableQuery = forceTimeout
-      ? query.replace(/\/\*\s*codegraph-test-force-timeout\s*\*\//g, '').trim()
-      : query;
-    const { queryCypher, queryCypherForTests } = await import('../query/cypher');
-    const result = forceTimeout
-      ? await queryCypherForTests(projectRoot, executableQuery, { forceTimeout: true })
-      : await queryCypher(projectRoot, executableQuery);
+    const { queryCypher } = await import('../query/cypher');
+    const result = await queryCypher(projectRoot, query);
     return this.serializeCypherToolResult(result);
   }
 
@@ -1892,10 +1887,6 @@ export class ToolHandler {
       throw new PathRefusalError(`Path does not exist or is not accessible: ${resolvePath(projectPath)}`);
     }
     return this.cg?.getProjectRoot() ?? this.defaultProjectHint ?? process.cwd();
-  }
-
-  private shouldForceCypherTimeoutForTest(query: string): boolean {
-    return process.env.NODE_ENV === 'test' && query.includes('codegraph-test-force-timeout');
   }
 
   /**
