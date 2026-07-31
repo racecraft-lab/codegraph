@@ -24,6 +24,25 @@ export const LSP_LANGUAGES = [
 export type LspLanguage = (typeof LSP_LANGUAGES)[number];
 
 export const DEFAULT_LSP_TIMEOUT_MS = 5000;
+
+/**
+ * Budget for a server's warm-up — `initialize` plus every request up to the
+ * first one it answers.
+ *
+ * A language server's first position request is not the same kind of operation
+ * as its later ones: it blocks until the server finishes the project-wide
+ * analysis it began after `initialize` returned. Measured against this
+ * repository, `jdtls` answers its first `textDocument/definition` in ~35s and
+ * every later one in ~26ms; the Dart analysis server takes ~12s then ~25ms.
+ * Charging both to one 5s budget killed those servers during warm-up and threw
+ * away the work they were about to become capable of.
+ *
+ * A healthy server finishes warm-up in milliseconds (typescript: ~284ms), so a
+ * generous ceiling here costs nothing when the server is fine. It is only paid
+ * when a server is genuinely stuck — and a warm-up failure abandons the
+ * language rather than restarting, so it is paid at most once.
+ */
+export const DEFAULT_LSP_STARTUP_TIMEOUT_MS = 60_000;
 export const DEFAULT_LSP_SESSION_LIMIT = 2;
 export const DEFAULT_LSP_REQUEST_LIMIT = 8;
 export const DEFAULT_LSP_FULL_INDEX_FILE_CAP = 2000;
@@ -53,6 +72,8 @@ export interface LspServerRegistryEntry {
   disposition: LspServerDisposition;
   commands: LspServerCommand[];
   defaultTimeoutMs: number;
+  /** Warm-up budget; see DEFAULT_LSP_STARTUP_TIMEOUT_MS. */
+  defaultStartupTimeoutMs: number;
   futureOwner?: 'SPEC-024';
   validationNote?: string;
 }
@@ -63,6 +84,8 @@ export interface EffectiveLspServerConfig {
   commandSource: LspValueSource | 'none';
   timeoutMs: number;
   timeoutSource: LspValueSource;
+  /** Warm-up budget; see DEFAULT_LSP_STARTUP_TIMEOUT_MS. */
+  startupTimeoutMs: number;
   disposition: LspServerDisposition;
 }
 
@@ -135,6 +158,18 @@ export interface LspServerStatusRecord {
   expectedAlternatives?: string[][];
   timeoutMs?: number;
   timeoutSource?: EffectiveLspServerConfig['timeoutSource'];
+  lastError?: string;
+  /**
+   * Commands tried before this one, in order, when a server was installed but
+   * failed at runtime and the language fell forward to a registry alternative.
+   * Absent when the first command worked — the common case.
+   */
+  fallbackFrom?: LspServerFallbackAttempt[];
+}
+
+export interface LspServerFallbackAttempt {
+  command: string[] | string | null;
+  reasonCode?: LspReasonCode;
   lastError?: string;
 }
 

@@ -225,12 +225,21 @@ function resolveServerConfig(
     timeoutMs = envTimeout.timeoutMs;
   }
 
+  // An operator who names an explicit timeout means it: honour that number for
+  // warm-up too rather than silently granting a much larger startup budget. The
+  // registry's warm-up default only applies when the timeout is also the
+  // registry's, and never shortens it.
+  const startupTimeoutMs = timeoutSource === 'registry'
+    ? Math.max(registry.defaultStartupTimeoutMs, timeoutMs)
+    : timeoutMs;
+
   return {
     language,
     command,
     commandSource,
     timeoutMs,
     timeoutSource,
+    startupTimeoutMs,
     disposition: registry.disposition,
   };
 }
