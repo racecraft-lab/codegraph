@@ -1793,9 +1793,73 @@ describe('LSP precision pass — server startup resilience', () => {
           'pyright-langserver',
           'basedpyright-langserver',
         ]);
+
         const python = status.servers.find((server) => server.language === 'python');
         expect(python?.state).toBe('initialized');
         expect(python?.fallbackFrom?.[0]?.command).toEqual(['pyright-langserver', '--stdio']);
+      } finally {
+        db.close();
+      }
+    } finally {
+      cg.close();
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+});
+
+/**
+ * `observedVersion` is written only on a successful initialize, so a server that
+ * starts, reports its version, and then dies mid-run leaves one behind. If the
+ * language then falls forward and the next command never initializes, that
+ * version would be reported against a command that never produced it.
+ */
+describe('LSP precision pass — fallback status attribution', () => {
+  it('does not attribute a dead server\'s version to the command tried after it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-fallback-version-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'a.py'), 'def target():\n    return 1\n');
+    fs.writeFileSync(path.join(dir, 'b.py'), 'from a import target\n\nvalue = target()\n');
+    makeExecutable(dir, 'pyright-langserver');
+    makeExecutable(dir, 'basedpyright-langserver');
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${dir}${path.delimiter}${originalPath ?? ''}`;
+
+    const cg = await CodeGraph.init(dir);
+    try {
+      await cg.indexAll();
+      const db = DatabaseConnection.open(getDatabasePath(dir));
+      try {
+        const queries = new QueryBuilder(db.getDb());
+        const config = resolveLspConfig({ projectRoot: dir, cliActivation: 'enable' });
+
+        const status = await runLspPrecisionPass({
+          projectRoot: dir,
+          queries,
+          config,
+          clientFactory: {
+            create: ({ command }) => command[0] === 'pyright-langserver'
+              ? {
+                  // Starts and identifies itself, then dies on every request.
+                  initialize: async () => ({ serverInfo: { name: 'pyright', version: '1.2.3' } }),
+                  request: async () => { throw new LspClientError('boom', 'server-crash'); },
+                  shutdown: async () => undefined,
+                }
+              : {
+                  // The fallback never gets far enough to report a version.
+                  initialize: async () => { throw new LspClientError('also boom', 'server-crash'); },
+                  request: async () => null,
+                  shutdown: async () => undefined,
+                },
+          },
+        });
+
+        const python = status.servers.find((server) => server.language === 'python');
+        expect(python?.command).toEqual(['basedpyright-langserver', '--stdio']);
+        expect(python?.observedVersion).toBeUndefined();
+        // The version is not lost, just filed against the server that reported it.
+        expect(python?.fallbackFrom?.[0]?.observedVersion).toContain('pyright');
       } finally {
         db.close();
       }

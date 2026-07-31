@@ -329,12 +329,19 @@ async function runLanguageWithFallbackCommands(run: RunLanguageOptions): Promise
       command: run.command,
       reasonCode: run.serverStatus.reasonCode,
       lastError: run.serverStatus.lastError,
+      observedVersion: run.serverStatus.observedVersion,
     }];
     run.command = command;
     run.serverStatus.command = command;
     run.serverStatus.resolvedPath = resolvedPath;
+    // Every remaining field describes the server just given up on, so it moves
+    // into the fallback record rather than staying on the live one. That matters
+    // most for observedVersion: it is written only on a successful initialize,
+    // so a server that starts and then dies mid-run leaves a version behind that
+    // would otherwise be reported against whichever command is tried next.
     delete run.serverStatus.reasonCode;
     delete run.serverStatus.lastError;
+    delete run.serverStatus.observedVersion;
     await runLanguageWithRestartBudget(run);
   }
 }

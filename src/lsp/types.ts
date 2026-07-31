@@ -38,9 +38,11 @@ export const DEFAULT_LSP_TIMEOUT_MS = 5000;
  * away the work they were about to become capable of.
  *
  * A healthy server finishes warm-up in milliseconds (typescript: ~284ms), so a
- * generous ceiling here costs nothing when the server is fine. It is only paid
- * when a server is genuinely stuck — and a warm-up failure abandons the
- * language rather than restarting, so it is paid at most once.
+ * generous ceiling here costs nothing when the server is fine. It is paid in
+ * full only when a server is genuinely stuck, and a warm-up *timeout* then
+ * abandons the language instead of restarting it, so the full budget is spent
+ * at most once. A warm-up crash is treated differently and still gets its one
+ * retry: it fails fast rather than consuming this budget, and may not repeat.
  */
 export const DEFAULT_LSP_STARTUP_TIMEOUT_MS = 60_000;
 export const DEFAULT_LSP_SESSION_LIMIT = 2;
@@ -171,6 +173,8 @@ export interface LspServerFallbackAttempt {
   command: string[] | string | null;
   reasonCode?: LspReasonCode;
   lastError?: string;
+  /** Present when the abandoned server got far enough to report a version. */
+  observedVersion?: string;
 }
 
 export interface LspCoverageRecord {
