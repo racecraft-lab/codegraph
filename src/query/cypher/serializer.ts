@@ -151,11 +151,11 @@ function isTypedCypherValue(value: unknown): value is CypherTypedValue {
   );
 }
 
-function outputTooLargeDiagnostic(): CypherSerializerDiagnosticResult {
+function outputTooLargeDiagnostic(payloadLimitBytes: number): CypherSerializerDiagnosticResult {
   return cypherDiagnosticResult(
     'CYPHER_OUTPUT_TOO_LARGE',
-    'Cypher result exceeds the fixed 1 MiB machine-output payload ceiling; narrow RETURN, MATCH, or LIMIT.',
-    'serialized payload <= 1048576 bytes',
+    `Cypher result exceeds the ${payloadLimitBytes}-byte machine-output payload ceiling; narrow RETURN, MATCH, or LIMIT.`,
+    `serialized payload <= ${payloadLimitBytes} bytes`,
     'serializer',
   );
 }

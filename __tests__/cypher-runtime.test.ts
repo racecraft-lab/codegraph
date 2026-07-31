@@ -678,6 +678,10 @@ describe('SPEC-013 Cypher serializer — T025 shared result serialization', () =
     }, { payloadLimitBytes: 80 });
 
     expectBoundaryDiagnostic(result as CypherRuntimeBoundaryResult, 'CYPHER_OUTPUT_TOO_LARGE');
+    expect(result).toMatchObject({
+      message: 'Cypher result exceeds the 80-byte machine-output payload ceiling; narrow RETURN, MATCH, or LIMIT.',
+      expected: 'serialized payload <= 80 bytes',
+    });
     expect(JSON.stringify(result)).not.toContain('0123456789');
     expect(result).not.toHaveProperty('rows');
   });
