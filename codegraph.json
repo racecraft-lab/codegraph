@@ -7,6 +7,7 @@
   },
   "analysis": {
     "flows": true,
-    "clusters": true
+    "clusters": true,
+    "cfg": true
   }
 }
