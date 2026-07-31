@@ -5,7 +5,8 @@ import { QueryBuilder, LspEdgeCandidateRow } from '../db/queries';
 import { Language } from '../types';
 import { isGeneratedFile } from '../extraction/generated-detection';
 import { LspJsonRpcClient } from './client';
-import { probeLspServerCommand } from './prereqs';
+import { probeLspServerCommand, resolveExecutablePath } from './prereqs';
+import { LSP_SERVER_REGISTRY } from './servers';
 import {
   compatibleLspTargetNodes,
   lspDecisionMetadata,
@@ -38,10 +39,11 @@ import {
 const LSP_PRECISION_LANGUAGES = LSP_LANGUAGES.filter((language) => language !== 'cobol') as LspLanguage[];
 
 const DEFAULT_CLIENT_FACTORY: LspClientFactory = {
-  create: ({ command, cwd, timeoutMs }) => new LspJsonRpcClient({
+  create: ({ command, cwd, timeoutMs, startupTimeoutMs }) => new LspJsonRpcClient({
     command,
     cwd,
     timeoutMs,
+    startupTimeoutMs,
     rootUri: pathToFileURL(cwd).href,
     rootPath: cwd,
   }),
@@ -65,6 +67,8 @@ export interface LspClientFactory {
     command: string[];
     cwd: string;
     timeoutMs: number;
+    /** Warm-up budget; optional so existing fake clients keep working. */
+    startupTimeoutMs?: number;
   }): LspDefinitionClient;
 }
 
@@ -198,10 +202,11 @@ export async function runLspPrecisionPass(options: RunLspPrecisionPassOptions): 
       continue;
     }
 
-    await runLanguageWithRestartBudget({
+    await runLanguageWithFallbackCommands({
       language,
       command: serverStatus.command,
       timeoutMs: serverConfig.timeoutMs,
+      startupTimeoutMs: serverConfig.startupTimeoutMs,
       candidates: languageCandidates,
       clientFactory,
       coverage,
@@ -274,6 +279,7 @@ interface RunLanguageOptions {
   language: LspLanguage;
   command: string[];
   timeoutMs: number;
+  startupTimeoutMs: number;
   candidates: LspEdgeCandidateRow[];
   clientFactory: LspClientFactory;
   coverage: LspCoverageRecord;
@@ -296,6 +302,81 @@ interface ProcessCandidatesResult {
   failure?: CandidateFailure;
 }
 
+/**
+ * Run a language, falling forward to the next registry alternative when the
+ * chosen server fails at runtime.
+ *
+ * Command selection only ever asked "is this executable present". A server that
+ * is installed but broken on this machine — a Kotlin server that cannot parse
+ * the local JDK version, a C# server with no project file to load — therefore
+ * ended the language outright, even though the registry lists a second command
+ * precisely for that case and `status` advertises it as an alternative. Try the
+ * next resolvable command once, so "installed" and "working" stop being treated
+ * as the same claim.
+ */
+async function runLanguageWithFallbackCommands(run: RunLanguageOptions): Promise<void> {
+  const alternatives = fallbackCommandsFor(run);
+  await runLanguageWithRestartBudget(run);
+
+  for (const command of alternatives) {
+    if (!isRecoverableServerState(run.serverStatus.state)) return;
+    if (run.coverage.checkedWorkItems > 0) return;
+
+    const resolvedPath = resolveExecutablePath(command[0]!, { cwd: run.options.projectRoot });
+    if (!resolvedPath) continue;
+
+    run.serverStatus.fallbackFrom = [...(run.serverStatus.fallbackFrom ?? []), {
+      command: run.command,
+      reasonCode: run.serverStatus.reasonCode,
+      lastError: run.serverStatus.lastError,
+      observedVersion: run.serverStatus.observedVersion,
+    }];
+    run.command = command;
+    run.serverStatus.command = command;
+    run.serverStatus.resolvedPath = resolvedPath;
+    // Every remaining field describes the server just given up on, so it moves
+    // into the fallback record rather than staying on the live one. That matters
+    // most for observedVersion: it is written only on a successful initialize,
+    // so a server that starts and then dies mid-run leaves a version behind that
+    // would otherwise be reported against whichever command is tried next.
+    delete run.serverStatus.reasonCode;
+    delete run.serverStatus.lastError;
+    delete run.serverStatus.observedVersion;
+    await runLanguageWithRestartBudget(run);
+  }
+}
+
+/** Registry alternatives after the command already tried, in declared order. */
+function fallbackCommandsFor(run: RunLanguageOptions): string[][] {
+  const declared = LSP_SERVER_REGISTRY[run.language].commands.map((entry) => entry.argv);
+  const attempted = run.command.join(' ');
+  const startIndex = declared.findIndex((argv) => argv.join(' ') === attempted);
+  return startIndex === -1 ? [] : declared.slice(startIndex + 1).map((argv) => argv.slice());
+}
+
+/** States where a different server could plausibly do better than this one did. */
+function isRecoverableServerState(state: LspServerState): boolean {
+  return state === 'crashed' || state === 'timed-out' || state === 'degraded';
+}
+
+/**
+ * True when a server ran out of time before answering anything.
+ *
+ * A restart earns its cost when the server *was* working and died, or when it
+ * crashed in a way that might not repeat — the replacement can pick up where
+ * the last one stopped. It earns nothing after a warm-up timeout: the server
+ * was not failing, it was still starting, and a fresh session throws away the
+ * progress it had made and begins the same cold start again. jdtls needs ~35s
+ * for its first answer here, so the old retry spent 23.9s reaching the same
+ * dead end twice and verified nothing either time.
+ *
+ * Deliberately narrow — a crash before the first answer still gets its retry.
+ */
+function isExhaustedWarmUpTimeout(run: RunLanguageOptions, reason: LspReasonCode): boolean {
+  if (run.coverage.checkedWorkItems > 0) return false;
+  return reason === 'initialize-timeout' || reason === 'request-timeout';
+}
+
 async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<void> {
   if (run.candidates.length === 0) return;
 
@@ -309,6 +390,7 @@ async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<vo
       command: run.command,
       cwd: run.options.projectRoot,
       timeoutMs: run.timeoutMs,
+      startupTimeoutMs: run.startupTimeoutMs,
     });
     run.status.performance.activeSessionHighWatermark = Math.max(
       run.status.performance.activeSessionHighWatermark,
@@ -339,7 +421,7 @@ async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<vo
 
       const failure = processed.failure;
       const shutdownError = await shutdownLanguageClient(client);
-      if (restartAttempts < 1) {
+      if (restartAttempts < 1 && !isExhaustedWarmUpTimeout(run, failure.reason)) {
         restartAttempts += 1;
         remaining = remaining.slice(failure.failedCandidateIndex);
         continue;
@@ -349,7 +431,7 @@ async function runLanguageWithRestartBudget(run: RunLanguageOptions): Promise<vo
     } catch (err) {
       const reason = reasonFromError(err);
       const shutdownError = await shutdownLanguageClient(client);
-      if (restartAttempts < 1) {
+      if (restartAttempts < 1 && !isExhaustedWarmUpTimeout(run, reason)) {
         restartAttempts += 1;
         continue;
       }

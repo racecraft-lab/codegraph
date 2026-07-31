@@ -47,6 +47,12 @@ export interface LspJsonRpcClientOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  /**
+   * Budget for `initialize` and every request up to the first non-initialize
+   * one the server answers. Defaults to `timeoutMs`, so callers that do not set
+   * it keep the previous single-budget behaviour.
+   */
+  startupTimeoutMs?: number;
   rootUri?: string | null;
   rootPath?: string | null;
   initializationOptions?: unknown;
@@ -114,6 +120,14 @@ export class LspJsonRpcError extends Error {
 export class LspJsonRpcClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly timeoutMs: number;
+  private readonly startupTimeoutMs: number;
+  /**
+   * False until the server answers a request. Analysis-heavy servers accept
+   * `initialize` immediately and then block the first position request on the
+   * project-wide analysis they kicked off, so warm-up and steady state need
+   * different budgets — see DEFAULT_LSP_STARTUP_TIMEOUT_MS.
+   */
+  private warmedUp = false;
   private readonly rootUri: string | null;
   private readonly rootPath: string | null;
   private readonly initializationOptions: unknown;
@@ -132,6 +146,7 @@ export class LspJsonRpcClient {
       throw new Error('LSP client command must include an executable');
     }
     this.timeoutMs = options.timeoutMs ?? DEFAULT_LSP_TIMEOUT_MS;
+    this.startupTimeoutMs = options.startupTimeoutMs ?? this.timeoutMs;
     this.rootUri = options.rootUri ?? null;
     this.rootPath = options.rootPath ?? null;
     this.initializationOptions = options.initializationOptions;
@@ -175,7 +190,7 @@ export class LspJsonRpcClient {
     }
 
     const id = this.nextId++;
-    const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+    const timeoutMs = options.timeoutMs ?? (this.warmedUp ? this.timeoutMs : this.startupTimeoutMs);
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
@@ -301,6 +316,14 @@ export class LspJsonRpcClient {
     if (!pending) return;
     this.pending.delete(message.id);
     clearTimeout(pending.timeout);
+    // Warm-up ends at the first answered *work* request, not at `initialize`.
+    // Analysis-heavy servers return `initialize` in milliseconds and only then
+    // begin the project scan that the first position request blocks on, so
+    // ending warm-up here would put that request back on the steady-state
+    // budget and reintroduce the very timeout this exists to prevent.
+    if (pending.method !== 'initialize') {
+      this.warmedUp = true;
+    }
     if ('error' in message) {
       pending.reject(new LspJsonRpcError(message.error));
       return;

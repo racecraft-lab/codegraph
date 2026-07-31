@@ -296,3 +296,69 @@ describe('LspJsonRpcClient', () => {
     });
   });
 });
+
+/**
+ * Analysis-heavy servers (jdtls, the Dart analysis server) return `initialize`
+ * in milliseconds and only then start the project scan that the first position
+ * request blocks on. Measured against this repository, jdtls answered its first
+ * `textDocument/definition` in ~35s and every later one in ~26ms. A single
+ * timeout cannot serve both phases, so the client carries a separate warm-up
+ * budget that ends at the first answered non-initialize request.
+ */
+describe('LSP client warm-up budget', () => {
+  // initialize answers at once; the first work request is slower than the
+  // steady-state budget but inside the warm-up budget.
+  const slowFirstRequestServer = rpcServerSource(`
+  if (message.method === 'initialize') return respond(message.id, { capabilities: {} });
+  if (message.method === 'test/work') {
+    const delay = handledWork === 0 ? 220 : 0;
+    handledWork += 1;
+    return setTimeout(() => respond(message.id, { attempt: handledWork }), delay);
+  }
+`).replace('function handleMessage(message) {', 'let handledWork = 0;\nfunction handleMessage(message) {');
+
+  it('spans initialize and the first work request, so a slow cold start is not killed', async () => {
+    const client = await createClient(slowFirstRequestServer, {
+      timeoutMs: 60,
+      startupTimeoutMs: 4000,
+    });
+
+    await client.initialize();
+    // 220ms > the 60ms steady-state budget: this only resolves if the warm-up
+    // budget is still in force after initialize returned.
+    await expect(client.request('test/work')).resolves.toEqual({ attempt: 1 });
+  });
+
+  it('reverts to the steady-state budget once a work request has been answered', async () => {
+    const neverAnswersSecond = rpcServerSource(`
+  if (message.method === 'initialize') return respond(message.id, { capabilities: {} });
+  if (message.method === 'test/work') {
+    handledWork += 1;
+    if (handledWork === 1) return respond(message.id, { attempt: 1 });
+    return; // second request is never answered
+  }
+`).replace('function handleMessage(message) {', 'let handledWork = 0;\nfunction handleMessage(message) {');
+
+    const client = await createClient(neverAnswersSecond, {
+      timeoutMs: 80,
+      startupTimeoutMs: 30_000,
+    });
+
+    await client.initialize();
+    await expect(client.request('test/work')).resolves.toEqual({ attempt: 1 });
+    // Warm-up is over, so the 80ms steady-state budget applies rather than the
+    // 30s startup budget — otherwise this test would hang for 30 seconds.
+    await expect(client.request('test/work')).rejects.toMatchObject({
+      name: 'LspRequestTimeoutError',
+    });
+  });
+
+  it('defaults the warm-up budget to timeoutMs so existing callers are unchanged', async () => {
+    const client = await createClient(slowFirstRequestServer, { timeoutMs: 60 });
+
+    await client.initialize();
+    await expect(client.request('test/work')).rejects.toMatchObject({
+      name: 'LspRequestTimeoutError',
+    });
+  });
+});

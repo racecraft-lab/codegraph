@@ -1,4 +1,5 @@
 import {
+  DEFAULT_LSP_STARTUP_TIMEOUT_MS,
   DEFAULT_LSP_TIMEOUT_MS,
   LSP_LANGUAGES,
   LspLanguage,
@@ -15,6 +16,7 @@ const entry = (
   disposition: 'implemented',
   commands: commands.map((argv) => ({ argv, label: argv.join(' ') })),
   defaultTimeoutMs: DEFAULT_LSP_TIMEOUT_MS,
+  defaultStartupTimeoutMs: DEFAULT_LSP_STARTUP_TIMEOUT_MS,
 });
 
 export const LSP_SERVER_REGISTRY: Record<LspLanguage, LspServerRegistryEntry> = {
@@ -41,6 +43,7 @@ export const LSP_SERVER_REGISTRY: Record<LspLanguage, LspServerRegistryEntry> = 
     disposition: 'future-owned',
     commands: [],
     defaultTimeoutMs: DEFAULT_LSP_TIMEOUT_MS,
+    defaultStartupTimeoutMs: DEFAULT_LSP_STARTUP_TIMEOUT_MS,
     futureOwner: 'SPEC-024',
     validationNote: 'Parser/resolver parity remains SPEC-008 evidence; LSP parity is owned by SPEC-024.',
   },

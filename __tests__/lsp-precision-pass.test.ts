@@ -1682,3 +1682,191 @@ describe('LSP document lifecycle — didOpen before definition requests', () => 
     expect(status.edgeCounts.suppressed).toBe(0);
   });
 });
+
+/**
+ * A server that fails before answering anything gets one attempt, and a server
+ * that is installed but broken hands the language to the next registry
+ * alternative rather than ending it.
+ */
+describe('LSP precision pass — server startup resilience', () => {
+  it('does not restart a server that failed before answering any work request', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-warmup-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'a.ts'), 'export function target(): number { return 1; }\n');
+    fs.writeFileSync(path.join(dir, 'b.ts'), "import { target } from './a';\nexport const value = target();\n");
+    const fakeServer = makeExecutable(dir, 'typescript-language-server');
+
+    const cg = await CodeGraph.init(dir);
+    try {
+      await cg.indexAll();
+      const db = DatabaseConnection.open(getDatabasePath(dir));
+      try {
+        const queries = new QueryBuilder(db.getDb());
+        const config = resolveLspConfig({
+          projectRoot: dir,
+          cliActivation: 'enable',
+          env: { CODEGRAPH_LSP_TYPESCRIPT_COMMAND_JSON: JSON.stringify([fakeServer, '--stdio']) },
+        });
+
+        let sessionsCreated = 0;
+        const status = await runLspPrecisionPass({
+          projectRoot: dir,
+          queries,
+          config,
+          clientFactory: {
+            create: () => {
+              sessionsCreated += 1;
+              return {
+                // Never completes its warm-up.
+                initialize: async () => { throw new LspRequestTimeoutError('initialize', 5000); },
+                request: async () => null,
+                shutdown: async () => undefined,
+              };
+            },
+          },
+        });
+
+        // Retrying a cold start that already failed just pays the warm-up
+        // budget twice for the same outcome.
+        expect(sessionsCreated).toBe(1);
+        expect(status.edgeCounts.verified).toBe(0);
+      } finally {
+        db.close();
+      }
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('falls forward to the next registry command when the installed server fails at runtime', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-fallback-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'a.py'), 'def target():\n    return 1\n');
+    fs.writeFileSync(path.join(dir, 'b.py'), 'from a import target\n\nvalue = target()\n');
+    // Python declares two registry alternatives; make both resolvable.
+    makeExecutable(dir, 'pyright-langserver');
+    makeExecutable(dir, 'basedpyright-langserver');
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${dir}${path.delimiter}${originalPath ?? ''}`;
+
+    const cg = await CodeGraph.init(dir);
+    try {
+      await cg.indexAll();
+      const db = DatabaseConnection.open(getDatabasePath(dir));
+      try {
+        const queries = new QueryBuilder(db.getDb());
+        const config = resolveLspConfig({ projectRoot: dir, cliActivation: 'enable' });
+
+        const attempted: string[] = [];
+        const status = await runLspPrecisionPass({
+          projectRoot: dir,
+          queries,
+          config,
+          clientFactory: {
+            create: ({ command }) => {
+              attempted.push(command[0]!);
+              // The first registry choice is installed but broken here.
+              if (command[0] === 'pyright-langserver') {
+                return {
+                  initialize: async () => { throw new LspClientError('boom', 'server-crash'); },
+                  request: async () => null,
+                  shutdown: async () => undefined,
+                };
+              }
+              return {
+                initialize: async () => ({ serverInfo: { name: 'fallback-py-lsp' } }),
+                request: async () => ({
+                  uri: pathToFileURL(path.join(dir, 'a.py')).href,
+                  range: { start: { line: 0, character: 4 }, end: { line: 0, character: 10 } },
+                }),
+                shutdown: async () => undefined,
+              };
+            },
+          },
+        });
+
+        // A crash still earns its one in-place restart; only after that is
+        // exhausted does the language fall forward to the next command.
+        expect(attempted).toEqual([
+          'pyright-langserver',
+          'pyright-langserver',
+          'basedpyright-langserver',
+        ]);
+
+        const python = status.servers.find((server) => server.language === 'python');
+        expect(python?.state).toBe('initialized');
+        expect(python?.fallbackFrom?.[0]?.command).toEqual(['pyright-langserver', '--stdio']);
+      } finally {
+        db.close();
+      }
+    } finally {
+      cg.close();
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+});
+
+/**
+ * `observedVersion` is written only on a successful initialize, so a server that
+ * starts, reports its version, and then dies mid-run leaves one behind. If the
+ * language then falls forward and the next command never initializes, that
+ * version would be reported against a command that never produced it.
+ */
+describe('LSP precision pass — fallback status attribution', () => {
+  it('does not attribute a dead server\'s version to the command tried after it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-lsp-fallback-version-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'a.py'), 'def target():\n    return 1\n');
+    fs.writeFileSync(path.join(dir, 'b.py'), 'from a import target\n\nvalue = target()\n');
+    makeExecutable(dir, 'pyright-langserver');
+    makeExecutable(dir, 'basedpyright-langserver');
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${dir}${path.delimiter}${originalPath ?? ''}`;
+
+    const cg = await CodeGraph.init(dir);
+    try {
+      await cg.indexAll();
+      const db = DatabaseConnection.open(getDatabasePath(dir));
+      try {
+        const queries = new QueryBuilder(db.getDb());
+        const config = resolveLspConfig({ projectRoot: dir, cliActivation: 'enable' });
+
+        const status = await runLspPrecisionPass({
+          projectRoot: dir,
+          queries,
+          config,
+          clientFactory: {
+            create: ({ command }) => command[0] === 'pyright-langserver'
+              ? {
+                  // Starts and identifies itself, then dies on every request.
+                  initialize: async () => ({ serverInfo: { name: 'pyright', version: '1.2.3' } }),
+                  request: async () => { throw new LspClientError('boom', 'server-crash'); },
+                  shutdown: async () => undefined,
+                }
+              : {
+                  // The fallback never gets far enough to report a version.
+                  initialize: async () => { throw new LspClientError('also boom', 'server-crash'); },
+                  request: async () => null,
+                  shutdown: async () => undefined,
+                },
+          },
+        });
+
+        const python = status.servers.find((server) => server.language === 'python');
+        expect(python?.command).toEqual(['basedpyright-langserver', '--stdio']);
+        expect(python?.observedVersion).toBeUndefined();
+        // The version is not lost, just filed against the server that reported it.
+        expect(python?.fallbackFrom?.[0]?.observedVersion).toContain('pyright');
+      } finally {
+        db.close();
+      }
+    } finally {
+      cg.close();
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+});
