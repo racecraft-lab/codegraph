@@ -27,7 +27,7 @@ export function serializeCypherResult(
   const bytes = JSON.stringify(stabilizeValue(result));
   const payloadLimitBytes = options.payloadLimitBytes ?? CYPHER_PAYLOAD_LIMIT_BYTES;
   if (Buffer.byteLength(bytes, 'utf8') > payloadLimitBytes) {
-    return outputTooLargeDiagnostic();
+    return outputTooLargeDiagnostic(payloadLimitBytes);
   }
   return bytes;
 }
