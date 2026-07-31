@@ -379,11 +379,12 @@ describe('T045 codegraph_rename — exposure + write annotations', () => {
     else process.env[ENV] = original;
   });
 
-  it('is a member of DEFAULT_MCP_TOOLS alongside explore, detect-changes, and get-cfg', () => {
+  it('is a member of DEFAULT_MCP_TOOLS alongside query, explore, detect-changes, and get-cfg', () => {
     // getStaticTools() with no allowlist reflects DEFAULT_MCP_TOOLS exactly (the
     // proxy tools/list surface).
     delete process.env[ENV];
     expect(getStaticTools().map((t) => t.name)).toEqual([
+      'codegraph_query',
       'codegraph_detect_changes',
       'codegraph_explore',
       'codegraph_rename',

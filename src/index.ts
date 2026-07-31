@@ -138,6 +138,7 @@ import {
   type CfgReadResult,
 } from './analysis/cfg';
 import { minRefsForPool } from './resolution/resolver-pool';
+import type { CypherQueryResult } from './query/cypher';
 
 const CFG_CONFIG_REVISION_METADATA_KEY = 'cfg_config_revision';
 
@@ -163,6 +164,30 @@ export {
   type DegradationCondition,
   type SearchNodesDetailed,
 } from './search/hybrid';
+// SPEC-013 public Cypher API: keep the package entry lightweight for unrelated
+// CLI/library consumers; the large private parser/runtime module loads only
+// when callers invoke `queryCypher`.
+export async function queryCypher(projectRoot: string, query: string): Promise<CypherQueryResult> {
+  const cypher = await import('./query/cypher');
+  return cypher.queryCypher(projectRoot, query);
+}
+export type {
+  CypherColumn,
+  CypherDiagnosticResult,
+  CypherNode,
+  CypherNodeValue,
+  CypherPath,
+  CypherPathValue,
+  CypherQueryResult,
+  CypherRelationship,
+  CypherRelationshipValue,
+  CypherRow,
+  CypherScalar,
+  CypherScalarValue,
+  CypherSuccessResult,
+  CypherTimeoutResult,
+  CypherValue,
+} from './query/cypher';
 export {
   isCfgReadResult,
   type CfgBlock,

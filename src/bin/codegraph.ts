@@ -42,6 +42,7 @@ try {
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs';
+import { TextDecoder } from 'util';
 import { getCodeGraphDir, isInitialized, unsafeIndexRootReason, findNearestCodeGraphRoot, planFrontload, hasStructuralKeyword, extractCodeTokens } from '../directory';
 import { extractProseCandidates } from '../search/identifier-segments';
 import { detectWorktreeIndexMismatch, worktreeMismatchWarning } from '../sync/worktree';
@@ -49,6 +50,7 @@ import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
 import { ensureCodegraphIgnored } from '../utils';
 import type { EmbeddingStatus, LocalEmbeddingSkipReason } from '../index';
+import type { CypherDiagnosticResult, CypherQueryResult, CypherSuccessResult } from '../index';
 import type { SearchMode } from '../types';
 import { DEGRADATION_HINT_STRINGS, provenanceTag, timingFooterLine, withJsonTiming, resolveAutoMode } from '../search/hybrid';
 import { EMBEDDING_PROVIDER_VALUES, type EmbeddingProviderSelection } from '../embeddings/config';
@@ -76,6 +78,13 @@ import {
   type CfgProjectStatus,
   type CfgReadResult,
 } from '../analysis/cfg';
+import {
+  cypherDiagnosticResult,
+  cypherInputTooLongDiagnostic,
+  normalizeCypherTransportResult,
+  serializeCypherTransportResult,
+} from '../query/cypher/serializer';
+import { CYPHER_MAX_INPUT_CODE_UNITS } from '../query/cypher/limits';
 import { loadAnalysisConfig, PROJECT_CONFIG_FILENAME } from '../project-config';
 import { createUnavailableReport, detectChanges, type DiffMode, type ReportFormat } from '../analysis/detect-changes';
 import {
@@ -346,6 +355,294 @@ function validateEmbeddingsOption(value: string | undefined): EmbeddingProviderS
     process.exit(1);
   }
   return value as EmbeddingProviderSelection;
+}
+
+// A valid UTF-8 encoding needs at most three bytes per UTF-16 code unit
+// (supplementary characters use four bytes for a two-unit surrogate pair).
+// Bound retained stdin before decoding so an untrusted stream cannot grow the
+// chunk list or final concatenation without limit.
+const CYPHER_CLI_INPUT_MAX_BYTES = CYPHER_MAX_INPUT_CODE_UNITS * 3;
+const CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS: readonly {
+  readonly long: string;
+  readonly short?: string;
+}[] = [
+  { long: '--kind', short: '-k' },
+  { long: '--mode', short: '-m' },
+  { long: '--limit', short: '-l' },
+  { long: '--file' },
+];
+
+type CypherCliQueryInputResult =
+  | { readonly status: 'success'; readonly query: string; readonly source: 'positional' | 'stdin' }
+  | CypherDiagnosticResult;
+
+async function resolveCliQueryInput(search: string): Promise<CypherCliQueryInputResult> {
+  if (search !== '-') {
+    return validateCypherCliInputLength(search, 'positional');
+  }
+
+  const stdin = await readStdinBuffer();
+  if (stdin.status === 'too-large') {
+    return cypherInputTooLongDiagnostic(CYPHER_MAX_INPUT_CODE_UNITS);
+  }
+  if (stdin.status === 'no-stdin') {
+    return cypherDiagnosticResult(
+      'CYPHER_MISSING_STDIN',
+      'Cypher query text was requested from stdin, but stdin is a terminal. Pipe the query in or pass it as an argument.',
+      'piped stdin query text',
+      'cli-input',
+    );
+  }
+
+  let query: string;
+  try {
+    query = new TextDecoder('utf-8', { fatal: true }).decode(stdin.bytes);
+  } catch {
+    return cypherDiagnosticResult(
+      'CYPHER_INVALID_STDIN_ENCODING',
+      'Cypher stdin must be valid UTF-8.',
+      'valid UTF-8 stdin',
+      'cli-input',
+    );
+  }
+  return validateCypherCliInputLength(query, 'stdin');
+}
+
+function validateCypherCliInputLength(
+  query: string,
+  source: 'positional' | 'stdin',
+): CypherCliQueryInputResult {
+  if (query.length <= CYPHER_MAX_INPUT_CODE_UNITS) {
+    return { status: 'success', query, source };
+  }
+  return cypherInputTooLongDiagnostic(CYPHER_MAX_INPUT_CODE_UNITS);
+}
+
+/**
+ * Cypher mode is opt-in by the uppercase `MATCH` keyword. Matching it case
+ * insensitively would capture an ordinary lowercase search for the English word
+ * "match" (or an identifier like `match(`), routing it into the Cypher parser
+ * and exiting 1 where keyword search previously returned results and exited 0 —
+ * the never-error posture required by Constitution VI.
+ */
+function startsWithCypherMatch(query: string): boolean {
+  return /^\s*MATCH\b/.test(query);
+}
+
+type LegacySearchCliOptions = {
+  readonly path?: string;
+  readonly limit?: string;
+  readonly kind?: string;
+  readonly mode?: string;
+  readonly json?: boolean;
+};
+
+async function runLegacySearchCli(searchText: string, options: LegacySearchCliOptions): Promise<void> {
+  const projectPath = resolveProjectPath(options.path);
+
+  if (!isInitialized(projectPath)) {
+    error(`CodeGraph not initialized in ${projectPath}`);
+    process.exit(1);
+  }
+
+  const { default: CodeGraph } = await loadCodeGraph();
+  const cg = await CodeGraph.open(projectPath);
+
+  const limit = parseInt(options.limit || '10', 10);
+
+  // Coerce mode in the action handler (SPEC-003 FR-002; contracts/mcp-cli-surface.md):
+  // the CLI surface defaults an unspecified OR unknown/out-of-enum value to `auto`
+  // — NEVER a commander `choices()` rejection, so a mistyped mode still returns
+  // keyword-eligible results and exits 0 (never-error posture, Constitution VI).
+  const mode: SearchMode =
+    options.mode === 'keyword' ||
+    options.mode === 'semantic' ||
+    options.mode === 'hybrid' ||
+    options.mode === 'auto'
+      ? options.mode
+      : 'auto';
+
+  // Production async-acquisition pattern: for any semantic-eligible mode warm the
+  // bounded, budget-capped query-vector cache BEFORE the synchronous search so the
+  // fused arm can consume it. `acquireQueryVectorForSearch` NEVER rejects (returns
+  // `{ vector: null, model: null }` with no provider), so this degrades cleanly to
+  // keyword when no embedding endpoint is configured.
+  if (mode !== 'keyword') {
+    await cg.acquireQueryVectorForSearch(searchText);
+  }
+
+  const detailed = cg.searchNodesDetailed(searchText, {
+    limit,
+    kinds: options.kind ? [options.kind as any] : undefined,
+    mode,
+  });
+  const rawResults = detailed.results;
+
+  // Mirror the MCP search down-rank so the CLI also surfaces the
+  // hand-written implementation before protobuf/gRPC scaffolding
+  // when both share a name. See extraction/generated-detection.ts.
+  const { isGeneratedFile } = await import('../extraction/generated-detection');
+  const results = [...rawResults].sort((a, b) => {
+    const aGen = isGeneratedFile(a.node.filePath) ? 1 : 0;
+    const bGen = isGeneratedFile(b.node.filePath) ? 1 : 0;
+    return aGen - bGen;
+  });
+
+  if (options.json) {
+    // FR-008 machine fields: attach embedMs/fusionMs to each result when the semantic
+    // arm ran; a no-op (identity) on the keyword/degraded path so the dormant --json
+    // shape stays byte-stable (no added fields).
+    console.log(JSON.stringify(withJsonTiming(results, detailed.timing), null, 2));
+  } else {
+    if (results.length === 0) {
+      info(`No results found for "${searchText}"`);
+      // FR-015 / review item 1: a degraded-AND-empty search still shows the hint —
+      // the early return here used to drop it (the footer only rendered on the
+      // non-empty branch). Printed WITHOUT chalk so the pinned contract string stays
+      // byte-exact; keyword/healthy-empty carry a null degradation → no footer, so
+      // explicit `--mode keyword` empty output stays byte-identical to today (SC-004).
+      if (detailed.degradation) {
+        console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
+      }
+    } else {
+      console.log(chalk.bold(`\nSearch Results for "${searchText}":\n`));
+
+      // Results arrive already ranked by relevance, so the order conveys
+      // it. We don't print the raw score: it's an unbounded BM25/FTS value
+      // (relative-ranking only), and the old `(score * 100)%` rendered it
+      // as nonsensical percentages like "12042%" (#1045). The MCP search
+      // tool likewise shows no score. Raw `score` stays in --json output.
+      for (const result of results) {
+        const node = result.node;
+        const location = `${node.filePath}:${node.startLine}`;
+
+        // FR-012: append the inline provenance tag on the primary line in fused modes.
+        // `provenanceTag` returns '' for a keyword/degraded hit (no `matchType`), so the
+        // #1045 no-score human layout stays byte-identical on the dormant path (SC-004).
+        console.log(
+          chalk.cyan(node.kind.padEnd(12)) +
+          chalk.white(node.name) +
+          chalk.dim(provenanceTag(result.matchType))
+        );
+        console.log(chalk.dim(`  ${location}`));
+        if (node.signature) {
+          console.log(chalk.dim(`  ${node.signature}`));
+        }
+        console.log();
+      }
+
+      // Results LEAD (FR-005); the FR-008 timing footer (semantic arm ran) or the
+      // FR-015 degradation hint (degraded) FOLLOWS. Mutually exclusive; keyword mode
+      // and the healthy-empty case emit neither (byte-identical to today, SC-004).
+      // Printed WITHOUT chalk so the pinned contract strings stay byte-exact — no ANSI
+      // escapes wrapping the FR-015 literals a consumer may parse.
+      if (detailed.timing) {
+        console.log(timingFooterLine(detailed.timing));
+      } else if (detailed.degradation) {
+        console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
+      }
+    }
+  }
+
+  cg.destroy();
+}
+
+function unsupportedCypherCliFlagDiagnostic(argv: readonly string[] = process.argv): CypherDiagnosticResult | undefined {
+  for (const flag of CYPHER_CLI_UNSUPPORTED_SEARCH_FLAGS) {
+    const matched = argv.find((arg) => {
+      return (
+        arg === flag.long ||
+        arg.startsWith(`${flag.long}=`) ||
+        (flag.short !== undefined && (arg === flag.short || arg.startsWith(`${flag.short}=`)))
+      );
+    });
+    if (matched !== undefined) {
+      return cypherDiagnosticResult(
+        'CYPHER_UNSUPPORTED',
+        `Cypher query mode does not support search-only CLI flag ${matched}. Put row limits inside the Cypher query text.`,
+        'Cypher-supported query flags',
+        'cli-options',
+      );
+    }
+  }
+  return undefined;
+}
+
+type CypherCliStdinResult =
+  | { readonly status: 'success'; readonly bytes: Buffer }
+  | { readonly status: 'too-large' }
+  | { readonly status: 'no-stdin' };
+
+async function readStdinBuffer(): Promise<CypherCliStdinResult> {
+  // `query -` means "read the query from stdin". On a terminal there is nothing
+  // to read and no EOF is coming, so awaiting the stream would hang forever with
+  // no prompt and no output. Refuse up front instead.
+  if (process.stdin.isTTY === true) {
+    return { status: 'no-stdin' };
+  }
+
+  const chunks: Buffer[] = [];
+  let retainedBytes = 0;
+  let tooLarge = false;
+
+  for await (const chunk of process.stdin) {
+    if (tooLarge) {
+      continue;
+    }
+
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (bytes.length > CYPHER_CLI_INPUT_MAX_BYTES - retainedBytes) {
+      tooLarge = true;
+      chunks.length = 0;
+      retainedBytes = 0;
+      continue;
+    }
+
+    chunks.push(bytes);
+    retainedBytes += bytes.length;
+  }
+
+  return tooLarge
+    ? { status: 'too-large' }
+    : { status: 'success', bytes: Buffer.concat(chunks, retainedBytes) };
+}
+
+async function writeCypherCliResult(result: CypherQueryResult, json: boolean): Promise<void> {
+  const normalized = normalizeCypherTransportResult(result);
+  if (json) {
+    process.stdout.write(serializeCypherTransportResult(normalized));
+    return;
+  }
+
+  if (normalized.status === 'success') {
+    await writeCypherHumanSuccess(normalized);
+    return;
+  }
+
+  if (normalized.status === 'timeout') {
+    error(`${normalized.code}: ${normalized.guidance}`);
+    return;
+  }
+
+  error(`${normalized.code}: ${normalized.message}`);
+}
+
+async function writeCypherHumanSuccess(result: CypherSuccessResult): Promise<void> {
+  const columns = result.columns.map((column) => column.name);
+  const { cypherRowsToTable } = await import('../query/cypher/serializer');
+  const tableRows = cypherRowsToTable(result.rows, columns);
+  if (columns.length === 0 || tableRows.length === 0) {
+    info('Cypher returned no rows.');
+    return;
+  }
+
+  console.log(columns.join('\t'));
+  for (const row of tableRows) {
+    console.log(columns.map((column) => row[column] ?? '').join('\t'));
+  }
+  if (result.truncated) {
+    warn(`Cypher result truncated at ${result.effectiveCap} rows. Add or narrow LIMIT in the query text.`);
+  }
 }
 
 function parseCfgPagingOption(value: string | undefined, flag: '--limit' | '--offset'): number | undefined {
@@ -1482,6 +1779,26 @@ program
   });
 
 /**
+ * codegraph search <search>
+ */
+program
+  .command('search <search>')
+  .description('Search for symbols in the codebase')
+  .option('-p, --path <path>', 'Project path')
+  .option('-l, --limit <number>', 'Maximum results', '10')
+  .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
+  .option('-m, --mode <mode>', 'Search mode: keyword | semantic | hybrid | auto (default: auto)')
+  .option('-j, --json', 'Output as JSON')
+  .action(async (search: string, options: LegacySearchCliOptions) => {
+    try {
+      await runLegacySearchCli(search, options);
+    } catch (err) {
+      error(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+/**
  * codegraph query <search>
  */
 program
@@ -1491,116 +1808,38 @@ program
   .option('-l, --limit <number>', 'Maximum results', '10')
   .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
   .option('-m, --mode <mode>', 'Search mode: keyword | semantic | hybrid | auto (default: auto)')
+  // Declared only so commander accepts the flag and Cypher mode can reject it by
+  // name; the keyword-search path has never filtered by file, so it is a no-op there.
+  .option('--file <file>', 'Accepted for compatibility; rejected in Cypher query mode and ignored otherwise')
   .option('-j, --json', 'Output as JSON')
-  .action(async (search: string, options: { path?: string; limit?: string; kind?: string; mode?: string; json?: boolean }) => {
+  .action(async (search: string, options: { path?: string; limit?: string; kind?: string; mode?: string; file?: string; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
-      if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
+      const queryInput = await resolveCliQueryInput(search);
+      if (queryInput.status === 'diagnostic') {
+        await writeCypherCliResult(queryInput, options.json === true);
         process.exit(1);
       }
+      const searchText = queryInput.query;
 
-      const { default: CodeGraph } = await loadCodeGraph();
-      const cg = await CodeGraph.open(projectPath);
-
-      const limit = parseInt(options.limit || '10', 10);
-
-      // Coerce mode in the action handler (SPEC-003 FR-002; contracts/mcp-cli-surface.md):
-      // the CLI surface defaults an unspecified OR unknown/out-of-enum value to `auto`
-      // — NEVER a commander `choices()` rejection, so a mistyped mode still returns
-      // keyword-eligible results and exits 0 (never-error posture, Constitution VI).
-      const mode: SearchMode =
-        options.mode === 'keyword' ||
-        options.mode === 'semantic' ||
-        options.mode === 'hybrid' ||
-        options.mode === 'auto'
-          ? options.mode
-          : 'auto';
-
-      // Production async-acquisition pattern: for any semantic-eligible mode warm the
-      // bounded, budget-capped query-vector cache BEFORE the synchronous search so the
-      // fused arm can consume it. `acquireQueryVectorForSearch` NEVER rejects (returns
-      // `{ vector: null, model: null }` with no provider), so this degrades cleanly to
-      // keyword when no embedding endpoint is configured.
-      if (mode !== 'keyword') {
-        await cg.acquireQueryVectorForSearch(search);
-      }
-
-      const detailed = cg.searchNodesDetailed(search, {
-        limit,
-        kinds: options.kind ? [options.kind as any] : undefined,
-        mode,
-      });
-      const rawResults = detailed.results;
-
-      // Mirror the MCP search down-rank so the CLI also surfaces the
-      // hand-written implementation before protobuf/gRPC scaffolding
-      // when both share a name. See extraction/generated-detection.ts.
-      const { isGeneratedFile } = await import('../extraction/generated-detection');
-      const results = [...rawResults].sort((a, b) => {
-        const aGen = isGeneratedFile(a.node.filePath) ? 1 : 0;
-        const bGen = isGeneratedFile(b.node.filePath) ? 1 : 0;
-        return aGen - bGen;
-      });
-
-      if (options.json) {
-        // FR-008 machine fields: attach embedMs/fusionMs to each result when the semantic
-        // arm ran; a no-op (identity) on the keyword/degraded path so the dormant --json
-        // shape stays byte-stable (no added fields).
-        console.log(JSON.stringify(withJsonTiming(results, detailed.timing), null, 2));
-      } else {
-        if (results.length === 0) {
-          info(`No results found for "${search}"`);
-          // FR-015 / review item 1: a degraded-AND-empty search still shows the hint —
-          // the early return here used to drop it (the footer only rendered on the
-          // non-empty branch). Printed WITHOUT chalk so the pinned contract string stays
-          // byte-exact; keyword/healthy-empty carry a null degradation → no footer, so
-          // explicit `--mode keyword` empty output stays byte-identical to today (SC-004).
-          if (detailed.degradation) {
-            console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
-          }
-        } else {
-          console.log(chalk.bold(`\nSearch Results for "${search}":\n`));
-
-          // Results arrive already ranked by relevance, so the order conveys
-          // it. We don't print the raw score: it's an unbounded BM25/FTS value
-          // (relative-ranking only), and the old `(score * 100)%` rendered it
-          // as nonsensical percentages like "12042%" (#1045). The MCP search
-          // tool likewise shows no score. Raw `score` stays in --json output.
-          for (const result of results) {
-            const node = result.node;
-            const location = `${node.filePath}:${node.startLine}`;
-
-            // FR-012: append the inline provenance tag on the primary line in fused modes.
-            // `provenanceTag` returns '' for a keyword/degraded hit (no `matchType`), so the
-            // #1045 no-score human layout stays byte-identical on the dormant path (SC-004).
-            console.log(
-              chalk.cyan(node.kind.padEnd(12)) +
-              chalk.white(node.name) +
-              chalk.dim(provenanceTag(result.matchType))
-            );
-            console.log(chalk.dim(`  ${location}`));
-            if (node.signature) {
-              console.log(chalk.dim(`  ${node.signature}`));
-            }
-            console.log();
-          }
-
-          // Results LEAD (FR-005); the FR-008 timing footer (semantic arm ran) or the
-          // FR-015 degradation hint (degraded) FOLLOWS. Mutually exclusive; keyword mode
-          // and the healthy-empty case emit neither (byte-identical to today, SC-004).
-          // Printed WITHOUT chalk so the pinned contract strings stay byte-exact — no ANSI
-          // escapes wrapping the FR-015 literals a consumer may parse.
-          if (detailed.timing) {
-            console.log(timingFooterLine(detailed.timing));
-          } else if (detailed.degradation) {
-            console.log(DEGRADATION_HINT_STRINGS[detailed.degradation]);
-          }
+      if (queryInput.source === 'stdin' || startsWithCypherMatch(searchText)) {
+        const unsupportedFlag = unsupportedCypherCliFlagDiagnostic();
+        if (unsupportedFlag !== undefined) {
+          await writeCypherCliResult(unsupportedFlag, options.json === true);
+          process.exit(1);
         }
+
+        const { queryCypher } = await loadCodeGraph();
+        const result = await queryCypher(projectPath, searchText);
+        await writeCypherCliResult(result, options.json === true);
+        if (result.status !== 'success') {
+          process.exit(1);
+        }
+        return;
       }
 
-      cg.destroy();
+      await runLegacySearchCli(searchText, options);
     } catch (err) {
       error(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);

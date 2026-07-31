@@ -5,6 +5,9 @@
  */
 
 import type CodeGraph from '../index';
+import type { CypherDiagnosticResult, CypherQueryResult } from '../query/cypher';
+import { cypherInputTooLongDiagnostic, serializeCypherTransportResult } from '../query/cypher/serializer';
+import { CYPHER_MAX_INPUT_CODE_UNITS } from '../query/cypher/limits';
 import { QueryPoolUnavailableError, type QueryPool } from './query-pool';
 import { findNearestCodeGraphRoot } from '../directory';
 // Lazy-load the heavy CodeGraph chain off the MCP startup path — see the same
@@ -651,6 +654,22 @@ export const tools: ToolDefinition[] = [
     annotations: READ_ONLY_ANNOTATIONS,
   },
   {
+    name: 'codegraph_query',
+    description: 'Run a bounded structured Cypher graph query against a CodeGraph index. Returns the canonical Cypher result union JSON for success, empty rows, diagnostics, and timeouts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Cypher query text.',
+        },
+        projectPath: projectPathProperty,
+      },
+      required: ['query'],
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
     name: 'codegraph_callers',
     description: 'List functions that call <symbol>. For the full flow, use codegraph_explore.',
     inputSchema: {
@@ -1033,7 +1052,7 @@ export function getStaticTools(): ToolDefinition[] {
  * status) remain fully functional — handlers stay, the library API and CLI are
  * untouched, and `CODEGRAPH_MCP_TOOLS=explore,node,...` re-enables any of them.
  */
-const DEFAULT_MCP_TOOLS = new Set(['explore', 'detect_changes', 'rename', 'get_cfg']);
+const DEFAULT_MCP_TOOLS = new Set(['explore', 'query', 'detect_changes', 'rename', 'get_cfg']);
 
 /**
  * Tool handler that executes tools against a CodeGraph instance
@@ -1246,6 +1265,7 @@ export class ToolHandler {
       const TINY_REPO_FILE_THRESHOLD = 500;
       const TINY_REPO_CORE_TOOLS = new Set([
         'codegraph_explore',
+        'codegraph_query',
         'codegraph_search',
         'codegraph_node',
         'codegraph_detect_changes',
@@ -1421,6 +1441,20 @@ export class ToolHandler {
       );
     }
     return value;
+  }
+
+  private validateCypherQueryInput(value: unknown): string | CypherDiagnosticResult | ToolResult {
+    if (typeof value !== 'string' || value.length === 0) {
+      return this.errorResult('query must be a non-empty string');
+    }
+    if (value.length > CYPHER_MAX_INPUT_CODE_UNITS) {
+      return cypherInputTooLongDiagnostic(CYPHER_MAX_INPUT_CODE_UNITS);
+    }
+    return value;
+  }
+
+  private isCypherDiagnosticResult(result: string | CypherDiagnosticResult | ToolResult): result is CypherDiagnosticResult {
+    return typeof result === 'object' && result !== null && 'status' in result && result.status === 'diagnostic';
   }
 
   /**
@@ -1676,6 +1710,16 @@ export class ToolHandler {
         return result;
       }
 
+      // codegraph_query returns canonical Cypher result-union JSON bytes. It
+      // has its own read-only worker boundary and expected diagnostics/timeouts
+      // are success-shaped, so skip generic banner wrapping that would corrupt
+      // the machine JSON payload.
+      if (toolName === 'codegraph_query') {
+        const result = await this.handleCypherQuery(args);
+        if (signal?.aborted) throw new Error('Request aborted');
+        return result;
+      }
+
       // Read tools: off-load the CPU-heavy dispatch to the worker pool when one
       // is attached and healthy (daemon mode), so the daemon's single event
       // loop stays free for the MCP
@@ -1765,6 +1809,7 @@ export class ToolHandler {
   private async dispatchTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
     switch (toolName) {
       case 'codegraph_search': return await this.handleSearch(args);
+      case 'codegraph_query': return await this.handleCypherQuery(args);
       case 'codegraph_callers': return await this.handleCallers(args);
       case 'codegraph_callees': return await this.handleCallees(args);
       case 'codegraph_impact': return await this.handleImpact(args);
@@ -1799,6 +1844,49 @@ export class ToolHandler {
       return this.errorResult(`${name} must be an integer`);
     }
     return raw;
+  }
+
+  /**
+   * Handle codegraph_query (SPEC-013). Expected query states — success, empty
+   * rows, parser/unsupported diagnostics, not-indexed, and timeout — are
+   * returned as canonical success-shaped Cypher JSON. `isError` stays reserved
+   * for path/access refusals and real malfunctions in the outer dispatcher.
+   */
+  private async handleCypherQuery(args: Record<string, unknown>): Promise<ToolResult> {
+    const queryInput = this.validateCypherQueryInput(args.query);
+    if (typeof queryInput !== 'string') {
+      return this.isCypherDiagnosticResult(queryInput)
+        ? this.serializeCypherToolResult(queryInput)
+        : queryInput;
+    }
+    const query = queryInput;
+
+    const projectRoot = this.resolveCypherProjectRoot(args.projectPath as string | undefined);
+    const { queryCypher } = await import('../query/cypher');
+    const result = await queryCypher(projectRoot, query);
+    return this.serializeCypherToolResult(result);
+  }
+
+  private async serializeCypherToolResult(result: CypherQueryResult): Promise<ToolResult> {
+    return this.textResult(serializeCypherTransportResult(result));
+  }
+
+  private resolveCypherProjectRoot(projectPath?: string): string {
+    if (projectPath !== undefined) {
+      if (existsSync(projectPath)) {
+        const pathError = validateProjectPath(projectPath);
+        if (pathError) {
+          throw new PathRefusalError(pathError);
+        }
+        return findNearestCodeGraphRoot(projectPath) ?? projectPath;
+      }
+      const resolvedRoot = findNearestCodeGraphRoot(projectPath);
+      if (resolvedRoot !== null) {
+        return resolvedRoot;
+      }
+      throw new PathRefusalError(`Path does not exist or is not accessible: ${resolvePath(projectPath)}`);
+    }
+    return this.cg?.getProjectRoot() ?? this.defaultProjectHint ?? process.cwd();
   }
 
   /**
