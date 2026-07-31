@@ -10,8 +10,24 @@ import type { CypherNode as ExportedCypherNode } from '../src';
  * so a test shortens it for the duration of one call instead.
  */
 async function withExpiredCypherDeadline<T>(run: () => Promise<T>): Promise<T> {
+  return withCypherDeadlineMs(0, run);
+}
+
+/**
+ * Run with a specific enforced Cypher deadline.
+ *
+ * Correctness assertions should not be decided by how fast the host is. The two
+ * ranged-aggregate probes below walk ~48,000 reachable nodes and take ~2.3s on a
+ * developer machine, which is comfortably inside the 5s production deadline but
+ * not inside it on a loaded CI runner sharing a box with the rest of the suite —
+ * a macOS runner timed one out. Raising the budget for those cases keeps them
+ * testing what they are named for (that ranged aggregates are not pruned before
+ * grouping and ordering) rather than doubling as a wall-clock benchmark. The
+ * production deadline itself stays covered by the T061 timeout probes.
+ */
+async function withCypherDeadlineMs<T>(deadlineMs: number, run: () => Promise<T>): Promise<T> {
   const previous = process.env.CODEGRAPH_CYPHER_DEADLINE_MS;
-  process.env.CODEGRAPH_CYPHER_DEADLINE_MS = '0';
+  process.env.CODEGRAPH_CYPHER_DEADLINE_MS = String(deadlineMs);
   try {
     return await run();
   } finally {
@@ -22,6 +38,9 @@ async function withExpiredCypherDeadline<T>(run: () => Promise<T>): Promise<T> {
     }
   }
 }
+
+/** Headroom for host-speed-sensitive correctness probes; not a product value. */
+const CYPHER_SLOW_HOST_DEADLINE_MS = 60_000;
 
 type SqliteStatement = {
   run: (...params: unknown[]) => unknown;
@@ -644,6 +663,48 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — T024 internal
     expect(followup.rows).toEqual([{ ok: 1 }]);
     expect(runtime.getCypherRuntimeStateForTests().activeWorkers).toBe(0);
   }, 7000);
+
+  /**
+   * An exhausted deadline must settle as a timeout every time, not most of the
+   * time. Node clamps `setTimeout(fn, 0)` up to 1ms rather than firing it
+   * immediately, so a zero deadline that raced a dispatched statement against a
+   * timer was decided by host speed: a pooled worker holding an already-open
+   * database can answer inside that window, and CI observed exactly that,
+   * returning `success` where a timeout was required. Repeat against a warm pool
+   * — the condition that makes the race winnable — and require every outcome.
+   */
+  it('settles an exhausted deadline as a timeout on every attempt, never racing the worker', async () => {
+    const runtime = await loadCypherRuntimeBoundaryContract();
+    const fixture = createCypherRuntimeFixture();
+
+    // Warm the pool first: a cold worker pays a boot the old timer always won.
+    expectBoundarySuccess(await runtime.executeCypherSqlForTests(
+      fixture.projectRoot,
+      { sql: 'SELECT 1 AS ok', effectiveCap: 1 },
+    ));
+
+    const statuses = await withExpiredCypherDeadline(async () => {
+      const seen: string[] = [];
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        const result = await runtime.executeCypherSqlForTests(
+          fixture.projectRoot,
+          { sql: 'SELECT 1 AS ok', effectiveCap: 1 },
+        );
+        seen.push(result.status);
+      }
+      return seen;
+    });
+
+    expect(new Set(statuses)).toEqual(new Set(['timeout']));
+    expect(runtime.getCypherRuntimeStateForTests().activeWorkers).toBe(0);
+
+    // The pool still works afterwards.
+    const followup = expectBoundarySuccess(await runtime.executeCypherSqlForTests(
+      fixture.projectRoot,
+      { sql: 'SELECT 1 AS ok', effectiveCap: 1 },
+    ));
+    expect(followup.rows).toEqual([{ ok: 1 }]);
+  }, 20000);
 });
 
 type CypherSerializerContract = {
@@ -1965,9 +2026,9 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API an
       'RETURN start.name AS startName, count(finish.name) AS reachable',
       'ORDER BY reachable DESC LIMIT 1',
     ].join(' ');
-    const belowGuard = expectSuccess(await runtime.queryCypher(
-      fixture.projectRoot,
-      aggregateQuery,
+    const belowGuard = expectSuccess(await withCypherDeadlineMs(
+      CYPHER_SLOW_HOST_DEADLINE_MS,
+      () => runtime.queryCypher(fixture.projectRoot, aggregateQuery),
     ));
 
     expect(belowGuard.rows.map((row) => [
@@ -1985,9 +2046,9 @@ describe.skipIf(!nodeSqliteAvailable)('SPEC-013 Cypher runtime — public API an
       0,
       'tree-sitter',
     );
-    const atGuard = expectSuccess(await runtime.queryCypher(
-      fixture.projectRoot,
-      aggregateQuery,
+    const atGuard = expectSuccess(await withCypherDeadlineMs(
+      CYPHER_SLOW_HOST_DEADLINE_MS,
+      () => runtime.queryCypher(fixture.projectRoot, aggregateQuery),
     ));
     expect(atGuard.rows.map((row) => [
       scalarValue(row, 'startName'),
