@@ -355,7 +355,22 @@ async function executeSqlInWorker(
   dbPath: string,
   request: CypherRuntimeSqlRequest,
 ): Promise<CypherRuntimeResult> {
+  const deadlineMs = resolveDeadlineMs();
   const pooled = await acquireWorker(dbPath);
+
+  // An exhausted budget is settled before the statement is dispatched, never by
+  // racing a timer against the worker. Node clamps `setTimeout(fn, 0)` up to 1ms
+  // rather than firing it immediately (nodejs.org, timers: "if a delay is less
+  // than 1 or greater than 2147483647, it defaults to 1 millisecond"), so a zero
+  // deadline used to mean "one millisecond", and a pooled worker whose database
+  // is already open can answer inside that window. The outcome then depended on
+  // how fast the host was.
+  if (deadlineMs <= 0) {
+    runtimeState.terminatedWorkers += 1;
+    discardWorker(pooled);
+    return timeoutResult();
+  }
+
   const requestId = (nextRequestId += 1);
   pooled.worker.ref();
   runtimeState.activeWorkers += 1;
@@ -408,7 +423,7 @@ async function executeSqlInWorker(
       }
       runtimeState.terminatedWorkers += 1;
       settle(timeoutResult(), false);
-    }, resolveDeadlineMs());
+    }, deadlineMs);
     timer.unref?.();
 
     pooled.worker.on('message', onMessage);
