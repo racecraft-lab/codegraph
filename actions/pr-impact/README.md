@@ -61,6 +61,15 @@ jobs:
 - `codegraph-version`
 - `helper-version`
 
+## Security rollout hold
+
+The action selects Node 24.22.1 for npm installation and its helper. The published
+CLI version 1.5.0 still executes its own bundled Node, with no host-runtime
+override. Do not use that published CLI for this incident remediation. Resume
+action use only after a reviewed release rebuilds every platform bundle with
+the patched runtime, then set `codegraph-version` to that published version.
+Changing the host runtime alone does not update existing bundled artifacts.
+
 ## Behavior
 
 - Runs CodeGraph `detect-changes` in base-ref mode and treats detector JSON as
