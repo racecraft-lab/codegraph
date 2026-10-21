@@ -24,7 +24,7 @@ REL="$ROOT/release"
 NPM="$REL/npm"
 
 rm -rf "$NPM"
-mkdir -p "$NPM/main"
+mkdir -p "$NPM/main/lib"
 
 shopt -s nullglob
 archives=("$REL"/codegraph-*.tar.gz "$REL"/codegraph-*.zip)
@@ -82,6 +82,7 @@ done
 #                per-platform bundle so its deps aren't duplicated here.
 cp "$ROOT/scripts/npm-shim.js" "$NPM/main/npm-shim.js"
 cp "$ROOT/scripts/npm-sdk.js" "$NPM/main/npm-sdk.js"
+cp "$ROOT/scripts/lib/node-runtime-policy.cjs" "$NPM/main/lib/node-runtime-policy.cjs"
 [ -f "$ROOT/README.md" ] && cp "$ROOT/README.md" "$NPM/main/README.md"
 
 # Ship the type declarations so `types`/`exports.types` resolve. Built from this
@@ -97,7 +98,7 @@ ROOT="$ROOT" DEST="$NPM/main" node -e '
   }});
 '
 
-VERSION="$VERSION" SCOPE="$SCOPE" TARGETS="${targets[*]}" \
+ROOT="$ROOT" VERSION="$VERSION" SCOPE="$SCOPE" TARGETS="${targets[*]}" \
   node -e '
     const fs=require("fs");
     const opt={};
@@ -115,7 +116,8 @@ VERSION="$VERSION" SCOPE="$SCOPE" TARGETS="${targets[*]}" \
         "./package.json": "./package.json"
       },
       optionalDependencies: opt,
-      files: ["npm-shim.js","npm-sdk.js","dist","README.md","actions"],
+      engines: JSON.parse(fs.readFileSync(process.env.ROOT + "/package.json", "utf8")).engines,
+      files: ["npm-shim.js","npm-sdk.js","lib","dist","README.md","actions"],
       license: "MIT",
       repository: { type: "git", url: "git+https://github.com/colbymchenry/codegraph.git" }
     }, null, 2) + "\n");

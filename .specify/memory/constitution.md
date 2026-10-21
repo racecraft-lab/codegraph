@@ -151,8 +151,9 @@ The product is the agent stopping — treat sufficiency like uptime.
 ### VII. Local-First, Private, Zero Native Dependencies
 
 - `node:sqlite` is the only store. New runtime dependencies MUST be pure-JS/WASM. The npm
-  engines range `>=20 <25` is preserved (it gates the thin-installer shim; the effective
-  from-source floor is Node 22.5+ for `node:sqlite`, which the bundled runtime satisfies).
+  engines range is `>=22.23.4 <23.0.0 || >=24.22.1 <25.0.0`: supported LTS patches
+  include the required CA trust-store fixes and `node:sqlite`. End-of-life releases
+  are unsupported; self-contained releases bundle a compatible patched runtime.
 - Telemetry MUST be hard-disabled by default in this fork. No network calls except
   user-configured endpoints (embedding/LLM) and locally spawned language servers; the web
   platform makes no external requests.
@@ -225,4 +226,4 @@ binding here:
 - The constitution is committed to git. Back it up before any SpecKit upgrade or
   `specify init --force` — upgrades overwrite `.specify/memory/`.
 
-**Version**: 1.1.1 | **Ratified**: 2026-07-03 | **Last Amended**: 2026-07-15
+**Version**: 1.2.0 | **Ratified**: 2026-07-03 | **Last Amended**: 2026-10-21

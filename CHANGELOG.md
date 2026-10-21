@@ -9,6 +9,11 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Require Node.js 22.23.4+ (22.x) or 24.22.1+ (24.x), and update the
+  bundled runtime to remove affected emSign CA trust.
+
 ### New Features
 
 - CodeGraph now offers read-only, bounded Cypher query access across the package API, `codegraph query`, and the `codegraph_query` MCP tool, with canonical JSON output, clear diagnostics, and `codegraph search` preserved as the explicit keyword-search escape hatch.

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from '../src/bin/node-version-check';
+import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR, isSupportedNodeVersion } from '../src/bin/node-version-check';
 
 describe('buildNode25BlockBanner', () => {
   it('embeds the reported Node version in the header', () => {
@@ -50,9 +50,9 @@ describe('buildNodeTooOldBanner', () => {
   });
 
   it('states the supported floor matching MIN_NODE_MAJOR', () => {
-    expect(MIN_NODE_MAJOR).toBe(20);
+    expect(MIN_NODE_MAJOR).toBe(22);
     expect(buildNodeTooOldBanner('18.0.0')).toContain(
-      `requires Node.js ${MIN_NODE_MAJOR} or newer`
+      'requires Node.js 22.23.4+ (22.x) or 24.22.1+ (24.x)'
     );
   });
 
@@ -65,5 +65,16 @@ describe('buildNodeTooOldBanner', () => {
 
   it('documents the CODEGRAPH_ALLOW_UNSAFE_NODE override', () => {
     expect(buildNodeTooOldBanner('18.0.0')).toContain('CODEGRAPH_ALLOW_UNSAFE_NODE=1');
+  });
+});
+
+
+describe('supported Node security patch floors', () => {
+  it.each(['22.23.4', '22.24.0', '24.22.1', '24.23.0'])('accepts patched %s', (version) => {
+    expect(isSupportedNodeVersion(version)).toBe(true);
+  });
+
+  it.each(['20.19.0', '22.23.3', '23.11.0', '24.11.1', '24.22.0', '24.22.1-rc.1', '25.1.0'])('rejects unsupported %s', (version) => {
+    expect(isSupportedNodeVersion(version)).toBe(false);
   });
 });

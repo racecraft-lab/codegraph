@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { copyNpmEntry } from './helpers/npm-package-fixture';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -34,7 +35,7 @@ function makeConsumer(): { root: string; mainPkg: string } {
   const root = mkTmp('consumer');
   const mainPkg = path.join(root, 'node_modules', '@colbymchenry', 'codegraph');
   fs.mkdirSync(mainPkg, { recursive: true });
-  fs.copyFileSync(SDK_SRC, path.join(mainPkg, 'npm-sdk.js'));
+  copyNpmEntry(SDK_SRC, mainPkg);
   fs.writeFileSync(
     path.join(mainPkg, 'package.json'),
     JSON.stringify({ name: '@colbymchenry/codegraph', version: VERSION, main: 'npm-sdk.js' }) + '\n'
@@ -62,8 +63,9 @@ function installPlatformPackage(root: string, sentinel: string): void {
 }
 
 // require() the SDK in a child process so each case gets a fresh module cache.
-function requireSdk(mainPkg: string, env: Record<string, string> = {}) {
+function requireSdk(mainPkg: string, env: Record<string, string> = {}, nodeVersion?: string) {
   const code =
+    (nodeVersion ? `Object.defineProperty(process.versions, 'node', { value: ${JSON.stringify(nodeVersion)} });` : '') +
     `try { const m = require(${JSON.stringify(path.join(mainPkg, 'npm-sdk.js'))});` +
     ` process.stdout.write(JSON.stringify({ sentinel: m.SENTINEL, cg: typeof m.CodeGraph })); }` +
     ` catch (e) { process.stderr.write(String(e && e.message || e)); process.exit(7); }`;
@@ -75,6 +77,15 @@ function requireSdk(mainPkg: string, env: Record<string, string> = {}) {
 }
 
 describe('npm-sdk programmatic entry', () => {
+  it.each(['20.19.0', '22.23.3', '24.22.0'])('rejects insecure host %s before loading the API', (version) => {
+    const { root, mainPkg } = makeConsumer();
+    installPlatformPackage(root, 'must-not-load');
+    const r = requireSdk(mainPkg, { CODEGRAPH_INSTALL_DIR: path.join(root, '.empty-cache') }, version);
+    expect(r.status).toBe(7);
+    expect(r.stderr).toContain('CA trust-store security');
+    expect(r.stdout).not.toContain('must-not-load');
+  });
+
   it('re-exports the installed platform bundle library', () => {
     const { root, mainPkg } = makeConsumer();
     installPlatformPackage(root, 'platform-lib');

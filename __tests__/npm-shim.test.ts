@@ -17,6 +17,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { copyNpmEntry } from './helpers/npm-package-fixture';
 import { spawn, execSync } from 'child_process';
 import * as https from 'https';
 import * as fs from 'fs';
@@ -42,7 +43,7 @@ function mkTmp(label: string): string {
 // A temp dir standing in for the installed @colbymchenry/codegraph main package.
 function makePkg(version = '9.9.9-test'): string {
   const dir = mkTmp('pkg');
-  fs.copyFileSync(SHIM_SRC, path.join(dir, 'npm-shim.js'));
+  copyNpmEntry(SHIM_SRC, dir);
   fs.writeFileSync(path.join(dir, 'package.json'),
     JSON.stringify({ name: '@colbymchenry/codegraph', version }) + '\n');
   return dir;
@@ -68,9 +69,13 @@ function writeHostPpidLauncher(binDir: string): void {
 
 // Launch the shim with async spawn so the in-process HTTPS server can respond
 // while it runs (spawnSync would block this event loop and deadlock).
-function runShim(pkgDir: string, args: string[], env: Record<string, string>) {
+function runShim(pkgDir: string, args: string[], env: Record<string, string>, nodeVersion?: string) {
   return new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn(process.execPath, [path.join(pkgDir, 'npm-shim.js'), ...args], {
+    const shimPath = path.join(pkgDir, 'npm-shim.js');
+    const argv = nodeVersion
+      ? ['-e', `Object.defineProperty(process.versions, 'node', { value: ${JSON.stringify(nodeVersion)} }); require(${JSON.stringify(shimPath)});`]
+      : [shimPath, ...args];
+    const child = spawn(process.execPath, argv, {
       env: { ...process.env, ...env },
     });
     let stdout = '', stderr = '';
@@ -98,6 +103,16 @@ describe('npm-shim windowsHide (#1092)', () => {
 });
 
 describe.skipIf(isWindows)('npm-shim launcher', () => {
+  it.each(['20.19.0', '22.23.3', '24.22.0'])('rejects insecure host %s before download', async (version) => {
+    const pkg = makePkg();
+    const cache = mkTmp('cache');
+    const r = await runShim(pkg, [], { CODEGRAPH_INSTALL_DIR: cache, CODEGRAPH_NO_DOWNLOAD: '1' }, version);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('CA trust-store security');
+    expect(r.stderr).not.toContain('downloading');
+    expect(fs.existsSync(path.join(cache, 'bundles'))).toBe(false);
+  });
+
   it('runs the installed optional-dependency bundle without any download', async () => {
     const pkg = makePkg();
     const platformPkg = path.join(pkg, 'node_modules', '@colbymchenry', `codegraph-${target}`);

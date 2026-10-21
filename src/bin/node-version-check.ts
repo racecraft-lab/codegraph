@@ -1,3 +1,5 @@
+import * as runtimePolicy from '../../scripts/lib/node-runtime-policy.cjs';
+
 /**
  * Node.js version compatibility check.
  *
@@ -45,11 +47,16 @@ export function buildNode25BlockBanner(nodeVersion: string): string {
  * *warns* on install (unless the user set `engine-strict`), so the CLI bootstrap
  * also hard-blocks here to actually enforce the floor.
  */
-export const MIN_NODE_MAJOR = 20;
+export const MIN_NODE_MAJOR = 22;
+
+/** Whether a stable runtime meets the shared supported LTS security floor. */
+export function isSupportedNodeVersion(version: string): boolean {
+  return runtimePolicy.isSupportedNodeVersion(version);
+}
 
 /**
- * Build the bordered banner shown when CodeGraph detects a Node.js major below
- * {@link MIN_NODE_MAJOR}. Pinned via unit test so the recovery commands and the
+ * Build the bordered banner shown when CodeGraph detects a runtime outside
+ * the supported LTS security patch floors. Pinned via unit test so the recovery commands and the
  * override env var can't be silently stripped by future edits.
  *
  * Uses ASCII glyphs to stay readable on Windows OEM-codepage consoles
@@ -61,9 +68,8 @@ export function buildNodeTooOldBanner(nodeVersion: string): string {
     sep,
     `[CodeGraph] Unsupported Node.js version: ${nodeVersion}`,
     sep,
-    `CodeGraph requires Node.js ${MIN_NODE_MAJOR} or newer. Older versions lack`,
-    'language features and native APIs CodeGraph depends on, and are not',
-    'tested or supported.',
+    'CodeGraph requires Node.js 22.23.4+ (22.x) or 24.22.1+ (24.x).',
+    'Older and end-of-life releases lack the required CA trust-store fixes.',
     '',
     'Fix: install Node.js 22 LTS:',
     '  nvm install 22 && nvm use 22                          # nvm',

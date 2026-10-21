@@ -29,8 +29,8 @@ npx vitest run __tests__/installer-targets.test.ts
 chmods the CLI. Any new SQL, WASM, or shipped static asset must be wired into
 `copy-assets`.
 
-Node engines are `>=20.0.0 <25.0.0`. Source runs that touch `node:sqlite` need
-Node 22.5+; the bundled runtime satisfies that.
+Supported Node engines live in `package.json`; use its patched LTS floors for
+CA trust-store security and `node:sqlite` support.
 
 ## Feature Worktree Preflight
 
