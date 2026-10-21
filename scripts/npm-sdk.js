@@ -16,10 +16,9 @@
 // package ships its own dist/**/*.d.ts tree (pointed at by `types`), built from
 // the same release so it can never skew from the runtime it re-exports.
 //
-// node:sqlite (Node >= 22.5) is required to OPEN a graph, but only lazily inside
-// the SQLite adapter — so loading this module is safe on older Node, and the
-// node:sqlite requirement surfaces with an actionable error only when a DB is
-// actually opened. Heavy extraction additionally wants the bundled launcher's
+// The host Node must meet the supported LTS security floor before loading the
+// API, including when the SDK uses network integrations. Heavy extraction
+// additionally wants the bundled launcher's
 // --liftoff-only flag (the WASM Zone-OOM guard, issues #293/#298); an embedded
 // host that drives large indexing should pass that flag to its own Node.
 
@@ -30,6 +29,7 @@ var fs = require('fs');
 var target = process.platform + '-' + process.arch; // e.g. darwin-arm64, linux-x64
 var pkg = '@colbymchenry/codegraph-' + target;
 
+require('./lib/node-runtime-policy.cjs').assertSupportedNodeVersion(process.versions.node);
 module.exports = require(resolveLibrary());
 
 // Locate the compiled library entry inside the installed per-platform bundle.

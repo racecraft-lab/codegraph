@@ -91,6 +91,8 @@ describe('PR impact action contract', () => {
     expect(pkg.version).toBe('1.5.0');
     expect(action).toContain('INPUT_CODEGRAPH_VERSION: ${{ inputs.codegraph-version }}');
     expect(action).toContain('codegraph_spec="$INPUT_CODEGRAPH_VERSION"');
+    expect(action).toContain('node-version: "24.22.1"');
+    expect(action.indexOf('name: Select patched host Node')).toBeLessThan(action.indexOf('name: Install CodeGraph CLI'));
     expect(action).toContain('npm install --global "@colbymchenry/codegraph@$codegraph_spec"');
     expect(action).toContain('write_env_line "PR_IMPACT_CODEGRAPH_BIN" "$codegraph_bin"');
     expect(action).toContain('write_env_line "PR_IMPACT_CODEGRAPH_RESOLVED_VERSION" "$codegraph_version"');
@@ -922,6 +924,7 @@ describe('PR impact action contract', () => {
       .map((match) => ({ action: match[1], ref: match[2] }));
 
     expect(externalUses).toEqual([
+      { action: 'actions/setup-node', ref: '820762786026740c76f36085b0efc47a31fe5020' },
       { action: 'actions/cache/restore', ref: '0057852bfaa89a56745cba8c7296529d2fc39830' },
       { action: 'actions/upload-artifact', ref: 'ea165f8d65b6e75b540449e92b4886f43607fa02' },
       { action: 'actions/cache/save', ref: '0057852bfaa89a56745cba8c7296529d2fc39830' },

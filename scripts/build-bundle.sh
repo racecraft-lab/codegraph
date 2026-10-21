@@ -13,7 +13,7 @@
 #   scripts/build-bundle.sh <target> [node-version]
 #     target:        darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64
 #                  | win32-x64 | win32-arm64
-#     node-version:  e.g. v24.16.0 (default below; pin for reproducible builds)
+#     node-version:  e.g. v24.22.1 (default below; pin for reproducible builds)
 #
 # Output:
 #   unix:    release/codegraph-<target>.tar.gz   (launcher: bin/codegraph)
@@ -21,9 +21,16 @@
 set -euo pipefail
 
 TARGET="${1:?usage: build-bundle.sh <target> [node-version]}"
-NODE_VERSION="${2:-v24.16.0}"
+NODE_VERSION="${2:-v24.22.1}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+node -e '
+  const { isSupportedNodeVersion } = require(process.argv[1]);
+  if (!isSupportedNodeVersion(process.argv[2].replace(/^v/, ""))) {
+    console.error("[bundle] require Node 22.23.4+ (22.x) or 24.22.1+ (24.x)");
+    process.exit(1);
+  }
+' "$ROOT/scripts/lib/node-runtime-policy.cjs" "$NODE_VERSION"
 OUT="$ROOT/release"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -63,6 +70,8 @@ echo "[bundle] building app"
 STAGE="$WORK/codegraph-${TARGET}"
 mkdir -p "$STAGE/lib" "$STAGE/bin"
 cp -R "$ROOT/dist" "$STAGE/lib/dist"
+mkdir -p "$STAGE/lib/scripts/lib"
+cp "$ROOT/scripts/lib/node-runtime-policy.cjs" "$STAGE/lib/scripts/lib/node-runtime-policy.cjs"
 cp "$ROOT/package.json" "$ROOT/package-lock.json" "$STAGE/lib/"
 echo "[bundle] installing production dependencies"
 ( cd "$STAGE/lib" && npm ci --omit=dev --ignore-scripts >/dev/null 2>&1 )

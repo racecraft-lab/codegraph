@@ -8,8 +8,8 @@
 // only the one matching the host, via each package's `os`/`cpu` fields (the
 // esbuild pattern). This shim — run by the user's OWN Node — locates that bundle
 // and execs its launcher, so the real work always runs on the bundled Node 24
-// (with node:sqlite), regardless of the user's Node version. The user's Node is
-// only ever a launcher; even an ancient version can run this file.
+// (with node:sqlite). The host Node must also meet the supported security floor
+// because the download fallback uses its HTTPS trust store.
 //
 // Self-heal (issue #303): some registries — notably the npmmirror/cnpm mirrors,
 // and some corporate proxies — don't reliably mirror the per-platform
@@ -42,6 +42,7 @@ main().catch(function (e) {
 });
 
 async function main() {
+  require('./lib/node-runtime-policy.cjs').assertSupportedNodeVersion(process.versions.node);
   // Happy path: the npm-installed optional dependency. Fall back to a download
   // when the registry didn't deliver it.
   var resolved = resolveInstalledBundle() || (await selfHealBundle());

@@ -607,8 +607,9 @@ that drive the graph directly: `DatabaseConnection`, `QueryBuilder`,
 - Install from npm (`npm i @colbymchenry/codegraph`) so the matching
   per-platform package — which carries the compiled library and its
   dependencies — is fetched alongside the shim.
-- The API runs on **your** runtime, so it needs **Node 22.5+** for the built-in
-  `node:sqlite` (Electron qualifies when its bundled Node is 22.5+). The CLI and
+- The API runs on **your** runtime, so it needs **Node 22.23.4+ (22.x) or
+  24.22.1+ (24.x)** for the CA trust-store fixes and built-in `node:sqlite`.
+  Electron must provide a runtime meeting the same security floor. The CLI and
   MCP server are unaffected — they run on the self-contained bundled runtime.
 - TypeScript types ship with the package. As with any Node-targeting library,
   keep `@types/node` available and `skipLibCheck: true` (the common default).
